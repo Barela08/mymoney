@@ -303,6 +303,21 @@ export async function permanentDeleteTransactionFromSupabase(id: string): Promis
   }
 }
 
+/**
+ * Permanent hard delete for multiple transactions: Irreversibly delete transactions
+ */
+export async function permanentDeleteTransactionsFromSupabase(ids: string[]): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error('Supabase client is not configured.');
+  if (!ids || ids.length === 0) return;
+
+  const { error } = await client.from('transactions').delete().in('id', ids);
+  if (error) {
+    console.error('Error permanently deleting transactions from Supabase:', error);
+    throw error;
+  }
+}
+
 // ==========================================
 // DYNAMIC SECTIONS OPERATIONS
 // ==========================================

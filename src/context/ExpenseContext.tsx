@@ -20,6 +20,7 @@ import {
   softDeleteTransactionFromSupabase,
   restoreTransactionInSupabase,
   permanentDeleteTransactionFromSupabase,
+  permanentDeleteTransactionsFromSupabase,
   fetchSectionsFromSupabase,
   saveSectionToSupabase,
   deleteSectionFromSupabase,
@@ -41,6 +42,7 @@ import {
 interface ExpenseContextType {
   transactions: Transaction[];
   isLoading: boolean;
+  isSyncing: boolean;
   error: string | null;
   summary: FinancialSummary;
   peopleSummaries: PersonSummary[];
@@ -53,6 +55,12 @@ interface ExpenseContextType {
   clearAllTransactions: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   isSupabaseConnected: boolean;
+
+  // Udhar & People Settlement
+  settlePersonUdhar: (personName: string, notes?: string) => Promise<Transaction>;
+  clearPersonTransactions: (personName: string) => Promise<boolean>;
+  permanentDeletePersonTransactions: (personName: string) => Promise<boolean>;
+  permanentDeleteMultipleTransactions: (ids: string[]) => Promise<boolean>;
 
   // Recycle Bin & Recovery
   recycleBinTransactions: Transaction[];
@@ -170,6 +178,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [notifications, setNotifications] = useState<BroadcastNotification[]>([]);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
 
@@ -182,20 +191,83 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     sortBy: 'newest',
   });
 
-  // Local storage persistence helper
-  const persistLocally = (newList: Transaction[]) => {
+  // User-scoped storage keys to prevent multi-device / multi-user cache contamination
+  const getUserTxStorageKey = useCallback((uid?: string) => {
+    return uid ? `my_money_transactions_${uid}` : LOCAL_STORAGE_KEY;
+  }, []);
+
+  const getUserPendingQueueKey = useCallback((uid?: string) => {
+    return `my_money_pending_queue_${uid || 'guest'}`;
+  }, []);
+
+  const getPendingQueue = useCallback((uid?: string): Transaction[] => {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newList));
+      const q = localStorage.getItem(getUserPendingQueueKey(uid));
+      return q ? JSON.parse(q) : [];
+    } catch {
+      return [];
+    }
+  }, [getUserPendingQueueKey]);
+
+  const savePendingQueue = useCallback((uid: string | undefined, queue: Transaction[]) => {
+    try {
+      const key = getUserPendingQueueKey(uid);
+      if (queue.length === 0) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, JSON.stringify(queue));
+      }
+    } catch {}
+  }, [getUserPendingQueueKey]);
+
+  // Local storage persistence helper (strictly scoped to authenticated user)
+  const persistLocally = useCallback((newList: Transaction[]) => {
+    try {
+      const key = getUserTxStorageKey(user?.uid);
+      localStorage.setItem(key, JSON.stringify(newList));
     } catch (e) {
       console.error('Failed to persist locally:', e);
     }
-  };
+  }, [user?.uid, getUserTxStorageKey]);
+
+  // When user switches or logs in/out, immediately load only this user's data
+  useEffect(() => {
+    if (user) {
+      const key = getUserTxStorageKey(user.uid);
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          setAllTransactions(JSON.parse(saved));
+        } catch {
+          setAllTransactions([]);
+        }
+      } else {
+        // Fallback check legacy key once
+        const legacy = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (legacy) {
+          try {
+            const parsed: Transaction[] = JSON.parse(legacy);
+            const userOwned = parsed.filter(
+              (t) => t.user_id === user.uid || (t.user_email && t.user_email.toLowerCase() === user.email.toLowerCase())
+            );
+            if (userOwned.length > 0) {
+              setAllTransactions(userOwned);
+              localStorage.setItem(key, JSON.stringify(userOwned));
+            }
+          } catch {}
+        }
+      }
+    } else {
+      setAllTransactions([]);
+    }
+  }, [user?.uid, getUserTxStorageKey]);
 
   // Primary database sync: SUPABASE with high-speed parallel fetching & Postgres Realtime
   const syncWithDatabase = useCallback(async (silent: boolean = false) => {
     if (!silent) {
       setIsLoading(true);
     }
+    setIsSyncing(true);
     setError(null);
 
     const supabase = getSupabaseClient();
@@ -209,7 +281,12 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
           fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
           fetchNotificationsFromSupabase().catch(() => []),
-          user ? fetchTransactionsFromSupabase(targetUserId, true).catch(() => null) : Promise.resolve(null),
+          user
+            ? fetchTransactionsFromSupabase(targetUserId, true).catch((err) => {
+                console.warn('Supabase fetchTransactions error:', err.message);
+                return null;
+              })
+            : Promise.resolve(null),
         ]);
 
         if (sectionsData && sectionsData.length > 0) {
@@ -234,36 +311,27 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // TRANSACTION SYNC: Only proceed if user session is loaded
         if (!user) {
           setIsLoading(false);
+          setIsSyncing(false);
           return;
         }
 
         if (Array.isArray(supaData)) {
-          // Check local storage for any pending transactions created by this user not yet in cloud
-          const localSaved = localStorage.getItem(LOCAL_STORAGE_KEY);
-          let localTxs: Transaction[] = [];
-          if (localSaved) {
-            try {
-              localTxs = JSON.parse(localSaved);
-            } catch {}
-          }
-
-          const unsynced = localTxs.filter(
-            (lt) =>
-              (lt.user_id === user.uid || (lt.user_email && lt.user_email.toLowerCase() === user.email.toLowerCase())) &&
-              !supaData.some((st) => st.id === lt.id)
-          );
-
-          if (unsynced.length > 0) {
-            await Promise.allSettled(
-              unsynced.map(async (pendingTx) => {
-                try {
-                  const saved = await saveTransactionToSupabase(pendingTx);
-                  supaData.unshift(saved);
-                } catch {
-                  supaData.unshift(pendingTx);
-                }
-              })
-            );
+          // Process offline pending queue (ONLY items that explicitly failed to upload)
+          const pendingQueue = getPendingQueue(user.uid);
+          if (pendingQueue.length > 0) {
+            const remainingQueue: Transaction[] = [];
+            for (const pendingTx of pendingQueue) {
+              try {
+                const saved = await saveTransactionToSupabase(pendingTx);
+                const idx = supaData.findIndex((t) => t.id === pendingTx.id);
+                if (idx >= 0) supaData[idx] = saved;
+                else supaData.unshift(saved);
+              } catch (e) {
+                console.warn('Could not sync pending tx from queue:', e);
+                remainingQueue.push(pendingTx);
+              }
+            }
+            savePendingQueue(user.uid, remainingQueue);
           }
 
           setAllTransactions(supaData);
@@ -272,6 +340,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         setIsLoading(false);
+        setIsSyncing(false);
         return;
       } catch (supaErr: any) {
         console.warn('Supabase fetch notice, using local cache:', supaErr.message);
@@ -279,21 +348,26 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     // Fallback to cached local storage
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (saved) {
-      try {
-        setAllTransactions(JSON.parse(saved));
-      } catch {}
+    if (user) {
+      const saved = localStorage.getItem(getUserTxStorageKey(user.uid));
+      if (saved) {
+        try {
+          setAllTransactions(JSON.parse(saved));
+        } catch {}
+      }
     }
     setIsLoading(false);
-  }, [user, isAdmin]);
+    setIsSyncing(false);
+  }, [user, isAdmin, getPendingQueue, savePendingQueue, persistLocally, getUserTxStorageKey]);
 
-  // Initial load and instant real-time subscription
+  // Initial load, multi-device Realtime subscription, and mobile tab wake/focus listener
   useEffect(() => {
-    // Initial load
+    if (!user) return;
+
+    // 1. Initial sync
     syncWithDatabase(false);
 
-    // High-speed real-time updates via WebSocket (instant UI reflection without re-fetching all tables)
+    // 2. High-speed real-time updates via WebSocket (instant UI reflection without manual reload)
     const unsubscribeSupabase = subscribeToSupabaseTransactions((event?: RealtimeTransactionEvent) => {
       setIsSupabaseConnected(true);
 
@@ -303,6 +377,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       const { eventType, newRecord, oldId } = event;
+
+      // In multi-user system, only process if belongs to current user (or if admin)
+      if (!isAdmin && newRecord && newRecord.user_id && newRecord.user_id !== user.uid) {
+        return;
+      }
 
       if (eventType === 'INSERT' && newRecord) {
         setAllTransactions((prev) => {
@@ -333,10 +412,32 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     });
 
+    // 3. Mobile screen wake / Tab focus / Reconnect listener
+    const handleSyncTrigger = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncWithDatabase(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSyncTrigger);
+    window.addEventListener('focus', handleSyncTrigger);
+    window.addEventListener('online', handleSyncTrigger);
+
+    // 4. Polling fallback every 20 seconds when screen is visible
+    const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncWithDatabase(true);
+      }
+    }, 20000);
+
     return () => {
       unsubscribeSupabase();
+      document.removeEventListener('visibilitychange', handleSyncTrigger);
+      window.removeEventListener('focus', handleSyncTrigger);
+      window.removeEventListener('online', handleSyncTrigger);
+      clearInterval(pollInterval);
     };
-  }, [syncWithDatabase]);
+  }, [user, isAdmin, syncWithDatabase, persistLocally]);
 
   const refreshTransactions = async () => {
     await syncWithDatabase();
@@ -427,7 +528,9 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           });
         })
         .catch((err: any) => {
-          console.warn('Supabase save notice, cached locally:', err.message);
+          console.warn('Supabase save notice, queued locally:', err.message);
+          const q = getPendingQueue(user.uid);
+          savePendingQueue(user.uid, [...q.filter((t) => t.id !== newTx.id), newTx]);
         });
     }
 
@@ -486,7 +589,9 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updateTransactionInSupabase(id, updatedTx)
         .then(() => setIsSupabaseConnected(true))
         .catch((err: any) => {
-          console.warn('Supabase update notice, cached locally:', err.message);
+          console.warn('Supabase update notice, queued locally:', err.message);
+          const q = getPendingQueue(user.uid);
+          savePendingQueue(user.uid, [...q.filter((t) => t.id !== id), updatedTx]);
         });
     }
 
@@ -518,7 +623,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       softDeleteTransactionFromSupabase(id, user.uid)
         .then(() => setIsSupabaseConnected(true))
         .catch((err: any) => {
-          console.warn('Supabase soft delete notice:', err.message);
+          console.warn('Supabase soft delete notice, queued locally:', err.message);
+          const q = getPendingQueue(user.uid);
+          const delTx = { ...existing, is_deleted: true, deleted_at: nowIso, deleted_by: user.uid };
+          savePendingQueue(user.uid, [...q.filter((t) => t.id !== id), delTx]);
         });
     }
 
@@ -575,6 +683,107 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     for (const t of userTransactions) {
       await deleteTransaction(t.id);
     }
+  };
+
+  // -------------------------------------------------------------
+  // SETTLE & CLEAR PERSON UDHAR (उधार चुकता / FULL SETTLEMENT)
+  // -------------------------------------------------------------
+  const settlePersonUdhar = async (personName: string, customNotes?: string): Promise<Transaction> => {
+    if (!user) {
+      throw new SecurityAuthorizationError('Authentication required to settle transactions.');
+    }
+
+    const cleanName = personName.trim();
+    const person = peopleSummaries.find((p) => p.name.toLowerCase() === cleanName.toLowerCase());
+    if (!person) {
+      throw new Error(`Person "${cleanName}" not found in your people ledger.`);
+    }
+
+    const balance = person.outstandingBalance;
+    if (Math.abs(balance) < 0.01) {
+      throw new Error(`Udhar with ${cleanName} is already completely cleared (Balance is ₹0).`);
+    }
+
+    const isOwed = balance > 0; // We gave money, person is returning it (Income/Received)
+    const amountToSettle = Math.abs(balance);
+    const subcategory = isOwed ? 'money_received' : 'money_given';
+    const type = isOwed ? 'income' : 'expense';
+    const title = isOwed
+      ? `Full Udhar Cleared by ${cleanName}`
+      : `Full Udhar Cleared to ${cleanName}`;
+    const description = `Account settled in full. Balance cleared to ₹0.`;
+
+    const tx = await addTransaction({
+      category: 'people',
+      subcategory,
+      transaction_type: type,
+      amount: amountToSettle,
+      title,
+      description,
+      person_name: cleanName,
+      transaction_date: getCurrentISTDate(),
+      transaction_time: getCurrentISTTime(),
+      notes: customNotes || 'Udhar Complete / Cleared (हिसाब चुकता)',
+    });
+
+    return tx;
+  };
+
+  // Clear / remove all records for a person from active directory (Soft-delete to Recycle Bin)
+  const clearPersonTransactions = async (personName: string): Promise<boolean> => {
+    if (!user) return false;
+    const cleanName = personName.trim().toLowerCase();
+    const personTxs = userTransactions.filter(
+      (t) => t.category === 'people' && t.person_name && t.person_name.trim().toLowerCase() === cleanName
+    );
+
+    if (personTxs.length === 0) return true;
+
+    for (const tx of personTxs) {
+      await deleteTransaction(tx.id);
+    }
+    return true;
+  };
+
+  // Permanently delete multiple transactions (Irreversible - never goes to Recycle Bin)
+  const permanentDeleteMultipleTransactions = async (ids: string[]): Promise<boolean> => {
+    if (!user || ids.length === 0) return false;
+
+    const idSet = new Set(ids);
+    setAllTransactions((prev) => {
+      const updated = prev.filter((t) => !idSet.has(t.id));
+      persistLocally(updated);
+      return updated;
+    });
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      permanentDeleteTransactionsFromSupabase(ids)
+        .then(() => setIsSupabaseConnected(true))
+        .catch((err: any) => {
+          console.warn('Supabase permanent delete notice:', err.message);
+        });
+    }
+
+    return true;
+  };
+
+  // Permanently delete all records for a person (उधार पूरा होने पर परमानेंट डिलीट - Recycle Bin में भी नहीं दिखेगा)
+  const permanentDeletePersonTransactions = async (personName: string): Promise<boolean> => {
+    if (!user) return false;
+    const cleanName = personName.trim().toLowerCase();
+    const targetTxs = allTransactions.filter(
+      (t) =>
+        t.category === 'people' &&
+        t.person_name &&
+        t.person_name.trim().toLowerCase() === cleanName &&
+        (isAdmin || t.user_id === user.uid)
+    );
+
+    if (targetTxs.length === 0) return true;
+
+    const ids = targetTxs.map((t) => t.id);
+    return permanentDeleteMultipleTransactions(ids);
   };
 
   // Dynamic Section Management
@@ -773,11 +982,13 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const list: PersonSummary[] = [];
     map.forEach((val, name) => {
+      const balance = Math.round((val.given - val.received) * 100) / 100;
       list.push({
         name,
         totalGiven: val.given,
         totalReceived: val.received,
-        outstandingBalance: val.given - val.received,
+        outstandingBalance: balance,
+        isSettled: Math.abs(balance) < 0.01,
         transactionCount: val.txs.length,
         lastTransactionDate: val.lastDate,
         transactions: val.txs.sort((a, b) =>
@@ -865,6 +1076,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       value={{
         transactions: userTransactions,
         isLoading,
+        isSyncing,
         error,
         summary,
         peopleSummaries,
@@ -875,6 +1087,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         editTransaction,
         deleteTransaction,
         clearAllTransactions,
+        settlePersonUdhar,
+        clearPersonTransactions,
+        permanentDeletePersonTransactions,
+        permanentDeleteMultipleTransactions,
         refreshTransactions,
         isSupabaseConnected,
         recycleBinTransactions,

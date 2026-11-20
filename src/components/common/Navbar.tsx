@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   X,
   Info,
+  RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -34,7 +35,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
-  const { maintenanceSettings, notifications, dynamicSections } = useExpense();
+  const {
+    maintenanceSettings,
+    notifications,
+    dynamicSections,
+    isSyncing,
+    refreshTransactions,
+    isSupabaseConnected,
+  } = useExpense();
   const [istTimeStr, setIstTimeStr] = useState('');
   const [istDateStr, setIstDateStr] = useState('');
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -127,6 +135,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">Maintenance Active</span>
             </div>
           )}
+
+          {/* Cloud Sync & Manual Refresh Button */}
+          <button
+            type="button"
+            onClick={() => refreshTransactions()}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-semibold cursor-pointer border border-slate-200/80 dark:border-slate-800"
+            title={
+              isSyncing
+                ? 'Syncing with cloud...'
+                : isSupabaseConnected
+                ? 'Cloud Synced! Tap to refresh latest data from other devices'
+                : 'Tap to sync data with cloud'
+            }
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${
+                isSyncing ? 'animate-spin text-emerald-500' : isSupabaseConnected ? 'text-emerald-500' : 'text-slate-400'
+              }`}
+            />
+            <span className="hidden xl:inline text-[11px]">
+              {isSyncing ? 'Syncing...' : isSupabaseConnected ? 'Synced' : 'Sync'}
+            </span>
+          </button>
 
           {/* Broadcast Notification Bell */}
           <div className="relative">
