@@ -65,6 +65,7 @@ export const ReportsSection: React.FC = () => {
     let expenses = 0;
     let homeExp = 0;
     let roomExp = 0;
+    let foodExp = 0;
     let otherExp = 0;
     let gasExp = 0;
     let groceryExp = 0;
@@ -86,6 +87,7 @@ export const ReportsSection: React.FC = () => {
           else if (tx.subcategory === 'rent') rentExp += amt;
           else if (tx.subcategory === 'electricity') elecExp += amt;
         }
+        if (tx.category === 'food') foodExp += amt;
         if (tx.category === 'other') otherExp += amt;
       }
     }
@@ -100,6 +102,7 @@ export const ReportsSection: React.FC = () => {
       savingsRate,
       homeExp,
       roomExp,
+      foodExp,
       otherExp,
       gasExp,
       groceryExp,
@@ -116,6 +119,7 @@ export const ReportsSection: React.FC = () => {
       { name: 'Room (Grocery)', value: metrics.groceryExp, color: '#06b6d4' },
       { name: 'Room (Rent)', value: metrics.rentExp, color: '#3b82f6' },
       { name: 'Room (Electricity)', value: metrics.elecExp, color: '#eab308' },
+      { name: 'Food & Dining', value: metrics.foodExp, color: '#f97316' },
       { name: 'Other Expenses', value: metrics.otherExp, color: '#a855f7' },
     ].filter((item) => item.value > 0);
 

@@ -1,4 +1,4 @@
-export type TransactionCategory = 'home' | 'room' | 'other' | 'people' | string;
+export type TransactionCategory = 'home' | 'room' | 'food' | 'other' | 'people' | string;
 
 export type TransactionSubcategory =
   // Home subcategories
@@ -9,8 +9,23 @@ export type TransactionSubcategory =
   | 'grocery'
   | 'rent'
   | 'electricity'
-  // Other subcategory
+  // Food subcategories
+  | 'restaurant'
+  | 'snacks'
+  | 'beverages'
+  | 'delivery'
+  | 'mess_tiffin'
+  | 'other_food'
+  // Other subcategories
+  | 'shopping'
+  | 'travel'
+  | 'entertainment'
+  | 'health'
+  | 'personal_care'
+  | 'education'
+  | 'bills'
   | 'other_expense'
+  | 'other_general'
   // People subcategories
   | 'money_given'
   | 'money_received'
@@ -28,9 +43,15 @@ export interface TransactionMetadata {
   billing_month?: string;
   // Gas specific
   paid_by?: string;
+  // Food specific
+  food_item?: string;
+  restaurant_name?: string;
+  platform?: string;
+  food_type?: string;
   // Other expense specific
   spent_at?: string;
   spent_for?: string;
+  category_tag?: string;
   // General custom fields
   [key: string]: any;
 }
@@ -149,6 +170,7 @@ export interface FinancialSummary {
   totalRent: number;
   totalElectricity: number;
   totalRoomExpenses: number;
+  totalFoodExpenses: number;
   totalOtherExpenses: number;
   totalMoneyGiven: number;
   totalMoneyReceived: number;
@@ -161,6 +183,7 @@ export interface PersonSummary {
   totalGiven: number;
   totalReceived: number;
   outstandingBalance: number; // Given - Received
+  isSettled?: boolean; // True when balance is 0 or marked settled
   transactionCount: number;
   lastTransactionDate: string;
   transactions: Transaction[];

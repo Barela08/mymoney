@@ -107,7 +107,7 @@ export function validateAmount(amount: unknown): AmountValidationResult {
   return { isValid: true, value: rounded };
 }
 
-const ALLOWED_CATEGORIES: TransactionCategory[] = ['home', 'room', 'other', 'people'];
+const ALLOWED_CATEGORIES: TransactionCategory[] = ['home', 'room', 'food', 'other', 'people'];
 const ALLOWED_TYPES: TransactionType[] = ['income', 'expense'];
 
 export interface PayloadValidationResult {
@@ -129,8 +129,12 @@ export function validateTransactionPayload(payload: unknown, currentUserId?: str
 
   const p = payload as Record<string, any>;
 
-  // Category validation
-  if (!ALLOWED_CATEGORIES.includes(p.category)) {
+  // Category validation (allow core categories or valid dynamic section identifiers)
+  const isAllowedCategory =
+    ALLOWED_CATEGORIES.includes(p.category) ||
+    (typeof p.category === 'string' && /^[a-z0-9_-]+$/i.test(p.category));
+
+  if (!isAllowedCategory) {
     errors.push(`Invalid category "${p.category}". Allowed: ${ALLOWED_CATEGORIES.join(', ')}.`);
   }
 

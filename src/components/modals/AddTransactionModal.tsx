@@ -15,6 +15,8 @@ import {
   Calendar,
   Clock,
   Sparkles,
+  Utensils,
+  Coffee,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -80,6 +82,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   // Room - Electricity
   const [elecMonth, setElecMonth] = useState<string>(getCurrentMonthName());
 
+  // Food & Dining
+  const [foodItem, setFoodItem] = useState<string>('');
+  const [foodPlace, setFoodPlace] = useState<string>('');
+
   // Other Expense
   const [spentAt, setSpentAt] = useState<string>('');
   const [spentFor, setSpentFor] = useState<string>('');
@@ -99,7 +105,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       } else {
         if (initialCategory === 'home') setSubcategory('received_home');
         else if (initialCategory === 'room') setSubcategory('grocery');
-        else if (initialCategory === 'other') setSubcategory('other_expense');
+        else if (initialCategory === 'food') setSubcategory('snacks');
+        else if (initialCategory === 'other') setSubcategory('shopping');
         else if (initialCategory === 'people') setSubcategory('money_given');
       }
       if (initialPersonName) setPersonName(initialPersonName);
@@ -113,7 +120,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     setCategory(cat);
     if (cat === 'home') setSubcategory('received_home');
     else if (cat === 'room') setSubcategory('grocery');
-    else if (cat === 'other') setSubcategory('other_expense');
+    else if (cat === 'food') setSubcategory('snacks');
+    else if (cat === 'other') setSubcategory('shopping');
     else if (cat === 'people') setSubcategory('money_given');
   };
 
@@ -127,6 +135,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     setGroceryQuantity('');
     setGasPaidBy('Self');
     setRentPaidTo('');
+    setFoodItem('');
+    setFoodPlace('');
     setSpentAt('');
     setSpentFor('');
     setPersonName('');
@@ -202,20 +212,30 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         finalDescription = `Power bill for ${elecMonth.trim()}`;
         metadata.billing_month = elecMonth.trim();
       }
+    } else if (category === 'food') {
+      finalType = 'expense';
+      if (!foodItem.trim()) {
+        toast.error('Food Item Required', 'Please enter what food was ordered or consumed');
+        return;
+      }
+      finalTitle = finalTitle || foodItem.trim();
+      finalDescription = foodPlace.trim() ? `${foodItem.trim()} at ${foodPlace.trim()}` : foodItem.trim();
+      metadata.food_item = foodItem.trim();
+      metadata.restaurant_name = foodPlace.trim();
+      metadata.platform = foodPlace.trim();
     } else if (category === 'other') {
       finalType = 'expense';
-      if (!spentAt.trim()) {
-        toast.error('Location/Platform Required', 'Please enter where the money was spent (e.g. Swiggy, Metro, Amazon)');
+      if (!spentFor.trim() && !spentAt.trim()) {
+        toast.error('Details Required', 'Please enter why or where the money was spent');
         return;
       }
-      if (!spentFor.trim()) {
-        toast.error('Reason Required', 'Please enter why it was spent (e.g. Travelling, Shopping, Food)');
-        return;
-      }
-      finalTitle = finalTitle || spentFor.trim();
-      finalDescription = `Spent at ${spentAt.trim()} for ${spentFor.trim()}`;
+      finalTitle = finalTitle || spentFor.trim() || spentAt.trim();
+      finalDescription = spentAt.trim() && spentFor.trim()
+        ? `Spent at ${spentAt.trim()} for ${spentFor.trim()}`
+        : (spentAt.trim() || spentFor.trim());
       metadata.spent_at = spentAt.trim();
       metadata.spent_for = spentFor.trim();
+      metadata.category_tag = subcategory;
     } else if (category === 'people') {
       if (!personName.trim()) {
         toast.error("Person's Name Required", 'Please enter the person name');
@@ -300,10 +320,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
               Select Category
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {[
                 { id: 'home' as TransactionCategory, label: 'Home Money', icon: Home },
                 { id: 'room' as TransactionCategory, label: 'Room Expense', icon: DoorOpen },
+                { id: 'food' as TransactionCategory, label: 'Food & Dining', icon: Utensils },
                 { id: 'other' as TransactionCategory, label: 'Other Expense', icon: ShoppingBag },
                 { id: 'people' as TransactionCategory, label: 'People (Udhar)', icon: Users },
               ].map((tab) => {
@@ -314,7 +335,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => handleCategoryChange(tab.id)}
-                    className={`flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                    className={`flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-semibold border transition-all ${
                       isSelected
                         ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20'
                         : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -394,6 +415,70 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {category === 'food' && (
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                Food & Dining Type
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { id: 'snacks', label: 'Fast Food / Snacks' },
+                  { id: 'restaurant', label: 'Dining / Restaurant' },
+                  { id: 'beverages', label: 'Chai / Coffee' },
+                  { id: 'delivery', label: 'Swiggy / Zomato' },
+                  { id: 'mess_tiffin', label: 'Mess / Tiffin' },
+                  { id: 'other_food', label: 'Other Food' },
+                ].map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setSubcategory(sub.id)}
+                    className={`py-2 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                      subcategory === sub.id
+                        ? 'bg-orange-50 dark:bg-orange-950/70 border-orange-400 text-orange-700 dark:text-orange-300 shadow-sm'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {category === 'other' && (
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                Expense Category
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'shopping', label: 'Shopping' },
+                  { id: 'travel', label: 'Travel & Transit' },
+                  { id: 'entertainment', label: 'Entertainment' },
+                  { id: 'health', label: 'Medical & Health' },
+                  { id: 'personal_care', label: 'Personal Care' },
+                  { id: 'bills', label: 'Bills & Recharge' },
+                  { id: 'education', label: 'Education' },
+                  { id: 'other_general', label: 'General Other' },
+                ].map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setSubcategory(sub.id)}
+                    className={`py-2 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                      subcategory === sub.id
+                        ? 'bg-purple-50 dark:bg-purple-950/70 border-purple-400 text-purple-700 dark:text-purple-300 shadow-sm'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -587,35 +672,128 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </div>
           )}
 
-          {/* Other Expenses Fields */}
-          {category === 'other' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Where was money spent? <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={spentAt}
-                  onChange={(e) => setSpentAt(e.target.value)}
-                  placeholder="e.g. Swiggy, Metro, Amazon, Market"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+          {/* Food & Dining Specific Fields */}
+          {category === 'food' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Food Item / Meal <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={foodItem}
+                    onChange={(e) => setFoodItem(e.target.value)}
+                    placeholder="e.g. Evening Chai & Samosa, Pizza, Thali"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Restaurant / Platform / Location
+                  </label>
+                  <input
+                    type="text"
+                    value={foodPlace}
+                    onChange={(e) => setFoodPlace(e.target.value)}
+                    placeholder="e.g. Swiggy, Zomato, Canteen, Dhaba"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
               </div>
 
+              {/* Quick Suggestion Chips */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Why was it spent? <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={spentFor}
-                  onChange={(e) => setSpentFor(e.target.value)}
-                  placeholder="e.g. Travelling, Shopping, Recharge, Food"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-2">
+                  Quick Food Chips:
+                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {[
+                    'Evening Chai & Samosa',
+                    'Pizza',
+                    'Burger & Fries',
+                    'Lunch Thali',
+                    'Biryani',
+                    'Tea & Poha',
+                    'Cold Drink / Juice',
+                    'Dosa',
+                    'Street Chaat',
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setFoodItem(chip)}
+                      className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-orange-50 dark:hover:bg-orange-950/40 text-slate-700 dark:text-slate-300 hover:text-orange-700 dark:hover:text-orange-300 rounded-lg text-[10px] font-medium border border-slate-200 dark:border-slate-700 cursor-pointer"
+                    >
+                      + {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Other Expenses Fields */}
+          {category === 'other' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Where was money spent? <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={spentAt}
+                    onChange={(e) => setSpentAt(e.target.value)}
+                    placeholder="e.g. Amazon, Metro Station, Pharmacy"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Why was it spent? (Reason) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={spentFor}
+                    onChange={(e) => setSpentFor(e.target.value)}
+                    placeholder="e.g. Travelling, Online Shopping, Haircut"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Other Suggestion Chips */}
+              <div>
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-2">
+                  Quick Reasons:
+                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {[
+                    'Online Shopping',
+                    'Metro Card Recharge',
+                    'Cab / Auto Fare',
+                    'Petrol',
+                    'Medicine',
+                    'Mobile Data Recharge',
+                    'Haircut / Salon',
+                    'Movie Tickets',
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setSpentFor(chip)}
+                      className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 rounded-lg text-[10px] font-medium border border-slate-200 dark:border-slate-700 cursor-pointer"
+                    >
+                      + {chip}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}

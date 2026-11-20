@@ -20,6 +20,7 @@ import {
   Building,
   Zap,
   Sparkles,
+  Utensils,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -112,7 +113,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       )}
 
       {/* =========================================================================
-          START KARTE HI 4 BADE BADE OPTION: Home, Room, Other, People
+          START KARTE HI 5 BADE BADE OPTION: Home, Room, Food, Other, People
           ========================================================================= */}
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
@@ -120,7 +121,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <span>Main Categories</span>
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/80 px-2.5 py-0.5 rounded-full">
-                4 Sections
+                5 Sections
               </span>
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -129,8 +130,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
 
-        {/* 4 Big Mobile-First Section Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+        {/* 5 Big Mobile-First Section Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
           {/* 1. HOME SECTION (बड़ा ऑप्शन 1) */}
           <div className="group relative bg-white dark:bg-slate-900 border-2 border-emerald-200 dark:border-emerald-900/60 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
             <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -249,7 +250,60 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             </div>
           </div>
 
-          {/* 3. OTHER EXPENSES (बड़ा ऑप्शन 3) */}
+          {/* 3. FOOD & DINING SECTION (बड़ा ऑप्शन 3) */}
+          <div className="group relative bg-white dark:bg-slate-900 border-2 border-orange-200 dark:border-orange-900/60 hover:border-orange-500 dark:hover:border-orange-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
+            <div className="absolute top-0 right-0 w-28 h-28 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
+
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-950/80 text-orange-600 dark:text-orange-400 flex items-center justify-center shadow-md shadow-orange-500/10 group-hover:scale-105 transition-transform">
+                  <Utensils className="w-6 h-6" />
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                  Section 3
+                </span>
+              </div>
+
+              <h4 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-4">
+                Food & Dining
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                Restaurant, cafe, tea/coffee, snacks, swiggy/zomato delivery & tiffin
+              </p>
+
+              {/* Food Expenses Stats */}
+              <div className="mt-4 p-3 bg-orange-50/70 dark:bg-orange-950/30 rounded-2xl border border-orange-100 dark:border-orange-900/40 space-y-1.5 text-xs">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Includes: Hotel, Snacks, Chai, Zomato, Mess
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-orange-200/60 dark:border-orange-800/60 font-extrabold text-slate-900 dark:text-slate-100">
+                  <span>Total Food Spent:</span>
+                  <span className="text-rose-600 dark:text-rose-400 font-sans">
+                    {formatINR(summary.totalFoodExpenses)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-5 space-y-2">
+              <button
+                onClick={() => onNavigate('food')}
+                className="w-full py-3 px-4 bg-orange-600 hover:bg-orange-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-orange-600/20 transition-all cursor-pointer"
+              >
+                <span>Open Food & Dining</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onOpenAddModal('food')}
+                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-orange-50 dark:hover:bg-orange-950 text-slate-700 dark:text-slate-300 hover:text-orange-700 dark:hover:text-orange-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                + Add Food Expense
+              </button>
+            </div>
+          </div>
+
+          {/* 4. OTHER EXPENSES (बड़ा ऑप्शन 4) */}
           <div className="group relative bg-white dark:bg-slate-900 border-2 border-purple-200 dark:border-purple-900/60 hover:border-purple-500 dark:hover:border-purple-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
             <div className="absolute top-0 right-0 w-28 h-28 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
 
@@ -259,7 +313,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                   <ShoppingBag className="w-6 h-6" />
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                  Section 3
+                  Section 4
                 </span>
               </div>
 
@@ -267,13 +321,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 Other Expenses
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                Travelling, shopping, mobile recharge, food & personal spending
+                Shopping, travel, medical bills, recharges & personal spending
               </p>
 
               {/* Other Expenses Stats */}
               <div className="mt-4 p-3 bg-purple-50/70 dark:bg-purple-950/30 rounded-2xl border border-purple-100 dark:border-purple-900/40 space-y-1.5 text-xs">
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Includes: Travel, Recharges, Food, Online orders
+                  Includes: Shopping, Travel, Health, Bills
                 </div>
                 <div className="flex items-center justify-between pt-1 border-t border-purple-200/60 dark:border-purple-800/60 font-extrabold text-slate-900 dark:text-slate-100">
                   <span>Total Other Spent:</span>
@@ -302,7 +356,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             </div>
           </div>
 
-          {/* 4. PEOPLE SECTION (बड़ा ऑप्शन 4) */}
+          {/* 5. PEOPLE SECTION (बड़ा ऑप्शन 5) */}
           <div className="group relative bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-900/60 hover:border-amber-500 dark:hover:border-amber-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
             <div className="absolute top-0 right-0 w-28 h-28 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
 
@@ -312,7 +366,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                   <Users className="w-6 h-6" />
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                  Section 4
+                  Section 5
                 </span>
               </div>
 
@@ -404,6 +458,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             onClick={() => onNavigate('room')}
           />
           <StatCard
+            title="Food & Dining"
+            amount={summary.totalFoodExpenses}
+            subtitle="Restaurant, Snacks, Delivery"
+            icon={Utensils}
+            variant="expense"
+            badge="Khana-Pina"
+            onClick={() => onNavigate('food')}
+          />
+          <StatCard
             title="Other Expenses"
             amount={summary.totalOtherExpenses}
             subtitle="Travel, Shopping & Personal"
@@ -483,9 +546,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
               const categoryBadgeColors = {
                 home: 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                 room: 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                food: 'bg-orange-50 dark:bg-orange-950/70 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                 other: 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                 people: 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-              }[tx.category];
+              }[tx.category] || 'bg-slate-50 dark:bg-slate-950/70 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800';
 
               return (
                 <div

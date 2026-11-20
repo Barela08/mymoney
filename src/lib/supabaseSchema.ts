@@ -67,4 +67,8 @@ DROP POLICY IF EXISTS "Users can delete own transactions" ON public.transactions
 CREATE POLICY "Users can delete own transactions"
     ON public.transactions FOR DELETE
     USING (auth.uid() = user_id);
+
+-- 6. Enable High-Speed Supabase Realtime Broadcasting
+ALTER TABLE public.transactions REPLICA IDENTITY FULL;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
 `;

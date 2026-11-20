@@ -72,6 +72,8 @@ const availableIcons = [
   'DoorOpen',
   'ShoppingBag',
   'Users',
+  'Utensils',
+  'Coffee',
   'GraduationCap',
   'Briefcase',
   'Heart',
@@ -237,6 +239,7 @@ export const AdminDashboard: React.FC = () => {
     // Cross-user transaction aggregation
     let totalHome = 0;
     let totalRoom = 0;
+    let totalFood = 0;
     let totalOther = 0;
     let totalGiven = 0;
     let totalReceived = 0;
@@ -246,6 +249,7 @@ export const AdminDashboard: React.FC = () => {
       totalVolume += t.amount;
       if (t.category === 'home') totalHome += t.amount;
       if (t.category === 'room') totalRoom += t.amount;
+      if (t.category === 'food') totalFood += t.amount;
       if (t.category === 'other') totalOther += t.amount;
       if (t.category === 'people') {
         if (t.subcategory === 'money_given') totalGiven += t.amount;
@@ -261,6 +265,7 @@ export const AdminDashboard: React.FC = () => {
       totalVolume,
       totalHome,
       totalRoom,
+      totalFood,
       totalOther,
       totalGiven,
       totalReceived,
@@ -836,7 +841,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 pt-2">
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Total Transactions</span>
                 <p className="text-base font-black text-slate-900 dark:text-slate-100 mt-1">{overviewStats.totalTransactions}</p>
@@ -852,6 +857,10 @@ export const AdminDashboard: React.FC = () => {
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Room Expenses</span>
                 <p className="text-base font-black text-rose-600 dark:text-rose-400 mt-1">{formatINR(overviewStats.totalRoom)}</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Food & Dining</span>
+                <p className="text-base font-black text-orange-600 dark:text-orange-400 mt-1">{formatINR(overviewStats.totalFood)}</p>
               </div>
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Udhar Given</span>

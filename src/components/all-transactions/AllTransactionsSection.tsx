@@ -319,6 +319,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
               <option value="all">All Categories</option>
               <option value="home">Home Money</option>
               <option value="room">Room Expenses</option>
+              <option value="food">Food & Dining</option>
               <option value="other">Other Expenses</option>
               <option value="people">People (Udhar)</option>
             </select>
@@ -456,9 +457,10 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
               const categoryBadgeColors = {
                 home: 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
                 room: 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                food: 'bg-orange-50 dark:bg-orange-950/70 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800',
                 other: 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
                 people: 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-              }[tx.category];
+              }[tx.category] || 'bg-slate-50 dark:bg-slate-950/70 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800';
 
               return (
                 <div

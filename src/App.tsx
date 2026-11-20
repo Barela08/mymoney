@@ -9,6 +9,7 @@ import { MobileNav } from './components/common/MobileNav';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { HomeSection } from './components/home/HomeSection';
 import { RoomSection } from './components/room/RoomSection';
+import { FoodSection } from './components/food/FoodSection';
 import { OtherSection } from './components/other/OtherSection';
 import { PeopleSection } from './components/people/PeopleSection';
 import { ReportsSection } from './components/reports/ReportsSection';
@@ -134,6 +135,10 @@ const MainContent: React.FC = () => {
               <RoomSection onOpenAddModal={handleOpenAddModal} />
             )}
 
+            {currentTab === 'food' && (
+              <FoodSection onOpenAddModal={handleOpenAddModal} />
+            )}
+
             {currentTab === 'other' && (
               <OtherSection onOpenAddModal={handleOpenAddModal} />
             )}
@@ -155,7 +160,7 @@ const MainContent: React.FC = () => {
             )}
 
             {/* Custom Dynamic Sections */}
-            {dynamicSections.some((s) => s.id === currentTab && !['home', 'room', 'other', 'people'].includes(s.id)) && (
+            {dynamicSections.some((s) => s.id === currentTab && !['home', 'room', 'food', 'other', 'people'].includes(s.id)) && (
               <DynamicCustomSection
                 section={dynamicSections.find((s) => s.id === currentTab)!}
                 onOpenAddModal={handleOpenAddModal}

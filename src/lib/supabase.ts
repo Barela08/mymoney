@@ -49,7 +49,7 @@ export function getSupabaseClient(): SupabaseClient | null {
         },
         realtime: {
           params: {
-            eventsPerSecond: 10,
+            eventsPerSecond: 40,
           },
         },
       });
@@ -139,10 +139,14 @@ export async function fetchTransactionsFromSupabase(
     throw error;
   }
 
-  return (data || []).map((row) => ({
+  return (data || []).map(mapRowToTransaction);
+}
+
+export function mapRowToTransaction(row: any): Transaction {
+  return {
     id: row.id,
     user_id: row.user_id,
-    user_email: row.user_email,
+    user_email: row.user_email || undefined,
     category: row.category,
     subcategory: row.subcategory,
     transaction_type: row.transaction_type,
@@ -159,7 +163,7 @@ export async function fetchTransactionsFromSupabase(
     deleted_by: row.deleted_by || undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
-  }));
+  };
 }
 
 export async function saveTransactionToSupabase(tx: Transaction): Promise<Transaction> {
@@ -441,7 +445,16 @@ export async function deactivateNotificationInSupabase(id: string): Promise<void
 // REAL-TIME LISTENER
 // ==========================================
 
-export function subscribeToSupabaseTransactions(onChanged: () => void): () => void {
+export type RealtimeTransactionEvent = {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRecord?: Transaction;
+  oldId?: string;
+  rawPayload: any;
+};
+
+export function subscribeToSupabaseTransactions(
+  onChanged: (event?: RealtimeTransactionEvent) => void
+): () => void {
   const client = getSupabaseClient();
   if (!client) return () => {};
 
@@ -450,11 +463,31 @@ export function subscribeToSupabaseTransactions(onChanged: () => void): () => vo
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'transactions' },
-      () => {
-        onChanged();
+      (payload) => {
+        try {
+          const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+          const newRecord = payload.new && Object.keys(payload.new).length > 0
+            ? mapRowToTransaction(payload.new)
+            : undefined;
+          const oldId = (payload.old as any)?.id || (payload.new as any)?.id;
+
+          onChanged({
+            eventType,
+            newRecord,
+            oldId,
+            rawPayload: payload,
+          });
+        } catch (err) {
+          console.warn('Realtime event parse warning:', err);
+          onChanged();
+        }
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[Realtime] Fast connection established for transactions');
+      }
+    });
 
   return () => {
     try {

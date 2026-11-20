@@ -415,5 +415,29 @@ CREATE POLICY "notifications_admin_all"
   WITH CHECK (public.is_admin());
 
 -- ==============================================================================
+-- 9. SUPABASE REALTIME REPLICATION & PUBLICATION
+-- ==============================================================================
+ALTER TABLE public.transactions REPLICA IDENTITY FULL;
+ALTER TABLE public.sections REPLICA IDENTITY FULL;
+ALTER TABLE public.app_settings REPLICA IDENTITY FULL;
+ALTER TABLE public.notifications REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'transactions') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'sections') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.sections;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'app_settings') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.app_settings;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  END IF;
+END $$;
+
+-- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================

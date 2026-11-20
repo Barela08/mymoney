@@ -16,6 +16,7 @@ import {
   saveTransactionToSupabase,
   updateTransactionInSupabase,
   subscribeToSupabaseTransactions,
+  RealtimeTransactionEvent,
   softDeleteTransactionFromSupabase,
   restoreTransactionInSupabase,
   permanentDeleteTransactionFromSupabase,
@@ -91,8 +92,9 @@ const LOCAL_BRANDING_KEY = 'my_money_branding_cache';
 const DEFAULT_SECTIONS: DynamicSection[] = [
   { id: 'home', name: 'Home Money', icon: 'Home', description: 'Money received & spent for home', display_order: 1, is_enabled: true },
   { id: 'room', name: 'Room Expenses', icon: 'DoorOpen', description: 'Gas, grocery, room rent & power bill', display_order: 2, is_enabled: true },
-  { id: 'other', name: 'Other Expenses', icon: 'ShoppingBag', description: 'Shopping, food, entertainment & personal', display_order: 3, is_enabled: true },
-  { id: 'people', name: 'People (Udhar)', icon: 'Users', description: 'Money given & received from people', display_order: 4, is_enabled: true },
+  { id: 'food', name: 'Food & Dining', icon: 'Utensils', description: 'Restaurant, fast food, snacks, tea, coffee & delivery', display_order: 3, is_enabled: true },
+  { id: 'other', name: 'Other Expenses', icon: 'ShoppingBag', description: 'Shopping, travel, bills & personal spending', display_order: 4, is_enabled: true },
+  { id: 'people', name: 'People (Udhar)', icon: 'Users', description: 'Money given & received from people', display_order: 5, is_enabled: true },
 ];
 
 const DEFAULT_MAINTENANCE: MaintenanceSettings = {
@@ -189,45 +191,51 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Primary database sync: SUPABASE with Postgres Realtime
-  const syncWithDatabase = useCallback(async () => {
-    setIsLoading(true);
+  // Primary database sync: SUPABASE with high-speed parallel fetching & Postgres Realtime
+  const syncWithDatabase = useCallback(async (silent: boolean = false) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
     setError(null);
 
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
-        // Fetch public metadata (sections, maintenance, branding, notifications)
-        const sectionsData = await fetchSectionsFromSupabase();
+        const targetUserId = isAdmin ? undefined : user?.uid;
+
+        // Run all public metadata and transactions fetches in PARALLEL for maximum speed
+        const [sectionsData, maint, brand, notifs, supaData] = await Promise.all([
+          fetchSectionsFromSupabase().catch(() => null),
+          fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
+          fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
+          fetchNotificationsFromSupabase().catch(() => []),
+          user ? fetchTransactionsFromSupabase(targetUserId, true).catch(() => null) : Promise.resolve(null),
+        ]);
+
         if (sectionsData && sectionsData.length > 0) {
           setDynamicSections(sectionsData);
           localStorage.setItem(LOCAL_SECTIONS_KEY, JSON.stringify(sectionsData));
         }
 
-        const maint = await fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode');
         if (maint) {
           setMaintenanceSettings(maint);
           localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(maint));
         }
 
-        const brand = await fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding');
         if (brand) {
           setAppBranding(brand);
           localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(brand));
         }
 
-        const notifs = await fetchNotificationsFromSupabase();
-        setNotifications(notifs);
+        if (notifs) {
+          setNotifications(notifs);
+        }
 
         // TRANSACTION SYNC: Only proceed if user session is loaded
         if (!user) {
           setIsLoading(false);
           return;
         }
-
-        // Fetch user's transactions from Supabase (including soft-deleted for recycle bin)
-        const targetUserId = isAdmin ? undefined : user.uid;
-        const supaData = await fetchTransactionsFromSupabase(targetUserId, true);
 
         if (Array.isArray(supaData)) {
           // Check local storage for any pending transactions created by this user not yet in cloud
@@ -246,15 +254,16 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           );
 
           if (unsynced.length > 0) {
-            for (const pendingTx of unsynced) {
-              try {
-                const saved = await saveTransactionToSupabase(pendingTx);
-                supaData.unshift(saved);
-              } catch (e) {
-                console.warn('Could not auto-sync pending tx to Supabase:', e);
-                supaData.unshift(pendingTx);
-              }
-            }
+            await Promise.allSettled(
+              unsynced.map(async (pendingTx) => {
+                try {
+                  const saved = await saveTransactionToSupabase(pendingTx);
+                  supaData.unshift(saved);
+                } catch {
+                  supaData.unshift(pendingTx);
+                }
+              })
+            );
           }
 
           setAllTransactions(supaData);
@@ -279,13 +288,49 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsLoading(false);
   }, [user, isAdmin]);
 
-  // Initial load and real-time subscription
+  // Initial load and instant real-time subscription
   useEffect(() => {
-    syncWithDatabase();
+    // Initial load
+    syncWithDatabase(false);
 
-    const unsubscribeSupabase = subscribeToSupabaseTransactions(() => {
+    // High-speed real-time updates via WebSocket (instant UI reflection without re-fetching all tables)
+    const unsubscribeSupabase = subscribeToSupabaseTransactions((event?: RealtimeTransactionEvent) => {
       setIsSupabaseConnected(true);
-      syncWithDatabase();
+
+      if (!event || !event.eventType) {
+        syncWithDatabase(true);
+        return;
+      }
+
+      const { eventType, newRecord, oldId } = event;
+
+      if (eventType === 'INSERT' && newRecord) {
+        setAllTransactions((prev) => {
+          const exists = prev.some((t) => t.id === newRecord.id);
+          const next = exists
+            ? prev.map((t) => (t.id === newRecord.id ? newRecord : t))
+            : [newRecord, ...prev];
+          persistLocally(next);
+          return next;
+        });
+      } else if (eventType === 'UPDATE' && newRecord) {
+        setAllTransactions((prev) => {
+          const exists = prev.some((t) => t.id === newRecord.id);
+          const next = exists
+            ? prev.map((t) => (t.id === newRecord.id ? newRecord : t))
+            : [newRecord, ...prev];
+          persistLocally(next);
+          return next;
+        });
+      } else if (eventType === 'DELETE' && oldId) {
+        setAllTransactions((prev) => {
+          const next = prev.filter((t) => t.id !== oldId);
+          persistLocally(next);
+          return next;
+        });
+      } else {
+        syncWithDatabase(true);
+      }
     });
 
     return () => {
@@ -372,17 +417,18 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        const saved = await saveTransactionToSupabase(newTx);
-        setIsSupabaseConnected(true);
-        setAllTransactions((prev) => {
-          const updated = prev.map((t) => (t.id === newTx.id ? { ...saved, user_email: user.email } : t));
-          persistLocally(updated);
-          return updated;
+      saveTransactionToSupabase(newTx)
+        .then((saved) => {
+          setIsSupabaseConnected(true);
+          setAllTransactions((prev) => {
+            const updated = prev.map((t) => (t.id === newTx.id ? { ...saved, user_email: user.email } : t));
+            persistLocally(updated);
+            return updated;
+          });
+        })
+        .catch((err: any) => {
+          console.warn('Supabase save notice, cached locally:', err.message);
         });
-      } catch (err: any) {
-        console.warn('Supabase save notice, cached locally:', err.message);
-      }
     }
 
     return newTx;
@@ -437,12 +483,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        await updateTransactionInSupabase(id, updatedTx);
-        setIsSupabaseConnected(true);
-      } catch (err: any) {
-        console.warn('Supabase update notice, cached locally:', err.message);
-      }
+      updateTransactionInSupabase(id, updatedTx)
+        .then(() => setIsSupabaseConnected(true))
+        .catch((err: any) => {
+          console.warn('Supabase update notice, cached locally:', err.message);
+        });
     }
 
     return updatedTx;
@@ -470,12 +515,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        await softDeleteTransactionFromSupabase(id, user.uid);
-        setIsSupabaseConnected(true);
-      } catch (err: any) {
-        console.warn('Supabase soft delete notice:', err.message);
-      }
+      softDeleteTransactionFromSupabase(id, user.uid)
+        .then(() => setIsSupabaseConnected(true))
+        .catch((err: any) => {
+          console.warn('Supabase soft delete notice:', err.message);
+        });
     }
 
     return true;
@@ -495,11 +539,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        await restoreTransactionInSupabase(id);
-      } catch (err: any) {
-        console.warn('Supabase restore notice:', err.message);
-      }
+      restoreTransactionInSupabase(id)
+        .then(() => setIsSupabaseConnected(true))
+        .catch((err: any) => {
+          console.warn('Supabase restore notice:', err.message);
+        });
     }
 
     return true;
@@ -517,11 +561,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      try {
-        await permanentDeleteTransactionFromSupabase(id);
-      } catch (err: any) {
-        console.warn('Supabase permanent delete notice:', err.message);
-      }
+      permanentDeleteTransactionFromSupabase(id)
+        .then(() => setIsSupabaseConnected(true))
+        .catch((err: any) => {
+          console.warn('Supabase permanent delete notice:', err.message);
+        });
     }
 
     return true;
@@ -635,6 +679,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let totalGrocery = 0;
     let totalRent = 0;
     let totalElectricity = 0;
+    let totalFoodExpenses = 0;
     let totalOtherExpenses = 0;
     let totalMoneyGiven = 0;
     let totalMoneyReceived = 0;
@@ -657,6 +702,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         else if (tx.subcategory === 'electricity') totalElectricity += amt;
       }
 
+      if (tx.category === 'food') {
+        totalFoodExpenses += amt;
+      }
+
       if (tx.category === 'other') {
         totalOtherExpenses += amt;
       }
@@ -674,7 +723,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const remainingHomeBalance = totalHomeReceived - totalHomeSpent;
     const netPeopleBalance = totalMoneyGiven - totalMoneyReceived;
 
-    const totalExpenses = totalHomeSpent + totalRoomExpenses + totalOtherExpenses;
+    const totalExpenses = totalHomeSpent + totalRoomExpenses + totalFoodExpenses + totalOtherExpenses;
     const totalIncome = totalHomeReceived;
     const availableBalance = totalIncome - totalExpenses;
 
@@ -690,6 +739,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       totalRent,
       totalElectricity,
       totalRoomExpenses,
+      totalFoodExpenses,
       totalOtherExpenses,
       totalMoneyGiven,
       totalMoneyReceived,

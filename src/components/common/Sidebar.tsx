@@ -24,6 +24,8 @@ import {
   Car,
   Sparkles,
   AlertTriangle,
+  Utensils,
+  Coffee,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -34,6 +36,7 @@ export type NavTab =
   | 'dashboard'
   | 'home'
   | 'room'
+  | 'food'
   | 'other'
   | 'people'
   | 'reports'
@@ -48,6 +51,8 @@ const iconMap: Record<string, any> = {
   DoorOpen,
   ShoppingBag,
   Users,
+  Utensils,
+  Coffee,
   GraduationCap,
   Briefcase,
   Heart,
@@ -68,8 +73,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpe
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
 
-  // Find enabled custom sections that aren't the standard 4 (home, room, other, people)
-  const coreSectionIds = ['home', 'room', 'other', 'people'];
+  // Find enabled custom sections that aren't the standard 5 (home, room, food, other, people)
+  const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
   const customSections = dynamicSections.filter(
     (s) => s.is_enabled && !coreSectionIds.includes(s.id)
   );
@@ -86,6 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpe
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
     { id: 'home' as NavTab, label: 'Home Money', icon: HomeIcon, countBadge: formatINR(summary.remainingHomeBalance) },
     { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
+    { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
     ...customSections.map((sec) => ({

@@ -24,6 +24,8 @@ import {
   Plane,
   Car,
   Sparkles,
+  Utensils,
+  Coffee,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
@@ -36,6 +38,8 @@ const iconMap: Record<string, any> = {
   DoorOpen,
   ShoppingBag,
   Users,
+  Utensils,
+  Coffee,
   GraduationCap,
   Briefcase,
   Heart,
@@ -64,7 +68,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
 
-  const coreSectionIds = ['home', 'room', 'other', 'people'];
+  const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
   const customSections = dynamicSections.filter(
     (s) => s.is_enabled && !coreSectionIds.includes(s.id)
   );
@@ -81,6 +85,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
     { id: 'home' as NavTab, label: 'Home Section', icon: Home, badge: formatINR(summary.remainingHomeBalance) },
     { id: 'room' as NavTab, label: 'Room Section', icon: DoorOpen, badge: formatINR(summary.totalRoomExpenses) },
+    { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People Section (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
     ...customSections.map((sec) => ({
@@ -271,7 +276,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         {/* 3. Room Section */}
         <button
           onClick={() => onSelectTab('room')}
-          className={`flex-1 flex flex-col items-center py-1.5 px-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-xl text-[9.5px] font-medium transition-colors ${
             currentTab === 'room'
               ? 'text-blue-600 dark:text-blue-400 font-bold bg-blue-50/60 dark:bg-blue-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
@@ -281,10 +286,23 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           <span className="truncate">Room</span>
         </button>
 
-        {/* 4. Other Expenses */}
+        {/* 4. Food & Dining Section */}
+        <button
+          onClick={() => onSelectTab('food')}
+          className={`flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-xl text-[9.5px] font-medium transition-colors ${
+            currentTab === 'food'
+              ? 'text-orange-600 dark:text-orange-400 font-bold bg-orange-50/60 dark:bg-orange-950/40'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+          }`}
+        >
+          <Utensils className="w-4 h-4 mb-0.5" />
+          <span className="truncate">Food</span>
+        </button>
+
+        {/* 5. Other Expenses */}
         <button
           onClick={() => onSelectTab('other')}
-          className={`flex-1 flex flex-col items-center py-1.5 px-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-xl text-[9.5px] font-medium transition-colors ${
             currentTab === 'other'
               ? 'text-purple-600 dark:text-purple-400 font-bold bg-purple-50/60 dark:bg-purple-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
@@ -294,10 +312,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           <span className="truncate">Other</span>
         </button>
 
-        {/* 5. People Section (Udhar) */}
+        {/* 6. People Section (Udhar) */}
         <button
           onClick={() => onSelectTab('people')}
-          className={`flex-1 flex flex-col items-center py-1.5 px-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-xl text-[9.5px] font-medium transition-colors ${
             currentTab === 'people'
               ? 'text-amber-600 dark:text-amber-400 font-bold bg-amber-50/60 dark:bg-amber-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
