@@ -349,8 +349,34 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
             savePendingQueue(user.uid, remainingQueue);
           }
 
-          setAllTransactions(supaData);
-          persistLocally(supaData);
+          // Anti-Data Loss Protection: Ensure local transactions are not obliterated if remote fetch returned empty
+          const localSaved = localStorage.getItem(getUserTxStorageKey(user.uid));
+          let localList: Transaction[] = [];
+          try {
+            localList = localSaved ? JSON.parse(localSaved) : [];
+          } catch {}
+
+          let mergedData = supaData;
+          if (supaData.length === 0 && localList.length > 0) {
+            // Restore and sync local transactions to cloud
+            for (const localTx of localList) {
+              saveTransactionToSupabase(localTx).catch(() => {});
+            }
+            mergedData = localList;
+          } else if (supaData.length > 0 && localList.length > 0) {
+            // Retain any newly created local transactions that have not yet propagated
+            const supaIds = new Set(supaData.map((t) => t.id));
+            const unsynced = localList.filter((t) => !supaIds.has(t.id));
+            if (unsynced.length > 0) {
+              for (const u of unsynced) {
+                saveTransactionToSupabase(u).catch(() => {});
+              }
+              mergedData = [...unsynced, ...supaData];
+            }
+          }
+
+          setAllTransactions(mergedData);
+          persistLocally(mergedData);
           setIsSupabaseConnected(true);
         }
 

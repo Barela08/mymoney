@@ -18,6 +18,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SkeletonTable } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder } from '../../types';
 import {
@@ -71,7 +72,7 @@ const POPULAR_OTHER_REASONS = [
 ];
 
 export const OtherSection: React.FC<OtherSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const toast = useToast();
 
   // In-line Add Form state
@@ -521,7 +522,11 @@ export const OtherSection: React.FC<OtherSectionProps> = ({ onOpenAddModal }) =>
         </div>
 
         {/* List */}
-        {filteredOtherTransactions.length === 0 ? (
+        {isLoading ? (
+          <div className="py-2">
+            <SkeletonTable rows={5} />
+          </div>
+        ) : filteredOtherTransactions.length === 0 ? (
           <EmptyState
             isFiltered={searchQuery.trim().length > 0 || selectedSubcategoryFilter !== 'all' || Boolean(startDate) || Boolean(endDate)}
             searchQuery={searchQuery || (selectedSubcategoryFilter !== 'all' ? selectedSubcategoryFilter : undefined)}

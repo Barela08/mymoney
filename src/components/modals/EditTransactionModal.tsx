@@ -4,6 +4,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { Transaction, TransactionType } from '../../types';
 import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
+import { UnsavedChangesModal } from '../common/states';
 
 interface EditTransactionModalProps {
   transaction: Transaction | null;
@@ -29,8 +30,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [type, setType] = useState<TransactionType>('expense');
 
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+
   useEffect(() => {
     if (transaction && isOpen) {
+      setShowUnsavedConfirm(false);
       setAmount(String(transaction.amount));
       setTitle(transaction.title || '');
       setDescription(transaction.description || '');
@@ -41,6 +45,32 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       setType(transaction.transaction_type);
     }
   }, [transaction, isOpen]);
+
+  const isDirty = Boolean(
+    transaction && (
+      String(transaction.amount) !== amount ||
+      (transaction.title || '') !== title ||
+      (transaction.description || '') !== description ||
+      (transaction.person_name || '') !== personName ||
+      (transaction.transaction_date || '') !== date ||
+      (transaction.transaction_time || '') !== time ||
+      (transaction.notes || '') !== notes ||
+      transaction.transaction_type !== type
+    )
+  );
+
+  const handleAttemptClose = () => {
+    if (isDirty) {
+      setShowUnsavedConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedConfirm(false);
+    onClose();
+  };
 
   if (!isOpen || !transaction) return null;
 
@@ -102,7 +132,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleAttemptClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -221,7 +251,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleAttemptClose}
               disabled={isSubmitting}
               className="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
             >
@@ -247,6 +277,13 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           </div>
         </form>
       </div>
+
+      <UnsavedChangesModal
+        isOpen={showUnsavedConfirm}
+        documentName={title || 'Transaction Record'}
+        onStay={() => setShowUnsavedConfirm(false)}
+        onDiscard={handleDiscardChanges}
+      />
     </div>
   );
 };

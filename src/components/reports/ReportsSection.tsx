@@ -30,11 +30,12 @@ import {
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
+import { SkeletonCardsGrid, SkeletonChart } from '../common/states';
 import { formatINR, formatDisplayDate, getPresetDateRange } from '../../lib/dateUtils';
 import { Transaction } from '../../types';
 
 export const ReportsSection: React.FC = () => {
-  const { transactions } = useExpense();
+  const { transactions, isLoading } = useExpense();
   const toast = useToast();
 
   // Date range filter
@@ -279,53 +280,57 @@ export const ReportsSection: React.FC = () => {
       </div>
 
       {/* 4 Financial Health Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Income"
-          amount={metrics.income}
-          subtitle="Money received in period"
-          icon={ArrowDownLeft}
-          variant="income"
-          badge="Incoming Cash"
-        />
+      {isLoading ? (
+        <SkeletonCardsGrid count={4} />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Income"
+            amount={metrics.income}
+            subtitle="Money received in period"
+            icon={ArrowDownLeft}
+            variant="income"
+            badge="Incoming Cash"
+          />
 
-        <StatCard
-          title="Total Expenses"
-          amount={metrics.expenses}
-          subtitle="All spending in period"
-          icon={ArrowUpRight}
-          variant="expense"
-          badge="Outgoing Cash"
-        />
+          <StatCard
+            title="Total Expenses"
+            amount={metrics.expenses}
+            subtitle="All spending in period"
+            icon={ArrowUpRight}
+            variant="expense"
+            badge="Outgoing Cash"
+          />
 
-        <StatCard
-          title="Remaining Balance"
-          amount={metrics.netBalance}
-          subtitle="Net savings in period"
-          icon={DollarSign}
-          variant={metrics.netBalance >= 0 ? 'balance' : 'expense'}
-          badge={metrics.netBalance >= 0 ? 'Positive Savings' : 'Deficit'}
-        />
+          <StatCard
+            title="Remaining Balance"
+            amount={metrics.netBalance}
+            subtitle="Net savings in period"
+            icon={DollarSign}
+            variant={metrics.netBalance >= 0 ? 'balance' : 'expense'}
+            badge={metrics.netBalance >= 0 ? 'Positive Savings' : 'Deficit'}
+          />
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Savings Rate
-            </span>
-            <div className="p-2.5 bg-blue-50 dark:bg-blue-950 text-blue-600 rounded-xl">
-              <Percent className="w-4 h-4" />
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Savings Rate
+              </span>
+              <div className="p-2.5 bg-blue-50 dark:bg-blue-950 text-blue-600 rounded-xl">
+                <Percent className="w-4 h-4" />
+              </div>
             </div>
-          </div>
-          <div className="mt-2">
-            <div className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 font-sans">
-              {metrics.savingsRate}%
+            <div className="mt-2">
+              <div className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 font-sans">
+                {metrics.savingsRate}%
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Percentage of income retained
+              </p>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Percentage of income retained
-            </p>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -358,7 +363,9 @@ export const ReportsSection: React.FC = () => {
           </div>
 
           <div className="h-72 w-full pt-4">
-            {timeSeriesData.length === 0 ? (
+            {isLoading ? (
+              <SkeletonChart height="h-64" />
+            ) : timeSeriesData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-slate-400 text-xs">
                 No data points for selected date range
               </div>
@@ -397,7 +404,9 @@ export const ReportsSection: React.FC = () => {
           </div>
 
           <div className="h-56 w-full">
-            {categoryPieData.length === 0 ? (
+            {isLoading ? (
+              <SkeletonChart height="h-48" />
+            ) : categoryPieData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-slate-400 text-xs">
                 No expense entries in this period
               </div>

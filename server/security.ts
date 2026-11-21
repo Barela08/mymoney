@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { query } from './db.ts';
+import { query } from './db';
 
 // -------------------------------------------------------------
 // PASSWORD POLICY ENFORCEMENT (Mandatory Rules from Section 7)
@@ -112,6 +112,10 @@ interface RateLimitRecord {
 }
 
 const rateLimitStore = new Map<string, RateLimitRecord>();
+
+export function resetRateLimit(key: string): void {
+  rateLimitStore.delete(key);
+}
 
 export function checkRateLimit(key: string, maxAttempts: number, windowMs: number): { allowed: boolean; remaining: number; retryAfterSec?: number } {
   const now = Date.now();

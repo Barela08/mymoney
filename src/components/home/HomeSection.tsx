@@ -19,6 +19,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SkeletonTable } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder } from '../../types';
 import {
@@ -34,7 +35,7 @@ interface HomeSectionProps {
 }
 
 export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const toast = useToast();
 
   // Tab mode for Home: 'overview' or 'history'
@@ -485,34 +486,42 @@ export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
               </button>
             </div>
 
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-              {homeTransactions.slice(0, 5).map((tx) => {
-                const isInc = tx.subcategory === 'received_home';
-                return (
-                  <div key={tx.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">
-                        {tx.title}
+            {isLoading ? (
+              <div className="py-2">
+                <SkeletonTable rows={3} />
+              </div>
+            ) : homeTransactions.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">No home transactions recorded yet.</p>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {homeTransactions.slice(0, 5).map((tx) => {
+                  const isInc = tx.subcategory === 'received_home';
+                  return (
+                    <div key={tx.id} className="py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">
+                          {tx.title}
+                        </div>
+                        <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                          <span>{formatDisplayDate(tx.transaction_date)}</span>
+                          <span>•</span>
+                          <span>{formatDisplayTime(tx.transaction_time)}</span>
+                          {tx.notes && <span>• {tx.notes}</span>}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                        <span>{formatDisplayDate(tx.transaction_date)}</span>
-                        <span>•</span>
-                        <span>{formatDisplayTime(tx.transaction_time)}</span>
-                        {tx.notes && <span>• {tx.notes}</span>}
+                      <div className="text-right">
+                        <div className={`font-bold text-sm ${isInc ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {isInc ? '+' : '-'} {formatINR(tx.amount)}
+                        </div>
+                        <span className="text-[10px] uppercase font-semibold text-slate-400">
+                          {isInc ? 'Received' : 'Spent'}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className={`font-bold text-sm ${isInc ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {isInc ? '+' : '-'} {formatINR(tx.amount)}
-                      </div>
-                      <span className="text-[10px] uppercase font-semibold text-slate-400">
-                        {isInc ? 'Received' : 'Spent'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -594,7 +603,11 @@ export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
               )}
             </div>
 
-            {filteredHomeTransactions.length === 0 ? (
+            {isLoading ? (
+              <div className="py-2">
+                <SkeletonTable rows={5} />
+              </div>
+            ) : filteredHomeTransactions.length === 0 ? (
               <EmptyState
                 isFiltered={searchQuery.trim().length > 0 || typeFilter !== 'all' || Boolean(startDate)}
                 searchQuery={searchQuery || (typeFilter !== 'all' ? typeFilter : undefined)}

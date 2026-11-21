@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SkeletonCardsGrid, SkeletonTable } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, PersonSummary, SortOrder } from '../../types';
 import {
@@ -43,6 +44,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     restoreTransaction,
     settlePersonUdhar,
     clearPersonTransactions,
+    isLoading,
   } = useExpense();
   const toast = useToast();
 
@@ -468,7 +470,11 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             </div>
 
             {/* People Cards Grid */}
-            {filteredPeople.length === 0 ? (
+            {isLoading ? (
+              <div className="py-2">
+                <SkeletonCardsGrid count={4} />
+              </div>
+            ) : filteredPeople.length === 0 ? (
               <EmptyState
                 isFiltered={peopleSummaries.length > 0}
                 title={

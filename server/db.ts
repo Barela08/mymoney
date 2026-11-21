@@ -35,20 +35,43 @@ export const pool = new pg.Pool({
   connectionString,
   ssl: { rejectUnauthorized: false },
   max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 30000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle PostgreSQL client:', err);
+  console.warn('PostgreSQL idle client notice (will reconnect on next query):', err.message);
 });
 
-export async function query<T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> {
+export async function query<T extends pg.QueryResultRow = any>(
+  text: string,
+  params?: any[],
+  retries = 2
+): Promise<pg.QueryResult<T>> {
   const start = Date.now();
-  const res = await pool.query<T>(text, params);
-  const duration = Date.now() - start;
-  if (process.env.NODE_ENV === 'development' && duration > 2000) {
-    console.warn(`[DB Slow Query] ${duration}ms: ${text.slice(0, 80)}...`);
+  try {
+    const res = await pool.query<T>(text, params);
+    const duration = Date.now() - start;
+    if (process.env.NODE_ENV === 'development' && duration > 2000) {
+      console.warn(`[DB Slow Query] ${duration}ms: ${text.slice(0, 80)}...`);
+    }
+    return res;
+  } catch (err: any) {
+    const msg = err.message || '';
+    const isConnErr =
+      msg.includes('Connection terminated') ||
+      msg.includes('ECONNRESET') ||
+      msg.includes('connection timeout') ||
+      msg.includes('timeout expired') ||
+      msg.includes('closed');
+
+    if (isConnErr && retries > 0) {
+      console.warn(`[DB Reconnect] Query failed (${msg}), retrying (${retries} attempts left)...`);
+      await new Promise((r) => setTimeout(r, 600));
+      return query<T>(text, params, retries - 1);
+    }
+    throw err;
   }
-  return res;
 }

@@ -18,11 +18,12 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { EmptyState } from '../common/EmptyState';
+import { SkeletonCardsGrid } from '../common/states';
 import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { Transaction } from '../../types';
 
 export const RecycleBinSection: React.FC = () => {
-  const { recycleBinTransactions, restoreTransaction, permanentDeleteTransaction } = useExpense();
+  const { recycleBinTransactions, restoreTransaction, permanentDeleteTransaction, isLoading } = useExpense();
   const { user, isAdmin } = useAuth();
   const toast = useToast();
 
@@ -167,7 +168,9 @@ export const RecycleBinSection: React.FC = () => {
       </div>
 
       {/* Deleted Items List */}
-      {filteredItems.length === 0 ? (
+      {isLoading ? (
+        <SkeletonCardsGrid count={4} />
+      ) : filteredItems.length === 0 ? (
         <EmptyState
           isFiltered={Boolean(searchQuery.trim()) || categoryFilter !== 'all'}
           searchQuery={searchQuery || (categoryFilter !== 'all' ? categoryFilter : undefined)}

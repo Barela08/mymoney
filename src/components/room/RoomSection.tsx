@@ -21,6 +21,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SkeletonTable, SkeletonCardsGrid } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, TransactionSubcategory, SortOrder } from '../../types';
 import {
@@ -37,7 +38,7 @@ interface RoomSectionProps {
 }
 
 export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const toast = useToast();
 
   // Active sub-tab filter: 'all' | 'grocery' | 'gas' | 'rent' | 'electricity'
@@ -296,62 +297,66 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          {/* 1. Gas */}
-          <StatCard
-            title="Gas Expenses"
-            amount={summary.totalGas}
-            subtitle="LPG Cylinder & Refills"
-            icon={Flame}
-            variant="expense"
-            badge="Gas Fuel"
-            onClick={() => setActiveCategory('gas')}
-          />
+        {isLoading ? (
+          <SkeletonCardsGrid count={5} />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+            {/* 1. Gas */}
+            <StatCard
+              title="Gas Expenses"
+              amount={summary.totalGas}
+              subtitle="LPG Cylinder & Refills"
+              icon={Flame}
+              variant="expense"
+              badge="Gas Fuel"
+              onClick={() => setActiveCategory('gas')}
+            />
 
-          {/* 2. Groceries */}
-          <StatCard
-            title="Grocery Expenses"
-            amount={summary.totalGrocery}
-            subtitle="Rice, Oil, Veggies & Ration"
-            icon={Apple}
-            variant="expense"
-            badge="Food & Ration"
-            onClick={() => setActiveCategory('grocery')}
-          />
+            {/* 2. Groceries */}
+            <StatCard
+              title="Grocery Expenses"
+              amount={summary.totalGrocery}
+              subtitle="Rice, Oil, Veggies & Ration"
+              icon={Apple}
+              variant="expense"
+              badge="Food & Ration"
+              onClick={() => setActiveCategory('grocery')}
+            />
 
-          {/* 3. Rent */}
-          <StatCard
-            title="Room Rent"
-            amount={summary.totalRent}
-            subtitle="Monthly flat / room share"
-            icon={Building}
-            variant="expense"
-            badge="Accommodation"
-            onClick={() => setActiveCategory('rent')}
-          />
+            {/* 3. Rent */}
+            <StatCard
+              title="Room Rent"
+              amount={summary.totalRent}
+              subtitle="Monthly flat / room share"
+              icon={Building}
+              variant="expense"
+              badge="Accommodation"
+              onClick={() => setActiveCategory('rent')}
+            />
 
-          {/* 4. Electricity */}
-          <StatCard
-            title="Electricity Bills"
-            amount={summary.totalElectricity}
-            subtitle="Power consumption charges"
-            icon={Zap}
-            variant="expense"
-            badge="Power Utility"
-            onClick={() => setActiveCategory('electricity')}
-          />
+            {/* 4. Electricity */}
+            <StatCard
+              title="Electricity Bills"
+              amount={summary.totalElectricity}
+              subtitle="Power consumption charges"
+              icon={Zap}
+              variant="expense"
+              badge="Power Utility"
+              onClick={() => setActiveCategory('electricity')}
+            />
 
-          {/* 5. Grand Total Room Expenses */}
-          <StatCard
-            title="Grand Total Room"
-            amount={summary.totalRoomExpenses}
-            subtitle="Gas + Grocery + Rent + Power"
-            icon={DoorOpen}
-            variant="expense"
-            badge="Combined Room"
-            onClick={() => setActiveCategory('all')}
-          />
-        </div>
+            {/* 5. Grand Total Room Expenses */}
+            <StatCard
+              title="Grand Total Room"
+              amount={summary.totalRoomExpenses}
+              subtitle="Gas + Grocery + Rent + Power"
+              icon={DoorOpen}
+              variant="expense"
+              badge="Combined Room"
+              onClick={() => setActiveCategory('all')}
+            />
+          </div>
+        )}
       </div>
 
       {/* Category Tabs & View Switcher */}
@@ -929,7 +934,11 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
               )}
             </div>
 
-            {filteredRoomTransactions.length === 0 ? (
+            {isLoading ? (
+              <div className="py-2">
+                <SkeletonTable rows={5} />
+              </div>
+            ) : filteredRoomTransactions.length === 0 ? (
               <EmptyState
                 isFiltered={searchQuery.trim().length > 0 || activeCategory !== 'all' || Boolean(filterStartDate)}
                 searchQuery={searchQuery || (activeCategory !== 'all' ? activeCategory : undefined)}

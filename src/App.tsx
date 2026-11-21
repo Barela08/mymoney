@@ -12,6 +12,7 @@ import { RoomSection } from './components/room/RoomSection';
 import { FoodSection } from './components/food/FoodSection';
 import { OtherSection } from './components/other/OtherSection';
 import { PeopleSection } from './components/people/PeopleSection';
+import { CalculatorSection } from './components/calculator/CalculatorSection';
 import { ReportsSection } from './components/reports/ReportsSection';
 import { AllTransactionsSection } from './components/all-transactions/AllTransactionsSection';
 import { RecycleBinSection } from './components/recycle-bin/RecycleBinSection';
@@ -23,7 +24,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
 import { TransactionCategory, TransactionSubcategory } from './types';
-import { Wallet, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { PwaInstallProvider } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
@@ -42,6 +43,8 @@ const MainContent: React.FC = () => {
   const [modalInitialCategory, setModalInitialCategory] = useState<TransactionCategory>('home');
   const [modalInitialSubcategory, setModalInitialSubcategory] = useState<TransactionSubcategory | undefined>(undefined);
   const [modalInitialPerson, setModalInitialPerson] = useState<string | undefined>(undefined);
+  const [modalInitialAmount, setModalInitialAmount] = useState<string | undefined>(undefined);
+  const [modalInitialTitle, setModalInitialTitle] = useState<string | undefined>(undefined);
 
   // Help & Feedback Modal State
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
@@ -55,11 +58,15 @@ const MainContent: React.FC = () => {
   const handleOpenAddModal = (
     category: TransactionCategory = 'home',
     subcategory?: TransactionSubcategory,
-    personName?: string
+    personName?: string,
+    amount?: number | string,
+    title?: string
   ) => {
     setModalInitialCategory(category);
     setModalInitialSubcategory(subcategory);
     setModalInitialPerson(personName);
+    setModalInitialAmount(amount !== undefined ? String(amount) : undefined);
+    setModalInitialTitle(title);
     setIsAddModalOpen(true);
   };
 
@@ -167,6 +174,10 @@ const MainContent: React.FC = () => {
               <PeopleSection onOpenAddModal={handleOpenAddModal} />
             )}
 
+            {currentTab === 'calculator' && (
+              <CalculatorSection onOpenAddModal={handleOpenAddModal} />
+            )}
+
             {currentTab === 'reports' && (
               <ReportsSection />
             )}
@@ -214,6 +225,8 @@ const MainContent: React.FC = () => {
           initialCategory={modalInitialCategory}
           initialSubcategory={modalInitialSubcategory}
           initialPersonName={modalInitialPerson}
+          initialAmount={modalInitialAmount}
+          initialTitle={modalInitialTitle}
         />
 
         {/* Help, Feedback & Complaint Support Modal */}

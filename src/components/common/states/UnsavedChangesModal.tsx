@@ -7,6 +7,7 @@ export interface UnsavedChangesModalProps {
   onDiscard: () => void;
   title?: string;
   message?: string;
+  documentName?: string;
 }
 
 export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
@@ -14,9 +15,16 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
   onStay,
   onDiscard,
   title = 'Unsaved Changes Detected',
-  message = 'You have unsaved changes in this form. If you close now, your edits will be permanently lost.',
+  message,
+  documentName,
 }) => {
   if (!isOpen) return null;
+
+  const displayMessage =
+    message ||
+    (documentName
+      ? `You have unsaved changes in "${documentName}". If you close now, your edits will be permanently lost.`
+      : 'You have unsaved changes in this form. If you close now, your edits will be permanently lost.');
 
   return (
     <div
@@ -43,7 +51,7 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
               {title}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              {message}
+              {displayMessage}
             </p>
           </div>
         </div>

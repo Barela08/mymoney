@@ -67,8 +67,11 @@ export const SkeletonTable: React.FC<{ rows?: number }> = ({ rows = 5 }) => (
   </div>
 );
 
-export const SkeletonChart: React.FC = () => (
-  <div className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-4" role="status" aria-label="Loading charts">
+export const SkeletonChart: React.FC<{ height?: string; className?: string }> = ({
+  height = 'h-64',
+  className = '',
+}) => (
+  <div className={`p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-4 ${className}`} role="status" aria-label="Loading charts">
     <div className="flex items-center justify-between">
       <SkeletonShimmer className="w-40 h-5 rounded" />
       <div className="flex gap-2">
@@ -76,6 +79,6 @@ export const SkeletonChart: React.FC = () => (
         <SkeletonShimmer className="w-16 h-7 rounded-xl" />
       </div>
     </div>
-    <SkeletonShimmer className="w-full h-64 rounded-xl" />
+    <SkeletonShimmer className={`w-full ${height} rounded-xl`} />
   </div>
 );

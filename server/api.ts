@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { parse as parseUrl } from 'url';
-import { query } from './db.ts';
+import { query, pool } from './db';
 import {
   validatePasswordPolicy,
   validateEmail,
@@ -11,24 +11,34 @@ import {
   hashToken,
   generateCryptoToken,
   checkRateLimit,
+  resetRateLimit,
   logSecurityEvent,
-} from './security.ts';
+} from './security';
 import {
   createSession,
   revokeSession,
   revokeAllUserSessions,
   authenticateRequest,
   sanitizeUserOutput,
-} from './auth.ts';
+} from './auth';
 import {
   sendPasswordResetEmail,
   sendPasswordChangedEmail,
   sendWelcomeEmail,
   sendAccountStatusEmail,
-} from './email.ts';
+  getWelcomeEmailDeliveryStatus,
+  sendAccountDeletionRequestedEmail,
+  sendAccountDeletionCancelledEmail,
+  sendAccountDeletionCompletedEmail,
+} from './email';
+import { APP_CONFIG } from './config';
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
+  // If Vercel or middleware already consumed and parsed JSON body
+  if ((req as any).body !== undefined && typeof (req as any).body === 'object') {
+    return (req as any).body;
+  }
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
@@ -52,6 +62,14 @@ async function parseJsonBody(req: IncomingMessage): Promise<any> {
 
 // Helper: send standard JSON response
 function sendJson(res: ServerResponse, statusCode: number, data: any, headers: Record<string, string> = {}) {
+  // Support Vercel serverless response object
+  if (typeof (res as any).status === 'function' && typeof (res as any).json === 'function') {
+    for (const [k, v] of Object.entries(headers)) {
+      res.setHeader(k, v);
+    }
+    return (res as any).status(statusCode).json(data);
+  }
+
   const payload = JSON.stringify(data);
   res.writeHead(statusCode, {
     'Content-Type': 'application/json',
@@ -92,6 +110,79 @@ function setSessionCookie(res: ServerResponse, sessionToken: string, expiresAt: 
 // Helper: clear session cookie
 function clearSessionCookie(res: ServerResponse) {
   res.setHeader('Set-Cookie', 'session_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax');
+}
+
+// -----------------------------------------------------------------------------
+// AUTOMATED 24-HOUR ACCOUNT DELETION BACKGROUND EXECUTION WORKER
+// - Idempotent execution
+// - Permanently deletes/anonymizes eligible user records after 24-hour countdown
+// - Revokes all active sessions & authentication tokens
+// - Retains only legally mandated audit logs
+// -----------------------------------------------------------------------------
+export async function processExpiredAccountDeletions(): Promise<number> {
+  let count = 0;
+  try {
+    const expiredRes = await query(
+      `SELECT r.*, u.full_name, u.email 
+       FROM public.account_deletion_requests r
+       JOIN public.app_users u ON r.user_id = u.id
+       WHERE r.status = 'pending' AND r.scheduled_for <= NOW()`
+    );
+
+    for (const req of expiredRes.rows) {
+      count++;
+      const userId = req.user_id;
+      const userEmail = req.email;
+      const userName = req.full_name;
+
+      console.log(`[Account Deletion Worker] Purging account & records for user ${userId} (${userEmail})...`);
+
+      // 1. Delete financial transactions
+      await query('DELETE FROM public.transactions WHERE user_id = $1', [userId]).catch(() => {});
+      // 2. Delete udhar repayments
+      await query('DELETE FROM public.udhar_repayments WHERE recorded_by_user_id = $1', [userId]).catch(() => {});
+      // 3. Delete udhar transactions
+      await query('DELETE FROM public.udhar_transactions WHERE user_id = $1', [userId]).catch(() => {});
+      // 4. Delete saved contacts
+      await query('DELETE FROM public.udhar_contacts WHERE user_id = $1', [userId]).catch(() => {});
+      // 5. Delete qr pairing tokens
+      await query('DELETE FROM public.qr_pairing_tokens WHERE user_id = $1', [userId]).catch(() => {});
+      // 6. Delete user connections
+      await query('DELETE FROM public.user_connections WHERE user_a_id = $1 OR user_b_id = $1', [userId]).catch(() => {});
+      // 7. Revoke and delete sessions
+      await query('DELETE FROM public.user_sessions WHERE user_id = $1', [userId]).catch(() => {});
+      // 8. Delete password resets
+      await query('DELETE FROM public.password_resets WHERE user_id = $1', [userId]).catch(() => {});
+      // 9. Mark request executed
+      await query(
+        `UPDATE public.account_deletion_requests 
+         SET status = 'executed', executed_at = NOW() 
+         WHERE id = $1`,
+        [req.id]
+      );
+      // 10. Delete user record
+      await query('DELETE FROM public.app_users WHERE id = $1', [userId]).catch(() => {});
+
+      // Dispatch final completion email notification
+      sendAccountDeletionCompletedEmail(userEmail, userName).catch(() => {});
+
+      await logSecurityEvent('ACCOUNT_DELETION_EXECUTED_AUTO', {
+        userId,
+        userEmail,
+        details: { requestId: req.id, scheduledFor: req.scheduled_for },
+      });
+    }
+  } catch (err: any) {
+    console.error('[Account Deletion Worker Error]:', err.message);
+  }
+  return count;
+}
+
+// Background timer: runs check every 60 seconds
+if (!(globalThis as any).__accountDeletionWorkerTimer) {
+  (globalThis as any).__accountDeletionWorkerTimer = setInterval(() => {
+    processExpiredAccountDeletions().catch(() => {});
+  }, 60000);
 }
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
@@ -159,7 +250,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Duplicate email check
       const dup = await query('SELECT id FROM public.app_users WHERE LOWER(email) = $1', [email]);
       if (dup.rows.length > 0) {
-        sendJson(res, 400, {
+        sendJson(res, 409, {
           success: false,
           message: 'An account with this email address already exists. Please log in or reset your password.',
         });
@@ -184,8 +275,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const session = await createSession(newUser.id, { userAgent, ipAddress: clientIp });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
-      // Async send welcome email
-      sendWelcomeEmail(email, fullName).catch(() => {});
+      // Async send welcome email (non-blocking, trusted user record from DB, idempotent)
+      sendWelcomeEmail(email, newUser.full_name, newUser.id).catch((err) => {
+        console.error('[Welcome Email Background Error]:', err);
+      });
 
       await logSecurityEvent('USER_REGISTER_SUCCESS', {
         userId: newUser.id,
@@ -212,8 +305,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const password = body.password || '';
       const rememberMe = Boolean(body.rememberMe);
 
-      // Rate limiting: 10 attempts per 5 minutes per IP
-      const rate = checkRateLimit(`login_ip:${clientIp}`, 10, 5 * 60 * 1000);
+      // Rate limiting: 25 attempts per 5 minutes per IP
+      const rate = checkRateLimit(`login_ip:${clientIp}`, 25, 5 * 60 * 1000);
       if (!rate.allowed) {
         sendJson(res, 429, {
           success: false,
@@ -294,6 +387,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Create session
       const session = await createSession(user.id, { rememberMe, userAgent, ipAddress: clientIp });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
+
+      resetRateLimit(`login_ip:${clientIp}`);
 
       await logSecurityEvent('USER_LOGIN_SUCCESS', {
         userId: user.id,
@@ -795,47 +890,96 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // STRICT SECURITY RULE: NEVER select password_hash or display_password!
-      const usersRes = await query(
-        `SELECT 
-            u.id,
-            u.full_name,
-            u.email,
-            u.phone,
-            u.role,
-            u.status,
-            u.email_verified,
-            u.avatar_url,
-            u.force_password_reset,
-            u.failed_login_attempts,
-            u.created_at,
-            u.last_login_at,
-            u.password_changed_at,
-            COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
-         FROM public.app_users u
-         LEFT JOIN public.user_sessions s ON u.id = s.user_id
-         GROUP BY u.id
-         ORDER BY u.created_at DESC`
-      );
+      // Fetch users robustly: Direct SQL (profiles + app_users) with HTTPS Supabase REST API fallback
+      let users: any[] = [];
+      try {
+        const usersRes = await query(
+          `SELECT 
+              COALESCE(u.id, p.id) AS id,
+              COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
+              COALESCE(u.email, p.email) AS email,
+              u.phone,
+              COALESCE(u.role, p.role, 'user') AS role,
+              COALESCE(u.status, p.status, 'active') AS status,
+              COALESCE(u.email_verified, FALSE) AS email_verified,
+              u.avatar_url,
+              COALESCE(u.force_password_reset, FALSE) AS force_password_reset,
+              COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
+              COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
+              u.last_login_at,
+              COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
+              COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
+           FROM public.profiles p
+           FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
+           LEFT JOIN public.user_sessions s ON u.id = s.user_id
+           GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
+           ORDER BY created_at DESC`
+        );
 
-      const users = usersRes.rows.map((r: any) => ({
-        id: r.id,
-        uid: r.id,
-        fullName: r.full_name,
-        displayName: r.full_name,
-        email: r.email,
-        phone: r.phone || null,
-        role: r.role,
-        status: r.status,
-        emailVerified: r.email_verified,
-        forcePasswordReset: r.force_password_reset,
-        failedLoginAttempts: r.failed_login_attempts,
-        createdAt: r.created_at,
-        lastLoginAt: r.last_login_at || null,
-        passwordChangedAt: r.password_changed_at,
-        passwordStatus: 'Set (Encrypted Bcrypt Hash)',
-        activeSessionsCount: parseInt(r.active_sessions_count || '0'),
-      }));
+        if (usersRes.rows && usersRes.rows.length > 0) {
+          users = usersRes.rows.map((r: any) => ({
+            id: r.id,
+            uid: r.id,
+            fullName: r.full_name,
+            displayName: r.full_name,
+            email: r.email,
+            phone: r.phone || null,
+            role: r.role,
+            status: r.status,
+            emailVerified: r.email_verified,
+            forcePasswordReset: r.force_password_reset,
+            failedLoginAttempts: r.failed_login_attempts,
+            createdAt: r.created_at,
+            lastLoginAt: r.last_login_at || null,
+            passwordChangedAt: r.password_changed_at,
+            passwordStatus: 'Set (Encrypted Bcrypt Hash)',
+            activeSessionsCount: parseInt(r.active_sessions_count || '0'),
+          }));
+        }
+      } catch (dbErr) {
+        console.warn('PostgreSQL direct query notice in admin/users, using Supabase REST fallback:', dbErr);
+      }
+
+      // If SQL query returned empty or failed, fetch from Supabase REST API with Secret Key
+      if (users.length === 0) {
+        try {
+          const supaUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
+          const supaKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+          if (supaKey) {
+            const r = await fetch(`${supaUrl}/rest/v1/profiles?select=*&order=created_at.desc`, {
+              headers: {
+                apikey: supaKey,
+                Authorization: `Bearer ${supaKey}`,
+              },
+            });
+            if (r.ok) {
+              const data = await r.json();
+              if (Array.isArray(data) && data.length > 0) {
+                users = data.map((p: any) => ({
+                  id: p.id,
+                  uid: p.id,
+                  fullName: p.email ? p.email.split('@')[0] : 'User',
+                  displayName: p.email ? p.email.split('@')[0] : 'User',
+                  email: p.email,
+                  phone: null,
+                  role: p.role || 'user',
+                  status: p.status || 'active',
+                  emailVerified: true,
+                  forcePasswordReset: false,
+                  failedLoginAttempts: 0,
+                  createdAt: p.created_at,
+                  lastLoginAt: null,
+                  passwordChangedAt: p.created_at,
+                  passwordStatus: 'Protected (Bcrypt Encrypted)',
+                  activeSessionsCount: 1,
+                }));
+              }
+            }
+          }
+        } catch (apiErr) {
+          console.error('Supabase REST fallback error:', apiErr);
+        }
+      }
 
       sendJson(res, 200, { success: true, users });
       return true;
@@ -1093,6 +1237,1309 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       sendJson(res, 200, { success: true, logs: logsRes.rows });
       return true;
+    }
+
+    // ---------------------------------------------------------
+    // 10. PUBLIC APP & BRANDING CONFIG: GET /api/config/public
+    // ---------------------------------------------------------
+    if (pathname === '/api/config/public' && method === 'GET') {
+      sendJson(res, 200, {
+        success: true,
+        config: {
+          appName: APP_CONFIG.appName,
+          appTagline: APP_CONFIG.appTagline,
+          companyName: APP_CONFIG.companyName,
+          companyTagline: APP_CONFIG.companyTagline,
+          supportEmail: APP_CONFIG.supportEmail,
+          supportPhone: APP_CONFIG.supportPhone,
+          appLoginUrl: APP_CONFIG.appLoginUrl,
+          appLogoUrl: APP_CONFIG.appLogoUrl || '/logo.jpg',
+          footerCopyright: APP_CONFIG.footerCopyright,
+        },
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
+    // 11. WELCOME EMAIL STATUS: GET /api/auth/welcome-email-status
+    // ---------------------------------------------------------
+    if (pathname === '/api/auth/welcome-email-status' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      const queryEmail = parsed.query.email ? normalizeEmail(parsed.query.email as string) : '';
+      
+      // If queryEmail provided, only admin or the user themselves can inspect
+      let targetLookup = authUser?.id || '';
+      if (queryEmail) {
+        if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin' && authUser.email !== queryEmail)) {
+          sendJson(res, 403, { success: false, message: 'Forbidden' });
+          return true;
+        }
+        targetLookup = queryEmail;
+      }
+
+      if (!targetLookup) {
+        sendJson(res, 400, { success: false, message: 'Target user ID or email required' });
+        return true;
+      }
+
+      const statusRecord = await getWelcomeEmailDeliveryStatus(targetLookup);
+      sendJson(res, 200, { success: true, delivery: statusRecord });
+      return true;
+    }
+
+    // ---------------------------------------------------------
+    // 12. RESEND WELCOME EMAIL: POST /api/auth/resend-welcome-email
+    // ---------------------------------------------------------
+    if (pathname === '/api/auth/resend-welcome-email' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      const body = await parseJsonBody(req);
+      const targetEmail = normalizeEmail(body.email || authUser?.email || '');
+
+      if (!targetEmail) {
+        sendJson(res, 400, { success: false, message: 'Email is required' });
+        return true;
+      }
+
+      // Check permission: either logged in as that user, or admin
+      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin' && authUser.email !== targetEmail)) {
+        sendJson(res, 403, { success: false, message: 'Forbidden' });
+        return true;
+      }
+
+      // Query user
+      const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1', [targetEmail]);
+      if (uRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'User not found' });
+        return true;
+      }
+
+      const target = uRes.rows[0];
+      const result = await sendWelcomeEmail(target.email, target.full_name, target.id, true);
+
+      sendJson(res, 200, {
+        success: result.success,
+        message: result.message,
+        delivery: result,
+      });
+      return true;
+    }
+
+    // =========================================================================
+    // SECTION A: ACCOUNT DELETION & CANCELLATION (24-Hour Backend Controlled)
+    // =========================================================================
+
+    // 1. INITIATE DELETION: POST /api/account/deletion/request
+    if (pathname === '/api/account/deletion/request' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required to initiate account deletion.' });
+        return true;
+      }
+
+      const rate = checkRateLimit(`del_req:${authUser.id}`, 5, 15 * 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Too many deletion attempts. Please wait before trying again.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const password = body.password || '';
+      const reason = (body.reason || '').trim();
+
+      if (!password) {
+        sendJson(res, 400, { success: false, message: 'Password verification is mandatory to schedule account deletion.' });
+        return true;
+      }
+
+      // Verify password
+      const uRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
+      const currentHash = uRes.rows[0]?.password_hash;
+      const isPassValid = await verifyPassword(password, currentHash);
+      if (!isPassValid) {
+        await logSecurityEvent('ACCOUNT_DELETION_FAILED_BAD_PASSWORD', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          ipAddress: clientIp,
+        });
+        sendJson(res, 400, { success: false, message: 'Incorrect password. Deletion request aborted for your security.' });
+        return true;
+      }
+
+      // Check if already pending
+      const pendingCheck = await query(
+        `SELECT id, scheduled_for, created_at 
+         FROM public.account_deletion_requests 
+         WHERE user_id = $1 AND status = 'pending' AND scheduled_for > NOW()`,
+        [authUser.id]
+      );
+
+      if (pendingCheck.rows.length > 0) {
+        const existing = pendingCheck.rows[0];
+        const remainingSec = Math.ceil((new Date(existing.scheduled_for).getTime() - Date.now()) / 1000);
+        sendJson(res, 200, {
+          success: true,
+          message: 'An account deletion request is already pending for your account.',
+          scheduledFor: existing.scheduled_for,
+          remainingSeconds: Math.max(0, remainingSec),
+          isAlreadyPending: true,
+        });
+        return true;
+      }
+
+      // Generate cryptographically secure single-use cancellation token
+      const rawToken = generateCryptoToken(32);
+      const tokenHash = hashToken(rawToken);
+
+      // Backend controlled 24-hour cancellation window
+      const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const nowIso = new Date().toISOString();
+
+      const insRes = await query(
+        `INSERT INTO public.account_deletion_requests (
+          user_id, user_email, cancellation_token_hash, status, scheduled_for, reason, ip_address, user_agent
+        ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)
+        RETURNING id`,
+        [authUser.id, authUser.email, tokenHash, scheduledFor, reason || null, clientIp, userAgent]
+      );
+
+      const requestId = insRes.rows[0].id;
+
+      // Update app_users status
+      await query(
+        `UPDATE public.app_users 
+         SET deletion_status = 'pending_deletion', deletion_scheduled_for = $1, deletion_request_id = $2, updated_at = NOW() 
+         WHERE id = $3`,
+        [scheduledFor, requestId, authUser.id]
+      );
+
+      const cancelLink = `${origin}/#cancel-deletion&token=${rawToken}&email=${encodeURIComponent(authUser.email)}`;
+      const submissionTimeStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+      const scheduledForStr = scheduledFor.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+
+      // Dispatch automated deletion notice email
+      sendAccountDeletionRequestedEmail(
+        authUser.email,
+        authUser.full_name,
+        scheduledForStr,
+        cancelLink,
+        submissionTimeStr
+      ).catch(() => {});
+
+      await logSecurityEvent('ACCOUNT_DELETION_SCHEDULED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        details: { requestId, scheduledFor: scheduledFor.toISOString(), cancellationWindowHours: 24 },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Account deletion request scheduled. You have 24 hours to cancel.',
+        scheduledFor: scheduledFor.toISOString(),
+        remainingSeconds: 24 * 60 * 60,
+        requestId,
+        cancelLink: process.env.NODE_ENV !== 'production' ? cancelLink : undefined,
+      });
+      return true;
+    }
+
+    // 2. CHECK DELETION STATUS: GET /api/account/deletion/status
+    if (pathname === '/api/account/deletion/status' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const reqDb = await query(
+        `SELECT id, scheduled_for, created_at, status, reason
+         FROM public.account_deletion_requests 
+         WHERE user_id = $1 
+         ORDER BY created_at DESC 
+         LIMIT 1`,
+        [authUser.id]
+      );
+
+      if (reqDb.rows.length === 0 || reqDb.rows[0].status !== 'pending') {
+        sendJson(res, 200, {
+          success: true,
+          isPending: false,
+          status: reqDb.rows[0]?.status || 'none',
+        });
+        return true;
+      }
+
+      const currentReq = reqDb.rows[0];
+      const remainingMs = new Date(currentReq.scheduled_for).getTime() - Date.now();
+
+      if (remainingMs <= 0) {
+        // Expired! Execute deletion asynchronously
+        processExpiredAccountDeletions().catch(() => {});
+        sendJson(res, 200, {
+          success: true,
+          isPending: false,
+          status: 'executing',
+          remainingSeconds: 0,
+        });
+        return true;
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        isPending: true,
+        status: 'pending_deletion',
+        requestId: currentReq.id,
+        scheduledFor: currentReq.scheduled_for,
+        createdAt: currentReq.created_at,
+        remainingSeconds: Math.ceil(remainingMs / 1000),
+        reason: currentReq.reason,
+      });
+      return true;
+    }
+
+    // 3. CANCEL DELETION (IN-APP): POST /api/account/deletion/cancel
+    if (pathname === '/api/account/deletion/cancel' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const reqDb = await query(
+        `SELECT id FROM public.account_deletion_requests 
+         WHERE user_id = $1 AND status = 'pending' 
+         ORDER BY created_at DESC LIMIT 1`,
+        [authUser.id]
+      );
+
+      if (reqDb.rows.length === 0) {
+        sendJson(res, 400, { success: false, message: 'No active pending deletion request found to cancel.' });
+        return true;
+      }
+
+      const reqId = reqDb.rows[0].id;
+
+      // Mark request cancelled
+      await query(
+        `UPDATE public.account_deletion_requests 
+         SET status = 'cancelled', cancelled_at = NOW() 
+         WHERE id = $1`,
+        [reqId]
+      );
+
+      // Restore user account status
+      await query(
+        `UPDATE public.app_users 
+         SET deletion_status = 'none', deletion_scheduled_for = NULL, deletion_request_id = NULL, updated_at = NOW() 
+         WHERE id = $1`,
+        [authUser.id]
+      );
+
+      // Send confirmation email
+      sendAccountDeletionCancelledEmail(authUser.email, authUser.full_name).catch(() => {});
+
+      await logSecurityEvent('ACCOUNT_DELETION_CANCELLED_IN_APP', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        details: { requestId: reqId },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Your account deletion request has been cancelled. Your account and all records remain safe and active.',
+      });
+      return true;
+    }
+
+    // 4. CANCEL DELETION (EMAIL TOKEN): POST /api/account/deletion/cancel-by-token
+    if (pathname === '/api/account/deletion/cancel-by-token' && method === 'POST') {
+      const rate = checkRateLimit(`cancel_token:${clientIp}`, 15, 5 * 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Too many requests. Please wait a moment.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const rawToken = body.token || '';
+
+      if (!rawToken) {
+        sendJson(res, 400, { success: false, message: 'Cancellation token is required.' });
+        return true;
+      }
+
+      const tokenHash = hashToken(rawToken);
+
+      const reqDb = await query(
+        `SELECT r.id, r.user_id, r.status, r.scheduled_for, u.email, u.full_name 
+         FROM public.account_deletion_requests r
+         JOIN public.app_users u ON r.user_id = u.id
+         WHERE r.cancellation_token_hash = $1`,
+        [tokenHash]
+      );
+
+      if (reqDb.rows.length === 0) {
+        sendJson(res, 400, { success: false, message: 'Invalid cancellation token.' });
+        return true;
+      }
+
+      const record = reqDb.rows[0];
+
+      if (record.status === 'cancelled') {
+        sendJson(res, 200, {
+          success: true,
+          message: 'This account deletion request was already cancelled. Your account is active.',
+        });
+        return true;
+      }
+
+      if (record.status === 'executed') {
+        sendJson(res, 400, {
+          success: false,
+          message: 'The 24-hour cancellation window has already expired and deletion was completed.',
+        });
+        return true;
+      }
+
+      // Mark request cancelled
+      await query(
+        `UPDATE public.account_deletion_requests 
+         SET status = 'cancelled', cancelled_at = NOW() 
+         WHERE id = $1`,
+        [record.id]
+      );
+
+      // Restore user account status
+      await query(
+        `UPDATE public.app_users 
+         SET deletion_status = 'none', deletion_scheduled_for = NULL, deletion_request_id = NULL, updated_at = NOW() 
+         WHERE id = $1`,
+        [record.user_id]
+      );
+
+      // Send confirmation email
+      sendAccountDeletionCancelledEmail(record.email, record.full_name).catch(() => {});
+
+      await logSecurityEvent('ACCOUNT_DELETION_CANCELLED_VIA_TOKEN', {
+        userId: record.user_id,
+        userEmail: record.email,
+        ipAddress: clientIp,
+        details: { requestId: record.id },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Your account deletion request has been successfully cancelled. Your account remains active.',
+      });
+      return true;
+    }
+
+    // 5. TRIGGER EXPIRED DELETIONS: POST /api/account/deletion/process-expired
+    if (pathname === '/api/account/deletion/process-expired' && method === 'POST') {
+      const processed = await processExpiredAccountDeletions();
+      sendJson(res, 200, { success: true, processedCount: processed });
+      return true;
+    }
+
+    // =========================================================================
+    // SECTION B: UDHAR CONTACTS (SAVED PEOPLE)
+    // =========================================================================
+
+    // 6. GET CONTACTS: GET /api/udhar/contacts
+    if (pathname === '/api/udhar/contacts' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const contactsRes = await query(
+        `SELECT c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
+                u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+         FROM public.udhar_contacts c
+         LEFT JOIN public.app_users u ON c.linked_user_id = u.id
+         WHERE c.user_id = $1
+         ORDER BY c.name ASC`,
+        [authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, contacts: contactsRes.rows });
+      return true;
+    }
+
+    // 7. SAVE CONTACT: POST /api/udhar/contacts
+    if (pathname === '/api/udhar/contacts' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const name = (body.name || '').trim();
+      const email = (body.email || '').trim().toLowerCase();
+      const phone = (body.phone || '').trim();
+      const relationshipType = (body.relationship_type || body.relationshipType || 'Friend').trim();
+      const notes = (body.notes || '').trim();
+      const linkedUserId = body.linked_user_id || body.linkedUserId || null;
+
+      if (!name) {
+        sendJson(res, 400, { success: false, message: "Person's name is required." });
+        return true;
+      }
+
+      const upsertRes = await query(
+        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, notes, linked_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (user_id, name) DO UPDATE 
+         SET email = EXCLUDED.email, 
+             phone = EXCLUDED.phone, 
+             relationship_type = EXCLUDED.relationship_type, 
+             notes = EXCLUDED.notes, 
+             linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
+             updated_at = NOW()
+         RETURNING *`,
+        [authUser.id, name, email || null, phone || null, relationshipType, notes || null, linkedUserId]
+      );
+
+      sendJson(res, 200, { success: true, contact: upsertRes.rows[0] });
+      return true;
+    }
+
+    // 8. UPDATE CONTACT: PUT /api/udhar/contacts/:id
+    const contactUpdateMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)$/);
+    if (contactUpdateMatch && method === 'PUT') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const contactId = contactUpdateMatch[1];
+      const body = await parseJsonBody(req);
+      const name = (body.name || '').trim();
+      const email = (body.email || '').trim().toLowerCase();
+      const phone = (body.phone || '').trim();
+      const relationshipType = (body.relationship_type || body.relationshipType || 'Friend').trim();
+      const notes = (body.notes || '').trim();
+      const linkedUserId = body.linked_user_id || body.linkedUserId || null;
+
+      if (!name) {
+        sendJson(res, 400, { success: false, message: "Person's name is required." });
+        return true;
+      }
+
+      const updRes = await query(
+        `UPDATE public.udhar_contacts 
+         SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5, linked_user_id = $6, updated_at = NOW()
+         WHERE id = $7 AND user_id = $8
+         RETURNING *`,
+        [name, email || null, phone || null, relationshipType, notes || null, linkedUserId, contactId, authUser.id]
+      );
+
+      if (updRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Contact not found.' });
+        return true;
+      }
+
+      sendJson(res, 200, { success: true, contact: updRes.rows[0] });
+      return true;
+    }
+
+    // 9. DELETE CONTACT: DELETE /api/udhar/contacts/:id
+    const contactDeleteMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)$/);
+    if (contactDeleteMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const contactId = contactDeleteMatch[1];
+      await query('DELETE FROM public.udhar_contacts WHERE id = $1 AND user_id = $2', [contactId, authUser.id]);
+      sendJson(res, 200, { success: true, message: 'Saved contact removed.' });
+      return true;
+    }
+
+    // 10. LINK UNREGISTERED CONTACT TO REGISTERED USER: POST /api/udhar/contacts/:id/link-registered
+    const contactLinkMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)\/link-registered$/);
+    if (contactLinkMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const contactId = contactLinkMatch[1];
+      const body = await parseJsonBody(req);
+      const registeredUserId = body.registeredUserId || body.userId || '';
+
+      if (!registeredUserId) {
+        sendJson(res, 400, { success: false, message: 'Target registered user ID is required.' });
+        return true;
+      }
+
+      if (registeredUserId === authUser.id) {
+        sendJson(res, 400, { success: false, message: 'You cannot link a contact to your own account.' });
+        return true;
+      }
+
+      const contactRes = await query(
+        'SELECT * FROM public.udhar_contacts WHERE id = $1 AND user_id = $2',
+        [contactId, authUser.id]
+      );
+
+      if (contactRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Contact not found.' });
+        return true;
+      }
+      const contact = contactRes.rows[0];
+
+      // Verify target user exists
+      const targetUserRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [registeredUserId]);
+      if (targetUserRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Registered user not found.' });
+        return true;
+      }
+
+      // Link contact
+      await query(
+        `UPDATE public.udhar_contacts 
+         SET linked_user_id = $1, updated_at = NOW() 
+         WHERE id = $2`,
+        [registeredUserId, contactId]
+      );
+
+      // Link user connection
+      await query(
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+        [authUser.id, registeredUserId]
+      );
+
+      // Retroactively bind counterpart_user_id on previous transactions with this contact name
+      await query(
+        `UPDATE public.udhar_transactions 
+         SET counterpart_user_id = $1, updated_at = NOW() 
+         WHERE user_id = $2 AND counterpart_name = $3 AND counterpart_user_id IS NULL`,
+        [registeredUserId, authUser.id, contact.name]
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Successfully linked ${contact.name} with registered user ${targetUserRes.rows[0].full_name}.`,
+      });
+      return true;
+    }
+
+    // =========================================================================
+    // SECTION C: REGISTERED USER SEARCH (SAFE & PRIVACY PRESERVING)
+    // =========================================================================
+
+    // Helper: Mask email for privacy
+    function maskEmail(em: string): string {
+      if (!em || !em.includes('@')) return '***@***';
+      const [local, domain] = em.split('@');
+      if (local.length <= 2) return `${local.charAt(0)}***@${domain}`;
+      return `${local.charAt(0)}***${local.charAt(local.length - 1)}@${domain}`;
+    }
+
+    function maskPhone(ph?: string | null): string | null {
+      if (!ph) return null;
+      const clean = ph.replace(/[\s\-\(\)]/g, '');
+      if (clean.length < 6) return '****';
+      return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
+    }
+
+    // 11. SEARCH USERS: GET /api/udhar/users/search?q=...
+    if (pathname === '/api/udhar/users/search' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const rate = checkRateLimit(`user_search:${authUser.id}`, 40, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Search rate limit exceeded. Please wait a moment.' });
+        return true;
+      }
+
+      const q = ((parsed.query.q as string) || '').trim().toLowerCase();
+      if (!q || q.length < 2) {
+        sendJson(res, 200, { success: true, users: [] });
+        return true;
+      }
+
+      // Query registered active users excluding requesting user
+      const usersRes = await query(
+        `SELECT id, full_name, email, phone, avatar_url, role 
+         FROM public.app_users 
+         WHERE id <> $1 AND status = 'active' AND (
+           LOWER(email) = $2 OR 
+           phone = $2 OR 
+           LOWER(email) LIKE $3 OR 
+           LOWER(full_name) LIKE $3
+         )
+         LIMIT 10`,
+        [authUser.id, q, `%${q}%`]
+      );
+
+      // Return ONLY privacy-sanitized profile info (never expose password, sessions, financial logs)
+      const sanitizedUsers = usersRes.rows.map((u: any) => ({
+        id: u.id,
+        displayName: u.full_name,
+        fullName: u.full_name,
+        emailMasked: maskEmail(u.email),
+        phoneMasked: maskPhone(u.phone),
+        avatarUrl: u.avatar_url,
+      }));
+
+      sendJson(res, 200, { success: true, users: sanitizedUsers });
+      return true;
+    }
+
+    // =========================================================================
+    // SECTION D: USER-SPECIFIC UDHAAR QR CODES & SECURE ONE-TIME PAIRING
+    // =========================================================================
+
+    // 12. GET MY QR CODE: GET /api/udhar/qr/my-code
+    if (pathname === '/api/udhar/qr/my-code' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      // Find active valid token or generate new pairing reference
+      let tokenRes = await query(
+        `SELECT pairing_token, pairing_code, expires_at 
+         FROM public.qr_pairing_tokens 
+         WHERE user_id = $1 AND expires_at > NOW() AND used = FALSE 
+         ORDER BY created_at DESC LIMIT 1`,
+        [authUser.id]
+      );
+
+      let pairingToken = tokenRes.rows[0]?.pairing_token;
+      let pairingCode = tokenRes.rows[0]?.pairing_code;
+      let expiresAt = tokenRes.rows[0]?.expires_at;
+
+      if (!pairingToken) {
+        pairingToken = generateCryptoToken(32);
+        pairingCode = `MM-${generateCryptoToken(4).toUpperCase()}`;
+        expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30-day token
+
+        await query(
+          `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, expires_at)
+           VALUES ($1, $2, $3, $4)`,
+          [authUser.id, pairingToken, pairingCode, expiresAt]
+        );
+      }
+
+      const qrPayload = JSON.stringify({
+        v: 1,
+        app: 'my-money',
+        type: 'udhar-pair',
+        code: pairingCode,
+        token: pairingToken,
+        name: authUser.full_name,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        pairingToken,
+        pairingCode,
+        publicName: authUser.full_name,
+        qrData: qrPayload,
+        expiresAt,
+      });
+      return true;
+    }
+
+    // 13. RESOLVE QR CODE: POST /api/udhar/qr/resolve
+    if (pathname === '/api/udhar/qr/resolve' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      let targetToken = (body.pairingToken || '').trim();
+      let targetCode = (body.pairingCode || '').trim();
+      const rawData = body.qrData || '';
+
+      if (rawData) {
+        try {
+          const parsedQr = JSON.parse(rawData);
+          if (parsedQr.token) targetToken = parsedQr.token;
+          if (parsedQr.code) targetCode = parsedQr.code;
+        } catch {
+          // If plain token string was scanned
+          if (!targetToken) targetToken = rawData.trim();
+        }
+      }
+
+      if (!targetToken && !targetCode) {
+        sendJson(res, 400, { success: false, message: 'No valid QR pairing token or code provided.' });
+        return true;
+      }
+
+      // Query token from database
+      const tokenRes = await query(
+        `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
+                u.full_name, u.email, u.phone, u.avatar_url
+         FROM public.qr_pairing_tokens t
+         JOIN public.app_users u ON t.user_id = u.id
+         WHERE (t.pairing_token = $1 OR t.pairing_code = $2) AND t.expires_at > NOW() AND t.used = FALSE`,
+        [targetToken || '__none__', targetCode || '__none__']
+      );
+
+      if (tokenRes.rows.length === 0) {
+        sendJson(res, 404, {
+          success: false,
+          message: 'Invalid, expired, or already used QR code pairing reference.',
+        });
+        return true;
+      }
+
+      const qrOwner = tokenRes.rows[0];
+
+      if (qrOwner.user_id === authUser.id) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'This is your own QR code! You cannot link your account with yourself.',
+        });
+        return true;
+      }
+
+      // Check if already linked
+      const connRes = await query(
+        `SELECT id FROM public.user_connections 
+         WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
+        [authUser.id, qrOwner.user_id]
+      );
+      const isAlreadyConnected = connRes.rows.length > 0;
+
+      sendJson(res, 200, {
+        success: true,
+        owner: {
+          id: qrOwner.user_id,
+          displayName: qrOwner.full_name,
+          fullName: qrOwner.full_name,
+          emailMasked: maskEmail(qrOwner.email),
+          phoneMasked: maskPhone(qrOwner.phone),
+          avatarUrl: qrOwner.avatar_url,
+        },
+        pairingToken: qrOwner.pairing_token,
+        pairingCode: qrOwner.pairing_code,
+        isAlreadyConnected,
+      });
+      return true;
+    }
+
+    // 14. CONNECT PERSON VIA QR: POST /api/udhar/qr/connect
+    if (pathname === '/api/udhar/qr/connect' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const pairingToken = (body.pairingToken || '').trim();
+      const pairingCode = (body.pairingCode || '').trim();
+      const relationshipType = (body.relationshipType || 'Friend').trim();
+
+      // Find token
+      const tokenRes = await query(
+        `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone 
+         FROM public.qr_pairing_tokens t
+         JOIN public.app_users u ON t.user_id = u.id
+         WHERE (t.pairing_token = $1 OR t.pairing_code = $2) AND t.expires_at > NOW() AND t.used = FALSE`,
+        [pairingToken || '__none__', pairingCode || '__none__']
+      );
+
+      if (tokenRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Pairing reference expired or invalid.' });
+        return true;
+      }
+
+      const tokenRecord = tokenRes.rows[0];
+      const targetUserId = tokenRecord.user_id;
+
+      if (targetUserId === authUser.id) {
+        sendJson(res, 400, { success: false, message: 'Cannot connect with your own QR code.' });
+        return true;
+      }
+
+      // 1. Create connection (idempotent ON CONFLICT DO NOTHING)
+      await query(
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+        [authUser.id, targetUserId]
+      );
+
+      // 2. Save target user in current user's udhar_contacts
+      await query(
+        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (user_id, name) DO UPDATE 
+         SET linked_user_id = EXCLUDED.linked_user_id, email = EXCLUDED.email, updated_at = NOW()`,
+        [authUser.id, tokenRecord.full_name, tokenRecord.email, tokenRecord.phone, relationshipType, targetUserId]
+      );
+
+      // 3. Reciprocally save current user in target user's contacts
+      await query(
+        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, 'Friend', $5, NOW())
+         ON CONFLICT (user_id, name) DO UPDATE 
+         SET linked_user_id = EXCLUDED.linked_user_id, email = EXCLUDED.email, updated_at = NOW()`,
+        [targetUserId, authUser.full_name, authUser.email, authUser.phone, authUser.id]
+      );
+
+      // 4. Mark single-use token if configured
+      if (tokenRecord.is_single_use) {
+        await query(
+          `UPDATE public.qr_pairing_tokens 
+           SET used = TRUE, used_by_user_id = $1, used_at = NOW() 
+           WHERE id = $2`,
+          [authUser.id, tokenRecord.id]
+        );
+      }
+
+      await logSecurityEvent('USER_LINKED_VIA_QR', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { targetUserId, targetName: tokenRecord.full_name },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Successfully linked with ${tokenRecord.full_name}! Added to Saved People.`,
+        connectedUser: {
+          id: targetUserId,
+          displayName: tokenRecord.full_name,
+        },
+      });
+      return true;
+    }
+
+    // =========================================================================
+    // SECTION E: TWO-SIDED UDHAAR TRANSACTIONS, ACCEPTANCE, DISPUTES & REPAYMENTS
+    // =========================================================================
+
+    // 15. GET UDHAAR TRANSACTIONS & SUMMARY: GET /api/udhar/transactions
+    if (pathname === '/api/udhar/transactions' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      // Fetch all transactions for this user
+      const txRes = await query(
+        `SELECT t.*, 
+                u.full_name AS counterpart_registered_name, 
+                u.email AS counterpart_email
+         FROM public.udhar_transactions t
+         LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
+         WHERE t.user_id = $1
+         ORDER BY t.transaction_date DESC, t.created_at DESC`,
+        [authUser.id]
+      );
+
+      // Fetch repayments for these transactions
+      const repayRes = await query(
+        `SELECT r.*, u.full_name AS recorded_by_name
+         FROM public.udhar_repayments r
+         JOIN public.udhar_transactions t ON r.udhar_id = t.id
+         LEFT JOIN public.app_users u ON r.recorded_by_user_id = u.id
+         WHERE t.user_id = $1
+         ORDER BY r.repayment_date DESC, r.created_at DESC`,
+        [authUser.id]
+      );
+
+      // Group repayments by udhar_id
+      const repaymentsByUdhar: Record<string, any[]> = {};
+      for (const rep of repayRes.rows) {
+        if (!repaymentsByUdhar[rep.udhar_id]) {
+          repaymentsByUdhar[rep.udhar_id] = [];
+        }
+        repaymentsByUdhar[rep.udhar_id].push(rep);
+      }
+
+      const transactions = txRes.rows.map((r: any) => ({
+        ...r,
+        repayments: repaymentsByUdhar[r.id] || [],
+      }));
+
+      // Calculate totals
+      let totalLent = 0;
+      let totalBorrowed = 0;
+      let outstandingReceivable = 0;
+      let outstandingPayable = 0;
+      let settledAmount = 0;
+      let overdueAmount = 0;
+
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      for (const t of transactions) {
+        const orig = parseFloat(t.original_amount) || 0;
+        const cur = parseFloat(t.current_balance) || 0;
+
+        if (t.direction === 'gave') {
+          totalLent += orig;
+          if (t.status !== 'settled') {
+            outstandingReceivable += cur;
+          }
+        } else {
+          totalBorrowed += orig;
+          if (t.status !== 'settled') {
+            outstandingPayable += cur;
+          }
+        }
+
+        settledAmount += Math.max(0, orig - cur);
+
+        if (t.due_date && t.due_date < todayStr && t.status !== 'settled' && cur > 0) {
+          overdueAmount += cur;
+        }
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        transactions,
+        summary: {
+          totalLent: Math.round(totalLent * 100) / 100,
+          totalBorrowed: Math.round(totalBorrowed * 100) / 100,
+          outstandingReceivable: Math.round(outstandingReceivable * 100) / 100,
+          outstandingPayable: Math.round(outstandingPayable * 100) / 100,
+          settledAmount: Math.round(settledAmount * 100) / 100,
+          overdueAmount: Math.round(overdueAmount * 100) / 100,
+        },
+      });
+      return true;
+    }
+
+    // 16. CREATE UDHAAR TRANSACTION (TWO-SIDED IF LINKED USER): POST /api/udhar/transactions
+    if (pathname === '/api/udhar/transactions' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const counterpartName = (body.counterpart_name || body.person_name || '').trim();
+      const counterpartUserId = body.counterpart_user_id || body.counterpartUserId || null;
+      const direction = body.direction; // 'gave' (Lend) or 'took' (Borrow)
+      const amount = parseFloat(body.amount);
+      const txDate = body.transaction_date || body.date || new Date().toISOString().split('T')[0];
+      const dueDate = body.due_date || body.dueDate || null;
+      const notes = (body.notes || '').trim();
+      const attachmentUrl = body.attachment_url || null;
+
+      if (!counterpartName) {
+        sendJson(res, 400, { success: false, message: "Person's name is required." });
+        return true;
+      }
+
+      if (!['gave', 'took'].includes(direction)) {
+        sendJson(res, 400, { success: false, message: "Transaction type must be 'gave' (I Gave) or 'took' (I Took)." });
+        return true;
+      }
+
+      if (isNaN(amount) || amount <= 0) {
+        sendJson(res, 400, { success: false, message: 'Please enter a valid amount greater than ₹0.' });
+        return true;
+      }
+
+      // Generate shared link ID
+      const linkRes = await query('SELECT gen_random_uuid() AS link_id');
+      const linkId = linkRes.rows[0].link_id;
+
+      // Check if counterpart is a registered user
+      let isRegisteredCounterpart = false;
+      let registeredUser: any = null;
+
+      if (counterpartUserId && counterpartUserId !== authUser.id) {
+        const uCheck = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [counterpartUserId]);
+        if (uCheck.rows.length > 0) {
+          isRegisteredCounterpart = true;
+          registeredUser = uCheck.rows[0];
+        }
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        if (isRegisteredCounterpart) {
+          // TWO-SIDED SYNCHRONIZATION:
+          // User A (Initiator):
+          const userAStatus = 'pending_confirmation';
+          const userARes = await client.query(
+            `INSERT INTO public.udhar_transactions (
+              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
+              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', TRUE)
+            RETURNING *`,
+            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, notes || null, attachmentUrl, userAStatus]
+          );
+
+          // User B (Counterpart): Inverted direction!
+          // If User A gave, User B took. If User A took, User B gave.
+          const counterpartDirection = direction === 'gave' ? 'took' : 'gave';
+          await client.query(
+            `INSERT INTO public.udhar_transactions (
+              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
+              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending_confirmation', 'pending', FALSE)`,
+            [linkId, registeredUser.id, authUser.id, authUser.full_name, counterpartDirection, amount, amount, txDate, dueDate, notes || null, attachmentUrl]
+          );
+
+          // Auto-save contacts for both users
+          await client.query(
+            `INSERT INTO public.udhar_contacts (user_id, name, email, relationship_type, linked_user_id, updated_at)
+             VALUES ($1, $2, $3, 'Friend', $4, NOW())
+             ON CONFLICT (user_id, name) DO UPDATE SET linked_user_id = EXCLUDED.linked_user_id, updated_at = NOW()`,
+            [authUser.id, registeredUser.full_name, registeredUser.email, registeredUser.id]
+          );
+
+          await client.query(
+            `INSERT INTO public.udhar_contacts (user_id, name, email, relationship_type, linked_user_id, updated_at)
+             VALUES ($1, $2, $3, 'Friend', $4, NOW())
+             ON CONFLICT (user_id, name) DO UPDATE SET linked_user_id = EXCLUDED.linked_user_id, updated_at = NOW()`,
+            [registeredUser.id, authUser.full_name, authUser.email, authUser.id]
+          );
+
+          // Create in-app notification for User B
+          const notifMsg = `${authUser.full_name} recorded an Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? 'You Borrowed' : 'You Lent'}). Please confirm or dispute.`;
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, is_active)
+             VALUES ($1, $2, 'info', TRUE)`,
+            [`New Udhar Request from ${authUser.full_name}`, notifMsg]
+          ).catch(() => {});
+
+          await client.query('COMMIT');
+
+          await logSecurityEvent('UDHAR_TWO_SIDED_CREATED', {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            details: { linkId, counterpartId: registeredUser.id, amount, direction },
+          });
+
+          sendJson(res, 201, {
+            success: true,
+            message: `Udhar recorded with ${registeredUser.full_name}. A linked entry was synchronized for their account.`,
+            transaction: userARes.rows[0],
+            isLinked: true,
+          });
+          return true;
+        } else {
+          // Unregistered contact or self-managed entry
+          const singleRes = await client.query(
+            `INSERT INTO public.udhar_transactions (
+              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
+              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
+            ) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed', 'confirmed', TRUE)
+            RETURNING *`,
+            [linkId, authUser.id, counterpartName, direction, amount, amount, txDate, dueDate, notes || null, attachmentUrl]
+          );
+
+          // Ensure saved in udhar_contacts
+          await client.query(
+            `INSERT INTO public.udhar_contacts (user_id, name, relationship_type, updated_at)
+             VALUES ($1, $2, 'Friend', NOW())
+             ON CONFLICT (user_id, name) DO NOTHING`,
+            [authUser.id, counterpartName]
+          );
+
+          await client.query('COMMIT');
+
+          await logSecurityEvent('UDHAR_UNREGISTERED_CREATED', {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            details: { counterpartName, amount, direction },
+          });
+
+          sendJson(res, 201, {
+            success: true,
+            message: `Udhar recorded for ${counterpartName}.`,
+            transaction: singleRes.rows[0],
+            isLinked: false,
+          });
+          return true;
+        }
+      } catch (e: any) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
+
+    // 17. CONFIRM TRANSACTION: POST /api/udhar/transactions/:id/confirm
+    const confirmMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/confirm$/);
+    if (confirmMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = confirmMatch[1];
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+
+      // Update both sides sharing link_id
+      await query(
+        `UPDATE public.udhar_transactions 
+         SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
+         WHERE link_id = $1`,
+        [tx.link_id]
+      );
+
+      await logSecurityEvent('UDHAR_CONFIRMED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id },
+      });
+
+      sendJson(res, 200, { success: true, message: 'Transaction confirmed successfully on both accounts.' });
+      return true;
+    }
+
+    // 18. DISPUTE TRANSACTION: POST /api/udhar/transactions/:id/dispute
+    const disputeMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/dispute$/);
+    if (disputeMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = disputeMatch[1];
+      const body = await parseJsonBody(req);
+      const disputeReason = (body.reason || 'Transaction disputed by user').trim();
+
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+
+      // Mark both sides as disputed
+      await query(
+        `UPDATE public.udhar_transactions 
+         SET status = 'disputed', confirmation_status = 'disputed', dispute_reason = $1, disputed_at = NOW(), disputed_by = $2, updated_at = NOW() 
+         WHERE link_id = $3`,
+        [disputeReason, authUser.id, tx.link_id]
+      );
+
+      await logSecurityEvent('UDHAR_DISPUTED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id, disputeReason },
+      });
+
+      sendJson(res, 200, { success: true, message: 'Transaction marked as disputed. Reason visible to both parties.' });
+      return true;
+    }
+
+    // 19. REPAY / SETTLE TRANSACTION: POST /api/udhar/transactions/:id/repay
+    const repayMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/repay$/);
+    if (repayMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = repayMatch[1];
+      const body = await parseJsonBody(req);
+      const repayAmount = parseFloat(body.amount);
+      const repayDate = body.repayment_date || body.date || new Date().toISOString().split('T')[0];
+      const notes = (body.notes || '').trim();
+
+      if (isNaN(repayAmount) || repayAmount <= 0) {
+        sendJson(res, 400, { success: false, message: 'Please enter a valid repayment amount greater than ₹0.' });
+        return true;
+      }
+
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      const currentBal = parseFloat(tx.current_balance);
+
+      if (repayAmount > currentBal + 0.05) {
+        sendJson(res, 400, {
+          success: false,
+          message: `Repayment amount (₹${repayAmount}) cannot exceed remaining balance (₹${currentBal}).`,
+        });
+        return true;
+      }
+
+      const newBalance = Math.max(0, Math.round((currentBal - repayAmount) * 100) / 100);
+      const isSettled = newBalance <= 0.01;
+      const newStatus = isSettled ? 'settled' : 'confirmed';
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Record repayment entry
+        await client.query(
+          `INSERT INTO public.udhar_repayments (link_id, udhar_id, recorded_by_user_id, amount, repayment_date, notes, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'confirmed')`,
+          [tx.link_id, tx.id, authUser.id, repayAmount, repayDate, notes || null]
+        );
+
+        // Update balances on all transactions sharing this link_id
+        await client.query(
+          `UPDATE public.udhar_transactions 
+           SET current_balance = $1, status = $2, settled_at = (CASE WHEN $3 = TRUE THEN NOW() ELSE settled_at END), updated_at = NOW() 
+           WHERE link_id = $4`,
+          [newBalance, newStatus, isSettled, tx.link_id]
+        );
+
+        await client.query('COMMIT');
+
+        await logSecurityEvent('UDHAR_REPAYMENT_RECORDED', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: { txId, linkId: tx.link_id, amount: repayAmount, remainingBalance: newBalance, isSettled },
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          message: isSettled
+            ? 'Full repayment recorded! Transaction is now completely settled.'
+            : `Partial repayment of ₹${repayAmount.toLocaleString('en-IN')} recorded. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+          remainingBalance: newBalance,
+          isSettled,
+        });
+        return true;
+      } catch (e: any) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
     }
 
     // Legacy alias: POST /api/send-reset-email

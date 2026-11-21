@@ -1,5 +1,5 @@
-import { query } from './db.ts';
-import { generateCryptoToken, hashToken } from './security.ts';
+import { query } from './db';
+import { generateCryptoToken, hashToken } from './security';
 import type { IncomingMessage } from 'http';
 
 export interface AuthenticatedUser {

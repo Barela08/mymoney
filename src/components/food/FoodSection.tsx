@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SkeletonTable } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder, TransactionSubcategory } from '../../types';
 import {
@@ -70,7 +71,7 @@ const POPULAR_FOOD_PLACES = [
 ];
 
 export const FoodSection: React.FC<FoodSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const toast = useToast();
 
   // In-line Add Form state
@@ -523,7 +524,11 @@ export const FoodSection: React.FC<FoodSectionProps> = ({ onOpenAddModal }) => {
         </div>
 
         {/* Transaction Cards List */}
-        {filteredFoodTransactions.length === 0 ? (
+        {isLoading ? (
+          <div className="py-2">
+            <SkeletonTable rows={5} />
+          </div>
+        ) : filteredFoodTransactions.length === 0 ? (
           <EmptyState
             isFiltered={searchQuery.trim().length > 0 || selectedSubcategoryFilter !== 'all' || Boolean(startDate) || Boolean(endDate)}
             searchQuery={searchQuery || (selectedSubcategoryFilter !== 'all' ? selectedSubcategoryFilter : undefined)}
