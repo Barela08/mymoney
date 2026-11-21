@@ -235,6 +235,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
   try {
     // ---------------------------------------------------------
+    // 0. ADMIN CONTROL CENTER DISPATCH (RBAC Protected)
+    // ---------------------------------------------------------
+    if (pathname.startsWith('/api/admin/')) {
+      const handled = await handleAdminApiRequest(req, res, pathname, method);
+      if (handled) return true;
+    }
+
+    // ---------------------------------------------------------
     // 1. REGISTER: POST /api/auth/register
     // ---------------------------------------------------------
     if (pathname === '/api/auth/register' && method === 'POST') {

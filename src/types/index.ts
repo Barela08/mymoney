@@ -66,6 +66,7 @@ export interface AuthUser {
   role: 'admin' | 'user' | 'superadmin' | 'anonymous';
   status: 'active' | 'suspended' | 'deactivated';
   email_verified?: boolean;
+  emailVerified?: boolean;
   avatar_url?: string | null;
   force_password_reset?: boolean;
   createdAt?: string;
