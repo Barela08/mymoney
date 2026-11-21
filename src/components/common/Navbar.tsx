@@ -13,10 +13,12 @@ import {
   X,
   Info,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 import { NavTab } from './Sidebar';
 import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateUtils';
 
@@ -35,6 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
+  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
   const {
     maintenanceSettings,
     notifications,
@@ -159,6 +162,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               {isSyncing ? 'Syncing...' : isSupabaseConnected ? 'Synced' : 'Sync'}
             </span>
           </button>
+
+          {/* Install / Download Web App Button */}
+          {!isInstalled && (
+            <button
+              type="button"
+              onClick={triggerInstallPrompt}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+              title="Install My Money App on Phone or PC"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden sm:inline text-[11px]">Install App</span>
+            </button>
+          )}
 
           {/* Broadcast Notification Bell */}
           <div className="relative">

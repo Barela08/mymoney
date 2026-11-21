@@ -23,6 +23,9 @@ import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
 import { TransactionCategory, TransactionSubcategory } from './types';
 import { Wallet, AlertTriangle } from 'lucide-react';
+import { PwaInstallProvider } from './context/PwaInstallContext';
+import { PwaInstallBanner } from './components/common/PwaInstallBanner';
+import { PwaInstallModal } from './components/common/PwaInstallModal';
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
@@ -205,7 +208,11 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <ExpenseProvider>
-            <MainContent />
+            <PwaInstallProvider>
+              <MainContent />
+              <PwaInstallBanner />
+              <PwaInstallModal />
+            </PwaInstallProvider>
           </ExpenseProvider>
         </AuthProvider>
       </ToastProvider>

@@ -26,11 +26,13 @@ import {
   Sparkles,
   Utensils,
   Coffee,
+  Download,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 import { formatINR } from '../../lib/dateUtils';
 
 const iconMap: Record<string, any> = {
@@ -67,6 +69,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
+  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
 
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
   const customSections = dynamicSections.filter(
@@ -212,6 +215,21 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
         {/* Drawer Footer */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          {/* Install / Download App on Mobile */}
+          {!isInstalled && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                triggerInstallPrompt();
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-3 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Install App / ऐप डाउनलोड करें</span>
+            </button>
+          )}
+
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span>Appearance</span>
             <button

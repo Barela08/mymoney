@@ -26,10 +26,12 @@ import {
   AlertTriangle,
   Utensils,
   Coffee,
+  Download,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 import { formatINR } from '../../lib/dateUtils';
 
 export type NavTab =
@@ -72,6 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpe
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
+  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
 
   // Find enabled custom sections that aren't the standard 5 (home, room, food, other, people)
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -213,6 +216,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpe
 
       {/* Footer / User Profile & Controls */}
       <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 space-y-3">
+        {/* Install Desktop/Web App CTA */}
+        {!isInstalled && (
+          <button
+            type="button"
+            onClick={triggerInstallPrompt}
+            className="w-full flex items-center justify-between px-3 py-2 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 border border-emerald-500/30 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-all cursor-pointer shadow-sm group"
+            title="Install My Money App on your computer / device"
+          >
+            <div className="flex items-center gap-2">
+              <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span>Install App</span>
+            </div>
+            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-emerald-600 text-white font-black uppercase tracking-wider">
+              Download
+            </span>
+          </button>
+        )}
+
         {/* User Profile Card */}
         <div
           onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
