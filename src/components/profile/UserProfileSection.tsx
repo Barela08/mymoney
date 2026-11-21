@@ -34,7 +34,7 @@ interface UserProfileSectionProps {
 export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
   onNavigateToDeletion,
 }) => {
-  const { user, logout, logoutAllDevices, changePassword, updateUserProfile, deleteAccount } = useAuth();
+  const { user, logout, logoutAllDevices, changePassword, updateUserProfile } = useAuth();
   const toast = useToast();
 
   const [profile, setProfile] = useState<UserProfileData | null>(null);
@@ -162,27 +162,6 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
     } finally {
       setIsLoggingOutAll(false);
       setIsConfirmLogoutAllOpen(false);
-    }
-  };
-
-  const handleDeleteAccountConfirm = async () => {
-    if (!deleteAccountPassword) {
-      toast.error('Required', 'Please enter your password to confirm account deletion.');
-      return;
-    }
-
-    try {
-      setIsDeletingAccount(true);
-      const res = await deleteAccount(deleteAccountPassword);
-      if (res.success) {
-        toast.info('Account Deleted', 'Your account and data were permanently purged.');
-      } else {
-        toast.error('Deletion Failed', res.message);
-      }
-    } catch (err: any) {
-      toast.error('Deletion Error', err.message);
-    } finally {
-      setIsDeletingAccount(false);
     }
   };
 

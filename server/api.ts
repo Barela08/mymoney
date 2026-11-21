@@ -30,6 +30,9 @@ import {
   sendAccountDeletionRequestedEmail,
   sendAccountDeletionCancelledEmail,
   sendAccountDeletionCompletedEmail,
+  sendFeedbackConfirmationEmail,
+  sendComplaintConfirmationEmail,
+  sendSupportTicketConfirmationEmail,
 } from './email';
 import { APP_CONFIG } from './config';
 import { handleAdminApiRequest } from './adminApi';
