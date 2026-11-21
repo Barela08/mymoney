@@ -44,7 +44,7 @@ interface AllTransactionsSectionProps {
 }
 
 export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, deleteTransaction, restoreTransaction } = useExpense();
+  const { transactions, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const toast = useToast();
 
   // Filter States
@@ -447,7 +447,9 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
           </span>
         </div>
 
-        {paginatedList.length === 0 ? (
+        {isLoading ? (
+          <SkeletonTable rows={8} />
+        ) : paginatedList.length === 0 ? (
           <EmptyState
             isFiltered={Boolean(searchQuery.trim()) || selectedCategory !== 'all' || selectedType !== 'all' || Boolean(minAmount) || Boolean(maxAmount) || datePreset !== 'all'}
             searchQuery={searchQuery || (selectedCategory !== 'all' ? selectedCategory : undefined)}
