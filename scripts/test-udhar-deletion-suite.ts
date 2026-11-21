@@ -192,10 +192,10 @@ async function runVerificationSuite() {
     const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const delReqRes = await client.query(`
-      INSERT INTO account_deletion_requests (user_id, cancellation_token_hash, scheduled_for, status)
-      VALUES ($1, $2, $3, 'pending')
+      INSERT INTO account_deletion_requests (user_id, user_email, cancellation_token_hash, scheduled_for, status)
+      VALUES ($1, $2, $3, $4, 'pending')
       RETURNING id, scheduled_for, status;
-    `, [userA.id, deletionTokenHash, scheduledFor]);
+    `, [userA.id, userA.email, deletionTokenHash, scheduledFor]);
 
     const reqId = delReqRes.rows[0].id;
 
