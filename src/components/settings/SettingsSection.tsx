@@ -258,6 +258,23 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
         </div>
       )}
 
+      {/* Account & Data Deletion Tab */}
+      {activeTab === 'deletion' && (
+        <div className="space-y-4">
+          <AccountDeletionSection />
+        </div>
+      )}
+
+      {/* Legal & Privacy Center Tab */}
+      {activeTab === 'legal' && (
+        <div className="space-y-4">
+          <LegalCenterSection
+            initialPolicyId={initialLegalPolicy}
+            onNavigateToAccountDeletion={() => setActiveTab('deletion')}
+          />
+        </div>
+      )}
+
       {/* Clear Confirmation Modal */}
       <ConfirmModal
         isOpen={isConfirmClearOpen}

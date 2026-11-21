@@ -2756,6 +2756,369 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
+    // =========================================================
+    // USER: FEEDBACK, COMPLAINT & SUPPORT TICKET ENDPOINTS
+    // =========================================================
+
+    // 1. SUBMIT STAR-RATING FEEDBACK: POST /api/feedback/submit
+    if (pathname === '/api/feedback/submit' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const rating = Number(body.rating);
+      const message = (body.message || '').trim();
+      const category = (body.category || 'App Experience').trim();
+      const subject = (body.subject || `${rating}-Star Feedback - ${category}`).trim();
+
+      if (!rating || rating < 1 || rating > 5) {
+        sendJson(res, 400, { success: false, message: 'Overall Rating (1 to 5 stars) is mandatory.' });
+        return true;
+      }
+
+      if (!message || message.length < 3) {
+        sendJson(res, 400, { success: false, message: 'Please share your experience, suggestions, or ideas.' });
+        return true;
+      }
+
+      // Fetch trusted user name and email from app_users
+      const uRes = await query('SELECT full_name, email, phone FROM public.app_users WHERE id = $1', [authUser.id]);
+      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
+      const trustedEmail = uRes.rows[0]?.email || authUser.email;
+      const trustedPhone = uRes.rows[0]?.phone || null;
+
+      // Duplicate prevention: check if identical feedback submitted within 15 seconds
+      const dupCheck = await query(
+        `SELECT id FROM public.feedbacks 
+         WHERE user_id = $1 AND message = $2 AND created_at > NOW() - INTERVAL '15 seconds'`,
+        [authUser.id, message]
+      );
+      if (dupCheck.rows.length > 0) {
+        sendJson(res, 409, {
+          success: false,
+          message: 'Duplicate feedback detected. Your previous feedback was already received!',
+        });
+        return true;
+      }
+
+      const insertRes = await query(
+        `INSERT INTO public.feedbacks (
+          user_id, user_name, user_email, user_phone, type, category, subject, message, rating, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'feedback', $5, $6, $7, $8, 'new', NOW(), NOW())
+        RETURNING *`,
+        [authUser.id, trustedName, trustedEmail, trustedPhone, category, subject, message, rating]
+      );
+
+      // Async send acknowledgement email
+      sendFeedbackConfirmationEmail({
+        email: trustedEmail,
+        userName: trustedName,
+        rating,
+        category,
+        message,
+      }).catch((e) => console.warn('[Feedback Ack Email Error]:', e));
+
+      await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
+        userId: authUser.id,
+        userEmail: trustedEmail,
+        details: { rating, category },
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: 'Thank you for your feedback! Your opinion helps us improve My Money Manager.',
+        feedback: insertRes.rows[0],
+      });
+      return true;
+    }
+
+    // 2. RAISE COMPLAINT: POST /api/support/complaint
+    if (pathname === '/api/support/complaint' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const category = (body.category || 'Other').trim();
+      const subject = (body.subject || '').trim();
+      const description = (body.description || body.message || '').trim();
+      const attachmentUrl = (body.attachment_url || body.attachment || '').trim() || null;
+
+      if (!subject || subject.length < 3) {
+        sendJson(res, 400, { success: false, message: 'Complaint subject is required (min 3 characters).' });
+        return true;
+      }
+      if (!description || description.length < 5) {
+        sendJson(res, 400, { success: false, message: 'Complaint description is required (min 5 characters).' });
+        return true;
+      }
+
+      // Fetch trusted user name and email from app_users
+      const uRes = await query('SELECT full_name, email FROM public.app_users WHERE id = $1', [authUser.id]);
+      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
+      const trustedEmail = uRes.rows[0]?.email || authUser.email;
+
+      // Generate unique ticket number: CMP-XXXX
+      const ticketNumber = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const insertRes = await query(
+        `INSERT INTO public.support_tickets (
+          ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'complaint', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
+        RETURNING *`,
+        [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, description, attachmentUrl]
+      );
+
+      const ticket = insertRes.rows[0];
+
+      // Async send confirmation email
+      sendComplaintConfirmationEmail({
+        email: trustedEmail,
+        userName: trustedName,
+        ticketNumber: ticket.ticket_number,
+        category: ticket.category,
+        subject: ticket.subject,
+        description: ticket.description,
+      }).catch((e) => console.warn('[Complaint Ack Email Error]:', e));
+
+      await logSecurityEvent('USER_SUBMITTED_COMPLAINT', {
+        userId: authUser.id,
+        userEmail: trustedEmail,
+        details: { ticketNumber: ticket.ticket_number, category: ticket.category },
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: 'Your complaint has been submitted successfully. Our support team will review it and get back to you.',
+        ticket: {
+          id: ticket.id,
+          ticket_number: ticket.ticket_number,
+          subject: ticket.subject,
+          category: ticket.category,
+          status: ticket.status,
+          created_at: ticket.created_at,
+        },
+      });
+      return true;
+    }
+
+    // 3. CONTACT SUPPORT / HELP REQUEST: POST /api/support/ticket
+    if (pathname === '/api/support/ticket' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const category = (body.category || 'How to use the app').trim();
+      const subject = (body.subject || '').trim();
+      const message = (body.message || body.description || '').trim();
+      const attachmentUrl = (body.attachment_url || body.attachment || '').trim() || null;
+
+      if (!subject || subject.length < 3) {
+        sendJson(res, 400, { success: false, message: 'Support subject is required.' });
+        return true;
+      }
+      if (!message || message.length < 5) {
+        sendJson(res, 400, { success: false, message: 'Support message is required.' });
+        return true;
+      }
+
+      // Fetch trusted user name and email from app_users
+      const uRes = await query('SELECT full_name, email FROM public.app_users WHERE id = $1', [authUser.id]);
+      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
+      const trustedEmail = uRes.rows[0]?.email || authUser.email;
+
+      // Generate unique ticket number: SUP-XXXX
+      const ticketNumber = `SUP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const insertRes = await query(
+        `INSERT INTO public.support_tickets (
+          ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'support', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
+        RETURNING *`,
+        [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, message, attachmentUrl]
+      );
+
+      const ticket = insertRes.rows[0];
+
+      // Async send confirmation email
+      sendSupportTicketConfirmationEmail({
+        email: trustedEmail,
+        userName: trustedName,
+        ticketNumber: ticket.ticket_number,
+        category: ticket.category,
+        subject: ticket.subject,
+        description: ticket.description,
+      }).catch((e) => console.warn('[Support Ticket Ack Email Error]:', e));
+
+      await logSecurityEvent('USER_SUBMITTED_SUPPORT_TICKET', {
+        userId: authUser.id,
+        userEmail: trustedEmail,
+        details: { ticketNumber: ticket.ticket_number, category: ticket.category },
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: 'Your support request has been submitted successfully.',
+        ticket: {
+          id: ticket.id,
+          ticket_number: ticket.ticket_number,
+          subject: ticket.subject,
+          category: ticket.category,
+          status: ticket.status,
+          created_at: ticket.created_at,
+        },
+      });
+      return true;
+    }
+
+    // 4. USER SUPPORT HISTORY: GET /api/user/support-history
+    if (pathname === '/api/user/support-history' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const [feedbacksRes, ticketsRes] = await Promise.all([
+        query(
+          `SELECT id, category, subject, rating, message, status, admin_notes, created_at, updated_at 
+           FROM public.feedbacks 
+           WHERE user_id = $1 
+           ORDER BY created_at DESC LIMIT 50`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT id, ticket_number, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at, resolved_at 
+           FROM public.support_tickets 
+           WHERE user_id = $1 
+           ORDER BY created_at DESC LIMIT 50`,
+          [authUser.id]
+        ),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        feedbacks: feedbacksRes.rows,
+        tickets: ticketsRes.rows,
+      });
+      return true;
+    }
+
+    // 5. USER TICKET DETAIL & REPLIES: GET /api/user/tickets/:id
+    const userTicketDetailMatch = pathname.match(/^\/api\/user\/tickets\/([a-zA-Z0-9_-]+)$/);
+    if (userTicketDetailMatch && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const ticketId = userTicketDetailMatch[1];
+      const ticketRes = await query(
+        `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
+        [ticketId, authUser.id]
+      );
+
+      if (ticketRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Ticket not found or unauthorized.' });
+        return true;
+      }
+
+      // Fetch customer-facing replies ONLY (strictly exclude internal notes)
+      const repliesRes = await query(
+        `SELECT id, sender_name, sender_type, sender_role, message, created_at 
+         FROM public.support_ticket_replies 
+         WHERE ticket_id = $1 AND is_internal = FALSE 
+         ORDER BY created_at ASC`,
+        [ticketId]
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        ticket: ticketRes.rows[0],
+        replies: repliesRes.rows,
+      });
+      return true;
+    }
+
+    // 6. USER REPLY TO ACTIVE TICKET: POST /api/user/tickets/:id/reply
+    const userTicketReplyMatch = pathname.match(/^\/api\/user\/tickets\/([a-zA-Z0-9_-]+)\/reply$/);
+    if (userTicketReplyMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const ticketId = userTicketReplyMatch[1];
+      const body = await parseJsonBody(req);
+      const message = (body.message || '').trim();
+
+      if (!message) {
+        sendJson(res, 400, { success: false, message: 'Reply message cannot be empty.' });
+        return true;
+      }
+
+      // Verify ticket ownership
+      const ticketRes = await query(
+        `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
+        [ticketId, authUser.id]
+      );
+
+      if (ticketRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Ticket not found or unauthorized.' });
+        return true;
+      }
+
+      const ticket = ticketRes.rows[0];
+      if (ticket.status === 'closed') {
+        sendJson(res, 400, { success: false, message: 'This ticket is closed. Please submit a new ticket for further assistance.' });
+        return true;
+      }
+
+      const uRes = await query('SELECT full_name FROM public.app_users WHERE id = $1', [authUser.id]);
+      const senderName = uRes.rows[0]?.full_name || authUser.full_name || 'User';
+
+      // Insert user reply
+      const replyRes = await query(
+        `INSERT INTO public.support_ticket_replies (
+          ticket_id, sender_id, sender_name, sender_role, sender_type, message, message_type, is_internal, email_status, created_at
+        ) VALUES ($1, $2, $3, 'user', 'user', $4, 'user_message', FALSE, 'none', NOW())
+        RETURNING id, sender_name, sender_type, sender_role, message, created_at`,
+        [ticketId, authUser.id, senderName, message]
+      );
+
+      // Update ticket updated_at and move back to in_progress if waiting_user
+      const newStatus = ticket.status === 'waiting_user' ? 'in_progress' : ticket.status;
+      await query(
+        `UPDATE public.support_tickets 
+         SET updated_at = NOW(), status = $1 
+         WHERE id = $2`,
+        [newStatus, ticketId]
+      );
+
+      await logSecurityEvent('USER_REPLIED_TO_TICKET', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { ticketId, ticketNumber: ticket.ticket_number },
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: 'Reply sent successfully.',
+        reply: replyRes.rows[0],
+      });
+      return true;
+    }
+
     // Legacy alias: POST /api/send-reset-email
     if (pathname === '/api/send-reset-email' && method === 'POST') {
       const body = await parseJsonBody(req);
