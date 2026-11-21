@@ -25,8 +25,15 @@ import { useToast } from '../../context/ToastContext';
 import { authApi, UserProfileData } from '../../lib/authApi';
 import { formatDisplayDate } from '../../lib/dateUtils';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { AccountDeletionSection } from './AccountDeletionSection';
 
-export const UserProfileSection: React.FC = () => {
+interface UserProfileSectionProps {
+  onNavigateToDeletion?: () => void;
+}
+
+export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
+  onNavigateToDeletion,
+}) => {
   const { user, logout, logoutAllDevices, changePassword, updateUserProfile, deleteAccount } = useAuth();
   const toast = useToast();
 
@@ -53,10 +60,6 @@ export const UserProfileSection: React.FC = () => {
   // Confirmations
   const [isConfirmLogoutAllOpen, setIsConfirmLogoutAllOpen] = useState(false);
   const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
-
-  const [isConfirmDeleteAccountOpen, setIsConfirmDeleteAccountOpen] = useState(false);
-  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
-  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const fetchProfileData = async () => {
     try {
@@ -365,14 +368,21 @@ export const UserProfileSection: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setIsConfirmDeleteAccountOpen(true)}
+            onClick={() => {
+              if (onNavigateToDeletion) {
+                onNavigateToDeletion();
+              } else {
+                const el = document.getElementById('account-deletion-section');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
             className="p-3.5 rounded-2xl bg-rose-50/60 hover:bg-rose-100/60 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 border border-rose-200/80 dark:border-rose-800 text-left transition-all cursor-pointer"
           >
             <div className="flex items-center gap-2 text-xs font-bold text-rose-700 dark:text-rose-300">
               <Trash2 className="w-4 h-4 text-rose-600" />
-              <span>Delete Account</span>
+              <span>Delete Account & Data</span>
             </div>
-            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">Permanently purge your data</p>
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">24-hour safety cancellation window</p>
           </button>
         </div>
       </div>
@@ -582,63 +592,10 @@ export const UserProfileSection: React.FC = () => {
         onCancel={() => setIsConfirmLogoutAllOpen(false)}
       />
 
-      {/* Delete Account Modal with Password Confirmation */}
-      {isConfirmDeleteAccountOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-rose-300 dark:border-rose-900 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 rounded-2xl">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Permanently Delete Account
-                </h3>
-                <p className="text-xs text-slate-500">This action is irreversible.</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              All your recorded transactions, people udhar history, budget summaries, and sessions will be permanently purged from the database.
-            </p>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Enter your password to confirm:
-              </label>
-              <input
-                type="password"
-                required
-                value={deleteAccountPassword}
-                onChange={(e) => setDeleteAccountPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono"
-              />
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsConfirmDeleteAccountOpen(false);
-                  setDeleteAccountPassword('');
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeletingAccount || !deleteAccountPassword}
-                onClick={handleDeleteAccountConfirm}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 disabled:opacity-50"
-              >
-                {isDeletingAccount ? 'Purging...' : 'Delete My Account'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Account Deletion & Data Purge with 24-Hour Cancellation Window */}
+      <div id="account-deletion-section" className="pt-2">
+        <AccountDeletionSection />
+      </div>
     </div>
   );
 };

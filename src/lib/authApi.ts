@@ -113,14 +113,19 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 function mapRawUserToAuthUser(u: any): AuthUser {
   return {
     uid: u.id,
+    id: u.id,
     email: u.email,
     displayName: u.full_name || u.email?.split('@')[0] || 'User',
+    full_name: u.full_name,
     role: (u.role as any) || 'user',
+    email_verified: Boolean(u.email_verified),
     emailVerified: Boolean(u.email_verified),
     status: (u.status as any) || 'active',
     phone: u.phone || null,
+    avatar_url: u.avatar_url || null,
     avatarUrl: u.avatar_url || null,
     createdAt: u.created_at || new Date().toISOString(),
+    created_at: u.created_at || new Date().toISOString(),
   };
 }
 

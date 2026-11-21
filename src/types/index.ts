@@ -68,6 +68,7 @@ export interface AuthUser {
   email_verified?: boolean;
   emailVerified?: boolean;
   avatar_url?: string | null;
+  avatarUrl?: string | null;
   force_password_reset?: boolean;
   createdAt?: string;
   created_at?: string;

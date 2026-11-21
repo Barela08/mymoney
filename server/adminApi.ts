@@ -7,7 +7,12 @@ import { parse as parseUrl } from 'url';
 import { query } from './db';
 import { authenticateRequest, sanitizeUserOutput, revokeSession, revokeAllUserSessions } from './auth';
 import { logSecurityEvent, hashPassword, hashToken, generateCryptoToken } from './security';
-import { sendEmail, sendPasswordResetEmail, sendAccountStatusEmail } from './email';
+import {
+  sendEmail,
+  sendPasswordResetEmail,
+  sendAccountStatusEmail,
+  sendAdminReplyToTicketEmail,
+} from './email';
 
 // Helper to send JSON responses
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
@@ -580,18 +585,208 @@ export async function handleAdminApiRequest(
     }
 
     // =========================================================
-    // 9. SUPPORT TICKETS & FEEDBACKS
+    // 9. FEEDBACK, COMPLAINT & SUPPORT TICKET MANAGEMENT
     // =========================================================
+
+    // ---------------------------------------------------------
+    // 9A. FEEDBACK MANAGEMENT: GET /api/admin/feedback
+    // ---------------------------------------------------------
+    if (pathname === '/api/admin/feedback' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'support.read');
+      if (!auth) return true;
+
+      const ratingFilter = parsedUrl.query.rating as string | undefined;
+      const categoryFilter = parsedUrl.query.category as string | undefined;
+      const statusFilter = parsedUrl.query.status as string | undefined;
+      const searchQuery = (parsedUrl.query.search as string || '').trim().toLowerCase();
+
+      let sql = `SELECT * FROM public.feedbacks WHERE type = 'feedback'`;
+      const params: any[] = [];
+
+      if (ratingFilter && ratingFilter !== 'all') {
+        params.push(parseInt(ratingFilter, 10));
+        sql += ` AND rating = $${params.length}`;
+      }
+      if (categoryFilter && categoryFilter !== 'all') {
+        params.push(categoryFilter);
+        sql += ` AND category = $${params.length}`;
+      }
+      if (statusFilter && statusFilter !== 'all') {
+        params.push(statusFilter);
+        sql += ` AND status = $${params.length}`;
+      }
+      if (searchQuery) {
+        params.push(`%${searchQuery}%`);
+        sql += ` AND (LOWER(user_name) LIKE $${params.length} OR LOWER(user_email) LIKE $${params.length} OR LOWER(message) LIKE $${params.length} OR LOWER(COALESCE(subject, '')) LIKE $${params.length})`;
+      }
+
+      sql += ` ORDER BY created_at DESC LIMIT 150`;
+
+      const [feedbacksRes, metricsRes] = await Promise.all([
+        query(sql, params),
+        query(`
+          SELECT 
+            COUNT(*)::int as total,
+            COALESCE(AVG(rating), 0)::numeric(3,1) as avg_rating,
+            COUNT(CASE WHEN rating = 5 THEN 1 END)::int as stars_5,
+            COUNT(CASE WHEN rating = 4 THEN 1 END)::int as stars_4,
+            COUNT(CASE WHEN rating = 3 THEN 1 END)::int as stars_3,
+            COUNT(CASE WHEN rating = 2 THEN 1 END)::int as stars_2,
+            COUNT(CASE WHEN rating = 1 THEN 1 END)::int as stars_1,
+            COUNT(CASE WHEN status = 'new' THEN 1 END)::int as new_count,
+            COUNT(CASE WHEN status IN ('reviewed', 'responded', 'resolved') THEN 1 END)::int as reviewed_count,
+            COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int as resolved_count
+          FROM public.feedbacks
+          WHERE type = 'feedback'
+        `),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        feedbacks: feedbacksRes.rows,
+        metrics: metricsRes.rows[0] || {
+          total: 0,
+          avg_rating: 0,
+          stars_5: 0,
+          stars_4: 0,
+          stars_3: 0,
+          stars_2: 0,
+          stars_1: 0,
+          new_count: 0,
+          reviewed_count: 0,
+          resolved_count: 0,
+        },
+      });
+      return true;
+    }
+
+    // Update Feedback Status / Admin Notes: PATCH /api/admin/feedback/:id
+    const feedbackMatch = pathname.match(/^\/api\/admin\/feedback\/([a-zA-Z0-9_-]+)$/);
+    if (feedbackMatch && (method === 'PATCH' || method === 'PUT')) {
+      const auth = await verifyAdminAuth(req, res, 'support.reply');
+      if (!auth) return true;
+
+      const feedbackId = feedbackMatch[1];
+      const body = await parseJsonBody(req);
+      const { status, admin_notes } = body;
+
+      const updated = await query(
+        `UPDATE public.feedbacks
+         SET status = COALESCE($1, status),
+             admin_notes = COALESCE($2, admin_notes),
+             reviewed_by = $3,
+             reviewed_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [status, admin_notes, auth.authUser.full_name || auth.authUser.email, feedbackId]
+      );
+
+      if (updated.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Feedback entry not found.' });
+        return true;
+      }
+
+      await logSecurityEvent('ADMIN_UPDATED_FEEDBACK', {
+        userId: auth.authUser.id,
+        actorRole: auth.role,
+        details: { feedbackId, newStatus: status },
+      });
+
+      sendJson(res, 200, { success: true, message: 'Feedback updated successfully.', feedback: updated.rows[0] });
+      return true;
+    }
+
+    // Reply to Feedback via Email: POST /api/admin/feedback/:id/reply
+    const feedbackReplyMatch = pathname.match(/^\/api\/admin\/feedback\/([a-zA-Z0-9_-]+)\/reply$/);
+    if (feedbackReplyMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'support.reply');
+      if (!auth) return true;
+
+      const feedbackId = feedbackReplyMatch[1];
+      const body = await parseJsonBody(req);
+      const replyMessage = (body.message || '').trim();
+      const isInternal = Boolean(body.is_internal || body.isInternal);
+
+      if (!replyMessage) {
+        sendJson(res, 400, { success: false, message: 'Reply message cannot be empty.' });
+        return true;
+      }
+
+      const fbRes = await query('SELECT * FROM public.feedbacks WHERE id = $1', [feedbackId]);
+      if (fbRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Feedback not found.' });
+        return true;
+      }
+      const fb = fbRes.rows[0];
+
+      let emailSent = false;
+      let emailError: string | undefined;
+
+      if (!isInternal) {
+        const dispatch = await sendAdminReplyToTicketEmail({
+          email: fb.user_email,
+          userName: fb.user_name,
+          ticketNumber: `FB-${feedbackId.slice(0, 6).toUpperCase()}`,
+          ticketType: 'feedback',
+          originalSubject: fb.category || 'App Feedback',
+          adminReply: replyMessage,
+          adminName: auth.authUser.full_name || 'My Money Manager Support',
+          userId: fb.user_id,
+        });
+        emailSent = dispatch.success;
+        emailError = dispatch.error;
+      }
+
+      const updated = await query(
+        `UPDATE public.feedbacks 
+         SET status = CASE WHEN $1::boolean THEN 'responded' ELSE status END,
+             admin_notes = CASE WHEN $2 THEN COALESCE(admin_notes || E'\n\n', '') || $2 ELSE admin_notes END,
+             reviewed_by = $3,
+             reviewed_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [!isInternal, isInternal ? `[Internal Note by ${auth.authUser.full_name}]: ${replyMessage}` : `[Admin Reply sent via Email by ${auth.authUser.full_name}]: ${replyMessage}`, auth.authUser.full_name, feedbackId]
+      );
+
+      await logSecurityEvent('ADMIN_REPLIED_TO_FEEDBACK', {
+        userId: auth.authUser.id,
+        actorRole: auth.role,
+        details: { feedbackId, isInternal, emailSent, emailError },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: isInternal ? 'Internal note added.' : (emailSent ? 'Reply sent via email successfully.' : 'Reply recorded (email delivery queued/notice).'),
+        feedback: updated.rows[0],
+        emailDispatched: emailSent,
+        emailError,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
+    // 9B. COMPLAINTS & SUPPORT TICKETS: GET /api/admin/support/tickets
+    // ---------------------------------------------------------
     if (pathname === '/api/admin/support/tickets' && method === 'GET') {
       const auth = await verifyAdminAuth(req, res, 'support.read');
       if (!auth) return true;
 
+      const typeFilter = parsedUrl.query.type as string | undefined; // 'complaint', 'support', or 'all'
       const categoryFilter = parsedUrl.query.category as string | undefined;
       const statusFilter = parsedUrl.query.status as string | undefined;
       const priorityFilter = parsedUrl.query.priority as string | undefined;
+      const assignedFilter = parsedUrl.query.assigned_to as string | undefined;
+      const searchQuery = (parsedUrl.query.search as string || '').trim().toLowerCase();
 
       let sql = `SELECT * FROM public.support_tickets WHERE 1=1`;
       const params: any[] = [];
+
+      if (typeFilter && typeFilter !== 'all') {
+        params.push(typeFilter);
+        sql += ` AND ticket_type = $${params.length}`;
+      }
       if (categoryFilter && categoryFilter !== 'all') {
         params.push(categoryFilter);
         sql += ` AND category = $${params.length}`;
@@ -604,40 +799,85 @@ export async function handleAdminApiRequest(
         params.push(priorityFilter);
         sql += ` AND priority = $${params.length}`;
       }
-      sql += ` ORDER BY created_at DESC LIMIT 100`;
+      if (assignedFilter && assignedFilter !== 'all') {
+        params.push(assignedFilter);
+        sql += ` AND assigned_to = $${params.length}`;
+      }
+      if (searchQuery) {
+        params.push(`%${searchQuery}%`);
+        sql += ` AND (LOWER(ticket_number) LIKE $${params.length} OR LOWER(subject) LIKE $${params.length} OR LOWER(user_name) LIKE $${params.length} OR LOWER(user_email) LIKE $${params.length} OR LOWER(description) LIKE $${params.length})`;
+      }
 
-      const ticketsRes = await query(sql, params);
-      sendJson(res, 200, { success: true, tickets: ticketsRes.rows });
+      sql += ` ORDER BY created_at DESC LIMIT 150`;
+
+      // Metrics SQL parameterized by type if filtered
+      let metricsTypeClause = '';
+      const metricsParams: any[] = [];
+      if (typeFilter && typeFilter !== 'all') {
+        metricsParams.push(typeFilter);
+        metricsTypeClause = `WHERE ticket_type = $1`;
+      }
+
+      const [ticketsRes, metricsRes] = await Promise.all([
+        query(sql, params),
+        query(`
+          SELECT
+            COUNT(*)::int as total,
+            COUNT(CASE WHEN status = 'open' THEN 1 END)::int as open,
+            COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int as in_progress,
+            COUNT(CASE WHEN status = 'waiting_user' THEN 1 END)::int as waiting_user,
+            COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int as resolved,
+            COUNT(CASE WHEN status = 'closed' THEN 1 END)::int as closed,
+            COUNT(CASE WHEN priority = 'urgent' AND status NOT IN ('resolved', 'closed') THEN 1 END)::int as urgent
+          FROM public.support_tickets
+          ${metricsTypeClause}
+        `, metricsParams),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        tickets: ticketsRes.rows,
+        metrics: metricsRes.rows[0] || {
+          total: 0,
+          open: 0,
+          in_progress: 0,
+          waiting_user: 0,
+          resolved: 0,
+          closed: 0,
+          urgent: 0,
+        },
+      });
       return true;
     }
 
-    // Ticket details & replies: GET /api/admin/support/tickets/:id
+    // Ticket details & replies & history: GET /api/admin/support/tickets/:id
     const ticketDetailMatch = pathname.match(/^\/api\/admin\/support\/tickets\/([a-zA-Z0-9_-]+)$/);
     if (ticketDetailMatch && method === 'GET') {
       const auth = await verifyAdminAuth(req, res, 'support.read');
       if (!auth) return true;
 
       const ticketId = ticketDetailMatch[1];
-      const ticketRes = await query('SELECT * FROM public.support_tickets WHERE id = $1', [ticketId]);
+      const [ticketRes, repliesRes, historyRes] = await Promise.all([
+        query('SELECT * FROM public.support_tickets WHERE id = $1', [ticketId]),
+        query('SELECT * FROM public.support_ticket_replies WHERE ticket_id = $1 ORDER BY created_at ASC', [ticketId]),
+        query('SELECT * FROM public.ticket_status_history WHERE ticket_id = $1 ORDER BY created_at DESC', [ticketId]),
+      ]);
+
       if (ticketRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Ticket not found.' });
         return true;
       }
 
-      const repliesRes = await query(
-        'SELECT * FROM public.support_ticket_replies WHERE ticket_id = $1 ORDER BY created_at ASC',
-        [ticketId]
-      );
-
       sendJson(res, 200, {
         success: true,
         ticket: ticketRes.rows[0],
         replies: repliesRes.rows,
+        statusHistory: historyRes.rows,
       });
       return true;
     }
 
-    // Add Ticket Reply: POST /api/admin/support/tickets/:id/reply
+    // Add Ticket Reply / Internal Note: POST /api/admin/support/tickets/:id/reply
     const ticketReplyMatch = pathname.match(/^\/api\/admin\/support\/tickets\/([a-zA-Z0-9_-]+)\/reply$/);
     if (ticketReplyMatch && method === 'POST') {
       const auth = await verifyAdminAuth(req, res, 'support.reply');
@@ -647,53 +887,177 @@ export async function handleAdminApiRequest(
       const body = await parseJsonBody(req);
       const message = (body.message || '').trim();
       const isInternal = Boolean(body.is_internal || body.isInternal);
+      const newStatus = body.status || body.newStatus;
 
       if (!message) {
         sendJson(res, 400, { success: false, message: 'Reply message cannot be empty.' });
         return true;
       }
 
-      const replyRes = await query(
-        `INSERT INTO public.support_ticket_replies (ticket_id, sender_id, sender_name, sender_role, message, is_internal)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [ticketId, auth.authUser.id, auth.authUser.full_name || 'Support Staff', auth.role, message, isInternal]
-      );
+      const ticketRes = await query('SELECT * FROM public.support_tickets WHERE id = $1', [ticketId]);
+      if (ticketRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Ticket not found.' });
+        return true;
+      }
+      const ticket = ticketRes.rows[0];
 
-      // If public reply, optionally email user
+      let emailStatus = 'none';
+      let emailError: string | undefined;
+
+      // If user-facing reply, dispatch actual email via verified backend SMTP
       if (!isInternal) {
-        const ticketRes = await query('SELECT user_email, user_name, subject, ticket_number FROM public.support_tickets WHERE id = $1', [ticketId]);
-        if (ticketRes.rows.length > 0) {
-          const t = ticketRes.rows[0];
-          sendEmail({
-            to: t.user_email,
-            subject: `[Update] Reply to Ticket #${t.ticket_number}: ${t.subject}`,
-            html: `<p>Hi ${t.user_name || 'User'},</p><p>A member of our support team replied to your ticket:</p><blockquote>${message}</blockquote>`,
-            text: `Support reply: ${message}`,
-            emailType: 'support_reply',
-            recipientName: t.user_name,
-          }).catch(() => {});
-        }
+        emailStatus = 'pending';
+        const dispatch = await sendAdminReplyToTicketEmail({
+          email: ticket.user_email,
+          userName: ticket.user_name,
+          ticketNumber: ticket.ticket_number,
+          ticketType: ticket.ticket_type as any,
+          originalSubject: ticket.subject,
+          adminReply: message,
+          adminName: auth.authUser.full_name || 'My Money Manager Support',
+          userId: ticket.user_id,
+        });
+
+        emailStatus = dispatch.success ? 'sent' : 'failed';
+        emailError = dispatch.error;
       }
 
-      // Update ticket status
-      await query("UPDATE public.support_tickets SET updated_at = NOW(), status = 'in_progress' WHERE id = $1", [ticketId]);
+      // Save reply to database
+      const replyRes = await query(
+        `INSERT INTO public.support_ticket_replies (
+          ticket_id, sender_id, sender_name, sender_role, sender_type, message, message_type, is_internal, email_status, delivery_error, created_at
+        ) VALUES ($1, $2, $3, $4, 'admin', $5, $6, $7, $8, $9, NOW())
+        RETURNING *`,
+        [
+          ticketId,
+          auth.authUser.id,
+          auth.authUser.full_name || 'Support Staff',
+          auth.role,
+          message,
+          isInternal ? 'internal_note' : 'admin_reply',
+          isInternal,
+          emailStatus,
+          emailError || null,
+        ]
+      );
 
-      sendJson(res, 201, { success: true, message: 'Reply registered.', reply: replyRes.rows[0] });
+      // Update ticket status & last_activity
+      const targetStatus = newStatus || (isInternal ? ticket.status : 'in_progress');
+      if (targetStatus !== ticket.status) {
+        await query(
+          `INSERT INTO public.ticket_status_history (ticket_id, old_status, new_status, changed_by, changed_by_name, reason, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [ticketId, ticket.status, targetStatus, auth.authUser.id, auth.authUser.full_name, `Admin reply sent (${isInternal ? 'Internal Note' : 'Email Reply'})`]
+        );
+      }
+
+      await query(
+        `UPDATE public.support_tickets 
+         SET updated_at = NOW(),
+             status = $1,
+             resolved_at = CASE WHEN $1 IN ('resolved', 'closed') THEN NOW() ELSE resolved_at END
+         WHERE id = $2`,
+        [targetStatus, ticketId]
+      );
+
+      await logSecurityEvent('ADMIN_REPLIED_TO_TICKET', {
+        userId: auth.authUser.id,
+        actorRole: auth.role,
+        details: { ticketId, ticketNumber: ticket.ticket_number, isInternal, emailStatus, emailError },
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: isInternal ? 'Internal note added.' : (emailStatus === 'sent' ? 'Reply sent via email successfully.' : 'Reply recorded, email delivery pending/retry available.'),
+        reply: replyRes.rows[0],
+        emailStatus,
+        emailError,
+      });
       return true;
     }
 
-    // Update Ticket Attributes: PUT /api/admin/support/tickets/:id
-    if (ticketDetailMatch && method === 'PUT') {
+    // Retry Failed Email Reply: POST /api/admin/support/replies/:replyId/retry-email
+    const retryEmailMatch = pathname.match(/^\/api\/admin\/support\/replies\/([a-zA-Z0-9_-]+)\/retry-email$/);
+    if (retryEmailMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'support.reply');
+      if (!auth) return true;
+
+      const replyId = retryEmailMatch[1];
+      const replyRes = await query(
+        `SELECT r.*, t.ticket_number, t.ticket_type, t.subject, t.user_email, t.user_name, t.user_id 
+         FROM public.support_ticket_replies r
+         JOIN public.support_tickets t ON t.id = r.ticket_id
+         WHERE r.id = $1`,
+        [replyId]
+      );
+
+      if (replyRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Reply record not found.' });
+        return true;
+      }
+      const r = replyRes.rows[0];
+
+      if (r.is_internal) {
+        sendJson(res, 400, { success: false, message: 'Cannot email an internal note.' });
+        return true;
+      }
+
+      const dispatch = await sendAdminReplyToTicketEmail({
+        email: r.user_email,
+        userName: r.user_name,
+        ticketNumber: r.ticket_number,
+        ticketType: r.ticket_type as any,
+        originalSubject: r.subject,
+        adminReply: r.message,
+        adminName: r.sender_name,
+        userId: r.user_id,
+      });
+
+      const nextStatus = dispatch.success ? 'sent' : 'failed';
+      await query(
+        `UPDATE public.support_ticket_replies 
+         SET email_status = $1, delivery_error = $2 
+         WHERE id = $3`,
+        [nextStatus, dispatch.error || null, replyId]
+      );
+
+      sendJson(res, 200, {
+        success: dispatch.success,
+        message: dispatch.success ? 'Email dispatched successfully.' : `Retry failed: ${dispatch.error}`,
+        emailStatus: nextStatus,
+        emailError: dispatch.error,
+      });
+      return true;
+    }
+
+    // Update Ticket Attributes (Status, Priority, Assignee): PUT /api/admin/support/tickets/:id
+    if (ticketDetailMatch && (method === 'PUT' || method === 'PATCH')) {
       const auth = await verifyAdminAuth(req, res, 'support.reply');
       if (!auth) return true;
 
       const ticketId = ticketDetailMatch[1];
       const body = await parseJsonBody(req);
-      const { priority, status, assigned_to, internal_notes } = body;
-      const isResolved = status === 'resolved' || status === 'closed';
+      const { priority, status, assigned_to, internal_notes, reason } = body;
 
-      await query(
+      const currentRes = await query('SELECT * FROM public.support_tickets WHERE id = $1', [ticketId]);
+      if (currentRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Ticket not found.' });
+        return true;
+      }
+      const current = currentRes.rows[0];
+
+      const newStatus = status || current.status;
+      if (status && status !== current.status) {
+        await query(
+          `INSERT INTO public.ticket_status_history (ticket_id, old_status, new_status, changed_by, changed_by_name, reason, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [ticketId, current.status, newStatus, auth.authUser.id, auth.authUser.full_name, reason || 'Status updated by admin']
+        );
+      }
+
+      const isResolved = newStatus === 'resolved' || newStatus === 'closed';
+
+      const updatedRes = await query(
         `UPDATE public.support_tickets 
          SET priority = COALESCE($1, priority),
              status = COALESCE($2, status),
@@ -701,11 +1065,18 @@ export async function handleAdminApiRequest(
              internal_notes = COALESCE($4, internal_notes),
              resolved_at = CASE WHEN $5::boolean THEN NOW() ELSE resolved_at END,
              updated_at = NOW()
-         WHERE id = $6`,
+         WHERE id = $6
+         RETURNING *`,
         [priority, status, assigned_to, internal_notes, isResolved, ticketId]
       );
 
-      sendJson(res, 200, { success: true, message: 'Ticket updated.' });
+      await logSecurityEvent('ADMIN_UPDATED_TICKET', {
+        userId: auth.authUser.id,
+        actorRole: auth.role,
+        details: { ticketId, oldStatus: current.status, newStatus, priority, assigned_to },
+      });
+
+      sendJson(res, 200, { success: true, message: 'Ticket updated successfully.', ticket: updatedRes.rows[0] });
       return true;
     }
 
