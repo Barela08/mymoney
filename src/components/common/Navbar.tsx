@@ -86,7 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     food: { title: 'Food & Dining Section', shortTitle: 'Food & Dining', subtitle: 'Restaurant, fast food, snacks, tea/coffee & food delivery' },
     other: { title: 'Other Expenses', shortTitle: 'Other Expenses', subtitle: 'Shopping, travel, medical, bills & personal' },
     people: { title: 'People Section (Udhar)', shortTitle: 'People (Udhar)', subtitle: 'Money given & received from people' },
-    calculator: { title: 'Calculator & Splitwise', shortTitle: 'Calculator & Split', subtitle: 'Quick calculations & group bill splitting' },
+    calculator: { title: 'Calculator', shortTitle: 'Calculator', subtitle: 'GST, Offer & Split Calculations' },
     reports: { title: 'Reports & Analytics', shortTitle: 'Reports', subtitle: 'Expense charts & cashflow trends' },
     all_transactions: { title: 'All Transactions Ledger', shortTitle: 'All Ledger', subtitle: 'Searchable master ledger' },
     recycle_bin: { title: 'Recycle Bin & Recovery', shortTitle: 'Recycle Bin', subtitle: 'Soft-deleted transactions & safety recovery' },
@@ -181,18 +181,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Quick Calculator & Splitwise Access */}
+          {/* Quick Calculator Access */}
           <button
             type="button"
             onClick={() => onSelectTab('calculator')}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
               currentTab === 'calculator'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-600/30'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-600/30'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
             }`}
-            title="Open Calculator & Splitwise (स्प्लिट वाइज)"
+            title="Financial Calculator (GST, Offer & Split)"
           >
-            <Calculator className={`w-3.5 h-3.5 ${currentTab === 'calculator' ? 'text-white' : 'text-indigo-500'}`} />
+            <Calculator className={`w-3.5 h-3.5 ${currentTab === 'calculator' ? 'text-white' : 'text-emerald-500'}`} />
             <span className="hidden sm:inline text-[11px]">Calculator</span>
           </button>
 

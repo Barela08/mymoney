@@ -433,23 +433,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
       </div>
 
-      {/* Quick Utility Tool: Calculator & Splitwise */}
-      <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-emerald-500/10 dark:from-indigo-950/30 dark:via-purple-950/30 dark:to-emerald-950/30 rounded-3xl p-4 sm:p-5 border border-indigo-200/80 dark:border-indigo-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+      {/* Quick Utility Tool: Calculator (GST, Offer & Split) */}
+      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 dark:from-emerald-950/30 dark:via-teal-950/30 dark:to-cyan-950/30 rounded-3xl p-4 sm:p-5 border border-emerald-200/80 dark:border-emerald-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/30 shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 shrink-0">
             <Calculator className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h4 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
-                Calculator & Splitwise
+                Financial Calculator
               </h4>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                New Tool
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                GST · Offer · Split
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Smart calculations, GST/Tax shortcuts, and group bill splitting (स्प्लिट वाइज) with WhatsApp sharing!
+              Dynamic GST calculations, custom discount offers, and accurate per-person bill split
             </p>
           </div>
         </div>
@@ -457,9 +457,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
           <button
             onClick={() => onNavigate('calculator')}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
           >
-            <span>Open Calculator & Splitwise</span>
+            <span>Open Calculator</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

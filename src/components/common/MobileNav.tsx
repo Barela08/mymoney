@@ -30,6 +30,9 @@ import {
   HelpCircle,
   MessageSquare,
   Calculator,
+  ShieldCheck,
+  QrCode,
+  ScanLine,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
@@ -61,6 +64,8 @@ interface MobileNavProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
   onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
+  onOpenMyQr?: () => void;
+  onOpenScanQr?: () => void;
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
@@ -70,6 +75,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onSelectTab,
   onOpenAddModal,
   onOpenHelpModal,
+  onOpenMyQr,
+  onOpenScanQr,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
@@ -96,7 +103,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People Section (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
-    { id: 'calculator' as NavTab, label: 'Calculator & Splitwise', icon: Calculator },
+    { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
     ...customSections.map((sec) => ({
       id: sec.id as NavTab,
       label: sec.name,
@@ -105,6 +112,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'all_transactions' as NavTab, label: 'All Transactions Ledger', icon: ListOrdered, count: summary.totalTransactionsCount },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
+    { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
     { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
     ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
   ];

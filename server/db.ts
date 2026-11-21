@@ -29,7 +29,7 @@ try {
 
 const connectionString =
   process.env.DATABASE_URL ||
-  'postgresql://postgres:Nilu@2006080@db.frgrfajnrzqwnevhlrio.supabase.co:5432/postgres';
+  'postgresql://postgres:postgres@localhost:5432/postgres';
 
 export const pool = new pg.Pool({
   connectionString,

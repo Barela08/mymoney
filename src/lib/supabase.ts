@@ -13,14 +13,16 @@ const STORAGE_KEY_URL = 'my_money_supabase_url';
 const STORAGE_KEY_KEY = 'my_money_supabase_key';
 
 export function getSavedSupabaseConfig(): { url: string; key: string } {
+  const defaultUrl = 'https://frgrfajnrzqwnevhlrio.supabase.co';
+  const defaultKey = 'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
   const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
   const localUrl = localStorage.getItem(STORAGE_KEY_URL) || '';
   const localKey = localStorage.getItem(STORAGE_KEY_KEY) || '';
 
   return {
-    url: localUrl || envUrl,
-    key: localKey || envKey,
+    url: localUrl || envUrl || defaultUrl,
+    key: localKey || envKey || defaultKey,
   };
 }
 

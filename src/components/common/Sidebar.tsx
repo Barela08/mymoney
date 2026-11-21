@@ -30,6 +30,10 @@ import {
   HelpCircle,
   MessageSquare,
   Calculator,
+  ShieldCheck,
+  Scale,
+  QrCode,
+  ScanLine,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -49,6 +53,8 @@ export type NavTab =
   | 'all_transactions'
   | 'recycle_bin'
   | 'settings'
+  | 'privacy_policy'
+  | 'legal'
   | 'admin'
   | string;
 
@@ -73,6 +79,8 @@ interface SidebarProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
   onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
+  onOpenMyQr?: () => void;
+  onOpenScanQr?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -80,6 +88,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectTab,
   onOpenAddModal,
   onOpenHelpModal,
+  onOpenMyQr,
+  onOpenScanQr,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
@@ -107,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
-    { id: 'calculator' as NavTab, label: 'Calculator & Split', icon: Calculator },
+    { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
     ...customSections.map((sec) => ({
       id: sec.id as NavTab,
       label: sec.name,
@@ -116,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
+    { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
     { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
   ];
 
@@ -166,6 +177,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <PlusCircle className="w-4 h-4" />
           <span>Add Transaction</span>
         </button>
+
+        {/* Quick Udhar QR Actions */}
+        {(onOpenMyQr || onOpenScanQr) && (
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {onOpenMyQr && (
+              <button
+                type="button"
+                onClick={onOpenMyQr}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                title="View My Udhar QR Code"
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>My QR</span>
+              </button>
+            )}
+            {onOpenScanQr && (
+              <button
+                type="button"
+                onClick={onOpenScanQr}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                title="Scan Udhar QR Code"
+              >
+                <ScanLine className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Scan QR</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Nav items */}

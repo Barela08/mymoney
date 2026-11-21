@@ -5,6 +5,12 @@ import { APP_CONFIG } from './config';
 import { query } from './db';
 import { logSecurityEvent } from './security';
 import { generateWelcomeEmail } from './welcomeEmailTemplate';
+import {
+  generateFeedbackReceivedEmail,
+  generateComplaintReceivedEmail,
+  generateSupportTicketReceivedEmail,
+  generateAdminReplyEmail,
+} from './supportEmailTemplates';
 
 const transporter = nodemailer.createTransport({
   host: APP_CONFIG.smtp.host,
@@ -657,4 +663,120 @@ export async function sendAccountDeletionCompletedEmail(email: string, name: str
   `;
   const text = `Hello ${name || 'User'},\n\nYour account and associated personal financial data for My Money Manager (${email}) have been permanently deleted on ${now} IST as requested.\n\nThank you for using My Money Manager.\n\nHackifyPro Team`;
   return sendEmail({ to: email, subject, html, text });
+}
+
+// -------------------------------------------------------------
+// 10. FEEDBACK, COMPLAINT & SUPPORT DISPATCH HELPERS
+// -------------------------------------------------------------
+
+function getBrandLogoAttachments(): any[] {
+  const attachments: any[] = [];
+  const logoPath = path.resolve(process.cwd(), 'public', 'logo.jpg');
+  if (fs.existsSync(logoPath)) {
+    attachments.push({
+      filename: 'logo.jpg',
+      path: logoPath,
+      cid: 'app_logo',
+      contentDisposition: 'inline',
+    });
+  }
+  return attachments;
+}
+
+export async function sendFeedbackConfirmationEmail(opts: {
+  email: string;
+  userName?: string | null;
+  rating?: number | null;
+  category?: string;
+  message: string;
+}): Promise<boolean> {
+  const template = generateFeedbackReceivedEmail(opts);
+  return sendEmail({
+    to: opts.email,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+    attachments: getBrandLogoAttachments(),
+  });
+}
+
+export async function sendComplaintConfirmationEmail(opts: {
+  email: string;
+  userName?: string | null;
+  ticketNumber: string;
+  category: string;
+  subject: string;
+  description: string;
+}): Promise<boolean> {
+  const template = generateComplaintReceivedEmail(opts);
+  return sendEmail({
+    to: opts.email,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+    attachments: getBrandLogoAttachments(),
+  });
+}
+
+export async function sendSupportTicketConfirmationEmail(opts: {
+  email: string;
+  userName?: string | null;
+  ticketNumber: string;
+  category: string;
+  subject: string;
+  description: string;
+}): Promise<boolean> {
+  const template = generateSupportTicketReceivedEmail(opts);
+  return sendEmail({
+    to: opts.email,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+    attachments: getBrandLogoAttachments(),
+  });
+}
+
+export async function sendAdminReplyToTicketEmail(opts: {
+  email: string;
+  userName?: string | null;
+  ticketNumber: string;
+  ticketType: 'complaint' | 'support' | 'feedback';
+  originalSubject: string;
+  adminReply: string;
+  adminName?: string;
+  userId?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    // If userId supplied, verify/fetch trusted registered name from app_users
+    let trustedName = opts.userName;
+    if (opts.userId) {
+      const u = await query('SELECT full_name FROM public.app_users WHERE id = $1', [opts.userId]);
+      if (u.rows.length > 0 && u.rows[0].full_name) {
+        trustedName = u.rows[0].full_name;
+      }
+    }
+
+    const template = generateAdminReplyEmail({
+      userName: trustedName,
+      ticketNumber: opts.ticketNumber,
+      ticketType: opts.ticketType,
+      originalSubject: opts.originalSubject,
+      adminReply: opts.adminReply,
+      adminName: opts.adminName,
+    });
+
+    const success = await sendEmail({
+      to: opts.email,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+      attachments: getBrandLogoAttachments(),
+    });
+
+    return { success };
+  } catch (err: any) {
+    const safeMsg = sanitizeErrorMessage(err);
+    console.error(`[Admin Reply Email Failed] Ticket: #${opts.ticketNumber} to ${opts.email}:`, safeMsg);
+    return { success: false, error: safeMsg };
+  }
 }

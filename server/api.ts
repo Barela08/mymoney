@@ -32,12 +32,22 @@ import {
   sendAccountDeletionCompletedEmail,
 } from './email';
 import { APP_CONFIG } from './config';
+import { handleAdminApiRequest } from './adminApi';
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
   // If Vercel or middleware already consumed and parsed JSON body
-  if ((req as any).body !== undefined && typeof (req as any).body === 'object') {
-    return (req as any).body;
+  if ((req as any).body !== undefined && (req as any).body !== null) {
+    if (typeof (req as any).body === 'object') {
+      return (req as any).body;
+    }
+    if (typeof (req as any).body === 'string') {
+      try {
+        return JSON.parse((req as any).body);
+      } catch {
+        return {};
+      }
+    }
   }
   return new Promise((resolve, reject) => {
     let body = '';
@@ -187,7 +197,19 @@ if (!(globalThis as any).__accountDeletionWorkerTimer) {
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const parsed = parseUrl(req.url || '', true);
-  const pathname = parsed.pathname || '';
+  let pathname = parsed.pathname || '';
+
+  // Handle Vercel rewrite where pathname might be /api/[...all]
+  if (pathname.includes('[...all]') || pathname.includes('[all]')) {
+    const queryAll = (req as any).query?.all;
+    if (queryAll) {
+      const sub = Array.isArray(queryAll) ? queryAll.join('/') : queryAll;
+      pathname = `/api/${sub}`;
+    } else if (req.headers['x-forwarded-uri']) {
+      pathname = parseUrl(req.headers['x-forwarded-uri'] as string, true).pathname || '';
+    }
+  }
+
   const method = req.method?.toUpperCase() || 'GET';
 
   // Only handle /api/* routes
@@ -2540,6 +2562,187 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       } finally {
         client.release();
       }
+    }
+
+    // =========================================================================
+    // CALCULATOR UPGRADE: SETTINGS & HISTORY APIS
+    // =========================================================================
+
+    // GET /api/calculator/settings
+    if (pathname === '/api/calculator/settings' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        // Return default settings for unauthenticated/guest users
+        sendJson(res, 200, {
+          success: true,
+          settings: {
+            last_mode: 'gst',
+            default_gst_percent: 18,
+            default_offer_percent: 10,
+            default_split_people: 2,
+          },
+        });
+        return true;
+      }
+
+      const row = await query(
+        `SELECT last_mode, default_gst_percent, default_offer_percent, default_split_people 
+         FROM public.user_calculator_settings 
+         WHERE user_id = $1`,
+        [authUser.id]
+      );
+
+      if (row.rows.length > 0) {
+        sendJson(res, 200, {
+          success: true,
+          settings: {
+            last_mode: row.rows[0].last_mode,
+            default_gst_percent: parseFloat(row.rows[0].default_gst_percent) || 18,
+            default_offer_percent: parseFloat(row.rows[0].default_offer_percent) || 10,
+            default_split_people: parseInt(row.rows[0].default_split_people, 10) || 2,
+          },
+        });
+      } else {
+        sendJson(res, 200, {
+          success: true,
+          settings: {
+            last_mode: 'gst',
+            default_gst_percent: 18,
+            default_offer_percent: 10,
+            default_split_people: 2,
+          },
+        });
+      }
+      return true;
+    }
+
+    // POST /api/calculator/settings
+    if (pathname === '/api/calculator/settings' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required to save calculator settings.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const lastMode = ['gst', 'offer', 'split', 'basic'].includes(body.last_mode) ? body.last_mode : 'gst';
+      const defaultGst = typeof body.default_gst_percent === 'number' && body.default_gst_percent >= 0 ? body.default_gst_percent : 18;
+      const defaultOffer = typeof body.default_offer_percent === 'number' && body.default_offer_percent >= 0 && body.default_offer_percent <= 100 ? body.default_offer_percent : 10;
+      const defaultSplit = typeof body.default_split_people === 'number' && body.default_split_people >= 1 ? Math.floor(body.default_split_people) : 2;
+
+      await query(
+        `INSERT INTO public.user_calculator_settings (user_id, last_mode, default_gst_percent, default_offer_percent, default_split_people, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (user_id) 
+         DO UPDATE SET 
+            last_mode = EXCLUDED.last_mode,
+            default_gst_percent = EXCLUDED.default_gst_percent,
+            default_offer_percent = EXCLUDED.default_offer_percent,
+            default_split_people = EXCLUDED.default_split_people,
+            updated_at = NOW()`,
+        [authUser.id, lastMode, defaultGst, defaultOffer, defaultSplit]
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Calculator settings updated successfully.',
+        settings: {
+          last_mode: lastMode,
+          default_gst_percent: defaultGst,
+          default_offer_percent: defaultOffer,
+          default_split_people: defaultSplit,
+        },
+      });
+      return true;
+    }
+
+    // GET /api/calculator/history
+    if (pathname === '/api/calculator/history' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 200, { success: true, history: [] });
+        return true;
+      }
+
+      const parsedUrl = parseUrl(req.url || '', true);
+      const typeFilter = parsedUrl.query.type as string | undefined;
+
+      let q = `SELECT id, calc_type, title, input_values, result_values, created_at 
+               FROM public.calculator_history 
+               WHERE user_id = $1`;
+      const params: any[] = [authUser.id];
+
+      if (typeFilter && ['gst', 'offer', 'split', 'basic'].includes(typeFilter)) {
+        params.push(typeFilter);
+        q += ` AND calc_type = $2`;
+      }
+
+      q += ` ORDER BY created_at DESC LIMIT 50`;
+
+      const result = await query(q, params);
+      sendJson(res, 200, { success: true, history: result.rows });
+      return true;
+    }
+
+    // POST /api/calculator/history
+    if (pathname === '/api/calculator/history' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required to save calculation history.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const calcType = body.calc_type;
+      if (!['gst', 'offer', 'split', 'basic'].includes(calcType)) {
+        sendJson(res, 400, { success: false, message: 'Invalid calculation type.' });
+        return true;
+      }
+
+      const title = (body.title || '').trim().slice(0, 100);
+      const inputValues = typeof body.input_values === 'object' && body.input_values !== null ? body.input_values : {};
+      const resultValues = typeof body.result_values === 'object' && body.result_values !== null ? body.result_values : {};
+
+      const inserted = await query(
+        `INSERT INTO public.calculator_history (user_id, calc_type, title, input_values, result_values, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         RETURNING id, calc_type, title, input_values, result_values, created_at`,
+        [authUser.id, calcType, title || null, JSON.stringify(inputValues), JSON.stringify(resultValues)]
+      );
+
+      sendJson(res, 201, {
+        success: true,
+        message: 'Calculation saved to history.',
+        record: inserted.rows[0],
+      });
+      return true;
+    }
+
+    // DELETE /api/calculator/history
+    if (pathname === '/api/calculator/history' && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const parsedUrl = parseUrl(req.url || '', true);
+      const targetId = (parsedUrl.query.id as string) || (await parseJsonBody(req)).id;
+
+      if (targetId) {
+        await query(
+          `DELETE FROM public.calculator_history WHERE id = $1 AND user_id = $2`,
+          [targetId, authUser.id]
+        );
+        sendJson(res, 200, { success: true, message: 'Calculation record deleted.' });
+      } else {
+        await query(
+          `DELETE FROM public.calculator_history WHERE user_id = $1`,
+          [authUser.id]
+        );
+        sendJson(res, 200, { success: true, message: 'Calculation history cleared.' });
+      }
+      return true;
     }
 
     // Legacy alias: POST /api/send-reset-email

@@ -439,5 +439,49 @@ BEGIN
 END $$;
 
 -- ==============================================================================
+-- 10. CALCULATOR HISTORY & SETTINGS
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.calculator_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.app_users(id) ON DELETE CASCADE,
+    calc_type TEXT NOT NULL CHECK (calc_type IN ('gst', 'offer', 'split', 'basic')),
+    title TEXT,
+    input_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_hist_user_created ON public.calculator_history(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_calc_hist_type ON public.calculator_history(calc_type);
+
+CREATE TABLE IF NOT EXISTS public.user_calculator_settings (
+    user_id UUID PRIMARY KEY REFERENCES public.app_users(id) ON DELETE CASCADE,
+    last_mode TEXT NOT NULL DEFAULT 'gst' CHECK (last_mode IN ('gst', 'offer', 'split', 'basic')),
+    default_gst_percent NUMERIC(5,2) DEFAULT 18.00,
+    default_offer_percent NUMERIC(5,2) DEFAULT 10.00,
+    default_split_people INTEGER DEFAULT 2,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.calculator_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_calculator_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "calc_history_user_select" ON public.calculator_history;
+CREATE POLICY "calc_history_user_select" ON public.calculator_history
+    FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
+
+DROP POLICY IF EXISTS "calc_history_user_insert" ON public.calculator_history;
+CREATE POLICY "calc_history_user_insert" ON public.calculator_history
+    FOR INSERT WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+
+DROP POLICY IF EXISTS "calc_history_user_delete" ON public.calculator_history;
+CREATE POLICY "calc_history_user_delete" ON public.calculator_history
+    FOR DELETE USING (auth.uid() = user_id OR user_id IS NULL);
+
+DROP POLICY IF EXISTS "calc_settings_user_all" ON public.user_calculator_settings;
+CREATE POLICY "calc_settings_user_all" ON public.user_calculator_settings
+    FOR ALL USING (auth.uid() = user_id);
+
+-- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================

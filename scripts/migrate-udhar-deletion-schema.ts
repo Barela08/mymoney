@@ -27,9 +27,11 @@ try {
   console.warn('Notice loading .env:', e);
 }
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  'postgresql://postgres:Nilu@2006080@db.frgrfajnrzqwnevhlrio.supabase.co:5432/postgres';
+const connectionString = process.env.DATABASE_URL || '';
+if (!connectionString) {
+  console.error('DATABASE_URL is not set in environment or .env');
+  process.exit(1);
+}
 
 async function migrate() {
   const client = new pg.Client({
