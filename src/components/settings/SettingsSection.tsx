@@ -18,6 +18,7 @@ import {
   Sliders,
   FileText,
   KeyRound,
+  Scale,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -25,8 +26,18 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { UserProfileSection } from '../profile/UserProfileSection';
+import { AccountDeletionSection } from '../profile/AccountDeletionSection';
+import { LegalCenterSection } from '../legal/LegalCenterSection';
 
-export const SettingsSection: React.FC = () => {
+interface SettingsSectionProps {
+  initialTab?: 'profile' | 'preferences' | 'deletion' | 'legal';
+  initialLegalPolicy?: string;
+}
+
+export const SettingsSection: React.FC<SettingsSectionProps> = ({
+  initialTab = 'profile',
+  initialLegalPolicy = 'privacy_policy',
+}) => {
   const {
     transactions,
     clearAllTransactions,
@@ -37,7 +48,7 @@ export const SettingsSection: React.FC = () => {
   const { user, isAdmin, logout } = useAuth();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'preferences'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'preferences' | 'deletion' | 'legal'>(initialTab);
 
   // Clear data confirmation modal
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
@@ -82,34 +93,60 @@ export const SettingsSection: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in pb-20 lg:pb-8 max-w-4xl mx-auto">
       {/* Settings Top Subtabs */}
-      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-fit">
+      <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl gap-1 w-full sm:w-fit">
         <button
           onClick={() => setActiveTab('profile')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'profile'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <User className="w-3.5 h-3.5" />
-          <span>My Profile & Account Security</span>
+          <span>Profile & Security</span>
         </button>
 
         <button
           onClick={() => setActiveTab('preferences')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'preferences'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <Sliders className="w-3.5 h-3.5" />
-          <span>Preferences & Data Backup</span>
+          <span>Preferences & Backup</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('deletion')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'deletion'
+              ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm'
+              : 'text-slate-500 hover:text-rose-600 dark:hover:text-rose-400'
+          }`}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Delete Account & Data</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('legal')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'legal'
+              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+              : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>Legal & Privacy Center</span>
         </button>
       </div>
 
       {/* Profile & Security Tab */}
-      {activeTab === 'profile' && <UserProfileSection />}
+      {activeTab === 'profile' && (
+        <UserProfileSection onNavigateToDeletion={() => setActiveTab('deletion')} />
+      )}
 
       {/* Preferences & Data Tab */}
       {activeTab === 'preferences' && (
