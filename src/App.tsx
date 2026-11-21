@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
-import { ToastProvider } from './context/ToastContext';
+import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ExpenseProvider, useExpense } from './context/ExpenseContext';
 import { Sidebar, NavTab } from './components/common/Sidebar';
@@ -20,6 +20,10 @@ import { DynamicCustomSection } from './components/dynamic/DynamicCustomSection'
 import { MaintenanceScreen } from './components/maintenance/MaintenanceScreen';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { SettingsSection } from './components/settings/SettingsSection';
+import { LegalCenterSection } from './components/legal/LegalCenterSection';
+import { MyUdharQrModal } from './components/people/MyUdharQrModal';
+import { ScanQrModal } from './components/people/ScanQrModal';
+import { udharDeletionApi } from './lib/udharDeletionApi';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
@@ -34,9 +38,57 @@ import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
   const { maintenanceSettings, dynamicSections, refreshTransactions } = useExpense();
+  const toast = useToast();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Global QR Modals State
+  const [isMyQrOpen, setIsMyQrOpen] = useState(false);
+  const [isScanQrOpen, setIsScanQrOpen] = useState(false);
+  const [initialLegalPolicy, setInitialLegalPolicy] = useState('privacy_policy');
+
+  // Hash routing listener (for deletion email cancellation links, direct legal links, etc.)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (!hash) return;
+
+      if (hash.includes('cancel-deletion=')) {
+        const token = hash.split('cancel-deletion=')[1]?.split('&')[0];
+        if (token) {
+          udharDeletionApi
+            .cancelAccountDeletionByToken(token)
+            .then((res) => {
+              if (res.success) {
+                toast.success('Deletion Cancelled', 'Your account and data deletion request was successfully cancelled.');
+                window.location.hash = '';
+                setCurrentTab('settings');
+              } else {
+                toast.error('Cancellation Failed', res.message);
+              }
+            })
+            .catch((err) => {
+              toast.error('Cancellation Error', err.message);
+            });
+        }
+      } else if (hash.includes('legal=')) {
+        const policy = hash.split('legal=')[1]?.split('&')[0];
+        if (policy) {
+          setInitialLegalPolicy(policy);
+          setCurrentTab('legal');
+        }
+      } else if (hash === '#privacy-policy') {
+        setCurrentTab('privacy_policy');
+      } else if (hash === '#delete-account') {
+        setCurrentTab('settings');
+      }
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [toast]);
 
   // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -132,6 +184,8 @@ const MainContent: React.FC = () => {
           onSelectTab={setCurrentTab}
           onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
           onOpenHelpModal={handleOpenHelpModal}
+          onOpenMyQr={() => setIsMyQrOpen(true)}
+          onOpenScanQr={() => setIsScanQrOpen(true)}
         />
 
         {/* Main Content Area */}
@@ -199,7 +253,24 @@ const MainContent: React.FC = () => {
             )}
 
             {currentTab === 'settings' && (
-              <SettingsSection />
+              <SettingsSection
+                initialTab="profile"
+                initialLegalPolicy={initialLegalPolicy}
+              />
+            )}
+
+            {currentTab === 'privacy_policy' && (
+              <LegalCenterSection
+                initialPolicyId="privacy_policy"
+                onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+              />
+            )}
+
+            {currentTab === 'legal' && (
+              <LegalCenterSection
+                initialPolicyId={initialLegalPolicy}
+                onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+              />
             )}
 
             {currentTab === 'admin' && (
@@ -216,6 +287,8 @@ const MainContent: React.FC = () => {
           onSelectTab={setCurrentTab}
           onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
           onOpenHelpModal={handleOpenHelpModal}
+          onOpenMyQr={() => setIsMyQrOpen(true)}
+          onOpenScanQr={() => setIsScanQrOpen(true)}
         />
 
         {/* Universal Add Transaction Modal */}
@@ -234,6 +307,26 @@ const MainContent: React.FC = () => {
           isOpen={isHelpModalOpen}
           onClose={() => setIsHelpModalOpen(false)}
           initialTab={helpModalInitialTab}
+        />
+
+        {/* My Udhar QR Code Modal */}
+        <MyUdharQrModal
+          isOpen={isMyQrOpen}
+          onClose={() => setIsMyQrOpen(false)}
+          onOpenScanner={() => {
+            setIsMyQrOpen(false);
+            setIsScanQrOpen(true);
+          }}
+        />
+
+        {/* Scan QR Modal */}
+        <ScanQrModal
+          isOpen={isScanQrOpen}
+          onClose={() => setIsScanQrOpen(false)}
+          onConnected={(person) => {
+            setIsScanQrOpen(false);
+            handleOpenAddModal('people', undefined, person.name);
+          }}
         />
 
         {/* DPDP Act 2023 Statutory Consent Banner */}
