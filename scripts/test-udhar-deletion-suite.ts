@@ -92,54 +92,54 @@ async function runVerificationSuite() {
     console.log(`✓ Test User B: ${userB.full_name} (${userB.id})`);
 
     // 3. Test QR Pairing Token Creation for User A
-    const pairingCode = 'TEST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const pairingCode = 'MM-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const pairingToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     const qrInsertRes = await client.query(`
-      INSERT INTO qr_pairing_tokens (user_id, token_hash, pairing_code, expires_at)
+      INSERT INTO qr_pairing_tokens (user_id, pairing_token, pairing_code, expires_at)
       VALUES ($1, $2, $3, $4)
-      RETURNING id, pairing_code, is_used;
-    `, [userA.id, tokenHash, pairingCode, expiresAt]);
+      RETURNING id, pairing_code, used;
+    `, [userA.id, pairingToken, pairingCode, expiresAt]);
 
     console.log('✓ QR pairing token created:', qrInsertRes.rows[0].pairing_code);
 
     // 4. Test User Connection Linking User B -> User A via QR pairing code
     const connectRes = await client.query(`
-      INSERT INTO user_connections (user_id, connected_user_id, connection_type, display_name)
-      VALUES ($1, $2, 'friend', $3)
-      ON CONFLICT (user_id, connected_user_id) DO UPDATE SET display_name = EXCLUDED.display_name
-      RETURNING id, user_id, connected_user_id, display_name;
-    `, [userB.id, userA.id, userA.full_name]);
+      INSERT INTO user_connections (user_a_id, user_b_id, status)
+      VALUES ($1, $2, 'connected')
+      ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'
+      RETURNING id, user_a_id, user_b_id, status;
+    `, [userB.id, userA.id]);
 
-    console.log(`✓ User connection established: ${userB.full_name} connected to ${connectRes.rows[0].display_name}`);
+    console.log(`✓ User connection established: ${userB.full_name} connected to ${userA.full_name} (Status: ${connectRes.rows[0].status})`);
 
     // 5. Test Two-Sided Udhar Transaction Synchronization
     // User A gives User B ₹1,500
     const linkId = crypto.randomUUID();
     const amount = 1500;
     const dueDate = '2026-12-15';
+    const txDate = '2026-11-22';
 
     // Insert Side A (Money I Gave)
     const txARes = await client.query(`
       INSERT INTO udhar_transactions (
-        user_id, counterparty_user_id, counterparty_name, direction, original_amount,
-        current_balance, status, acceptance_status, due_date, notes, link_id, is_initiator
+        user_id, counterpart_user_id, counterpart_name, direction, original_amount,
+        current_balance, status, confirmation_status, transaction_date, due_date, notes, link_id, is_initiator
       )
-      VALUES ($1, $2, $3, 'gave', $4, $4, 'pending', 'confirmed', $5, 'Dinner payment test', $6, true)
+      VALUES ($1, $2, $3, 'gave', $4, $4, 'confirmed', 'confirmed', $5, $6, 'Dinner payment test', $7, true)
       RETURNING id, direction, original_amount, current_balance, link_id;
-    `, [userA.id, userB.id, userB.full_name, amount, dueDate, linkId]);
+    `, [userA.id, userB.id, userB.full_name, amount, txDate, dueDate, linkId]);
 
     // Insert Side B (Money I Took)
     const txBRes = await client.query(`
       INSERT INTO udhar_transactions (
-        user_id, counterparty_user_id, counterparty_name, direction, original_amount,
-        current_balance, status, acceptance_status, due_date, notes, link_id, is_initiator
+        user_id, counterpart_user_id, counterpart_name, direction, original_amount,
+        current_balance, status, confirmation_status, transaction_date, due_date, notes, link_id, is_initiator
       )
-      VALUES ($1, $2, $3, 'took', $4, $4, 'pending', 'pending_confirmation', $5, 'Dinner payment test', $6, false)
+      VALUES ($1, $2, $3, 'took', $4, $4, 'pending_confirmation', 'pending', $5, $6, 'Dinner payment test', $7, false)
       RETURNING id, direction, original_amount, current_balance, link_id;
-    `, [userB.id, userA.id, userA.full_name, amount, dueDate, linkId]);
+    `, [userB.id, userA.id, userA.full_name, amount, txDate, dueDate, linkId]);
 
     console.log(`✓ Two-sided Udhar transactions synchronized:`);
     console.log(`   User A (${userA.full_name}) record: id=${txARes.rows[0].id}, direction=${txARes.rows[0].direction}, balance=₹${txARes.rows[0].current_balance}`);
@@ -149,11 +149,11 @@ async function runVerificationSuite() {
     // 6. Test User B confirms the transaction
     const confirmRes = await client.query(`
       UPDATE udhar_transactions
-      SET acceptance_status = 'confirmed'
+      SET status = 'confirmed', confirmation_status = 'confirmed'
       WHERE id = $1
-      RETURNING id, acceptance_status;
+      RETURNING id, status, confirmation_status;
     `, [txBRes.rows[0].id]);
-    console.log(`✓ User B confirmed transaction: status=${confirmRes.rows[0].acceptance_status}`);
+    console.log(`✓ User B confirmed transaction: status=${confirmRes.rows[0].status}, confirmation_status=${confirmRes.rows[0].confirmation_status}`);
 
     // 7. Test Partial Repayment of ₹500
     const repayAmount = 500;
@@ -173,7 +173,7 @@ async function runVerificationSuite() {
     const newBal = amount - repayAmount;
     await client.query(`
       UPDATE udhar_transactions
-      SET current_balance = $1, status = 'partially_repaid'
+      SET current_balance = $1
       WHERE link_id = $2;
     `, [newBal, linkId]);
 
@@ -183,7 +183,7 @@ async function runVerificationSuite() {
       WHERE link_id = $1;
     `, [linkId]);
 
-    console.log(`✓ Repayment applied: Both sides current_balance updated to ₹${checkBalancesRes.rows[0].current_balance} (Status: ${checkBalancesRes.rows[0].status})`);
+    console.log(`✓ Repayment applied: Both sides current_balance updated to ₹${checkBalancesRes.rows[0].current_balance} (Remaining balance is synchronized)`);
 
     // 8. Test Account Deletion 24-Hour Scheduling & Cancellation Workflow
     console.log('Testing 24-hour Account Deletion Workflow...');
