@@ -33,6 +33,7 @@ import { PwaInstallProvider } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
 import { HelpSupportModal } from './components/support/HelpSupportModal';
+import { HelpSupportSection } from './components/support/HelpSupportSection';
 import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
 
 const MainContent: React.FC = () => {
@@ -250,6 +251,10 @@ const MainContent: React.FC = () => {
                 section={dynamicSections.find((s) => s.id === currentTab)!}
                 onOpenAddModal={handleOpenAddModal}
               />
+            )}
+
+            {currentTab === 'help_support' && (
+              <HelpSupportSection />
             )}
 
             {currentTab === 'settings' && (

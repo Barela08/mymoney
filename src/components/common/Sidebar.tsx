@@ -52,6 +52,7 @@ export type NavTab =
   | 'reports'
   | 'all_transactions'
   | 'recycle_bin'
+  | 'help_support'
   | 'settings'
   | 'privacy_policy'
   | 'legal'
@@ -127,6 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
     { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
+    { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
     { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
   ];
 

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { submitFeedbackToSupabase } from '../../lib/supabase';
+import { supportApi } from '../../lib/supportApi';
 import { FeedbackType, FeedbackUrgency } from '../../types';
 
 interface HelpSupportModalProps {
@@ -70,8 +70,8 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
   // Submit Feedback
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!feedbackSubject.trim() || !feedbackMessage.trim()) {
-      toast.error('Validation Error', 'Please enter subject and message.');
+    if (!feedbackMessage.trim()) {
+      toast.error('Validation Error', 'Please enter your feedback message.');
       return;
     }
     if (!feedbackDpdpConsent) {
@@ -81,21 +81,14 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
 
     try {
       setIsSubmitting(true);
-      await submitFeedbackToSupabase({
-        user_id: user?.uid,
-        user_name: user?.displayName || 'User',
-        user_email: user?.email || 'user@mymoney.com',
-        type: 'feedback',
-        category: feedbackCategory,
-        subject: feedbackSubject.trim(),
-        message: feedbackMessage.trim(),
+      const res = await supportApi.submitFeedback({
         rating: feedbackRating,
-        dpdp_consent: feedbackDpdpConsent,
-        dpdp_consent_at: new Date().toISOString(),
-        status: 'pending',
+        category: feedbackCategory,
+        subject: feedbackSubject.trim() || undefined,
+        message: feedbackMessage.trim(),
       });
 
-      setSubmittedSuccess('आपका फीडबैक सफलतापूर्वक दर्ज कर लिया गया है! धन्यवाद।');
+      setSubmittedSuccess(res.message || 'आपका फीडबैक सफलतापूर्वक दर्ज कर लिया गया है! धन्यवाद।');
       toast.success('Feedback Submitted', 'Thank you for your valuable feedback!');
       setFeedbackSubject('');
       setFeedbackMessage('');
@@ -120,23 +113,15 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
 
     try {
       setIsSubmitting(true);
-      await submitFeedbackToSupabase({
-        user_id: user?.uid,
-        user_name: user?.displayName || 'User',
-        user_email: user?.email || 'user@mymoney.com',
-        user_phone: complaintPhone.trim() || undefined,
-        type: 'complaint',
+      const res = await supportApi.raiseComplaint({
         category: complaintCategory,
         subject: complaintSubject.trim(),
-        message: complaintMessage.trim(),
-        urgency: complaintUrgency,
-        dpdp_consent: complaintDpdpConsent,
-        dpdp_consent_at: new Date().toISOString(),
-        status: 'pending',
+        description: complaintMessage.trim(),
       });
 
-      setSubmittedSuccess('आपकी शिकायत दर्ज कर ली गई है। हमारी टीम जल्द से जल्द इसका निवारण करेगी।');
-      toast.success('Complaint Registered', 'Ticket created. Developer will review immediately.');
+      const ticketNum = res.ticket?.ticket_number ? `#${res.ticket.ticket_number}` : '';
+      setSubmittedSuccess(`आपकी शिकायत दर्ज कर ली गई है (${ticketNum})। हमारी टीम जल्द से जल्द इसका निवारण करेगी।`);
+      toast.success('Complaint Registered', `Ticket ${ticketNum} created. Support will review immediately.`);
       setComplaintSubject('');
       setComplaintMessage('');
     } catch (err: any) {
