@@ -30,7 +30,7 @@ import {
   saveNotificationToSupabase,
   deactivateNotificationInSupabase,
 } from '../lib/supabase';
-import { getCurrentISTDate, getCurrentISTTime, getPresetDateRange } from '../lib/dateUtils';
+import { getCurrentISTDate, getCurrentISTTime, formatDisplayTime, getPresetDateRange } from '../lib/dateUtils';
 import { useAuth } from './AuthContext';
 import {
   validateTransactionPayload,
@@ -55,6 +55,15 @@ interface ExpenseContextType {
   clearAllTransactions: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   isSupabaseConnected: boolean;
+
+  // Offline, Network & Sync States
+  isOffline: boolean;
+  isReconnecting: boolean;
+  lastSyncedAt: string;
+  pendingSyncCount: number;
+
+  // Undo State
+  undoLastDelete: () => Promise<boolean>;
 
   // Udhar & People Settlement
   settlePersonUdhar: (personName: string, notes?: string) => Promise<Transaction>;
@@ -181,6 +190,12 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
+  const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string>(() => {
+    return formatDisplayTime(getCurrentISTTime());
+  });
+  const [lastDeletedTx, setLastDeletedTx] = useState<Transaction | null>(null);
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     searchQuery: '',
@@ -419,9 +434,19 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     };
 
+    const handleOnline = () => {
+      setIsOffline(false);
+      setIsReconnecting(true);
+      syncWithDatabase(true).finally(() => setIsReconnecting(false));
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
     document.addEventListener('visibilitychange', handleSyncTrigger);
     window.addEventListener('focus', handleSyncTrigger);
-    window.addEventListener('online', handleSyncTrigger);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     // 4. Polling fallback every 20 seconds when screen is visible
     const pollInterval = setInterval(() => {
@@ -434,7 +459,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       unsubscribeSupabase();
       document.removeEventListener('visibilitychange', handleSyncTrigger);
       window.removeEventListener('focus', handleSyncTrigger);
-      window.removeEventListener('online', handleSyncTrigger);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       clearInterval(pollInterval);
     };
   }, [user, isAdmin, syncWithDatabase, persistLocally]);
@@ -610,6 +636,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     const nowIso = new Date().toISOString();
+    setLastDeletedTx(existing);
     setAllTransactions((prev) => {
       const updated = prev.map((t) =>
         t.id === id ? { ...t, is_deleted: true, deleted_at: nowIso, deleted_by: user.uid } : t
@@ -656,6 +683,14 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     return true;
   };
+
+  // Undo Last Delete (Reversible soft delete instant recovery)
+  const undoLastDelete = useCallback(async (): Promise<boolean> => {
+    if (!lastDeletedTx) return false;
+    const res = await restoreTransaction(lastDeletedTx.id);
+    setLastDeletedTx(null);
+    return res;
+  }, [lastDeletedTx, restoreTransaction]);
 
   // Permanent Delete transaction (Irreversible)
   const permanentDeleteTransaction = async (id: string): Promise<boolean> => {
@@ -1071,6 +1106,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return list;
   }, [userTransactions, filterOptions]);
 
+  const pendingSyncCount = useMemo(() => {
+    if (!user) return 0;
+    return getPendingQueue(user.uid).length;
+  }, [user, allTransactions, getPendingQueue]);
+
   return (
     <ExpenseContext.Provider
       value={{
@@ -1093,6 +1133,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         permanentDeleteMultipleTransactions,
         refreshTransactions,
         isSupabaseConnected,
+        isOffline,
+        isReconnecting,
+        lastSyncedAt,
+        pendingSyncCount,
+        undoLastDelete,
         recycleBinTransactions,
         restoreTransaction,
         permanentDeleteTransaction,

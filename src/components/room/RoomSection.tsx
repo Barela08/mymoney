@@ -20,6 +20,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, TransactionSubcategory, SortOrder } from '../../types';
 import {
@@ -36,7 +37,7 @@ interface RoomSectionProps {
 }
 
 export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
   const toast = useToast();
 
   // Active sub-tab filter: 'all' | 'grocery' | 'gas' | 'rent' | 'electricity'
@@ -261,10 +262,19 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success('Deleted', `Room record "${transactionToDelete.title}" removed.`);
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Room Record Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Room Record Restored', `"${target.title}" restored.`);
+        },
+        6
+      );
       setTransactionToDelete(null);
     } catch (err: any) {
       toast.error('Delete failed', err.message);
@@ -920,10 +930,21 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
             </div>
 
             {filteredRoomTransactions.length === 0 ? (
-              <div className="py-12 text-center text-slate-400">
-                <DoorOpen className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No matching room records found.</p>
-              </div>
+              <EmptyState
+                isFiltered={searchQuery.trim().length > 0 || activeCategory !== 'all' || Boolean(filterStartDate)}
+                searchQuery={searchQuery || (activeCategory !== 'all' ? activeCategory : undefined)}
+                title="No Room Expenses Recorded Yet"
+                description="Track room rent, groceries & ration, LPG gas cylinder refills, and electricity bills."
+                actionLabel="+ Add Room Expense"
+                onAction={() => setActiveCategory('all')}
+                onClearFilters={() => {
+                  setSearchQuery('');
+                  setActiveCategory('all');
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+                icon={DoorOpen}
+              />
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredRoomTransactions.map((tx) => {

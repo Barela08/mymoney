@@ -27,6 +27,9 @@ import {
   Utensils,
   Coffee,
   Download,
+  HelpCircle,
+  MessageSquare,
+  Calculator,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -41,6 +44,7 @@ export type NavTab =
   | 'food'
   | 'other'
   | 'people'
+  | 'calculator'
   | 'reports'
   | 'all_transactions'
   | 'recycle_bin'
@@ -68,9 +72,15 @@ interface SidebarProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
+  onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpenAddModal }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentTab,
+  onSelectTab,
+  onOpenAddModal,
+  onOpenHelpModal,
+}) => {
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
@@ -97,6 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpe
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
+    { id: 'calculator' as NavTab, label: 'Calculator & Split', icon: Calculator },
     ...customSections.map((sec) => ({
       id: sec.id as NavTab,
       label: sec.name,
@@ -232,6 +243,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, onOpe
               Download
             </span>
           </button>
+        )}
+
+        {/* Help, Feedback & Support Buttons */}
+        {onOpenHelpModal && (
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => onOpenHelpModal('feedback')}
+              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+              title="Give Feedback or Suggest a Feature"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Feedback</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenHelpModal('help')}
+              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+              title="Helpline (+91 74149345405)"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
+              <span>Help</span>
+            </button>
+          </div>
         )}
 
         {/* User Profile Card */}

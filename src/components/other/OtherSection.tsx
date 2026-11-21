@@ -17,6 +17,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder } from '../../types';
 import {
@@ -70,7 +71,7 @@ const POPULAR_OTHER_REASONS = [
 ];
 
 export const OtherSection: React.FC<OtherSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
   const toast = useToast();
 
   // In-line Add Form state
@@ -197,10 +198,19 @@ export const OtherSection: React.FC<OtherSectionProps> = ({ onOpenAddModal }) =>
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success('Deleted', `Record "${transactionToDelete.title}" removed.`);
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Other Record Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Other Record Restored', `"${target.title}" restored.`);
+        },
+        6
+      );
       setTransactionToDelete(null);
     } catch (err: any) {
       toast.error('Delete failed', err.message);
@@ -512,10 +522,23 @@ export const OtherSection: React.FC<OtherSectionProps> = ({ onOpenAddModal }) =>
 
         {/* List */}
         {filteredOtherTransactions.length === 0 ? (
-          <div className="py-12 text-center text-slate-400">
-            <ShoppingBag className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p className="text-sm font-medium">No other expense records found.</p>
-          </div>
+          <EmptyState
+            isFiltered={searchQuery.trim().length > 0 || selectedSubcategoryFilter !== 'all' || Boolean(startDate) || Boolean(endDate)}
+            searchQuery={searchQuery || (selectedSubcategoryFilter !== 'all' ? selectedSubcategoryFilter : undefined)}
+            title="No Other Expenses Recorded Yet"
+            description="Track shopping, travel, mobile recharges, health bills, and personal spending."
+            actionLabel="+ Add Other Expense"
+            onAction={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onClearFilters={() => {
+              setSearchQuery('');
+              setSelectedSubcategoryFilter('all');
+              setStartDate('');
+              setEndDate('');
+            }}
+            icon={ShoppingBag}
+          />
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {filteredOtherTransactions.map((tx) => {

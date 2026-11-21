@@ -17,6 +17,7 @@ import {
 import { useExpense } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { EmptyState } from '../common/EmptyState';
 import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { Transaction } from '../../types';
 
@@ -159,6 +160,7 @@ export const RecycleBinSection: React.FC = () => {
           <option value="all">All Categories</option>
           <option value="home">Home Money</option>
           <option value="room">Room Expenses</option>
+          <option value="food">Food & Dining</option>
           <option value="other">Other Expenses</option>
           <option value="people">People (Udhar)</option>
         </select>
@@ -166,19 +168,21 @@ export const RecycleBinSection: React.FC = () => {
 
       {/* Deleted Items List */}
       {filteredItems.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-12 border border-slate-200 dark:border-slate-800 text-center">
-          <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-4 border border-emerald-200 dark:border-emerald-900 shadow-inner">
-            <CheckCircle2 className="w-8 h-8" />
-          </div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
-            Recycle Bin is Empty
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-            {searchQuery
-              ? 'No deleted transactions match your current search filters.'
-              : 'All your financial records are safe and active. Deleted transactions will appear here.'}
-          </p>
-        </div>
+        <EmptyState
+          isFiltered={Boolean(searchQuery.trim()) || categoryFilter !== 'all'}
+          searchQuery={searchQuery || (categoryFilter !== 'all' ? categoryFilter : undefined)}
+          title="Recycle Bin is Empty"
+          description={
+            searchQuery || categoryFilter !== 'all'
+              ? 'No deleted transactions match your current search criteria.'
+              : 'All your financial records are safe and active. Deleted transactions will appear here if soft-deleted.'
+          }
+          onClearFilters={() => {
+            setSearchQuery('');
+            setCategoryFilter('all');
+          }}
+          icon={Trash2}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredItems.map((item) => (

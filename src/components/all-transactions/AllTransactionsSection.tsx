@@ -22,6 +22,8 @@ import {
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
+import { SkeletonTable } from '../common/states/SkeletonLoaders';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import {
   Transaction,
@@ -42,7 +44,7 @@ interface AllTransactionsSectionProps {
 }
 
 export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, deleteTransaction } = useExpense();
+  const { transactions, deleteTransaction, restoreTransaction } = useExpense();
   const toast = useToast();
 
   // Filter States
@@ -178,12 +180,18 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success(
-        'Transaction Deleted',
-        `"${transactionToDelete.title}" (₹${transactionToDelete.amount.toLocaleString('en-IN')}) was removed.`
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Transaction Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Record Restored', `"${target.title}" restored.`);
+        },
+        6
       );
       setTransactionToDelete(null);
     } catch (err: any) {
@@ -440,16 +448,20 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
         </div>
 
         {paginatedList.length === 0 ? (
-          <div className="py-16 text-center text-slate-400">
-            <ListOrdered className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p className="text-sm font-medium">No transactions match your filters.</p>
-            <button
-              onClick={handleResetFilters}
-              className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
-            >
-              Clear all filters
-            </button>
-          </div>
+          <EmptyState
+            isFiltered={Boolean(searchQuery.trim()) || selectedCategory !== 'all' || selectedType !== 'all' || Boolean(minAmount) || Boolean(maxAmount) || datePreset !== 'all'}
+            searchQuery={searchQuery || (selectedCategory !== 'all' ? selectedCategory : undefined)}
+            title="No Transactions Found"
+            description={
+              transactions.length === 0
+                ? 'Your master ledger is empty. Begin by adding your first transaction.'
+                : 'No transactions match your current search and filter settings.'
+            }
+            actionLabel="+ Add Transaction"
+            onAction={() => onOpenAddModal()}
+            onClearFilters={handleResetFilters}
+            icon={ListOrdered}
+          />
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {paginatedList.map((tx) => {

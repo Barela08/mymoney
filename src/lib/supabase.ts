@@ -5,6 +5,8 @@ import {
   MaintenanceSettings,
   AppBrandingSettings,
   BroadcastNotification,
+  FeedbackItem,
+  FeedbackStatus,
 } from '../types';
 
 const STORAGE_KEY_URL = 'my_money_supabase_url';
@@ -503,6 +505,151 @@ export function subscribeToSupabaseTransactions(
         console.log('[Realtime] Fast connection established for transactions');
       }
     });
+
+  return () => {
+    try {
+      client.removeChannel(channel);
+    } catch {}
+  };
+}
+
+// ==========================================
+// FEEDBACK & COMPLAINTS DATABASE OPERATIONS
+// ==========================================
+
+export async function fetchFeedbacksFromSupabase(userId?: string): Promise<FeedbackItem[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    let query = client
+      .from('feedbacks')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error fetching feedbacks from Supabase:', error.message);
+      return [];
+    }
+
+    return (data || []).map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      user_name: row.user_name,
+      user_email: row.user_email,
+      user_phone: row.user_phone || undefined,
+      type: row.type,
+      category: row.category || undefined,
+      subject: row.subject,
+      message: row.message,
+      rating: row.rating ? Number(row.rating) : undefined,
+      urgency: row.urgency || 'normal',
+      dpdp_consent: Boolean(row.dpdp_consent),
+      dpdp_consent_at: row.dpdp_consent_at || undefined,
+      status: row.status,
+      admin_notes: row.admin_notes || undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+  } catch (err: any) {
+    console.warn('fetchFeedbacksFromSupabase failed:', err.message);
+    return [];
+  }
+}
+
+export async function submitFeedbackToSupabase(
+  payload: Omit<FeedbackItem, 'id' | 'created_at' | 'updated_at'>
+): Promise<FeedbackItem | null> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error('Supabase client is not configured.');
+
+  const nowIso = new Date().toISOString();
+  const insertPayload = {
+    user_id: payload.user_id || null,
+    user_name: payload.user_name,
+    user_email: payload.user_email,
+    user_phone: payload.user_phone || null,
+    type: payload.type,
+    category: payload.category || null,
+    subject: payload.subject,
+    message: payload.message,
+    rating: payload.rating || null,
+    urgency: payload.urgency || 'normal',
+    dpdp_consent: Boolean(payload.dpdp_consent),
+    dpdp_consent_at: payload.dpdp_consent ? (payload.dpdp_consent_at || nowIso) : null,
+    status: 'pending',
+    admin_notes: null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const { data, error } = await client
+    .from('feedbacks')
+    .insert([insertPayload])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error submitting feedback to Supabase:', error);
+    throw error;
+  }
+
+  return data as FeedbackItem;
+}
+
+export async function updateFeedbackStatusInSupabase(
+  id: string,
+  status: FeedbackStatus,
+  adminNotes?: string
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error('Supabase client is not configured.');
+
+  const updates: Record<string, any> = {
+    status,
+    updated_at: new Date().toISOString(),
+  };
+  if (adminNotes !== undefined) {
+    updates.admin_notes = adminNotes;
+  }
+
+  const { error } = await client.from('feedbacks').update(updates).eq('id', id);
+  if (error) {
+    console.error('Error updating feedback in Supabase:', error);
+    throw error;
+  }
+}
+
+export async function deleteFeedbackFromSupabase(id: string): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error('Supabase client is not configured.');
+
+  const { error } = await client.from('feedbacks').delete().eq('id', id);
+  if (error) {
+    console.error('Error deleting feedback from Supabase:', error);
+    throw error;
+  }
+}
+
+export function subscribeToSupabaseFeedbacks(onChanged: () => void): () => void {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+
+  const channel = client
+    .channel('realtime_feedbacks_' + Math.random().toString(36).substring(2, 7))
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'feedbacks' },
+      () => {
+        onChanged();
+      }
+    )
+    .subscribe();
 
   return () => {
     try {

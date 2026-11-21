@@ -19,6 +19,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, PersonSummary, SortOrder } from '../../types';
 import {
@@ -39,6 +40,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     peopleSummaries,
     addTransaction,
     deleteTransaction,
+    restoreTransaction,
     settlePersonUdhar,
     clearPersonTransactions,
   } = useExpense();
@@ -143,10 +145,19 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success('Deleted', `Record "${transactionToDelete.title}" moved to Recycle Bin.`);
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Udhar Record Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Udhar Record Restored', `"${target.title}" restored.`);
+        },
+        6
+      );
       setTransactionToDelete(null);
     } catch (err: any) {
       toast.error('Delete failed', err.message);
@@ -458,16 +469,27 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
 
             {/* People Cards Grid */}
             {filteredPeople.length === 0 ? (
-              <div className="py-12 text-center text-slate-400">
-                <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">
-                  {peopleTab === 'pending'
-                    ? 'Great! No pending udhar remaining. All accounts settled.'
+              <EmptyState
+                isFiltered={peopleSummaries.length > 0}
+                title={
+                  peopleTab === 'pending'
+                    ? 'All Udhar Accounts Settled!'
                     : peopleTab === 'settled'
-                    ? 'No cleared udhar records found.'
-                    : 'No people transactions recorded yet.'}
-                </p>
-              </div>
+                    ? 'No Cleared Udhar Records'
+                    : 'No People Accounts Recorded Yet'
+                }
+                description={
+                  peopleTab === 'pending'
+                    ? 'Awesome! You have no pending money to give or collect from anyone.'
+                    : 'Track money given (उधार दिया) and money received (उधार लिया) person by person.'
+                }
+                actionLabel="+ Record Person Udhar"
+                onAction={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onClearFilters={() => setPeopleTab('all')}
+                icon={Users}
+              />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
                 {filteredPeople.map((p) => {

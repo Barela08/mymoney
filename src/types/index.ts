@@ -58,25 +58,44 @@ export interface TransactionMetadata {
 
 export interface AuthUser {
   uid: string;
+  id?: string;
   email: string;
   displayName: string;
-  role: 'admin' | 'user';
-  status: 'active' | 'suspended';
+  full_name?: string;
+  phone?: string | null;
+  role: 'admin' | 'user' | 'superadmin' | 'anonymous';
+  status: 'active' | 'suspended' | 'deactivated';
+  email_verified?: boolean;
+  avatar_url?: string | null;
+  force_password_reset?: boolean;
   createdAt?: string;
+  created_at?: string;
+  last_login_at?: string | null;
+  password_changed_at?: string;
 }
 
 /**
  * STRICT ADMIN DASHBOARD VIEW MODEL
  * Displays user identity and management status safely.
+ * Strict Security Rule: Never displays actual passwords, password hashes, or tokens!
  */
 export interface AdminUserListItem {
   id: string;
+  uid?: string;
+  fullName?: string;
+  displayName?: string;
   email: string;
+  phone?: string | null;
+  role?: 'admin' | 'user' | 'superadmin' | 'anonymous';
+  status: 'active' | 'suspended' | 'deactivated';
+  emailVerified?: boolean;
+  forcePasswordReset?: boolean;
   createdAt: string;
-  status: 'active' | 'suspended';
-  role?: 'admin' | 'user';
-  displayPassword?: string;
-  display_password?: string;
+  lastLoginAt?: string | null;
+  passwordChangedAt?: string;
+  passwordStatus?: string;
+  activeSessionsCount?: number;
+  failedLoginAttempts?: number;
 }
 
 export interface Transaction {
@@ -207,4 +226,35 @@ export interface FilterOptions {
   maxAmount?: number;
   sortBy: SortOrder;
   personName?: string;
+}
+
+export type FeedbackType = 'feedback' | 'complaint';
+export type FeedbackStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
+export type FeedbackUrgency = 'low' | 'normal' | 'high' | 'urgent';
+
+export interface FeedbackItem {
+  id: string;
+  user_id?: string;
+  user_name: string;
+  user_email: string;
+  user_phone?: string;
+  type: FeedbackType;
+  category?: string;
+  subject: string;
+  message: string;
+  rating?: number; // 1 to 5 for feedback
+  urgency?: FeedbackUrgency; // for complaints
+  dpdp_consent: boolean;
+  dpdp_consent_at?: string;
+  status: FeedbackStatus;
+  admin_notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DpdpConsentState {
+  hasAnswered: boolean;
+  isConsented: boolean;
+  consentedAt?: string;
+  allowAnalytics?: boolean;
 }

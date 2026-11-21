@@ -1,9 +1,38 @@
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+function backendApiPlugin(): Plugin {
+  return {
+    name: 'backend-api-plugin',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        try {
+          const apiModule = await server.ssrLoadModule('./server/api.ts');
+          const handled = await apiModule.handleApiRequest(req, res);
+          if (!handled) {
+            next();
+          }
+        } catch (err) {
+          next(err);
+        }
+      });
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(async (_req, _res, next) => {
+        try {
+          // Preview server fallback
+          next();
+        } catch (err) {
+          next(err);
+        }
+      });
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), backendApiPlugin()],
   server: {
     port: 5173,
     headers: {

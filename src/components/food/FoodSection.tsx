@@ -19,6 +19,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder, TransactionSubcategory } from '../../types';
 import {
@@ -69,7 +70,7 @@ const POPULAR_FOOD_PLACES = [
 ];
 
 export const FoodSection: React.FC<FoodSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
   const toast = useToast();
 
   // In-line Add Form state
@@ -193,10 +194,19 @@ export const FoodSection: React.FC<FoodSectionProps> = ({ onOpenAddModal }) => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success('Deleted', `Food expense "${transactionToDelete.title}" moved to Recycle Bin.`);
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Food Expense Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Food Record Restored', `"${target.title}" restored.`);
+        },
+        6
+      );
       setTransactionToDelete(null);
     } catch (err: any) {
       toast.error('Delete failed', err.message);
@@ -514,19 +524,23 @@ export const FoodSection: React.FC<FoodSectionProps> = ({ onOpenAddModal }) => {
 
         {/* Transaction Cards List */}
         {filteredFoodTransactions.length === 0 ? (
-          <div className="text-center py-12 px-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 flex items-center justify-center mx-auto">
-              <Utensils className="w-6 h-6" />
-            </div>
-            <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200">
-              No Food Expenses Found
-            </h4>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              {searchQuery || selectedSubcategoryFilter !== 'all'
-                ? 'Try adjusting your search criteria or filter tags.'
-                : 'Start tracking your daily meals, chai, coffee, street snacks, and online deliveries!'}
-            </p>
-          </div>
+          <EmptyState
+            isFiltered={searchQuery.trim().length > 0 || selectedSubcategoryFilter !== 'all' || Boolean(startDate) || Boolean(endDate)}
+            searchQuery={searchQuery || (selectedSubcategoryFilter !== 'all' ? selectedSubcategoryFilter : undefined)}
+            title="No Food Expenses Recorded Yet"
+            description="Start tracking your daily meals, restaurant bills, evening chai, coffee, street snacks, and online deliveries!"
+            actionLabel="+ Add Food Expense"
+            onAction={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onClearFilters={() => {
+              setSearchQuery('');
+              setSelectedSubcategoryFilter('all');
+              setStartDate('');
+              setEndDate('');
+            }}
+            icon={Utensils}
+          />
         ) : (
           <div className="space-y-2">
             {filteredFoodTransactions.map((tx) => {

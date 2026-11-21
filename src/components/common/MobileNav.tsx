@@ -27,6 +27,9 @@ import {
   Utensils,
   Coffee,
   Download,
+  HelpCircle,
+  MessageSquare,
+  Calculator,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
@@ -57,6 +60,7 @@ interface MobileNavProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
+  onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
@@ -65,6 +69,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   currentTab,
   onSelectTab,
   onOpenAddModal,
+  onOpenHelpModal,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
@@ -91,6 +96,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People Section (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
+    { id: 'calculator' as NavTab, label: 'Calculator & Splitwise', icon: Calculator },
     ...customSections.map((sec) => ({
       id: sec.id as NavTab,
       label: sec.name,
@@ -227,6 +233,21 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             >
               <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span>Install App / ऐप डाउनलोड करें</span>
+            </button>
+          )}
+
+          {/* Help & Support on Mobile */}
+          {onOpenHelpModal && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenHelpModal('help');
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer"
+            >
+              <HelpCircle className="w-4 h-4 text-emerald-500" />
+              <span>Help & Feedback (74149345405)</span>
             </button>
           )}
 

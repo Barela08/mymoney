@@ -18,6 +18,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder } from '../../types';
 import {
@@ -33,7 +34,7 @@ interface HomeSectionProps {
 }
 
 export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
-  const { transactions, summary, addTransaction, deleteTransaction } = useExpense();
+  const { transactions, summary, addTransaction, deleteTransaction, restoreTransaction } = useExpense();
   const toast = useToast();
 
   // Tab mode for Home: 'overview' or 'history'
@@ -182,10 +183,19 @@ export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success('Deleted', `Record "${transactionToDelete.title}" deleted.`);
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Home Record Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Home Record Restored', `"${target.title}" restored.`);
+        },
+        6
+      );
       setTransactionToDelete(null);
     } catch (err: any) {
       toast.error('Delete failed', err.message);
@@ -585,10 +595,21 @@ export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
             </div>
 
             {filteredHomeTransactions.length === 0 ? (
-              <div className="py-12 text-center text-slate-400">
-                <FileText className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No matching home records found.</p>
-              </div>
+              <EmptyState
+                isFiltered={searchQuery.trim().length > 0 || typeFilter !== 'all' || Boolean(startDate)}
+                searchQuery={searchQuery || (typeFilter !== 'all' ? typeFilter : undefined)}
+                title="No Home Money Records Yet"
+                description="Keep track of money sent from parents or allowances, and see your remaining balance."
+                actionLabel="+ Add Home Money"
+                onAction={() => setActiveTab('overview')}
+                onClearFilters={() => {
+                  setSearchQuery('');
+                  setTypeFilter('all');
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                icon={HomeIcon}
+              />
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredHomeTransactions.map((tx) => {

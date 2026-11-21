@@ -27,6 +27,9 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { EmptyState } from '../common/EmptyState';
+import { FirstTimeOnboarding } from '../common/FirstTimeOnboarding';
+import { SkeletonCardsGrid, SkeletonTable } from '../common/states/SkeletonLoaders';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction } from '../../types';
 import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
@@ -38,7 +41,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal }) => {
-  const { transactions, summary, deleteTransaction } = useExpense();
+  const { transactions, summary, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const { isAdmin } = useAuth();
   const toast = useToast();
 
@@ -51,12 +54,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
+    const target = transactionToDelete;
     try {
       setIsDeleting(true);
-      await deleteTransaction(transactionToDelete.id);
-      toast.success(
-        'Transaction Deleted',
-        `"${transactionToDelete.title}" (₹${transactionToDelete.amount.toLocaleString('en-IN')}) was removed.`
+      await deleteTransaction(target.id);
+      toast.showUndoToast(
+        'Transaction Moved to Recycle Bin',
+        `"${target.title}" (₹${target.amount.toLocaleString('en-IN')}) was removed.`,
+        async () => {
+          await restoreTransaction(target.id);
+          toast.success('Record Restored', `"${target.title}" was restored.`);
+        },
+        6
       );
       setTransactionToDelete(null);
     } catch (err: any) {
@@ -111,6 +120,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </button>
         </div>
       )}
+
+      {/* State 24: First-Time User Onboarding Guide (shown when 0 transactions) */}
+      <FirstTimeOnboarding onOpenAddModal={onOpenAddModal} />
 
       {/* =========================================================================
           START KARTE HI 5 BADE BADE OPTION: Home, Room, Food, Other, People
@@ -429,88 +441,92 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           <span className="text-xs text-slate-400">Live Calculated Totals</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <StatCard
-            title="Total Income"
-            amount={summary.totalIncome}
-            subtitle="Money received"
-            icon={ArrowDownLeft}
-            variant="income"
-            badge="Incoming Funds"
-            onClick={() => onNavigate('home')}
-          />
-          <StatCard
-            title="Home Expenses"
-            amount={summary.totalHomeSpent}
-            subtitle={`Rem: ${formatINR(summary.remainingHomeBalance)}`}
-            icon={Home}
-            variant="expense"
-            badge="Household"
-            onClick={() => onNavigate('home')}
-          />
-          <StatCard
-            title="Room Expenses"
-            amount={summary.totalRoomExpenses}
-            subtitle="Gas, Groceries, Rent, Power"
-            icon={DoorOpen}
-            variant="expense"
-            badge="Room & Flat"
-            onClick={() => onNavigate('room')}
-          />
-          <StatCard
-            title="Food & Dining"
-            amount={summary.totalFoodExpenses}
-            subtitle="Restaurant, Snacks, Delivery"
-            icon={Utensils}
-            variant="expense"
-            badge="Khana-Pina"
-            onClick={() => onNavigate('food')}
-          />
-          <StatCard
-            title="Other Expenses"
-            amount={summary.totalOtherExpenses}
-            subtitle="Travel, Shopping & Personal"
-            icon={ShoppingBag}
-            variant="expense"
-            badge="Personal"
-            onClick={() => onNavigate('other')}
-          />
-          <StatCard
-            title="Money Given"
-            amount={summary.totalMoneyGiven}
-            subtitle="Udhar to people"
-            icon={ArrowUpRight}
-            variant="amber"
-            badge="Udhar Diya"
-            onClick={() => onNavigate('people')}
-          />
-          <StatCard
-            title="Money Received"
-            amount={summary.totalMoneyReceived}
-            subtitle="Udhar collected back"
-            icon={ArrowDownLeft}
-            variant="income"
-            badge="Udhar Liya"
-            onClick={() => onNavigate('people')}
-          />
-          <StatCard
-            title="Available Balance"
-            amount={summary.availableBalance}
-            subtitle="Income minus Total Expenses"
-            icon={Wallet}
-            variant="balance"
-            badge="Net Cash Balance"
-          />
-          <StatCard
-            title="Total Transactions"
-            amount={summary.totalTransactionsCount}
-            subtitle="All stored records"
-            icon={Receipt}
-            variant="neutral"
-            badge="Records Count"
-            onClick={() => onNavigate('all_transactions')}
-          />
-        </div>
+        {isLoading ? (
+          <SkeletonCardsGrid count={8} />
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <StatCard
+              title="Total Income"
+              amount={summary.totalIncome}
+              subtitle="Money received"
+              icon={ArrowDownLeft}
+              variant="income"
+              badge="Incoming Funds"
+              onClick={() => onNavigate('home')}
+            />
+            <StatCard
+              title="Home Expenses"
+              amount={summary.totalHomeSpent}
+              subtitle={`Rem: ${formatINR(summary.remainingHomeBalance)}`}
+              icon={Home}
+              variant="expense"
+              badge="Household"
+              onClick={() => onNavigate('home')}
+            />
+            <StatCard
+              title="Room Expenses"
+              amount={summary.totalRoomExpenses}
+              subtitle="Gas, Groceries, Rent, Power"
+              icon={DoorOpen}
+              variant="expense"
+              badge="Room & Flat"
+              onClick={() => onNavigate('room')}
+            />
+            <StatCard
+              title="Food & Dining"
+              amount={summary.totalFoodExpenses}
+              subtitle="Restaurant, Snacks, Delivery"
+              icon={Utensils}
+              variant="expense"
+              badge="Khana-Pina"
+              onClick={() => onNavigate('food')}
+            />
+            <StatCard
+              title="Other Expenses"
+              amount={summary.totalOtherExpenses}
+              subtitle="Travel, Shopping & Personal"
+              icon={ShoppingBag}
+              variant="expense"
+              badge="Personal"
+              onClick={() => onNavigate('other')}
+            />
+            <StatCard
+              title="Money Given"
+              amount={summary.totalMoneyGiven}
+              subtitle="Udhar to people"
+              icon={ArrowUpRight}
+              variant="amber"
+              badge="Udhar Diya"
+              onClick={() => onNavigate('people')}
+            />
+            <StatCard
+              title="Money Received"
+              amount={summary.totalMoneyReceived}
+              subtitle="Udhar collected back"
+              icon={ArrowDownLeft}
+              variant="income"
+              badge="Udhar Liya"
+              onClick={() => onNavigate('people')}
+            />
+            <StatCard
+              title="Available Balance"
+              amount={summary.availableBalance}
+              subtitle="Income minus Total Expenses"
+              icon={Wallet}
+              variant="balance"
+              badge="Net Cash Balance"
+            />
+            <StatCard
+              title="Total Transactions"
+              amount={summary.totalTransactionsCount}
+              subtitle="All stored records"
+              icon={Receipt}
+              variant="neutral"
+              badge="Records Count"
+              onClick={() => onNavigate('all_transactions')}
+            />
+          </div>
+        )}
       </div>
 
       {/* Recent Transactions Section */}
@@ -533,12 +549,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </button>
         </div>
 
-        {recentTransactions.length === 0 ? (
-          <div className="py-12 text-center text-slate-400">
-            <Receipt className="w-12 h-12 mx-auto mb-3 opacity-40" />
-            <p className="font-medium text-sm">No transactions recorded yet.</p>
-            <p className="text-xs mt-1">Click "+ Add New Transaction" to get started.</p>
-          </div>
+        {isLoading ? (
+          <SkeletonTable rows={5} />
+        ) : recentTransactions.length === 0 ? (
+          <EmptyState
+            title="No transactions recorded yet"
+            description="Your cashflow and daily transactions will appear here. Start by recording your first entry."
+            actionLabel="+ Add New Transaction"
+            onAction={() => onOpenAddModal()}
+          />
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {recentTransactions.map((tx) => {

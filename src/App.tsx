@@ -17,6 +17,7 @@ import { AllTransactionsSection } from './components/all-transactions/AllTransac
 import { RecycleBinSection } from './components/recycle-bin/RecycleBinSection';
 import { DynamicCustomSection } from './components/dynamic/DynamicCustomSection';
 import { MaintenanceScreen } from './components/maintenance/MaintenanceScreen';
+import { OfflineBanner } from './components/common/OfflineBanner';
 import { SettingsSection } from './components/settings/SettingsSection';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
@@ -26,6 +27,8 @@ import { Wallet, AlertTriangle } from 'lucide-react';
 import { PwaInstallProvider } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
+import { HelpSupportModal } from './components/support/HelpSupportModal';
+import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
@@ -39,6 +42,15 @@ const MainContent: React.FC = () => {
   const [modalInitialCategory, setModalInitialCategory] = useState<TransactionCategory>('home');
   const [modalInitialSubcategory, setModalInitialSubcategory] = useState<TransactionSubcategory | undefined>(undefined);
   const [modalInitialPerson, setModalInitialPerson] = useState<string | undefined>(undefined);
+
+  // Help & Feedback Modal State
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+  const [helpModalInitialTab, setHelpModalInitialTab] = useState<'help' | 'feedback' | 'complaint' | 'dpdp'>('help');
+
+  const handleOpenHelpModal = (tab: 'help' | 'feedback' | 'complaint' | 'dpdp' = 'help') => {
+    setHelpModalInitialTab(tab);
+    setIsHelpModalOpen(true);
+  };
 
   const handleOpenAddModal = (
     category: TransactionCategory = 'home',
@@ -85,6 +97,9 @@ const MainContent: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+      {/* State 11 & 12: Offline and Reconnecting Status Banner */}
+      <OfflineBanner />
+
       {/* Admin Maintenance Mode Banner */}
       {maintenanceSettings.isEnabled && isAdmin && (
         <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-black flex items-center justify-between border-b border-amber-600 shadow-sm animate-pulse z-50">
@@ -109,6 +124,7 @@ const MainContent: React.FC = () => {
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+          onOpenHelpModal={handleOpenHelpModal}
         />
 
         {/* Main Content Area */}
@@ -119,6 +135,7 @@ const MainContent: React.FC = () => {
             onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
             onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
             onSelectTab={setCurrentTab}
+            onOpenHelpModal={handleOpenHelpModal}
           />
 
           {/* Dynamic Section Views */}
@@ -187,6 +204,7 @@ const MainContent: React.FC = () => {
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+          onOpenHelpModal={handleOpenHelpModal}
         />
 
         {/* Universal Add Transaction Modal */}
@@ -197,6 +215,16 @@ const MainContent: React.FC = () => {
           initialSubcategory={modalInitialSubcategory}
           initialPersonName={modalInitialPerson}
         />
+
+        {/* Help, Feedback & Complaint Support Modal */}
+        <HelpSupportModal
+          isOpen={isHelpModalOpen}
+          onClose={() => setIsHelpModalOpen(false)}
+          initialTab={helpModalInitialTab}
+        />
+
+        {/* DPDP Act 2023 Statutory Consent Banner */}
+        <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
       </div>
     </div>
   );

@@ -38,6 +38,8 @@ interface AddTransactionModalProps {
   initialCategory?: TransactionCategory;
   initialSubcategory?: TransactionSubcategory;
   initialPersonName?: string;
+  initialAmount?: number | string;
+  initialTitle?: string;
 }
 
 export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
@@ -46,6 +48,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   initialCategory = 'home',
   initialSubcategory,
   initialPersonName,
+  initialAmount,
+  initialTitle,
 }) => {
   const { addTransaction } = useExpense();
   const toast = useToast();
@@ -110,10 +114,12 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         else if (initialCategory === 'people') setSubcategory('money_given');
       }
       if (initialPersonName) setPersonName(initialPersonName);
+      if (initialAmount !== undefined && initialAmount !== '') setAmount(String(initialAmount));
+      if (initialTitle) setTitle(initialTitle);
       setRentMonth(getCurrentMonthName());
       setElecMonth(getCurrentMonthName());
     }
-  }, [isOpen, initialCategory, initialSubcategory, initialPersonName]);
+  }, [isOpen, initialCategory, initialSubcategory, initialPersonName, initialAmount, initialTitle]);
 
   // Adjust subcategory when category changes
   const handleCategoryChange = (cat: TransactionCategory) => {
