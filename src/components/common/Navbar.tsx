@@ -23,6 +23,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
 import { NavTab } from './Sidebar';
 import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateUtils';
+import { SUPPORT_CONTACT } from '../../config/contact';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -202,7 +203,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={() => onOpenHelpModal('help')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-semibold cursor-pointer border border-slate-200/80 dark:border-slate-800"
-              title="Help, Feedback, Complaints & WhatsApp (+91 74149345405)"
+              title={`Help, Feedback, Complaints & WhatsApp (${SUPPORT_CONTACT.displayPhone})`}
             >
               <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden xl:inline text-[11px]">Help</span>

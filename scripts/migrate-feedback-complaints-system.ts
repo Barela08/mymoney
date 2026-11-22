@@ -29,6 +29,10 @@ async function migrate() {
     ALTER TABLE public.feedbacks ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
     ALTER TABLE public.feedbacks ADD COLUMN IF NOT EXISTS admin_notes TEXT;
 
+    ALTER TABLE public.feedbacks DROP CONSTRAINT IF EXISTS feedbacks_status_check;
+    ALTER TABLE public.feedbacks ADD CONSTRAINT feedbacks_status_check 
+      CHECK (status = ANY (ARRAY['new'::text, 'reviewed'::text, 'responded'::text, 'resolved'::text, 'closed'::text, 'pending'::text, 'in_progress'::text]));
+
     CREATE INDEX IF NOT EXISTS idx_feedbacks_user_id ON public.feedbacks(user_id);
     CREATE INDEX IF NOT EXISTS idx_feedbacks_rating ON public.feedbacks(rating);
     CREATE INDEX IF NOT EXISTS idx_feedbacks_status ON public.feedbacks(status);

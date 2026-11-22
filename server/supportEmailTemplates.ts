@@ -165,13 +165,15 @@ export function generateFeedbackReceivedEmail(data: {
 // -----------------------------------------------------------------------------
 export function generateComplaintReceivedEmail(data: {
   userName?: string | null;
-  ticketNumber: string;
+  ticketNumber?: string;
+  ticketId?: string;
   category: string;
   subject: string;
   description: string;
 }): { subject: string; html: string; text: string } {
   const greeting = formatPersonalizedGreeting(data.userName);
-  const subject = `Your complaint has been registered — #${data.ticketNumber}`;
+  const ticketNum = data.ticketNumber || data.ticketId || 'N/A';
+  const subject = `Your complaint has been registered — #${ticketNum}`;
 
   const bodyContent = `
     <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
@@ -190,7 +192,7 @@ export function generateComplaintReceivedEmail(data: {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #991b1b; padding-bottom: 6px;">
-                <strong>Complaint / Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #fca5a5;">#${escapeHtml(data.ticketNumber)}</span>
+                <strong>Complaint / Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #fca5a5;">#${escapeHtml(ticketNum)}</span>
               </td>
             </tr>
             <tr>
@@ -239,7 +241,7 @@ export function generateComplaintReceivedEmail(data: {
   `;
 
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName}\n${APP_CONFIG.appTagline}\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nComplaint Registered: #${data.ticketNumber}\n\n${greeting}\n\nWe have registered your complaint (#${data.ticketNumber}).\nCategory: ${data.category}\nSubject: ${data.subject}\nStatus: Open\n\nDescription:\n${data.description}\n\nOur team is reviewing your complaint. You can track this in your Feedback & Support History section.\n\nWarm regards,\nTeam ${APP_CONFIG.appName}\n`;
+  const text = `${APP_CONFIG.appName}\n${APP_CONFIG.appTagline}\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nComplaint Registered: #${ticketNum}\n\n${greeting}\n\nWe have registered your complaint (#${ticketNum}).\nCategory: ${data.category}\nSubject: ${data.subject}\nStatus: Open\n\nDescription:\n${data.description}\n\nOur team is reviewing your complaint. You can track this in your Feedback & Support History section.\n\nWarm regards,\nTeam ${APP_CONFIG.appName}\n`;
   return { subject, html, text };
 }
 
@@ -248,13 +250,17 @@ export function generateComplaintReceivedEmail(data: {
 // -----------------------------------------------------------------------------
 export function generateSupportTicketReceivedEmail(data: {
   userName?: string | null;
-  ticketNumber: string;
+  ticketNumber?: string;
+  ticketId?: string;
   category: string;
   subject: string;
-  description: string;
+  description?: string;
+  message?: string;
 }): { subject: string; html: string; text: string } {
   const greeting = formatPersonalizedGreeting(data.userName);
-  const subject = `Your support request has been received — #${data.ticketNumber}`;
+  const ticketNum = data.ticketNumber || data.ticketId || 'N/A';
+  const desc = data.description || data.message || '';
+  const subject = `Your support request has been received — #${ticketNum}`;
 
   const bodyContent = `
     <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
@@ -273,7 +279,7 @@ export function generateSupportTicketReceivedEmail(data: {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #166534; padding-bottom: 6px;">
-                <strong>Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml(data.ticketNumber)}</span>
+                <strong>Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml(ticketNum)}</span>
               </td>
             </tr>
             <tr>
@@ -288,7 +294,7 @@ export function generateSupportTicketReceivedEmail(data: {
             </tr>
           </table>
           <p style="margin: 12px 0 0 0; font-size: 13px; color: #334155; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
-            ${escapeHtml(data.description)}
+            ${escapeHtml(desc)}
           </p>
         </td>
       </tr>
@@ -307,7 +313,7 @@ export function generateSupportTicketReceivedEmail(data: {
   `;
 
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName}\n${APP_CONFIG.appTagline}\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nSupport Ticket: #${data.ticketNumber}\n\n${greeting}\n\nWe have received your support request (#${data.ticketNumber}).\nCategory: ${data.category}\nSubject: ${data.subject}\n\nDescription:\n${data.description}\n\nYou can track this ticket in your Feedback & Support History section.\n\nWarm regards,\nTeam ${APP_CONFIG.appName}\n`;
+  const text = `${APP_CONFIG.appName}\n${APP_CONFIG.appTagline}\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nSupport Ticket: #${ticketNum}\n\n${greeting}\n\nWe have received your support request (#${ticketNum}).\nCategory: ${data.category}\nSubject: ${data.subject}\n\nDescription:\n${desc}\n\nYou can track this ticket in your Feedback & Support History section.\n\nWarm regards,\nTeam ${APP_CONFIG.appName}\n`;
   return { subject, html, text };
 }
 
@@ -316,15 +322,18 @@ export function generateSupportTicketReceivedEmail(data: {
 // -----------------------------------------------------------------------------
 export function generateAdminReplyEmail(data: {
   userName?: string | null;
-  ticketNumber: string;
-  ticketType: 'complaint' | 'support' | 'feedback';
+  ticketNumber?: string;
+  ticketId?: string;
+  ticketType?: string;
   originalSubject: string;
   adminReply: string;
   adminName?: string;
+  status?: string;
 }): { subject: string; html: string; text: string } {
   const greeting = formatPersonalizedGreeting(data.userName);
+  const ticketNum = data.ticketNumber || data.ticketId || 'N/A';
   const ticketLabel = data.ticketType === 'complaint' ? 'complaint' : data.ticketType === 'feedback' ? 'feedback' : 'support request';
-  const subject = `Update regarding your ${ticketLabel} #${data.ticketNumber}`;
+  const subject = `Update regarding your ${ticketLabel} #${ticketNum}`;
 
   const bodyContent = `
     <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
@@ -334,8 +343,17 @@ export function generateAdminReplyEmail(data: {
       ${greeting}
     </p>
     <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-      Our support team has reviewed your ${ticketLabel} regarding <strong>&ldquo;${escapeHtml(data.originalSubject)}&rdquo;</strong> (Ticket: <span style="font-family: monospace; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">#${escapeHtml(data.ticketNumber)}</span>).
+      Our support team has reviewed your ${ticketLabel} regarding <strong>&ldquo;${escapeHtml(data.originalSubject)}&rdquo;</strong> (Ticket: <span style="font-family: monospace; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">#${escapeHtml(ticketNum)}</span>).
     </p>
+
+    ${data.status ? `
+    <div style="margin: 0 0 16px 0;">
+      <span style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Ticket Status: </span>
+      <span style="display: inline-block; background: #dcfce7; color: #166534; font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 6px; text-transform: uppercase;">
+        ${escapeHtml(data.status.replace(/_/g, ' ').toUpperCase())}
+      </span>
+    </div>
+    ` : ''}
 
     <!-- Admin Message Box -->
     <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 12px; padding: 18px 20px;">
@@ -382,6 +400,6 @@ ${escapeHtml(data.adminReply)}
   `;
 
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName} Support Update\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nUpdate regarding your ${ticketLabel} #${data.ticketNumber}\n\n${greeting}\n\nOur support team has reviewed your ${ticketLabel} regarding "${data.originalSubject}".\n\nMessage from ${data.adminName || 'Support Team'}:\n${data.adminReply}\n\nIf you need any further assistance, you can reply in the app or contact our support team at ${APP_CONFIG.supportEmail}.\n\nRegards,\nMy Money Manager Support\nA product of ${APP_CONFIG.companyName}\n`;
+  const text = `${APP_CONFIG.appName} Support Update\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nUpdate regarding your ${ticketLabel} #${ticketNum}\n\n${greeting}\n\nOur support team has reviewed your ${ticketLabel} regarding "${data.originalSubject}".\n\nMessage from ${data.adminName || 'Support Team'}:\n${data.adminReply}\n\nIf you need any further assistance, you can reply in the app or contact our support team at ${APP_CONFIG.supportEmail}.\n\nRegards,\nMy Money Manager Support\nA product of ${APP_CONFIG.companyName}\n`;
   return { subject, html, text };
 }

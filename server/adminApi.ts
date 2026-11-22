@@ -81,10 +81,14 @@ async function verifyAdminAuth(
     if (roleRes.rows.length > 0 && Array.isArray(roleRes.rows[0].permissions)) {
       permissions = roleRes.rows[0].permissions;
     }
+    if (role === 'admin') {
+      if (!permissions.includes('backups.read')) permissions.push('backups.read');
+      if (!permissions.includes('roles.read')) permissions.push('roles.read');
+    }
   } catch (e) {
     // Fallback based on role
     if (role === 'superadmin') permissions = ['*'];
-    else if (role === 'admin') permissions = ['users.read', 'users.update', 'users.suspend', 'users.restore', 'security.read', 'security.manage', 'emails.read', 'emails.templates.manage', 'support.read', 'support.reply', 'legal.read', 'analytics.read', 'reports.export', 'system.read', 'settings.manage', 'audit.read', 'features.manage'];
+    else if (role === 'admin') permissions = ['users.read', 'users.update', 'users.suspend', 'users.restore', 'security.read', 'security.manage', 'emails.read', 'emails.templates.manage', 'support.read', 'support.reply', 'legal.read', 'analytics.read', 'reports.export', 'system.read', 'settings.manage', 'audit.read', 'features.manage', 'backups.read', 'roles.read'];
     else if (role === 'support') permissions = ['users.read', 'support.read', 'support.reply', 'emails.read'];
     else if (role === 'analyst') permissions = ['users.read', 'analytics.read', 'reports.export', 'audit.read'];
   }
@@ -122,15 +126,22 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'analytics.read');
       if (!auth) return true;
 
-      // Real aggregated database queries
+      // Real aggregated database queries (Optimized single-pass scan)
+      const usersAggRes = await query(`
+        SELECT 
+          COUNT(*) as total_users,
+          COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as new_today,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as new_week,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') as new_month,
+          COUNT(*) FILTER (WHERE locked_until > NOW()) as locked_accounts,
+          COUNT(*) FILTER (WHERE status = 'active') as active_users,
+          COUNT(*) FILTER (WHERE status = 'suspended') as suspended_users,
+          COUNT(*) FILTER (WHERE status = 'deactivated') as inactive_users
+        FROM public.app_users
+      `);
+
       const [
-        totalUsersRes,
-        newTodayRes,
-        newWeekRes,
-        newMonthRes,
-        statusCountsRes,
         failedLoginsRes,
-        lockedAccountsRes,
         activeSessionsRes,
         pendingDeletionsRes,
         incidentsRes,
@@ -138,13 +149,7 @@ export async function handleAdminApiRequest(
         chartRegistrationsRes,
         chartLoginsRes,
       ] = await Promise.all([
-        query('SELECT COUNT(*) as count FROM public.app_users'),
-        query('SELECT COUNT(*) as count FROM public.app_users WHERE created_at >= CURRENT_DATE'),
-        query("SELECT COUNT(*) as count FROM public.app_users WHERE created_at >= NOW() - INTERVAL '7 days'"),
-        query("SELECT COUNT(*) as count FROM public.app_users WHERE created_at >= NOW() - INTERVAL '30 days'"),
-        query(`SELECT status, COUNT(*) as count FROM public.app_users GROUP BY status`),
         query("SELECT COUNT(*) as count FROM public.security_audit_logs WHERE event_type LIKE '%LOGIN_FAILED%' AND created_at >= NOW() - INTERVAL '24 hours'"),
-        query('SELECT COUNT(*) as count FROM public.app_users WHERE locked_until > NOW()'),
         query('SELECT COUNT(*) as count FROM public.user_sessions WHERE is_revoked = FALSE AND expires_at > NOW()'),
         query("SELECT COUNT(*) as count FROM public.account_deletion_requests WHERE status = 'pending_24h'"),
         query("SELECT COUNT(*) as count FROM public.security_incidents WHERE status IN ('new', 'investigating', 'monitoring')"),
@@ -165,21 +170,17 @@ export async function handleAdminApiRequest(
         `),
       ]);
 
-      const statusMap: Record<string, number> = {};
-      for (const row of statusCountsRes.rows) {
-        statusMap[row.status] = parseInt(row.count);
-      }
-
-      const totalUsers = parseInt(totalUsersRes.rows[0]?.count || '0');
-      const newToday = parseInt(newTodayRes.rows[0]?.count || '0');
-      const newWeek = parseInt(newWeekRes.rows[0]?.count || '0');
-      const newMonth = parseInt(newMonthRes.rows[0]?.count || '0');
-      const activeUsers = statusMap['active'] || 0;
-      const suspendedUsers = statusMap['suspended'] || 0;
-      const inactiveUsers = statusMap['deactivated'] || 0;
+      const userRow = usersAggRes.rows[0] || {};
+      const totalUsers = parseInt(userRow.total_users || '0');
+      const newToday = parseInt(userRow.new_today || '0');
+      const newWeek = parseInt(userRow.new_week || '0');
+      const newMonth = parseInt(userRow.new_month || '0');
+      const lockedAccounts = parseInt(userRow.locked_accounts || '0');
+      const activeUsers = parseInt(userRow.active_users || '0');
+      const suspendedUsers = parseInt(userRow.suspended_users || '0');
+      const inactiveUsers = parseInt(userRow.inactive_users || '0');
       const pendingDeletions = parseInt(pendingDeletionsRes.rows[0]?.count || '0');
       const failedLogins24h = parseInt(failedLoginsRes.rows[0]?.count || '0');
-      const lockedAccounts = parseInt(lockedAccountsRes.rows[0]?.count || '0');
       const activeSessions = parseInt(activeSessionsRes.rows[0]?.count || '0');
       const openIncidents = parseInt(incidentsRes.rows[0]?.count || '0');
 
@@ -1592,11 +1593,11 @@ export async function handleAdminApiRequest(
           GROUP BY category, status, priority
         `),
         query(`
-          SELECT DATE(requested_at) as date, status, COUNT(*) as count 
+          SELECT DATE(created_at) as date, status, COUNT(*) as count 
           FROM public.account_deletion_requests 
-          WHERE requested_at >= NOW() - INTERVAL '${interval}'
-          GROUP BY DATE(requested_at), status 
-          ORDER BY DATE(requested_at) ASC
+          WHERE created_at >= NOW() - INTERVAL '${interval}'
+          GROUP BY DATE(created_at), status 
+          ORDER BY DATE(created_at) ASC
         `),
       ]);
 

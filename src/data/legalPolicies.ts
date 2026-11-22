@@ -384,8 +384,8 @@ export const LEGAL_POLICIES: LegalPolicyItem[] = [
         title: '2. Grievance Officer Contact Details',
         content: [
           'Officer Name: Security & Legal Compliance Desk, HackifyPro',
-          'Official Email: hackifypro@gmail.com / support@hackifypro.com',
-          'Helpline Phone / WhatsApp: +91 74149345405',
+          'Official Email: hackifypro@gmail.com',
+          'Helpline Phone / WhatsApp: +91 74149 35405',
           'Operating Hours: Monday to Saturday, 10:00 AM – 6:00 PM IST',
         ],
       },
@@ -412,8 +412,8 @@ export const LEGAL_POLICIES: LegalPolicyItem[] = [
       {
         title: '1. Primary Channels',
         content: [
-          'Email Support: support@hackifypro.com / hackifypro@gmail.com',
-          'Direct Phone / WhatsApp Helpline: +91 74149345405',
+          'Email Support: hackifypro@gmail.com',
+          'Direct Phone / WhatsApp Helpline: +91 74149 35405',
           'In-App Feedback: Open Help & Support from the side menu to submit feedback or report technical issues directly.',
         ],
       },
@@ -548,7 +548,7 @@ export const LEGAL_POLICIES: LegalPolicyItem[] = [
         content: [
           'Official Website: hackifypro.com',
           'Contact: hackifypro@gmail.com',
-          'Phone: +91 74149345405',
+          'Phone: +91 74149 35405',
           'Copyright © 2026 HackifyPro. All rights reserved.',
         ],
       },

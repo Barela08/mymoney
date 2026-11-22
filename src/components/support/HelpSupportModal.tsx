@@ -14,22 +14,24 @@ import {
   HelpCircle,
   Sparkles,
   Smartphone,
-  Lock,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { supportApi } from '../../lib/supportApi';
-import { FeedbackType, FeedbackUrgency } from '../../types';
+import { FeedbackUrgency } from '../../types';
+import {
+  SUPPORT_CONTACT,
+  buildWhatsAppSupportUrl,
+  buildMailToUrl,
+} from '../../config/contact';
 
 interface HelpSupportModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: 'help' | 'feedback' | 'complaint' | 'dpdp';
 }
-
-const SUPPORT_PHONE = '74149345405';
-const SUPPORT_EMAIL = 'hackifypro@gmail.com';
-const DEVELOPER_NAME = 'HackifyPro';
 
 export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
   isOpen,
@@ -56,15 +58,29 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
   const [complaintPhone, setComplaintPhone] = useState<string>('');
   const [complaintDpdpConsent, setComplaintDpdpConsent] = useState<boolean>(true);
 
-  // State
+  // Copy-to-clipboard state
+  const [copiedPhone, setCopiedPhone] = useState<boolean>(false);
+  const [copiedEmail, setCopiedEmail] = useState<boolean>(false);
+
+  // Submission State
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submittedSuccess, setSubmittedSuccess] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  // WhatsApp Link Helper
-  const getWhatsAppUrl = (customText: string) => {
-    return `https://wa.me/91${SUPPORT_PHONE}?text=${encodeURIComponent(customText)}`;
+  // Copy handlers
+  const handleCopyPhone = () => {
+    navigator.clipboard.writeText(SUPPORT_CONTACT.phone);
+    setCopiedPhone(true);
+    toast.success('Copied to Clipboard', `Support phone number ${SUPPORT_CONTACT.displayPhone} copied.`);
+    setTimeout(() => setCopiedPhone(false), 2500);
+  };
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(SUPPORT_CONTACT.email);
+    setCopiedEmail(true);
+    toast.success('Copied to Clipboard', `Support email ${SUPPORT_CONTACT.email} copied.`);
+    setTimeout(() => setCopiedEmail(false), 2500);
   };
 
   // Submit Feedback
@@ -88,7 +104,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
         message: feedbackMessage.trim(),
       });
 
-      setSubmittedSuccess(res.message || 'आपका फीडबैक सफलतापूर्वक दर्ज कर लिया गया है! धन्यवाद।');
+      setSubmittedSuccess(res.message || 'Your feedback has been successfully submitted. Thank you for helping us improve!');
       toast.success('Feedback Submitted', 'Thank you for your valuable feedback!');
       setFeedbackSubject('');
       setFeedbackMessage('');
@@ -103,7 +119,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
   const handleComplaintSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!complaintSubject.trim() || !complaintMessage.trim()) {
-      toast.error('Validation Error', 'Please describe the problem and subject.');
+      toast.error('Validation Error', 'Please describe the problem and enter a subject.');
       return;
     }
     if (!complaintDpdpConsent) {
@@ -120,7 +136,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
       });
 
       const ticketNum = res.ticket?.ticket_number ? `#${res.ticket.ticket_number}` : '';
-      setSubmittedSuccess(`आपकी शिकायत दर्ज कर ली गई है (${ticketNum})। हमारी टीम जल्द से जल्द इसका निवारण करेगी।`);
+      setSubmittedSuccess(`Your complaint has been registered (${ticketNum}). Our support team will investigate and follow up promptly.`);
       toast.success('Complaint Registered', `Ticket ${ticketNum} created. Support will review immediately.`);
       setComplaintSubject('');
       setComplaintMessage('');
@@ -142,10 +158,10 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
-                Help, Feedback & Complaints
+                Help, Feedback & Support
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Created & Supported by <span className="font-bold text-emerald-600">{DEVELOPER_NAME}</span>
+                Official Support Desk by <span className="font-bold text-emerald-600">{SUPPORT_CONTACT.companyName}</span>
               </p>
             </div>
           </div>
@@ -159,25 +175,66 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
           </button>
         </div>
 
-        {/* Developer Contact Quick Card */}
+        {/* Official Contact Quick Card */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-600/10 via-teal-600/10 to-emerald-600/10 border-b border-slate-100 dark:border-slate-800">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
+            <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-xs text-slate-900 dark:text-slate-100">
-                  Developer & Support Helpline
+                  Direct Support Helpline
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500 text-white">
-                  Direct Support
+                  Official
                 </span>
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                फोन / WhatsApp: <a href={`tel:+91${SUPPORT_PHONE}`} className="font-bold text-emerald-600 underline">+91 {SUPPORT_PHONE}</a> • Email: <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-emerald-600 underline">{SUPPORT_EMAIL}</a>
-              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                {/* Phone */}
+                <span className="inline-flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                  <a
+                    href={SUPPORT_CONTACT.telUrl}
+                    className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                    title="Call support helpline"
+                  >
+                    {SUPPORT_CONTACT.displayPhone}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyPhone}
+                    className="p-1 hover:text-emerald-600 transition-colors text-slate-400 cursor-pointer"
+                    title="Copy phone number"
+                  >
+                    {copiedPhone ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </span>
+
+                <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
+
+                {/* Email */}
+                <span className="inline-flex items-center gap-1">
+                  <Mail className="w-3.5 h-3.5 text-emerald-600" />
+                  <a
+                    href={SUPPORT_CONTACT.mailToUrl}
+                    className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                    title="Send email to support"
+                  >
+                    {SUPPORT_CONTACT.email}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyEmail}
+                    className="p-1 hover:text-emerald-600 transition-colors text-slate-400 cursor-pointer"
+                    title="Copy email address"
+                  >
+                    {copiedEmail ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </span>
+              </div>
             </div>
 
+            {/* WhatsApp Direct Action Button */}
             <a
-              href={getWhatsAppUrl(`Hello ${DEVELOPER_NAME}, I need help with My Money Manager app.`)}
+              href={SUPPORT_CONTACT.whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
@@ -220,7 +277,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>Feedback (फीडबैक)</span>
+            <span>Feedback</span>
           </button>
 
           <button
@@ -236,7 +293,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
             }`}
           >
             <AlertOctagon className="w-3.5 h-3.5" />
-            <span>Complaint (शिकायत)</span>
+            <span>Complaint</span>
           </button>
 
           <button
@@ -252,7 +309,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>DPDP Privacy</span>
+            <span>Privacy & DPDP</span>
           </button>
         </div>
 
@@ -264,7 +321,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
               <div>
                 <p className="font-bold">{submittedSuccess}</p>
                 <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-1">
-                  अगर आप तुरंत डेवलपर से संपर्क करना चाहते हैं तो ऊपर दिए गए 'Chat on WhatsApp' बटन का उपयोग करें।
+                  If you need immediate live support, feel free to use the 'Chat on WhatsApp' button above or dial {SUPPORT_CONTACT.displayPhone}.
                 </p>
               </div>
             </div>
@@ -279,41 +336,42 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                   <span>About My Money Manager</span>
                 </h4>
                 <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-                  यह एक संपूर्ण पर्सनल फाइनेंस, रूम खर्च, फूड व डाइनिंग, और उधार (People Ledger) प्रबंधन ऐप है जिसे <b>HackifyPro</b> द्वारा विकसित किया गया है।
+                  A comprehensive personal finance, room expense, dining, and peer-to-peer ledger application engineered and maintained by <b>{SUPPORT_CONTACT.companyName}</b>.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
                   <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <p className="font-bold text-slate-800 dark:text-slate-200">📱 Multi-Device Sync</p>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">📱 Multi-Device Synchronization</p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      लैपटॉप या मोबाइल में लॉगिन करें, दोनों जगह एक जैसा रियल-टाइम डेटा दिखेगा।
+                      Log in securely from any device (laptop, phone, tablet) and access your financial data in real time.
                     </p>
                   </div>
                   <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
                     <p className="font-bold text-slate-800 dark:text-slate-200">🤝 Udhar Settle & Clear</p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      हिसाब पूरा होने पर 1-क्लिक में हिसाब क्लियर या सेटल करें।
+                      Track who owes you and whom you owe with 1-click settlements and transparent history.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Direct WhatsApp Callout */}
+              {/* Direct Support Callout */}
               <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3">
                 <div>
                   <p className="font-bold text-emerald-900 dark:text-emerald-200">
-                    डेवलपर से सीधा संपर्क करें
+                    Need Immediate Assistance?
                   </p>
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
-                    कोई भी परेशानी आने पर 74149345405 पर WhatsApp मैसेज भेजें।
+                    Reach our official support desk via WhatsApp or phone call at {SUPPORT_CONTACT.displayPhone}.
                   </p>
                 </div>
                 <a
-                  href={getWhatsAppUrl(`Hello ${DEVELOPER_NAME}, I need assistance with My Money App.`)}
+                  href={SUPPORT_CONTACT.whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm flex items-center gap-1"
                 >
-                  WhatsApp &rarr;
+                  <span>WhatsApp</span>
+                  <span>&rarr;</span>
                 </a>
               </div>
             </div>
@@ -324,7 +382,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
             <form onSubmit={handleFeedbackSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  1. आपका अनुभव कैसा रहा? (Rating)
+                  1. How would you rate your experience?
                 </label>
                 <div className="flex items-center gap-2">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -342,56 +400,56 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                     </button>
                   ))}
                   <span className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-2">
-                    {feedbackRating === 5 && '🌟 Excellent! (बहुत बढ़िया)'}
-                    {feedbackRating === 4 && '👍 Very Good (अच्छा)'}
-                    {feedbackRating === 3 && '👌 Good (ठीक है)'}
-                    {feedbackRating === 2 && '😐 Needs Improvement (सुधार चाहिए)'}
-                    {feedbackRating === 1 && '👎 Poor (खराब)'}
+                    {feedbackRating === 5 && '🌟 Excellent'}
+                    {feedbackRating === 4 && '👍 Very Good'}
+                    {feedbackRating === 3 && '👌 Good'}
+                    {feedbackRating === 2 && '😐 Needs Improvement'}
+                    {feedbackRating === 1 && '👎 Poor'}
                   </span>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  2. फीडबैक प्रकार (Category)
+                  2. Feedback Category
                 </label>
                 <select
                   value={feedbackCategory}
                   onChange={(e) => setFeedbackCategory(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                 >
-                  <option value="Feature Request">नया फीचर सुझाव (New Feature Request)</option>
-                  <option value="UI Design">डिज़ाइन और लुक (UI / Visual Design)</option>
-                  <option value="Performance">स्पीड और परफॉरमेंस (Speed / Performance)</option>
-                  <option value="Appreciation">प्रशंसा (Appreciation / Love it)</option>
-                  <option value="Other">अन्य (Other)</option>
+                  <option value="Feature Request">New Feature Request</option>
+                  <option value="UI Design">UI & Visual Design</option>
+                  <option value="Performance">Speed & Performance</option>
+                  <option value="Appreciation">Appreciation & Compliments</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  3. विषय (Subject) *
+                  3. Subject *
                 </label>
                 <input
                   type="text"
                   required
                   value={feedbackSubject}
                   onChange={(e) => setFeedbackSubject(e.target.value)}
-                  placeholder="उदा. 'होम स्क्रीन पर नया चार्ट चाहिए'"
+                  placeholder="e.g., 'Request for new chart on home screen'"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  4. आपका फीडबैक / सुझाव विस्तार से लिखें *
+                  4. Your Feedback / Suggestions in Detail *
                 </label>
                 <textarea
                   rows={3}
                   required
                   value={feedbackMessage}
                   onChange={(e) => setFeedbackMessage(e.target.value)}
-                  placeholder="अपने विचार यहाँ साझा करें..."
+                  placeholder="Share your thoughts, ideas, or experiences here..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                 />
               </div>
@@ -406,18 +464,20 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                   className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                 />
                 <label htmlFor="dpdp-feedback-consent" className="text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer leading-relaxed">
-                  <b>DPDP Act 2023 Consent:</b> मैं अपने फीडबैक, नाम और ईमेल को ऐप सुधार और सेवा गुणवत्ता हेतु <b>HackifyPro</b> द्वारा प्रोसेस किए जाने की स्पष्ट सहमति देता हूँ।
+                  <b>DPDP Act 2023 Consent:</b> I give explicit consent to <b>{SUPPORT_CONTACT.companyName}</b> to process my feedback, name, and email solely for application improvement and service quality purposes.
                 </label>
               </div>
 
               <div className="flex items-center justify-between gap-3 pt-2">
                 <a
-                  href={getWhatsAppUrl(`[Feedback for ${DEVELOPER_NAME}]\nSubject: ${feedbackSubject || 'General Feedback'}\nRating: ${feedbackRating}/5\n${feedbackMessage}`)}
+                  href={buildWhatsAppSupportUrl(
+                    `[Feedback for ${SUPPORT_CONTACT.companyName}]\nSubject: ${feedbackSubject || 'General Feedback'}\nRating: ${feedbackRating}/5\n${feedbackMessage}`
+                  )}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-bold"
                 >
-                  <span>WhatsApp पर भी भेजें</span>
+                  <span>Send via WhatsApp as well</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
 
@@ -427,7 +487,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{isSubmitting ? 'भेज रहे हैं...' : 'फीडबैक सबमिट करें'}</span>
+                  <span>{isSubmitting ? 'Submitting...' : 'Submit Feedback'}</span>
                 </button>
               </div>
             </form>
@@ -439,86 +499,86 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
               <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-xs text-rose-800 dark:text-rose-200">
                 <p className="font-bold flex items-center gap-1.5">
                   <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>शिकायत निवारण (Grievance Redressal)</span>
+                  <span>Official Grievance Redressal</span>
                 </p>
                 <p className="text-[11px] mt-0.5 opacity-90">
-                  आपकी शिकायत सीधे एडमिन और डेवलपर तक पहुंचेगी और प्राथमिकता के आधार पर समाधान किया जाएगा।
+                  Your complaint will be reviewed with high priority by our technical and administrative team.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    1. समस्या की गंभीरता (Urgency)
+                    1. Problem Urgency
                   </label>
                   <select
                     value={complaintUrgency}
                     onChange={(e) => setComplaintUrgency(e.target.value as FeedbackUrgency)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                   >
-                    <option value="normal">Normal (सामान्य)</option>
-                    <option value="high">High (गंभीर)</option>
-                    <option value="urgent">Urgent (अति आवश्यक - तुरंत हल करें)</option>
-                    <option value="low">Low (साधारण)</option>
+                    <option value="normal">Normal (Standard resolution)</option>
+                    <option value="high">High (Priority investigation)</option>
+                    <option value="urgent">Urgent (Critical - immediate action)</option>
+                    <option value="low">Low (Minor inquiry)</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    2. शिकायत प्रकार (Category)
+                    2. Complaint Category
                   </label>
                   <select
                     value={complaintCategory}
                     onChange={(e) => setComplaintCategory(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                   >
-                    <option value="Data Sync Issue">डेटा सिंक समस्या (दूसरे डिवाइस में नहीं दिखा)</option>
-                    <option value="Calculation Error">हिसाब या राशि में गड़बड़ी (Calculation Error)</option>
-                    <option value="Bug / Crash">ऐप हैंग या एरर (Bug / Crash)</option>
-                    <option value="Account / Login">लॉगिन या पासवर्ड समस्या (Account Issue)</option>
-                    <option value="Privacy Concern">डेटा प्राइवेसी चिंता (Privacy Issue)</option>
-                    <option value="Other">अन्य शिकायत (Other)</option>
+                    <option value="Data Sync Issue">Data Sync Issue (Not showing on another device)</option>
+                    <option value="Calculation Error">Calculation / Balance Discrepancy</option>
+                    <option value="Bug / Crash">Application Crash or Technical Bug</option>
+                    <option value="Account / Login">Login or Password Access Issue</option>
+                    <option value="Privacy Concern">Data Privacy Concern</option>
+                    <option value="Other">Other Grievance</option>
                   </select>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  3. शिकायत का विषय (Subject) *
+                  3. Complaint Subject *
                 </label>
                 <input
                   type="text"
                   required
                   value={complaintSubject}
                   onChange={(e) => setComplaintSubject(e.target.value)}
-                  placeholder="उदा. 'उधार क्लियर करने के बाद दूसरे मोबाइल में नहीं दिखा'"
+                  placeholder="e.g., 'Udhar balance not updating after settlement'"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  4. समस्या का पूरा विवरण लिखें *
+                  4. Detailed Description of the Issue *
                 </label>
                 <textarea
                   rows={3}
                   required
                   value={complaintMessage}
                   onChange={(e) => setComplaintMessage(e.target.value)}
-                  placeholder="कदम-दर-कदम बताएं कि क्या समस्या आ रही है..."
+                  placeholder="Please describe what happened step-by-step, including unexpected behavior..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  5. आपका मोबाइल / WhatsApp नंबर (समाधान हेतु संपर्क के लिए)
+                  5. Contact Phone / WhatsApp (For resolution follow-up)
                 </label>
                 <input
                   type="tel"
                   value={complaintPhone}
                   onChange={(e) => setComplaintPhone(e.target.value)}
-                  placeholder="उदा. 74149345405"
+                  placeholder="e.g., +91 74149 35405"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                 />
               </div>
@@ -533,18 +593,20 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                   className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
                 />
                 <label htmlFor="dpdp-complaint-consent" className="text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer leading-relaxed">
-                  <b>DPDP Act 2023 Consent:</b> मैं शिकायत के त्वरित समाधान हेतु <b>HackifyPro</b> को मेरा नाम, फोन, ईमेल और विवरण प्रोसेस करने तथा मुझसे संपर्क करने की सहमति देता हूँ।
+                  <b>DPDP Act 2023 Consent:</b> I give consent to <b>{SUPPORT_CONTACT.companyName}</b> to process my contact details (name, phone, email, issue details) to investigate and resolve this grievance.
                 </label>
               </div>
 
               <div className="flex items-center justify-between gap-3 pt-2">
                 <a
-                  href={getWhatsAppUrl(`[COMPLAINT URGENT - ${complaintUrgency.toUpperCase()}]\nCategory: ${complaintCategory}\nSubject: ${complaintSubject}\nDetails: ${complaintMessage}\nPhone: ${complaintPhone || 'N/A'}`)}
+                  href={buildWhatsAppSupportUrl(
+                    `[COMPLAINT - ${complaintUrgency.toUpperCase()}]\nCategory: ${complaintCategory}\nSubject: ${complaintSubject}\nDetails: ${complaintMessage}\nPhone: ${complaintPhone || 'N/A'}`
+                  )}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 font-bold"
                 >
-                  <span>WhatsApp पर तुरंत शिकायत भेजें</span>
+                  <span>Submit via WhatsApp as well</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
 
@@ -554,7 +616,7 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                   className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <AlertOctagon className="w-3.5 h-3.5" />
-                  <span>{isSubmitting ? 'दर्ज कर रहे हैं...' : 'शिकायत दर्ज करें'}</span>
+                  <span>{isSubmitting ? 'Registering...' : 'Register Complaint'}</span>
                 </button>
               </div>
             </form>
@@ -567,45 +629,48 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-blue-600" />
                   <h4 className="font-bold text-blue-950 dark:text-blue-100 text-sm">
-                    डिजिटल व्यक्तिगत डेटा संरक्षण अधिनियम (DPDP Act, 2023)
+                    Digital Personal Data Protection Act (DPDP Act, 2023)
                   </h4>
                 </div>
                 <p className="text-blue-900 dark:text-blue-200 leading-relaxed text-[11px]">
-                  My Money Manager भारतीय डेटा सुरक्षा कानून (DPDP Act 2023) का पूर्ण अनुपालन करता है। आपकी वित्तीय गोपनीयता हमारा सर्वोच्च सिद्धांत है।
+                  My Money Manager complies fully with the statutory standards of India's Digital Personal Data Protection Act, 2023. Your financial confidentiality and privacy are strictly safeguarded.
                 </p>
               </div>
 
               <div className="space-y-2">
                 <h5 className="font-bold text-slate-800 dark:text-slate-200">
-                  आपके DPDP अधिकार (Your Statutory Rights):
+                  Your Statutory Privacy Rights:
                 </h5>
                 <ul className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400 list-disc pl-5">
-                  <li><b>डेटा एक्सेस का अधिकार (Right to Access):</b> आप अपने सभी खर्चों और विवरणों को कभी भी देख और एक्सपोर्ट कर सकते हैं।</li>
-                  <li><b>डेटा सुधार का अधिकार (Right to Correction):</b> किसी भी लेन-देन को संपादित करने का पूर्ण नियंत्रण आपके हाथ में है।</li>
-                  <li><b>डेटा डिलीट करने का अधिकार (Right to Erasure):</b> आप रीसायकल बिन के माध्यम से रिकॉर्ड्स स्थायी रूप से डिलीट कर सकते हैं।</li>
-                  <li><b>शिकायत निवारण का अधिकार (Right to Grievance Redressal):</b> सीधे डेवलपर (<a href={`tel:+91${SUPPORT_PHONE}`} className="underline text-emerald-600 font-bold">+91 {SUPPORT_PHONE}</a> / <a href={`mailto:${SUPPORT_EMAIL}`} className="underline text-emerald-600 font-bold">{SUPPORT_EMAIL}</a>) से संपर्क करें।</li>
+                  <li><b>Right to Access:</b> Review and export all your transactions and profile records at any time.</li>
+                  <li><b>Right to Correction:</b> Edit, update, or correct any historical entry or personal detail.</li>
+                  <li><b>Right to Erasure:</b> Permanently delete specific transactions or request full account deletion with a 24-hour safety window.</li>
+                  <li><b>Right to Grievance Redressal:</b> Contact our official Data Grievance Desk directly at{' '}
+                    <a href={SUPPORT_CONTACT.telUrl} className="underline text-emerald-600 font-bold">{SUPPORT_CONTACT.displayPhone}</a> or{' '}
+                    <a href={SUPPORT_CONTACT.mailToUrl} className="underline text-emerald-600 font-bold">{SUPPORT_CONTACT.email}</a>.
+                  </li>
                 </ul>
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
                   <p className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-                    डेटा कलेक्शन सहमति (Consent Status)
+                    Data Consent Standing
                   </p>
                   <p className="text-[11px] text-emerald-600 font-semibold">
-                    ✅ Active & Consented under DPDP Act 2023
+                    Active & Consented under DPDP Act 2023
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     localStorage.removeItem('my_money_dpdp_consent_v1');
-                    toast.info('Consent Reset', 'डेटा सहमति रिसेट कर दी गई है।');
+                    toast.info('Consent Reset', 'Data processing consent has been reset.');
                     onClose();
                   }}
                   className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-300 cursor-pointer"
                 >
-                  सहमति बदलें (Reset)
+                  Reset Consent
                 </button>
               </div>
             </div>

@@ -15,6 +15,7 @@ import { useExpense } from '../../../context/ExpenseContext';
 import { useToast } from '../../../context/ToastContext';
 import { MaintenanceSettings, AppBrandingSettings } from '../../../types';
 import { MaintenanceScreen } from '../../maintenance/MaintenanceScreen';
+import { SUPPORT_CONTACT } from '../../../config/contact';
 
 export const AdminSettingsTab: React.FC = () => {
   const toast = useToast();
@@ -32,15 +33,15 @@ export const AdminSettingsTab: React.FC = () => {
 
   // General App Settings form
   const [appName, setAppName] = useState('My Money Manager');
-  const [supportEmail, setSupportEmail] = useState('support@hackifypro.com');
-  const [supportPhone, setSupportPhone] = useState('+91 9876543210');
+  const [supportEmail, setSupportEmail] = useState<string>(SUPPORT_CONTACT.email);
+  const [supportPhone, setSupportPhone] = useState<string>(SUPPORT_CONTACT.displayPhone);
   const [defaultCurrency, setDefaultCurrency] = useState('INR (₹)');
   const [allowRegistration, setAllowRegistration] = useState(true);
   const [requireEmailVerification, setRequireEmailVerification] = useState(true);
 
   // Branding Form
   const [brandTitle, setBrandTitle] = useState(appBranding?.brandTitle || 'My Money Manager');
-  const [companyName, setCompanyName] = useState(appBranding?.companyName || 'HackifyPro Solutions');
+  const [companyName, setCompanyName] = useState(appBranding?.companyName || SUPPORT_CONTACT.companyName);
   const [footerText, setFooterText] = useState(appBranding?.footerText || '© 2026 My Money Manager by HackifyPro. All rights reserved.');
   const [isSavingBrand, setIsSavingBrand] = useState(false);
 

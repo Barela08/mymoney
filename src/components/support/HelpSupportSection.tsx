@@ -18,11 +18,14 @@ import {
   MessageCircle,
   Paperclip,
   Check,
+  Smartphone,
+  Copy,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { supportApi, FeedbackRecord, SupportTicketRecord, SupportTicketReplyRecord } from '../../lib/supportApi';
 import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
+import { SUPPORT_CONTACT, buildWhatsAppSupportUrl, buildMailToUrl } from '../../config/contact';
 
 const STAR_LABELS: Record<number, string> = {
   1: 'Poor',
@@ -110,6 +113,24 @@ export const HelpSupportSection: React.FC = () => {
   const [isLoadingTicketDetails, setIsLoadingTicketDetails] = useState<boolean>(false);
   const [userReplyText, setUserReplyText] = useState<string>('');
   const [isSendingUserReply, setIsSendingUserReply] = useState<boolean>(false);
+
+  // Copy state
+  const [copiedPhone, setCopiedPhone] = useState<boolean>(false);
+  const [copiedEmail, setCopiedEmail] = useState<boolean>(false);
+
+  const handleCopyPhone = () => {
+    navigator.clipboard.writeText(SUPPORT_CONTACT.phone);
+    setCopiedPhone(true);
+    toast.success('Copied to Clipboard', `Helpline ${SUPPORT_CONTACT.displayPhone} copied.`);
+    setTimeout(() => setCopiedPhone(false), 2500);
+  };
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(SUPPORT_CONTACT.email);
+    setCopiedEmail(true);
+    toast.success('Copied to Clipboard', `Support email ${SUPPORT_CONTACT.email} copied.`);
+    setTimeout(() => setCopiedEmail(false), 2500);
+  };
 
   // Load history when tab is switched to history
   useEffect(() => {
@@ -287,6 +308,80 @@ export const HelpSupportSection: React.FC = () => {
             We are dedicated to providing you with the best personal finance experience. Submit suggestions, register issues, or get direct help from our team.
           </p>
         </div>
+      </div>
+
+      {/* Official Contact Quick Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Phone */}
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <Phone className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Direct Helpline</p>
+              <a
+                href={SUPPORT_CONTACT.telUrl}
+                className="text-xs font-bold text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400"
+              >
+                {SUPPORT_CONTACT.displayPhone}
+              </a>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopyPhone}
+            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            title="Copy phone number"
+          >
+            {copiedPhone ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* Email */}
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3 truncate">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <Mail className="w-4 h-4" />
+            </div>
+            <div className="truncate">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Support Email</p>
+              <a
+                href={SUPPORT_CONTACT.mailToUrl}
+                className="text-xs font-bold text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 truncate block"
+              >
+                {SUPPORT_CONTACT.email}
+              </a>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopyEmail}
+            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer shrink-0"
+            title="Copy email address"
+          >
+            {copiedEmail ? <Check className="w-3.5 h-3.5 text-blue-600" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* WhatsApp */}
+        <a
+          href={SUPPORT_CONTACT.whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 transition-all rounded-2xl text-white flex items-center justify-between shadow-md shadow-emerald-600/20 cursor-pointer"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+              <Smartphone className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Instant Chat</p>
+              <p className="text-xs font-bold">WhatsApp Direct</p>
+            </div>
+          </div>
+          <ExternalLink className="w-4 h-4 opacity-80" />
+        </a>
       </div>
 
       {/* Main Tabs */}
