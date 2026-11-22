@@ -53,6 +53,7 @@ import { SavedPeopleManagerModal } from './SavedPeopleManagerModal';
 import { PersonDetailsView } from './PersonDetailsView';
 import { AddPersonModal } from './AddPersonModal';
 import { QrSuccessModal } from './QrSuccessModal';
+import { UdharDetailModal } from './UdharDetailModal';
 
 interface PeopleSectionProps {
   onOpenAddModal: (category?: any, subcategory?: any, personName?: string) => void;
@@ -92,6 +93,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   const [isAddPersonModalOpen, setIsAddPersonModalOpen] = useState(false);
   const [selectedTxForRepay, setSelectedTxForRepay] = useState<UdharTransactionItem | null>(null);
   const [selectedTxForDispute, setSelectedTxForDispute] = useState<UdharTransactionItem | null>(null);
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<UdharTransactionItem | null>(null);
   const [initialPersonForAdd, setInitialPersonForAdd] = useState<string | undefined>(undefined);
   const [selectedPersonForDetails, setSelectedPersonForDetails] = useState<PersonSummary | null>(null);
   const [connectedSuccessPerson, setConnectedSuccessPerson] = useState<{

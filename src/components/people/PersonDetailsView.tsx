@@ -651,6 +651,16 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
           }}
         />
       )}
+
+      {/* Udhar Detail & Audit Modal */}
+      {selectedTxForDetail && (
+        <UdharDetailModal
+          isOpen={Boolean(selectedTxForDetail)}
+          transaction={selectedTxForDetail}
+          onClose={() => setSelectedTxForDetail(null)}
+          onRefreshUdhar={onRefreshUdhar}
+        />
+      )}
     </div>
   );
 };
