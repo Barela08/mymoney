@@ -281,7 +281,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   <span>{item.label}</span>
                 </div>
                 {item.count !== undefined && (
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                  <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                     {item.count}
                   </span>
                 )}
@@ -348,7 +348,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             setIsMoreSheetOpen(false);
             onSelectTab('dashboard');
           }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
             currentTab === 'dashboard'
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -364,7 +364,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             setIsMoreSheetOpen(false);
             onSelectTab('all_transactions');
           }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
             currentTab === 'all_transactions'
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -380,7 +380,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             setIsMoreSheetOpen(false);
             onSelectTab('people');
           }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
             currentTab === 'people'
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -396,7 +396,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             setIsMoreSheetOpen(false);
             onSelectTab('reports');
           }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
             currentTab === 'reports'
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -409,7 +409,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         {/* 5. More */}
         <button
           onClick={() => setIsMoreSheetOpen(!isMoreSheetOpen)}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
+          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
             isMoreSheetOpen || ['budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'privacy_policy'].includes(currentTab)
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -457,7 +457,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <PieChart className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Budget</span>
+                <span className="text-xs font-medium">Budget</span>
               </button>
 
               {/* Savings Goals */}
@@ -469,7 +469,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <Target className="w-4 h-4 text-teal-600 dark:text-teal-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Goals</span>
+                <span className="text-xs font-medium">Goals</span>
               </button>
 
               {/* Recurring Bills */}
@@ -481,7 +481,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Bills</span>
+                <span className="text-xs font-medium">Bills</span>
               </button>
 
               {/* QR Scanner */}
@@ -493,7 +493,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <ScanLine className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Scan QR</span>
+                <span className="text-xs font-medium">Scan QR</span>
               </button>
 
               {/* My QR */}
@@ -505,7 +505,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <QrCode className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">My QR</span>
+                <span className="text-xs font-medium">My QR</span>
               </button>
 
               {/* Calculator */}
@@ -517,7 +517,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <Calculator className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Calc</span>
+                <span className="text-xs font-medium">Calc</span>
               </button>
 
               {/* Notifications */}
@@ -529,7 +529,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Alerts</span>
+                <span className="text-xs font-medium">Alerts</span>
               </button>
 
               {/* Settings */}
@@ -541,7 +541,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <Settings className="w-4 h-4 text-slate-600 dark:text-slate-400 stroke-[1.75]" />
-                <span className="text-[11px] font-medium">Settings</span>
+                <span className="text-xs font-medium">Settings</span>
               </button>
             </div>
 

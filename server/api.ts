@@ -2916,6 +2916,55 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             [registeredUser.id, authUser.full_name, authUser.email, authUser.id]
           );
 
+          // Auto-sync into public.transactions for general ledger, reports and dashboard
+          try {
+            await client.query(
+              `INSERT INTO public.transactions (
+                id, user_id, user_email, category, subcategory, transaction_type, amount,
+                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
+              ) VALUES (
+                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
+                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
+              )`,
+              [
+                authUser.id,
+                authUser.email,
+                direction === 'gave' ? 'money_given' : 'money_taken',
+                direction === 'gave' ? 'expense' : 'income',
+                amount,
+                direction === 'gave' ? `Money Lent to ${registeredUser.full_name}` : `Money Borrowed from ${registeredUser.full_name}`,
+                registeredUser.full_name,
+                txDate,
+                notes || null,
+                JSON.stringify({ link_id: linkId, udhar_id: userARes.rows[0].id, direction, due_date: dueDate }),
+              ]
+            );
+
+            await client.query(
+              `INSERT INTO public.transactions (
+                id, user_id, user_email, category, subcategory, transaction_type, amount,
+                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
+              ) VALUES (
+                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
+                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
+              )`,
+              [
+                registeredUser.id,
+                registeredUser.email,
+                counterpartDirection === 'gave' ? 'money_given' : 'money_taken',
+                counterpartDirection === 'gave' ? 'expense' : 'income',
+                amount,
+                counterpartDirection === 'gave' ? `Money Lent to ${authUser.full_name || 'Friend'}` : `Money Borrowed from ${authUser.full_name || 'Friend'}`,
+                authUser.full_name || 'Friend',
+                txDate,
+                notes || null,
+                JSON.stringify({ link_id: linkId, direction: counterpartDirection, due_date: dueDate }),
+              ]
+            );
+          } catch (txSyncErr) {
+            console.warn('[Sync to public.transactions notice]:', txSyncErr);
+          }
+
           // Create in-app notification for User B
           const notifMsg = `${authUser.full_name} recorded an Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? 'You Borrowed' : 'You Lent'}). Please confirm or dispute.`;
           await client.query(
@@ -2923,6 +2972,33 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
              VALUES ($1, $2, 'info', TRUE)`,
             [`New Udhar Request from ${authUser.full_name}`, notifMsg]
           ).catch(() => {});
+
+          // Auto-sync into public.transactions for general ledger, reports and dashboard
+          try {
+            await client.query(
+              `INSERT INTO public.transactions (
+                id, user_id, user_email, category, subcategory, transaction_type, amount,
+                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
+              ) VALUES (
+                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
+                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
+              )`,
+              [
+                authUser.id,
+                authUser.email,
+                direction === 'gave' ? 'money_given' : 'money_taken',
+                direction === 'gave' ? 'expense' : 'income',
+                amount,
+                direction === 'gave' ? `Money Lent to ${counterpartName}` : `Money Borrowed from ${counterpartName}`,
+                counterpartName,
+                txDate,
+                notes || null,
+                JSON.stringify({ link_id: linkId, udhar_id: singleRes.rows[0].id, direction, due_date: dueDate }),
+              ]
+            );
+          } catch (txSyncErr) {
+            console.warn('[Sync to public.transactions single notice]:', txSyncErr);
+          }
 
           await client.query('COMMIT');
 
@@ -2989,6 +3065,33 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
              ON CONFLICT (user_id, name) DO NOTHING`,
             [authUser.id, counterpartName]
           );
+
+          // Auto-sync into public.transactions for general ledger, reports and dashboard
+          try {
+            await client.query(
+              `INSERT INTO public.transactions (
+                id, user_id, user_email, category, subcategory, transaction_type, amount,
+                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
+              ) VALUES (
+                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
+                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
+              )`,
+              [
+                authUser.id,
+                authUser.email,
+                direction === 'gave' ? 'money_given' : 'money_taken',
+                direction === 'gave' ? 'expense' : 'income',
+                amount,
+                direction === 'gave' ? `Money Lent to ${counterpartName}` : `Money Borrowed from ${counterpartName}`,
+                counterpartName,
+                txDate,
+                notes || null,
+                JSON.stringify({ link_id: linkId, udhar_id: singleRes.rows[0].id, direction, due_date: dueDate }),
+              ]
+            );
+          } catch (txSyncErr) {
+            console.warn('[Sync to public.transactions single notice]:', txSyncErr);
+          }
 
           await client.query('COMMIT');
 
@@ -3131,6 +3234,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const repayAmount = parseFloat(body.amount);
       const repayDate = body.repayment_date || body.date || new Date().toISOString().split('T')[0];
       const notes = (body.notes || '').trim();
+      const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
 
       if (isNaN(repayAmount) || repayAmount <= 0) {
         sendJson(res, 400, { success: false, message: 'Please enter a valid repayment amount greater than ₹0.' });
@@ -3154,86 +3258,126 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const newBalance = Math.max(0, Math.round((currentBal - repayAmount) * 100) / 100);
-      const isSettled = newBalance <= 0.01;
-      const newStatus = isSettled ? 'settled' : 'confirmed';
+      const isTwoSided = Boolean(tx.counterpart_user_id);
+      const isBorrower = tx.direction === 'took';
+      // When two registered users are linked, a borrower's repayment claim requires lender confirmation
+      const repaymentStatus = (isTwoSided && isBorrower) ? 'pending_confirmation' : 'confirmed';
 
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
 
         // Record repayment entry
-        await client.query(
-          `INSERT INTO public.udhar_repayments (link_id, udhar_id, recorded_by_user_id, amount, repayment_date, notes, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'confirmed')`,
-          [tx.link_id, tx.id, authUser.id, repayAmount, repayDate, notes || null]
+        const repInsertRes = await client.query(
+          `INSERT INTO public.udhar_repayments (
+            link_id, udhar_id, recorded_by_user_id, amount, repayment_date, payment_method, notes, status,
+            confirmed_at, confirmed_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (CASE WHEN $8 = 'confirmed' THEN NOW() ELSE NULL END), (CASE WHEN $8 = 'confirmed' THEN $3 ELSE NULL END))
+          RETURNING *`,
+          [tx.link_id, tx.id, authUser.id, repayAmount, repayDate, paymentMethod, notes || null, repaymentStatus]
         );
 
-        // Update balances on all transactions sharing this link_id
-        await client.query(
-          `UPDATE public.udhar_transactions 
-           SET current_balance = $1, status = $2, settled_at = (CASE WHEN $3 = TRUE THEN NOW() ELSE settled_at END), updated_at = NOW() 
-           WHERE link_id = $4`,
-          [newBalance, newStatus, isSettled, tx.link_id]
-        );
+        let newBalance = currentBal;
+        let isSettled = false;
+        let totalConfirmedRepaid = 0;
+
+        if (repaymentStatus === 'confirmed') {
+          // Recompute confirmed repayments sum
+          const sumRes = await client.query(
+            `SELECT COALESCE(SUM(amount), 0) AS total_repaid
+             FROM public.udhar_repayments
+             WHERE link_id = $1 AND status = 'confirmed'`,
+            [tx.link_id]
+          );
+          totalConfirmedRepaid = parseFloat(sumRes.rows[0].total_repaid) || 0;
+          const origAmt = parseFloat(tx.original_amount) || 0;
+          newBalance = Math.max(0, Math.round((origAmt - totalConfirmedRepaid) * 100) / 100);
+          isSettled = newBalance <= 0.01;
+          const newStatus = isSettled ? 'settled' : 'confirmed';
+
+          // Update balances on all transactions sharing this link_id
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = $1, paid_amount = $2, status = $3, 
+                 settled_at = (CASE WHEN $4 = TRUE THEN NOW() ELSE settled_at END), updated_at = NOW() 
+             WHERE link_id = $5`,
+            [newBalance, totalConfirmedRepaid, newStatus, isSettled, tx.link_id]
+          );
+        }
 
         await client.query('COMMIT');
 
         await logSecurityEvent('UDHAR_REPAYMENT_RECORDED', {
           userId: authUser.id,
           userEmail: authUser.email,
-          details: { txId, linkId: tx.link_id, amount: repayAmount, remainingBalance: newBalance, isSettled },
+          details: { txId, linkId: tx.link_id, amount: repayAmount, status: repaymentStatus, remainingBalance: newBalance, isSettled },
         });
 
-        // Multi-channel notification for repayment & auto-cancellation of reminders if settled
-        notifyUdharRepayment({
-          initiatorUserId: authUser.id,
-          initiatorName: authUser.full_name || 'Friend',
-          recipientUserId: tx.counterpart_user_id || null,
-          repaymentId: txId,
-          contactName: tx.counterpart_name || 'Contact',
-          repaymentAmount: repayAmount,
-          remainingBalance: newBalance,
-          isFullySettled: isSettled,
-        }).catch((e) => console.warn('[Notify Udhar Repayment Error]:', e));
-
-        // In-app notification for counterpart user
-        if (tx.counterpart_user_id) {
-          await client.query(
+        // Notifications
+        if (repaymentStatus === 'pending_confirmation' && tx.counterpart_user_id) {
+          await query(
             `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-             VALUES ($1, $2, 'repayment', $3, $4, $5, TRUE)`,
+             VALUES ($1, $2, 'repayment_pending', $3, $4, $5, TRUE)`,
             [
-              isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
-              `${authUser.full_name} recorded a repayment of ₹${repayAmount.toLocaleString('en-IN')}. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+              `Repayment Confirmation Needed: ${authUser.full_name}`,
+              `${authUser.full_name} reported a payment of ₹${repayAmount.toLocaleString('en-IN')} via ${paymentMethod}. Please confirm receipt.`,
               tx.counterpart_user_id,
               tx.link_id,
               authUser.id,
             ]
           ).catch(() => {});
-        }
-
-        // Automated Udhar Settlement Emails (if fully cleared / settled)
-        if (isSettled) {
-          sendUdharSettledEmails({
-            transactionId: tx.id,
-            linkId: tx.link_id,
+        } else if (repaymentStatus === 'confirmed') {
+          notifyUdharRepayment({
             initiatorUserId: authUser.id,
-            initiatorName: authUser.full_name || 'My Money User',
-            initiatorEmail: authUser.email,
-            counterpartUserId: tx.counterpart_user_id || null,
-            counterpartName: tx.counterpart_name,
-            amountSettled: repayAmount,
-            settlementDate: repayDate,
-            updatedBalance: newBalance,
-            direction: tx.direction,
-          }).catch((e) => console.warn('[Udhar Settled Email Error]:', e));
+            initiatorName: authUser.full_name || 'Friend',
+            recipientUserId: tx.counterpart_user_id || null,
+            repaymentId: txId,
+            contactName: tx.counterpart_name || 'Contact',
+            repaymentAmount: repayAmount,
+            remainingBalance: newBalance,
+            isFullySettled: isSettled,
+          }).catch((e) => console.warn('[Notify Udhar Repayment Error]:', e));
+
+          if (tx.counterpart_user_id) {
+            await query(
+              `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+               VALUES ($1, $2, 'repayment', $3, $4, $5, TRUE)`,
+              [
+                isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
+                `${authUser.full_name} recorded a repayment of ₹${repayAmount.toLocaleString('en-IN')}. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+                tx.counterpart_user_id,
+                tx.link_id,
+                authUser.id,
+              ]
+            ).catch(() => {});
+          }
+
+          if (isSettled) {
+            sendUdharSettledEmails({
+              transactionId: tx.id,
+              linkId: tx.link_id,
+              initiatorUserId: authUser.id,
+              initiatorName: authUser.full_name || 'My Money User',
+              initiatorEmail: authUser.email,
+              counterpartUserId: tx.counterpart_user_id || null,
+              counterpartName: tx.counterpart_name,
+              amountSettled: repayAmount,
+              settlementDate: repayDate,
+              updatedBalance: newBalance,
+              direction: tx.direction,
+            }).catch((e) => console.warn('[Udhar Settled Email Error]:', e));
+          }
         }
 
         sendJson(res, 200, {
           success: true,
-          message: isSettled
-            ? 'Full repayment recorded! Transaction is now completely settled.'
-            : `Partial repayment of ₹${repayAmount.toLocaleString('en-IN')} recorded. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+          repayment: repInsertRes.rows[0],
+          isPendingConfirmation: repaymentStatus === 'pending_confirmation',
+          message: repaymentStatus === 'pending_confirmation'
+            ? `Payment of ₹${repayAmount.toLocaleString('en-IN')} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.`
+            : isSettled
+              ? 'Full repayment recorded! Transaction is now completely settled.'
+              : `Partial repayment of ₹${repayAmount.toLocaleString('en-IN')} recorded. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
           remainingBalance: newBalance,
           isSettled,
         });
@@ -3246,7 +3390,186 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // 20. UPDATE UDHAAR TRANSACTION: PUT /api/udhar/transactions/:id
+    // 19B. CONFIRM REPAYMENT (LENDER ONLY): POST /api/udhar/repayments/:id/confirm
+    const confirmRepaymentMatch = pathname.match(/^\/api\/udhar\/repayments\/([a-zA-Z0-9_-]+)\/confirm$/);
+    if (confirmRepaymentMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const repaymentId = confirmRepaymentMatch[1];
+      const repRes = await query(`SELECT r.* FROM public.udhar_repayments r WHERE r.id = $1`, [repaymentId]);
+
+      if (repRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+        return true;
+      }
+
+      const rep = repRes.rows[0];
+      if (rep.status === 'confirmed') {
+        sendJson(res, 400, { success: false, message: 'This repayment has already been confirmed.' });
+        return true;
+      }
+
+      // Check transaction for authUser to verify role
+      const txRes = await query(
+        `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
+        [rep.link_id, authUser.id]
+      );
+
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Associated transaction not found for your account.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      // Role enforcement: Only the lender (direction === 'gave') can confirm repayment!
+      if (tx.direction !== 'gave') {
+        sendJson(res, 403, {
+          success: false,
+          message: 'Only the lender who gave the money can confirm receipt of repayment.',
+        });
+        return true;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // 1. Mark repayment confirmed
+        await client.query(
+          `UPDATE public.udhar_repayments 
+           SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = $1, rejection_reason = NULL
+           WHERE id = $2`,
+          [authUser.id, repaymentId]
+        );
+
+        // 2. Recompute total confirmed repayments
+        const sumRes = await client.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total_repaid
+           FROM public.udhar_repayments
+           WHERE link_id = $1 AND status = 'confirmed'`,
+          [tx.link_id]
+        );
+        const totalConfirmedRepaid = parseFloat(sumRes.rows[0].total_repaid) || 0;
+        const origAmt = parseFloat(tx.original_amount) || 0;
+        const newBalance = Math.max(0, Math.round((origAmt - totalConfirmedRepaid) * 100) / 100);
+        const isSettled = newBalance <= 0.01;
+        const newStatus = isSettled ? 'settled' : 'confirmed';
+
+        // 3. Update all transaction rows with link_id
+        await client.query(
+          `UPDATE public.udhar_transactions 
+           SET current_balance = $1, paid_amount = $2, status = $3, 
+               settled_at = (CASE WHEN $4 = TRUE THEN NOW() ELSE settled_at END), updated_at = NOW() 
+           WHERE link_id = $5`,
+          [newBalance, totalConfirmedRepaid, newStatus, isSettled, tx.link_id]
+        );
+
+        await client.query('COMMIT');
+
+        // Notify borrower
+        if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
+          await query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'repayment_confirmed', $3, $4, $5, TRUE)`,
+            [
+              `Repayment Confirmed by ${authUser.full_name}`,
+              `${authUser.full_name} confirmed receiving your repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+              rep.recorded_by_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        sendJson(res, 200, {
+          success: true,
+          message: `Repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')} confirmed successfully!`,
+          remainingBalance: newBalance,
+          isSettled,
+        });
+        return true;
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
+
+    // 19C. REJECT REPAYMENT (LENDER ONLY): POST /api/udhar/repayments/:id/reject
+    const rejectRepaymentMatch = pathname.match(/^\/api\/udhar\/repayments\/([a-zA-Z0-9_-]+)\/reject$/);
+    if (rejectRepaymentMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const repaymentId = rejectRepaymentMatch[1];
+      const body = await parseJsonBody(req);
+      const rejectionReason = (body.reason || body.rejection_reason || 'Payment not received').trim();
+
+      const repRes = await query(`SELECT * FROM public.udhar_repayments WHERE id = $1`, [repaymentId]);
+      if (repRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+        return true;
+      }
+
+      const rep = repRes.rows[0];
+      const txRes = await query(
+        `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
+        [rep.link_id, authUser.id]
+      );
+
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Associated transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      if (tx.direction !== 'gave') {
+        sendJson(res, 403, {
+          success: false,
+          message: 'Only the lender who gave the money can reject a repayment claim.',
+        });
+        return true;
+      }
+
+      await query(
+        `UPDATE public.udhar_repayments 
+         SET status = 'rejected', rejection_reason = $1, confirmed_at = NOW(), confirmed_by = $2 
+         WHERE id = $3`,
+        [rejectionReason, authUser.id, repaymentId]
+      );
+
+      // Notify borrower
+      if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
+        await query(
+          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+           VALUES ($1, $2, 'repayment_rejected', $3, $4, $5, TRUE)`,
+          [
+            `Repayment Claim Rejected`,
+            `${authUser.full_name} rejected your payment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}: "${rejectionReason}".`,
+            rep.recorded_by_user_id,
+            tx.link_id,
+            authUser.id,
+          ]
+        ).catch(() => {});
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Repayment claim rejected.',
+        rejectionReason,
+      });
+      return true;
+    }
+
+    // 20. UPDATE UDHAAR TRANSACTION (WITH AUDIT & REPAYMENT PRESERVATION): PUT /api/udhar/transactions/:id
     const updateTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)$/);
     if (updateTxMatch && method === 'PUT') {
       const authUser = await authenticateRequest(req);
@@ -3261,50 +3584,134 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const newNotes = body.notes !== undefined ? (body.notes || '').trim() : undefined;
       const newDate = body.transaction_date || body.date;
       const newDueDate = body.due_date || body.dueDate;
+      const editReason = (body.reason_for_edit || body.reason || body.edit_reason || 'Details updated').trim();
 
-      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      const txRes = await query(
+        'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2)',
+        [txId, authUser.id]
+      );
       if (txRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Transaction not found.' });
         return true;
       }
 
       const tx = txRes.rows[0];
-      const updatedAmt = newAmount !== undefined && !isNaN(newAmount) && newAmount > 0 ? newAmount : parseFloat(tx.original_amount);
+      const prevAmt = parseFloat(tx.original_amount);
+      const updatedAmt = newAmount !== undefined && !isNaN(newAmount) && newAmount > 0 ? newAmount : prevAmt;
       const updatedNotes = newNotes !== undefined ? newNotes : tx.notes;
       const updatedDate = newDate || tx.transaction_date;
       const updatedDueDate = newDueDate !== undefined ? newDueDate : tx.due_date;
 
-      await query(
-        `UPDATE public.udhar_transactions 
-         SET original_amount = $1, current_balance = $1, notes = $2, transaction_date = $3, due_date = $4, updated_at = NOW() 
-         WHERE link_id = $5`,
-        [updatedAmt, updatedNotes || null, updatedDate, updatedDueDate || null, tx.link_id]
-      );
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      // Automated update email notifications to participants
-      sendUdharUpdatedEmails({
-        transactionId: tx.id,
-        linkId: tx.link_id,
-        initiatorUserId: authUser.id,
-        initiatorName: authUser.full_name || 'My Money User',
-        initiatorEmail: authUser.email,
-        counterpartUserId: tx.counterpart_user_id || null,
-        counterpartName: tx.counterpart_name,
-        amount: updatedAmt,
-        direction: tx.direction,
-        description: updatedNotes || undefined,
-        transactionDate: updatedDate,
-        status: tx.status,
-      }).catch((e) => console.warn('[Udhar Updated Email Error]:', e));
+        // 1. Calculate confirmed repayments to NEVER wipe out repayments
+        const repaySumRes = await client.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total_repaid
+           FROM public.udhar_repayments
+           WHERE link_id = $1 AND status = 'confirmed'`,
+          [tx.link_id]
+        );
+        const totalConfirmedRepaid = parseFloat(repaySumRes.rows[0].total_repaid) || 0;
+        const newBalance = Math.max(0, Math.round((updatedAmt - totalConfirmedRepaid) * 100) / 100);
+        const isSettled = newBalance <= 0.01;
+        const newStatus = isSettled ? 'settled' : 'confirmed';
 
-      sendJson(res, 200, {
-        success: true,
-        message: 'Udhar transaction updated successfully.',
-      });
-      return true;
+        // 2. Insert into audit history table
+        await client.query(
+          `INSERT INTO public.udhar_edit_history (
+            udhar_id, link_id, edited_by_user_id, previous_amount, new_amount,
+            previous_notes, new_notes, previous_date, new_date, previous_due_date, new_due_date,
+            reason_for_edit
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            tx.id,
+            tx.link_id,
+            authUser.id,
+            prevAmt,
+            updatedAmt,
+            tx.notes,
+            updatedNotes || null,
+            tx.transaction_date,
+            updatedDate,
+            tx.due_date,
+            updatedDueDate || null,
+            editReason,
+          ]
+        );
+
+        // 3. Update both sides of udhar_transactions
+        await client.query(
+          `UPDATE public.udhar_transactions 
+           SET original_amount = $1, current_balance = $2, paid_amount = $3, status = $4,
+               notes = $5, transaction_date = $6, due_date = $7,
+               last_edited_at = NOW(), last_edited_by = $8, edit_reason = $9, updated_at = NOW() 
+           WHERE link_id = $10`,
+          [
+            updatedAmt,
+            newBalance,
+            totalConfirmedRepaid,
+            newStatus,
+            updatedNotes || null,
+            updatedDate,
+            updatedDueDate || null,
+            authUser.id,
+            editReason,
+            tx.link_id,
+          ]
+        );
+
+        await client.query('COMMIT');
+
+        // Notify counterpart if registered
+        if (tx.counterpart_user_id) {
+          const targetUser = tx.user_id === authUser.id ? tx.counterpart_user_id : tx.user_id;
+          await query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'udhar_edited', $3, $4, $5, TRUE)`,
+            [
+              `Udhar Edited by ${authUser.full_name}`,
+              `${authUser.full_name} updated the transaction details (${editReason}). Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+              targetUser,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        // Automated update email
+        sendUdharUpdatedEmails({
+          transactionId: tx.id,
+          linkId: tx.link_id,
+          initiatorUserId: authUser.id,
+          initiatorName: authUser.full_name || 'My Money User',
+          initiatorEmail: authUser.email,
+          counterpartUserId: tx.counterpart_user_id || null,
+          counterpartName: tx.counterpart_name,
+          amount: updatedAmt,
+          direction: tx.direction,
+          description: updatedNotes || undefined,
+          transactionDate: updatedDate,
+          status: newStatus,
+        }).catch((e) => console.warn('[Udhar Updated Email Error]:', e));
+
+        sendJson(res, 200, {
+          success: true,
+          message: `Udhar transaction updated successfully. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+          remainingBalance: newBalance,
+          isSettled,
+        });
+        return true;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
-    // 20B. SETTLE TRANSACTION FULLY: POST /api/udhar/transactions/:id/settle
+    // 20B. SETTLE TRANSACTION FULLY (LENDER ONLY FOR 2-WAY): POST /api/udhar/transactions/:id/settle
     const settleTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/settle$/);
     if (settleTxMatch && method === 'POST') {
       const authUser = await authenticateRequest(req);
@@ -3325,6 +3732,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
+
+      // ROLE & DIRECTION PERMISSION CHECK:
+      // If two-sided (counterpart_user_id exists) and authUser is borrower (direction === 'took'),
+      // borrower CANNOT unilaterally declare debt settled without lender's confirmation!
+      if (tx.counterpart_user_id && tx.direction === 'took') {
+        sendJson(res, 403, {
+          success: false,
+          message: 'Only the lender who gave the money can mark an Udhar as settled. As the borrower, please record a repayment for their confirmation.',
+        });
+        return true;
+      }
+
       const currentBal = parseFloat(tx.current_balance);
       if (currentBal <= 0) {
         sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
@@ -3337,15 +3756,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         // Record settlement repayment
         await client.query(
-          `INSERT INTO public.udhar_repayments (link_id, udhar_id, recorded_by_user_id, amount, repayment_date, notes, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'confirmed')`,
-          [tx.link_id, tx.id, authUser.id, currentBal, settleDate, notes]
+          `INSERT INTO public.udhar_repayments (
+            link_id, udhar_id, recorded_by_user_id, amount, repayment_date, payment_method, notes, status,
+            confirmed_at, confirmed_by
+          ) VALUES ($1, $2, $3, $4, $5, 'Cash', $6, 'confirmed', NOW(), $7)`,
+          [tx.link_id, tx.id, authUser.id, currentBal, settleDate, notes, authUser.id]
         );
 
         // Update balance on all rows sharing link_id to 0 and settled
         await client.query(
           `UPDATE public.udhar_transactions 
-           SET current_balance = 0, status = 'settled', settled_at = NOW(), updated_at = NOW() 
+           SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
            WHERE link_id = $1`,
           [tx.link_id]
         );
@@ -3452,6 +3873,60 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       sendJson(res, 200, {
         success: true,
         message: 'Transaction cancelled successfully. Balances updated.',
+      });
+      return true;
+    }
+
+    // 20D. GET TRANSACTION AUDIT & REPAYMENT HISTORY: GET /api/udhar/transactions/:id/history
+    const historyTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/history$/);
+    if (historyTxMatch && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = historyTxMatch[1];
+      const txRes = await query(
+        'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2)',
+        [txId, authUser.id]
+      );
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+
+      let editHistory: any[] = [];
+      try {
+        const editHistRes = await query(
+          `SELECT h.*, u.full_name AS edited_by_name 
+           FROM public.udhar_edit_history h
+           LEFT JOIN public.app_users u ON h.edited_by_user_id = u.id
+           WHERE h.link_id = $1
+           ORDER BY h.created_at DESC`,
+          [tx.link_id]
+        );
+        editHistory = editHistRes.rows;
+      } catch (err) {
+        console.warn('Edit history fetch notice:', err);
+      }
+
+      const repaymentsRes = await query(
+        `SELECT r.*, u.full_name AS recorded_by_name
+         FROM public.udhar_repayments r
+         LEFT JOIN public.app_users u ON r.recorded_by_user_id = u.id
+         WHERE r.link_id = $1
+         ORDER BY r.repayment_date DESC, r.created_at DESC`,
+        [tx.link_id]
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        transaction: tx,
+        editHistory,
+        repayments: repaymentsRes.rows,
       });
       return true;
     }
