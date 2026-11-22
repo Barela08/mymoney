@@ -233,8 +233,19 @@ export const adminClient = {
   },
 
   // 9. Administration & RBAC
-  async getAuditLogs() {
-    return adminRequest('/api/admin/audit-logs', { method: 'GET' });
+  async getAuditLogs(params?: { q?: string; event_type?: string; role?: string; limit?: number; offset?: number }) {
+    const searchParams = new URLSearchParams();
+    if (params?.q) searchParams.append('q', params.q);
+    if (params?.event_type && params.event_type !== 'all') searchParams.append('event_type', params.event_type);
+    if (params?.role && params.role !== 'all') searchParams.append('role', params.role);
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.offset) searchParams.append('offset', params.offset.toString());
+    const qs = searchParams.toString();
+    return adminRequest(`/api/admin/audit-logs${qs ? '?' + qs : ''}`, { method: 'GET' });
+  },
+
+  async getAnalytics(range: string = '30d') {
+    return adminRequest(`/api/admin/analytics?range=${encodeURIComponent(range)}`, { method: 'GET' });
   },
 
   async getAdminRoles() {
@@ -270,6 +281,14 @@ export const adminClient = {
 
   async acknowledgeAlert(id: string) {
     return adminRequest(`/api/admin/alerts/${encodeURIComponent(id)}/ack`, { method: 'PUT' });
+  },
+
+  async getNotifications() {
+    return adminRequest('/api/admin/notifications', { method: 'GET' });
+  },
+
+  async deleteNotification(id: string) {
+    return adminRequest(`/api/admin/notifications/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
   async broadcastNotification(data: { title: string; message: string; type?: string; target_user_id?: string }) {

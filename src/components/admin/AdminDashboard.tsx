@@ -76,10 +76,15 @@ import { securityAudit, SecurityAuditEntry } from '../../lib/security';
 import { formatINR, formatDisplayDate, formatDisplayTime, getCurrentISTDate, getCurrentISTTime } from '../../lib/dateUtils';
 import { MaintenanceScreen } from '../maintenance/MaintenanceScreen';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
+import { AdminFeedbackSection } from './AdminFeedbackSection';
+import { AdminTicketsSection } from './AdminTicketsSection';
 
 type AdminTab =
   | 'overview'
   | 'users'
+  | 'feedback'
+  | 'complaints'
+  | 'support'
   | 'feedbacks'
   | 'transactions'
   | 'sections'
@@ -849,13 +854,9 @@ export const AdminDashboard: React.FC = () => {
         {[
           { id: 'overview' as AdminTab, label: 'Overview', icon: LayoutDashboard },
           { id: 'users' as AdminTab, label: 'User Directory', icon: Users, badge: usersList.length },
-          {
-            id: 'feedbacks' as AdminTab,
-            label: 'Feedback & Complaints',
-            icon: MessageSquare,
-            badge: feedbacks.filter((f) => f.status === 'pending').length || undefined,
-            alert: feedbacks.some((f) => f.type === 'complaint' && f.status === 'pending'),
-          },
+          { id: 'feedback' as AdminTab, label: 'Feedback', icon: Star },
+          { id: 'complaints' as AdminTab, label: 'Complaints', icon: AlertOctagon },
+          { id: 'support' as AdminTab, label: 'Support Tickets', icon: MessageSquare },
           { id: 'transactions' as AdminTab, label: 'All Transactions', icon: FileText, badge: allGlobalTransactions.length },
           { id: 'sections' as AdminTab, label: 'Dynamic Sections', icon: FolderKanban, badge: dynamicSections.length },
           { id: 'recycle_bin' as AdminTab, label: 'Recycle Bin', icon: Trash2, badge: recycleBinTransactions.length },
@@ -1277,7 +1278,22 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* ========================================================= */}
-      {/* TAB 2.5: FEEDBACK & COMPLAINTS MANAGEMENT                 */}
+      {/* TAB: FEEDBACK MANAGEMENT                                   */}
+      {/* ========================================================= */}
+      {activeTab === 'feedback' && <AdminFeedbackSection />}
+
+      {/* ========================================================= */}
+      {/* TAB: COMPLAINTS MANAGEMENT                                 */}
+      {/* ========================================================= */}
+      {activeTab === 'complaints' && <AdminTicketsSection ticketType="complaint" />}
+
+      {/* ========================================================= */}
+      {/* TAB: HELP & SUPPORT TICKETS                                */}
+      {/* ========================================================= */}
+      {activeTab === 'support' && <AdminTicketsSection ticketType="support" />}
+
+      {/* ========================================================= */}
+      {/* TAB 2.5: LEGACY FEEDBACK & COMPLAINTS MANAGEMENT          */}
       {/* ========================================================= */}
       {activeTab === 'feedbacks' && (
         <div className="space-y-6">

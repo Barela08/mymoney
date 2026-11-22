@@ -977,12 +977,12 @@ export async function handleAdminApiRequest(
     }
 
     // Retry Failed Email Reply: POST /api/admin/support/replies/:replyId/retry-email
-    const retryEmailMatch = pathname.match(/^\/api\/admin\/support\/replies\/([a-zA-Z0-9_-]+)\/retry-email$/);
-    if (retryEmailMatch && method === 'POST') {
+    const retrySupportReplyEmailMatch = pathname.match(/^\/api\/admin\/support\/replies\/([a-zA-Z0-9_-]+)\/retry-email$/);
+    if (retrySupportReplyEmailMatch && method === 'POST') {
       const auth = await verifyAdminAuth(req, res, 'support.reply');
       if (!auth) return true;
 
-      const replyId = retryEmailMatch[1];
+      const replyId = retrySupportReplyEmailMatch[1];
       const replyRes = await query(
         `SELECT r.*, t.ticket_number, t.ticket_type, t.subject, t.user_email, t.user_name, t.user_id 
          FROM public.support_ticket_replies r
@@ -1427,6 +1427,193 @@ export async function handleAdminApiRequest(
       });
 
       sendJson(res, 201, { success: true, message: 'Notification broadcast dispatched.', notification: notifRes.rows[0] });
+      return true;
+    }
+
+    // GET /api/admin/notifications
+    if (pathname === '/api/admin/notifications' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const notifsRes = await query(
+        `SELECT n.*, u.full_name as creator_name, u.email as creator_email 
+         FROM public.notifications n
+         LEFT JOIN public.app_users u ON n.created_by = u.id
+         ORDER BY n.created_at DESC 
+         LIMIT 100`
+      );
+
+      sendJson(res, 200, { success: true, notifications: notifsRes.rows });
+      return true;
+    }
+
+    // DELETE /api/admin/notifications/:id
+    if (pathname.startsWith('/api/admin/notifications/') && method === 'DELETE') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const notifId = pathname.split('/')[4];
+      await query('UPDATE public.notifications SET is_active = FALSE WHERE id = $1', [notifId]);
+
+      await logSecurityEvent('NOTIFICATION_DEACTIVATED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { notificationId: notifId },
+      });
+
+      sendJson(res, 200, { success: true, message: 'Notification deactivated successfully.' });
+      return true;
+    }
+
+    // =========================================================
+    // 17. AUDIT LOGS: GET /api/admin/audit-logs
+    // =========================================================
+    if (pathname === '/api/admin/audit-logs' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'audit.read');
+      if (!auth) return true;
+
+      const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      const q = (urlObj.searchParams.get('q') || '').trim();
+      const eventType = (urlObj.searchParams.get('event_type') || '').trim();
+      const role = (urlObj.searchParams.get('role') || '').trim();
+      const limit = Math.min(parseInt(urlObj.searchParams.get('limit') || '100'), 500);
+      const offset = Math.max(parseInt(urlObj.searchParams.get('offset') || '0'), 0);
+
+      const conditions: string[] = ['1=1'];
+      const params: any[] = [];
+
+      if (q) {
+        params.push(`%${q}%`);
+        conditions.push(`(event_type ILIKE $${params.length} OR user_email ILIKE $${params.length} OR CAST(details AS TEXT) ILIKE $${params.length})`);
+      }
+      if (eventType && eventType !== 'all') {
+        params.push(eventType);
+        conditions.push(`event_type = $${params.length}`);
+      }
+      if (role && role !== 'all') {
+        params.push(role);
+        conditions.push(`actor_role = $${params.length}`);
+      }
+
+      const totalRes = await query(
+        `SELECT COUNT(*) as total FROM public.security_audit_logs WHERE ${conditions.join(' AND ')}`,
+        params
+      );
+
+      params.push(limit);
+      const limitParamIdx = params.length;
+      params.push(offset);
+      const offsetParamIdx = params.length;
+
+      const logsRes = await query(
+        `SELECT id, event_type, user_id, user_email, actor_role, ip_address, details, created_at 
+         FROM public.security_audit_logs 
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY created_at DESC 
+         LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`,
+        params
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        logs: logsRes.rows,
+        total: parseInt(totalRes.rows[0]?.total || '0'),
+        limit,
+        offset,
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 18. REPORTS & ANALYTICS: GET /api/admin/analytics
+    // =========================================================
+    if (pathname === '/api/admin/analytics' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'analytics.read');
+      if (!auth) return true;
+
+      const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      const range = urlObj.searchParams.get('range') || '30d';
+
+      let interval = "30 days";
+      if (range === 'today') interval = "1 day";
+      else if (range === '7d') interval = "7 days";
+      else if (range === '90d') interval = "90 days";
+
+      const [
+        registrationsTrend,
+        loginsTrend,
+        verificationsRes,
+        statusBreakdown,
+        securityBreakdown,
+        emailStatsRes,
+        ticketStatsRes,
+        deletionTrendsRes,
+      ] = await Promise.all([
+        query(`
+          SELECT DATE(created_at) as date, COUNT(*) as count 
+          FROM public.app_users 
+          WHERE created_at >= NOW() - INTERVAL '${interval}'
+          GROUP BY DATE(created_at) 
+          ORDER BY DATE(created_at) ASC
+        `),
+        query(`
+          SELECT DATE(created_at) as date, COUNT(*) as count 
+          FROM public.security_audit_logs 
+          WHERE event_type = 'USER_LOGIN_SUCCESS' AND created_at >= NOW() - INTERVAL '${interval}'
+          GROUP BY DATE(created_at) 
+          ORDER BY DATE(created_at) ASC
+        `),
+        query(`
+          SELECT 
+            COUNT(*) FILTER (WHERE email_verified = TRUE) as verified_count,
+            COUNT(*) FILTER (WHERE email_verified = FALSE) as unverified_count
+          FROM public.app_users
+        `),
+        query(`
+          SELECT status, COUNT(*) as count 
+          FROM public.app_users 
+          GROUP BY status
+        `),
+        query(`
+          SELECT severity, status, COUNT(*) as count 
+          FROM public.security_incidents 
+          GROUP BY severity, status
+        `),
+        query(`
+          SELECT status, COUNT(*) as count 
+          FROM public.email_dispatch_logs 
+          WHERE created_at >= NOW() - INTERVAL '${interval}'
+          GROUP BY status
+        `),
+        query(`
+          SELECT category, status, priority, COUNT(*) as count 
+          FROM public.support_tickets 
+          GROUP BY category, status, priority
+        `),
+        query(`
+          SELECT DATE(requested_at) as date, status, COUNT(*) as count 
+          FROM public.account_deletion_requests 
+          WHERE requested_at >= NOW() - INTERVAL '${interval}'
+          GROUP BY DATE(requested_at), status 
+          ORDER BY DATE(requested_at) ASC
+        `),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        range,
+        data: {
+          registrationsTrend: registrationsTrend.rows,
+          loginsTrend: loginsTrend.rows,
+          verification: verificationsRes.rows[0] || { verified_count: 0, unverified_count: 0 },
+          statuses: statusBreakdown.rows,
+          security: securityBreakdown.rows,
+          emails: emailStatsRes.rows,
+          tickets: ticketStatsRes.rows,
+          deletions: deletionTrendsRes.rows,
+        },
+      });
       return true;
     }
 
