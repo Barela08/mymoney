@@ -174,6 +174,46 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
     }
   }
 
+  // Supabase JWT Access Token support (format: header.payload.signature)
+  if (token.includes('.') && token.split('.').length === 3) {
+    try {
+      const payloadBase64 = token.split('.')[1];
+      const normalizedBase64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
+      const decodedJson = Buffer.from(normalizedBase64, 'base64').toString('utf8');
+      const jwtPayload = JSON.parse(decodedJson);
+      const jwtUserId = jwtPayload.sub;
+      if (jwtUserId) {
+        const jwtRes = await query(
+          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+           FROM public.app_users WHERE id = $1`,
+          [jwtUserId]
+        );
+        if (jwtRes.rows.length > 0 && jwtRes.rows[0].status === 'active') {
+          const row = jwtRes.rows[0];
+          const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+          return {
+            id: row.id,
+            full_name: row.full_name,
+            email: row.email,
+            phone: row.phone,
+            role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
+            status: row.status,
+            email_verified: row.email_verified,
+            avatar_url: row.avatar_url,
+            force_password_reset: row.force_password_reset,
+            created_at: row.created_at,
+            last_login_at: row.last_login_at,
+            password_changed_at: row.password_changed_at,
+          };
+        }
+        const restUser = await resolveUserViaSupabaseRest(jwtUserId);
+        if (restUser) return restUser;
+      }
+    } catch (jwtErr) {
+      console.warn('Supabase JWT token decode notice:', jwtErr);
+    }
+  }
+
   const tokenHash = hashToken(token);
 
   try {

@@ -16,12 +16,21 @@ import {
   Receipt,
   RotateCcw,
   Sparkles,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { PersonSummary, Transaction } from '../../types';
+import {
+  udharDeletionApi,
+  UdharTransactionItem,
+} from '../../lib/udharDeletionApi';
 import { SettleUdharModal } from './SettleUdharModal';
+import { RepayUdharModal } from './RepayUdharModal';
 
 interface PersonDetailsViewProps {
   person: PersonSummary;
@@ -29,6 +38,8 @@ interface PersonDetailsViewProps {
   onOpenAddModal: (category?: any, subcategory?: any, personName?: string) => void;
   onEditPerson?: (personName: string) => void;
   onDeletePerson?: (personName: string) => void;
+  udharTransactions?: UdharTransactionItem[];
+  onRefreshUdhar?: () => Promise<void>;
 }
 
 export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
@@ -37,16 +48,31 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   onOpenAddModal,
   onEditPerson,
   onDeletePerson,
+  udharTransactions = [],
+  onRefreshUdhar,
 }) => {
   const { settlePersonUdhar, permanentDeletePersonTransactions } = useExpense();
   const toast = useToast();
 
   const [searchHistory, setSearchHistory] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'given' | 'received'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'given' | 'received' | 'settled'>('all');
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
+  const [selectedTxForRepay, setSelectedTxForRepay] = useState<UdharTransactionItem | null>(null);
+  const [expandedRepayments, setExpandedRepayments] = useState<Record<string, boolean>>({});
+  const [isInviting, setIsInviting] = useState(false);
 
-  // Filtered person's transactions
+  // Filter Udhar Transactions specifically for this person
+  const personUdharTxs = useMemo(() => {
+    const pName = person.name.toLowerCase().trim();
+    return udharTransactions.filter(
+      (t) =>
+        t.counterpart_name.toLowerCase().trim() === pName ||
+        (person.linkedUserId && t.counterpart_user_id === person.linkedUserId)
+    );
+  }, [udharTransactions, person.name, person.linkedUserId]);
+
+  // Combined transactions filter
   const filteredTxs = useMemo(() => {
     let list = person.transactions || [];
     if (searchHistory.trim()) {
@@ -66,6 +92,27 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
     return list;
   }, [person.transactions, searchHistory, filterType]);
 
+  const filteredUdharTxs = useMemo(() => {
+    let list = personUdharTxs;
+    if (searchHistory.trim()) {
+      const q = searchHistory.toLowerCase().trim();
+      list = list.filter(
+        (t) =>
+          (t.notes && t.notes.toLowerCase().includes(q)) ||
+          String(t.original_amount).includes(q) ||
+          String(t.current_balance).includes(q)
+      );
+    }
+    if (filterType === 'given') {
+      list = list.filter((t) => t.direction === 'gave');
+    } else if (filterType === 'received') {
+      list = list.filter((t) => t.direction === 'took');
+    } else if (filterType === 'settled') {
+      list = list.filter((t) => t.status === 'settled');
+    }
+    return list;
+  }, [personUdharTxs, searchHistory, filterType]);
+
   const balance = person.outstandingBalance;
   const isSettled = Math.abs(balance) < 0.01;
   const isOwedToYou = balance > 0; // You will get
@@ -76,10 +123,66 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
       await settlePersonUdhar(person.name, notes);
       toast.success('Udhar Settled', `All pending balance with ${person.name} is now cleared (₹0).`);
       setIsSettleModalOpen(false);
+      if (onRefreshUdhar) await onRefreshUdhar();
     } catch (err: any) {
       toast.error('Settlement Failed', err.message);
     } finally {
       setIsSettling(false);
+    }
+  };
+
+  const handleSettleSingleTx = async (txId: string) => {
+    if (!confirm('Settle this entire debt balance to ₹0?')) return;
+    try {
+      const res = await udharDeletionApi.settleUdharTransaction(txId);
+      if (res.success) {
+        toast.success('Settled', res.message);
+        if (onRefreshUdhar) await onRefreshUdhar();
+      }
+    } catch (err: any) {
+      toast.error('Settlement Failed', err.message);
+    }
+  };
+
+  const handleCancelSingleTx = async (txId: string) => {
+    if (!confirm('Are you sure you want to cancel this Udhar transaction? This removes it for both participants.')) return;
+    try {
+      const res = await udharDeletionApi.cancelUdharTransaction(txId);
+      if (res.success) {
+        toast.success('Cancelled', res.message);
+        if (onRefreshUdhar) await onRefreshUdhar();
+      }
+    } catch (err: any) {
+      toast.error('Cancellation Failed', err.message);
+    }
+  };
+
+  const handleSendInvite = async () => {
+    if (!person.email) {
+      toast.info('No Email Found', 'Please edit this contact to add their email address before sending an invitation.');
+      return;
+    }
+    try {
+      setIsInviting(true);
+      // We look up contact id from contacts if available
+      const contactsRes = await udharDeletionApi.getContacts();
+      const match = contactsRes.contacts?.find(
+        (c) => c.name.toLowerCase() === person.name.toLowerCase()
+      );
+      if (match) {
+        const invRes = await udharDeletionApi.inviteContact(match.id);
+        if (invRes.success) {
+          toast.success('Invitation Sent', `Invitation email dispatched to ${person.email}.`);
+        } else {
+          toast.error('Invitation Failed', invRes.message);
+        }
+      } else {
+        toast.error('Contact Not Found', 'Could not locate contact record to send invitation.');
+      }
+    } catch (err: any) {
+      toast.error('Error', err.message);
+    } finally {
+      setIsInviting(false);
     }
   };
 
@@ -100,6 +203,10 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
     }
   };
 
+  const toggleRepayments = (txId: string) => {
+    setExpandedRepayments((prev) => ({ ...prev, [txId]: !prev[txId] }));
+  };
+
   return (
     <div className="space-y-6 pb-20 max-w-4xl mx-auto animate-fade-in">
       {/* Top Header Navigation */}
@@ -113,6 +220,18 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
+          {person.email && !person.isRegisteredUser && (
+            <button
+              onClick={handleSendInvite}
+              disabled={isInviting}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold transition-colors cursor-pointer"
+              title="Send App Invitation"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isInviting ? 'Sending...' : 'Invite to App'}</span>
+            </button>
+          )}
+
           {onEditPerson && (
             <button
               onClick={() => onEditPerson(person.name)}
@@ -137,15 +256,39 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
       <div className="bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-emerald-950/10 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-2xl font-black shadow-md border-2 border-white/30 shrink-0">
-              {person.name.charAt(0).toUpperCase()}
+            <div className="relative shrink-0">
+              {person.avatarUrl ? (
+                <img
+                  src={person.avatarUrl}
+                  alt={person.name}
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-white/40 shadow-md"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-2xl font-black shadow-md border-2 border-white/30">
+                  {person.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              {person.isRegisteredUser && (
+                <span
+                  className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] shadow border-2 border-slate-900"
+                  title="Verified App User"
+                >
+                  ✓
+                </span>
+              )}
             </div>
+
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl sm:text-2xl font-extrabold">{person.name}</h2>
+                {person.isRegisteredUser && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    2-Way Linked
+                  </span>
+                )}
                 {isSettled ? (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-white/20 text-emerald-200">
-                    Settled
+                    Settled (₹0)
                   </span>
                 ) : (
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
@@ -155,13 +298,15 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-emerald-100 mt-1">
-                {person.transactionCount} transactions recorded · Last on {formatDisplayDate(person.lastTransactionDate)}
+              <p className="text-xs text-emerald-100 mt-1 flex items-center gap-2 flex-wrap">
+                {person.phone && <span>📞 {person.phone}</span>}
+                {person.email && <span>✉️ {person.email}</span>}
+                <span>· Last updated: {formatDisplayDate(person.lastTransactionDate)}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             <button
               onClick={() => onOpenAddModal('people', isOwedToYou ? 'money_given' : 'money_received', person.name)}
               className="px-4 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 active:scale-95 text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
@@ -205,7 +350,159 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
         </div>
       </div>
 
-      {/* Transaction History Section */}
+      {/* Shared Two-Way Udhar Ledger (if any two-way records exist) */}
+      {personUdharTxs.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                Shared Two-Way Udhar Records ({personUdharTxs.length})
+              </h3>
+              <p className="text-xs text-slate-400">
+                Synchronized canonical debts with partial repayments & settlement state
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {filteredUdharTxs.map((tx) => {
+              const curBal = parseFloat(String(tx.current_balance)) || 0;
+              const origAmt = parseFloat(String(tx.original_amount)) || 0;
+              const isGave = tx.direction === 'gave';
+              const isTxSettled = tx.status === 'settled' || curBal <= 0.01;
+              const isRepaymentsExpanded = Boolean(expandedRepayments[tx.id]);
+
+              return (
+                <div
+                  key={tx.id}
+                  className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`p-2 rounded-xl shrink-0 ${
+                          isGave
+                            ? 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
+                            : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        {isGave ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                            {isGave ? 'You Gave' : 'You Took'}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isTxSettled
+                                ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                : isGave
+                                ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                                : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                            }`}
+                          >
+                            {isTxSettled ? 'Settled' : tx.status}
+                          </span>
+                        </div>
+                        {tx.notes && <p className="text-xs text-slate-500 mt-0.5">{tx.notes}</p>}
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1">
+                          <span>Date: {formatDisplayDate(tx.transaction_date)}</span>
+                          {tx.due_date && <span>· Due: {formatDisplayDate(tx.due_date)}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right sm:text-right">
+                      <div className="font-mono text-sm text-slate-400">
+                        Original: {formatINR(origAmt)}
+                      </div>
+                      <div
+                        className={`font-black text-base ${
+                          isTxSettled
+                            ? 'text-slate-400'
+                            : isGave
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        Remaining: {formatINR(curBal)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions for this specific Udhar record */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex-wrap gap-2 text-xs">
+                    <button
+                      onClick={() => toggleRepayments(tx.id)}
+                      className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Repayments ({tx.repayments?.length || 0})</span>
+                      {isRepaymentsExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      {!isTxSettled && curBal > 0 && (
+                        <>
+                          <button
+                            onClick={() => setSelectedTxForRepay(tx)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                          >
+                            Record Repayment
+                          </button>
+                          <button
+                            onClick={() => handleSettleSingleTx(tx.id)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold cursor-pointer"
+                          >
+                            Settle
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => handleCancelSingleTx(tx.id)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold cursor-pointer"
+                        title="Cancel this record"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Expanded Repayments History */}
+                  {isRepaymentsExpanded && (
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Repayments Log
+                      </p>
+                      {(!tx.repayments || tx.repayments.length === 0) ? (
+                        <p className="text-xs text-slate-400 italic">No partial repayments recorded yet.</p>
+                      ) : (
+                        <div className="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800">
+                          {tx.repayments.map((rep) => (
+                            <div key={rep.id} className="pt-1.5 flex items-center justify-between text-xs">
+                              <div>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {formatINR(Number(rep.amount))}
+                                </span>
+                                {rep.notes && <span className="text-slate-400 ml-1.5">({rep.notes})</span>}
+                              </div>
+                              <span className="text-[11px] text-slate-400">
+                                {formatDisplayDate(rep.repayment_date)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Transaction History Section (All entries) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
@@ -322,7 +619,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
         )}
       </div>
 
-      {/* Settle Modal */}
+      {/* Settle Full Modal */}
       {isSettleModalOpen && (
         <SettleUdharModal
           isOpen={isSettleModalOpen}
@@ -331,6 +628,19 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
           isLoading={isSettling}
           onConfirm={handleSettleConfirm}
           onClose={() => setIsSettleModalOpen(false)}
+        />
+      )}
+
+      {/* Repay Udhar Modal */}
+      {selectedTxForRepay && (
+        <RepayUdharModal
+          isOpen={Boolean(selectedTxForRepay)}
+          transaction={selectedTxForRepay}
+          onClose={() => setSelectedTxForRepay(null)}
+          onSuccess={async () => {
+            setSelectedTxForRepay(null);
+            if (onRefreshUdhar) await onRefreshUdhar();
+          }}
         />
       )}
     </div>

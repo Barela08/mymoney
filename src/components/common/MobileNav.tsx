@@ -165,8 +165,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               className="w-10 h-10 rounded-xl object-cover shadow-sm border border-emerald-500/30"
             />
             <div>
-              <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">My Money Manager</h2>
-              <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">by HackifyPro</p>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">My Money Manager</h2>
+              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">by HackifyPro</p>
             </div>
           </div>
           <button
@@ -179,32 +179,34 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
         {/* User Card in Mobile Drawer */}
         {user && (
-          <div className="mx-4 mt-3 p-3 bg-slate-100 dark:bg-slate-800/80 rounded-2xl flex items-center justify-between">
-            <div className="flex items-center gap-2.5 min-w-0">
+          <div className="mx-4 mt-3 p-3 bg-slate-100/80 dark:bg-slate-800/80 rounded-2xl flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
               {user.avatar_url || user.avatarUrl ? (
                 <img
                   src={user.avatar_url || user.avatarUrl || ''}
                   alt={user.displayName || 'User'}
-                  className="w-8 h-8 rounded-xl object-cover border border-emerald-500/40 shadow-sm shrink-0"
+                  className="w-8 h-8 rounded-xl object-cover border border-emerald-500/40 shadow-xs shrink-0"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-bold flex items-center justify-center text-xs shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold flex items-center justify-center text-xs shrink-0">
                   {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
               )}
-              <div className="min-w-0">
-                <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-xs text-slate-900 dark:text-slate-100 truncate">
                   {user.displayName}
                 </p>
-                <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 break-all line-clamp-1" title={user.email || ''}>
+                  {user.email}
+                </p>
               </div>
             </div>
             {isAdmin ? (
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 shrink-0">
+              <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/50 dark:border-amber-800/50 shrink-0">
                 Admin
               </span>
             ) : (
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
+              <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700/60 shrink-0">
                 User
               </span>
             )}
@@ -212,9 +214,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         )}
 
         {/* Available Balance Box */}
-        <div className="p-4 mx-4 my-2.5 bg-gradient-to-br from-blue-50 to-indigo-50/50 dark:from-blue-950/40 dark:to-slate-800/60 rounded-xl border border-blue-200/60 dark:border-blue-900/50">
-          <span className="text-[11px] text-blue-700 dark:text-blue-300 font-medium">Available Balance</span>
-          <div className="text-xl font-extrabold text-blue-700 dark:text-blue-300 mt-0.5">
+        <div className={`p-4 mx-4 my-2.5 rounded-xl border ${
+          summary.availableBalance < 0
+            ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-200/80 dark:border-rose-900/40'
+            : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60'
+        }`}>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Available Balance</span>
+          <div className={`text-xl font-bold font-sans tabular-nums mt-0.5 ${
+            summary.availableBalance < 0
+              ? 'text-rose-600 dark:text-rose-400'
+              : 'text-slate-900 dark:text-slate-100'
+          }`}>
             {formatINR(summary.availableBalance)}
           </div>
         </div>

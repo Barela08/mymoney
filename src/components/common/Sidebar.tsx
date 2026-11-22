@@ -118,40 +118,75 @@ export const Sidebar: React.FC<SidebarProps> = ({
     icon: any;
     countBadge?: string;
     badgeNum?: number;
+    onClick?: () => void;
   }
 
-  const navItems: NavItem[] = [
-    { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'home' as NavTab, label: 'Home Money', icon: HomeIcon, countBadge: formatINR(summary.remainingHomeBalance) },
-    { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
-    { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
-    { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
-    { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
-    { id: 'budget' as NavTab, label: 'Budget Planner', icon: PieChart },
-    { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
-    { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
-    { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
-    ...customSections.map((sec) => ({
-      id: sec.id as NavTab,
-      label: sec.name,
-      icon: iconMap[sec.icon] || FolderKanban,
-    })),
-    { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
-    { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
-    { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
-    { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
-    { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
-    { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
-    { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
+  interface NavGroup {
+    title: string;
+    items: NavItem[];
+  }
+
+  const navGroups: NavGroup[] = [
+    {
+      title: 'Overview',
+      items: [
+        { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
+      ],
+    },
+    {
+      title: 'Money Management',
+      items: [
+        { id: 'home' as NavTab, label: 'Home Money', icon: HomeIcon, countBadge: formatINR(summary.remainingHomeBalance) },
+        { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
+        { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
+        { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
+        { id: 'budget' as NavTab, label: 'Budget Planner', icon: PieChart },
+        { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
+        { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
+        { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
+        ...customSections.map((sec) => ({
+          id: sec.id as NavTab,
+          label: sec.name,
+          icon: iconMap[sec.icon] || FolderKanban,
+        })),
+      ],
+    },
+    {
+      title: 'People & Payments',
+      items: [
+        { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
+      ],
+    },
+    {
+      title: 'Tools',
+      items: [
+        { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
+        ...(onOpenMyQr ? [{ id: 'my_qr' as NavTab, label: 'My QR Code', icon: QrCode, onClick: onOpenMyQr }] : []),
+        ...(onOpenScanQr ? [{ id: 'scan_qr' as NavTab, label: 'Scan QR Code', icon: ScanLine, onClick: onOpenScanQr }] : []),
+        { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
+        { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
+      ],
+    },
+    {
+      title: 'Support',
+      items: [
+        {
+          id: 'help_support' as NavTab,
+          label: 'Help & Feedback',
+          icon: HelpCircle,
+          onClick: onOpenHelpModal ? () => onOpenHelpModal('help') : undefined,
+        },
+        { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
+        { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
+      ],
+    },
+    ...(isAdmin ? [{
+      title: 'Admin',
+      items: [
+        { id: 'admin' as NavTab, label: 'Admin Control', icon: Shield },
+      ],
+    }] : []),
   ];
-
-  if (isAdmin) {
-    navItems.push({
-      id: 'admin' as NavTab,
-      label: 'Admin Control',
-      icon: Shield,
-    });
-  }
 
   return (
     <aside className="hidden lg:flex flex-col w-64 xl:w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-screen sticky top-0 select-none">
@@ -177,9 +212,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
             <span>Available balance</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className={`w-1.5 h-1.5 rounded-full ${summary.availableBalance < 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} />
           </div>
-          <div className="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100 font-sans mt-0.5">
+          <div className={`text-lg font-semibold tabular-nums font-sans mt-0.5 ${
+            summary.availableBalance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'
+          }`}>
             {formatINR(summary.availableBalance)}
           </div>
         </div>
@@ -187,120 +224,110 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Quick Add Button */}
         <button
           onClick={onOpenAddModal}
-          className="w-full mt-3 flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-medium text-xs sm:text-sm transition-colors cursor-pointer"
+          className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-medium text-xs sm:text-sm transition-colors cursor-pointer"
         >
           <PlusCircle className="w-4 h-4 stroke-[2]" />
           <span>Add transaction</span>
         </button>
-
-        {/* Quick Udhar QR Actions */}
-        {(onOpenMyQr || onOpenScanQr) && (
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            {onOpenMyQr && (
-              <button
-                type="button"
-                onClick={onOpenMyQr}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
-                title="View My Udhar QR Code"
-              >
-                <QrCode className="w-3.5 h-3.5 stroke-[1.75] text-emerald-600 dark:text-emerald-400" />
-                <span>My QR</span>
-              </button>
-            )}
-            {onOpenScanQr && (
-              <button
-                type="button"
-                onClick={onOpenScanQr}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
-                title="Scan Udhar QR Code"
-              >
-                <ScanLine className="w-3.5 h-3.5 stroke-[1.75] text-indigo-600 dark:text-indigo-400" />
-                <span>Scan QR</span>
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Nav items */}
-      <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = currentTab === item.id;
-          const Icon = item.icon;
-          const isAdminItem = item.id === 'admin';
+      {/* Nav groups */}
+      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
+        {navGroups.map((group) => (
+          <div key={group.title} className="space-y-1">
+            <div className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              {group.title}
+            </div>
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all text-left cursor-pointer ${
-                isActive
-                  ? isAdminItem
-                    ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold shadow-sm border border-indigo-200/60 dark:border-indigo-800/40'
-                    : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold shadow-sm border border-emerald-200/60 dark:border-emerald-800/40'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Icon
-                  className={`w-4 h-4 shrink-0 ${
+            {group.items.map((item) => {
+              const isActive = currentTab === item.id;
+              const Icon = item.icon;
+              const isAdminItem = item.id === 'admin';
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    if (item.onClick) {
+                      item.onClick();
+                    } else {
+                      onSelectTab(item.id);
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all text-left cursor-pointer ${
                     isActive
                       ? isAdminItem
-                        ? 'text-indigo-600 dark:text-indigo-400'
-                        : 'text-emerald-600 dark:text-emerald-400'
-                      : isAdminItem
-                      ? 'text-indigo-500'
-                      : 'text-slate-400'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold shadow-xs border border-indigo-200/60 dark:border-indigo-800/40'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs border border-emerald-200/60 dark:border-emerald-800/40'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
-                />
-                <span className="truncate">{item.label}</span>
-              </div>
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon
+                      className={`w-4 h-4 shrink-0 ${
+                        isActive
+                          ? isAdminItem
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                          : isAdminItem
+                          ? 'text-indigo-500'
+                          : 'text-slate-400'
+                      }`}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </div>
 
-              {item.badgeNum !== undefined && (
-                <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  {item.badgeNum}
-                </span>
-              )}
-
-              {isAdminItem && (
-                <div className="flex items-center gap-1">
-                  {maintenanceSettings.isEnabled && (
-                    <span className="px-1.5 py-0.5 text-xs font-bold rounded-md bg-amber-500 text-slate-950 animate-pulse">
-                      MAINT
+                  {item.countBadge && (
+                    <span className="ml-2 text-xs font-mono text-slate-500 dark:text-slate-400">
+                      {item.countBadge}
                     </span>
                   )}
-                  <span className="px-1.5 py-0.5 text-xs font-bold rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                    ADM
-                  </span>
-                </div>
-              )}
-            </button>
-          );
-        })}
+
+                  {item.badgeNum !== undefined && (
+                    <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      {item.badgeNum}
+                    </span>
+                  )}
+
+                  {isAdminItem && (
+                    <div className="flex items-center gap-1">
+                      {maintenanceSettings.isEnabled && (
+                        <span className="px-1.5 py-0.5 text-xs font-bold rounded-md bg-amber-500 text-slate-950 animate-pulse">
+                          MAINT
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.5 text-xs font-bold rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                        ADM
+                      </span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Footer / User Profile & Controls */}
-      <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 space-y-3">
-        {/* Help, Feedback & Support Buttons */}
-        {onOpenHelpModal && (
-          <div className="grid grid-cols-2 gap-1.5">
+      <div className="p-3.5 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
+        {/* Dedicated Desktop PWA Install Prompt */}
+        {!isInstalled && triggerInstallPrompt && (
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                Install App
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Fast offline desktop access
+              </p>
+            </div>
             <button
               type="button"
-              onClick={() => onOpenHelpModal('feedback')}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors cursor-pointer"
-              title="Give Feedback or Suggest a Feature"
+              onClick={triggerInstallPrompt}
+              className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer shrink-0"
             >
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Feedback</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenHelpModal('help')}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors cursor-pointer"
-              title={`Helpline (${SUPPORT_CONTACT.displayPhone})`}
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
-              <span>Help</span>
+              <Download className="w-3 h-3 stroke-[2]" />
+              <span>Install</span>
             </button>
           </div>
         )}
@@ -308,9 +335,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* User Profile Card */}
         <div
           onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
-          className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl cursor-pointer transition-colors"
+          className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-colors"
+          title={`Signed in as ${user?.email || 'User'}`}
         >
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
             {user?.avatar_url || user?.avatarUrl ? (
               <img
                 src={user?.avatar_url || user?.avatarUrl || ''}
@@ -318,34 +346,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="w-8 h-8 rounded-xl object-cover shrink-0 border border-emerald-500/30"
               />
             ) : (
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold flex items-center justify-center text-xs shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold flex items-center justify-center text-xs shrink-0">
                 {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
               </div>
             )}
-            <div className="min-w-0">
-              <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-xs text-slate-900 dark:text-slate-100 truncate">
                 {user?.displayName || 'User'}
               </p>
-              <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+              <p
+                className="text-xs text-slate-500 dark:text-slate-400 break-all line-clamp-1"
+                title={user?.email || ''}
+              >
+                {user?.email}
+              </p>
             </div>
           </div>
 
           {isAdmin ? (
-            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 shrink-0">
+            <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/50 dark:border-amber-800/50 shrink-0">
               Admin
             </span>
           ) : (
-            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
+            <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700/60 shrink-0">
               User
             </span>
           )}
         </div>
 
-        {/* Theme Toggle & Logout */}
-        <div className="flex items-center justify-between px-1">
+        {/* Theme Toggle & Logout (Balanced 2-Column Row) */}
+        <div className="grid grid-cols-2 gap-2 pt-0.5">
           <button
+            type="button"
             onClick={toggleTheme}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            className="h-9 px-3 flex items-center justify-center gap-1.5 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
             title="Toggle theme"
           >
             {theme === 'dark' ? (
@@ -362,8 +396,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={logout}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
+            className="h-9 px-3 flex items-center justify-center gap-1.5 text-xs font-medium rounded-xl text-rose-600 dark:text-rose-400 bg-rose-50/50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 border border-rose-200/60 dark:border-rose-900/40 transition-colors cursor-pointer"
             title="Log out"
           >
             <LogOut className="w-3.5 h-3.5" />

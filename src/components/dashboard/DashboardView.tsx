@@ -164,7 +164,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
               <Wallet className="w-3.5 h-3.5 stroke-[1.75]" />
               <span>Available balance</span>
             </span>
-            <h2 className="text-3xl sm:text-4xl font-semibold mt-1 tracking-tight font-sans tabular-nums text-white">
+            <h2 className={`text-3xl sm:text-4xl font-semibold mt-1 tracking-tight font-sans tabular-nums ${
+              summary.availableBalance < 0 ? 'text-rose-400' : 'text-white'
+            }`}>
               {formatINR(summary.availableBalance)}
             </h2>
           </div>
@@ -181,7 +183,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         {/* 4 Metric Sub-Panels */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
           <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
-            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+            <span className="text-xs font-medium text-slate-300 flex items-center gap-1">
               <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400 stroke-[1.75]" /> Income
             </span>
             <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
@@ -190,7 +192,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
 
           <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
-            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+            <span className="text-xs font-medium text-slate-300 flex items-center gap-1">
               <ArrowUpRight className="w-3.5 h-3.5 text-rose-400 stroke-[1.75]" /> Expenses
             </span>
             <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
@@ -199,7 +201,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
 
           <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
-            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+            <span className="text-xs font-medium text-slate-300 flex items-center gap-1">
               <TrendingUp className="w-3.5 h-3.5 text-teal-400 stroke-[1.75]" /> Net savings
             </span>
             <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
@@ -208,7 +210,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
 
           <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
-            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+            <span className="text-xs font-medium text-slate-300 flex items-center gap-1">
               <Users className="w-3.5 h-3.5 text-amber-400 stroke-[1.75]" /> Net udhar
             </span>
             <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
@@ -218,7 +220,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
       </div>
 
-      {/* 3. Quick Action Buttons Row */}
+      {/* 3. Quick Action Buttons Row (Consolidated: No duplicate calculator) */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
         <button
           onClick={() => onNavigate('reports')}
@@ -280,17 +282,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </span>
         </button>
 
-        <button
-          onClick={() => onNavigate('calculator')}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/10">
-            <Calculator className="w-4 h-4 stroke-[1.75]" />
-          </div>
-          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
-            Calculator
-          </span>
-        </button>
+        {onOpenScanQr ? (
+          <button
+            onClick={onOpenScanQr}
+            className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
+            title="Scan Udhar QR Code"
+          >
+            <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/10">
+              <ScanLine className="w-4 h-4 stroke-[1.75]" />
+            </div>
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
+              Scan QR
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => onNavigate('recurring_bills')}
+            className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
+          >
+            <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/10">
+              <Receipt className="w-4 h-4 stroke-[1.75]" />
+            </div>
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
+              Bills
+            </span>
+          </button>
+        )}
       </div>
 
       {/* 4. Monthly Financial Flow Overview */}
@@ -339,7 +356,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                       title={`Expense: ₹${item.expense.toLocaleString('en-IN')}`}
                     />
                   </div>
-                  <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate w-full text-center">
+                  <span className="text-xs font-mono text-slate-400 dark:text-slate-500 truncate w-full text-center">
                     {item.label}
                   </span>
                 </div>
@@ -353,7 +370,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       {isAdmin && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 text-xs">
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200">
+            <span className="px-2 py-0.5 rounded text-xs font-extrabold bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200">
               ADMIN
             </span>
             <span className="text-slate-700 dark:text-slate-300 font-medium">
@@ -433,14 +450,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('home')}
-                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>Open home</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('home', 'received_home')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
                 + Add home entry
               </button>
@@ -465,7 +482,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
               {/* Room Breakdown Stats */}
               <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
-                <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-600 dark:text-slate-400">
+                <div className="grid grid-cols-2 gap-1 text-xs text-slate-600 dark:text-slate-400">
                   <div>Rent: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalRent)}</span></div>
                   <div>Gas: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalGas)}</span></div>
                   <div>Grocery: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalGrocery)}</span></div>
@@ -484,14 +501,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('room')}
-                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 active:scale-[0.99] rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>Open room</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('room')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
                 + Add room expense
               </button>
@@ -535,14 +552,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('food')}
-                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 active:scale-[0.99] rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>Open food</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('food')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
                 + Add food expense
               </button>
@@ -586,14 +603,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('other')}
-                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 active:scale-[0.99] rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>Open other</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('other')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
                 + Add other expense
               </button>
@@ -643,14 +660,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('people')}
-                className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>Open people</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('people', 'money_given')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
                 + Add udhar record
               </button>
@@ -659,129 +676,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
       </div>
 
-      {/* Financial Calculator Utility */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-slate-200/60 dark:border-slate-700/60 shrink-0">
-            <Calculator className="w-5 h-5 stroke-[1.75]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
-                Financial calculator
-              </h4>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
-                GST · Offer · Split
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Accurate GST calculation, custom discount offers, and per-person bill split
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
-          <button
-            onClick={() => onNavigate('calculator')}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 active:scale-[0.99] text-slate-800 dark:text-slate-200 rounded-xl text-xs font-medium transition-colors cursor-pointer"
-          >
-            <span>Open calculator</span>
-            <ChevronRight className="w-4 h-4 stroke-[1.75]" />
-          </button>
-        </div>
-      </div>
-
-      {/* 8 Complete Financial Summary Cards */}
+      {/* Financial Master Ledger Overview Cards (Consolidated: No duplicate categories, Issue 13) */}
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
           <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
             Overall financial overview
           </h3>
-          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">Live totals</span>
+          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">Live ledger</span>
         </div>
 
         {isLoading ? (
-          <SkeletonCardsGrid count={9} />
+          <SkeletonCardsGrid count={4} />
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               title="Total Income"
               amount={summary.totalIncome}
-              subtitle="Money received"
+              subtitle="All credited funds"
               icon={ArrowDownLeft}
               variant="income"
-              badge="Incoming Funds"
               onClick={() => onNavigate('home')}
             />
             <StatCard
-              title="Home Expenses"
-              amount={summary.totalHomeSpent}
-              subtitle="Household & family spending"
-              icon={Home}
-              variant="expense"
-              badge="Household"
-              onClick={() => onNavigate('home')}
-            />
-            <StatCard
-              title="Room Expenses"
-              amount={summary.totalRoomExpenses}
-              subtitle="Gas, Groceries, Rent, Power"
-              icon={DoorOpen}
-              variant="expense"
-              badge="Room & Flat"
-              onClick={() => onNavigate('room')}
-            />
-            <StatCard
-              title="Food & Dining"
-              amount={summary.totalFoodExpenses}
-              subtitle="Restaurant, Snacks, Delivery"
-              icon={Utensils}
-              variant="expense"
-              badge="Khana-Pina"
-              onClick={() => onNavigate('food')}
-            />
-            <StatCard
-              title="Other Expenses"
-              amount={summary.totalOtherExpenses}
-              subtitle="Travel, Shopping & Personal"
-              icon={ShoppingBag}
-              variant="expense"
-              badge="Personal"
-              onClick={() => onNavigate('other')}
-            />
-            <StatCard
-              title="Money Given"
-              amount={summary.totalMoneyGiven}
-              subtitle="Udhar to people"
+              title="Total Expenses"
+              amount={summary.totalExpenses}
+              subtitle="All category spends"
               icon={ArrowUpRight}
-              variant="amber"
-              badge="Udhar Diya"
-              onClick={() => onNavigate('people')}
-            />
-            <StatCard
-              title="Money Received"
-              amount={summary.totalMoneyReceived}
-              subtitle="Udhar collected back"
-              icon={ArrowDownLeft}
-              variant="income"
-              badge="Udhar Liya"
-              onClick={() => onNavigate('people')}
+              variant="expense"
+              onClick={() => onNavigate('all_transactions')}
             />
             <StatCard
               title="Available Balance"
               amount={summary.availableBalance}
-              subtitle="Income minus Total Expenses"
+              subtitle="Net cash in hand"
               icon={Wallet}
               variant="balance"
-              badge="Net Cash Balance"
             />
             <StatCard
               title="Total Transactions"
               amount={summary.totalTransactionsCount}
-              subtitle="All stored records"
+              subtitle="Active records in ledger"
               icon={Receipt}
               variant="neutral"
-              badge="Records Count"
+              isCount={true}
               onClick={() => onNavigate('all_transactions')}
             />
           </div>
@@ -850,7 +787,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                         <span className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
                           {tx.title}
                         </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border capitalize ${categoryBadgeColors}`}>
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${categoryBadgeColors}`}>
                           {tx.category} · {tx.subcategory.replace('_', ' ')}
                         </span>
                       </div>
@@ -861,13 +798,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                         </p>
                       )}
 
-                      <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
+                      <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
                         <span className="flex items-center gap-1 font-mono">
                           <Calendar className="w-3 h-3 stroke-[1.75]" />
                           {formatDisplayDate(tx.transaction_date)}
                         </span>
                         <span className="flex items-center gap-1 font-mono">
-                          <Clock className="w-3 h-3 stroke-[1.75] text-slate-400" />
+                          <Clock className="w-3.5 h-3.5 stroke-[1.75] text-slate-400" />
                           {formatDisplayTime(tx.transaction_time)}
                         </span>
                         {tx.person_name && (
@@ -890,7 +827,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                       >
                         {isIncome ? '+' : '-'} {formatINR(tx.amount)}
                       </div>
-                      <span className="text-[10px] capitalize font-medium text-slate-400">
+                      <span className="text-xs capitalize font-medium text-slate-400">
                         {tx.transaction_type}
                       </span>
                     </div>

@@ -144,7 +144,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isAdmin && maintenanceSettings.isEnabled && (
             <div
               onClick={() => onSelectTab('admin')}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-medium text-[11px] rounded-lg cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-medium text-xs rounded-xl cursor-pointer"
               title="Maintenance Mode is Active! Normal users are blocked. Click to manage."
             >
               <AlertTriangle className="w-3.5 h-3.5 stroke-[1.75]" />
@@ -152,32 +152,33 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-
-          {/* Quick Calculator Access (Responsive: Visible on sm and up) */}
+          {/* Quick Calculator Access (Standardized secondary button h-9) */}
           <button
             type="button"
             onClick={() => onSelectTab('calculator')}
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer border ${
+            className={`hidden sm:inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium transition-colors cursor-pointer border ${
               currentTab === 'calculator'
                 ? 'bg-emerald-600 text-white border-emerald-600'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
             }`}
             title="Financial Calculator (GST, Offer & Split)"
+            aria-label="Open calculator"
           >
             <Calculator className={`w-3.5 h-3.5 stroke-[1.75] ${currentTab === 'calculator' ? 'text-white' : 'text-emerald-500'}`} />
-            <span className="hidden sm:inline text-xs">Calculator</span>
+            <span className="hidden sm:inline">Calculator</span>
           </button>
 
-          {/* Help, Feedback & Support Button (Responsive: Visible on sm and up) */}
+          {/* Help, Feedback & Support Button (Standardized secondary button h-9) */}
           {onOpenHelpModal && (
             <button
               type="button"
               onClick={() => onOpenHelpModal('help')}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-medium cursor-pointer border border-slate-200/80 dark:border-slate-800"
+              className="hidden sm:inline-flex items-center gap-1.5 h-9 px-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-medium cursor-pointer border border-slate-200/80 dark:border-slate-800"
               title={`Help, Feedback, Complaints & WhatsApp (${SUPPORT_CONTACT.displayPhone})`}
+              aria-label="Help and support"
             >
               <HelpCircle className="w-3.5 h-3.5 stroke-[1.75] text-emerald-500" />
-              <span className="hidden xl:inline text-xs">Help</span>
+              <span className="hidden xl:inline">Help</span>
             </button>
           )}
 
@@ -189,19 +190,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             onOpenHelpModal={onOpenHelpModal}
           />
 
-          {/* Live IST clock (displayed on 2xl to keep header uncluttered) */}
-          <div className="hidden 2xl:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/60 font-mono">
-            <Clock className="w-3.5 h-3.5 stroke-[1.75] text-emerald-500" />
+          {/* Live IST clock (Subtle, non-distracting typography) */}
+          <div className="hidden 2xl:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono px-1">
+            <Clock className="w-3.5 h-3.5 stroke-[1.75] text-slate-400" />
             <span>{istDateStr}</span>
-            <span className="text-slate-300 dark:text-slate-600">|</span>
-            <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{istTimeStr} (IST)</span>
+            <span className="text-slate-300 dark:text-slate-600">·</span>
+            <span className="tabular-nums font-medium">{istTimeStr} IST</span>
           </div>
 
           {/* User Badge */}
           {user && (
             <div
               onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
-              className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-medium cursor-pointer transition-colors"
+              className="hidden sm:flex items-center gap-2 h-9 px-2.5 bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-medium cursor-pointer transition-colors border border-slate-200/60 dark:border-slate-700/60"
               title={isAdmin ? 'Open Admin Control' : 'View Profile Settings'}
             >
               {user.avatar_url || user.avatarUrl ? (
@@ -217,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
               <span className="truncate max-w-[100px]">{user.displayName}</span>
               {isAdmin && (
-                <span className="px-1 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-medium">
+                <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-medium">
                   Admin
                 </span>
               )}
@@ -227,17 +228,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Add Transaction Button (visible on mobile where sidebar is hidden) */}
           <button
             onClick={onOpenAddModal}
-            className="flex lg:hidden items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer whitespace-nowrap"
+            className="flex lg:hidden items-center gap-1.5 h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
           >
             <PlusCircle className="w-4 h-4 stroke-[2] shrink-0" />
             <span>Add</span>
           </button>
 
-          {/* Theme Switcher */}
+          {/* Theme Switcher (Standardized icon button h-9 w-9) */}
           <button
             onClick={toggleTheme}
-            className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors shrink-0 cursor-pointer"
+            className="h-9 w-9 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-800 transition-colors shrink-0 cursor-pointer"
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label="Toggle theme"
           >
             {theme === 'dark' ? (
               <Moon className="w-4 h-4 text-amber-400" />

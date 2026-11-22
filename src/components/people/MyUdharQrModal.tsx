@@ -32,6 +32,7 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
   const [qrInfo, setQrInfo] = useState<MyQrCodeResponse | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [qrError, setQrError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,6 +40,7 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
   const handleRegenerateQr = async () => {
     try {
       setIsRegenerating(true);
+      setQrError(null);
       const res = await udharDeletionApi.regenerateQrCode();
       if (res.success) {
         setQrInfo(res);
@@ -61,6 +63,7 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
   const fetchQrCode = async () => {
     try {
       setIsLoading(true);
+      setQrError(null);
       const res = await udharDeletionApi.getMyQrCode();
       if (res.success) {
         setQrInfo(res);
@@ -77,7 +80,9 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
         setQrDataUrl(dataUrl);
       }
     } catch (err: any) {
-      toast.error('QR Error', err.message || 'Unable to generate Udhar QR code.');
+      const msg = err.message || 'Unable to generate Udhar QR code. Please ensure you are logged in and connected.';
+      setQrError(msg);
+      toast.error('QR Error', msg);
     } finally {
       setIsLoading(false);
     }
@@ -161,7 +166,18 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
         {isLoading ? (
           <div className="py-16 flex flex-col items-center justify-center space-y-3">
             <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs text-slate-500 font-medium">Generating QR code...</p>
+            <p className="text-xs text-slate-500 font-medium">Generating official pairing QR...</p>
+          </div>
+        ) : qrError ? (
+          <div className="py-10 px-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-center space-y-3 animate-fade-in">
+            <p className="text-xs text-rose-700 dark:text-rose-300 font-medium">{qrError}</p>
+            <button
+              onClick={fetchQrCode}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5 mx-auto cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Generation</span>
+            </button>
           </div>
         ) : (
           <div className="space-y-4">

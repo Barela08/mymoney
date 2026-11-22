@@ -195,6 +195,8 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         onBack={() => setSelectedPersonForDetails(null)}
         onOpenAddModal={onOpenAddModal}
         onEditPerson={() => setIsSavedPeopleOpen(true)}
+        udharTransactions={udharTransactions}
+        onRefreshUdhar={fetchUdharData}
       />
     );
   }

@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { AuthUser, AdminUserListItem } from '../types';
-import { authApi, getStoredSessionToken, setStoredSessionToken, UserProfileData } from '../lib/authApi';
+import {
+  authApi,
+  getStoredSessionToken,
+  setStoredSessionToken,
+  setStoredAuthUser,
+  UserProfileData,
+} from '../lib/authApi';
 import { getSupabaseClient } from '../lib/supabase';
 
 interface AuthContextType {
@@ -114,6 +120,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             created_at: prof?.created_at || new Date().toISOString(),
           };
           setUser(authUser);
+          setStoredAuthUser(authUser);
+          if (!getStoredSessionToken()) {
+            setStoredSessionToken(session.access_token || `direct_${session.user.id}_${Date.now()}`);
+          }
           setIsLoading(false);
           return;
         }
@@ -172,6 +182,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           if (!apiSuccess) {
             setUser(authUser);
+            setStoredAuthUser(authUser);
+            setStoredSessionToken(supaData.session?.access_token || `direct_${supaData.user.id}_${Date.now()}`);
             return { success: true, message: 'Logged in successfully.' };
           }
         }
@@ -280,6 +292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setUser(null);
       setStoredSessionToken(null);
+      setStoredAuthUser(null);
     }
   };
 
@@ -290,6 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setUser(null);
       setStoredSessionToken(null);
+      setStoredAuthUser(null);
     }
   };
 

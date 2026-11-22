@@ -1716,7 +1716,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // When User A adds User B, User A automatically gets added to User B's saved contacts too!
     async function ensureReciprocalContact(
       targetUserId: string,
-      sourceUser: { id: string; full_name?: string; email?: string; phone?: string },
+      sourceUser: { id: string; full_name?: string; email?: string; phone?: string; avatar_url?: string },
       relationshipType: string = 'Friend'
     ) {
       if (!targetUserId || targetUserId === sourceUser.id) return;
@@ -1724,6 +1724,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const sourceName = (sourceUser.full_name || sourceUser.email?.split('@')[0] || 'Friend').trim();
       const sourceEmail = (sourceUser.email || '').trim().toLowerCase() || null;
       const sourcePhone = (sourceUser.phone || '').trim() || null;
+      const sourcePhoto = sourceUser.avatar_url || null;
 
       try {
         // 1. Check if target user already has a contact linked to sourceUser.id
@@ -1737,9 +1738,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             `UPDATE public.udhar_contacts 
              SET email = COALESCE(email, $1), 
                  phone = COALESCE(phone, $2), 
+                 photo_url = COALESCE(photo_url, $3),
                  updated_at = NOW() 
-             WHERE id = $3`,
-            [sourceEmail, sourcePhone, existingLinked.rows[0].id]
+             WHERE id = $4`,
+            [sourceEmail, sourcePhone, sourcePhoto, existingLinked.rows[0].id]
           );
         } else {
           // 2. Check if contact exists by name for target user
@@ -1754,21 +1756,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
                SET linked_user_id = $1, 
                    email = COALESCE($2, email), 
                    phone = COALESCE($3, phone), 
+                   photo_url = COALESCE($4, photo_url),
                    updated_at = NOW() 
-               WHERE id = $4`,
-              [sourceUser.id, sourceEmail, sourcePhone, existingByName.rows[0].id]
+               WHERE id = $5`,
+              [sourceUser.id, sourceEmail, sourcePhone, sourcePhoto, existingByName.rows[0].id]
             );
           } else {
             // 3. Insert fresh reciprocal contact for target user
             await query(
-              `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, notes, linked_user_id, updated_at)
-               VALUES ($1, $2, $3, $4, $5, 'Added via 2-Way Sync', $6, NOW())
+              `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, notes, linked_user_id, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, 'Added via 2-Way Sync', $7, NOW())
                ON CONFLICT (user_id, name) DO UPDATE 
                SET linked_user_id = EXCLUDED.linked_user_id, 
                    email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
                    phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+                   photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
                    updated_at = NOW()`,
-              [targetUserId, sourceName, sourceEmail, sourcePhone, relationshipType, sourceUser.id]
+              [targetUserId, sourceName, sourceEmail, sourcePhone, sourcePhoto, relationshipType, sourceUser.id]
             );
           }
         }
@@ -2219,28 +2223,41 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Query registered active users excluding requesting user
+      // Query registered active users excluding requesting user with connection status
       const usersRes = await query(
-        `SELECT id, full_name, email, phone, avatar_url, role 
-         FROM public.app_users 
-         WHERE id <> $1 AND status = 'active' AND (
-           LOWER(email) = $2 OR 
-           phone = $2 OR 
-           LOWER(email) LIKE $3 OR 
-           LOWER(full_name) LIKE $3
+        `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.role,
+           EXISTS(
+             SELECT 1 FROM public.user_connections uc 
+             WHERE (uc.user_a_id = $1 AND uc.user_b_id = u.id) 
+                OR (uc.user_b_id = $1 AND uc.user_a_id = u.id)
+           ) AS is_connected,
+           EXISTS(
+             SELECT 1 FROM public.udhar_contacts c
+             WHERE c.user_id = $1 AND (c.linked_user_id = u.id OR LOWER(TRIM(c.name)) = LOWER(TRIM(u.full_name)))
+           ) AS is_saved_contact
+         FROM public.app_users u 
+         WHERE u.id <> $1 AND u.status = 'active' AND (
+           LOWER(u.email) = $2 OR 
+           u.phone = $2 OR 
+           LOWER(u.email) LIKE $3 OR 
+           LOWER(u.full_name) LIKE $3
          )
-         LIMIT 10`,
+         ORDER BY u.full_name ASC
+         LIMIT 20`,
         [authUser.id, q, `%${q}%`]
       );
 
-      // Return ONLY privacy-sanitized profile info (never expose password, sessions, financial logs)
+      // Return real verified profile details with connection status
       const sanitizedUsers = usersRes.rows.map((u: any) => ({
         id: u.id,
         displayName: u.full_name,
         fullName: u.full_name,
+        email: u.email,
         emailMasked: maskEmail(u.email),
         phoneMasked: maskPhone(u.phone),
         avatarUrl: u.avatar_url,
+        isAlreadyConnected: Boolean(u.is_connected || u.is_saved_contact),
+        isSavedContact: Boolean(u.is_saved_contact),
       }));
 
       sendJson(res, 200, { success: true, users: sanitizedUsers });
@@ -2255,7 +2272,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     if (pathname === '/api/udhar/qr/my-code' && method === 'GET') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
         return true;
       }
 
@@ -2271,21 +2288,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            ORDER BY created_at DESC LIMIT 1`,
           [authUser.id]
         );
-        pairingToken = tokenRes.rows[0]?.pairing_token;
-        pairingCode = tokenRes.rows[0]?.pairing_code;
-        if (tokenRes.rows[0]?.expires_at) expiresAt = tokenRes.rows[0].expires_at;
+        if (tokenRes.rows.length > 0) {
+          pairingToken = tokenRes.rows[0].pairing_token;
+          pairingCode = tokenRes.rows[0].pairing_code;
+          if (tokenRes.rows[0].expires_at) expiresAt = tokenRes.rows[0].expires_at;
+        }
       } catch (err) {
         console.warn('QR tokens table query notice:', err);
       }
 
       if (!pairingToken) {
-        pairingToken = generateCryptoToken(32);
-        pairingCode = `MM-${generateCryptoToken(4).toUpperCase()}`;
+        pairingToken = crypto.randomBytes(32).toString('hex');
+        pairingCode = `MM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
         try {
           await query(
-            `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, expires_at)
-             VALUES ($1, $2, $3, $4)`,
+            `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
+             VALUES ($1, $2, $3, FALSE, $4)`,
             [authUser.id, pairingToken, pairingCode, expiresAt]
           );
         } catch (dbErr) {
@@ -2293,14 +2312,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
+      // Opaque, secure QR payload containing only application identifier and pairing credentials (no plaintext personal data)
       const qrPayload = JSON.stringify({
-        v: 1,
         app: 'my-money',
+        v: 2,
         type: 'udhar-pair',
-        code: pairingCode,
         token: pairingToken,
-        userId: authUser.id,
-        name: authUser.full_name || authUser.email?.split('@')[0] || 'User',
+        code: pairingCode,
+        exp: new Date(expiresAt).getTime(),
       });
 
       sendJson(res, 200, {
@@ -2308,6 +2327,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         pairingToken,
         pairingCode,
         publicName: authUser.full_name || authUser.email?.split('@')[0] || 'User',
+        avatarUrl: authUser.avatar_url || null,
         qrData: qrPayload,
         expiresAt,
       });
@@ -2318,54 +2338,104 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     if (pathname === '/api/udhar/qr/resolve' && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
         return true;
       }
 
       const body = await parseJsonBody(req);
       let targetToken = (body.pairingToken || '').trim();
       let targetCode = (body.pairingCode || '').trim();
-      const rawData = body.qrData || '';
+      const rawData = (body.qrData || '').trim();
 
       if (rawData) {
         try {
           const parsedQr = JSON.parse(rawData);
-          if (parsedQr.token) targetToken = parsedQr.token;
-          if (parsedQr.code) targetCode = parsedQr.code;
+          if (parsedQr.app !== 'my-money' || parsedQr.type !== 'udhar-pair') {
+            sendJson(res, 400, {
+              success: false,
+              code: 'INVALID_QR',
+              message: 'Invalid QR format. Please scan a genuine My Money Manager user QR code.',
+            });
+            return true;
+          }
+          if (parsedQr.token) targetToken = String(parsedQr.token).trim();
+          if (parsedQr.code) targetCode = String(parsedQr.code).trim();
         } catch {
-          // If plain token string was scanned
-          if (!targetToken) targetToken = rawData.trim();
+          // If a raw string token or code was scanned
+          if (rawData.startsWith('MM-')) {
+            targetCode = rawData;
+          } else {
+            targetToken = rawData;
+          }
         }
       }
 
       if (!targetToken && !targetCode) {
-        sendJson(res, 400, { success: false, message: 'No valid QR pairing token or code provided.' });
+        sendJson(res, 400, {
+          success: false,
+          code: 'INVALID_QR',
+          message: 'No valid QR pairing token or code provided.',
+        });
         return true;
       }
 
-      // Query token from database
+      // Query token from database joining actual registered account
       const tokenRes = await query(
         `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
-                u.full_name, u.email, u.phone, u.avatar_url
+                u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
          FROM public.qr_pairing_tokens t
          JOIN public.app_users u ON t.user_id = u.id
-         WHERE (t.pairing_token = $1 OR t.pairing_code = $2) AND t.expires_at > NOW() AND t.used = FALSE`,
+         WHERE (t.pairing_token = $1 OR t.pairing_code = $2)
+         ORDER BY t.created_at DESC LIMIT 1`,
         [targetToken || '__none__', targetCode || '__none__']
       );
 
       if (tokenRes.rows.length === 0) {
         sendJson(res, 404, {
           success: false,
-          message: 'Invalid, expired, or already used QR code pairing reference.',
+          code: 'NOT_FOUND',
+          message: 'QR code not recognized. This is not a registered My Money Manager account QR.',
         });
         return true;
       }
 
-      const qrOwner = tokenRes.rows[0];
+      const qrRecord = tokenRes.rows[0];
 
-      if (qrOwner.user_id === authUser.id) {
+      // Check revoked / used state
+      if (qrRecord.used) {
+        sendJson(res, 410, {
+          success: false,
+          code: 'QR_REVOKED',
+          message: 'This QR code has been revoked. The user has generated a newer QR code.',
+        });
+        return true;
+      }
+
+      // Check expiration
+      if (new Date(qrRecord.expires_at) <= new Date()) {
+        sendJson(res, 410, {
+          success: false,
+          code: 'QR_EXPIRED',
+          message: 'This QR code has expired. Please ask the person to tap "Regenerate QR" to get a fresh code.',
+        });
+        return true;
+      }
+
+      // Check account status
+      if (qrRecord.status !== 'active') {
+        sendJson(res, 403, {
+          success: false,
+          code: 'ACCOUNT_UNAVAILABLE',
+          message: 'This user account is currently deactivated or suspended.',
+        });
+        return true;
+      }
+
+      // Prevent self-connection
+      if (qrRecord.user_id === authUser.id) {
         sendJson(res, 400, {
           success: false,
+          code: 'SELF_CONNECTION',
           message: 'This is your own QR code! You cannot link your account with yourself.',
         });
         return true;
@@ -2375,22 +2445,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const connRes = await query(
         `SELECT id FROM public.user_connections 
          WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
-        [authUser.id, qrOwner.user_id]
+        [authUser.id, qrRecord.user_id]
       );
       const isAlreadyConnected = connRes.rows.length > 0;
 
       sendJson(res, 200, {
         success: true,
         owner: {
-          id: qrOwner.user_id,
-          displayName: qrOwner.full_name,
-          fullName: qrOwner.full_name,
-          emailMasked: maskEmail(qrOwner.email),
-          phoneMasked: maskPhone(qrOwner.phone),
-          avatarUrl: qrOwner.avatar_url,
+          id: qrRecord.user_id,
+          displayName: qrRecord.full_name || qrRecord.email?.split('@')[0] || 'User',
+          fullName: qrRecord.full_name || qrRecord.email?.split('@')[0] || 'User',
+          emailMasked: maskEmail(qrRecord.email),
+          phoneMasked: maskPhone(qrRecord.phone),
+          avatarUrl: qrRecord.avatar_url || null,
+          isVerified: true,
         },
-        pairingToken: qrOwner.pairing_token,
-        pairingCode: qrOwner.pairing_code,
+        pairingToken: qrRecord.pairing_token,
+        pairingCode: qrRecord.pairing_code,
         isAlreadyConnected,
       });
       return true;
@@ -2400,16 +2471,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     if (pathname === '/api/udhar/qr/regenerate' && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
         return true;
       }
 
-      // Deactivate/expire old QR tokens for this user
+      // Deactivate/expire all old QR tokens for this user
       await query('UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1', [authUser.id]);
 
-      // Generate fresh token
+      // Generate cryptographically fresh token & unique code
       const pairingToken = crypto.randomBytes(32).toString('hex');
-      const pairingCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const pairingCode = `MM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
       await query(
@@ -2417,6 +2488,28 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
          VALUES ($1, $2, $3, FALSE, $4)`,
         [authUser.id, pairingToken, pairingCode, expiresAt]
       );
+
+      const qrPayload = JSON.stringify({
+        app: 'my-money',
+        v: 2,
+        type: 'udhar-pair',
+        token: pairingToken,
+        code: pairingCode,
+        exp: expiresAt.getTime(),
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Fresh QR code generated successfully. Previous codes have been expired.',
+        pairingToken,
+        pairingCode,
+        publicName: authUser.full_name || authUser.email?.split('@')[0] || 'User',
+        avatarUrl: authUser.avatar_url || null,
+        qrData: qrPayload,
+        expiresAt,
+      });
+      return true;
+    }
 
       const qrPayload = JSON.stringify({
         v: 1,
@@ -2455,7 +2548,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Find token
       const tokenRes = await query(
-        `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone 
+        `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status 
          FROM public.qr_pairing_tokens t
          JOIN public.app_users u ON t.user_id = u.id
          WHERE (t.pairing_token = $1 OR t.pairing_code = $2) AND t.expires_at > NOW() AND t.used = FALSE`,
@@ -2463,19 +2556,24 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       );
 
       if (tokenRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Pairing reference expired or invalid.' });
+        sendJson(res, 404, { success: false, message: 'Pairing reference expired, revoked or invalid.' });
         return true;
       }
 
       const tokenRecord = tokenRes.rows[0];
       const targetUserId = tokenRecord.user_id;
 
+      if (tokenRecord.status !== 'active') {
+        sendJson(res, 403, { success: false, message: 'This user account is currently deactivated or suspended.' });
+        return true;
+      }
+
       if (targetUserId === authUser.id) {
         sendJson(res, 400, { success: false, message: 'Cannot connect with your own QR code.' });
         return true;
       }
 
-      // 1. Create mutual bidirectional connection (idempotent ON CONFLICT DO NOTHING)
+      // 1. Create mutual bidirectional connection (idempotent ON CONFLICT DO UPDATE)
       await query(
         `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
          VALUES ($1, $2, 'connected')
@@ -2495,14 +2593,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         `SELECT id, name FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
         [authUser.id, targetUserId]
       );
-      const wasAlreadyConnected = existingLinked.rows.length > 0;
 
       if (existingLinked.rows.length > 0) {
         await query(
           `UPDATE public.udhar_contacts 
-           SET name = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), relationship_type = $4, updated_at = NOW() 
-           WHERE id = $5`,
-          [targetDisplayName, tokenRecord.email, tokenRecord.phone, relationshipType, existingLinked.rows[0].id]
+           SET name = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), photo_url = COALESCE($4, photo_url), relationship_type = $5, updated_at = NOW() 
+           WHERE id = $6`,
+          [targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, existingLinked.rows[0].id]
         );
       } else {
         const existingByName = await query(
@@ -2512,20 +2609,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         if (existingByName.rows.length > 0) {
           await query(
             `UPDATE public.udhar_contacts 
-             SET linked_user_id = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), relationship_type = $4, updated_at = NOW() 
-             WHERE id = $5`,
-            [targetUserId, tokenRecord.email, tokenRecord.phone, relationshipType, existingByName.rows[0].id]
+             SET linked_user_id = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), photo_url = COALESCE($4, photo_url), relationship_type = $5, updated_at = NOW() 
+             WHERE id = $6`,
+            [targetUserId, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, existingByName.rows[0].id]
           );
         } else {
           await query(
-            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
              ON CONFLICT (user_id, name) DO UPDATE 
              SET linked_user_id = EXCLUDED.linked_user_id, 
                  email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
                  phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url), 
                  updated_at = NOW()`,
-            [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, relationshipType, targetUserId]
+            [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
           ).catch(err => console.warn('QR user contact insert notice:', err));
         }
       }
@@ -2565,7 +2663,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           : `Successfully linked with ${tokenRecord.full_name}! Added to Saved People.`,
         connectedUser: {
           id: targetUserId,
+          name: tokenRecord.full_name,
           displayName: tokenRecord.full_name,
+          fullName: tokenRecord.full_name,
+          email: tokenRecord.email,
+          emailMasked: maskEmail(tokenRecord.email),
+          phone: tokenRecord.phone,
+          avatarUrl: tokenRecord.avatar_url || null,
         },
       });
       return true;
@@ -2587,7 +2691,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const txRes = await query(
         `SELECT t.*, 
                 u.full_name AS counterpart_registered_name, 
-                u.email AS counterpart_email
+                u.email AS counterpart_email,
+                u.avatar_url AS counterpart_avatar
          FROM public.udhar_transactions t
          LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
          WHERE t.user_id = $1
@@ -2606,6 +2711,22 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [authUser.id]
       );
 
+      // Fetch edit history for audit trail
+      let editHistRes: any = { rows: [] };
+      try {
+        editHistRes = await query(
+          `SELECT h.*, u.full_name AS edited_by_name
+           FROM public.udhar_edit_history h
+           LEFT JOIN public.app_users u ON h.edited_by_user_id = u.id
+           JOIN public.udhar_transactions t ON h.link_id = t.link_id
+           WHERE t.user_id = $1
+           ORDER BY h.created_at DESC`,
+          [authUser.id]
+        );
+      } catch (e) {
+        console.warn('Audit history query notice:', e);
+      }
+
       // Group repayments by transaction id
       const repaymentsByUdhar: Record<string, any[]> = {};
       for (const rep of repayRes.rows) {
@@ -2616,10 +2737,26 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         repaymentsByUdhar[key].push(rep);
       }
 
-      const transactions = txRes.rows.map((r: any) => ({
-        ...r,
-        repayments: repaymentsByUdhar[r.id] || [],
-      }));
+      // Group edit history by link_id
+      const editHistoryByLink: Record<string, any[]> = {};
+      for (const hist of editHistRes.rows) {
+        if (!editHistoryByLink[hist.link_id]) {
+          editHistoryByLink[hist.link_id] = [];
+        }
+        editHistoryByLink[hist.link_id].push(hist);
+      }
+
+      const transactions = txRes.rows.map((r: any) => {
+        const orig = parseFloat(r.original_amount) || 0;
+        const cur = parseFloat(r.current_balance) || 0;
+        const computedPaid = Math.max(0, Math.round((orig - cur) * 100) / 100);
+        return {
+          ...r,
+          paid_amount: r.paid_amount !== null && r.paid_amount !== undefined ? parseFloat(r.paid_amount) : computedPaid,
+          repayments: repaymentsByUdhar[r.id] || [],
+          edit_history: editHistoryByLink[r.link_id] || [],
+        };
+      });
 
       // Calculate totals
       let totalLent = 0;

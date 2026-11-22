@@ -132,17 +132,17 @@ export const NotificationBell: React.FC<Props> = ({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Bell Button */}
+      {/* Bell Button (Standardized h-9 w-9, Issue 21) */}
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="relative p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+        className="relative h-9 w-9 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-800 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         title="Notifications"
         aria-label="Open notifications"
       >
         <Bell className="w-4 h-4 stroke-[1.75]" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-emerald-600 text-white font-medium text-[10px] tabular-nums flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white font-medium text-xs tabular-nums flex items-center justify-center ring-2 ring-white dark:ring-slate-900 leading-none">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -166,7 +166,7 @@ export const NotificationBell: React.FC<Props> = ({
                 Notifications
               </span>
               {unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-md text-[10px] font-bold">
+                <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-md text-xs font-bold">
                   {unreadCount} new
                 </span>
               )}
@@ -177,7 +177,7 @@ export const NotificationBell: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={markAllAsRead}
-                  className="p-1 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                  className="p-1 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1"
                   title="Mark all as read"
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
@@ -214,7 +214,7 @@ export const NotificationBell: React.FC<Props> = ({
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                   No notifications right now
                 </p>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                <p className="text-xs text-slate-400 dark:text-slate-500">
                   Transaction and Udhar alerts will appear here
                 </p>
               </div>
@@ -238,16 +238,16 @@ export const NotificationBell: React.FC<Props> = ({
                       <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
                         {n.title}
                       </p>
-                      <span className="text-[10px] text-slate-400 shrink-0">
+                      <span className="text-xs text-slate-400 shrink-0">
                         {formatRelativeTime(n.created_at)}
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
                       {n.message}
                     </p>
 
-                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                    <div className="flex items-center justify-between mt-1 text-xs">
                       <span className="text-emerald-600 dark:text-emerald-400 font-medium capitalize">
                         {n.category}
                       </span>
