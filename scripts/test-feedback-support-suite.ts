@@ -1,6 +1,4 @@
-import pg from 'pg';
-import fs from 'fs';
-import path from 'path';
+import { query, pool } from '../server/db';
 import crypto from 'crypto';
 import {
   generateFeedbackReceivedEmail,
@@ -16,36 +14,6 @@ import {
   sendSupportTicketConfirmationEmail,
   sendAdminReplyToTicketEmail,
 } from '../server/email';
-
-// Load environment variables
-try {
-  const envPath = path.resolve(process.cwd(), '.env');
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx !== -1) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
-        }
-        if (!process.env[key]) {
-          process.env[key] = val;
-        }
-      }
-    }
-  }
-} catch (e) {
-  console.warn('Notice loading .env:', e);
-}
-
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL || '',
-  ssl: { rejectUnauthorized: false },
-});
 
 let passed = 0;
 let failed = 0;
@@ -66,9 +34,6 @@ async function runFeedbackSupportTestSuite() {
   console.log('MY MONEY MANAGER — FEEDBACK, COMPLAINTS & SUPPORT TEST SUITE');
   console.log('================================================================\n');
 
-  const client = await pool.connect();
-  console.log('✓ Connected to PostgreSQL Database');
-
   try {
     // -------------------------------------------------------------
     // 1. DATABASE SCHEMA VERIFICATION
@@ -76,7 +41,7 @@ async function runFeedbackSupportTestSuite() {
     console.log('\n--- 1. Testing Database Schema & Migrations ---');
 
     // 1.1 feedbacks table columns
-    const feedbackColsRes = await client.query(`
+    const feedbackColsRes = await query(`
       SELECT column_name, data_type 
       FROM information_schema.columns 
       WHERE table_schema = 'public' AND table_name = 'feedbacks'
