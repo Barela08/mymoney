@@ -2779,18 +2779,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
-      const rating = Number(body.rating);
+      const rawRating = body.rating !== undefined && body.rating !== null ? Number(body.rating) : null;
+      const rating = rawRating && rawRating >= 1 && rawRating <= 5 ? rawRating : null;
       const message = (body.message || '').trim();
-      const category = (body.category || 'App Experience').trim();
-      const subject = (body.subject || `${rating}-Star Feedback - ${category}`).trim();
-
-      if (!rating || rating < 1 || rating > 5) {
-        sendJson(res, 400, { success: false, message: 'Overall Rating (1 to 5 stars) is mandatory.' });
-        return true;
-      }
+      const dpdpConsent = Boolean(body.dpdp_consent);
 
       if (!message || message.length < 3) {
-        sendJson(res, 400, { success: false, message: 'Please share your experience, suggestions, or ideas.' });
+        sendJson(res, 400, { success: false, message: 'Please share your thoughts, suggestions, or experience.' });
         return true;
       }
 
@@ -2814,19 +2809,38 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const category = (body.category || 'General Feedback').trim();
+      const subject = (body.subject || (rating ? `${rating}-Star User Feedback` : 'User Feedback')).trim();
+
       const insertRes = await query(
         `INSERT INTO public.feedbacks (
-          user_id, user_name, user_email, user_phone, type, category, subject, message, rating, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'feedback', $5, $6, $7, $8, 'new', NOW(), NOW())
+          user_id, user_name, user_email, user_phone, type, category, subject, message, rating, dpdp_consent, dpdp_consent_at, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'feedback', $5, $6, $7, $8, $9, $10, 'new', NOW(), NOW())
         RETURNING *`,
-        [authUser.id, trustedName, trustedEmail, trustedPhone, category, subject, message, rating]
+        [authUser.id, trustedName, trustedEmail, trustedPhone, category, subject, message, rating, dpdpConsent, dpdpConsent ? new Date() : null]
       );
+
+      const feedback = insertRes.rows[0];
+      const feedbackId = `FB-${feedback.id.slice(0, 8).toUpperCase()}`;
+
+      // If user explicitly checked dpdp_consent, record in user_consents audit history as well
+      if (dpdpConsent) {
+        try {
+          await query(
+            `INSERT INTO public.user_consents (user_id, user_email, purpose, status, action, policy_version, consent_wording, ip_address, user_agent, created_at)
+             VALUES ($1, $2, 'optional_feedback_support', 'granted', 'granted', 'v1.2 - DPDP Act 2023', 'Explicit consent granted during feedback submission for service quality improvement.', $3, $4, NOW())`,
+            [authUser.id, trustedEmail, clientIp, userAgent]
+          );
+        } catch (e) {
+          console.warn('[Consent Record Notice]:', e);
+        }
+      }
 
       // Async send acknowledgement email
       sendFeedbackConfirmationEmail({
         email: trustedEmail,
         userName: trustedName,
-        rating,
+        rating: rating || 5,
         category,
         message,
       }).catch((e) => console.warn('[Feedback Ack Email Error]:', e));
@@ -2834,13 +2848,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
         userId: authUser.id,
         userEmail: trustedEmail,
-        details: { rating, category },
+        details: { rating, feedbackId },
       });
 
       sendJson(res, 201, {
         success: true,
         message: 'Thank you for your feedback! Your opinion helps us improve My Money Manager.',
-        feedback: insertRes.rows[0],
+        feedback_id: feedbackId,
+        feedback,
       });
       return true;
     }
@@ -2854,9 +2869,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
-      const category = (body.category || 'Other').trim();
       const subject = (body.subject || '').trim();
       const description = (body.description || body.message || '').trim();
+      const phone = (body.phone || body.user_phone || '').trim() || null;
+      const category = (body.category || 'General Complaint').trim();
       const attachmentUrl = (body.attachment_url || body.attachment || '').trim() || null;
 
       if (!subject || subject.length < 3) {
@@ -2864,14 +2880,29 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
       if (!description || description.length < 5) {
-        sendJson(res, 400, { success: false, message: 'Complaint description is required (min 5 characters).' });
+        sendJson(res, 400, { success: false, message: 'Detailed description is required (min 5 characters).' });
         return true;
       }
 
       // Fetch trusted user name and email from app_users
-      const uRes = await query('SELECT full_name, email FROM public.app_users WHERE id = $1', [authUser.id]);
+      const uRes = await query('SELECT full_name, email, phone FROM public.app_users WHERE id = $1', [authUser.id]);
       const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
       const trustedEmail = uRes.rows[0]?.email || authUser.email;
+      const userPhone = phone || uRes.rows[0]?.phone || null;
+
+      // Duplicate prevention: check identical complaint within 15 seconds
+      const dupCheck = await query(
+        `SELECT id FROM public.support_tickets 
+         WHERE user_id = $1 AND subject = $2 AND description = $3 AND created_at > NOW() - INTERVAL '15 seconds'`,
+        [authUser.id, subject, description]
+      );
+      if (dupCheck.rows.length > 0) {
+        sendJson(res, 409, {
+          success: false,
+          message: 'Duplicate complaint detected. Your previous submission was already received!',
+        });
+        return true;
+      }
 
       // Generate unique ticket number: CMP-XXXX
       const ticketNumber = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2899,12 +2930,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       await logSecurityEvent('USER_SUBMITTED_COMPLAINT', {
         userId: authUser.id,
         userEmail: trustedEmail,
-        details: { ticketNumber: ticket.ticket_number, category: ticket.category },
+        details: { ticketNumber: ticket.ticket_number },
       });
 
       sendJson(res, 201, {
         success: true,
         message: 'Your complaint has been submitted successfully. Our support team will review it and get back to you.',
+        ticket_number: ticket.ticket_number,
         ticket: {
           id: ticket.id,
           ticket_number: ticket.ticket_number,
@@ -3125,6 +3157,127 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         success: true,
         message: 'Reply sent successfully.',
         reply: replyRes.rows[0],
+      });
+      return true;
+    }
+
+    // =========================================================
+    // PRIVACY & DPDP CONSENT ENDPOINTS (DPDP ACT 2023)
+    // =========================================================
+
+    // 1. GET CONSENT STATUS: GET /api/privacy/consent-status
+    if (pathname === '/api/privacy/consent-status' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      // Query consent history for this user
+      const consentsRes = await query(
+        `SELECT id, purpose, status, action, policy_version, consent_wording, created_at 
+         FROM public.user_consents 
+         WHERE user_id = $1 
+         ORDER BY created_at DESC`,
+        [authUser.id]
+      );
+
+      const history = consentsRes.rows;
+      const latest = history[0] || null;
+      const status = latest ? latest.status : 'not_granted';
+
+      sendJson(res, 200, {
+        success: true,
+        status,
+        latest,
+        history,
+        policyVersion: 'v1.2 - DPDP Act 2023',
+      });
+      return true;
+    }
+
+    // 2. GRANT OPTIONAL CONSENT: POST /api/privacy/consent-grant
+    if (pathname === '/api/privacy/consent-grant' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const purpose = (body.purpose || 'optional_feedback_support').trim();
+      const wording = (body.wording || 'User explicitly granted optional processing consent for service quality feedback and support inquiries under the DPDP Act 2023.').trim();
+
+      const insertRes = await query(
+        `INSERT INTO public.user_consents (
+          user_id, user_email, purpose, status, action, policy_version, consent_wording, ip_address, user_agent, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'granted', 'granted', 'v1.2 - DPDP Act 2023', $4, $5, $6, NOW(), NOW())
+        RETURNING *`,
+        [authUser.id, authUser.email, purpose, wording, clientIp, userAgent]
+      );
+
+      await logSecurityEvent('USER_GRANTED_DPDP_CONSENT', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { purpose, policyVersion: 'v1.2 - DPDP Act 2023' },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Optional consent recorded successfully.',
+        status: 'granted',
+        consent: insertRes.rows[0],
+      });
+      return true;
+    }
+
+    // 3. WITHDRAW OPTIONAL CONSENT: POST /api/privacy/consent-withdraw
+    if (pathname === '/api/privacy/consent-withdraw' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const purpose = (body.purpose || 'optional_feedback_support').trim();
+      const wording = (body.wording || 'User explicitly withdrew optional processing consent. All optional data processing ceased. Core app functionality and account remain active.').trim();
+
+      // Check if user previously had granted consent
+      const prevCheck = await query(
+        `SELECT id, status FROM public.user_consents 
+         WHERE user_id = $1 AND purpose = $2 
+         ORDER BY created_at DESC LIMIT 1`,
+        [authUser.id, purpose]
+      );
+
+      if (!prevCheck.rows.length || prevCheck.rows[0].status === 'withdrawn') {
+        sendJson(res, 400, {
+          success: false,
+          message: 'No active optional consent found to withdraw.',
+        });
+        return true;
+      }
+
+      const insertRes = await query(
+        `INSERT INTO public.user_consents (
+          user_id, user_email, purpose, status, action, policy_version, consent_wording, ip_address, user_agent, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'withdrawn', 'withdrawn', 'v1.2 - DPDP Act 2023', $4, $5, $6, NOW(), NOW())
+        RETURNING *`,
+        [authUser.id, authUser.email, purpose, wording, clientIp, userAgent]
+      );
+
+      await logSecurityEvent('USER_WITHDREW_DPDP_CONSENT', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { purpose, policyVersion: 'v1.2 - DPDP Act 2023' },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Optional consent has been withdrawn. Core account and financial ledgers remain preserved.',
+        status: 'withdrawn',
+        consent: insertRes.rows[0],
       });
       return true;
     }

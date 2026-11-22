@@ -103,10 +103,11 @@ function wrapEmailHtml(title: string, bodyContent: string): string {
 }
 
 // -----------------------------------------------------------------------------
-// 1. FEEDBACK RECEIVED EMAIL
+// 1. FEEDBACK RECEIVED EMAIL (USER CONFIRMATION)
 // -----------------------------------------------------------------------------
 export function generateFeedbackReceivedEmail(data: {
   userName?: string | null;
+  feedbackId?: string;
   rating?: number | null;
   category?: string;
   message?: string;
@@ -114,49 +115,144 @@ export function generateFeedbackReceivedEmail(data: {
   userEmail?: string;
 }): { subject: string; html: string; text: string } {
   const greeting = formatPersonalizedGreeting(data.userName);
-  const ratingText = data.rating ? STAR_LABELS[data.rating] || `${data.rating} Stars` : 'Not specified';
+  const ratingText = data.rating ? `${data.rating}/5` : 'Not specified';
   const starsRender = data.rating ? '★'.repeat(data.rating) + '☆'.repeat(5 - data.rating) : '';
   const messageContent = data.message || data.feedbackMessage || '';
-  const subject = `Thank you for your feedback — ${APP_CONFIG.appName}`;
+  const fbId = data.feedbackId || 'N/A';
+  const subject = `Thank you for your feedback – ${APP_CONFIG.appName}`;
 
   const bodyContent = `
     <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
-      Thank You for Your Feedback! ✨
+      Thank You for Your Feedback!
     </h2>
-    <p style="margin: 0 0 12px 0; font-size: 15px; font-weight: 600; color: #065f46;">
+    <p style="margin: 0 0 14px 0; font-size: 15px; font-weight: 600; color: #065f46;">
       ${greeting}
     </p>
-    <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-      We have received your feedback. Your opinion helps us continuously improve My Money Manager and build a better personal finance experience for you.
+    <p style="margin: 0 0 14px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
+      Thank you for sharing your feedback with My Money Manager.
+    </p>
+    <p style="margin: 0 0 18px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
+      Your feedback has been successfully submitted to our team. We appreciate your time and suggestions, and your feedback helps us improve the application and user experience.
     </p>
     
     <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px 18px;">
       <tr>
         <td>
-          <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 700; color: #065f46;">
-            Your Rating: <span style="font-size: 16px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml(ratingText)})
+          <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;">
+            <strong>Feedback ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml(fbId)}</span>
           </p>
-          ${data.category ? `<p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #166534;">Category: ${escapeHtml(data.category)}</p>` : ''}
-          <p style="margin: 8px 0 0 0; font-size: 13px; font-style: italic; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            &ldquo;${escapeHtml(messageContent)}&rdquo;
+          <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;">
+            <strong>Rating:</strong> <span style="font-size: 15px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml(ratingText)})
+          </p>
+          <div style="margin: 10px 0 0 0;">
+            <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase;">Your Feedback:</p>
+            <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+              ${escapeHtml(messageContent)}
+            </p>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0 0 16px 0; font-size: 14px; color: #334155; line-height: 1.5;">
+      Our team will review your feedback.
+    </p>
+    <p style="margin: 0 0 4px 0; font-size: 13px; color: #64748b;">
+      Regards,
+    </p>
+    <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
+      HackifyPro Support Team<br>
+      ${escapeHtml(APP_CONFIG.appName)}
+    </p>
+  `;
+
+  const html = wrapEmailHtml(subject, bodyContent);
+  const text = `Hello ${data.userName || 'User'},\n\nThank you for sharing your feedback with My Money Manager.\n\nYour feedback has been successfully submitted to our team. We appreciate your time and suggestions, and your feedback helps us improve the application and user experience.\n\nFeedback ID: #${fbId}\nRating: ${ratingText}\nYour Feedback: ${messageContent}\n\nOur team will review your feedback.\n\nRegards,\nHackifyPro Support Team\nMy Money Manager\n`;
+  return { subject, html, text };
+}
+
+// -----------------------------------------------------------------------------
+// 1B. FEEDBACK RECEIVED — ADMIN NOTIFICATION EMAIL
+// -----------------------------------------------------------------------------
+export function generateFeedbackAdminNotificationEmail(data: {
+  userName: string;
+  userEmail: string;
+  userId: string;
+  feedbackId: string;
+  rating: number;
+  message: string;
+  submittedAt: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `New Feedback Received – ${APP_CONFIG.appName}`;
+  const starsRender = data.rating ? '★'.repeat(data.rating) + '☆'.repeat(5 - data.rating) : '';
+
+  const bodyContent = `
+    <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
+      New Feedback Received
+    </h2>
+    <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #065f46;">
+      Hello Admin,
+    </p>
+    <p style="margin: 0 0 20px 0; font-size: 14px; color: #334155; line-height: 1.6;">
+      A new feedback submission has been received in My Money Manager.
+    </p>
+
+    <!-- User Details Box -->
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 16px 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <h3 style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">
+            User Details
+          </h3>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;">
+            <strong>Name:</strong> ${escapeHtml(data.userName)}
+          </p>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;">
+            <strong>Email:</strong> <span style="font-family: monospace;">${escapeHtml(data.userEmail)}</span>
+          </p>
+          <p style="margin: 0; font-size: 13px; color: #334155;">
+            <strong>User ID:</strong> <span style="font-family: monospace; font-size: 12px;">${escapeHtml(data.userId)}</span>
           </p>
         </td>
       </tr>
     </table>
 
-    <p style="margin: 0 0 12px 0; font-size: 13px; color: #64748b; line-height: 1.5;">
-      Our product team regularly reviews user ratings and feature requests to guide future enhancements.
+    <!-- Feedback Details Box -->
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <h3 style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #065f46; text-transform: uppercase;">
+            Feedback Details
+          </h3>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;">
+            <strong>Feedback ID:</strong> <span style="font-family: monospace; font-size: 13px; font-weight: 700; color: #065f46;">#${escapeHtml(data.feedbackId)}</span>
+          </p>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
+            <strong>Rating:</strong> <span style="font-size: 14px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml(data.rating)}/5)
+          </p>
+          <p style="margin: 0 0 8px 0; font-size: 13px; color: #334155;">
+            <strong>Submitted At:</strong> ${escapeHtml(data.submittedAt)}
+          </p>
+          <div style="margin: 8px 0 0 0;">
+            <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase;">Feedback:</p>
+            <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+              ${escapeHtml(data.message)}
+            </p>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0 0 16px 0; font-size: 13px; color: #64748b; line-height: 1.5;">
+      Please review this feedback in the Admin Panel.
     </p>
-    <p style="margin: 0 0 4px 0; font-size: 13px; color: #64748b;">
-      Warm regards,
-    </p>
-    <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
-      Team ${escapeHtml(APP_CONFIG.appName)}
+    <p style="margin: 0; font-size: 13px; font-weight: 700; color: #065f46;">
+      My Money Manager — Admin Notification
     </p>
   `;
 
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName}\n${APP_CONFIG.appTagline}\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nThank you for your feedback!\n\n${greeting}\n\nWe have received your feedback.\nRating: ${ratingText}\n${data.category ? `Category: ${data.category}\n` : ''}\nYour Message:\n"${data.message}"\n\nWarm regards,\nTeam ${APP_CONFIG.appName}\n`;
+  const text = `Hello Admin,\n\nA new feedback submission has been received in My Money Manager.\n\nUser Details\nName: ${data.userName}\nEmail: ${data.userEmail}\nUser ID: ${data.userId}\n\nFeedback Details\nFeedback ID: #${data.feedbackId}\nRating: ${data.rating}/5\nFeedback: ${data.message}\nSubmitted At: ${data.submittedAt}\n\nPlease review this feedback in the Admin Panel.\n\nMy Money Manager — Admin Notification\n`;
   return { subject, html, text };
 }
 

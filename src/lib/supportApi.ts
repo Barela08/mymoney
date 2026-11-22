@@ -134,17 +134,30 @@ export interface TicketMetrics {
   urgent: number;
 }
 
+export interface UserConsentRecord {
+  id: string;
+  user_id?: string;
+  user_email?: string;
+  purpose: string;
+  status: 'granted' | 'withdrawn' | 'not_granted';
+  action: 'granted' | 'withdrawn';
+  policy_version: string;
+  consent_wording?: string;
+  created_at: string;
+}
+
 export const supportApi = {
   // -----------------------------------------------------------
   // USER-FACING APIs
   // -----------------------------------------------------------
 
   async submitFeedback(payload: {
-    rating: number;
+    rating?: number | null;
     message: string;
+    dpdp_consent?: boolean;
     category?: string;
     subject?: string;
-  }): Promise<{ success: boolean; message: string; feedback: FeedbackRecord }> {
+  }): Promise<{ success: boolean; message: string; feedback: FeedbackRecord; feedback_id?: string }> {
     try {
       return await request('/api/feedback/submit', {
         method: 'POST',
@@ -162,13 +175,13 @@ export const supportApi = {
         user_name: storedUser?.displayName || storedUser?.full_name || 'Valued User',
         user_email: storedUser?.email || 'user@mymoney.app',
         type: 'feedback',
-        category: payload.category || 'App Experience',
-        subject: payload.subject || `${payload.rating}-Star Feedback`,
+        category: payload.category || 'General Feedback',
+        subject: payload.subject || (payload.rating ? `${payload.rating}-Star Feedback` : 'User Feedback'),
         message: payload.message,
-        rating: payload.rating,
+        rating: payload.rating || null,
         status: 'new',
-        dpdp_consent: true,
-        dpdp_consent_at: nowIso,
+        dpdp_consent: Boolean(payload.dpdp_consent),
+        dpdp_consent_at: payload.dpdp_consent ? nowIso : null,
         created_at: nowIso,
         updated_at: nowIso,
       };
@@ -179,20 +192,41 @@ export const supportApi = {
         throw new Error(error.message || 'Could not submit feedback.');
       }
 
+      const fbRecord = data as FeedbackRecord;
+      const feedbackId = `FB-${fbRecord.id ? fbRecord.id.slice(0, 8).toUpperCase() : Date.now().toString(36).toUpperCase()}`;
+
+      // If user consented, record in user_consents if possible
+      if (payload.dpdp_consent) {
+        try {
+          await client.from('user_consents').insert([{
+            user_id: storedUser?.id || storedUser?.uid || null,
+            user_email: storedUser?.email || null,
+            purpose: 'optional_feedback_support',
+            status: 'granted',
+            action: 'granted',
+            policy_version: 'v1.2 - DPDP Act 2023',
+            consent_wording: 'Explicit consent granted during feedback submission for service quality improvement.',
+            created_at: nowIso,
+          }]);
+        } catch {}
+      }
+
       return {
         success: true,
         message: 'Thank you for your feedback! Your opinion helps us improve My Money Manager.',
-        feedback: data as FeedbackRecord,
+        feedback_id: feedbackId,
+        feedback: fbRecord,
       };
     }
   },
 
   async raiseComplaint(payload: {
-    category: string;
     subject: string;
     description: string;
+    phone?: string;
     attachment_url?: string;
-  }): Promise<{ success: boolean; message: string; ticket: Partial<SupportTicketRecord> }> {
+    category?: string;
+  }): Promise<{ success: boolean; message: string; ticket: Partial<SupportTicketRecord>; ticket_number?: string }> {
     try {
       return await request('/api/support/complaint', {
         method: 'POST',
@@ -205,21 +239,21 @@ export const supportApi = {
       if (!client) throw err;
 
       const nowIso = new Date().toISOString();
-      const ticketNumber = `CMP-${Date.now().toString(36).toUpperCase()}`;
+      const ticketNumber = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
       // Insert into feedbacks table as type = 'complaint'
       const feedbackPayload = {
         user_id: storedUser?.id || storedUser?.uid || null,
         user_name: storedUser?.displayName || storedUser?.full_name || 'User',
         user_email: storedUser?.email || 'user@mymoney.app',
+        user_phone: payload.phone || null,
         type: 'complaint',
-        category: payload.category,
+        category: payload.category || 'General Complaint',
         subject: payload.subject,
         message: payload.description,
-        urgency: 'high',
+        urgency: 'normal',
         status: 'new',
-        dpdp_consent: true,
-        dpdp_consent_at: nowIso,
+        dpdp_consent: false,
         created_at: nowIso,
         updated_at: nowIso,
       };
@@ -229,14 +263,150 @@ export const supportApi = {
       return {
         success: true,
         message: `Your complaint has been registered (${ticketNumber}). Our support team will investigate promptly.`,
+        ticket_number: ticketNumber,
         ticket: {
           ticket_number: ticketNumber,
-          category: payload.category,
+          category: payload.category || 'General Complaint',
           subject: payload.subject,
           description: payload.description,
           status: 'open',
           created_at: nowIso,
         },
+      };
+    }
+  },
+
+  // -----------------------------------------------------------
+  // PRIVACY & DPDP CONSENT APIs
+  // -----------------------------------------------------------
+
+  async getConsentStatus(): Promise<{
+    success: boolean;
+    status: 'granted' | 'withdrawn' | 'not_granted';
+    latest: UserConsentRecord | null;
+    history: UserConsentRecord[];
+    policyVersion: string;
+  }> {
+    try {
+      return await request('/api/privacy/consent-status', { method: 'GET' });
+    } catch (err: any) {
+      console.warn('Backend consent API unreachable, checking Supabase/local fallback:', err.message);
+      const client = getSupabaseClient();
+      const storedUser = getStoredAuthUser();
+      if (!client || !storedUser) {
+        return {
+          success: true,
+          status: 'not_granted',
+          latest: null,
+          history: [],
+          policyVersion: 'v1.2 - DPDP Act 2023',
+        };
+      }
+
+      const { data, error } = await client
+        .from('user_consents')
+        .select('*')
+        .eq('user_id', storedUser?.id || storedUser?.uid)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return {
+          success: true,
+          status: 'not_granted',
+          latest: null,
+          history: [],
+          policyVersion: 'v1.2 - DPDP Act 2023',
+        };
+      }
+
+      const history = (data || []) as UserConsentRecord[];
+      const latest = history[0] || null;
+      return {
+        success: true,
+        status: latest ? latest.status : 'not_granted',
+        latest,
+        history,
+        policyVersion: 'v1.2 - DPDP Act 2023',
+      };
+    }
+  },
+
+  async grantConsent(
+    purpose = 'optional_feedback_support',
+    wording?: string
+  ): Promise<{ success: boolean; message: string; status: string; consent?: UserConsentRecord }> {
+    try {
+      return await request('/api/privacy/consent-grant', {
+        method: 'POST',
+        body: JSON.stringify({ purpose, wording }),
+      });
+    } catch (err: any) {
+      console.warn('Backend grant consent API unreachable, saving via Supabase fallback:', err.message);
+      const client = getSupabaseClient();
+      const storedUser = getStoredAuthUser();
+      if (!client || !storedUser) throw err;
+
+      const nowIso = new Date().toISOString();
+      const record = {
+        user_id: storedUser?.id || storedUser?.uid,
+        user_email: storedUser?.email || null,
+        purpose,
+        status: 'granted',
+        action: 'granted',
+        policy_version: 'v1.2 - DPDP Act 2023',
+        consent_wording: wording || 'User explicitly granted optional processing consent for service quality feedback and support inquiries under the DPDP Act 2023.',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      const { data, error } = await client.from('user_consents').insert([record]).select().single();
+      if (error) throw error;
+
+      return {
+        success: true,
+        message: 'Optional consent recorded successfully.',
+        status: 'granted',
+        consent: data as UserConsentRecord,
+      };
+    }
+  },
+
+  async withdrawConsent(
+    purpose = 'optional_feedback_support',
+    wording?: string
+  ): Promise<{ success: boolean; message: string; status: string; consent?: UserConsentRecord }> {
+    try {
+      return await request('/api/privacy/consent-withdraw', {
+        method: 'POST',
+        body: JSON.stringify({ purpose, wording }),
+      });
+    } catch (err: any) {
+      console.warn('Backend withdraw consent API unreachable, saving via Supabase fallback:', err.message);
+      const client = getSupabaseClient();
+      const storedUser = getStoredAuthUser();
+      if (!client || !storedUser) throw err;
+
+      const nowIso = new Date().toISOString();
+      const record = {
+        user_id: storedUser?.id || storedUser?.uid,
+        user_email: storedUser?.email || null,
+        purpose,
+        status: 'withdrawn',
+        action: 'withdrawn',
+        policy_version: 'v1.2 - DPDP Act 2023',
+        consent_wording: wording || 'User explicitly withdrew optional processing consent. All optional data processing ceased. Core app functionality and account remain active.',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      const { data, error } = await client.from('user_consents').insert([record]).select().single();
+      if (error) throw error;
+
+      return {
+        success: true,
+        message: 'Optional consent has been withdrawn. Core account and financial ledgers remain preserved.',
+        status: 'withdrawn',
+        consent: data as UserConsentRecord,
       };
     }
   },
