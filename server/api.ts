@@ -1945,29 +1945,38 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Find active valid token or generate new pairing reference
-      let tokenRes = await query(
-        `SELECT pairing_token, pairing_code, expires_at 
-         FROM public.qr_pairing_tokens 
-         WHERE user_id = $1 AND expires_at > NOW() AND used = FALSE 
-         ORDER BY created_at DESC LIMIT 1`,
-        [authUser.id]
-      );
+      let pairingToken = '';
+      let pairingCode = '';
+      let expiresAt: any = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-      let pairingToken = tokenRes.rows[0]?.pairing_token;
-      let pairingCode = tokenRes.rows[0]?.pairing_code;
-      let expiresAt = tokenRes.rows[0]?.expires_at;
+      try {
+        const tokenRes = await query(
+          `SELECT pairing_token, pairing_code, expires_at 
+           FROM public.qr_pairing_tokens 
+           WHERE user_id = $1 AND expires_at > NOW() AND used = FALSE 
+           ORDER BY created_at DESC LIMIT 1`,
+          [authUser.id]
+        );
+        pairingToken = tokenRes.rows[0]?.pairing_token;
+        pairingCode = tokenRes.rows[0]?.pairing_code;
+        if (tokenRes.rows[0]?.expires_at) expiresAt = tokenRes.rows[0].expires_at;
+      } catch (err) {
+        console.warn('QR tokens table query notice:', err);
+      }
 
       if (!pairingToken) {
         pairingToken = generateCryptoToken(32);
         pairingCode = `MM-${generateCryptoToken(4).toUpperCase()}`;
-        expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30-day token
 
-        await query(
-          `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, expires_at)
-           VALUES ($1, $2, $3, $4)`,
-          [authUser.id, pairingToken, pairingCode, expiresAt]
-        );
+        try {
+          await query(
+            `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, expires_at)
+             VALUES ($1, $2, $3, $4)`,
+            [authUser.id, pairingToken, pairingCode, expiresAt]
+          );
+        } catch (dbErr) {
+          console.warn('[QR Pairing DB Notice]:', dbErr);
+        }
       }
 
       const qrPayload = JSON.stringify({
@@ -1976,14 +1985,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         type: 'udhar-pair',
         code: pairingCode,
         token: pairingToken,
-        name: authUser.full_name,
+        userId: authUser.id,
+        name: authUser.full_name || authUser.email?.split('@')[0] || 'User',
       });
 
       sendJson(res, 200, {
         success: true,
         pairingToken,
         pairingCode,
-        publicName: authUser.full_name,
+        publicName: authUser.full_name || authUser.email?.split('@')[0] || 'User',
         qrData: qrPayload,
         expiresAt,
       });
