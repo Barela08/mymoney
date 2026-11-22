@@ -42,8 +42,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }
 
   // RBAC Access Guard: user must be authenticated with administrative privileges
+  const isMasterAdmin = Boolean(user?.email && user.email.toLowerCase().trim() === 'admin@mymoney.com');
   const allowedRoles = ['superadmin', 'admin', 'analyst', 'support'];
-  const hasAccess = Boolean(user && (isAdmin || (user.role && allowedRoles.includes(user.role))));
+  const userRole = (user?.role || '').toLowerCase().trim();
+  const hasAccess = Boolean(user && (isMasterAdmin || isAdmin || (userRole && allowedRoles.includes(userRole))));
 
   if (!hasAccess) {
     return (
@@ -55,15 +57,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <p className="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
           This zone is restricted exclusively to authorized platform administration personnel. Unauthorized access attempts are cryptographically timestamped and forwarded to security audit logs.
         </p>
-        {onExit && (
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <button
-            onClick={onExit}
+            onClick={onExit || (() => { window.location.href = '/'; })}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             Return to Personal Workspace
           </button>
-        )}
+          <button
+            onClick={() => {
+              window.location.hash = '';
+              window.location.reload();
+            }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh Clearance
+          </button>
+        </div>
       </div>
     );
   }

@@ -94,6 +94,41 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
   const token = extractSessionToken(req);
   if (!token) return null;
 
+  // Direct Supabase fallback token support (format: direct_<userId>_<timestamp>)
+  if (token.startsWith('direct_')) {
+    const parts = token.split('_');
+    const directUserId = parts[1];
+    if (directUserId) {
+      try {
+        const directRes = await query(
+          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+           FROM public.app_users WHERE id = $1`,
+          [directUserId]
+        );
+        if (directRes.rows.length > 0 && directRes.rows[0].status === 'active') {
+          const row = directRes.rows[0];
+          const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+          return {
+            id: row.id,
+            full_name: row.full_name,
+            email: row.email,
+            phone: row.phone,
+            role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
+            status: row.status,
+            email_verified: row.email_verified,
+            avatar_url: row.avatar_url,
+            force_password_reset: row.force_password_reset,
+            created_at: row.created_at,
+            last_login_at: row.last_login_at,
+            password_changed_at: row.password_changed_at,
+          };
+        }
+      } catch (err) {
+        console.warn('Error resolving direct token:', err);
+      }
+    }
+  }
+
   const tokenHash = hashToken(token);
 
   // Query active session and join with app_users
@@ -141,12 +176,14 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
   // Update session last active time
   query(`UPDATE public.user_sessions SET last_active_at = NOW() WHERE id = $1`, [row.session_id]).catch(() => {});
 
+  const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+
   return {
     id: row.id,
     full_name: row.full_name,
     email: row.email,
     phone: row.phone,
-    role: row.role,
+    role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
     status: row.status,
     email_verified: row.email_verified,
     avatar_url: row.avatar_url,

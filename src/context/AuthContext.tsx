@@ -101,13 +101,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .eq('id', session.user.id)
             .single();
 
-          const isAdm = email.toLowerCase() === 'admin@mymoney.com' || prof?.role === 'admin';
+          const isAdm = email.toLowerCase() === 'admin@mymoney.com' || prof?.role === 'admin' || prof?.role === 'superadmin';
           const authUser: AuthUser = {
             uid: session.user.id,
             id: session.user.id,
             email,
-            displayName: prof?.full_name || email.split('@')[0],
-            full_name: prof?.full_name || email.split('@')[0],
+            displayName: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
+            full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
             role: isAdm ? 'admin' : (prof?.role || 'user'),
             status: prof?.status || 'active',
             email_verified: true,
@@ -163,8 +163,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             uid: supaData.user.id,
             id: supaData.user.id,
             email: supaData.user.email || email,
-            displayName: email.split('@')[0],
-            full_name: email.split('@')[0],
+            displayName: isAdm ? 'Security Administrator' : email.split('@')[0],
+            full_name: isAdm ? 'Security Administrator' : email.split('@')[0],
             role: isAdm ? 'admin' : 'user',
             status: 'active',
             email_verified: true,
@@ -514,7 +514,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isAdmin = Boolean(user && (user.role === 'admin' || user.role === 'superadmin'));
+  const isMasterAdmin = Boolean(user?.email && user.email.toLowerCase().trim() === 'admin@mymoney.com');
+  const userRole = (user?.role || '').toLowerCase().trim();
+  const isAdmin = Boolean(
+    isMasterAdmin ||
+    (user && (userRole === 'admin' || userRole === 'superadmin' || userRole === 'support' || userRole === 'analyst'))
+  );
 
   return (
     <AuthContext.Provider

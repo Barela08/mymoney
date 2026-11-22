@@ -68,7 +68,8 @@ async function verifyAdminAuth(
     return null;
   }
 
-  const role = authUser.role_slug || authUser.role || 'user';
+  const isMasterAdmin = Boolean(authUser.email && authUser.email.toLowerCase().trim() === 'admin@mymoney.com');
+  const role = isMasterAdmin ? 'superadmin' : ((authUser.role_slug || authUser.role || 'user').toLowerCase().trim());
   if (!['superadmin', 'admin', 'support', 'analyst'].includes(role)) {
     sendJson(res, 403, { success: false, message: 'Access Denied: Administrative authorization required.' });
     return null;

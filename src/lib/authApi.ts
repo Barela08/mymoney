@@ -111,13 +111,17 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 // Used automatically if backend serverless endpoints are offline, 404, or unreachable
 // -----------------------------------------------------------------------------
 function mapRawUserToAuthUser(u: any): AuthUser {
+  const isMasterAdmin = Boolean(u.email && u.email.toLowerCase().trim() === 'admin@mymoney.com');
+  const rawRole = (u.role || '').toLowerCase().trim();
+  const effectiveRole = isMasterAdmin ? 'superadmin' : (rawRole || 'user');
+
   return {
     uid: u.id,
     id: u.id,
     email: u.email,
-    displayName: u.full_name || u.email?.split('@')[0] || 'User',
-    full_name: u.full_name,
-    role: (u.role as any) || 'user',
+    displayName: u.full_name || u.email?.split('@')[0] || (isMasterAdmin ? 'Security Administrator' : 'User'),
+    full_name: u.full_name || (isMasterAdmin ? 'Security Administrator' : undefined),
+    role: effectiveRole as any,
     email_verified: Boolean(u.email_verified),
     emailVerified: Boolean(u.email_verified),
     status: (u.status as any) || 'active',

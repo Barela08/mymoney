@@ -1,6 +1,12 @@
 import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
+import dns from 'dns';
+
+// Ensure IPv6-only database hosts (like Supabase direct connection) resolve properly in Node.js
+try {
+  dns.setDefaultResultOrder('verbatim');
+} catch {}
 
 // Parse .env if not loaded
 try {
@@ -31,9 +37,40 @@ const connectionString =
   process.env.DATABASE_URL ||
   'postgresql://postgres:postgres@localhost:5432/postgres';
 
+const dnsResolver = new dns.promises.Resolver();
+try {
+  dnsResolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch {}
+
+const customLookup = (
+  hostname: string,
+  options: any,
+  cb: (err: any, address?: string, family?: number) => void
+) => {
+  dns.lookup(hostname, options, async (err, address, family) => {
+    if (!err && address) {
+      return cb(null, address, family);
+    }
+    try {
+      if (hostname.includes('supabase.co')) {
+        const ips = await dnsResolver.resolve6(hostname);
+        if (ips && ips.length > 0) {
+          return cb(null, ips[0], 6);
+        }
+      }
+      const ips4 = await dnsResolver.resolve4(hostname);
+      if (ips4 && ips4.length > 0) {
+        return cb(null, ips4[0], 4);
+      }
+    } catch {}
+    return cb(err, address, family);
+  });
+};
+
 export const pool = new pg.Pool({
   connectionString,
   ssl: { rejectUnauthorized: false },
+  lookup: customLookup,
   max: 20,
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 30000,

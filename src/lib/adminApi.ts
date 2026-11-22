@@ -2,10 +2,10 @@
  * Admin Control Center Frontend API Client
  * Securely communicates with /api/admin/* endpoints using session tokens & cookies
  */
-import { authApi } from './authApi';
+import { authApi, getStoredSessionToken } from './authApi';
 
 function getHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
-  const token = localStorage.getItem('my_money_session_token');
+  const token = getStoredSessionToken() || localStorage.getItem('my_money_auth_token') || localStorage.getItem('my_money_session_token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...customHeaders,
