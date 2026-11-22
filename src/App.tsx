@@ -42,6 +42,10 @@ import { NotificationProvider } from './context/NotificationContext';
 import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
 import { NotificationPreferencesModal } from './components/notifications/NotificationPreferencesModal';
 import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
+import { BudgetSection } from './components/budget/BudgetSection';
+import { SavingsGoalsSection } from './components/savings/SavingsGoalsSection';
+import { RecurringBillsSection } from './components/bills/RecurringBillsSection';
+import { NotificationsSection } from './components/notifications/NotificationsSection';
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
@@ -221,11 +225,12 @@ const MainContent: React.FC = () => {
               />
 
               {/* Dynamic Section Views */}
-              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
                 {currentTab === 'dashboard' && (
                   <DashboardView
                     onNavigate={setCurrentTab}
                     onOpenAddModal={handleOpenAddModal}
+                    onOpenScanQr={() => setIsScanQrOpen(true)}
                   />
                 )}
 
@@ -263,6 +268,22 @@ const MainContent: React.FC = () => {
 
                 {currentTab === 'recycle_bin' && (
                   <RecycleBinSection />
+                )}
+
+                {currentTab === 'budget' && (
+                  <BudgetSection />
+                )}
+
+                {currentTab === 'savings_goals' && (
+                  <SavingsGoalsSection />
+                )}
+
+                {currentTab === 'recurring_bills' && (
+                  <RecurringBillsSection />
+                )}
+
+                {currentTab === 'notifications' && (
+                  <NotificationsSection onNavigate={setCurrentTab} />
                 )}
 
                 {/* Custom Dynamic Sections */}

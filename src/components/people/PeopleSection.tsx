@@ -51,6 +51,9 @@ import { AddUdharModal } from './AddUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
 import { DisputeModal } from './DisputeModal';
 import { SavedPeopleManagerModal } from './SavedPeopleManagerModal';
+import { PersonDetailsView } from './PersonDetailsView';
+import { AddPersonModal } from './AddPersonModal';
+import { QrSuccessModal } from './QrSuccessModal';
 
 interface PeopleSectionProps {
   onOpenAddModal: (category?: any, subcategory?: any, personName?: string) => void;
@@ -87,9 +90,16 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   const [isMyQrOpen, setIsMyQrOpen] = useState(false);
   const [isScanQrOpen, setIsScanQrOpen] = useState(false);
   const [isSavedPeopleOpen, setIsSavedPeopleOpen] = useState(false);
+  const [isAddPersonModalOpen, setIsAddPersonModalOpen] = useState(false);
   const [selectedTxForRepay, setSelectedTxForRepay] = useState<UdharTransactionItem | null>(null);
   const [selectedTxForDispute, setSelectedTxForDispute] = useState<UdharTransactionItem | null>(null);
   const [initialPersonForAdd, setInitialPersonForAdd] = useState<string | undefined>(undefined);
+  const [selectedPersonForDetails, setSelectedPersonForDetails] = useState<PersonSummary | null>(null);
+  const [connectedSuccessPerson, setConnectedSuccessPerson] = useState<{
+    name: string;
+    emailMasked?: string;
+    avatarUrl?: string | null;
+  } | null>(null);
 
   // Fetch Udhar Data from Backend
   const fetchUdharData = useCallback(async () => {
@@ -172,6 +182,23 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     const cur = parseFloat(String(t.current_balance)) || 0;
     return t.due_date && t.due_date < todayStr && t.status !== 'settled' && cur > 0;
   }).length;
+
+  // Screen 8: Individual Person Details View
+  const currentSelectedPerson = useMemo(() => {
+    if (!selectedPersonForDetails) return null;
+    return peopleSummaries.find((p) => p.name === selectedPersonForDetails.name) || selectedPersonForDetails;
+  }, [selectedPersonForDetails, peopleSummaries]);
+
+  if (currentSelectedPerson) {
+    return (
+      <PersonDetailsView
+        person={currentSelectedPerson}
+        onBack={() => setSelectedPersonForDetails(null)}
+        onOpenAddModal={onOpenAddModal}
+        onEditPerson={() => setIsSavedPeopleOpen(true)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-20 lg:pb-8">
@@ -303,6 +330,13 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setIsAddPersonModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow hover:bg-emerald-700 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Add Person</span>
+            </button>
+            <button
               onClick={() => setIsScanQrOpen(true)}
               className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-all flex items-center gap-1.5 cursor-pointer"
             >
@@ -313,7 +347,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               onClick={() => setIsSavedPeopleOpen(true)}
               className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5" />
               <span>Manage People</span>
             </button>
           </div>
@@ -337,7 +371,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                 <span>Scan Friend's QR</span>
               </button>
               <button
-                onClick={() => setIsSavedPeopleOpen(true)}
+                onClick={() => setIsAddPersonModalOpen(true)}
                 className="px-3.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold hover:bg-slate-300 cursor-pointer"
               >
                 + Add Manually
@@ -358,7 +392,10 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                   key={person.name}
                   className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all flex flex-col justify-between gap-3 group"
                 >
-                  <div className="flex items-start gap-3">
+                  <div
+                    onClick={() => setSelectedPersonForDetails(person)}
+                    className="flex items-start gap-3 cursor-pointer"
+                  >
                     {/* Avatar with fallback */}
                     <div className="relative shrink-0">
                       {person.avatarUrl ? (
@@ -385,7 +422,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                     {/* Name & Info */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-emerald-600 transition-colors">
                           {person.name}
                         </h4>
                         {isLinked && (
@@ -435,7 +472,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSearchQuery(person.name)}
+                      onClick={() => setSelectedPersonForDetails(person)}
                       className="px-2 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Receipt className="w-3 h-3" />

@@ -39,3 +39,17 @@
 .currency-symbol {
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+/* iOS & Android Safe Area Utilities */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-area-bottom-inset {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}

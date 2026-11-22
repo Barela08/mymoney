@@ -446,6 +446,7 @@ export async function notifyTransactionCreated(
  */
 export async function notifyUdharCreated(params: {
   initiatorUserId: string;
+  initiatorName?: string;
   recipientUserId?: string | null;
   transactionId: string;
   contactName: string;
@@ -455,6 +456,7 @@ export async function notifyUdharCreated(params: {
 }) {
   const formattedAmount = `₹${Number(params.amount).toLocaleString('en-IN')}`;
   const isGiven = params.direction === 'given' || params.direction === 'gave';
+  const initiatorDisplayName = params.initiatorName || 'Friend';
 
   // 1. Initiator notification
   await createNotification({
@@ -477,8 +479,8 @@ export async function notifyUdharCreated(params: {
       userId: params.recipientUserId,
       title: isGiven ? `Udhar Recorded: ${formattedAmount}` : `Payment Recorded: ${formattedAmount}`,
       message: isGiven
-        ? `You borrowed ${formattedAmount} from ${params.contactName}. View your Udhar ledger.`
-        : `You lent ${formattedAmount} to ${params.contactName}. View your Udhar ledger.`,
+        ? `You borrowed ${formattedAmount} from ${initiatorDisplayName}. View your Udhar ledger.`
+        : `You lent ${formattedAmount} to ${initiatorDisplayName}. View your Udhar ledger.`,
       category: 'udhar',
       type: 'info',
       relatedEntityType: 'udhar_transaction',
@@ -526,6 +528,7 @@ export async function notifyQrConnected(params: {
  */
 export async function notifyUdharRepayment(params: {
   initiatorUserId: string;
+  initiatorName?: string;
   recipientUserId?: string | null;
   repaymentId: string;
   contactName: string;
@@ -535,6 +538,7 @@ export async function notifyUdharRepayment(params: {
 }) {
   const formattedRepayment = `₹${Number(params.repaymentAmount).toLocaleString('en-IN')}`;
   const formattedRemaining = `₹${Number(params.remainingBalance).toLocaleString('en-IN')}`;
+  const initiatorDisplayName = params.initiatorName || 'Friend';
 
   if (params.isFullySettled) {
     // 1. Fully settled congratulatory alert!
@@ -564,8 +568,8 @@ export async function notifyUdharRepayment(params: {
     if (params.recipientUserId) {
       await createNotification({
         userId: params.recipientUserId,
-        title,
-        message: `Your Udhar balance of ${formattedRepayment} with ${params.contactName} is fully settled (₹0 balance).`,
+        title: `🎉 Udhar Settled with ${initiatorDisplayName}! 💚`,
+        message: `Your Udhar balance of ${formattedRepayment} with ${initiatorDisplayName} is fully settled (₹0 balance).`,
         category: 'settlement',
         type: 'success',
         relatedEntityType: 'udhar_repayment',
@@ -595,7 +599,7 @@ export async function notifyUdharRepayment(params: {
       await createNotification({
         userId: params.recipientUserId,
         title: `Payment Updated: ${formattedRepayment}`,
-        message: `Repayment of ${formattedRepayment} applied. Your remaining balance is ${formattedRemaining}.`,
+        message: `Repayment of ${formattedRepayment} logged by ${initiatorDisplayName}. Your remaining balance is ${formattedRemaining}.`,
         category: 'repay',
         type: 'info',
         relatedEntityType: 'udhar_repayment',

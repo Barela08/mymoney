@@ -2622,6 +2622,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           // Multi-channel notifications for both parties
           notifyUdharCreated({
             initiatorUserId: authUser.id,
+            initiatorName: authUser.full_name || 'Friend',
             recipientUserId: registeredUser.id,
             transactionId: userARes.rows[0].id,
             contactName: registeredUser.full_name || 'Friend',
@@ -2871,6 +2872,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         // Multi-channel notification for repayment & auto-cancellation of reminders if settled
         notifyUdharRepayment({
           initiatorUserId: authUser.id,
+          initiatorName: authUser.full_name || 'Friend',
           recipientUserId: tx.counterpart_user_id || null,
           repaymentId: txId,
           contactName: tx.counterpart_name || 'Contact',

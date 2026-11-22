@@ -12,11 +12,17 @@ import {
   Zap,
   ArrowUpRight,
   ArrowDownLeft,
+  ArrowRightLeft,
   Calendar,
   Clock,
   Sparkles,
   Utensils,
   Coffee,
+  CreditCard,
+  Camera,
+  Upload,
+  Trash2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -99,6 +105,62 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [personName, setPersonName] = useState<string>(initialPersonName || '');
   const [peopleReason, setPeopleReason] = useState<string>('');
 
+  // Screen 2 New Fields: Transaction Type, Payment Method, Receipt Attachment
+  const [transactionType, setTransactionType] = useState<TransactionType | 'transfer'>('expense');
+  const [paymentMethod, setPaymentMethod] = useState<string>('UPI');
+  const [receiptImage, setReceiptImage] = useState<string | null>(null);
+  const [isCompressingReceipt, setIsCompressingReceipt] = useState(false);
+
+  // Compress & handle receipt attachment
+  const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Invalid File', 'Please select an image file (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File Too Large', 'Please select an image smaller than 10MB.');
+      return;
+    }
+
+    setIsCompressingReceipt(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 960;
+        let width = img.width;
+        let height = img.height;
+        if (width > height && width > MAX_DIM) {
+          height = Math.round((height * MAX_DIM) / width);
+          width = MAX_DIM;
+        } else if (height > MAX_DIM) {
+          width = Math.round((width * MAX_DIM) / height);
+          height = MAX_DIM;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.8);
+          setReceiptImage(compressed);
+        }
+        setIsCompressingReceipt(false);
+      };
+      img.onerror = () => {
+        setIsCompressingReceipt(false);
+        toast.error('Image Error', 'Failed to load receipt image.');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Reset or initialize state when opening
   useEffect(() => {
     if (isOpen) {
@@ -139,6 +201,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     amount ||
     title ||
     notes ||
+    receiptImage ||
     homePurpose ||
     homeExpenseReason ||
     groceryItem ||
@@ -182,6 +245,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     setSpentFor('');
     setPersonName('');
     setPeopleReason('');
+    setReceiptImage(null);
+    setPaymentMethod('UPI');
+    setTransactionType('expense');
   };
 
   if (!isOpen) return null;
@@ -298,6 +364,29 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       }
     }
 
+    // Apply explicit Transaction Type overrides
+    if (transactionType === 'transfer') {
+      finalType = 'expense';
+      finalTitle = finalTitle || `Transfer: ${category}`;
+      finalDescription = finalDescription || `Transfer via ${paymentMethod}`;
+      metadata.is_transfer = true;
+      metadata.transfer_type = 'account_transfer';
+    } else if (transactionType === 'income' && category !== 'people' && category !== 'home') {
+      finalType = 'income';
+    }
+
+    // Attach payment method & receipt
+    if (paymentMethod) {
+      metadata.payment_method = paymentMethod;
+    }
+    if (receiptImage) {
+      metadata.receipt_url = receiptImage;
+      metadata.receipt_data = receiptImage;
+    }
+    if (personName.trim() && category !== 'people') {
+      metadata.associated_person = personName.trim();
+    }
+
     const payload: NewTransactionPayload = {
       category,
       subcategory,
@@ -356,6 +445,64 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          {/* Transaction Type: Expense / Income / Transfer */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+              Transaction Type
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTransactionType('expense');
+                  if (category === 'home' && subcategory === 'received_home') {
+                    setSubcategory('home_expense');
+                  }
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  transactionType === 'expense'
+                    ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-400 text-rose-700 dark:text-rose-300 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <ArrowUpRight className="w-3.5 h-3.5 text-rose-500" />
+                <span>Expense (खर्च)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTransactionType('income');
+                  if (category === 'home') {
+                    setSubcategory('received_home');
+                  }
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  transactionType === 'income'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-400 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Income (आय)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTransactionType('transfer');
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  transactionType === 'transfer'
+                    ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-400 text-blue-700 dark:text-blue-300 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 text-blue-500" />
+                <span>Transfer (ट्रांसफर)</span>
+              </button>
+            </div>
+          </div>
           {/* Section Picker Tabs */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
@@ -916,6 +1063,98 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Payment Method Selector (Screen 2) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+              <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Payment Method</span>
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {[
+                { id: 'UPI', label: 'UPI / QR' },
+                { id: 'Cash', label: 'Cash (नकद)' },
+                { id: 'Bank Transfer', label: 'Net Banking' },
+                { id: 'Card', label: 'Card' },
+                { id: 'Other', label: 'Other' },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setPaymentMethod(m.id)}
+                  className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all text-center cursor-pointer ${
+                    paymentMethod === m.id
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 text-emerald-700 dark:text-emerald-300 shadow-sm font-bold'
+                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Receipt Image Attachment (Screen 2) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Receipt Attachment (Optional)</span>
+              </span>
+              {receiptImage && (
+                <button
+                  type="button"
+                  onClick={() => setReceiptImage(null)}
+                  className="text-xs text-rose-500 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Remove Receipt</span>
+                </button>
+              )}
+            </label>
+
+            {receiptImage ? (
+              <div className="relative p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                <img
+                  src={receiptImage}
+                  alt="Receipt Preview"
+                  className="w-16 h-16 rounded-xl object-cover border border-slate-300 dark:border-slate-600 shadow-sm"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                    Receipt Attached
+                  </p>
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    Optimized & compressed (ready to save)
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-slate-50/50 dark:bg-slate-800/30 transition-colors">
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleReceiptChange}
+                  className="hidden"
+                />
+                {isCompressingReceipt ? (
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                    <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    <span>Compressing image...</span>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5 text-slate-400" />
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Upload or take photo of receipt / bill
+                    </span>
+                    <span className="text-[10px] text-slate-400">PNG, JPG, WEBP (Max 10MB)</span>
+                  </>
+                )}
+              </label>
+            )}
           </div>
 
           {/* Notes (Optional) */}
