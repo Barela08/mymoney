@@ -101,7 +101,11 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
 
     // Type
     if (selectedType !== 'all') {
-      list = list.filter((t) => t.transaction_type === selectedType);
+      if (selectedType === 'transfer') {
+        list = list.filter((t) => t.transaction_type === 'transfer' || t.metadata?.is_transfer);
+      } else {
+        list = list.filter((t) => t.transaction_type === selectedType && !t.metadata?.is_transfer);
+      }
     }
 
     // Min Amount
@@ -343,9 +347,10 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
               }}
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              <option value="all">All Types (Income & Expenses)</option>
+              <option value="all">All Types (Income, Expense, Transfer)</option>
               <option value="income">Income Only (+)</option>
               <option value="expense">Expenses Only (-)</option>
+              <option value="transfer">Transfers Only (⇄)</option>
             </select>
           </div>
 
