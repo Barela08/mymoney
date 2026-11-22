@@ -609,24 +609,10 @@ export const HelpSupportModal: React.FC<HelpSupportModalProps> = ({
                   />
                 </div>
 
-                {/* 3. Contact Phone / WhatsApp (Optional) */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Contact Phone / WhatsApp (Optional)
-                  </label>
-                  <input
-                    type="tel"
-                    value={complaintPhone}
-                    onChange={(e) => setComplaintPhone(e.target.value)}
-                    placeholder="e.g., +91 74149 35405 (Optional for direct phone callback)"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-
                 <div className="flex items-center justify-between gap-3 pt-2">
                   <a
                     href={buildWhatsAppSupportUrl(
-                      `[COMPLAINT]\nSubject: ${complaintSubject}\nDetails: ${complaintMessage}\nPhone: ${complaintPhone || 'N/A'}`
+                      `[COMPLAINT]\nSubject: ${complaintSubject}\nDetails: ${complaintMessage}`
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
