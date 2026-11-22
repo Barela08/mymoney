@@ -134,9 +134,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           className="flex items-center gap-3 cursor-pointer group"
           title="Go to Profile & Settings"
         >
-          {user?.avatarUrl ? (
+          {user?.avatar_url || user?.avatarUrl ? (
             <img
-              src={user.avatarUrl}
+              src={user?.avatar_url || user?.avatarUrl || ''}
               alt={user.displayName}
               className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-md group-hover:scale-105 transition-transform"
             />

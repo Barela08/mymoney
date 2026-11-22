@@ -215,9 +215,9 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
               onClick={() => setIsPhotoModalOpen(true)}
               title="Click to change profile picture"
             >
-              {user?.avatarUrl ? (
+              {user?.avatar_url || user?.avatarUrl || profile?.avatar_url ? (
                 <img
-                  src={user.avatarUrl}
+                  src={user?.avatar_url || user?.avatarUrl || profile?.avatar_url || ''}
                   alt={displayName}
                   className="w-20 h-20 rounded-2xl object-cover shadow-xl shadow-emerald-600/20 border-2 border-emerald-500/40 shrink-0"
                 />
