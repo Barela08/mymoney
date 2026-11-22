@@ -9,6 +9,7 @@ import {
   ArrowRight,
   RotateCcw,
   Mail,
+  Phone,
   HelpCircle,
   X,
   Sparkles,
@@ -18,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { udharDeletionApi, DeletionStatusResponse } from '../../lib/udharDeletionApi';
 import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
+import { SUPPORT_CONTACT } from '../../config/contact';
 
 interface AccountDeletionSectionProps {
   onDeletionCancelled?: () => void;
@@ -248,6 +250,14 @@ export const AccountDeletionSection: React.FC<AccountDeletionSectionProps> = ({
           <p className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
             <span>Cancellation permanently aborts the scheduled backend deletion job and records the event securely.</span>
+          </p>
+          <p className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-medium pt-1">
+            <Phone className="w-4 h-4 shrink-0" />
+            <span>
+              Did not request this? Contact HackifyPro Helpline immediately at{' '}
+              <a href={SUPPORT_CONTACT.telUrl} className="underline font-bold">{SUPPORT_CONTACT.displayPhone}</a> or{' '}
+              <a href={SUPPORT_CONTACT.mailToUrl} className="underline font-bold">{SUPPORT_CONTACT.email}</a>.
+            </span>
           </p>
         </div>
       </div>

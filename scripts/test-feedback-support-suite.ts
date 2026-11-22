@@ -372,17 +372,15 @@ async function runFeedbackSupportTestSuite() {
     console.log('\n--- 4. Testing Real Email Dispatch Service ---');
 
     try {
-      const emailTestResult = await sendFeedbackConfirmationEmail({
+      const emailSuccess = await sendFeedbackConfirmationEmail({
         userName: 'Nilesh Barela',
-        userEmail: 'barelanilesh483@gmail.com',
+        email: 'barelanilesh483@gmail.com',
         rating: 5,
         category: 'App Experience',
-        feedbackMessage: 'Automated test verification of feedback email delivery.',
+        message: 'Automated test verification of feedback email delivery.',
       });
-      assert(emailTestResult.success, 'Nodemailer sent feedback confirmation email to verified address');
-      if (emailTestResult.messageId) {
-        console.log(`   Message ID: ${emailTestResult.messageId}`);
-      }
+      assert(Boolean(emailSuccess), 'Nodemailer sent feedback confirmation email to verified address');
+      console.log('   Feedback confirmation email dispatched successfully');
     } catch (e: any) {
       console.warn('   Email dispatch notice:', e.message);
     }

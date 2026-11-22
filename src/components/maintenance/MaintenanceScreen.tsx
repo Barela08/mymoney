@@ -1,7 +1,8 @@
 import React from 'react';
-import { Wrench, Shield, LogOut, Clock, RefreshCw } from 'lucide-react';
+import { Wrench, Shield, LogOut, Clock, RefreshCw, Phone, Mail } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { MaintenanceSettings } from '../../types';
+import { SUPPORT_CONTACT } from '../../config/contact';
 
 interface MaintenanceScreenProps {
   settings: MaintenanceSettings;
@@ -85,13 +86,30 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, 
       </main>
 
       {/* Footer */}
-      <footer className="z-10 text-center text-xs text-slate-500 max-w-md mx-auto">
-        <p className="font-semibold text-slate-400 mb-1">
+      <footer className="z-10 text-center text-xs text-slate-500 max-w-md mx-auto space-y-2">
+        <p className="font-semibold text-slate-400">
           Thank you for your patience and understanding.
         </p>
-        <p className="text-[11px] flex items-center justify-center gap-1.5 text-slate-500">
+        <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-400">
+          <a
+            href={SUPPORT_CONTACT.telUrl}
+            className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1 font-medium"
+          >
+            <Phone className="w-3 h-3 text-emerald-400" />
+            <span>{SUPPORT_CONTACT.displayPhone}</span>
+          </a>
+          <span className="text-slate-600">•</span>
+          <a
+            href={SUPPORT_CONTACT.mailToUrl}
+            className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1 font-medium"
+          >
+            <Mail className="w-3 h-3 text-emerald-400" />
+            <span>{SUPPORT_CONTACT.email}</span>
+          </a>
+        </div>
+        <p className="text-[11px] flex items-center justify-center gap-1.5 text-slate-500 pt-1">
           <Shield className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Enterprise Defense-in-Depth Architecture · HackifyPro</span>
+          <span>Enterprise Defense-in-Depth Architecture · {SUPPORT_CONTACT.companyName}</span>
         </p>
       </footer>
     </div>

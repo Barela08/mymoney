@@ -684,15 +684,18 @@ function getBrandLogoAttachments(): any[] {
 }
 
 export async function sendFeedbackConfirmationEmail(opts: {
-  email: string;
+  email?: string;
+  userEmail?: string;
   userName?: string | null;
   rating?: number | null;
   category?: string;
-  message: string;
+  message?: string;
+  feedbackMessage?: string;
 }): Promise<boolean> {
+  const recipient = opts.email || opts.userEmail || '';
   const template = generateFeedbackReceivedEmail(opts);
   return sendEmail({
-    to: opts.email,
+    to: recipient,
     subject: template.subject,
     html: template.html,
     text: template.text,
@@ -701,16 +704,19 @@ export async function sendFeedbackConfirmationEmail(opts: {
 }
 
 export async function sendComplaintConfirmationEmail(opts: {
-  email: string;
+  email?: string;
+  userEmail?: string;
   userName?: string | null;
-  ticketNumber: string;
+  ticketNumber?: string;
+  ticketId?: string;
   category: string;
   subject: string;
   description: string;
 }): Promise<boolean> {
-  const template = generateComplaintReceivedEmail(opts);
+  const recipient = opts.email || opts.userEmail || '';
+  const template = generateComplaintReceivedEmail(opts as any);
   return sendEmail({
-    to: opts.email,
+    to: recipient,
     subject: template.subject,
     html: template.html,
     text: template.text,
@@ -719,16 +725,20 @@ export async function sendComplaintConfirmationEmail(opts: {
 }
 
 export async function sendSupportTicketConfirmationEmail(opts: {
-  email: string;
+  email?: string;
+  userEmail?: string;
   userName?: string | null;
-  ticketNumber: string;
+  ticketNumber?: string;
+  ticketId?: string;
   category: string;
   subject: string;
-  description: string;
+  description?: string;
+  message?: string;
 }): Promise<boolean> {
-  const template = generateSupportTicketReceivedEmail(opts);
+  const recipient = opts.email || opts.userEmail || '';
+  const template = generateSupportTicketReceivedEmail(opts as any);
   return sendEmail({
-    to: opts.email,
+    to: recipient,
     subject: template.subject,
     html: template.html,
     text: template.text,
@@ -737,15 +747,20 @@ export async function sendSupportTicketConfirmationEmail(opts: {
 }
 
 export async function sendAdminReplyToTicketEmail(opts: {
-  email: string;
+  email?: string;
+  userEmail?: string;
   userName?: string | null;
-  ticketNumber: string;
-  ticketType: 'complaint' | 'support' | 'feedback';
+  ticketNumber?: string;
+  ticketId?: string;
+  ticketType?: 'complaint' | 'support' | 'feedback';
   originalSubject: string;
   adminReply: string;
   adminName?: string;
   userId?: string;
+  status?: string;
 }): Promise<{ success: boolean; error?: string }> {
+  const recipient = opts.email || opts.userEmail || '';
+  const ticketNum = opts.ticketNumber || opts.ticketId || 'N/A';
   try {
     // If userId supplied, verify/fetch trusted registered name from app_users
     let trustedName = opts.userName;
@@ -758,15 +773,16 @@ export async function sendAdminReplyToTicketEmail(opts: {
 
     const template = generateAdminReplyEmail({
       userName: trustedName,
-      ticketNumber: opts.ticketNumber,
-      ticketType: opts.ticketType,
+      ticketNumber: ticketNum,
+      ticketType: opts.ticketType || 'support',
       originalSubject: opts.originalSubject,
       adminReply: opts.adminReply,
       adminName: opts.adminName,
+      status: opts.status,
     });
 
     const success = await sendEmail({
-      to: opts.email,
+      to: recipient,
       subject: template.subject,
       html: template.html,
       text: template.text,
@@ -776,7 +792,7 @@ export async function sendAdminReplyToTicketEmail(opts: {
     return { success };
   } catch (err: any) {
     const safeMsg = sanitizeErrorMessage(err);
-    console.error(`[Admin Reply Email Failed] Ticket: #${opts.ticketNumber} to ${opts.email}:`, safeMsg);
+    console.error(`[Admin Reply Email Failed] Ticket: #${ticketNum} to ${recipient}:`, safeMsg);
     return { success: false, error: safeMsg };
   }
 }
