@@ -31,7 +31,7 @@ export type TransactionSubcategory =
   | 'money_received'
   | string;
 
-export type TransactionType = 'income' | 'expense';
+export type TransactionType = 'income' | 'expense' | 'transfer';
 
 export interface TransactionMetadata {
   // Grocery specific
