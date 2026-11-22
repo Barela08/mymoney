@@ -322,16 +322,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       <div className="fixed bottom-20 right-4 z-40 lg:hidden">
         <button
           onClick={onOpenAddModal}
-          className="flex items-center justify-center w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white shadow-xl shadow-emerald-600/40 transition-transform p-3.5 cursor-pointer border-2 border-white dark:border-slate-800"
-          aria-label="Add Transaction"
-          title="Add Transaction"
+          className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-md border border-emerald-500/30 transition-transform p-3 cursor-pointer"
+          aria-label="Add transaction"
+          title="Add transaction"
         >
-          <Plus className="w-7 h-7 stroke-[2.5]" />
+          <Plus className="w-5 h-5 stroke-[2]" />
         </button>
       </div>
 
       {/* Fixed 5-Tab Bottom Navigation for Mobile (Home, Transactions, People, Reports, More) */}
-      <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 lg:hidden px-2 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))] flex items-center justify-around shadow-lg">
+      <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200/80 dark:border-slate-800 lg:hidden px-2 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))] flex items-center justify-around shadow-sm">
         {/* 1. Home (Dashboard) */}
         <button
           onClick={() => {
@@ -340,11 +340,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
             currentTab === 'dashboard'
-              ? 'text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/60 dark:bg-emerald-950/40'
+              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <LayoutDashboard className="w-5 h-5 mb-0.5" />
+          <LayoutDashboard className="w-4 h-4 mb-0.5 stroke-[1.75]" />
           <span className="truncate">Home</span>
         </button>
 
@@ -356,11 +356,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
             currentTab === 'all_transactions'
-              ? 'text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/60 dark:bg-emerald-950/40'
+              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <ListOrdered className="w-5 h-5 mb-0.5" />
+          <ListOrdered className="w-4 h-4 mb-0.5 stroke-[1.75]" />
           <span className="truncate">Transactions</span>
         </button>
 
@@ -372,11 +372,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
             currentTab === 'people'
-              ? 'text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/60 dark:bg-emerald-950/40'
+              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <Users className="w-5 h-5 mb-0.5" />
+          <Users className="w-4 h-4 mb-0.5 stroke-[1.75]" />
           <span className="truncate">People</span>
         </button>
 
@@ -388,11 +388,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
             currentTab === 'reports'
-              ? 'text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/60 dark:bg-emerald-950/40'
+              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <BarChart3 className="w-5 h-5 mb-0.5" />
+          <BarChart3 className="w-4 h-4 mb-0.5 stroke-[1.75]" />
           <span className="truncate">Reports</span>
         </button>
 
@@ -401,11 +401,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           onClick={() => setIsMoreSheetOpen(!isMoreSheetOpen)}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-[10px] font-medium transition-colors ${
             isMoreSheetOpen || ['budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'privacy_policy'].includes(currentTab)
-              ? 'text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/60 dark:bg-emerald-950/40'
+              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <MoreHorizontal className="w-5 h-5 mb-0.5" />
+          <MoreHorizontal className="w-4 h-4 mb-0.5 stroke-[1.75]" />
           <span className="truncate">More</span>
         </button>
       </div>
@@ -417,21 +417,22 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             onClick={() => setIsMoreSheetOpen(false)}
             className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden animate-fade-in"
           />
-          <div className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl p-5 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] max-h-[85vh] overflow-y-auto lg:hidden animate-slide-up space-y-4">
+          <div className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-2xl shadow-xl p-5 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] max-h-[85vh] overflow-y-auto lg:hidden animate-slide-up space-y-4">
             <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
 
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                  More Features & Tools
+                <h3 className="font-semibold text-base text-slate-900 dark:text-slate-100">
+                  More features
                 </h3>
                 <p className="text-xs text-slate-500">Quick access to all tools & settings</p>
               </div>
               <button
                 onClick={() => setIsMoreSheetOpen(false)}
                 className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                aria-label="Close"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 stroke-[1.75]" />
               </button>
             </div>
 
@@ -443,10 +444,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   onSelectTab('budget');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-orange-50/60 dark:bg-orange-950/30 border border-orange-200/60 dark:border-orange-900/40 text-orange-700 dark:text-orange-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <PieChart className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                <span className="text-[11px] font-bold">Budget</span>
+                <PieChart className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Budget</span>
               </button>
 
               {/* Savings Goals */}
@@ -455,10 +456,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   onSelectTab('savings_goals');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/60 dark:border-teal-900/40 text-teal-700 dark:text-teal-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <Target className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-                <span className="text-[11px] font-bold">Goals</span>
+                <Target className="w-4 h-4 text-teal-600 dark:text-teal-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Goals</span>
               </button>
 
               {/* Recurring Bills */}
@@ -467,10 +468,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   onSelectTab('recurring_bills');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/40 text-indigo-700 dark:text-indigo-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <CalendarClock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                <span className="text-[11px] font-bold">Bills</span>
+                <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Bills</span>
               </button>
 
               {/* QR Scanner */}
@@ -479,10 +480,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   if (onOpenScanQr) onOpenScanQr();
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/40 text-blue-700 dark:text-blue-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <ScanLine className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <span className="text-[11px] font-bold">Scan QR</span>
+                <ScanLine className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Scan QR</span>
               </button>
 
               {/* My QR */}
@@ -491,10 +492,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   if (onOpenMyQr) onOpenMyQr();
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/60 dark:border-purple-900/40 text-purple-700 dark:text-purple-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <QrCode className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                <span className="text-[11px] font-bold">My QR</span>
+                <QrCode className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">My QR</span>
               </button>
 
               {/* Calculator */}
@@ -503,10 +504,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   onSelectTab('calculator');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <Calculator className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-[11px] font-bold">Calc</span>
+                <Calculator className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Calc</span>
               </button>
 
               {/* Notifications */}
@@ -515,10 +516,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   onSelectTab('notifications');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-amber-700 dark:text-amber-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <Bell className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                <span className="text-[11px] font-bold">Alerts</span>
+                <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Alerts</span>
               </button>
 
               {/* Settings */}
@@ -527,17 +528,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   setIsMoreSheetOpen(false);
                   onSelectTab('settings');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 active:scale-95 transition-all text-center gap-1.5 cursor-pointer"
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <Settings className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                <span className="text-[11px] font-bold">Settings</span>
+                <Settings className="w-4 h-4 text-slate-600 dark:text-slate-400 stroke-[1.75]" />
+                <span className="text-[11px] font-medium">Settings</span>
               </button>
             </div>
 
             {/* Categories & Policies List in More Sheet */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
-              <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider px-2 pb-1">
-                Categories & Help
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 px-2 pb-1">
+                Categories and support
               </p>
               <div className="grid grid-cols-2 gap-1.5">
                 <button

@@ -256,47 +256,47 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
   return (
     <div className="space-y-6 animate-fade-in pb-16 lg:pb-8">
       {/* Top Header Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <ListOrdered className="w-5 h-5 text-emerald-600" />
-            <span>Master Financial Ledger</span>
+          <h3 className="font-semibold text-base sm:text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <ListOrdered className="w-5 h-5 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+            <span>Master financial ledger</span>
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Complete searchable database of all transactions with strict ID deletion and editing
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Searchable database of all recorded transactions
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 stroke-[1.75]" />
             <span>Export ({filteredList.length})</span>
           </button>
           <button
             onClick={() => onOpenAddModal()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium transition-colors cursor-pointer"
           >
-            <span>Add Transaction</span>
+            <span>Add transaction</span>
           </button>
         </div>
       </div>
 
       {/* Advanced Filter Panel */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Filters & Search</span>
+          <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
+            <SlidersHorizontal className="w-3.5 h-3.5 stroke-[1.75]" />
+            <span>Filters and search</span>
           </span>
           <button
             onClick={handleResetFilters}
-            className="flex items-center gap-1 text-xs text-rose-500 hover:underline font-medium"
+            className="flex items-center gap-1 text-xs text-rose-500 hover:underline font-medium cursor-pointer"
           >
-            <RotateCcw className="w-3 h-3" />
-            <span>Reset Filters</span>
+            <RotateCcw className="w-3 h-3 stroke-[1.75]" />
+            <span>Reset filters</span>
           </button>
         </div>
 
@@ -442,12 +442,12 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       </div>
 
       {/* Transactions Table & Cards */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-            Showing {paginatedList.length} of {filteredList.length} Records
+          <span className="text-xs font-medium text-slate-500">
+            Showing {paginatedList.length} of {filteredList.length} records
           </span>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs font-mono text-slate-400">
             Page {currentPage} of {totalPages}
           </span>
         </div>
@@ -474,35 +474,35 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
             {paginatedList.map((tx) => {
               const isIncome = tx.transaction_type === 'income';
               const categoryBadgeColors = {
-                home: 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                room: 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                food: 'bg-orange-50 dark:bg-orange-950/70 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800',
-                other: 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-                people: 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                home: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+                room: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-500/20',
+                food: 'bg-orange-50 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 border-orange-500/20',
+                other: 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-500/20',
+                people: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-500/20',
               }[tx.category] || 'bg-slate-50 dark:bg-slate-950/70 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800';
 
               return (
                 <div
                   key={tx.id}
-                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 rounded-xl px-2 sm:px-3 transition-colors group"
+                  className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 rounded-xl px-2 sm:px-3 transition-colors group"
                 >
                   <div className="flex items-start gap-3 min-w-0">
                     <div
                       className={`p-2 rounded-xl shrink-0 mt-0.5 ${
                         isIncome
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                          : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                       }`}
                     >
-                      {isIncome ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                      {isIncome ? <ArrowDownLeft className="w-4 h-4 stroke-[1.75]" /> : <ArrowUpRight className="w-4 h-4 stroke-[1.75]" />}
                     </div>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
+                        <span className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
                           {tx.title}
                         </span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${categoryBadgeColors}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border capitalize ${categoryBadgeColors}`}>
                           {tx.category} · {tx.subcategory.replace('_', ' ')}
                         </span>
                       </div>
@@ -515,11 +515,11 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
 
                       <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1 flex-wrap">
                         <span className="flex items-center gap-1 font-mono">
-                          <Calendar className="w-3 h-3" />
+                          <Calendar className="w-3 h-3 stroke-[1.75]" />
                           {formatDisplayDate(tx.transaction_date)}
                         </span>
                         <span className="flex items-center gap-1 font-mono">
-                          <Clock className="w-3 h-3 text-emerald-500" />
+                          <Clock className="w-3 h-3 stroke-[1.75] text-slate-400" />
                           {formatDisplayTime(tx.transaction_time)}
                         </span>
                         {tx.person_name && (
@@ -535,7 +535,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
                   <div className="flex items-center justify-between sm:justify-end gap-3 pl-11 sm:pl-0">
                     <div className="text-right">
                       <div
-                        className={`text-base font-extrabold font-sans ${
+                        className={`text-base font-semibold font-sans tabular-nums ${
                           isIncome
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-rose-600 dark:text-rose-400'
@@ -543,7 +543,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
                       >
                         {isIncome ? '+' : '-'} {formatINR(tx.amount)}
                       </div>
-                      <span className="text-[10px] uppercase font-semibold text-slate-400">
+                      <span className="text-[10px] capitalize font-medium text-slate-400">
                         {tx.transaction_type}
                       </span>
                     </div>

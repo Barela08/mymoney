@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  Sparkles,
   Check,
   RotateCcw,
   QrCode,
@@ -203,17 +202,17 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-20 lg:pb-8">
       {/* Top Banner & Quick Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 rounded-3xl text-white shadow-xl shadow-emerald-900/10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 bg-slate-950 dark:bg-slate-950 text-white rounded-2xl border border-emerald-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
         <div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold tracking-wide uppercase">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Smart Lend & Borrow System</span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+            <Users className="w-3.5 h-3.5 stroke-[1.75]" />
+            <span>Two-way synchronized ledger</span>
           </span>
-          <h2 className="text-xl sm:text-2xl font-black mt-2 tracking-tight">
-            Udhar & People Ledger (उधार खाता)
+          <h2 className="text-xl sm:text-2xl font-semibold mt-1 tracking-tight text-white">
+            People ledger (Udhar)
           </h2>
-          <p className="text-xs sm:text-sm text-emerald-100/90 mt-1 font-medium">
-            Two-sided synchronized balances, QR pairing, partial repayments, and dispute resolution
+          <p className="text-xs sm:text-sm text-slate-300 mt-1 font-medium">
+            Synchronized balances, QR pairing, partial repayments and settlement tracking
           </p>
         </div>
 
@@ -224,34 +223,34 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               setInitialPersonForAdd(undefined);
               setIsAddUdharOpen(true);
             }}
-            className="px-4 py-2.5 rounded-xl bg-white text-emerald-700 font-extrabold text-xs shadow-md shadow-emerald-950/20 hover:bg-emerald-50 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer active:scale-[0.99]"
           >
-            <PlusCircle className="w-4 h-4 text-emerald-600" />
+            <PlusCircle className="w-4 h-4 stroke-[2]" />
             <span>Add Udhar</span>
           </button>
 
           <button
             onClick={() => setIsMyQrOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs backdrop-blur-md border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 font-medium text-xs border border-white/[0.08] transition-colors flex items-center gap-1.5 cursor-pointer active:scale-[0.99]"
           >
-            <QrCode className="w-4 h-4" />
+            <QrCode className="w-4 h-4 stroke-[1.75]" />
             <span>My QR</span>
           </button>
 
           <button
             onClick={() => setIsScanQrOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs backdrop-blur-md border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 font-medium text-xs border border-white/[0.08] transition-colors flex items-center gap-1.5 cursor-pointer active:scale-[0.99]"
           >
-            <Smartphone className="w-4 h-4" />
+            <Smartphone className="w-4 h-4 stroke-[1.75]" />
             <span>Scan QR</span>
           </button>
 
           <button
             onClick={() => setIsSavedPeopleOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs backdrop-blur-md border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 font-medium text-xs border border-white/[0.08] transition-colors flex items-center gap-1.5 cursor-pointer active:scale-[0.99]"
           >
-            <Users className="w-4 h-4" />
-            <span>Saved People</span>
+            <Users className="w-4 h-4 stroke-[1.75]" />
+            <span>Saved people</span>
           </button>
         </div>
       </div>
@@ -664,9 +663,9 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           )}
 
                           {isLinked && (
-                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-0.5">
-                              <Sparkles className="w-2.5 h-2.5" />
-                              <span>2-Way Synced</span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>2-Way synced</span>
                             </span>
                           )}
                         </div>

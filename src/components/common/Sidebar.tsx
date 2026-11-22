@@ -161,25 +161,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <img
             src="/logo.jpg"
             alt="My Money Manager by HackifyPro"
-            className="w-11 h-11 rounded-xl object-cover shadow-md shadow-emerald-500/20 border border-emerald-500/30"
+            className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
           />
           <div className="min-w-0">
-            <h1 className="text-base font-extrabold text-slate-900 dark:text-slate-100 leading-tight truncate">
+            <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight truncate">
               My Money Manager
             </h1>
-            <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
               by HackifyPro
             </p>
           </div>
         </div>
 
         {/* Available Balance Pill */}
-        <div className="mt-5 p-3.5 bg-gradient-to-br from-blue-50 to-indigo-50/50 dark:from-blue-950/40 dark:to-slate-800/60 rounded-xl border border-blue-200/60 dark:border-blue-900/50">
-          <div className="flex items-center justify-between text-xs text-blue-700 dark:text-blue-300 font-medium">
-            <span>Available Balance</span>
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+        <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
+            <span>Available balance</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           </div>
-          <div className="text-xl font-extrabold text-blue-700 dark:text-blue-300 font-sans mt-0.5">
+          <div className="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100 font-sans mt-0.5">
             {formatINR(summary.availableBalance)}
           </div>
         </div>
@@ -187,10 +187,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Quick Add Button */}
         <button
           onClick={onOpenAddModal}
-          className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-semibold text-sm shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+          className="w-full mt-3 flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-medium text-xs sm:text-sm transition-colors cursor-pointer"
         >
-          <PlusCircle className="w-4 h-4" />
-          <span>Add Transaction</span>
+          <PlusCircle className="w-4 h-4 stroke-[2]" />
+          <span>Add transaction</span>
         </button>
 
         {/* Quick Udhar QR Actions */}
@@ -200,10 +200,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={onOpenMyQr}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
                 title="View My Udhar QR Code"
               >
-                <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <QrCode className="w-3.5 h-3.5 stroke-[1.75] text-emerald-600 dark:text-emerald-400" />
                 <span>My QR</span>
               </button>
             )}
@@ -211,10 +211,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={onOpenScanQr}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
                 title="Scan Udhar QR Code"
               >
-                <ScanLine className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <ScanLine className="w-3.5 h-3.5 stroke-[1.75] text-indigo-600 dark:text-indigo-400" />
                 <span>Scan QR</span>
               </button>
             )}
@@ -257,7 +257,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
 
               {item.badgeNum !== undefined && (
-                <span className="ml-2 px-2 py-0.5 text-[11px] font-bold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                   {item.badgeNum}
                 </span>
               )}
@@ -265,11 +265,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {isAdminItem && (
                 <div className="flex items-center gap-1">
                   {maintenanceSettings.isEnabled && (
-                    <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-amber-500 text-slate-950 animate-pulse">
+                    <span className="px-1.5 py-0.5 text-xs font-bold rounded-md bg-amber-500 text-slate-950 animate-pulse">
                       MAINT
                     </span>
                   )}
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                  <span className="px-1.5 py-0.5 text-xs font-bold rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
                     ADM
                   </span>
                 </div>
@@ -287,7 +287,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={() => onOpenHelpModal('feedback')}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors cursor-pointer"
               title="Give Feedback or Suggest a Feature"
             >
               <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
@@ -296,7 +296,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={() => onOpenHelpModal('help')}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors cursor-pointer"
               title={`Helpline (${SUPPORT_CONTACT.displayPhone})`}
             >
               <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
@@ -326,16 +326,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
                 {user?.displayName || 'User'}
               </p>
-              <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
+              <p className="text-xs text-slate-400 truncate">{user?.email}</p>
             </div>
           </div>
 
           {isAdmin ? (
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 shrink-0">
+            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 shrink-0">
               Admin
             </span>
           ) : (
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
+            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
               User
             </span>
           )}

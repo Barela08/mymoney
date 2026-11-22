@@ -1509,3 +1509,104 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
 
   return { initiatorSent, counterpartStatus };
 }
+
+// -------------------------------------------------------------
+// 17. CONTACT INVITATION EMAIL (FOR MANUAL/UNREGISTERED CONTACTS)
+// -------------------------------------------------------------
+export async function sendContactInvitationEmail(opts: {
+  inviterName: string;
+  inviterEmail?: string;
+  recipientName: string;
+  recipientEmail: string;
+  inviteLink: string;
+  inviteToken?: string;
+}): Promise<boolean> {
+  const subject = `You've been invited to ${APP_CONFIG.appName} by ${opts.inviterName}`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 24px; margin: 0; }
+        .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .header { background: #065f46; padding: 24px; text-align: center; }
+        .header h1 { color: #ffffff; font-size: 20px; margin: 0; font-weight: 800; }
+        .header p { color: #a7f3d0; font-size: 12px; margin: 4px 0 0; font-weight: 600; }
+        .content { padding: 32px 28px; }
+        .btn { display: inline-block; background-color: #047857; color: #ffffff !important; font-weight: 700; font-size: 14px; padding: 12px 28px; text-decoration: none; border-radius: 10px; margin: 20px 0; }
+        .feature-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px; margin: 20px 0; }
+        .footer { background: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
+        .url-box { background: #f8fafc; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 8px; font-size: 11px; color: #475569; word-break: break-all; margin-top: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="header">
+          <h1>${APP_CONFIG.appName}</h1>
+          <p>by ${APP_CONFIG.companyName} · Smart Money & Udhar Tracker</p>
+        </div>
+        <div class="content">
+          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hi ${opts.recipientName || 'Friend'},</p>
+          <p style="font-size: 13px; line-height: 1.6; color: #334155;">
+            <strong>${opts.inviterName}</strong> has added you as a contact in ${APP_CONFIG.appName} to help manage money lending, borrowing, and repayment records digitally.
+          </p>
+          <div class="feature-box">
+            <p style="font-weight: 700; font-size: 13px; color: #065f46; margin: 0 0 10px 0;">With ${APP_CONFIG.appName}, you can:</p>
+            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #166534; line-height: 1.6;">
+              <li>Track money given and received.</li>
+              <li>Manage borrowing and repayment records.</li>
+              <li>Maintain transparent transaction history.</li>
+              <li>Keep track of outstanding balances.</li>
+            </ul>
+          </div>
+          <p style="font-size: 13px; line-height: 1.6; color: #334155;">
+            Create your account to join and manage your financial records:
+          </p>
+          <div style="text-align: center;">
+            <a href="${opts.inviteLink}" class="btn" target="_blank">Create Your Account</a>
+          </div>
+          <p style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Or copy and paste this link into your browser:</p>
+          <div class="url-box">${opts.inviteLink}</div>
+        </div>
+        <div class="footer">
+          &copy; ${new Date().getFullYear()} ${APP_CONFIG.appName} · Developed under ${APP_CONFIG.companyName}.
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  const text = `Hi ${opts.recipientName || 'Friend'},\n\n${opts.inviterName} has added you as a contact in ${APP_CONFIG.appName} to help manage money lending, borrowing, and repayment records digitally.\n\nWith ${APP_CONFIG.appName}, you can:\n- Track money given and received.\n- Manage borrowing and repayment records.\n- Maintain transparent transaction history.\n- Keep track of outstanding balances.\n\nCreate your account to join and manage your financial records:\n${opts.inviteLink}\n\n${APP_CONFIG.appName} by ${APP_CONFIG.companyName}`;
+
+  try {
+    const logRes = await query(
+      `INSERT INTO public.email_dispatch_logs (
+        email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
+        reference_id, trigger_event, metadata
+      ) VALUES ($1, 'contact_invitation', $2, $3, $4, 'pending', 0, 3, $5, 'contact_invitation', $6)
+      RETURNING id`,
+      [
+        opts.recipientEmail.toLowerCase().trim(),
+        `invite:${opts.recipientEmail.toLowerCase().trim()}_${Date.now()}`,
+        opts.recipientName,
+        subject,
+        opts.inviteToken || null,
+        JSON.stringify({ inviterName: opts.inviterName, inviterEmail: opts.inviterEmail })
+      ]
+    );
+    const logId = logRes.rows[0]?.id || `invite_${Date.now()}`;
+    return await executeEmailDispatch(
+      logId,
+      opts.recipientEmail.toLowerCase().trim(),
+      subject,
+      html,
+      text,
+      getBrandLogoAttachments(),
+      1,
+      3
+    );
+  } catch (err: any) {
+    console.error('[sendContactInvitationEmail Error]:', err.message);
+    return false;
+  }
+}

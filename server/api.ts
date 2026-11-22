@@ -35,6 +35,7 @@ import {
   sendUdharCreatedEmails,
   sendUdharSettledEmails,
   sendUdharUpdatedEmails,
+  sendContactInvitationEmail,
   sendComplaintConfirmationEmail,
   sendSupportTicketConfirmationEmail,
 } from './email';
@@ -1821,6 +1822,56 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
+    // 6B. GET CONTACTS WITH LIVE BALANCES: GET /api/udhar/contacts/with-balances
+    if (pathname === '/api/udhar/contacts/with-balances' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const contactsRes = await query(
+        `SELECT 
+          c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.photo_url, c.created_at, c.updated_at,
+          u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar,
+          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status <> 'cancelled' THEN t.original_amount ELSE 0 END), 0) AS total_given,
+          COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status <> 'cancelled' THEN t.original_amount ELSE 0 END), 0) AS total_taken,
+          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance 
+                            WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN -t.current_balance 
+                            ELSE 0 END), 0) AS net_balance,
+          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_receivable,
+          COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_payable,
+          MAX(t.transaction_date) AS last_transaction_date,
+          COUNT(t.id) AS total_transactions_count,
+          COUNT(CASE WHEN t.status NOT IN ('settled', 'cancelled') AND t.current_balance > 0 THEN 1 END) AS pending_transactions_count
+        FROM public.udhar_contacts c
+        LEFT JOIN public.app_users u ON c.linked_user_id = u.id
+        LEFT JOIN public.udhar_transactions t ON t.user_id = c.user_id AND (
+          (c.linked_user_id IS NOT NULL AND t.counterpart_user_id = c.linked_user_id) OR
+          (LOWER(TRIM(t.counterpart_name)) = LOWER(TRIM(c.name)))
+        )
+        WHERE c.user_id = $1
+        GROUP BY c.id, u.full_name, u.email, u.avatar_url
+        ORDER BY c.name ASC`,
+        [authUser.id]
+      );
+
+      const parsedContacts = contactsRes.rows.map((row: any) => ({
+        ...row,
+        total_given: parseFloat(row.total_given) || 0,
+        total_taken: parseFloat(row.total_taken) || 0,
+        net_balance: Math.round((parseFloat(row.net_balance) || 0) * 100) / 100,
+        outstanding_receivable: parseFloat(row.outstanding_receivable) || 0,
+        outstanding_payable: parseFloat(row.outstanding_payable) || 0,
+        total_transactions_count: parseInt(row.total_transactions_count, 10) || 0,
+        pending_transactions_count: parseInt(row.pending_transactions_count, 10) || 0,
+        is_registered: Boolean(row.linked_user_id),
+      }));
+
+      sendJson(res, 200, { success: true, contacts: parsedContacts });
+      return true;
+    }
+
     // 7. SAVE CONTACT: POST /api/udhar/contacts
     if (pathname === '/api/udhar/contacts' && method === 'POST') {
       const authUser = await authenticateRequest(req);
@@ -2049,6 +2100,86 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
+    // 10B. INVITE CONTACT VIA EMAIL: POST /api/udhar/contacts/:id/invite
+    const contactInviteMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)\/invite$/);
+    if (contactInviteMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const contactId = contactInviteMatch[1];
+      const contactRes = await query(
+        'SELECT * FROM public.udhar_contacts WHERE id = $1 AND user_id = $2',
+        [contactId, authUser.id]
+      );
+
+      if (contactRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Contact not found.' });
+        return true;
+      }
+
+      const contact = contactRes.rows[0];
+      if (!contact.email) {
+        sendJson(res, 400, { success: false, message: 'This contact does not have an email address to invite.' });
+        return true;
+      }
+
+      // Check if already registered
+      const regUserCheck = await query(
+        'SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = LOWER($1)',
+        [contact.email]
+      );
+      if (regUserCheck.rows.length > 0) {
+        const regUser = regUserCheck.rows[0];
+        await query(
+          'UPDATE public.udhar_contacts SET linked_user_id = $1, updated_at = NOW() WHERE id = $2',
+          [regUser.id, contact.id]
+        );
+        await ensureReciprocalContact(regUser.id, authUser, contact.relationship_type || 'Friend');
+
+        sendJson(res, 200, {
+          success: true,
+          message: `${contact.name} is already registered on My Money Manager! Linked accounts automatically.`,
+          alreadyRegistered: true,
+          linkedUserId: regUser.id,
+        });
+        return true;
+      }
+
+      // Generate secure invitation token
+      const tokenHash = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+      const appBaseUrl = process.env.APP_URL || 'http://localhost:5173';
+      const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
+
+      await query(
+        `INSERT INTO public.invitations (
+          inviter_user_id, invited_person_id, recipient_email, recipient_name, token_hash, status, expires_at
+        ) VALUES ($1, $2, $3, $4, $5, 'pending', $6)`,
+        [authUser.id, contact.id, contact.email.toLowerCase().trim(), contact.name, tokenHash, expiresAt]
+      );
+
+      // Dispatch invitation email
+      const sent = await sendContactInvitationEmail({
+        inviterName: authUser.full_name || 'My Money User',
+        inviterEmail: authUser.email,
+        recipientName: contact.name,
+        recipientEmail: contact.email,
+        inviteLink,
+        inviteToken: tokenHash,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Invitation email sent to ${contact.email}.`,
+        inviteLink,
+        emailSent: sent,
+      });
+      return true;
+    }
+
     // =========================================================================
     // SECTION C: REGISTERED USER SEARCH (SAFE & PRIVACY PRESERVING)
     // =========================================================================
@@ -2265,6 +2396,50 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
+    // 13B. REGENERATE QR CODE: POST /api/udhar/qr/regenerate
+    if (pathname === '/api/udhar/qr/regenerate' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      // Deactivate/expire old QR tokens for this user
+      await query('UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1', [authUser.id]);
+
+      // Generate fresh token
+      const pairingToken = crypto.randomBytes(32).toString('hex');
+      const pairingCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+      await query(
+        `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
+         VALUES ($1, $2, $3, FALSE, $4)`,
+        [authUser.id, pairingToken, pairingCode, expiresAt]
+      );
+
+      const qrPayload = JSON.stringify({
+        v: 1,
+        app: 'my-money',
+        type: 'udhar-pair',
+        code: pairingCode,
+        token: pairingToken,
+        userId: authUser.id,
+        name: authUser.full_name || 'My Money User',
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'New Udhar QR code generated successfully.',
+        pairingCode,
+        pairingToken,
+        publicName: authUser.full_name || 'My Money User',
+        qrData: qrPayload,
+        expiresAt: expiresAt.toISOString(),
+      });
+      return true;
+    }
+
     // 14. CONNECT PERSON VIA QR: POST /api/udhar/qr/connect
     if (pathname === '/api/udhar/qr/connect' && method === 'POST') {
       const authUser = await authenticateRequest(req);
@@ -2320,6 +2495,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         `SELECT id, name FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
         [authUser.id, targetUserId]
       );
+      const wasAlreadyConnected = existingLinked.rows.length > 0;
 
       if (existingLinked.rows.length > 0) {
         await query(
@@ -2383,7 +2559,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       sendJson(res, 200, {
         success: true,
-        message: `Successfully linked with ${tokenRecord.full_name}! Added to Saved People.`,
+        alreadyConnected: wasAlreadyConnected,
+        message: wasAlreadyConnected
+          ? `Already connected with ${tokenRecord.full_name}.`
+          : `Successfully linked with ${tokenRecord.full_name}! Added to Saved People.`,
         connectedUser: {
           id: targetUserId,
           displayName: tokenRecord.full_name,
@@ -2881,6 +3060,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           isFullySettled: isSettled,
         }).catch((e) => console.warn('[Notify Udhar Repayment Error]:', e));
 
+        // In-app notification for counterpart user
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'repayment', $3, $4, $5, TRUE)`,
+            [
+              isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
+              `${authUser.full_name} recorded a repayment of ₹${repayAmount.toLocaleString('en-IN')}. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
         // Automated Udhar Settlement Emails (if fully cleared / settled)
         if (isSettled) {
           sendUdharSettledEmails({
@@ -2969,6 +3163,158 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       sendJson(res, 200, {
         success: true,
         message: 'Udhar transaction updated successfully.',
+      });
+      return true;
+    }
+
+    // 20B. SETTLE TRANSACTION FULLY: POST /api/udhar/transactions/:id/settle
+    const settleTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/settle$/);
+    if (settleTxMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = settleTxMatch[1];
+      const body = await parseJsonBody(req);
+      const notes = (body.notes || 'Settled in full').trim();
+      const settleDate = body.settlement_date || body.date || new Date().toISOString().split('T')[0];
+
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      const currentBal = parseFloat(tx.current_balance);
+      if (currentBal <= 0) {
+        sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
+        return true;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Record settlement repayment
+        await client.query(
+          `INSERT INTO public.udhar_repayments (link_id, udhar_id, recorded_by_user_id, amount, repayment_date, notes, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'confirmed')`,
+          [tx.link_id, tx.id, authUser.id, currentBal, settleDate, notes]
+        );
+
+        // Update balance on all rows sharing link_id to 0 and settled
+        await client.query(
+          `UPDATE public.udhar_transactions 
+           SET current_balance = 0, status = 'settled', settled_at = NOW(), updated_at = NOW() 
+           WHERE link_id = $1`,
+          [tx.link_id]
+        );
+
+        // Notify counterpart if registered
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'settlement', $3, $4, $5, TRUE)`,
+            [
+              `Udhar Settled with ${authUser.full_name}`,
+              `${authUser.full_name} marked the transaction of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')} as fully settled.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        await client.query('COMMIT');
+
+        // Automated Udhar Settlement Emails
+        sendUdharSettledEmails({
+          transactionId: tx.id,
+          linkId: tx.link_id,
+          initiatorUserId: authUser.id,
+          initiatorName: authUser.full_name || 'My Money User',
+          initiatorEmail: authUser.email,
+          counterpartUserId: tx.counterpart_user_id || null,
+          counterpartName: tx.counterpart_name,
+          amountSettled: currentBal,
+          settlementDate: settleDate,
+          updatedBalance: 0,
+          direction: tx.direction,
+        }).catch((e) => console.warn('[Udhar Settled Email Error]:', e));
+
+        await logSecurityEvent('UDHAR_SETTLED_IN_FULL', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: { txId, linkId: tx.link_id, settledAmount: currentBal },
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          message: `Transaction with ${tx.counterpart_name} has been settled in full.`,
+          isSettled: true,
+        });
+        return true;
+      } catch (err: any) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // 20C. CANCEL / DELETE UDHAAR TRANSACTION: DELETE /api/udhar/transactions/:id
+    const deleteTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)$/);
+    if (deleteTxMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = deleteTxMatch[1];
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+
+      // Mark transaction as cancelled across both sides preserving audit trail
+      await query(
+        `UPDATE public.udhar_transactions 
+         SET status = 'cancelled', current_balance = 0, updated_at = NOW() 
+         WHERE link_id = $1`,
+        [tx.link_id]
+      );
+
+      // Notify counterpart if registered
+      if (tx.counterpart_user_id) {
+        await query(
+          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+           VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
+          [
+            `Udhar Cancelled by ${authUser.full_name}`,
+            `${authUser.full_name} has cancelled the transaction of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+            tx.counterpart_user_id,
+            tx.link_id,
+            authUser.id,
+          ]
+        ).catch(() => {});
+      }
+
+      await logSecurityEvent('UDHAR_CANCELLED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Transaction cancelled successfully. Balances updated.',
       });
       return true;
     }

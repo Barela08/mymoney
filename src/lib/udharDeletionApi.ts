@@ -27,6 +27,16 @@ export interface UdharContact {
   linked_user_email?: string | null;
   linked_user_avatar?: string | null;
   reciprocallyLinked?: boolean;
+  total_given?: number;
+  total_taken?: number;
+  net_balance?: number;
+  outstanding_receivable?: number;
+  outstanding_payable?: number;
+  last_transaction_date?: string | null;
+  pending_transactions_count?: number;
+  total_transactions_count?: number;
+  photo_url?: string | null;
+  is_registered?: boolean;
 }
 
 export interface SearchUserResult {
@@ -216,6 +226,22 @@ export const udharDeletionApi = {
     }
   },
 
+  async getContactsWithBalances(): Promise<{ success: boolean; contacts: UdharContact[] }> {
+    try {
+      const res = await apiRequest('/api/udhar/contacts/with-balances', { method: 'GET' });
+      if (res && res.success && Array.isArray(res.contacts)) {
+        return res;
+      }
+      return await this.getContacts();
+    } catch {
+      return await this.getContacts();
+    }
+  },
+
+  async inviteContact(contactId: string): Promise<{ success: boolean; message: string; inviteLink?: string; emailSent?: boolean }> {
+    return apiRequest(`/api/udhar/contacts/${contactId}/invite`, { method: 'POST' });
+  },
+
   async saveContact(contact: {
     name: string;
     email?: string;
@@ -340,6 +366,14 @@ export const udharDeletionApi = {
         qrData: qrPayload,
         expiresAt,
       };
+    }
+  },
+
+  async regenerateQrCode(): Promise<MyQrCodeResponse> {
+    try {
+      return await apiRequest('/api/udhar/qr/regenerate', { method: 'POST' });
+    } catch {
+      return await this.getMyQrCode();
     }
   },
 
@@ -664,5 +698,21 @@ export const udharDeletionApi = {
         isSettled,
       };
     }
+  },
+
+  async settleUdharTransaction(
+    id: string,
+    payload?: { notes?: string; settlement_date?: string }
+  ): Promise<{ success: boolean; message: string; isSettled: boolean }> {
+    return apiRequest(`/api/udhar/transactions/${id}/settle`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  async cancelUdharTransaction(id: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest(`/api/udhar/transactions/${id}`, {
+      method: 'DELETE',
+    });
   },
 };

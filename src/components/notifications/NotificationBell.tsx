@@ -140,9 +140,9 @@ export const NotificationBell: React.FC<Props> = ({
         title="Notifications"
         aria-label="Open notifications"
       >
-        <Bell className="w-4 h-4" />
+        <Bell className="w-4 h-4 stroke-[1.75]" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white font-extrabold text-[10px] flex items-center justify-center shadow-xs ring-2 ring-white dark:ring-slate-900 animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-emerald-600 text-white font-medium text-[10px] tabular-nums flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -158,7 +158,7 @@ export const NotificationBell: React.FC<Props> = ({
 
       {/* Dropdown Menu / Responsive Sheet */}
       {isOpen && (
-        <div className="fixed inset-x-3 top-16 sm:inset-x-auto sm:absolute sm:right-0 sm:top-full sm:mt-2 w-auto sm:w-96 max-w-sm sm:max-w-md mx-auto sm:mx-0 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden z-50 animate-fade-in">
+        <div className="fixed inset-x-3 top-16 sm:inset-x-auto sm:absolute sm:right-0 sm:top-full sm:mt-2 w-auto sm:w-96 max-w-sm sm:max-w-md mx-auto sm:mx-0 bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-800 overflow-hidden z-50 animate-fade-in">
           {/* Header */}
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
             <div className="flex items-center gap-2">

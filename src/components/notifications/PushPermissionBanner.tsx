@@ -44,16 +44,14 @@ export const PushPermissionBanner: React.FC = () => {
   };
 
   return (
-    <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-3 sm:px-4 py-2 sm:py-2.5 shadow-md flex items-center justify-between gap-2.5 text-xs animate-fade-in relative z-20">
+    <div className="bg-slate-900 text-slate-100 border-b border-slate-800 px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5 text-xs animate-fade-in relative z-20">
       <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-        <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-          <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100" />
+        <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center shrink-0 text-emerald-400">
+          <Bell className="w-3.5 h-3.5 stroke-[1.75]" />
         </div>
-        <p className="truncate text-[11px] sm:text-xs">
-          <span className="font-extrabold mr-1">Turn on Notifications:</span>
-          <span className="text-emerald-100 hidden sm:inline">
-            Get instant transaction alerts, Udhar khata updates, and payment settlements.
-          </span>
+        <p className="truncate text-[11px] sm:text-xs text-slate-300">
+          <span className="font-medium text-white mr-1.5">Notifications:</span>
+          <span>Receive instant transaction alerts and mutual Udhar updates.</span>
         </p>
       </div>
 
@@ -62,18 +60,18 @@ export const PushPermissionBanner: React.FC = () => {
           type="button"
           onClick={handleEnable}
           disabled={isSubscribing}
-          className="px-2.5 sm:px-3 py-1 bg-white text-emerald-800 hover:bg-emerald-50 rounded-lg font-bold text-[11px] sm:text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+          className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg font-medium text-[11px] sm:text-xs transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap active:scale-[0.99]"
         >
-          {isSubscribing ? 'Enabling...' : 'Enable Alerts'}
+          {isSubscribing ? 'Enabling...' : 'Enable alerts'}
         </button>
         <button
           type="button"
           onClick={handleDismiss}
-          className="p-1 rounded-lg text-emerald-200 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
           title="Dismiss"
           aria-label="Dismiss banner"
         >
-          <X className="w-4 h-4" />
+          <X className="w-3.5 h-3.5 stroke-[1.75]" />
         </button>
       </div>
     </div>

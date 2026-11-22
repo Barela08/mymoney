@@ -19,7 +19,6 @@ import {
   Apple,
   Building,
   Zap,
-  Sparkles,
   Utensils,
   Calculator,
   ScanLine,
@@ -127,100 +126,92 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-20 lg:pb-8">
-      {/* 1. Personalized Greeting Bar with Avatar & Notification Shortcut */}
+      {/* 1. Context Title & Profile Shortcut */}
       <div className="flex items-center justify-between px-1">
         <div
           onClick={() => onNavigate('settings')}
           className="flex items-center gap-3 cursor-pointer group"
-          title="Go to Profile & Settings"
+          title="Account profile and settings"
         >
           {user?.avatar_url || user?.avatarUrl ? (
             <img
               src={user?.avatar_url || user?.avatarUrl || ''}
               alt={user.displayName}
-              className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-md group-hover:scale-105 transition-transform"
+              className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-800 transition-opacity group-hover:opacity-90"
             />
           ) : (
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-lg flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-base flex items-center justify-center border border-slate-200 dark:border-slate-700">
               {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
             </div>
           )}
 
           <div>
-            <p className="text-xs text-slate-400 font-semibold">{greeting},</p>
-            <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 transition-colors">
-              {user?.displayName || 'Fintech User'}
-            </h1>
+            <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 transition-colors group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+              {user?.displayName || 'Personal Account'}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Financial Ledger · {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+            </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('notifications')}
-            className="p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 shadow-xs transition-colors cursor-pointer relative"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
-      {/* 2. Available Balance Card */}
-      <div className="bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-7 text-white shadow-xl shadow-emerald-950/15 relative overflow-hidden space-y-5">
+      {/* 2. Master Balance Ledger Card */}
+      <div className="bg-slate-950 dark:bg-slate-950 text-white rounded-2xl p-6 sm:p-7 border border-emerald-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] relative space-y-5">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-[11px] font-bold tracking-wide uppercase text-emerald-100">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Available Balance</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+              <Wallet className="w-3.5 h-3.5 stroke-[1.75]" />
+              <span>Available balance</span>
             </span>
-            <h2 className="text-3xl sm:text-4xl font-black mt-2 tracking-tight font-sans">
+            <h2 className="text-3xl sm:text-4xl font-semibold mt-1 tracking-tight font-sans tabular-nums text-white">
               {formatINR(summary.availableBalance)}
             </h2>
           </div>
 
           <button
             onClick={() => onOpenAddModal()}
-            className="flex items-center justify-center gap-2 px-5 py-3 bg-white text-emerald-800 hover:bg-emerald-50 active:scale-95 rounded-2xl text-xs sm:text-sm font-bold shadow-lg transition-all cursor-pointer self-start sm:self-auto"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer self-start sm:self-auto"
           >
-            <PlusCircle className="w-4 h-4 text-emerald-600" />
-            <span>Add Transaction</span>
+            <PlusCircle className="w-4 h-4 stroke-[2]" />
+            <span>Add transaction</span>
           </button>
         </div>
 
-        {/* 4 Metric Compact Pills */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 flex items-center gap-1">
-              <ArrowDownLeft className="w-3 h-3 text-emerald-300" /> Income
+        {/* 4 Metric Sub-Panels */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+          <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
+            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+              <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400 stroke-[1.75]" /> Income
             </span>
-            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+            <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
               {formatINR(summary.totalIncome)}
             </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
-            <span className="text-[10px] uppercase font-bold text-rose-200 flex items-center gap-1">
-              <ArrowUpRight className="w-3 h-3 text-rose-300" /> Expenses
+          <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
+            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+              <ArrowUpRight className="w-3.5 h-3.5 text-rose-400 stroke-[1.75]" /> Expenses
             </span>
-            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+            <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
               {formatINR(summary.totalExpenses)}
             </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
-            <span className="text-[10px] uppercase font-bold text-teal-200 flex items-center gap-1">
-              <TrendingUp className="w-3 h-3 text-teal-300" /> Net Savings
+          <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
+            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5 text-teal-400 stroke-[1.75]" /> Net savings
             </span>
-            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+            <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
               {formatINR(summary.availableBalance)}
             </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
-            <span className="text-[10px] uppercase font-bold text-amber-200 flex items-center gap-1">
-              <Users className="w-3 h-3 text-amber-300" /> Net Udhar
+          <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] space-y-1">
+            <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-amber-400 stroke-[1.75]" /> Net udhar
             </span>
-            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+            <span className="text-xs sm:text-sm font-semibold font-sans tabular-nums block text-white">
               {formatINR(summary.netPeopleBalance)}
             </span>
           </div>
@@ -230,125 +221,125 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       {/* 3. Quick Action Buttons Row */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
         <button
-          onClick={() => onOpenAddModal()}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-emerald-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+          onClick={() => onNavigate('reports')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <PlusCircle className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/10">
+            <BarChart3 className="w-4 h-4 stroke-[1.75]" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
-            + Add
-          </span>
-        </button>
-
-        <button
-          onClick={() => onOpenScanQr ? onOpenScanQr() : onNavigate('people')}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <ScanLine className="w-5 h-5" />
-          </div>
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
-            Scan QR
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
+            Reports
           </span>
         </button>
 
         <button
           onClick={() => onNavigate('people')}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-amber-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Users className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/10">
+            <Users className="w-4 h-4 stroke-[1.75]" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
             Udhar
           </span>
         </button>
 
         <button
           onClick={() => onNavigate('budget')}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-purple-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <PieChart className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center border border-purple-500/10">
+            <PieChart className="w-4 h-4 stroke-[1.75]" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
             Budget
           </span>
         </button>
 
         <button
           onClick={() => onNavigate('savings_goals')}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-teal-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Target className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 flex items-center justify-center border border-teal-500/10">
+            <Target className="w-4 h-4 stroke-[1.75]" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
             Goals
           </span>
         </button>
 
         <button
-          onClick={() => onNavigate('calculator')}
-          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+          onClick={() => onNavigate('all_transactions')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Calculator className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-500/10">
+            <Receipt className="w-4 h-4 stroke-[1.75]" />
           </div>
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
-            Calc
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
+            History
+          </span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('calculator')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:scale-[0.99] transition-colors flex flex-col items-center gap-1.5 text-center cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/10">
+            <Calculator className="w-4 h-4 stroke-[1.75]" />
+          </div>
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
+            Calculator
           </span>
         </button>
       </div>
 
-      {/* 4. Monthly Financial Graph & Overview */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between pb-2">
+      {/* 4. Monthly Financial Flow Overview */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/80">
           <div>
-            <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span>Monthly Financial Overview</span>
+            <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+              <span>Monthly financial flow</span>
             </h3>
-            <p className="text-xs text-slate-400">
-              6-Month Income vs Expense Flow
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              6-month cashflow comparison
             </p>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] font-bold">
-            <span className="flex items-center gap-1 text-emerald-600">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Income
+          <div className="flex items-center gap-3 text-xs font-medium">
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Income
             </span>
-            <span className="flex items-center gap-1 text-rose-500">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Expense
+            <span className="flex items-center gap-1.5 text-rose-500 dark:text-rose-400">
+              <span className="w-2 h-2 rounded-full bg-rose-400" /> Expense
             </span>
           </div>
         </div>
 
         {/* Visual Bar Chart */}
         <div className="pt-2">
-          <div className="grid grid-cols-6 gap-2 sm:gap-4 items-end h-36 border-b border-slate-100 dark:border-slate-800 pb-2">
+          <div className="grid grid-cols-6 gap-2 sm:gap-4 items-end h-36 border-b border-slate-100 dark:border-slate-800/80 pb-2">
             {monthlyChartData.map((item: any) => {
               const incomeHeight = Math.max(4, Math.round((item.income / maxBarValue) * 100));
               const expenseHeight = Math.max(4, Math.round((item.expense / maxBarValue) * 100));
 
               return (
-                <div key={item.key} className="flex flex-col items-center h-full justify-end gap-1 group">
+                <div key={item.key} className="flex flex-col items-center h-full justify-end gap-1.5">
                   <div className="w-full flex items-end justify-center gap-1 h-28">
                     {/* Income Bar */}
                     <div
-                      className="w-2.5 sm:w-4 bg-emerald-500 rounded-t-md transition-all group-hover:brightness-110"
+                      className="w-2 sm:w-3 bg-emerald-500/90 rounded-t-xs transition-opacity hover:opacity-80"
                       style={{ height: `${incomeHeight}%` }}
                       title={`Income: ₹${item.income.toLocaleString('en-IN')}`}
                     />
                     {/* Expense Bar */}
                     <div
-                      className="w-2.5 sm:w-4 bg-rose-400 rounded-t-md transition-all group-hover:brightness-110"
+                      className="w-2 sm:w-3 bg-rose-400/90 rounded-t-xs transition-opacity hover:opacity-80"
                       style={{ height: `${expenseHeight}%` }}
                       title={`Expense: ₹${item.expense.toLocaleString('en-IN')}`}
                     />
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 truncate w-full text-center">
+                  <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate w-full text-center">
                     {item.label}
                   </span>
                 </div>
@@ -381,64 +372,57 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       {/* State 24: First-Time User Onboarding Guide (shown when 0 transactions) */}
       <FirstTimeOnboarding onOpenAddModal={onOpenAddModal} />
 
-      {/* =========================================================================
-          START KARTE HI 5 BADE BADE OPTION: Home, Room, Food, Other, People
-          ========================================================================= */}
+      {/* 5 Main Ledger Sections */}
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
           <div>
-            <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <span>Main Categories</span>
-              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/80 px-2.5 py-0.5 rounded-full">
-                5 Sections
+            <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-3">
+              <span>Main categories</span>
+              <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-full ml-1">
+                5 sections
               </span>
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Select any section to manage expenses or view dedicated history
             </p>
           </div>
         </div>
 
-        {/* 5 Big Mobile-First Section Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
-          {/* 1. HOME SECTION (बड़ा ऑप्शन 1) */}
-          <div className="group relative bg-white dark:bg-slate-900 border-2 border-emerald-200 dark:border-emerald-900/60 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
-            <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-
+        {/* 5 Mobile-First Section Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {/* 1. Home Section */}
+          <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-5 transition-colors flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-md shadow-emerald-500/10 group-hover:scale-105 transition-transform">
-                  <Home className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/15">
+                  <Home className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  Section 1
-                </span>
               </div>
 
-              <h4 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-4">
-                Home Section
+              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-3">
+                Home section
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
                 Track money received from home and expenses spent for household
               </p>
 
               {/* Home Balance Stats */}
-              <div className="mt-4 p-3 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 space-y-1.5 text-xs">
+              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>Received From Home:</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400 font-sans">
+                  <span>Received from home</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
                     {formatINR(summary.totalHomeReceived)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>Home Spent:</span>
-                  <span className="font-bold text-rose-600 dark:text-rose-400 font-sans">
+                  <span>Home spent</span>
+                  <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
                     {formatINR(summary.totalHomeSpent)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/60 font-extrabold text-slate-900 dark:text-slate-100">
-                  <span>Remaining Balance:</span>
-                  <span className="text-blue-600 dark:text-blue-400 font-sans">
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
+                  <span>Remaining balance</span>
+                  <span className="text-teal-600 dark:text-teal-400 tabular-nums">
                     {formatINR(summary.remainingHomeBalance)}
                   </span>
                 </div>
@@ -449,52 +433,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('home')}
-                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <span>Open Home Section</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Open home</span>
+                <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('home', 'received_home')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950 text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
               >
-                Add Home Money
+                + Add home entry
               </button>
             </div>
           </div>
 
-          {/* 2. ROOM SECTION (बड़ा ऑप्शन 2) */}
-          <div className="group relative bg-white dark:bg-slate-900 border-2 border-blue-200 dark:border-blue-900/60 hover:border-blue-500 dark:hover:border-blue-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
-            <div className="absolute top-0 right-0 w-28 h-28 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
-
+          {/* 2. Room Section */}
+          <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-5 transition-colors flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-md shadow-blue-500/10 group-hover:scale-105 transition-transform">
-                  <DoorOpen className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/15">
+                  <DoorOpen className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  Section 2
-                </span>
               </div>
 
-              <h4 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-4">
-                Room Section
+              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-3">
+                Room section
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                Gas LPG cylinder, groceries, monthly room rent & electricity bills
+                Gas LPG cylinder, groceries, room rent and electricity
               </p>
 
               {/* Room Breakdown Stats */}
-              <div className="mt-4 p-3 bg-blue-50/70 dark:bg-blue-950/30 rounded-2xl border border-blue-100 dark:border-blue-900/40 space-y-1.5 text-xs">
+              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
                 <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-600 dark:text-slate-400">
-                  <div>Rent: <span className="font-bold text-slate-900 dark:text-slate-200">{formatINR(summary.totalRent)}</span></div>
-                  <div>Gas: <span className="font-bold text-slate-900 dark:text-slate-200">{formatINR(summary.totalGas)}</span></div>
-                  <div>Grocery: <span className="font-bold text-slate-900 dark:text-slate-200">{formatINR(summary.totalGrocery)}</span></div>
-                  <div>Power: <span className="font-bold text-slate-900 dark:text-slate-200">{formatINR(summary.totalElectricity)}</span></div>
+                  <div>Rent: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalRent)}</span></div>
+                  <div>Gas: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalGas)}</span></div>
+                  <div>Grocery: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalGrocery)}</span></div>
+                  <div>Power: <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">{formatINR(summary.totalElectricity)}</span></div>
                 </div>
-                <div className="flex items-center justify-between pt-1.5 border-t border-blue-200/60 dark:border-blue-800/60 font-extrabold text-slate-900 dark:text-slate-100">
-                  <span>Grand Total Room:</span>
-                  <span className="text-rose-600 dark:text-rose-400 font-sans">
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
+                  <span>Total room spent</span>
+                  <span className="text-rose-600 dark:text-rose-400 tabular-nums">
                     {formatINR(summary.totalRoomExpenses)}
                   </span>
                 </div>
@@ -505,49 +484,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('room')}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 active:scale-[0.99] rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <span>Open Room Section</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Open room</span>
+                <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('room')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950 text-slate-700 dark:text-slate-300 hover:text-blue-700 dark:hover:text-blue-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
               >
-                + Add Room Expense
+                + Add room expense
               </button>
             </div>
           </div>
 
-          {/* 3. FOOD & DINING SECTION (बड़ा ऑप्शन 3) */}
-          <div className="group relative bg-white dark:bg-slate-900 border-2 border-orange-200 dark:border-orange-900/60 hover:border-orange-500 dark:hover:border-orange-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
-            <div className="absolute top-0 right-0 w-28 h-28 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
-
+          {/* 3. Food & Dining Section */}
+          <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-5 transition-colors flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-950/80 text-orange-600 dark:text-orange-400 flex items-center justify-center shadow-md shadow-orange-500/10 group-hover:scale-105 transition-transform">
-                  <Utensils className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-500/15">
+                  <Utensils className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
-                  Section 3
-                </span>
               </div>
 
-              <h4 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-4">
-                Food & Dining
+              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-3">
+                Food & dining
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                Restaurant, cafe, tea/coffee, snacks, swiggy/zomato delivery & tiffin
+                Restaurant, cafe, tea/coffee, snacks and meal delivery
               </p>
 
               {/* Food Expenses Stats */}
-              <div className="mt-4 p-3 bg-orange-50/70 dark:bg-orange-950/30 rounded-2xl border border-orange-100 dark:border-orange-900/40 space-y-1.5 text-xs">
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Includes: Hotel, Snacks, Chai, Zomato, Mess
+              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>Category entries</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">
+                    {transactions.filter(t => t.category === 'food').length} entries
+                  </span>
                 </div>
-                <div className="flex items-center justify-between pt-1 border-t border-orange-200/60 dark:border-orange-800/60 font-extrabold text-slate-900 dark:text-slate-100">
-                  <span>Total Food Spent:</span>
-                  <span className="text-rose-600 dark:text-rose-400 font-sans">
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
+                  <span>Total food spent</span>
+                  <span className="text-rose-600 dark:text-rose-400 tabular-nums">
                     {formatINR(summary.totalFoodExpenses)}
                   </span>
                 </div>
@@ -558,49 +535,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('food')}
-                className="w-full py-3 px-4 bg-orange-600 hover:bg-orange-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-orange-600/20 transition-all cursor-pointer"
+                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 active:scale-[0.99] rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <span>Open Food & Dining</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Open food</span>
+                <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('food')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-orange-50 dark:hover:bg-orange-950 text-slate-700 dark:text-slate-300 hover:text-orange-700 dark:hover:text-orange-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
               >
-                + Add Food Expense
+                + Add food expense
               </button>
             </div>
           </div>
 
-          {/* 4. OTHER EXPENSES (बड़ा ऑप्शन 4) */}
-          <div className="group relative bg-white dark:bg-slate-900 border-2 border-purple-200 dark:border-purple-900/60 hover:border-purple-500 dark:hover:border-purple-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
-            <div className="absolute top-0 right-0 w-28 h-28 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
-
+          {/* 4. Other Expenses */}
+          <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-5 transition-colors flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 flex items-center justify-center shadow-md shadow-purple-500/10 group-hover:scale-105 transition-transform">
-                  <ShoppingBag className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center border border-purple-500/15">
+                  <ShoppingBag className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                  Section 4
-                </span>
               </div>
 
-              <h4 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-4">
-                Other Expenses
+              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-3">
+                Other expenses
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                Shopping, travel, medical bills, recharges & personal spending
+                Shopping, travel, medical bills, recharges and personal spending
               </p>
 
               {/* Other Expenses Stats */}
-              <div className="mt-4 p-3 bg-purple-50/70 dark:bg-purple-950/30 rounded-2xl border border-purple-100 dark:border-purple-900/40 space-y-1.5 text-xs">
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Includes: Shopping, Travel, Health, Bills
+              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>Category entries</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">
+                    {transactions.filter(t => t.category === 'other').length} entries
+                  </span>
                 </div>
-                <div className="flex items-center justify-between pt-1 border-t border-purple-200/60 dark:border-purple-800/60 font-extrabold text-slate-900 dark:text-slate-100">
-                  <span>Total Other Spent:</span>
-                  <span className="text-rose-600 dark:text-rose-400 font-sans">
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
+                  <span>Total other spent</span>
+                  <span className="text-rose-600 dark:text-rose-400 tabular-nums">
                     {formatINR(summary.totalOtherExpenses)}
                   </span>
                 </div>
@@ -611,58 +586,53 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('other')}
-                className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-600/20 transition-all cursor-pointer"
+                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 active:scale-[0.99] rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <span>Open Other Expenses</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Open other</span>
+                <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('other')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950 text-slate-700 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
               >
-                + Add Other Expense
+                + Add other expense
               </button>
             </div>
           </div>
 
-          {/* 5. PEOPLE SECTION (बड़ा ऑप्शन 5) */}
-          <div className="group relative bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-900/60 hover:border-amber-500 dark:hover:border-amber-500 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
-            <div className="absolute top-0 right-0 w-28 h-28 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-
+          {/* 5. People Section (Udhar) */}
+          <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-5 transition-colors flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-md shadow-amber-500/10 group-hover:scale-105 transition-transform">
-                  <Users className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/15">
+                  <Users className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                  Section 5
-                </span>
               </div>
 
-              <h4 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-4">
-                People Section
+              <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-3">
+                People ledger (Udhar)
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                Udhar Diya (Money Given) & Udhar Liya (Money Received)
+                Money lent to contacts and money borrowed from people
               </p>
 
               {/* People Stats */}
-              <div className="mt-4 p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-100 dark:border-amber-900/40 space-y-1.5 text-xs">
+              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>Given (उधार दिया):</span>
-                  <span className="font-bold text-rose-600 dark:text-rose-400 font-sans">
+                  <span>Given (Lent)</span>
+                  <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
                     {formatINR(summary.totalMoneyGiven)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>Received (वापस मिला):</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400 font-sans">
+                  <span>Received (Repaid)</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
                     {formatINR(summary.totalMoneyReceived)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between pt-1.5 border-t border-amber-200/60 dark:border-amber-800/60 font-extrabold text-slate-900 dark:text-slate-100">
-                  <span>Outstanding Net:</span>
-                  <span className="text-amber-600 dark:text-amber-400 font-sans">
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
+                  <span>Outstanding net</span>
+                  <span className="text-amber-600 dark:text-amber-400 tabular-nums">
                     {formatINR(summary.netPeopleBalance)}
                   </span>
                 </div>
@@ -673,39 +643,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => onNavigate('people')}
-                className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <span>Open People Section</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Open people</span>
+                <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
                 onClick={() => onOpenAddModal('people', 'money_given')}
-                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-slate-700 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
               >
-                Record Udhar
+                + Add udhar record
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Quick Utility Tool: Calculator (GST, Offer & Split) */}
-      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 dark:from-emerald-950/30 dark:via-teal-950/30 dark:to-cyan-950/30 rounded-3xl p-4 sm:p-5 border border-emerald-200/80 dark:border-emerald-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+      {/* Financial Calculator Utility */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 shrink-0">
-            <Calculator className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-slate-200/60 dark:border-slate-700/60 shrink-0">
+            <Calculator className="w-5 h-5 stroke-[1.75]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h4 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
-                Financial Calculator
+              <h4 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                Financial calculator
               </h4>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
                 GST · Offer · Split
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Dynamic GST calculations, custom discount offers, and accurate per-person bill split
+              Accurate GST calculation, custom discount offers, and per-person bill split
             </p>
           </div>
         </div>
@@ -713,10 +683,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
           <button
             onClick={() => onNavigate('calculator')}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 active:scale-[0.99] text-slate-800 dark:text-slate-200 rounded-xl text-xs font-medium transition-colors cursor-pointer"
           >
-            <span>Open Calculator</span>
-            <ChevronRight className="w-4 h-4" />
+            <span>Open calculator</span>
+            <ChevronRight className="w-4 h-4 stroke-[1.75]" />
           </button>
         </div>
       </div>
@@ -724,10 +694,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       {/* 8 Complete Financial Summary Cards */}
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
-          <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Overall Financial Overview
+          <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+            Overall financial overview
           </h3>
-          <span className="text-xs text-slate-400">Live Calculated Totals</span>
+          <span className="text-xs font-mono text-slate-400 dark:text-slate-500">Live totals</span>
         </div>
 
         {isLoading ? (
@@ -746,7 +716,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             <StatCard
               title="Home Expenses"
               amount={summary.totalHomeSpent}
-              subtitle={`Rem: ${formatINR(summary.remainingHomeBalance)}`}
+              subtitle="Household & family spending"
               icon={Home}
               variant="expense"
               badge="Household"
@@ -819,22 +789,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       </div>
 
       {/* Recent Transactions Section */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800/80">
           <div>
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-              Recent Transactions
+            <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+              Recent transactions
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Latest financial records with exact date, time, and category
             </p>
           </div>
           <button
             onClick={() => onNavigate('all_transactions')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
           >
-            <span>View All ({transactions.length})</span>
-            <Eye className="w-3.5 h-3.5" />
+            <span>View all ({transactions.length})</span>
+            <Eye className="w-3.5 h-3.5 stroke-[1.75]" />
           </button>
         </div>
 
@@ -848,39 +818,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             onAction={() => onOpenAddModal()}
           />
         ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
             {recentTransactions.map((tx) => {
               const isIncome = tx.transaction_type === 'income';
               const categoryBadgeColors = {
-                home: 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-                room: 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                food: 'bg-orange-50 dark:bg-orange-950/70 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800',
-                other: 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-                people: 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-              }[tx.category] || 'bg-slate-50 dark:bg-slate-950/70 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800';
+                home: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+                room: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-500/20',
+                food: 'bg-orange-50 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 border-orange-500/20',
+                other: 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-500/20',
+                people: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-500/20',
+              }[tx.category] || 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800';
 
               return (
                 <div
                   key={tx.id}
-                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 rounded-xl px-2 sm:px-3 transition-colors group"
+                  className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 rounded-xl px-2 sm:px-3 transition-colors group"
                 >
                   <div className="flex items-start gap-3 min-w-0">
                     <div
-                      className={`p-2.5 rounded-xl shrink-0 ${
+                      className={`p-2 rounded-xl shrink-0 ${
                         isIncome
-                          ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                          : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                       }`}
                     >
-                      {isIncome ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                      {isIncome ? <ArrowDownLeft className="w-4 h-4 stroke-[1.75]" /> : <ArrowUpRight className="w-4 h-4 stroke-[1.75]" />}
                     </div>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
+                        <span className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
                           {tx.title}
                         </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase ${categoryBadgeColors}`}>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border capitalize ${categoryBadgeColors}`}>
                           {tx.category} · {tx.subcategory.replace('_', ' ')}
                         </span>
                       </div>
@@ -893,11 +863,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
                       <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
                         <span className="flex items-center gap-1 font-mono">
-                          <Calendar className="w-3 h-3" />
+                          <Calendar className="w-3 h-3 stroke-[1.75]" />
                           {formatDisplayDate(tx.transaction_date)}
                         </span>
                         <span className="flex items-center gap-1 font-mono">
-                          <Clock className="w-3 h-3 text-emerald-500" />
+                          <Clock className="w-3 h-3 stroke-[1.75] text-slate-400" />
                           {formatDisplayTime(tx.transaction_time)}
                         </span>
                         {tx.person_name && (
@@ -912,7 +882,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                   <div className="flex items-center justify-between sm:justify-end gap-3 pl-11 sm:pl-0">
                     <div className="text-right">
                       <div
-                        className={`text-base font-extrabold font-sans ${
+                        className={`text-base font-semibold font-sans tabular-nums ${
                           isIncome
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-rose-600 dark:text-rose-400'
@@ -920,7 +890,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                       >
                         {isIncome ? '+' : '-'} {formatINR(tx.amount)}
                       </div>
-                      <span className="text-[10px] uppercase font-semibold text-slate-400">
+                      <span className="text-[10px] capitalize font-medium text-slate-400">
                         {tx.transaction_type}
                       </span>
                     </div>
@@ -928,17 +898,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                     <div className="flex items-center gap-1 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => setTransactionToEdit(tx)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                         title="Edit Record"
                       >
-                        <Edit3 className="w-4 h-4" />
+                        <Edit3 className="w-4 h-4 stroke-[1.75]" />
                       </button>
                       <button
                         onClick={() => setTransactionToDelete(tx)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors"
                         title="Delete Record"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 stroke-[1.75]" />
                       </button>
                     </div>
                   </div>

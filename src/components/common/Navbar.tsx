@@ -128,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           />
 
           <div className="min-w-0">
-            <h2 className="text-base sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 truncate">
+            <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">
               <span className="sm:hidden">{currentInfo.shortTitle}</span>
               <span className="hidden sm:inline">{currentInfo.title}</span>
             </h2>
@@ -144,11 +144,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isAdmin && maintenanceSettings.isEnabled && (
             <div
               onClick={() => onSelectTab('admin')}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] rounded-lg uppercase tracking-wider cursor-pointer shadow-sm animate-pulse"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-medium text-[11px] rounded-lg cursor-pointer"
               title="Maintenance Mode is Active! Normal users are blocked. Click to manage."
             >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Maintenance Active</span>
+              <AlertTriangle className="w-3.5 h-3.5 stroke-[1.75]" />
+              <span className="hidden sm:inline">Maintenance active</span>
             </div>
           )}
 
@@ -157,15 +157,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={() => onSelectTab('calculator')}
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer border ${
               currentTab === 'calculator'
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-600/30'
+                ? 'bg-emerald-600 text-white border-emerald-600'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
             }`}
             title="Financial Calculator (GST, Offer & Split)"
           >
-            <Calculator className={`w-3.5 h-3.5 ${currentTab === 'calculator' ? 'text-white' : 'text-emerald-500'}`} />
-            <span className="hidden sm:inline text-[11px]">Calculator</span>
+            <Calculator className={`w-3.5 h-3.5 stroke-[1.75] ${currentTab === 'calculator' ? 'text-white' : 'text-emerald-500'}`} />
+            <span className="hidden sm:inline text-xs">Calculator</span>
           </button>
 
           {/* Help, Feedback & Support Button (Responsive: Visible on sm and up) */}
@@ -173,11 +173,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               type="button"
               onClick={() => onOpenHelpModal('help')}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-semibold cursor-pointer border border-slate-200/80 dark:border-slate-800"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-medium cursor-pointer border border-slate-200/80 dark:border-slate-800"
               title={`Help, Feedback, Complaints & WhatsApp (${SUPPORT_CONTACT.displayPhone})`}
             >
-              <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden xl:inline text-[11px]">Help</span>
+              <HelpCircle className="w-3.5 h-3.5 stroke-[1.75] text-emerald-500" />
+              <span className="hidden xl:inline text-xs">Help</span>
             </button>
           )}
 
@@ -189,19 +189,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             onOpenHelpModal={onOpenHelpModal}
           />
 
-          {/* Live IST clock */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60 font-mono">
-            <Clock className="w-3.5 h-3.5 text-emerald-500" />
+          {/* Live IST clock (displayed on 2xl to keep header uncluttered) */}
+          <div className="hidden 2xl:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/60 font-mono">
+            <Clock className="w-3.5 h-3.5 stroke-[1.75] text-emerald-500" />
             <span>{istDateStr}</span>
             <span className="text-slate-300 dark:text-slate-600">|</span>
-            <span className="font-semibold text-slate-900 dark:text-slate-100">{istTimeStr} (IST)</span>
+            <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{istTimeStr} (IST)</span>
           </div>
 
           {/* User Badge */}
           {user && (
             <div
               onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
-              className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-medium cursor-pointer transition-colors"
               title={isAdmin ? 'Open Admin Control' : 'View Profile Settings'}
             >
               {user.avatar_url || user.avatarUrl ? (
@@ -211,25 +211,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="w-5 h-5 rounded-lg object-cover border border-emerald-500/30"
                 />
               ) : (
-                <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold">
+                <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">
                   {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
               )}
               <span className="truncate max-w-[100px]">{user.displayName}</span>
               {isAdmin && (
-                <span className="px-1 py-0.5 rounded text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold">
+                <span className="px-1 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-medium">
                   Admin
                 </span>
               )}
             </div>
           )}
 
-          {/* Add Transaction Button */}
+          {/* Add Transaction Button (visible on mobile where sidebar is hidden) */}
           <button
             onClick={onOpenAddModal}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer whitespace-nowrap"
+            className="flex lg:hidden items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer whitespace-nowrap"
           >
-            <PlusCircle className="w-4 h-4 shrink-0" />
+            <PlusCircle className="w-4 h-4 stroke-[2] shrink-0" />
             <span>Add</span>
           </button>
 
