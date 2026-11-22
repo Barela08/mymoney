@@ -74,13 +74,13 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
       console.warn('Profile fetch notice, falling back to session user:', err?.message);
       if (user) {
         const fallbackProfile: UserProfileData = {
-          id: user.uid || user.id,
-          uid: user.uid || user.id,
+          id: user.uid || user.id || 'user',
+          uid: user.uid || user.id || 'user',
           full_name: user.displayName || user.full_name || 'User',
           displayName: user.displayName || user.full_name || 'User',
-          email: user.email,
+          email: user.email || '',
           phone: user.phone || null,
-          role: user.role || 'user',
+          role: (user.role === 'admin' || user.role === 'superadmin' ? user.role : 'user') as any,
           status: user.status || 'active',
           email_verified: Boolean(user.email_verified),
           avatar_url: user.avatarUrl || null,

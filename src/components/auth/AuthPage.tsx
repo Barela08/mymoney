@@ -22,6 +22,9 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authApi } from '../../lib/authApi';
+import { DpdpConsentModal } from '../common/DpdpConsentModal';
+import { getStoredDpdpConsent, saveDpdpConsent } from '../common/DpdpConsentBanner';
+import { StartupPermissionsModal } from '../common/StartupPermissionsModal';
 
 export const AuthPage: React.FC = () => {
   const {
@@ -52,6 +55,32 @@ export const AuthPage: React.FC = () => {
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
   const [generatedResetLink, setGeneratedResetLink] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Statutory DPDP Consent & Permissions Modal States
+  const [isDpdpModalOpen, setIsDpdpModalOpen] = useState(false);
+  const [isPermsModalOpen, setIsPermsModalOpen] = useState(false);
+  const [isDpdpAgreed, setIsDpdpAgreed] = useState(() => {
+    const c = getStoredDpdpConsent();
+    return c.hasAnswered && c.isConsented;
+  });
+
+  // Verify DPDP consent before login/signup at startup
+  useEffect(() => {
+    const consent = getStoredDpdpConsent();
+    if (!consent.hasAnswered || !consent.isConsented) {
+      setIsDpdpModalOpen(true);
+    }
+  }, []);
+
+  const handleAcceptDpdp = () => {
+    setIsDpdpAgreed(true);
+    setIsDpdpModalOpen(false);
+    // After DPDP is accepted, prompt for startup permissions if not yet handled
+    const handled = localStorage.getItem('my_money_startup_perms_handled_v1');
+    if (!handled) {
+      setIsPermsModalOpen(true);
+    }
+  };
 
   // Token Verification for reset_password mode
   const [activeToken, setActiveToken] = useState<string>('');
@@ -233,6 +262,14 @@ export const AuthPage: React.FC = () => {
     }
 
     // 4. Submit Login or Register
+    // Enforce DPDP Act 2023 Consent Acceptance Before Login / Register
+    const currentConsent = getStoredDpdpConsent();
+    if (!currentConsent.hasAnswered || !currentConsent.isConsented || !isDpdpAgreed) {
+      setIsDpdpModalOpen(true);
+      setErrorMessage('कृपया लॉगिन या रजिस्टर करने से पहले DPDP Act 2023 डेटा सुरक्षा सहमति स्वीकार करें (Please accept DPDP Consent).');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       if (mode === 'login') {
@@ -587,6 +624,40 @@ export const AuthPage: React.FC = () => {
               </div>
             )}
 
+            {/* DPDP Consent Acceptance Checkbox for Registration */}
+            {mode === 'register' && (
+              <div className="flex items-start gap-2.5 pt-1 text-left">
+                <input
+                  type="checkbox"
+                  id="register-dpdp-consent"
+                  checked={isDpdpAgreed}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsDpdpAgreed(checked);
+                    saveDpdpConsent(checked);
+                    if (!checked) {
+                      setIsDpdpModalOpen(true);
+                    }
+                  }}
+                  className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
+                />
+                <label
+                  htmlFor="register-dpdp-consent"
+                  className="text-xs text-slate-600 dark:text-slate-300 cursor-pointer leading-relaxed"
+                >
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setIsDpdpModalOpen(true)}
+                    className="text-emerald-600 dark:text-emerald-400 font-bold underline cursor-pointer"
+                  >
+                    DPDP Act 2023 Consent & Privacy Terms
+                  </button>{' '}
+                  for cloud sync and financial ledger security.
+                </label>
+              </div>
+            )}
+
             {/* Submit Button */}
             <div className="pt-2">
               <button
@@ -690,6 +761,18 @@ export const AuthPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Statutory DPDP Act 2023 Consent Gate Modal (Must be accepted before login) */}
+      <DpdpConsentModal
+        isOpen={isDpdpModalOpen}
+        onAccept={handleAcceptDpdp}
+      />
+
+      {/* Startup Permissions Modal for Notification & Camera (for QR) */}
+      <StartupPermissionsModal
+        isOpen={isPermsModalOpen}
+        onComplete={() => setIsPermsModalOpen(false)}
+      />
     </div>
   );
 };
