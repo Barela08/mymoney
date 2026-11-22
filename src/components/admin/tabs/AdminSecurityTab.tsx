@@ -16,9 +16,19 @@ import {
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
 
-export const AdminSecurityTab: React.FC = () => {
+interface AdminSecurityTabProps {
+  initialSubView?: 'incidents' | 'logins' | 'sessions';
+}
+
+export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({ initialSubView = 'incidents' }) => {
   const toast = useToast();
-  const [subView, setSubView] = useState<'incidents' | 'logins' | 'sessions'>('incidents');
+  const [subView, setSubView] = useState<'incidents' | 'logins' | 'sessions'>(initialSubView);
+
+  useEffect(() => {
+    if (initialSubView) {
+      setSubView(initialSubView);
+    }
+  }, [initialSubView]);
   const [incidents, setIncidents] = useState<any[]>([]);
   const [loginAttempts, setLoginAttempts] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);

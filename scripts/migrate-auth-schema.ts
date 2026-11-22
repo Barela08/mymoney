@@ -140,7 +140,7 @@ async function migrate() {
     `, [
       'Security Administrator',
       adminEmail.toLowerCase(),
-      '+91 7414934540',
+      '+91 74149 35405',
       adminHash,
       'admin',
       'active',

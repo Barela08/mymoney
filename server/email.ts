@@ -551,7 +551,7 @@ export async function sendAccountDeletionRequestedEmail(
 
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5;">
             <strong style="color: #b91c1c;">Did not initiate this request?</strong><br/>
-            Please click the cancel button above immediately and change your account password. For immediate assistance, contact HackifyPro Support at <strong>support@hackifypro.com</strong> or phone helpline <strong>+91 74149345405</strong>.
+            Please click the cancel button above immediately and change your account password. For immediate assistance, contact HackifyPro Support at <strong>hackifypro@gmail.com</strong> or phone helpline <strong>+91 74149 35405</strong>.
           </div>
         </div>
         <div class="footer">
@@ -561,7 +561,7 @@ export async function sendAccountDeletionRequestedEmail(
     </body>
     </html>
   `;
-  const text = `Dear ${name || 'User'},\n\nWe received a request to permanently delete your My Money Manager account (${email}).\n\nSubmitted At: ${submissionTimeStr}\nScheduled Permanent Deletion: ${scheduledForDateStr}\nCancellation Window: 24 Hours\n\nTo cancel this request and restore your account to active standing, click this secure link:\n${cancelLink}\n\nIf you did not request this, cancel immediately and contact HackifyPro Support at support@hackifypro.com or +91 74149345405.\n\nMy Money Manager Security Team`;
+  const text = `Dear ${name || 'User'},\n\nWe received a request to permanently delete your My Money Manager account (${email}).\n\nSubmitted At: ${submissionTimeStr}\nScheduled Permanent Deletion: ${scheduledForDateStr}\nCancellation Window: 24 Hours\n\nTo cancel this request and restore your account to active standing, click this secure link:\n${cancelLink}\n\nIf you did not request this, cancel immediately and contact HackifyPro Support at hackifypro@gmail.com or +91 74149 35405.\n\nMy Money Manager Security Team`;
   return sendEmail({ to: email, subject, html, text });
 }
 
@@ -601,7 +601,7 @@ export async function sendAccountDeletionCancelledEmail(email: string, name: str
             Your My Money Manager account has been restored to normal active status. Your transactions, budgets, Udhar records, and saved people contacts remain intact and safe.
           </p>
           <p style="font-size: 12px; color: #64748b;">
-            If you did not perform this cancellation, please contact HackifyPro Support immediately at support@hackifypro.com.
+            If you did not perform this cancellation, please contact HackifyPro Support immediately at hackifypro@gmail.com or phone helpline +91 74149 35405.
           </p>
         </div>
         <div class="footer">

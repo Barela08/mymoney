@@ -23,13 +23,23 @@ import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
 import { formatDisplayDate } from '../../../lib/dateUtils';
 
-export const AdminUsersTab: React.FC = () => {
+interface AdminUsersTabProps {
+  initialStatusFilter?: string;
+}
+
+export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ initialStatusFilter = 'all' }) => {
   const toast = useToast();
   const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter);
   const [roleFilter, setRoleFilter] = useState<string>('all');
+
+  useEffect(() => {
+    if (initialStatusFilter) {
+      setStatusFilter(initialStatusFilter);
+    }
+  }, [initialStatusFilter]);
 
   // Modals
   const [selectedUserForActivity, setSelectedUserForActivity] = useState<any>(null);

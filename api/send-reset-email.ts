@@ -111,7 +111,7 @@ export async function sendPasswordResetEmail(payload: {
                       <b>Need Assistance?</b> Contact HackifyPro Support
                     </p>
                     <p style="margin: 0;">
-                      WhatsApp / Phone: <a href="https://wa.me/9174149345405" style="color: #10b981; text-decoration: none; font-weight: 600;">+91 74149345405</a> • Email: <a href="mailto:hackifypro@gmail.com" style="color: #10b981; text-decoration: none;">hackifypro@gmail.com</a>
+                      WhatsApp / Phone: <a href="https://wa.me/917414935405?text=Hello%20HackifyPro%20Support%20Team%2C%0A%0AI%20need%20assistance%20regarding%20My%20Money%20Manager%20app.%20I%20have%20a%20query%20and%20would%20like%20some%20help.%0A%0APlease%20guide%20me%20regarding%20my%20issue.%0A%0AThank%20you." style="color: #10b981; text-decoration: none; font-weight: 600;">+91 74149 35405</a> • Email: <a href="mailto:hackifypro@gmail.com?subject=My%20Money%20Manager%20%E2%80%93%20Support%20Request" style="color: #10b981; text-decoration: none;">hackifypro@gmail.com</a>
                     </p>
                     <p style="margin: 8px 0 0 0; font-size: 10px; color: #475569;">
                       Compliant with Digital Personal Data Protection (DPDP) Act, 2023.
@@ -130,7 +130,7 @@ export async function sendPasswordResetEmail(payload: {
     from: '"HackifyPro Alert" <hackifypro@gmail.com>',
     to: email,
     subject: `🔐 ${otp} is your My Money Manager Password Reset OTP`,
-    text: `Your password reset OTP is ${otp}. Direct reset link: ${resetLink}. Contact support at 74149345405.`,
+    text: `Your password reset OTP is ${otp}. Direct reset link: ${resetLink}. Contact support at +91 74149 35405 or hackifypro@gmail.com.`,
     html: htmlContent,
   });
 }

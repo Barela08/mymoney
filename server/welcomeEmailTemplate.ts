@@ -3,7 +3,8 @@ import { APP_CONFIG } from './config';
 /**
  * Escapes HTML characters to prevent email HTML injection
  */
-export function escapeHtml(str: string): string {
+export function escapeHtml(str?: string | null): string {
+  if (!str || typeof str !== 'string') return '';
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

@@ -1,5 +1,6 @@
 import { APP_CONFIG } from './config';
 import { escapeHtml, formatPersonalizedGreeting } from './welcomeEmailTemplate';
+export { escapeHtml, formatPersonalizedGreeting };
 
 export const STAR_LABELS: Record<number, string> = {
   1: 'Poor (1/5)',
@@ -108,11 +109,14 @@ export function generateFeedbackReceivedEmail(data: {
   userName?: string | null;
   rating?: number | null;
   category?: string;
-  message: string;
+  message?: string;
+  feedbackMessage?: string;
+  userEmail?: string;
 }): { subject: string; html: string; text: string } {
   const greeting = formatPersonalizedGreeting(data.userName);
   const ratingText = data.rating ? STAR_LABELS[data.rating] || `${data.rating} Stars` : 'Not specified';
   const starsRender = data.rating ? '★'.repeat(data.rating) + '☆'.repeat(5 - data.rating) : '';
+  const messageContent = data.message || data.feedbackMessage || '';
   const subject = `Thank you for your feedback — ${APP_CONFIG.appName}`;
 
   const bodyContent = `
@@ -134,7 +138,7 @@ export function generateFeedbackReceivedEmail(data: {
           </p>
           ${data.category ? `<p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #166534;">Category: ${escapeHtml(data.category)}</p>` : ''}
           <p style="margin: 8px 0 0 0; font-size: 13px; font-style: italic; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            &ldquo;${escapeHtml(data.message)}&rdquo;
+            &ldquo;${escapeHtml(messageContent)}&rdquo;
           </p>
         </td>
       </tr>

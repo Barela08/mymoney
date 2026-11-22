@@ -15,9 +15,19 @@ import {
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
 
-export const AdminEmailsTab: React.FC = () => {
+interface AdminEmailsTabProps {
+  initialSubView?: 'logs' | 'templates' | 'test';
+}
+
+export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ initialSubView = 'logs' }) => {
   const toast = useToast();
-  const [subView, setSubView] = useState<'logs' | 'templates' | 'test'>('logs');
+  const [subView, setSubView] = useState<'logs' | 'templates' | 'test'>(initialSubView);
+
+  useEffect(() => {
+    if (initialSubView) {
+      setSubView(initialSubView);
+    }
+  }, [initialSubView]);
   const [logs, setLogs] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
