@@ -89,6 +89,48 @@ export function extractSessionToken(req: IncomingMessage): string | null {
   return null;
 }
 
+// Helper: fallback to Supabase REST for user resolution
+async function resolveUserViaSupabaseRest(userId: string): Promise<AuthenticatedUser | null> {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
+    const supabaseKey =
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
+      'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+    const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}&select=*`, {
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        Accept: 'application/json',
+      },
+    });
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].status === 'active') {
+        const row = rows[0];
+        const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+        return {
+          id: row.id,
+          full_name: row.full_name,
+          email: row.email,
+          phone: row.phone,
+          role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
+          status: row.status,
+          email_verified: row.email_verified,
+          avatar_url: row.avatar_url,
+          force_password_reset: row.force_password_reset,
+          created_at: row.created_at,
+          last_login_at: row.last_login_at,
+          password_changed_at: row.password_changed_at,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('resolveUserViaSupabaseRest error:', err);
+  }
+  return null;
+}
+
 // Authenticate current request
 export async function authenticateRequest(req: IncomingMessage): Promise<AuthenticatedUser | null> {
   const token = extractSessionToken(req);
@@ -124,74 +166,104 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
           };
         }
       } catch (err) {
-        console.warn('Error resolving direct token:', err);
+        console.warn('Direct token DB query failed, attempting Supabase REST fallback:', err);
       }
+      // If query failed or returned no row, try Supabase REST
+      const restUser = await resolveUserViaSupabaseRest(directUserId);
+      if (restUser) return restUser;
     }
   }
 
   const tokenHash = hashToken(token);
 
-  // Query active session and join with app_users
-  const res = await query(
-    `SELECT 
-        s.id AS session_id,
-        s.expires_at,
-        s.is_revoked,
-        u.id,
-        u.full_name,
-        u.email,
-        u.phone,
-        u.role,
-        u.status,
-        u.email_verified,
-        u.avatar_url,
-        u.force_password_reset,
-        u.created_at,
-        u.last_login_at,
-        u.password_changed_at
-     FROM public.user_sessions s
-     JOIN public.app_users u ON s.user_id = u.id
-     WHERE s.session_token_hash = $1`,
-    [tokenHash]
-  );
+  try {
+    // Query active session and join with app_users
+    const res = await query(
+      `SELECT 
+          s.id AS session_id,
+          s.expires_at,
+          s.is_revoked,
+          u.id,
+          u.full_name,
+          u.email,
+          u.phone,
+          u.role,
+          u.status,
+          u.email_verified,
+          u.avatar_url,
+          u.force_password_reset,
+          u.created_at,
+          u.last_login_at,
+          u.password_changed_at
+       FROM public.user_sessions s
+       JOIN public.app_users u ON s.user_id = u.id
+       WHERE s.session_token_hash = $1`,
+      [tokenHash]
+    );
 
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
+    if (res.rows.length === 0) return null;
+    const row = res.rows[0];
 
-  // Session checks
-  if (row.is_revoked) return null;
-  if (new Date(row.expires_at) < new Date()) {
-    // Expired
-    await query(`UPDATE public.user_sessions SET is_revoked = TRUE WHERE id = $1`, [row.session_id]);
+    // Session checks
+    if (row.is_revoked) return null;
+    if (new Date(row.expires_at) < new Date()) {
+      // Expired
+      await query(`UPDATE public.user_sessions SET is_revoked = TRUE WHERE id = $1`, [row.session_id]).catch(() => {});
+      return null;
+    }
+
+    // Account status check
+    if (row.status !== 'active') {
+      // Account suspended or deactivated - revoke session
+      await query(`UPDATE public.user_sessions SET is_revoked = TRUE WHERE id = $1`, [row.session_id]).catch(() => {});
+      return null;
+    }
+
+    // Update session last active time
+    query(`UPDATE public.user_sessions SET last_active_at = NOW() WHERE id = $1`, [row.session_id]).catch(() => {});
+
+    const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+
+    return {
+      id: row.id,
+      full_name: row.full_name,
+      email: row.email,
+      phone: row.phone,
+      role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
+      status: row.status,
+      email_verified: row.email_verified,
+      avatar_url: row.avatar_url,
+      force_password_reset: row.force_password_reset,
+      created_at: row.created_at,
+      last_login_at: row.last_login_at,
+      password_changed_at: row.password_changed_at,
+    };
+  } catch (err: any) {
+    console.warn('authenticateRequest query failed, attempting Supabase REST fallback:', err.message);
+    try {
+      const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
+      const supabaseKey =
+        process.env.SUPABASE_SECRET_KEY ||
+        process.env.SUPABASE_PUBLISHABLE_KEY ||
+        'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+      const sessRes = await fetch(
+        `${supabaseUrl}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}&is_revoked=eq.false&select=id,user_id,expires_at`,
+        {
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
+        }
+      );
+      if (sessRes.ok) {
+        const sessRows = await sessRes.json();
+        if (Array.isArray(sessRows) && sessRows.length > 0) {
+          const s = sessRows[0];
+          if (new Date(s.expires_at) >= new Date()) {
+            return await resolveUserViaSupabaseRest(s.user_id);
+          }
+        }
+      }
+    } catch {}
     return null;
   }
-
-  // Account status check
-  if (row.status !== 'active') {
-    // Account suspended or deactivated - revoke session
-    await query(`UPDATE public.user_sessions SET is_revoked = TRUE WHERE id = $1`, [row.session_id]);
-    return null;
-  }
-
-  // Update session last active time
-  query(`UPDATE public.user_sessions SET last_active_at = NOW() WHERE id = $1`, [row.session_id]).catch(() => {});
-
-  const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
-
-  return {
-    id: row.id,
-    full_name: row.full_name,
-    email: row.email,
-    phone: row.phone,
-    role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-    status: row.status,
-    email_verified: row.email_verified,
-    avatar_url: row.avatar_url,
-    force_password_reset: row.force_password_reset,
-    created_at: row.created_at,
-    last_login_at: row.last_login_at,
-    password_changed_at: row.password_changed_at,
-  };
 }
 
 export function sanitizeUserOutput(user: AuthenticatedUser) {

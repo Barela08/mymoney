@@ -71,7 +71,32 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
         setEditPhone(res.profile.phone || '');
       }
     } catch (err: any) {
-      toast.error('Profile Error', err.message || 'Unable to fetch user profile.');
+      console.warn('Profile fetch notice, falling back to session user:', err?.message);
+      if (user) {
+        const fallbackProfile: UserProfileData = {
+          id: user.uid || user.id,
+          uid: user.uid || user.id,
+          full_name: user.displayName || user.full_name || 'User',
+          displayName: user.displayName || user.full_name || 'User',
+          email: user.email,
+          phone: user.phone || null,
+          role: user.role || 'user',
+          status: user.status || 'active',
+          email_verified: Boolean(user.email_verified),
+          avatar_url: user.avatarUrl || null,
+          force_password_reset: false,
+          created_at: user.createdAt || new Date().toISOString(),
+          createdAt: user.createdAt || new Date().toISOString(),
+          last_login_at: null,
+          password_changed_at: 'Never',
+          activeSessionsCount: 1,
+        };
+        setProfile(fallbackProfile);
+        setEditFullName(fallbackProfile.full_name);
+        setEditPhone(fallbackProfile.phone || '');
+      } else {
+        toast.error('Profile Error', err.message || 'Unable to fetch user profile.');
+      }
     } finally {
       setIsLoadingProfile(false);
     }

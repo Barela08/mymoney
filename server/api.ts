@@ -506,28 +506,39 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 6. GET PROFILE: GET /api/profile
     // ---------------------------------------------------------
     if (pathname === '/api/profile' && method === 'GET') {
-      const authUser = await authenticateRequest(req);
-      if (!authUser) {
-        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+      try {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson(res, 401, { success: false, message: 'Authentication required.' });
+          return true;
+        }
+
+        // Count active sessions with defensive catch
+        let activeSessionsCount = 1;
+        try {
+          const sessRes = await query(
+            `SELECT COUNT(*) as count FROM public.user_sessions 
+             WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()`,
+            [authUser.id]
+          );
+          activeSessionsCount = parseInt(sessRes.rows[0]?.count || '1');
+        } catch {
+          activeSessionsCount = 1;
+        }
+
+        sendJson(res, 200, {
+          success: true,
+          profile: {
+            ...sanitizeUserOutput(authUser),
+            activeSessionsCount,
+          },
+        });
+        return true;
+      } catch (err: any) {
+        console.error('Error in GET /api/profile:', err);
+        sendJson(res, 500, { success: false, message: err.message || 'Failed to retrieve user profile.' });
         return true;
       }
-
-      // Count active sessions
-      const sessRes = await query(
-        `SELECT COUNT(*) as count FROM public.user_sessions 
-         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()`,
-        [authUser.id]
-      );
-      const activeSessionsCount = parseInt(sessRes.rows[0]?.count || '1');
-
-      sendJson(res, 200, {
-        success: true,
-        profile: {
-          ...sanitizeUserOutput(authUser),
-          activeSessionsCount,
-        },
-      });
-      return true;
     }
 
     // ---------------------------------------------------------

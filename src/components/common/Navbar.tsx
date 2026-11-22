@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   X,
   Info,
-  RefreshCw,
   Download,
   HelpCircle,
   Calculator,
@@ -47,9 +46,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     maintenanceSettings,
     notifications,
     dynamicSections,
-    isSyncing,
-    refreshTransactions,
-    isSupabaseConnected,
   } = useExpense();
   const [istTimeStr, setIstTimeStr] = useState('');
   const [istDateStr, setIstDateStr] = useState('');
@@ -60,14 +56,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     (n) => n.is_active && (!n.target_user_id || n.target_user_id === user?.uid)
   );
 
-  // Live IST Clock
+  // Live IST Clock (Without seconds churn)
   useEffect(() => {
     const updateTime = () => {
       const ist = getISTNow();
       const hours = String(ist.getHours()).padStart(2, '0');
       const minutes = String(ist.getMinutes()).padStart(2, '0');
-      const seconds = String(ist.getSeconds()).padStart(2, '0');
-      setIstTimeStr(formatDisplayTime(`${hours}:${minutes}:${seconds}`));
+      // Format clean time without seconds (e.g. 10:30 AM)
+      setIstTimeStr(formatDisplayTime(`${hours}:${minutes}`));
 
       const year = ist.getFullYear();
       const month = String(ist.getMonth() + 1).padStart(2, '0');
@@ -76,7 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
 
     updateTime();
-    const interval = setInterval(updateTime, 1000);
+    const interval = setInterval(updateTime, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -145,29 +141,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          {/* Cloud Sync & Manual Refresh Button */}
-          <button
-            type="button"
-            onClick={() => refreshTransactions()}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-semibold cursor-pointer border border-slate-200/80 dark:border-slate-800"
-            title={
-              isSyncing
-                ? 'Syncing with cloud...'
-                : isSupabaseConnected
-                ? 'Cloud Synced! Tap to refresh latest data from other devices'
-                : 'Tap to sync data with cloud'
-            }
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${
-                isSyncing ? 'animate-spin text-emerald-500' : isSupabaseConnected ? 'text-emerald-500' : 'text-slate-400'
-              }`}
-            />
-            <span className="hidden xl:inline text-[11px]">
-              {isSyncing ? 'Syncing...' : isSupabaseConnected ? 'Synced' : 'Sync'}
-            </span>
-          </button>
 
           {/* Install / Download Web App Button */}
           {!isInstalled && (
