@@ -153,11 +153,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
 
-          {/* Quick Calculator Access */}
+          {/* Quick Calculator Access (Responsive: Visible on sm and up) */}
           <button
             type="button"
             onClick={() => onSelectTab('calculator')}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
               currentTab === 'calculator'
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-600/30'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
@@ -168,12 +168,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="hidden sm:inline text-[11px]">Calculator</span>
           </button>
 
-          {/* Help, Feedback & Support Button */}
+          {/* Help, Feedback & Support Button (Responsive: Visible on sm and up) */}
           {onOpenHelpModal && (
             <button
               type="button"
               onClick={() => onOpenHelpModal('help')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-semibold cursor-pointer border border-slate-200/80 dark:border-slate-800"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-semibold cursor-pointer border border-slate-200/80 dark:border-slate-800"
               title={`Help, Feedback, Complaints & WhatsApp (${SUPPORT_CONTACT.displayPhone})`}
             >
               <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />

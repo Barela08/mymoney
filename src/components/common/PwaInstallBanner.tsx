@@ -16,23 +16,23 @@ export const PwaInstallBanner: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-16 lg:bottom-4 inset-x-3 sm:inset-x-auto sm:right-4 z-40 max-w-md bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-2xl border border-emerald-400/30 backdrop-blur-md animate-fade-in flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3 min-w-0">
+    <div className="fixed bottom-20 lg:bottom-4 inset-x-3 sm:inset-x-auto sm:right-4 z-30 max-w-md bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-2xl border border-emerald-400/30 backdrop-blur-md animate-fade-in flex items-center justify-between gap-2.5">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
         <img
           src="/logo.jpg"
           alt="My Money"
-          className="w-10 h-10 rounded-xl object-cover border-2 border-white/40 shadow-sm shrink-0"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border-2 border-white/40 shadow-sm shrink-0"
         />
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="font-extrabold text-xs tracking-tight truncate">
               Install My Money App
             </span>
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-white/20 text-emerald-100">
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-white/20 text-emerald-100 shrink-0">
               Free App
             </span>
           </div>
-          <p className="text-[11px] text-emerald-100/90 truncate">
+          <p className="text-[10.5px] sm:text-[11px] text-emerald-100/90 truncate">
             अपने फोन में ऐप डाउनलोड / इंस्टॉल करें
           </p>
         </div>
@@ -48,7 +48,7 @@ export const PwaInstallBanner: React.FC = () => {
         </button>
         <button
           onClick={dismissBanner}
-          className="py-1.5 px-2.5 bg-white/15 hover:bg-white/25 active:scale-95 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap text-white"
+          className="hidden sm:inline-flex py-1.5 px-2.5 bg-white/15 hover:bg-white/25 active:scale-95 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap text-white"
         >
           <span>Cancel</span>
         </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -12,19 +12,12 @@ import { RoomSection } from './components/room/RoomSection';
 import { FoodSection } from './components/food/FoodSection';
 import { OtherSection } from './components/other/OtherSection';
 import { PeopleSection } from './components/people/PeopleSection';
-import { CalculatorSection } from './components/calculator/CalculatorSection';
-import { ReportsSection } from './components/reports/ReportsSection';
 import { AllTransactionsSection } from './components/all-transactions/AllTransactionsSection';
-import { RecycleBinSection } from './components/recycle-bin/RecycleBinSection';
-import { DynamicCustomSection } from './components/dynamic/DynamicCustomSection';
 import { MaintenanceScreen } from './components/maintenance/MaintenanceScreen';
 import { OfflineBanner } from './components/common/OfflineBanner';
-import { SettingsSection } from './components/settings/SettingsSection';
-import { LegalCenterSection } from './components/legal/LegalCenterSection';
 import { MyUdharQrModal } from './components/people/MyUdharQrModal';
 import { ScanQrModal } from './components/people/ScanQrModal';
 import { udharDeletionApi } from './lib/udharDeletionApi';
-import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
 import { TransactionCategory, TransactionSubcategory } from './types';
@@ -32,20 +25,36 @@ import { AlertTriangle } from 'lucide-react';
 import { PwaInstallProvider } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
-import { HelpSupportModal } from './components/support/HelpSupportModal';
-import { HelpSupportSection } from './components/support/HelpSupportSection';
 import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
-import { DpdpConsentModal } from './components/common/DpdpConsentModal';
-import { StartupPermissionsModal } from './components/common/StartupPermissionsModal';
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
-import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
-import { NotificationPreferencesModal } from './components/notifications/NotificationPreferencesModal';
 import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
-import { BudgetSection } from './components/budget/BudgetSection';
-import { SavingsGoalsSection } from './components/savings/SavingsGoalsSection';
-import { RecurringBillsSection } from './components/bills/RecurringBillsSection';
-import { NotificationsSection } from './components/notifications/NotificationsSection';
+
+// High-Performance On-Demand Lazy Loaded Modules
+const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const LegalCenterSection = lazy(() => import('./components/legal/LegalCenterSection').then(m => ({ default: m.LegalCenterSection })));
+const CalculatorSection = lazy(() => import('./components/calculator/CalculatorSection').then(m => ({ default: m.CalculatorSection })));
+const ReportsSection = lazy(() => import('./components/reports/ReportsSection').then(m => ({ default: m.ReportsSection })));
+const RecycleBinSection = lazy(() => import('./components/recycle-bin/RecycleBinSection').then(m => ({ default: m.RecycleBinSection })));
+const DynamicCustomSection = lazy(() => import('./components/dynamic/DynamicCustomSection').then(m => ({ default: m.DynamicCustomSection })));
+const SettingsSection = lazy(() => import('./components/settings/SettingsSection').then(m => ({ default: m.SettingsSection })));
+const HelpSupportSection = lazy(() => import('./components/support/HelpSupportSection').then(m => ({ default: m.HelpSupportSection })));
+const BudgetSection = lazy(() => import('./components/budget/BudgetSection').then(m => ({ default: m.BudgetSection })));
+const SavingsGoalsSection = lazy(() => import('./components/savings/SavingsGoalsSection').then(m => ({ default: m.SavingsGoalsSection })));
+const RecurringBillsSection = lazy(() => import('./components/bills/RecurringBillsSection').then(m => ({ default: m.RecurringBillsSection })));
+const NotificationsSection = lazy(() => import('./components/notifications/NotificationsSection').then(m => ({ default: m.NotificationsSection })));
+const HelpSupportModal = lazy(() => import('./components/support/HelpSupportModal').then(m => ({ default: m.HelpSupportModal })));
+const NotificationCenterModal = lazy(() => import('./components/notifications/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
+const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
+const StartupPermissionsModal = lazy(() => import('./components/common/StartupPermissionsModal').then(m => ({ default: m.StartupPermissionsModal })));
+const DpdpConsentModal = lazy(() => import('./components/common/DpdpConsentModal').then(m => ({ default: m.DpdpConsentModal })));
+
+const SectionFallback: React.FC = () => (
+  <div className="flex flex-col items-center justify-center py-20 min-h-[300px] space-y-3 animate-pulse">
+    <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading View...</span>
+  </div>
+);
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
@@ -197,7 +206,9 @@ const MainContent: React.FC = () => {
       )}
 
       {currentTab === 'admin' ? (
-        <AdminDashboard onExit={() => setCurrentTab('dashboard')} />
+        <Suspense fallback={<SectionFallback />}>
+          <AdminDashboard onExit={() => setCurrentTab('dashboard')} />
+        </Suspense>
       ) : (
         <PullToRefresh onRefresh={refreshTransactions} className="flex flex-1 min-h-0 flex-col">
           <div className="flex flex-1 min-h-0">
@@ -226,98 +237,100 @@ const MainContent: React.FC = () => {
 
               {/* Dynamic Section Views */}
               <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
-                {currentTab === 'dashboard' && (
-                  <DashboardView
-                    onNavigate={setCurrentTab}
-                    onOpenAddModal={handleOpenAddModal}
-                    onOpenScanQr={() => setIsScanQrOpen(true)}
-                  />
-                )}
+                <Suspense fallback={<SectionFallback />}>
+                  {currentTab === 'dashboard' && (
+                    <DashboardView
+                      onNavigate={setCurrentTab}
+                      onOpenAddModal={handleOpenAddModal}
+                      onOpenScanQr={() => setIsScanQrOpen(true)}
+                    />
+                  )}
 
-                {currentTab === 'home' && (
-                  <HomeSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'home' && (
+                    <HomeSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'room' && (
-                  <RoomSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'room' && (
+                    <RoomSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'food' && (
-                  <FoodSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'food' && (
+                    <FoodSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'other' && (
-                  <OtherSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'other' && (
+                    <OtherSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'people' && (
-                  <PeopleSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'people' && (
+                    <PeopleSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'calculator' && (
-                  <CalculatorSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'calculator' && (
+                    <CalculatorSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'reports' && (
-                  <ReportsSection />
-                )}
+                  {currentTab === 'reports' && (
+                    <ReportsSection />
+                  )}
 
-                {currentTab === 'all_transactions' && (
-                  <AllTransactionsSection onOpenAddModal={handleOpenAddModal} />
-                )}
+                  {currentTab === 'all_transactions' && (
+                    <AllTransactionsSection onOpenAddModal={handleOpenAddModal} />
+                  )}
 
-                {currentTab === 'recycle_bin' && (
-                  <RecycleBinSection />
-                )}
+                  {currentTab === 'recycle_bin' && (
+                    <RecycleBinSection />
+                  )}
 
-                {currentTab === 'budget' && (
-                  <BudgetSection />
-                )}
+                  {currentTab === 'budget' && (
+                    <BudgetSection />
+                  )}
 
-                {currentTab === 'savings_goals' && (
-                  <SavingsGoalsSection />
-                )}
+                  {currentTab === 'savings_goals' && (
+                    <SavingsGoalsSection />
+                  )}
 
-                {currentTab === 'recurring_bills' && (
-                  <RecurringBillsSection />
-                )}
+                  {currentTab === 'recurring_bills' && (
+                    <RecurringBillsSection />
+                  )}
 
-                {currentTab === 'notifications' && (
-                  <NotificationsSection onNavigate={setCurrentTab} />
-                )}
+                  {currentTab === 'notifications' && (
+                    <NotificationsSection onNavigate={setCurrentTab} />
+                  )}
 
-                {/* Custom Dynamic Sections */}
-                {dynamicSections.some((s) => s.id === currentTab && !['home', 'room', 'food', 'other', 'people'].includes(s.id)) && (
-                  <DynamicCustomSection
-                    section={dynamicSections.find((s) => s.id === currentTab)!}
-                    onOpenAddModal={handleOpenAddModal}
-                  />
-                )}
+                  {/* Custom Dynamic Sections */}
+                  {dynamicSections.some((s) => s.id === currentTab && !['home', 'room', 'food', 'other', 'people'].includes(s.id)) && (
+                    <DynamicCustomSection
+                      section={dynamicSections.find((s) => s.id === currentTab)!}
+                      onOpenAddModal={handleOpenAddModal}
+                    />
+                  )}
 
-                {currentTab === 'help_support' && (
-                  <HelpSupportSection />
-                )}
+                  {currentTab === 'help_support' && (
+                    <HelpSupportSection />
+                  )}
 
-                {currentTab === 'settings' && (
-                  <SettingsSection
-                    initialTab="profile"
-                    initialLegalPolicy={initialLegalPolicy}
-                  />
-                )}
+                  {currentTab === 'settings' && (
+                    <SettingsSection
+                      initialTab="profile"
+                      initialLegalPolicy={initialLegalPolicy}
+                    />
+                  )}
 
-                {currentTab === 'privacy_policy' && (
-                  <LegalCenterSection
-                    initialPolicyId="privacy_policy"
-                    onNavigateToAccountDeletion={() => setCurrentTab('settings')}
-                  />
-                )}
+                  {currentTab === 'privacy_policy' && (
+                    <LegalCenterSection
+                      initialPolicyId="privacy_policy"
+                      onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+                    />
+                  )}
 
-                {currentTab === 'legal' && (
-                  <LegalCenterSection
-                    initialPolicyId={initialLegalPolicy}
-                    onNavigateToAccountDeletion={() => setCurrentTab('settings')}
-                  />
-                )}
+                  {currentTab === 'legal' && (
+                    <LegalCenterSection
+                      initialPolicyId={initialLegalPolicy}
+                      onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+                    />
+                  )}
+                </Suspense>
               </main>
             </div>
 
@@ -347,57 +360,65 @@ const MainContent: React.FC = () => {
           initialTitle={modalInitialTitle}
         />
 
-        {/* Help, Feedback & Complaint Support Modal */}
-        <HelpSupportModal
-          isOpen={isHelpModalOpen}
-          onClose={() => setIsHelpModalOpen(false)}
-          initialTab={helpModalInitialTab}
-        />
+        <Suspense fallback={null}>
+          {/* Help, Feedback & Complaint Support Modal */}
+          {isHelpModalOpen && (
+            <HelpSupportModal
+              isOpen={isHelpModalOpen}
+              onClose={() => setIsHelpModalOpen(false)}
+              initialTab={helpModalInitialTab}
+            />
+          )}
 
-        {/* My Udhar QR Code Modal */}
-        <MyUdharQrModal
-          isOpen={isMyQrOpen}
-          onClose={() => setIsMyQrOpen(false)}
-          onOpenScanner={() => {
-            setIsMyQrOpen(false);
-            setIsScanQrOpen(true);
-          }}
-        />
+          {/* My Udhar QR Code Modal */}
+          <MyUdharQrModal
+            isOpen={isMyQrOpen}
+            onClose={() => setIsMyQrOpen(false)}
+            onOpenScanner={() => {
+              setIsMyQrOpen(false);
+              setIsScanQrOpen(true);
+            }}
+          />
 
-        {/* Scan QR Modal */}
-        <ScanQrModal
-          isOpen={isScanQrOpen}
-          onClose={() => setIsScanQrOpen(false)}
-          onConnected={(person) => {
-            setIsScanQrOpen(false);
-            handleOpenAddModal('people', undefined, person.name);
-          }}
-        />
+          {/* Scan QR Modal */}
+          <ScanQrModal
+            isOpen={isScanQrOpen}
+            onClose={() => setIsScanQrOpen(false)}
+            onConnected={(person) => {
+              setIsScanQrOpen(false);
+              handleOpenAddModal('people', undefined, person.name);
+            }}
+          />
 
-        {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}
-        <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
-        <DpdpConsentModal onOpenPrivacyPolicy={() => handleOpenHelpModal('dpdp')} />
+          {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}
+          <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
+          <DpdpConsentModal onOpenPrivacyPolicy={() => handleOpenHelpModal('dpdp')} />
 
-        {/* Startup Permissions Modal for Notification & Camera (for QR scanning) */}
-        <StartupPermissionsModal />
+          {/* Startup Permissions Modal for Notification & Camera (for QR scanning) */}
+          <StartupPermissionsModal />
 
-        {/* Full Notification Center Modal */}
-        <NotificationCenterModal
-          isOpen={isNotifCenterOpen}
-          onClose={() => setIsNotifCenterOpen(false)}
-          onSelectTab={setCurrentTab}
-          onOpenPreferences={() => {
-            setIsNotifCenterOpen(false);
-            setIsNotifPrefsOpen(true);
-          }}
-          onOpenHelpModal={handleOpenHelpModal}
-        />
+          {/* Full Notification Center Modal */}
+          {isNotifCenterOpen && (
+            <NotificationCenterModal
+              isOpen={isNotifCenterOpen}
+              onClose={() => setIsNotifCenterOpen(false)}
+              onSelectTab={setCurrentTab}
+              onOpenPreferences={() => {
+                setIsNotifCenterOpen(false);
+                setIsNotifPrefsOpen(true);
+              }}
+              onOpenHelpModal={handleOpenHelpModal}
+            />
+          )}
 
-        {/* Notification Preferences Modal */}
-        <NotificationPreferencesModal
-          isOpen={isNotifPrefsOpen}
-          onClose={() => setIsNotifPrefsOpen(false)}
-        />
+          {/* Notification Preferences Modal */}
+          {isNotifPrefsOpen && (
+            <NotificationPreferencesModal
+              isOpen={isNotifPrefsOpen}
+              onClose={() => setIsNotifPrefsOpen(false)}
+            />
+          )}
+        </Suspense>
     </div>
   );
 };
