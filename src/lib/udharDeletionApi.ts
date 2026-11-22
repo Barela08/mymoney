@@ -43,9 +43,12 @@ export interface SearchUserResult {
   id: string;
   displayName: string;
   fullName: string;
+  email?: string;
   emailMasked: string;
   phoneMasked?: string | null;
   avatarUrl?: string | null;
+  isAlreadyConnected?: boolean;
+  isSavedContact?: boolean;
 }
 
 export interface MyQrCodeResponse {
@@ -64,9 +67,11 @@ export interface ResolveQrResponse {
     id: string;
     displayName: string;
     fullName: string;
+    email?: string;
     emailMasked: string;
     phoneMasked?: string | null;
     avatarUrl?: string | null;
+    isVerified?: boolean;
   };
   pairingToken?: string;
   pairingCode?: string;
@@ -81,8 +86,30 @@ export interface UdharRepayment {
   recorded_by_name?: string;
   amount: number | string;
   repayment_date: string;
+  payment_method?: 'UPI' | 'Cash' | 'Bank Transfer' | string;
   notes?: string;
-  status: string;
+  status: 'pending_confirmation' | 'confirmed' | 'rejected' | string;
+  rejection_reason?: string | null;
+  confirmed_at?: string | null;
+  confirmed_by?: string | null;
+  created_at: string;
+}
+
+export interface UdharEditHistoryItem {
+  id: string;
+  udhar_id: string;
+  link_id: string;
+  edited_by_user_id: string;
+  edited_by_name?: string;
+  previous_amount?: number | null;
+  new_amount?: number | null;
+  previous_notes?: string | null;
+  new_notes?: string | null;
+  previous_date?: string | null;
+  new_date?: string | null;
+  previous_due_date?: string | null;
+  new_due_date?: string | null;
+  reason_for_edit?: string | null;
   created_at: string;
 }
 
@@ -94,9 +121,11 @@ export interface UdharTransactionItem {
   counterpart_name: string;
   counterpart_registered_name?: string | null;
   counterpart_email?: string | null;
+  counterpart_avatar?: string | null;
   direction: 'gave' | 'took';
   original_amount: number | string;
   current_balance: number | string;
+  paid_amount?: number | string;
   transaction_date: string;
   due_date?: string | null;
   notes?: string | null;
@@ -104,12 +133,16 @@ export interface UdharTransactionItem {
   status: 'pending_confirmation' | 'confirmed' | 'disputed' | 'settled' | 'cancelled';
   confirmation_status: 'pending' | 'confirmed' | 'disputed';
   is_initiator: boolean;
+  last_edited_at?: string | null;
+  last_edited_by?: string | null;
+  edit_reason?: string | null;
   dispute_reason?: string | null;
   disputed_at?: string | null;
   settled_at?: string | null;
   created_at: string;
   updated_at: string;
   repayments?: UdharRepayment[];
+  edit_history?: UdharEditHistoryItem[];
 }
 
 export interface UdharSummaryData {
@@ -586,12 +619,14 @@ export const udharDeletionApi = {
 
   async repayUdharTransaction(
     id: string,
-    payload: { amount: number; repayment_date?: string; notes?: string }
+    payload: { amount: number; repayment_date?: string; notes?: string; payment_method?: string }
   ): Promise<{
     success: boolean;
     message: string;
     remainingBalance: number;
     isSettled: boolean;
+    isPendingConfirmation?: boolean;
+    repayment?: UdharRepayment;
   }> {
     try {
       return await apiRequest(`/api/udhar/transactions/${id}/repay`, {
@@ -622,11 +657,65 @@ export const udharDeletionApi = {
 
       return {
         success: true,
-        message: isSettled ? 'Loan fully cleared and marked as settled!' : `Repayment of recorded.`,
+        message: isSettled ? 'Loan fully cleared and marked as settled!' : `Repayment recorded.`,
         remainingBalance: remainingBal,
         isSettled,
       };
     }
+  },
+
+  async confirmRepayment(repaymentId: string): Promise<{
+    success: boolean;
+    message: string;
+    remainingBalance?: number;
+    isSettled?: boolean;
+  }> {
+    return apiRequest(`/api/udhar/repayments/${repaymentId}/confirm`, {
+      method: 'POST',
+    });
+  },
+
+  async rejectRepayment(repaymentId: string, reason: string): Promise<{
+    success: boolean;
+    message: string;
+    rejectionReason?: string;
+  }> {
+    return apiRequest(`/api/udhar/repayments/${repaymentId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async editUdharTransaction(
+    id: string,
+    payload: {
+      amount?: number;
+      notes?: string;
+      transaction_date?: string;
+      due_date?: string | null;
+      reason_for_edit?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    message: string;
+    remainingBalance?: number;
+    isSettled?: boolean;
+  }> {
+    return apiRequest(`/api/udhar/transactions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getUdharTransactionHistory(id: string): Promise<{
+    success: boolean;
+    transaction: UdharTransactionItem;
+    editHistory: UdharEditHistoryItem[];
+    repayments: UdharRepayment[];
+  }> {
+    return apiRequest(`/api/udhar/transactions/${id}/history`, {
+      method: 'GET',
+    });
   },
 
   async settleUdharTransaction(

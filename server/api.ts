@@ -2973,33 +2973,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             [`New Udhar Request from ${authUser.full_name}`, notifMsg]
           ).catch(() => {});
 
-          // Auto-sync into public.transactions for general ledger, reports and dashboard
-          try {
-            await client.query(
-              `INSERT INTO public.transactions (
-                id, user_id, user_email, category, subcategory, transaction_type, amount,
-                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
-              ) VALUES (
-                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
-                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
-              )`,
-              [
-                authUser.id,
-                authUser.email,
-                direction === 'gave' ? 'money_given' : 'money_taken',
-                direction === 'gave' ? 'expense' : 'income',
-                amount,
-                direction === 'gave' ? `Money Lent to ${counterpartName}` : `Money Borrowed from ${counterpartName}`,
-                counterpartName,
-                txDate,
-                notes || null,
-                JSON.stringify({ link_id: linkId, udhar_id: singleRes.rows[0].id, direction, due_date: dueDate }),
-              ]
-            );
-          } catch (txSyncErr) {
-            console.warn('[Sync to public.transactions single notice]:', txSyncErr);
-          }
-
           await client.query('COMMIT');
 
           // Ensure reciprocal 2-way saved people sync
