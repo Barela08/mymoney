@@ -151,6 +151,10 @@ export interface AppBrandingSettings {
   timezone: string;
   allowRegistration: boolean;
   allowLogin: boolean;
+  brandTitle?: string;
+  companyName?: string;
+  footerText?: string;
+  showBrandingBadge?: boolean;
 }
 
 export interface BroadcastNotification {

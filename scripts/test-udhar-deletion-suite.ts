@@ -157,17 +157,13 @@ async function runVerificationSuite() {
 
     // 7. Test Partial Repayment of ₹500
     const repayAmount = 500;
+    const repayDate = '2026-11-22';
 
     // Create repayment records
     await client.query(`
-      INSERT INTO udhar_repayments (transaction_id, link_id, amount, payment_mode, notes)
-      VALUES ($1, $2, $3, 'upi', 'Partial repayment ₹500 via UPI');
-    `, [txARes.rows[0].id, linkId, repayAmount]);
-
-    await client.query(`
-      INSERT INTO udhar_repayments (transaction_id, link_id, amount, payment_mode, notes)
-      VALUES ($1, $2, $3, 'upi', 'Partial repayment ₹500 via UPI');
-    `, [txBRes.rows[0].id, linkId, repayAmount]);
+      INSERT INTO udhar_repayments (link_id, udhar_id, recorded_by_user_id, amount, repayment_date, notes)
+      VALUES ($1, $2, $3, $4, $5, 'Partial repayment ₹500 via UPI');
+    `, [linkId, txARes.rows[0].id, userB.id, repayAmount, repayDate]);
 
     // Update balances on both sides
     const newBal = amount - repayAmount;
