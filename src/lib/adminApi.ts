@@ -324,4 +324,41 @@ export const adminClient = {
       body: JSON.stringify(data),
     });
   },
+
+  async getCampaigns() {
+    return adminRequest('/api/admin/notifications/campaigns', { method: 'GET' });
+  },
+
+  async createCampaign(data: {
+    title: string;
+    message: string;
+    category?: string;
+    type?: string;
+    channels?: string[];
+    target_type?: string;
+    target_user_ids?: string[];
+    deep_link?: string;
+    scheduled_for?: string | null;
+  }) {
+    return adminRequest('/api/admin/notifications/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async cancelCampaign(id: string) {
+    return adminRequest(`/api/admin/notifications/campaigns/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+    });
+  },
+
+  async retryCampaign(id: string) {
+    return adminRequest(`/api/admin/notifications/campaigns/${encodeURIComponent(id)}/retry`, {
+      method: 'POST',
+    });
+  },
+
+  async getNotificationAnalytics() {
+    return adminRequest('/api/admin/notifications/analytics', { method: 'GET' });
+  },
 };

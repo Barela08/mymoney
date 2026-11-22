@@ -52,6 +52,17 @@ export const APP_CONFIG = {
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || '"My Money Manager" <hackifypro@gmail.com>',
   },
+
+  // Web Push VAPID Configuration
+  vapid: {
+    publicKey:
+      process.env.VAPID_PUBLIC_KEY ||
+      'BO9W43xYOjB1hjIt5iqTHA0Q0hFRnYOGXZqVc_UJoIkVgd5tbnDdewJG6tmbmoaXjxjsihA1uTxMC4h2MxMqYn4',
+    privateKey:
+      process.env.VAPID_PRIVATE_KEY ||
+      '7TH3qBHXc-OcLSgsdqizeRZym3jPEvnHBImAalNdQhY',
+    subject: process.env.VAPID_SUBJECT || 'mailto:hackifypro@gmail.com',
+  },
 } as const;
 
 export type AppConfig = typeof APP_CONFIG;

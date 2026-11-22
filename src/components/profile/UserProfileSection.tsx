@@ -26,6 +26,8 @@ import { authApi, UserProfileData } from '../../lib/authApi';
 import { formatDisplayDate } from '../../lib/dateUtils';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { AccountDeletionSection } from './AccountDeletionSection';
+import { ProfilePhotoUploadModal } from './ProfilePhotoUploadModal';
+import { Camera } from 'lucide-react';
 
 interface UserProfileSectionProps {
   onNavigateToDeletion?: () => void;
@@ -41,6 +43,7 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
   const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(true);
 
   // Edit Profile Modal
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFullName, setEditFullName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -207,8 +210,25 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div className="flex items-center gap-5">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-2xl flex items-center justify-center shadow-xl shadow-emerald-600/20 border-2 border-white dark:border-slate-800 shrink-0">
-              {displayName.charAt(0).toUpperCase()}
+            <div
+              className="relative group cursor-pointer"
+              onClick={() => setIsPhotoModalOpen(true)}
+              title="Click to change profile picture"
+            >
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={displayName}
+                  className="w-20 h-20 rounded-2xl object-cover shadow-xl shadow-emerald-600/20 border-2 border-emerald-500/40 shrink-0"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-2xl flex items-center justify-center shadow-xl shadow-emerald-600/20 border-2 border-white dark:border-slate-800 shrink-0">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white backdrop-blur-xs">
+                <Camera className="w-6 h-6" />
+              </div>
             </div>
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
@@ -241,10 +261,17 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
+            <button
+              onClick={() => setIsPhotoModalOpen(true)}
+              className="flex-1 sm:flex-none px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Photo</span>
+            </button>
             <button
               onClick={() => setIsEditModalOpen(true)}
-              className="flex-1 sm:flex-none px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="flex-1 sm:flex-none px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Edit3 className="w-3.5 h-3.5" />
               <span>Edit Profile</span>
@@ -600,6 +627,14 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
       <div id="account-deletion-section" className="pt-2">
         <AccountDeletionSection />
       </div>
+
+      {/* Profile Photo Upload Modal */}
+      <ProfilePhotoUploadModal
+        isOpen={isPhotoModalOpen}
+        onClose={() => setIsPhotoModalOpen(false)}
+        currentAvatarUrl={user?.avatarUrl}
+        onPhotoUpdated={() => fetchProfileData()}
+      />
     </div>
   );
 };

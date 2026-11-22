@@ -1,0 +1,338 @@
+import React, { useState, useMemo } from 'react';
+import {
+  ArrowLeft,
+  Phone,
+  Mail,
+  User,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Calendar,
+  Clock,
+  Plus,
+  CheckCircle2,
+  Trash2,
+  Edit3,
+  Search,
+  Receipt,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
+import { useExpense } from '../../context/ExpenseContext';
+import { useToast } from '../../context/ToastContext';
+import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
+import { PersonSummary, Transaction } from '../../types';
+import { SettleUdharModal } from './SettleUdharModal';
+
+interface PersonDetailsViewProps {
+  person: PersonSummary;
+  onBack: () => void;
+  onOpenAddModal: (category?: any, subcategory?: any, personName?: string) => void;
+  onEditPerson?: (personName: string) => void;
+  onDeletePerson?: (personName: string) => void;
+}
+
+export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
+  person,
+  onBack,
+  onOpenAddModal,
+  onEditPerson,
+  onDeletePerson,
+}) => {
+  const { settlePersonUdhar, permanentDeletePersonTransactions } = useExpense();
+  const toast = useToast();
+
+  const [searchHistory, setSearchHistory] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'given' | 'received'>('all');
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+  const [isSettling, setIsSettling] = useState(false);
+
+  // Filtered person's transactions
+  const filteredTxs = useMemo(() => {
+    let list = person.transactions || [];
+    if (searchHistory.trim()) {
+      const q = searchHistory.toLowerCase().trim();
+      list = list.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          (t.notes && t.notes.toLowerCase().includes(q)) ||
+          String(t.amount).includes(q)
+      );
+    }
+    if (filterType === 'given') {
+      list = list.filter((t) => t.subcategory === 'money_given');
+    } else if (filterType === 'received') {
+      list = list.filter((t) => t.subcategory === 'money_received');
+    }
+    return list;
+  }, [person.transactions, searchHistory, filterType]);
+
+  const balance = person.outstandingBalance;
+  const isSettled = Math.abs(balance) < 0.01;
+  const isOwedToYou = balance > 0; // You will get
+
+  const handleSettleConfirm = async (notes?: string) => {
+    try {
+      setIsSettling(true);
+      await settlePersonUdhar(person.name, notes);
+      toast.success('Udhar Settled', `All pending balance with ${person.name} is now cleared (₹0).`);
+      setIsSettleModalOpen(false);
+    } catch (err: any) {
+      toast.error('Settlement Failed', err.message);
+    } finally {
+      setIsSettling(false);
+    }
+  };
+
+  const handleDeleteHistory = async () => {
+    if (
+      !confirm(
+        `Are you sure you want to permanently delete all financial records for ${person.name}? This action cannot be undone.`
+      )
+    )
+      return;
+
+    try {
+      await permanentDeletePersonTransactions(person.name);
+      toast.success('Records Cleared', `All transactions with ${person.name} have been permanently removed.`);
+      onBack();
+    } catch (err: any) {
+      toast.error('Failed to clear records', err.message);
+    }
+  };
+
+  return (
+    <div className="space-y-6 pb-20 max-w-4xl mx-auto animate-fade-in">
+      {/* Top Header Navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to People</span>
+        </button>
+
+        <div className="flex items-center gap-2">
+          {onEditPerson && (
+            <button
+              onClick={() => onEditPerson(person.name)}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              title="Edit Contact"
+            >
+              <Edit3 className="w-4 h-4" />
+            </button>
+          )}
+
+          <button
+            onClick={handleDeleteHistory}
+            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+            title="Delete History with Person"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Person Profile Banner */}
+      <div className="bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-emerald-950/10 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-2xl font-black shadow-md border-2 border-white/30 shrink-0">
+              {person.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-extrabold">{person.name}</h2>
+                {isSettled ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-white/20 text-emerald-200">
+                    Settled
+                  </span>
+                ) : (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                    isOwedToYou ? 'bg-emerald-400/20 text-emerald-200' : 'bg-rose-400/20 text-rose-200'
+                  }`}>
+                    {isOwedToYou ? 'You will get' : 'You will give'}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-emerald-100 mt-1">
+                {person.transactionCount} transactions recorded · Last on {formatDisplayDate(person.lastTransactionDate)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={() => onOpenAddModal('people', isOwedToYou ? 'money_given' : 'money_received', person.name)}
+              className="px-4 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 active:scale-95 text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Add Udhar</span>
+            </button>
+
+            {!isSettled && (
+              <button
+                onClick={() => setIsSettleModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white active:scale-95 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Settle Full (हिसाब चुकता)</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 3 Metric Summary Cards */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-2">
+          <div className="p-3 sm:p-4 rounded-2xl bg-white/10 backdrop-blur-md space-y-1">
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Total You Gave</span>
+            <span className="text-sm sm:text-lg font-black font-sans">{formatINR(person.totalGiven)}</span>
+          </div>
+
+          <div className="p-3 sm:p-4 rounded-2xl bg-white/10 backdrop-blur-md space-y-1">
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Total You Received</span>
+            <span className="text-sm sm:text-lg font-black font-sans">{formatINR(person.totalReceived)}</span>
+          </div>
+
+          <div className="p-3 sm:p-4 rounded-2xl bg-white/15 backdrop-blur-md space-y-1">
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Net Balance</span>
+            <span className={`text-sm sm:text-lg font-black font-sans ${
+              isSettled ? 'text-white' : isOwedToYou ? 'text-emerald-300' : 'text-rose-300'
+            }`}>
+              {formatINR(Math.abs(balance))}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Transaction History Section */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+              Transaction History with {person.name}
+            </h3>
+            <p className="text-xs text-slate-400">
+              Every given, received, or settled entry in chronological order
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search history..."
+                value={searchHistory}
+                onChange={(e) => setSearchHistory(e.target.value)}
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs w-36 sm:w-48 focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+              <button
+                onClick={() => setFilterType('all')}
+                className={`px-2 py-1 rounded-lg transition-colors ${
+                  filterType === 'all' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-400'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilterType('given')}
+                className={`px-2 py-1 rounded-lg transition-colors ${
+                  filterType === 'given' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs' : 'text-slate-400'
+                }`}
+              >
+                Gave
+              </button>
+              <button
+                onClick={() => setFilterType('received')}
+                className={`px-2 py-1 rounded-lg transition-colors ${
+                  filterType === 'received' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-400'
+                }`}
+              >
+                Got
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {filteredTxs.length === 0 ? (
+          <div className="text-center py-10 space-y-2 text-slate-400 text-xs">
+            <Receipt className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
+            <p>No transactions found matching your criteria</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+            {filteredTxs.map((tx) => {
+              const isGiven = tx.subcategory === 'money_given';
+              return (
+                <div
+                  key={tx.id}
+                  className="py-3 flex items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 rounded-xl px-2 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`p-2 rounded-xl shrink-0 ${
+                        isGiven
+                          ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400'
+                          : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {isGiven ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+                        {tx.title}
+                      </p>
+                      {tx.notes && (
+                        <p className="text-[11px] text-slate-400 truncate mt-0.5">{tx.notes}</p>
+                      )}
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1 font-mono">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {formatDisplayDate(tx.transaction_date)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatDisplayTime(tx.transaction_time)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div
+                      className={`font-black text-sm sm:text-base font-sans ${
+                        isGiven ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {isGiven ? '-' : '+'} {formatINR(tx.amount)}
+                    </div>
+                    <span className="text-[9.5px] uppercase font-bold text-slate-400">
+                      {isGiven ? 'Given (उधार दिया)' : 'Received (वापस मिला)'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Settle Modal */}
+      {isSettleModalOpen && (
+        <SettleUdharModal
+          isOpen={isSettleModalOpen}
+          personName={person.name}
+          balance={person.outstandingBalance}
+          isLoading={isSettling}
+          onConfirm={handleSettleConfirm}
+          onClose={() => setIsSettleModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+};

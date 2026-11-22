@@ -13,6 +13,10 @@ import {
   sendAccountStatusEmail,
   sendAdminReplyToTicketEmail,
 } from './email';
+import {
+  notifyAdminTicketReply,
+  dispatchCampaign,
+} from './notificationService';
 
 // Helper to send JSON responses
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
@@ -968,6 +972,15 @@ export async function handleAdminApiRequest(
         details: { ticketId, ticketNumber: ticket.ticket_number, isInternal, emailStatus, emailError },
       });
 
+      if (!isInternal && ticket.user_id) {
+        notifyAdminTicketReply(ticket.user_id, {
+          id: ticket.id,
+          subject: ticket.subject,
+          replyText: message,
+          adminName: auth.authUser.full_name || 'Support Staff',
+        }).catch((e) => console.warn('[Notify Admin Reply Error]:', e));
+      }
+
       sendJson(res, 201, {
         success: true,
         message: isInternal ? 'Internal note added.' : (emailStatus === 'sent' ? 'Reply sent via email successfully.' : 'Reply recorded, email delivery pending/retry available.'),
@@ -1421,6 +1434,23 @@ export async function handleAdminApiRequest(
         [title, message, type, targetUserId, auth.authUser.id]
       );
 
+      // Sync to public.user_notifications for all targeted users so Notification Center displays it
+      try {
+        const allAppUsers = await query(`SELECT id FROM public.app_users`);
+        for (const u of allAppUsers.rows) {
+          if (targetUserId === 'all' || targetUserId === u.id) {
+            await query(
+              `INSERT INTO public.user_notifications 
+               (user_id, title, message, category, type, deep_link, metadata)
+               VALUES ($1, $2, $3, 'announcement', $4, 'dashboard', $5)`,
+              [u.id, title, message, type, JSON.stringify({ broadcastId: notifRes.rows[0]?.id })]
+            ).catch(() => {});
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Sync Broadcast Notice]:', err.message);
+      }
+
       await logSecurityEvent('BROADCAST_NOTIFICATION_SENT', {
         userEmail: auth.authUser.email,
         actorRole: auth.role,
@@ -1465,6 +1495,139 @@ export async function handleAdminApiRequest(
       });
 
       sendJson(res, 200, { success: true, message: 'Notification deactivated successfully.' });
+      return true;
+    }
+
+    // =========================================================
+    // 16B. NOTIFICATION CAMPAIGNS & ANALYTICS
+    // =========================================================
+
+    // GET /api/admin/notifications/campaigns
+    if (pathname === '/api/admin/notifications/campaigns' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const cRes = await query(`
+        SELECT c.*, u.full_name as creator_name, u.email as creator_email
+        FROM public.notification_campaigns c
+        LEFT JOIN public.app_users u ON c.created_by = u.id
+        ORDER BY c.created_at DESC
+        LIMIT 100
+      `);
+      sendJson(res, 200, { success: true, campaigns: cRes.rows });
+      return true;
+    }
+
+    // POST /api/admin/notifications/campaigns
+    if (pathname === '/api/admin/notifications/campaigns' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const title = (body.title || '').trim();
+      const message = (body.message || '').trim();
+      const category = body.category || 'announcement';
+      const type = body.type || 'announcement';
+      const channels = Array.isArray(body.channels) && body.channels.length > 0 ? body.channels : ['in_app'];
+      const targetType = ['all', 'active', 'selected'].includes(body.target_type) ? body.target_type : 'all';
+      const targetUserIds = Array.isArray(body.target_user_ids) ? body.target_user_ids : null;
+      const deepLink = body.deep_link ? String(body.deep_link).trim() : null;
+      const scheduledFor = body.scheduled_for ? new Date(body.scheduled_for) : null;
+
+      if (!title || !message) {
+        sendJson(res, 400, { success: false, message: 'Title and message are required.' });
+        return true;
+      }
+
+      const isScheduled = scheduledFor && scheduledFor.getTime() > Date.now();
+      const initialStatus = isScheduled ? 'scheduled' : 'sending';
+
+      const insRes = await query(
+        `INSERT INTO public.notification_campaigns 
+         (title, message, category, type, channels, target_type, target_user_ids, deep_link, status, scheduled_for, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [title, message, category, type, channels, targetType, targetUserIds, deepLink, initialStatus, scheduledFor, auth.authUser.id]
+      );
+
+      const campaign = insRes.rows[0];
+
+      if (!isScheduled) {
+        // Dispatch immediately in background
+        dispatchCampaign(campaign.id).catch((e) => console.error('[Campaign Dispatch Error]:', e));
+      }
+
+      await logSecurityEvent('ADMIN_CAMPAIGN_CREATED', {
+        userId: auth.authUser.id,
+        actorRole: auth.role,
+        details: { campaignId: campaign.id, title, targetType, channels, isScheduled },
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: isScheduled ? 'Campaign scheduled successfully.' : 'Campaign dispatched to target recipients.',
+        campaign,
+      });
+      return true;
+    }
+
+    // POST /api/admin/notifications/campaigns/:id/cancel
+    const cancelCampaignMatch = pathname.match(/^\/api\/admin\/notifications\/campaigns\/([a-zA-Z0-9_-]+)\/cancel$/);
+    if (cancelCampaignMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const campaignId = cancelCampaignMatch[1];
+      await query(
+        `UPDATE public.notification_campaigns 
+         SET status = 'cancelled', updated_at = NOW() 
+         WHERE id = $1 AND status = 'scheduled'`,
+        [campaignId]
+      );
+      sendJson(res, 200, { success: true, message: 'Scheduled campaign cancelled.' });
+      return true;
+    }
+
+    // POST /api/admin/notifications/campaigns/:id/retry
+    const retryCampaignMatch = pathname.match(/^\/api\/admin\/notifications\/campaigns\/([a-zA-Z0-9_-]+)\/retry$/);
+    if (retryCampaignMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const campaignId = retryCampaignMatch[1];
+      dispatchCampaign(campaignId).catch((e) => console.error('[Campaign Retry Error]:', e));
+      sendJson(res, 200, { success: true, message: 'Retry triggered for failed campaign recipients.' });
+      return true;
+    }
+
+    // GET /api/admin/notifications/analytics
+    if (pathname === '/api/admin/notifications/analytics' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const [logsRes, subRes, notifsRes] = await Promise.all([
+        query(`
+          SELECT channel, status, COUNT(*) as count 
+          FROM public.notification_delivery_logs 
+          GROUP BY channel, status
+        `),
+        query(`SELECT COUNT(*) as count FROM public.push_subscriptions`),
+        query(`
+          SELECT 
+            COUNT(*) as total_in_app,
+            COUNT(*) FILTER (WHERE is_read = TRUE) as read_count
+          FROM public.user_notifications
+          WHERE is_deleted = FALSE
+        `),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        deliveryLogs: logsRes.rows,
+        activePushSubscribers: parseInt(subRes.rows[0]?.count || '0', 10),
+        inAppTotal: parseInt(notifsRes.rows[0]?.total_in_app || '0', 10),
+        inAppRead: parseInt(notifsRes.rows[0]?.read_count || '0', 10),
+      });
       return true;
     }
 

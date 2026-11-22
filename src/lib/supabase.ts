@@ -205,6 +205,24 @@ export async function saveTransactionToSupabase(tx: Transaction): Promise<Transa
     throw error;
   }
 
+  // Trigger automated in-app & push transaction notification
+  if (!tx.is_deleted) {
+    try {
+      fetch('/api/notifications/events/transaction-created', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: data?.id || tx.id,
+          title: tx.title,
+          amount: tx.amount,
+          type: tx.transaction_type,
+          category: tx.subcategory,
+          section: tx.category,
+        }),
+      }).catch(() => {});
+    } catch {}
+  }
+
   return {
     ...tx,
     id: data?.id || tx.id,

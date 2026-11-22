@@ -38,6 +38,10 @@ import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
 import { DpdpConsentModal } from './components/common/DpdpConsentModal';
 import { StartupPermissionsModal } from './components/common/StartupPermissionsModal';
 import { PullToRefresh } from './components/common/PullToRefresh';
+import { NotificationProvider } from './context/NotificationContext';
+import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
+import { NotificationPreferencesModal } from './components/notifications/NotificationPreferencesModal';
+import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
@@ -51,6 +55,10 @@ const MainContent: React.FC = () => {
   const [isMyQrOpen, setIsMyQrOpen] = useState(false);
   const [isScanQrOpen, setIsScanQrOpen] = useState(false);
   const [initialLegalPolicy, setInitialLegalPolicy] = useState('privacy_policy');
+
+  // Notification Center & Preferences Modals State
+  const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
+  const [isNotifPrefsOpen, setIsNotifPrefsOpen] = useState(false);
 
   // Hash routing listener (for deletion email cancellation links, direct legal links, etc.)
   useEffect(() => {
@@ -163,6 +171,9 @@ const MainContent: React.FC = () => {
       {/* State 11 & 12: Offline and Reconnecting Status Banner */}
       <OfflineBanner />
 
+      {/* Push Notification Opt-in Value Proposition Banner */}
+      <PushPermissionBanner />
+
       {/* Admin Maintenance Mode Banner */}
       {maintenanceSettings.isEnabled && isAdmin && (
         <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-black flex items-center justify-between border-b border-amber-600 shadow-sm animate-pulse z-50">
@@ -205,6 +216,8 @@ const MainContent: React.FC = () => {
                 onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
                 onSelectTab={setCurrentTab}
                 onOpenHelpModal={handleOpenHelpModal}
+                onOpenNotificationCenter={() => setIsNotifCenterOpen(true)}
+                onOpenNotificationPreferences={() => setIsNotifPrefsOpen(true)}
               />
 
               {/* Dynamic Section Views */}
@@ -346,6 +359,24 @@ const MainContent: React.FC = () => {
 
         {/* Startup Permissions Modal for Notification & Camera (for QR scanning) */}
         <StartupPermissionsModal />
+
+        {/* Full Notification Center Modal */}
+        <NotificationCenterModal
+          isOpen={isNotifCenterOpen}
+          onClose={() => setIsNotifCenterOpen(false)}
+          onSelectTab={setCurrentTab}
+          onOpenPreferences={() => {
+            setIsNotifCenterOpen(false);
+            setIsNotifPrefsOpen(true);
+          }}
+          onOpenHelpModal={handleOpenHelpModal}
+        />
+
+        {/* Notification Preferences Modal */}
+        <NotificationPreferencesModal
+          isOpen={isNotifPrefsOpen}
+          onClose={() => setIsNotifPrefsOpen(false)}
+        />
     </div>
   );
 };
@@ -357,9 +388,11 @@ export default function App() {
         <AuthProvider>
           <ExpenseProvider>
             <PwaInstallProvider>
-              <MainContent />
-              <PwaInstallBanner />
-              <PwaInstallModal />
+              <NotificationProvider>
+                <MainContent />
+                <PwaInstallBanner />
+                <PwaInstallModal />
+              </NotificationProvider>
             </PwaInstallProvider>
           </ExpenseProvider>
         </AuthProvider>

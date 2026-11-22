@@ -212,6 +212,12 @@ export interface PersonSummary {
   transactionCount: number;
   lastTransactionDate: string;
   transactions: Transaction[];
+  linkedUserId?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  relationshipType?: string | null;
+  isRegisteredUser?: boolean;
 }
 
 export interface DateFilterRange {

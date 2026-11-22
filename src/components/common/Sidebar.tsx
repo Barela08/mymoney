@@ -34,6 +34,10 @@ import {
   Scale,
   QrCode,
   ScanLine,
+  PieChart,
+  Target,
+  CalendarClock,
+  Bell,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -49,6 +53,10 @@ export type NavTab =
   | 'food'
   | 'other'
   | 'people'
+  | 'budget'
+  | 'savings_goals'
+  | 'recurring_bills'
+  | 'notifications'
   | 'calculator'
   | 'reports'
   | 'all_transactions'
@@ -119,6 +127,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
+    { id: 'budget' as NavTab, label: 'Budget Planner', icon: PieChart },
+    { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
+    { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
     { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
     ...customSections.map((sec) => ({
       id: sec.id as NavTab,
@@ -126,6 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: iconMap[sec.icon] || FolderKanban,
     })),
     { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
+    { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
     { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
     { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
@@ -269,24 +281,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer / User Profile & Controls */}
       <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 space-y-3">
-        {/* Install Desktop/Web App CTA */}
-        {!isInstalled && (
-          <button
-            type="button"
-            onClick={triggerInstallPrompt}
-            className="w-full flex items-center justify-between px-3 py-2 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 border border-emerald-500/30 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 transition-all cursor-pointer shadow-sm group"
-            title="Install My Money App on your computer / device"
-          >
-            <div className="flex items-center gap-2">
-              <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-              <span>Install App</span>
-            </div>
-            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-emerald-600 text-white font-black uppercase tracking-wider">
-              Download
-            </span>
-          </button>
-        )}
-
         {/* Help, Feedback & Support Buttons */}
         {onOpenHelpModal && (
           <div className="grid grid-cols-2 gap-1.5">
@@ -317,9 +311,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl cursor-pointer transition-colors"
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold flex items-center justify-center text-xs shrink-0">
-              {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-            </div>
+            {user?.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.displayName}
+                className="w-8 h-8 rounded-xl object-cover shrink-0 border border-emerald-500/30"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold flex items-center justify-center text-xs shrink-0">
+                {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
                 {user?.displayName || 'User'}

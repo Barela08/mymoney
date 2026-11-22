@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Wallet,
   Home,
@@ -22,6 +22,12 @@ import {
   Sparkles,
   Utensils,
   Calculator,
+  ScanLine,
+  PieChart,
+  Target,
+  Bell,
+  TrendingUp,
+  BarChart3,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -39,16 +45,59 @@ import { NavTab } from '../common/Sidebar';
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
   onOpenAddModal: (category?: any, subcategory?: any) => void;
+  onOpenScanQr?: () => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal, onOpenScanQr }) => {
   const { transactions, summary, deleteTransaction, restoreTransaction, isLoading } = useExpense();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
 
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Time-of-day greeting
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 ? 'Good morning' : currentHour < 17 ? 'Good afternoon' : 'Good evening';
+
+  // Last 6 months cashflow graph calculation
+  const monthlyChartData = useMemo(() => {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const months: Array<{ key: string; label: string; income: number; expense: number }> = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.push({
+        key,
+        label: `${monthNames[d.getMonth()]}`,
+        income: 0,
+        expense: 0,
+      });
+    }
+
+    for (const tx of transactions) {
+      const txMonth = tx.transaction_date.slice(0, 7);
+      const bucket = months.find((m) => m.key === txMonth);
+      if (bucket) {
+        if (tx.transaction_type === 'income') {
+          bucket.income += Number(tx.amount) || 0;
+        } else {
+          bucket.expense += Number(tx.amount) || 0;
+        }
+      }
+    }
+
+    return months;
+  }, [transactions]);
+
+  // Max value for bar chart scaling
+  const maxBarValue = Math.max(
+    1,
+    ...monthlyChartData.map((m: any) => Math.max(m.income, m.expense))
+  );
 
   // Recent transactions (top 8)
   const recentTransactions = transactions.slice(0, 8);
@@ -78,28 +127,235 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-20 lg:pb-8">
-      {/* Top Welcome & Cashflow Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-5 sm:p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-3xl text-white shadow-xl shadow-emerald-900/10">
-        <div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold tracking-wide uppercase">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Personal Money Manager</span>
-          </span>
-          <h2 className="text-xl sm:text-3xl font-extrabold mt-2 tracking-tight">
-            Available Balance: {formatINR(summary.availableBalance)}
-          </h2>
-          <p className="text-xs sm:text-sm text-emerald-50/90 mt-1 font-medium">
-            Total Income: {formatINR(summary.totalIncome)} · Total Spent: {formatINR(summary.totalExpenses)}
-          </p>
+      {/* 1. Personalized Greeting Bar with Avatar & Notification Shortcut */}
+      <div className="flex items-center justify-between px-1">
+        <div
+          onClick={() => onNavigate('settings')}
+          className="flex items-center gap-3 cursor-pointer group"
+          title="Go to Profile & Settings"
+        >
+          {user?.avatarUrl ? (
+            <img
+              src={user.avatarUrl}
+              alt={user.displayName}
+              className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-md group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-lg flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+              {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs text-slate-400 font-semibold">{greeting},</p>
+            <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 transition-colors">
+              {user?.displayName || 'Fintech User'}
+            </h1>
+          </div>
         </div>
 
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onNavigate('notifications')}
+            className="p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 shadow-xs transition-colors cursor-pointer relative"
+            title="Notifications"
+          >
+            <Bell className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Available Balance Card */}
+      <div className="bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-7 text-white shadow-xl shadow-emerald-950/15 relative overflow-hidden space-y-5">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-[11px] font-bold tracking-wide uppercase text-emerald-100">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Available Balance</span>
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black mt-2 tracking-tight font-sans">
+              {formatINR(summary.availableBalance)}
+            </h2>
+          </div>
+
+          <button
+            onClick={() => onOpenAddModal()}
+            className="flex items-center justify-center gap-2 px-5 py-3 bg-white text-emerald-800 hover:bg-emerald-50 active:scale-95 rounded-2xl text-xs sm:text-sm font-bold shadow-lg transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <PlusCircle className="w-4 h-4 text-emerald-600" />
+            <span>Add Transaction</span>
+          </button>
+        </div>
+
+        {/* 4 Metric Compact Pills */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
+            <span className="text-[10px] uppercase font-bold text-emerald-200 flex items-center gap-1">
+              <ArrowDownLeft className="w-3 h-3 text-emerald-300" /> Income
+            </span>
+            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+              {formatINR(summary.totalIncome)}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
+            <span className="text-[10px] uppercase font-bold text-rose-200 flex items-center gap-1">
+              <ArrowUpRight className="w-3 h-3 text-rose-300" /> Expenses
+            </span>
+            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+              {formatINR(summary.totalExpenses)}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
+            <span className="text-[10px] uppercase font-bold text-teal-200 flex items-center gap-1">
+              <TrendingUp className="w-3 h-3 text-teal-300" /> Net Savings
+            </span>
+            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+              {formatINR(summary.availableBalance)}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md space-y-0.5">
+            <span className="text-[10px] uppercase font-bold text-amber-200 flex items-center gap-1">
+              <Users className="w-3 h-3 text-amber-300" /> Net Udhar
+            </span>
+            <span className="text-xs sm:text-sm font-black font-sans block text-white">
+              {formatINR(summary.netPeopleBalance)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Quick Action Buttons Row */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
         <button
           onClick={() => onOpenAddModal()}
-          className="flex items-center justify-center gap-2 px-5 py-3 bg-white text-emerald-800 hover:bg-emerald-50 active:scale-95 rounded-2xl text-sm font-bold shadow-lg transition-all cursor-pointer w-full md:w-auto"
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-emerald-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
         >
-          <PlusCircle className="w-4 h-4 text-emerald-600" />
-          <span>Add Transaction</span>
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <PlusCircle className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+            + Add
+          </span>
         </button>
+
+        <button
+          onClick={() => onOpenScanQr ? onOpenScanQr() : onNavigate('people')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <ScanLine className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+            Scan QR
+          </span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('people')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-amber-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Users className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+            Udhar
+          </span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('budget')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-purple-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <PieChart className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+            Budget
+          </span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('savings_goals')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-teal-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Target className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+            Goals
+          </span>
+        </button>
+
+        <button
+          onClick={() => onNavigate('calculator')}
+          className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center gap-1 text-center cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Calculator className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate w-full">
+            Calc
+          </span>
+        </button>
+      </div>
+
+      {/* 4. Monthly Financial Graph & Overview */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between pb-2">
+          <div>
+            <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-emerald-600" />
+              <span>Monthly Financial Overview</span>
+            </h3>
+            <p className="text-xs text-slate-400">
+              6-Month Income vs Expense Flow
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 text-[11px] font-bold">
+            <span className="flex items-center gap-1 text-emerald-600">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Income
+            </span>
+            <span className="flex items-center gap-1 text-rose-500">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Expense
+            </span>
+          </div>
+        </div>
+
+        {/* Visual Bar Chart */}
+        <div className="pt-2">
+          <div className="grid grid-cols-6 gap-2 sm:gap-4 items-end h-36 border-b border-slate-100 dark:border-slate-800 pb-2">
+            {monthlyChartData.map((item: any) => {
+              const incomeHeight = Math.max(4, Math.round((item.income / maxBarValue) * 100));
+              const expenseHeight = Math.max(4, Math.round((item.expense / maxBarValue) * 100));
+
+              return (
+                <div key={item.key} className="flex flex-col items-center h-full justify-end gap-1 group">
+                  <div className="w-full flex items-end justify-center gap-1 h-28">
+                    {/* Income Bar */}
+                    <div
+                      className="w-2.5 sm:w-4 bg-emerald-500 rounded-t-md transition-all group-hover:brightness-110"
+                      style={{ height: `${incomeHeight}%` }}
+                      title={`Income: ₹${item.income.toLocaleString('en-IN')}`}
+                    />
+                    {/* Expense Bar */}
+                    <div
+                      className="w-2.5 sm:w-4 bg-rose-400 rounded-t-md transition-all group-hover:brightness-110"
+                      style={{ height: `${expenseHeight}%` }}
+                      title={`Expense: ₹${item.expense.toLocaleString('en-IN')}`}
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 truncate w-full text-center">
+                    {item.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Admin Quick Link */}

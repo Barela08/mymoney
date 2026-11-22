@@ -73,7 +73,7 @@ export const pool = new pg.Pool({
   lookup: customLookup,
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 25000,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
 });

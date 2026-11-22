@@ -40,6 +40,17 @@ import {
 } from './email';
 import { APP_CONFIG } from './config';
 import { handleAdminApiRequest } from './adminApi';
+import {
+  getUserNotificationPreferences,
+  createNotification,
+  notifyTransactionCreated,
+  notifyUdharCreated,
+  notifyUdharRepayment,
+  notifyQrConnected,
+  notifyFeedbackSubmitted,
+  notifyComplaintSubmitted,
+  processScheduledCampaigns,
+} from './notificationService';
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
@@ -199,6 +210,13 @@ export async function processExpiredAccountDeletions(): Promise<number> {
 if (!(globalThis as any).__accountDeletionWorkerTimer) {
   (globalThis as any).__accountDeletionWorkerTimer = setInterval(() => {
     processExpiredAccountDeletions().catch(() => {});
+  }, 60000);
+}
+
+// Background timer: runs scheduled notification campaigns every 60 seconds
+if (!(globalThis as any).__scheduledCampaignsWorkerTimer) {
+  (globalThis as any).__scheduledCampaignsWorkerTimer = setInterval(() => {
+    processScheduledCampaigns().catch(() => {});
   }, 60000);
 }
 
@@ -2282,26 +2300,59 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // 1. Create connection (idempotent ON CONFLICT DO NOTHING)
+      // 1. Create mutual bidirectional connection (idempotent ON CONFLICT DO NOTHING)
       await query(
         `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
          VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+        [authUser.id, targetUserId]
+      );
+      await query(
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+        [targetUserId, authUser.id]
+      ).catch(() => {});
+
+      // 2. Save target user in current user's udhar_contacts with safe matching
+      const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split('@')[0] || 'Friend').trim();
+      const existingLinked = await query(
+        `SELECT id, name FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
         [authUser.id, targetUserId]
       );
 
-      // 2. Save target user in current user's udhar_contacts
-      const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split('@')[0] || 'Friend').trim();
-      await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE 
-         SET linked_user_id = EXCLUDED.linked_user_id, 
-             email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
-             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
-             updated_at = NOW()`,
-        [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, relationshipType, targetUserId]
-      ).catch(err => console.warn('QR user contact insert notice:', err));
+      if (existingLinked.rows.length > 0) {
+        await query(
+          `UPDATE public.udhar_contacts 
+           SET name = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), relationship_type = $4, updated_at = NOW() 
+           WHERE id = $5`,
+          [targetDisplayName, tokenRecord.email, tokenRecord.phone, relationshipType, existingLinked.rows[0].id]
+        );
+      } else {
+        const existingByName = await query(
+          `SELECT id FROM public.udhar_contacts WHERE user_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+          [authUser.id, targetDisplayName]
+        );
+        if (existingByName.rows.length > 0) {
+          await query(
+            `UPDATE public.udhar_contacts 
+             SET linked_user_id = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), relationship_type = $4, updated_at = NOW() 
+             WHERE id = $5`,
+            [targetUserId, tokenRecord.email, tokenRecord.phone, relationshipType, existingByName.rows[0].id]
+          );
+        } else {
+          await query(
+            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (user_id, name) DO UPDATE 
+             SET linked_user_id = EXCLUDED.linked_user_id, 
+                 email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+                 phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+                 updated_at = NOW()`,
+            [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, relationshipType, targetUserId]
+          ).catch(err => console.warn('QR user contact insert notice:', err));
+        }
+      }
 
       // 3. Reciprocally save current user in target user's contacts (2-way sync)
       await ensureReciprocalContact(targetUserId, authUser, relationshipType);
@@ -2315,6 +2366,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           [authUser.id, tokenRecord.id]
         );
       }
+
+      // 5. Send Realtime in-app & Push Notifications to both users
+      notifyQrConnected({
+        userAId: authUser.id,
+        userAName: authUser.full_name || 'My Money User',
+        userBId: targetUserId,
+        userBName: tokenRecord.full_name || 'Friend',
+      }).catch((e) => console.warn('[Notify QR Connected Error]:', e));
 
       await logSecurityEvent('USER_LINKED_VIA_QR', {
         userId: authUser.id,
@@ -2357,24 +2416,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [authUser.id]
       );
 
-      // Fetch repayments for these transactions
+      // Fetch repayments for these transactions (linked by link_id or udhar_id so both parties see settlements)
       const repayRes = await query(
-        `SELECT r.*, u.full_name AS recorded_by_name
+        `SELECT r.*, t.id AS tx_id, u.full_name AS recorded_by_name
          FROM public.udhar_repayments r
-         JOIN public.udhar_transactions t ON r.udhar_id = t.id
+         JOIN public.udhar_transactions t ON (r.link_id = t.link_id OR r.udhar_id = t.id)
          LEFT JOIN public.app_users u ON r.recorded_by_user_id = u.id
          WHERE t.user_id = $1
          ORDER BY r.repayment_date DESC, r.created_at DESC`,
         [authUser.id]
       );
 
-      // Group repayments by udhar_id
+      // Group repayments by transaction id
       const repaymentsByUdhar: Record<string, any[]> = {};
       for (const rep of repayRes.rows) {
-        if (!repaymentsByUdhar[rep.udhar_id]) {
-          repaymentsByUdhar[rep.udhar_id] = [];
+        const key = rep.tx_id || rep.udhar_id;
+        if (!repaymentsByUdhar[key]) {
+          repaymentsByUdhar[key] = [];
         }
-        repaymentsByUdhar[rep.udhar_id].push(rep);
+        repaymentsByUdhar[key].push(rep);
       }
 
       const transactions = txRes.rows.map((r: any) => ({
@@ -2503,13 +2563,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         if (isRegisteredCounterpart) {
           // TWO-SIDED SYNCHRONIZATION:
-          // User A (Initiator):
-          const userAStatus = 'pending_confirmation';
+          // User A (Initiator): Confirmed active transaction
+          const userAStatus = 'confirmed';
           const userARes = await client.query(
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
               transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', TRUE)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'confirmed', TRUE)
             RETURNING *`,
             [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, notes || null, attachmentUrl, userAStatus]
           );
@@ -2521,7 +2581,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
               transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending_confirmation', 'pending', FALSE)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'confirmed', 'confirmed', FALSE)`,
             [linkId, registeredUser.id, authUser.id, authUser.full_name, counterpartDirection, amount, amount, txDate, dueDate, notes || null, attachmentUrl]
           );
 
@@ -2558,6 +2618,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             userEmail: authUser.email,
             details: { linkId, counterpartId: registeredUser.id, amount, direction },
           });
+
+          // Multi-channel notifications for both parties
+          notifyUdharCreated({
+            initiatorUserId: authUser.id,
+            recipientUserId: registeredUser.id,
+            transactionId: userARes.rows[0].id,
+            contactName: registeredUser.full_name || 'Friend',
+            amount,
+            direction,
+            dueDate,
+          }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
 
           // Non-blocking automated email notifications for registered users
           sendUdharCreatedEmails({
@@ -2609,6 +2680,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             userEmail: authUser.email,
             details: { counterpartName, amount, direction },
           });
+
+          // Multi-channel notification for initiator
+          notifyUdharCreated({
+            initiatorUserId: authUser.id,
+            recipientUserId: null,
+            transactionId: singleRes.rows[0].id,
+            contactName: counterpartName,
+            amount,
+            direction,
+            dueDate,
+          }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
 
           // Non-blocking automated email notifications (initiator gets email, unverified counterpart safely skipped & logged)
           sendUdharCreatedEmails({
@@ -2785,6 +2867,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           userEmail: authUser.email,
           details: { txId, linkId: tx.link_id, amount: repayAmount, remainingBalance: newBalance, isSettled },
         });
+
+        // Multi-channel notification for repayment & auto-cancellation of reminders if settled
+        notifyUdharRepayment({
+          initiatorUserId: authUser.id,
+          recipientUserId: tx.counterpart_user_id || null,
+          repaymentId: txId,
+          contactName: tx.counterpart_name || 'Contact',
+          repaymentAmount: repayAmount,
+          remainingBalance: newBalance,
+          isFullySettled: isSettled,
+        }).catch((e) => console.warn('[Notify Udhar Repayment Error]:', e));
 
         // Automated Udhar Settlement Emails (if fully cleared / settled)
         if (isSettled) {
@@ -3141,6 +3234,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         submittedAt: feedback.created_at ? new Date(feedback.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : undefined,
       }).catch((e) => console.warn('[Feedback Dual Emails Dispatch Error]:', e));
 
+      // In-app thank you notification
+      notifyFeedbackSubmitted(authUser.id, {
+        id: feedback.id,
+        rating: rating || 5,
+        category,
+      }).catch((e) => console.warn('[Notify Feedback Error]:', e));
+
       await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
         userId: authUser.id,
         userEmail: trustedEmail,
@@ -3222,6 +3322,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         subject: ticket.subject,
         description: ticket.description,
       }).catch((e) => console.warn('[Complaint Ack Email Error]:', e));
+
+      // In-app complaint confirmation notification
+      notifyComplaintSubmitted(authUser.id, {
+        id: ticket.id,
+        subject: ticket.subject,
+        category: ticket.category,
+      }).catch((e) => console.warn('[Notify Complaint Error]:', e));
 
       await logSecurityEvent('USER_SUBMITTED_COMPLAINT', {
         userId: authUser.id,
@@ -3575,6 +3682,720 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         status: 'withdrawn',
         consent: insertRes.rows[0],
       });
+      return true;
+    }
+
+    // =========================================================
+    // SECTION: USER NOTIFICATION CENTER & WEB PUSH APIS
+    // =========================================================
+
+    // 1. GET USER NOTIFICATIONS: GET /api/notifications
+    if (pathname === '/api/notifications' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      const page = Math.max(1, parseInt(urlObj.searchParams.get('page') || '1', 10));
+      const limit = Math.min(100, Math.max(1, parseInt(urlObj.searchParams.get('limit') || '20', 10)));
+      const offset = (page - 1) * limit;
+      const category = (urlObj.searchParams.get('category') || '').trim();
+      const unreadOnly = urlObj.searchParams.get('unread_only') === 'true';
+
+      const conditions: string[] = ['user_id = $1', 'is_deleted = FALSE'];
+      const params: any[] = [authUser.id];
+
+      if (category && category !== 'all') {
+        params.push(category);
+        conditions.push(`category = $${params.length}`);
+      }
+
+      if (unreadOnly) {
+        conditions.push('is_read = FALSE');
+      }
+
+      const whereClause = conditions.join(' AND ');
+
+      const [listRes, countRes, unreadRes] = await Promise.all([
+        query(
+          `SELECT * FROM public.user_notifications 
+           WHERE ${whereClause}
+           ORDER BY created_at DESC 
+           LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+          [...params, limit, offset]
+        ),
+        query(
+          `SELECT COUNT(*) as total FROM public.user_notifications WHERE ${whereClause}`,
+          params
+        ),
+        query(
+          `SELECT COUNT(*) as unread_count FROM public.user_notifications 
+           WHERE user_id = $1 AND is_deleted = FALSE AND is_read = FALSE`,
+          [authUser.id]
+        ),
+      ]);
+
+      const total = parseInt(countRes.rows[0]?.total || '0', 10);
+      const unreadCount = parseInt(unreadRes.rows[0]?.unread_count || '0', 10);
+
+      sendJson(res, 200, {
+        success: true,
+        notifications: listRes.rows,
+        unreadCount,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit) || 1,
+      });
+      return true;
+    }
+
+    // 2. MARK SINGLE NOTIFICATION AS READ: PATCH /api/notifications/:id/read
+    const notifReadMatch = pathname.match(/^\/api\/notifications\/([a-zA-Z0-9_-]+)\/read$/);
+    if (notifReadMatch && (method === 'PATCH' || method === 'POST')) {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const notifId = notifReadMatch[1];
+      const updateRes = await query(
+        `UPDATE public.user_notifications 
+         SET is_read = TRUE, read_at = NOW() 
+         WHERE id = $1 AND user_id = $2 
+         RETURNING *`,
+        [notifId, authUser.id]
+      );
+
+      if (updateRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Notification not found.' });
+        return true;
+      }
+
+      sendJson(res, 200, { success: true, notification: updateRes.rows[0] });
+      return true;
+    }
+
+    // 3. MARK ALL AS READ: POST /api/notifications/mark-all-read
+    if (pathname === '/api/notifications/mark-all-read' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      await query(
+        `UPDATE public.user_notifications 
+         SET is_read = TRUE, read_at = NOW() 
+         WHERE user_id = $1 AND is_deleted = FALSE AND is_read = FALSE`,
+        [authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, message: 'All notifications marked as read.' });
+      return true;
+    }
+
+    // 4. DELETE SINGLE NOTIFICATION (SOFT DELETE): DELETE /api/notifications/:id
+    const notifDeleteMatch = pathname.match(/^\/api\/notifications\/([a-zA-Z0-9_-]+)$/);
+    if (notifDeleteMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const notifId = notifDeleteMatch[1];
+      await query(
+        `UPDATE public.user_notifications 
+         SET is_deleted = TRUE, deleted_at = NOW() 
+         WHERE id = $1 AND user_id = $2`,
+        [notifId, authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, message: 'Notification removed.' });
+      return true;
+    }
+
+    // 5. CLEAR ALL NOTIFICATIONS: POST /api/notifications/clear-all
+    if (pathname === '/api/notifications/clear-all' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      await query(
+        `UPDATE public.user_notifications 
+         SET is_deleted = TRUE, deleted_at = NOW() 
+         WHERE user_id = $1 AND is_deleted = FALSE`,
+        [authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, message: 'All notifications cleared.' });
+      return true;
+    }
+
+    // 6. GET NOTIFICATION PREFERENCES: GET /api/notifications/preferences
+    if (pathname === '/api/notifications/preferences' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const prefs = await getUserNotificationPreferences(authUser.id);
+      sendJson(res, 200, { success: true, preferences: prefs });
+      return true;
+    }
+
+    // 7. UPDATE NOTIFICATION PREFERENCES: PUT /api/notifications/preferences
+    if (pathname === '/api/notifications/preferences' && method === 'PUT') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const inApp = body.in_app_enabled !== undefined ? !!body.in_app_enabled : true;
+      const push = body.push_enabled !== undefined ? !!body.push_enabled : true;
+      const email = body.email_enabled !== undefined ? !!body.email_enabled : true;
+      const income = body.notify_income !== undefined ? !!body.notify_income : true;
+      const expense = body.notify_expense !== undefined ? !!body.notify_expense : true;
+      const udhar = body.notify_udhar !== undefined ? !!body.notify_udhar : true;
+      const support = body.notify_support !== undefined ? !!body.notify_support : true;
+      const announcements = body.notify_announcements !== undefined ? !!body.notify_announcements : true;
+      const offers = body.notify_offers !== undefined ? !!body.notify_offers : true;
+      const quietHours = body.quiet_hours_enabled !== undefined ? !!body.quiet_hours_enabled : false;
+      const quietStart = (body.quiet_hours_start || '22:00').trim();
+      const quietEnd = (body.quiet_hours_end || '07:00').trim();
+      const hideAmounts = body.privacy_hide_amounts !== undefined ? !!body.privacy_hide_amounts : false;
+
+      const upRes = await query(
+        `INSERT INTO public.user_notification_preferences (
+          user_id, in_app_enabled, push_enabled, email_enabled,
+          notify_income, notify_expense, notify_udhar, notify_support,
+          notify_announcements, notify_offers,
+          quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
+          updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+          in_app_enabled = EXCLUDED.in_app_enabled,
+          push_enabled = EXCLUDED.push_enabled,
+          email_enabled = EXCLUDED.email_enabled,
+          notify_income = EXCLUDED.notify_income,
+          notify_expense = EXCLUDED.notify_expense,
+          notify_udhar = EXCLUDED.notify_udhar,
+          notify_support = EXCLUDED.notify_support,
+          notify_announcements = EXCLUDED.notify_announcements,
+          notify_offers = EXCLUDED.notify_offers,
+          quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
+          quiet_hours_start = EXCLUDED.quiet_hours_start,
+          quiet_hours_end = EXCLUDED.quiet_hours_end,
+          privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
+          updated_at = NOW()
+        RETURNING *`,
+        [
+          authUser.id,
+          inApp,
+          push,
+          email,
+          income,
+          expense,
+          udhar,
+          support,
+          announcements,
+          offers,
+          quietHours,
+          quietStart,
+          quietEnd,
+          hideAmounts,
+        ]
+      );
+
+      sendJson(res, 200, { success: true, preferences: upRes.rows[0] });
+      return true;
+    }
+
+    // 8. PUSH VAPID PUBLIC KEY: GET /api/notifications/push/vapid-public-key
+    if (pathname === '/api/notifications/push/vapid-public-key' && method === 'GET') {
+      sendJson(res, 200, {
+        success: true,
+        publicKey: APP_CONFIG.vapid.publicKey,
+      });
+      return true;
+    }
+
+    // 9. REGISTER PUSH SUBSCRIPTION: POST /api/notifications/push/subscribe
+    if (pathname === '/api/notifications/push/subscribe' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const endpoint = (body.endpoint || '').trim();
+      const p256dh = body.keys?.p256dh || body.p256dh || '';
+      const authKey = body.keys?.auth || body.auth || '';
+      const userAgent = req.headers['user-agent'] || null;
+
+      if (!endpoint || !p256dh || !authKey) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Invalid push subscription payload (missing endpoint or cryptographic keys).',
+        });
+        return true;
+      }
+
+      await query(
+        `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (endpoint) DO UPDATE SET
+           user_id = EXCLUDED.user_id,
+           p256dh = EXCLUDED.p256dh,
+           auth = EXCLUDED.auth,
+           user_agent = EXCLUDED.user_agent,
+           updated_at = NOW()`,
+        [authUser.id, endpoint, p256dh, authKey, userAgent]
+      );
+
+      sendJson(res, 200, { success: true, message: 'Push notifications registered successfully.' });
+      return true;
+    }
+
+    // 10. UNREGISTER PUSH SUBSCRIPTION: POST /api/notifications/push/unsubscribe
+    if (pathname === '/api/notifications/push/unsubscribe' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const endpoint = (body.endpoint || '').trim();
+
+      if (endpoint) {
+        await query(
+          `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2`,
+          [authUser.id, endpoint]
+        );
+      }
+
+      sendJson(res, 200, { success: true, message: 'Push notifications disabled.' });
+      return true;
+    }
+
+    // 11. SEND TEST NOTIFICATION: POST /api/notifications/push/test
+    if (pathname === '/api/notifications/push/test' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const result = await createNotification({
+        userId: authUser.id,
+        title: '🔔 Test Notification · My Money Manager',
+        message: 'Push and In-App notification delivery verified! You will now receive instant financial and Udhar updates.',
+        category: 'general',
+        type: 'info',
+        deepLink: 'dashboard',
+        channels: ['in_app', 'push'],
+        skipPreferenceCheck: true,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Test notification dispatched successfully.',
+        result,
+      });
+      return true;
+    }
+
+    // 12. EVENT TRIGGER: TRANSACTION CREATED: POST /api/notifications/events/transaction-created
+    if (pathname === '/api/notifications/events/transaction-created' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const txId = body.id || body.transaction_id;
+      const title = (body.title || 'Transaction').trim();
+      const amount = Number(body.amount) || 0;
+      const type = body.type === 'income' ? 'income' : 'expense';
+      const category = body.category || 'General';
+      const section = body.section || '';
+
+      if (txId && amount > 0) {
+        await notifyTransactionCreated(authUser.id, {
+          id: txId,
+          title,
+          amount,
+          type,
+          category,
+          section,
+        });
+      }
+
+      sendJson(res, 200, { success: true, message: 'Transaction notification processed.' });
+      return true;
+    }
+
+    // =========================================================
+    // SECTION: USER BUDGETS APIS
+    // =========================================================
+
+    // 1. GET ALL USER BUDGETS: GET /api/budgets
+    if (pathname === '/api/budgets' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const listRes = await query(
+        `SELECT * FROM public.user_budgets WHERE user_id = $1 ORDER BY created_at ASC`,
+        [authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, budgets: listRes.rows });
+      return true;
+    }
+
+    // 2. UPSERT BUDGET: POST /api/budgets
+    if (pathname === '/api/budgets' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const category = (body.category || '').trim().toLowerCase();
+      const monthlyLimit = Number(body.monthly_limit || body.monthlyLimit) || 0;
+      const alertThreshold = Math.min(100, Math.max(1, Number(body.alert_threshold || body.alertThreshold) || 85));
+
+      if (!category) {
+        sendJson(res, 400, { success: false, message: 'Category is required for budget.' });
+        return true;
+      }
+      if (monthlyLimit <= 0) {
+        sendJson(res, 400, { success: false, message: 'Monthly budget limit must be greater than 0.' });
+        return true;
+      }
+
+      const upsertRes = await query(
+        `INSERT INTO public.user_budgets (user_id, category, monthly_limit, alert_threshold, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_id, category) DO UPDATE SET
+           monthly_limit = EXCLUDED.monthly_limit,
+           alert_threshold = EXCLUDED.alert_threshold,
+           updated_at = NOW()
+         RETURNING *`,
+        [authUser.id, category, monthlyLimit, alertThreshold]
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Budget saved successfully.',
+        budget: upsertRes.rows[0],
+      });
+      return true;
+    }
+
+    // 3. DELETE BUDGET: DELETE /api/budgets/:id
+    const budgetDeleteMatch = pathname.match(/^\/api\/budgets\/([a-zA-Z0-9_-]+)$/);
+    if (budgetDeleteMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const budgetId = budgetDeleteMatch[1];
+      await query(
+        `DELETE FROM public.user_budgets WHERE id = $1 AND user_id = $2`,
+        [budgetId, authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, message: 'Budget removed successfully.' });
+      return true;
+    }
+
+    // =========================================================
+    // SECTION: SAVINGS GOALS APIS
+    // =========================================================
+
+    // 1. GET ALL SAVINGS GOALS: GET /api/savings-goals
+    if (pathname === '/api/savings-goals' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const listRes = await query(
+        `SELECT * FROM public.savings_goals WHERE user_id = $1 ORDER BY created_at DESC`,
+        [authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, goals: listRes.rows });
+      return true;
+    }
+
+    // 2. CREATE OR EDIT SAVINGS GOAL: POST /api/savings-goals
+    if (pathname === '/api/savings-goals' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const title = (body.title || '').trim();
+      const targetAmount = Number(body.target_amount || body.targetAmount) || 0;
+      const currentAmount = Math.max(0, Number(body.current_amount || body.currentAmount) || 0);
+      const targetDate = body.target_date || body.targetDate || null;
+      const category = (body.category || 'general').trim();
+      const notes = (body.notes || '').trim() || null;
+      const isCompleted = !!body.is_completed || currentAmount >= targetAmount;
+
+      if (!title || title.length < 2) {
+        sendJson(res, 400, { success: false, message: 'Goal title must be at least 2 characters.' });
+        return true;
+      }
+      if (targetAmount <= 0) {
+        sendJson(res, 400, { success: false, message: 'Target amount must be greater than 0.' });
+        return true;
+      }
+
+      let goalRes;
+      if (body.id) {
+        goalRes = await query(
+          `UPDATE public.savings_goals
+           SET title = $1, target_amount = $2, current_amount = $3, target_date = $4, category = $5, notes = $6, is_completed = $7, updated_at = NOW()
+           WHERE id = $8 AND user_id = $9
+           RETURNING *`,
+          [title, targetAmount, currentAmount, targetDate, category, notes, isCompleted, body.id, authUser.id]
+        );
+      } else {
+        goalRes = await query(
+          `INSERT INTO public.savings_goals (user_id, title, target_amount, current_amount, target_date, category, notes, is_completed)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *`,
+          [authUser.id, title, targetAmount, currentAmount, targetDate, category, notes, isCompleted]
+        );
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: body.id ? 'Savings goal updated.' : 'Savings goal created.',
+        goal: goalRes.rows[0],
+      });
+      return true;
+    }
+
+    // 3. CONTRIBUTE / WITHDRAW GOAL: POST /api/savings-goals/:id/contribute
+    const goalContributeMatch = pathname.match(/^\/api\/savings-goals\/([a-zA-Z0-9_-]+)\/contribute$/);
+    if (goalContributeMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const goalId = goalContributeMatch[1];
+      const body = await parseJsonBody(req);
+      const delta = Number(body.amount) || 0;
+      const action = body.action === 'withdraw' ? 'withdraw' : 'add';
+
+      if (delta <= 0) {
+        sendJson(res, 400, { success: false, message: 'Contribution amount must be greater than 0.' });
+        return true;
+      }
+
+      const existingGoal = await query(
+        `SELECT * FROM public.savings_goals WHERE id = $1 AND user_id = $2`,
+        [goalId, authUser.id]
+      );
+
+      if (existingGoal.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Savings goal not found.' });
+        return true;
+      }
+
+      const goal = existingGoal.rows[0];
+      const prevAmount = Number(goal.current_amount) || 0;
+      const newAmount = action === 'withdraw'
+        ? Math.max(0, prevAmount - delta)
+        : prevAmount + delta;
+      const isCompleted = newAmount >= Number(goal.target_amount);
+
+      const updateRes = await query(
+        `UPDATE public.savings_goals 
+         SET current_amount = $1, is_completed = $2, updated_at = NOW() 
+         WHERE id = $3 AND user_id = $4 
+         RETURNING *`,
+        [newAmount, isCompleted, goalId, authUser.id]
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        message: action === 'withdraw' ? 'Amount withdrawn from goal.' : 'Contribution added to goal!',
+        goal: updateRes.rows[0],
+      });
+      return true;
+    }
+
+    // 4. DELETE SAVINGS GOAL: DELETE /api/savings-goals/:id
+    const goalDeleteMatch = pathname.match(/^\/api\/savings-goals\/([a-zA-Z0-9_-]+)$/);
+    if (goalDeleteMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const goalId = goalDeleteMatch[1];
+      await query(
+        `DELETE FROM public.savings_goals WHERE id = $1 AND user_id = $2`,
+        [goalId, authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, message: 'Savings goal deleted.' });
+      return true;
+    }
+
+    // =========================================================
+    // SECTION: RECURRING BILLS APIS
+    // =========================================================
+
+    // 1. GET ALL RECURRING BILLS: GET /api/recurring-bills
+    if (pathname === '/api/recurring-bills' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const listRes = await query(
+        `SELECT * FROM public.recurring_bills WHERE user_id = $1 ORDER BY due_day ASC`,
+        [authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, bills: listRes.rows });
+      return true;
+    }
+
+    // 2. CREATE OR EDIT RECURRING BILL: POST /api/recurring-bills
+    if (pathname === '/api/recurring-bills' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const title = (body.title || '').trim();
+      const category = (body.category || 'other').trim().toLowerCase();
+      const amount = Number(body.amount) || 0;
+      const frequency = (body.frequency || 'monthly').trim().toLowerCase();
+      const dueDay = Math.min(31, Math.max(1, Number(body.due_day || body.dueDay) || 1));
+      const reminderEnabled = body.reminder_enabled !== undefined ? !!body.reminder_enabled : true;
+      const isActive = body.is_active !== undefined ? !!body.is_active : true;
+
+      if (!title || title.length < 2) {
+        sendJson(res, 400, { success: false, message: 'Bill title must be at least 2 characters.' });
+        return true;
+      }
+      if (amount <= 0) {
+        sendJson(res, 400, { success: false, message: 'Bill amount must be greater than 0.' });
+        return true;
+      }
+
+      let billRes;
+      if (body.id) {
+        billRes = await query(
+          `UPDATE public.recurring_bills
+           SET title = $1, category = $2, amount = $3, frequency = $4, due_day = $5, reminder_enabled = $6, is_active = $7, updated_at = NOW()
+           WHERE id = $8 AND user_id = $9
+           RETURNING *`,
+          [title, category, amount, frequency, dueDay, reminderEnabled, isActive, body.id, authUser.id]
+        );
+      } else {
+        billRes = await query(
+          `INSERT INTO public.recurring_bills (user_id, title, category, amount, frequency, due_day, reminder_enabled, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *`,
+          [authUser.id, title, category, amount, frequency, dueDay, reminderEnabled, isActive]
+        );
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: body.id ? 'Recurring bill updated.' : 'Recurring bill added.',
+        bill: billRes.rows[0],
+      });
+      return true;
+    }
+
+    // 3. MARK BILL AS PAID: POST /api/recurring-bills/:id/pay
+    const billPayMatch = pathname.match(/^\/api\/recurring-bills\/([a-zA-Z0-9_-]+)\/pay$/);
+    if (billPayMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const billId = billPayMatch[1];
+      const body = await parseJsonBody(req);
+      const paidDate = body.paid_date || new Date().toISOString().split('T')[0];
+
+      const updateRes = await query(
+        `UPDATE public.recurring_bills
+         SET last_paid_date = $1, updated_at = NOW()
+         WHERE id = $2 AND user_id = $3
+         RETURNING *`,
+        [paidDate, billId, authUser.id]
+      );
+
+      if (updateRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Recurring bill not found.' });
+        return true;
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Bill marked as paid for this cycle.',
+        bill: updateRes.rows[0],
+      });
+      return true;
+    }
+
+    // 4. DELETE RECURRING BILL: DELETE /api/recurring-bills/:id
+    const billDeleteMatch = pathname.match(/^\/api\/recurring-bills\/([a-zA-Z0-9_-]+)$/);
+    if (billDeleteMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const billId = billDeleteMatch[1];
+      await query(
+        `DELETE FROM public.recurring_bills WHERE id = $1 AND user_id = $2`,
+        [billId, authUser.id]
+      );
+
+      sendJson(res, 200, { success: true, message: 'Recurring bill deleted.' });
       return true;
     }
 

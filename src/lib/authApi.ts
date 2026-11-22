@@ -32,6 +32,8 @@ export function getStoredSessionToken(): string | null {
   }
 }
 
+export const getStoredAuthToken = getStoredSessionToken;
+
 export function setStoredSessionToken(token: string | null) {
   try {
     if (token) {

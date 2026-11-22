@@ -57,7 +57,7 @@ interface PeopleSectionProps {
 }
 
 export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) => {
-  const { summary, refreshTransactions } = useExpense();
+  const { summary, refreshTransactions, peopleSummaries, refreshContacts } = useExpense();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -100,15 +100,22 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         setUdharTransactions(res.transactions);
         setUdharSummary(res.summary);
       }
+      await refreshContacts();
     } catch (err: any) {
       console.warn('Could not fetch udhar transactions:', err.message);
     } finally {
       setIsLoadingUdhar(false);
     }
-  }, []);
+  }, [refreshContacts]);
 
   useEffect(() => {
     fetchUdharData();
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchUdharData();
+      }
+    }, 15000);
+    return () => clearInterval(interval);
   }, [fetchUdharData]);
 
   // Handle Confirm pending transaction
@@ -277,6 +284,169 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           icon={AlertTriangle}
           badge={overdueAmountBadge(overdueCount)}
         />
+      </div>
+
+      {/* Connected & Saved People Directory */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-emerald-600" />
+              <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Connected & Saved People ({peopleSummaries.length})
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              People paired via QR code or saved in your ledger with live 2-way sync
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsScanQrOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Pair QR</span>
+            </button>
+            <button
+              onClick={() => setIsSavedPeopleOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Manage People</span>
+            </button>
+          </div>
+        </div>
+
+        {peopleSummaries.length === 0 ? (
+          <div className="p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+            <Users className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+              No connected or saved people yet
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Scan a friend's QR code or add a contact to start 2-way synchronized lending and borrowing.
+            </p>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <button
+                onClick={() => setIsScanQrOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Scan Friend's QR</span>
+              </button>
+              <button
+                onClick={() => setIsSavedPeopleOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold hover:bg-slate-300 cursor-pointer"
+              >
+                + Add Manually
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {peopleSummaries.map((person) => {
+              const isLinked = Boolean(person.linkedUserId || person.isRegisteredUser);
+              const balance = person.outstandingBalance;
+              const owesYou = balance > 0;
+              const youOwe = balance < 0;
+              const isSettled = Math.abs(balance) < 0.01;
+
+              return (
+                <div
+                  key={person.name}
+                  className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all flex flex-col justify-between gap-3 group"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Avatar with fallback */}
+                    <div className="relative shrink-0">
+                      {person.avatarUrl ? (
+                        <img
+                          src={person.avatarUrl}
+                          alt={person.name}
+                          className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500/40"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-sm flex items-center justify-center shadow-sm">
+                          {person.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      {isLinked && (
+                        <span
+                          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[9px] shadow"
+                          title="Verified Registered Connection"
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Name & Info */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+                          {person.name}
+                        </h4>
+                        {isLinked && (
+                          <span className="px-1.5 py-0.2 rounded text-[8.5px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 shrink-0">
+                            2-WAY
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {person.phone || person.email || (person.relationshipType ? `${person.relationshipType}` : `${person.transactionCount} entries`)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Balance Badge */}
+                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between text-xs">
+                    <span className="text-[11px] text-slate-400 font-medium">Net Balance</span>
+                    <span
+                      className={`font-black text-xs px-2 py-0.5 rounded-full ${
+                        isSettled
+                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          : owesYou
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {isSettled
+                        ? 'Settled (₹0)'
+                        : owesYou
+                        ? `Owes ₹${Math.abs(balance).toLocaleString('en-IN')}`
+                        : `You Owe ₹${Math.abs(balance).toLocaleString('en-IN')}`}
+                    </span>
+                  </div>
+
+                  {/* Actions: Give, Take, Filter */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInitialPersonForAdd(person.name);
+                        setIsAddUdharOpen(true);
+                      }}
+                      className="px-2 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <PlusCircle className="w-3 h-3" />
+                      <span>Record Udhar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery(person.name)}
+                      className="px-2 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Receipt className="w-3 h-3" />
+                      <span>Ledger</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Main Ledger Section */}
@@ -621,6 +791,8 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         onClose={() => setIsScanQrOpen(false)}
         onConnected={(p) => {
           fetchUdharData();
+          refreshContacts();
+          refreshTransactions();
           setInitialPersonForAdd(p.name);
           setIsAddUdharOpen(true);
         }}
@@ -632,6 +804,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         transaction={selectedTxForRepay}
         onSuccess={() => {
           fetchUdharData();
+          refreshContacts();
           refreshTransactions();
         }}
       />
@@ -642,13 +815,17 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         transaction={selectedTxForDispute}
         onSuccess={() => {
           fetchUdharData();
+          refreshContacts();
         }}
       />
 
       <SavedPeopleManagerModal
         isOpen={isSavedPeopleOpen}
         onClose={() => setIsSavedPeopleOpen(false)}
-        onContactsUpdated={fetchUdharData}
+        onContactsUpdated={() => {
+          fetchUdharData();
+          refreshContacts();
+        }}
         onSelectPersonForUdhar={(pName) => {
           setInitialPersonForAdd(pName);
           setIsAddUdharOpen(true);

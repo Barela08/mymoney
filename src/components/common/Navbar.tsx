@@ -23,6 +23,7 @@ import { usePwaInstall } from '../../context/PwaInstallContext';
 import { NavTab } from './Sidebar';
 import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -30,6 +31,8 @@ interface NavbarProps {
   onOpenAddModal: () => void;
   onSelectTab: (tab: NavTab) => void;
   onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
+  onOpenNotificationCenter?: () => void;
+  onOpenNotificationPreferences?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -38,6 +41,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddModal,
   onSelectTab,
   onOpenHelpModal,
+  onOpenNotificationCenter,
+  onOpenNotificationPreferences,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
@@ -88,6 +93,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     food: { title: 'Food & Dining Section', shortTitle: 'Food & Dining', subtitle: 'Restaurant, fast food, snacks, tea/coffee & food delivery' },
     other: { title: 'Other Expenses', shortTitle: 'Other Expenses', subtitle: 'Shopping, travel, medical, bills & personal' },
     people: { title: 'People Section (Udhar)', shortTitle: 'People (Udhar)', subtitle: 'Money given & received from people' },
+    budget: { title: 'Budget Planner', shortTitle: 'Budgets', subtitle: 'Category-wise limits & spend tracking' },
+    savings_goals: { title: 'Savings Goals', shortTitle: 'Savings', subtitle: 'Target amounts & progress milestones' },
+    recurring_bills: { title: 'Recurring Bills', shortTitle: 'Bills', subtitle: 'Subscriptions, rent, power & dues' },
+    notifications: { title: 'Notification Center', shortTitle: 'Alerts', subtitle: 'Budget warnings & transaction activity' },
     calculator: { title: 'Calculator', shortTitle: 'Calculator', subtitle: 'GST, Offer & Split Calculations' },
     reports: { title: 'Reports & Analytics', shortTitle: 'Reports', subtitle: 'Expense charts & cashflow trends' },
     all_transactions: { title: 'All Transactions Ledger', shortTitle: 'All Ledger', subtitle: 'Searchable master ledger' },
@@ -188,64 +197,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Broadcast Notification Bell */}
-          <div className="relative">
-            <button
-              onClick={() => setIsNotifOpen((prev) => !prev)}
-              className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors relative cursor-pointer"
-              title="Broadcast Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              {activeNotifs.length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900 animate-ping" />
-              )}
-            </button>
-
-            {/* Notification Dropdown */}
-            {isNotifOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                    <Bell className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>System Announcements</span>
-                  </h4>
-                  <button
-                    onClick={() => setIsNotifOpen(false)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
-                  {activeNotifs.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-4">
-                      No active announcements.
-                    </p>
-                  ) : (
-                    activeNotifs.map((n) => (
-                      <div
-                        key={n.id}
-                        className={`p-3 rounded-xl border text-xs space-y-1 ${
-                          n.type === 'maintenance'
-                            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-200'
-                            : n.type === 'warning'
-                            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 text-rose-900 dark:text-rose-200'
-                            : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900 text-blue-900 dark:text-blue-200'
-                        }`}
-                      >
-                        <p className="font-bold">{n.title}</p>
-                        <p className="text-[11px] opacity-90 leading-relaxed">{n.message}</p>
-                        <span className="text-[9px] opacity-60 block pt-1">
-                          {new Date(n.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Notification Center Bell & Dropdown */}
+          <NotificationBell
+            onSelectTab={onSelectTab}
+            onOpenFullCenter={onOpenNotificationCenter || (() => {})}
+            onOpenPreferences={onOpenNotificationPreferences || (() => {})}
+            onOpenHelpModal={onOpenHelpModal}
+          />
 
           {/* Live IST clock */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60 font-mono">
@@ -262,9 +220,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
               title={isAdmin ? 'Open Admin Control' : 'View Profile Settings'}
             >
-              <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold">
-                {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-              </div>
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.displayName}
+                  className="w-5 h-5 rounded-lg object-cover border border-emerald-500/30"
+                />
+              ) : (
+                <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold">
+                  {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                </div>
+              )}
               <span className="truncate max-w-[100px]">{user.displayName}</span>
               {isAdmin && (
                 <span className="px-1 py-0.5 rounded text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold">

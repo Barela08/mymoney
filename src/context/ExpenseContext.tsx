@@ -38,6 +38,7 @@ import {
   assertResourceOwnership,
   SecurityAuthorizationError,
 } from '../lib/security';
+import { udharDeletionApi, UdharContact } from '../lib/udharDeletionApi';
 
 interface ExpenseContextType {
   transactions: Transaction[];
@@ -46,6 +47,8 @@ interface ExpenseContextType {
   error: string | null;
   summary: FinancialSummary;
   peopleSummaries: PersonSummary[];
+  savedContacts: UdharContact[];
+  refreshContacts: () => Promise<void>;
   filterOptions: FilterOptions;
   setFilterOptions: React.Dispatch<React.SetStateAction<FilterOptions>>;
   filteredTransactions: Transaction[];
@@ -196,6 +199,22 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return formatDisplayTime(getCurrentISTTime());
   });
   const [lastDeletedTx, setLastDeletedTx] = useState<Transaction | null>(null);
+  const [savedContacts, setSavedContacts] = useState<UdharContact[]>([]);
+
+  const refreshContacts = useCallback(async () => {
+    if (!user) {
+      setSavedContacts([]);
+      return;
+    }
+    try {
+      const res = await udharDeletionApi.getContacts();
+      if (res && res.success) {
+        setSavedContacts(res.contacts || []);
+      }
+    } catch (e) {
+      console.warn('[ExpenseContext] Failed to load contacts:', e);
+    }
+  }, [user]);
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     searchQuery: '',
@@ -407,6 +426,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // 1. Initial sync
     syncWithDatabase(false);
+    refreshContacts();
 
     // 2. High-speed real-time updates via WebSocket (instant UI reflection without manual reload)
     const unsubscribeSupabase = subscribeToSupabaseTransactions((event?: RealtimeTransactionEvent) => {
@@ -457,13 +477,14 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const handleSyncTrigger = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         syncWithDatabase(true);
+        refreshContacts();
       }
     };
 
     const handleOnline = () => {
       setIsOffline(false);
       setIsReconnecting(true);
-      syncWithDatabase(true).finally(() => setIsReconnecting(false));
+      Promise.all([syncWithDatabase(true), refreshContacts()]).finally(() => setIsReconnecting(false));
     };
     const handleOffline = () => {
       setIsOffline(true);
@@ -478,6 +499,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         syncWithDatabase(true);
+        refreshContacts();
       }
     }, 20000);
 
@@ -489,10 +511,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       window.removeEventListener('offline', handleOffline);
       clearInterval(pollInterval);
     };
-  }, [user, isAdmin, syncWithDatabase, persistLocally]);
+  }, [user, isAdmin, syncWithDatabase, persistLocally, refreshContacts]);
 
   const refreshTransactions = async () => {
-    await syncWithDatabase();
+    await Promise.all([syncWithDatabase(), refreshContacts()]);
   };
 
   // -------------------------------------------------------------
@@ -1018,15 +1040,55 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [userTransactions]);
 
-  // People summaries for current user
+  // People summaries for current user (incorporating saved/connected contacts from QR & manual)
   const peopleSummaries: PersonSummary[] = useMemo(() => {
-    const map = new Map<string, { given: number; received: number; txs: Transaction[]; lastDate: string }>();
+    const map = new Map<
+      string,
+      {
+        given: number;
+        received: number;
+        txs: Transaction[];
+        lastDate: string;
+        linkedUserId?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        avatarUrl?: string | null;
+        relationshipType?: string | null;
+        isRegisteredUser?: boolean;
+      }
+    >();
 
+    // 1. First seed map with all saved contacts (QR connected & manual)
+    for (const c of savedContacts) {
+      const nameKey = c.name.trim();
+      if (!map.has(nameKey)) {
+        map.set(nameKey, {
+          given: 0,
+          received: 0,
+          txs: [],
+          lastDate: c.created_at?.split('T')[0] || '',
+          linkedUserId: c.linked_user_id,
+          email: c.email,
+          phone: c.phone,
+          avatarUrl: c.linked_user_avatar,
+          relationshipType: c.relationship_type,
+          isRegisteredUser: Boolean(c.linked_user_id),
+        });
+      }
+    }
+
+    // 2. Map all transactions onto contacts
     for (const tx of userTransactions) {
       if (tx.category === 'people' && tx.person_name) {
         const nameKey = tx.person_name.trim();
         if (!map.has(nameKey)) {
-          map.set(nameKey, { given: 0, received: 0, txs: [], lastDate: tx.transaction_date });
+          map.set(nameKey, {
+            given: 0,
+            received: 0,
+            txs: [],
+            lastDate: tx.transaction_date,
+            isRegisteredUser: false,
+          });
         }
         const data = map.get(nameKey)!;
         data.txs.push(tx);
@@ -1049,17 +1111,31 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         totalGiven: val.given,
         totalReceived: val.received,
         outstandingBalance: balance,
-        isSettled: Math.abs(balance) < 0.01,
+        isSettled: val.txs.length === 0 || Math.abs(balance) < 0.01,
         transactionCount: val.txs.length,
         lastTransactionDate: val.lastDate,
         transactions: val.txs.sort((a, b) =>
           (b.transaction_date + b.transaction_time).localeCompare(a.transaction_date + a.transaction_time)
         ),
+        linkedUserId: val.linkedUserId,
+        email: val.email,
+        phone: val.phone,
+        avatarUrl: val.avatarUrl,
+        relationshipType: val.relationshipType,
+        isRegisteredUser: val.isRegisteredUser,
       });
     });
 
-    return list.sort((a, b) => Math.abs(b.outstandingBalance) - Math.abs(a.outstandingBalance));
-  }, [userTransactions]);
+    return list.sort((a, b) => {
+      if (Math.abs(b.outstandingBalance) !== Math.abs(a.outstandingBalance)) {
+        return Math.abs(b.outstandingBalance) - Math.abs(a.outstandingBalance);
+      }
+      if (b.transactionCount !== a.transactionCount) {
+        return b.transactionCount - a.transactionCount;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [userTransactions, savedContacts]);
 
   // Filtered and sorted transactions for current user
   const filteredTransactions = useMemo(() => {
@@ -1146,6 +1222,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         error,
         summary,
         peopleSummaries,
+        savedContacts,
+        refreshContacts,
         filterOptions,
         setFilterOptions,
         filteredTransactions,

@@ -84,3 +84,64 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Push Notifications: Handle Web Push events received from server
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'My Money Manager',
+    body: 'You have a new notification.',
+    icon: '/logo.jpg',
+    badge: '/icon-192.png',
+    tag: 'my-money-alert',
+    data: { url: '/' },
+  };
+
+  if (event.data) {
+    try {
+      const parsed = event.data.json();
+      data = { ...data, ...parsed };
+    } catch {
+      data.body = event.data.text() || data.body;
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon || '/logo.jpg',
+    badge: data.badge || '/icon-192.png',
+    image: data.image,
+    tag: data.tag || `notif-${Date.now()}`,
+    vibrate: [150, 50, 150],
+    data: data.data || { url: '/' },
+    actions: data.actions || [],
+    requireInteraction: !!data.requireInteraction,
+  };
+
+  event.waitUntil(self.registration.showNotification(data.title, options));
+});
+
+// Push Notification Click: Deep link to application URL or focus existing tab
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // If a tab is already open, focus and navigate it
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          if (client.url && client.navigate) {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      // If no tab is open, open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
