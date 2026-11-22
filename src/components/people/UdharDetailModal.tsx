@@ -1,0 +1,553 @@
+import React, { useState, useEffect } from 'react';
+import {
+  X,
+  Receipt,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Calendar,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Edit3,
+  CreditCard,
+  Banknote,
+  Building,
+  RotateCcw,
+  Check,
+  History,
+  ShieldCheck,
+  AlertTriangle,
+} from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+import {
+  udharDeletionApi,
+  UdharTransactionItem,
+  UdharRepayment,
+  UdharEditHistoryItem,
+} from '../../lib/udharDeletionApi';
+import { formatINR, formatDisplayDate } from '../../lib/dateUtils';
+import { EditUdharModal } from './EditUdharModal';
+import { RepayUdharModal } from './RepayUdharModal';
+import { SettleUdharModal } from './SettleUdharModal';
+
+interface UdharDetailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  transaction: UdharTransactionItem | null;
+  onRefreshUdhar?: () => void;
+}
+
+export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
+  isOpen,
+  onClose,
+  transaction,
+  onRefreshUdhar,
+}) => {
+  const toast = useToast();
+
+  const [activeTab, setActiveTab] = useState<'repayments' | 'history'>('repayments');
+  const [historyList, setHistoryList] = useState<UdharEditHistoryItem[]>([]);
+  const [repaymentsList, setRepaymentsList] = useState<UdharRepayment[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Submodals
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+
+  // Reject dialog state
+  const [rejectingRepaymentId, setRejectingRepaymentId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+
+  const fetchDetails = async () => {
+    if (!transaction) return;
+    try {
+      setIsLoadingHistory(true);
+      const res = await udharDeletionApi.getUdharTransactionHistory(transaction.id);
+      if (res.success) {
+        setHistoryList(res.editHistory || []);
+        setRepaymentsList(res.repayments || []);
+      }
+    } catch (err: any) {
+      console.warn('Could not fetch transaction history:', err.message);
+      // Fallback to transaction repayments
+      setRepaymentsList(transaction.repayments || []);
+      setHistoryList(transaction.edit_history || []);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && transaction) {
+      fetchDetails();
+    }
+  }, [isOpen, transaction]);
+
+  if (!isOpen || !transaction) return null;
+
+  const isLender = transaction.direction === 'gave';
+  const isTwoSided = Boolean(transaction.counterpart_user_id);
+  const currentBal = parseFloat(String(transaction.current_balance)) || 0;
+  const originalAmt = parseFloat(String(transaction.original_amount)) || 0;
+  const paidAmt = Math.max(0, originalAmt - currentBal);
+  const isSettled = transaction.status === 'settled' || currentBal <= 0.01;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isOverdue = transaction.due_date && transaction.due_date < todayStr && !isSettled && currentBal > 0;
+
+  const handleConfirmRepayment = async (repaymentId: string) => {
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.confirmRepayment(repaymentId);
+      if (res.success) {
+        toast.success('Repayment Confirmed', res.message);
+        await fetchDetails();
+        if (onRefreshUdhar) onRefreshUdhar();
+      }
+    } catch (err: any) {
+      toast.error('Confirmation Failed', err.message);
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleRejectRepayment = async (repaymentId: string) => {
+    const reason = rejectionReason.trim();
+    if (!reason) {
+      toast.error('Reason Required', 'Please enter a reason for rejecting this payment.');
+      return;
+    }
+
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.rejectRepayment(repaymentId, reason);
+      if (res.success) {
+        toast.info('Repayment Rejected', res.message);
+        setRejectingRepaymentId(null);
+        setRejectionReason('');
+        await fetchDetails();
+        if (onRefreshUdhar) onRefreshUdhar();
+      }
+    } catch (err: any) {
+      toast.error('Action Failed', err.message);
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              {transaction.counterpart_avatar ? (
+                <img
+                  src={transaction.counterpart_avatar}
+                  alt={transaction.counterpart_name}
+                  className="w-11 h-11 rounded-2xl object-cover border-2 border-emerald-500/30 flex-shrink-0"
+                />
+              ) : (
+                <div
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold text-base flex-shrink-0 ${
+                    isLender
+                      ? 'bg-gradient-to-tr from-emerald-600 to-teal-500'
+                      : 'bg-gradient-to-tr from-rose-600 to-orange-500'
+                  }`}
+                >
+                  {transaction.counterpart_name.charAt(0).toUpperCase()}
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                    {transaction.counterpart_name}
+                  </h3>
+                  {isTwoSided && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                      Linked 2-Way
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+                  {isLender ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                      <ArrowUpRight className="w-3.5 h-3.5" /> You Lent Money
+                    </span>
+                  ) : (
+                    <span className="text-rose-600 dark:text-rose-400 flex items-center gap-0.5">
+                      <ArrowDownLeft className="w-3.5 h-3.5" /> You Borrowed Money
+                    </span>
+                  )}
+                  <span>•</span>
+                  <span>{formatDisplayDate(transaction.transaction_date)}</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Overdue Banner if applicable */}
+          {isOverdue && (
+            <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center gap-2.5 text-xs text-rose-800 dark:text-rose-300">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+              <span>
+                <strong>Overdue!</strong> Due date was {formatDisplayDate(transaction.due_date!)}.
+              </span>
+            </div>
+          )}
+
+          {/* Financial Breakdown Cards */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Total Amount
+              </span>
+              <p className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-200 mt-0.5">
+                {formatINR(originalAmt)}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-center">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Repaid So Far
+              </span>
+              <p className="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                {formatINR(paidAmt)}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 text-center">
+              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider block">
+                Balance Due
+              </span>
+              <p className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                {formatINR(currentBal)}
+              </p>
+            </div>
+          </div>
+
+          {/* Details & Notes */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs space-y-2">
+            <div className="flex items-center justify-between text-slate-500">
+              <span>Status:</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                  isSettled
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                }`}
+              >
+                {isSettled ? 'Fully Settled' : 'Active'}
+              </span>
+            </div>
+
+            {transaction.due_date && (
+              <div className="flex items-center justify-between text-slate-500">
+                <span>Due Date:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {formatDisplayDate(transaction.due_date)}
+                </span>
+              </div>
+            )}
+
+            {transaction.notes && (
+              <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-slate-400 block mb-0.5">Note:</span>
+                <p className="font-medium text-slate-700 dark:text-slate-300 italic">
+                  "{transaction.notes}"
+                </p>
+              </div>
+            )}
+
+            {transaction.last_edited_at && (
+              <p className="text-[10px] text-slate-400 pt-1">
+                Last edited on {formatDisplayDate(transaction.last_edited_at)}{' '}
+                {transaction.edit_reason ? `(${transaction.edit_reason})` : ''}
+              </p>
+            )}
+          </div>
+
+          {/* Tabs: Repayments vs Edit History */}
+          <div className="space-y-3">
+            <div className="flex items-center border-b border-slate-200 dark:border-slate-800 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setActiveTab('repayments')}
+                className={`py-2 px-3 border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'repayments'
+                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Repayment Log ({repaymentsList.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('history')}
+                className={`py-2 px-3 border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'history'
+                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Audit History ({historyList.length})
+              </button>
+            </div>
+
+            {/* Tab 1: Repayments */}
+            {activeTab === 'repayments' && (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {repaymentsList.length === 0 ? (
+                  <p className="text-xs text-center py-4 text-slate-400 italic">
+                    No repayments recorded yet.
+                  </p>
+                ) : (
+                  repaymentsList.map((rep) => {
+                    const isPending = rep.status === 'pending_confirmation';
+                    const isRejected = rep.status === 'rejected';
+
+                    return (
+                      <div
+                        key={rep.id}
+                        className={`p-3 rounded-2xl border text-xs space-y-2 transition-colors ${
+                          isPending
+                            ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60'
+                            : isRejected
+                              ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'
+                              : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
+                              {formatINR(Number(rep.amount))}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+                              {rep.payment_method || 'UPI'}
+                            </span>
+                          </div>
+
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              isPending
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                : isRejected
+                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            }`}
+                          >
+                            {isPending
+                              ? 'Pending Confirmation'
+                              : isRejected
+                                ? 'Rejected'
+                                : 'Confirmed'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-400">
+                          <span>{formatDisplayDate(rep.repayment_date)}</span>
+                          {rep.recorded_by_name && <span>By {rep.recorded_by_name}</span>}
+                        </div>
+
+                        {rep.notes && (
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 italic">
+                            "{rep.notes}"
+                          </p>
+                        )}
+
+                        {rep.rejection_reason && (
+                          <p className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold">
+                            Reason: {rep.rejection_reason}
+                          </p>
+                        )}
+
+                        {/* Lender Actions for Pending Confirmation */}
+                        {isLender && isPending && (
+                          <div className="pt-2 border-t border-amber-200 dark:border-amber-800/60 flex items-center gap-2">
+                            {rejectingRepaymentId === rep.id ? (
+                              <div className="w-full space-y-2">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="Enter reason for rejecting payment..."
+                                  value={rejectionReason}
+                                  onChange={(e) => setRejectionReason(e.target.value)}
+                                  className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-rose-300 bg-white dark:bg-slate-800 font-medium"
+                                />
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setRejectingRepaymentId(null)}
+                                    className="px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isProcessingAction}
+                                    onClick={() => handleRejectRepayment(rep.id)}
+                                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                                  >
+                                    Confirm Reject
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isProcessingAction}
+                                  onClick={() => handleConfirmRepayment(rep.id)}
+                                  className="flex-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm shadow-emerald-600/30"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Confirm Receipt</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isProcessingAction}
+                                  onClick={() => {
+                                    setRejectingRepaymentId(rep.id);
+                                    setRejectionReason('');
+                                  }}
+                                  className="py-1.5 px-3 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-xs font-bold transition-colors cursor-pointer"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Tab 2: Audit History */}
+            {activeTab === 'history' && (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {historyList.length === 0 ? (
+                  <p className="text-xs text-center py-4 text-slate-400 italic">
+                    No modifications recorded for this transaction.
+                  </p>
+                ) : (
+                  historyList.map((hist) => (
+                    <div
+                      key={hist.id}
+                      className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
+                        <span>
+                          {formatINR(Number(hist.previous_amount))} &rarr;{' '}
+                          {formatINR(Number(hist.new_amount))}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          {formatDisplayDate(hist.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-slate-600 dark:text-slate-400">
+                        Reason: <strong>{hist.reason_for_edit || 'Details updated'}</strong>
+                      </p>
+                      {hist.edited_by_name && (
+                        <p className="text-[10px] text-slate-400">Edited by {hist.edited_by_name}</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            {!isSettled && (
+              <button
+                type="button"
+                onClick={() => setIsRepayModalOpen(true)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Receipt className="w-4 h-4" />
+                <span>Record Repayment</span>
+              </button>
+            )}
+
+            {!isSettled && (
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(true)}
+                className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
+            )}
+
+            {!isSettled && isLender && (
+              <button
+                type="button"
+                onClick={() => setIsSettleModalOpen(true)}
+                className="py-2.5 px-3.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Settle Full</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Submodals */}
+      {isEditModalOpen && (
+        <EditUdharModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          transaction={transaction}
+          onSuccess={async () => {
+            setIsEditModalOpen(false);
+            await fetchDetails();
+            if (onRefreshUdhar) onRefreshUdhar();
+          }}
+        />
+      )}
+
+      {isRepayModalOpen && (
+        <RepayUdharModal
+          isOpen={isRepayModalOpen}
+          onClose={() => setIsRepayModalOpen(false)}
+          transaction={transaction}
+          onSuccess={async () => {
+            setIsRepayModalOpen(false);
+            await fetchDetails();
+            if (onRefreshUdhar) onRefreshUdhar();
+          }}
+        />
+      )}
+
+      {isSettleModalOpen && (
+        <SettleUdharModal
+          isOpen={isSettleModalOpen}
+          personName={transaction.counterpart_name}
+          outstandingBalance={currentBal}
+          onClose={() => setIsSettleModalOpen(false)}
+          onSuccess={async () => {
+            setIsSettleModalOpen(false);
+            await fetchDetails();
+            if (onRefreshUdhar) onRefreshUdhar();
+          }}
+        />
+      )}
+    </>
+  );
+};

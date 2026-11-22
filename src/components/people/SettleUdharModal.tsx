@@ -6,9 +6,11 @@ interface SettleUdharModalProps {
   isOpen: boolean;
   onClose: () => void;
   personName: string;
-  balance: number;
-  isLoading: boolean;
-  onConfirm: () => void;
+  balance?: number;
+  outstandingBalance?: number;
+  isLoading?: boolean;
+  onConfirm?: () => void;
+  onSuccess?: () => void | Promise<void>;
 }
 
 export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
@@ -16,13 +18,24 @@ export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
   onClose,
   personName,
   balance,
-  isLoading,
+  outstandingBalance,
+  isLoading = false,
   onConfirm,
+  onSuccess,
 }) => {
   if (!isOpen) return null;
 
-  const isPositive = balance > 0;
-  const absBal = Math.abs(balance);
+  const effectiveBal = balance !== undefined ? balance : (outstandingBalance ?? 0);
+  const isPositive = effectiveBal > 0;
+  const absBal = Math.abs(effectiveBal);
+
+  const handleConfirmAction = () => {
+    if (onConfirm) {
+      onConfirm();
+    } else if (onSuccess) {
+      onSuccess();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
@@ -80,7 +93,7 @@ export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={onConfirm}
+              onClick={handleConfirmAction}
               disabled={isLoading}
               className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
             >

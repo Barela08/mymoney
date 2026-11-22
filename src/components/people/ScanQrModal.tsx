@@ -22,7 +22,7 @@ import { udharDeletionApi, ResolveQrResponse } from '../../lib/udharDeletionApi'
 interface ScanQrModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConnected?: (person: { id: string; name: string }) => void;
+  onConnected?: (person: { id: string; name: string; emailMasked?: string; avatarUrl?: string | null }) => void;
 }
 
 export const ScanQrModal: React.FC<ScanQrModalProps> = ({
@@ -257,6 +257,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           onConnected({
             id: res.connectedUser.id,
             name: res.connectedUser.displayName,
+            emailMasked: resolvedOwner?.owner?.emailMasked,
+            avatarUrl: resolvedOwner?.owner?.avatarUrl || null,
           });
         }
         onClose();

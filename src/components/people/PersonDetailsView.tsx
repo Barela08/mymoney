@@ -31,6 +31,7 @@ import {
 } from '../../lib/udharDeletionApi';
 import { SettleUdharModal } from './SettleUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
+import { UdharDetailModal } from './UdharDetailModal';
 
 interface PersonDetailsViewProps {
   person: PersonSummary;
@@ -59,6 +60,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
   const [selectedTxForRepay, setSelectedTxForRepay] = useState<UdharTransactionItem | null>(null);
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<UdharTransactionItem | null>(null);
   const [expandedRepayments, setExpandedRepayments] = useState<Record<string, boolean>>({});
   const [isInviting, setIsInviting] = useState(false);
 
@@ -442,6 +444,12 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
                     </button>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedTxForDetail(tx)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                      >
+                        Details
+                      </button>
                       {!isTxSettled && curBal > 0 && (
                         <>
                           <button

@@ -8,6 +8,9 @@ import {
   ArrowRight,
   Receipt,
   AlertCircle,
+  CreditCard,
+  Banknote,
+  Building,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -32,6 +35,7 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
   const toast = useToast();
 
   const [amount, setAmount] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Bank Transfer'>('UPI');
   const [repayDate, setRepayDate] = useState<string>(getCurrentISTDate());
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -40,6 +44,8 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
 
   const currentBal = parseFloat(String(transaction.current_balance)) || 0;
   const originalAmt = parseFloat(String(transaction.original_amount)) || 0;
+  const isTwoSided = Boolean(transaction.counterpart_user_id);
+  const isBorrower = transaction.direction === 'took';
 
   const handleSetFullSettlement = () => {
     setAmount(String(currentBal));
@@ -63,12 +69,17 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
       const res = await udharDeletionApi.repayUdharTransaction(transaction.id, {
         amount: repayVal,
         repayment_date: repayDate,
+        payment_method: paymentMethod,
         notes: notes.trim() || undefined,
       });
 
       if (res.success) {
         toast.success(
-          res.isSettled ? 'Account Settled!' : 'Repayment Logged',
+          res.isPendingConfirmation
+            ? 'Submitted for Confirmation'
+            : res.isSettled
+              ? 'Account Settled!'
+              : 'Repayment Logged',
           res.message
         );
         if (onSuccess) onSuccess();
@@ -92,10 +103,10 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-slate-100">
-                Record Repayment / Settle
+                Record Repayment
               </h3>
               <p className="text-[11px] text-slate-500">
-                With {transaction.counterpart_name}
+                With {transaction.counterpart_name} ({transaction.direction === 'gave' ? 'You Lent' : 'You Borrowed'})
               </p>
             </div>
           </div>
@@ -129,6 +140,19 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
           </div>
         </div>
 
+        {/* Notice for 2-way connected borrowers */}
+        {isTwoSided && isBorrower && (
+          <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Mutual Confirmation System</p>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                Since {transaction.counterpart_name} is a connected user, this repayment will be sent to them to confirm receipt before the debt is marked settled.
+              </p>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
@@ -160,6 +184,51 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
             </div>
           </div>
 
+          {/* Payment Method Selector */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+              Payment Method
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('UPI')}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  paymentMethod === 'UPI'
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>UPI</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('Cash')}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  paymentMethod === 'Cash'
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <Banknote className="w-3.5 h-3.5" />
+                <span>Cash</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('Bank Transfer')}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  paymentMethod === 'Bank Transfer'
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <Building className="w-3.5 h-3.5" />
+                <span>Bank</span>
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               Repayment Date
@@ -175,11 +244,11 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
 
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Payment Note (e.g. Paid via UPI, Cash, Bank Transfer)
+              Payment Note (Optional)
             </label>
             <input
               type="text"
-              placeholder="e.g. Paid ₹500 via Google Pay"
+              placeholder="e.g. Paid via Google Pay, transaction ref #1234"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-emerald-500"
@@ -204,7 +273,7 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
               ) : (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Confirm Repayment</span>
+                  <span>Submit Repayment</span>
                 </>
               )}
             </button>

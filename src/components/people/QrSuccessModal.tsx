@@ -66,30 +66,46 @@ export const QrSuccessModal: React.FC<QrSuccessModalProps> = ({
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-around gap-2">
           {/* Current User */}
           <div className="text-center space-y-1">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold flex items-center justify-center text-sm shadow-sm mx-auto">
-              {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-            </div>
-            <p className="font-bold text-[11px] text-slate-800 dark:text-slate-200 truncate max-w-[90px]">
+            {(user?.avatar_url || user?.avatarUrl) ? (
+              <img
+                src={user?.avatar_url || user?.avatarUrl || ''}
+                alt={user?.displayName || 'You'}
+                className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500/30 shadow-xs mx-auto"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white font-bold flex items-center justify-center text-sm shadow-xs mx-auto">
+                {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+              </div>
+            )}
+            <p className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate max-w-[90px]">
               {user?.displayName || 'You'}
             </p>
-            <span className="text-[9px] text-emerald-600 font-bold">Connected</span>
+            <span className="text-xs text-emerald-600 font-medium">Connected</span>
           </div>
 
           {/* Sync arrows */}
           <div className="flex flex-col items-center justify-center text-emerald-500">
             <UserCheck className="w-5 h-5" />
-            <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase mt-0.5">2-WAY</span>
+            <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase mt-0.5">2-WAY</span>
           </div>
 
           {/* Connected Person */}
           <div className="text-center space-y-1">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold flex items-center justify-center text-sm shadow-sm mx-auto">
-              {connectedPerson.name.charAt(0).toUpperCase()}
-            </div>
-            <p className="font-bold text-[11px] text-slate-800 dark:text-slate-200 truncate max-w-[90px]">
+            {connectedPerson.avatarUrl ? (
+              <img
+                src={connectedPerson.avatarUrl}
+                alt={connectedPerson.name}
+                className="w-12 h-12 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-xs mx-auto"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold flex items-center justify-center text-sm shadow-xs mx-auto">
+                {connectedPerson.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <p className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate max-w-[90px]">
               {connectedPerson.name}
             </p>
-            <span className="text-[9px] text-indigo-600 font-bold">Saved</span>
+            <span className="text-xs text-indigo-600 font-medium">Saved</span>
           </div>
         </div>
 
