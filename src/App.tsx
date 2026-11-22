@@ -26,6 +26,8 @@ import { PwaInstallProvider } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
 import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
+import { DpdpConsentModal } from './components/common/DpdpConsentModal';
+import { StartupPermissionsModal } from './components/common/StartupPermissionsModal';
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
 import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
@@ -46,8 +48,6 @@ const NotificationsSection = lazy(() => import('./components/notifications/Notif
 const HelpSupportModal = lazy(() => import('./components/support/HelpSupportModal').then(m => ({ default: m.HelpSupportModal })));
 const NotificationCenterModal = lazy(() => import('./components/notifications/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
-const StartupPermissionsModal = lazy(() => import('./components/common/StartupPermissionsModal').then(m => ({ default: m.StartupPermissionsModal })));
-const DpdpConsentModal = lazy(() => import('./components/common/DpdpConsentModal').then(m => ({ default: m.DpdpConsentModal })));
 
 const SectionFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-20 min-h-[300px] space-y-3 animate-pulse">

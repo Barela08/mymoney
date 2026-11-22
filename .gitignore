@@ -31,3 +31,4 @@ dist-ssr
 *.jpeg
 *.jpg
 !public/logo.jpg
+unslop/
