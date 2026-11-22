@@ -830,8 +830,41 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           fetchUdharData();
           refreshContacts();
           refreshTransactions();
-          setInitialPersonForAdd(p.name);
-          setIsAddUdharOpen(true);
+          setIsScanQrOpen(false);
+          setConnectedSuccessPerson({
+            name: p.name,
+            emailMasked: undefined,
+            avatarUrl: null,
+          });
+        }}
+      />
+
+      {/* Screen 7: QR Connection Success Modal */}
+      {connectedSuccessPerson && (
+        <QrSuccessModal
+          isOpen={Boolean(connectedSuccessPerson)}
+          onClose={() => setConnectedSuccessPerson(null)}
+          connectedPerson={connectedSuccessPerson}
+          onViewProfile={(pName) => {
+            const found = peopleSummaries.find((x) => x.name === pName);
+            if (found) setSelectedPersonForDetails(found);
+            setConnectedSuccessPerson(null);
+          }}
+          onAddUdhar={(pName) => {
+            setConnectedSuccessPerson(null);
+            setInitialPersonForAdd(pName);
+            setIsAddUdharOpen(true);
+          }}
+        />
+      )}
+
+      {/* Screen 5: Dedicated Add Person Modal */}
+      <AddPersonModal
+        isOpen={isAddPersonModalOpen}
+        onClose={() => setIsAddPersonModalOpen(false)}
+        onPersonAdded={(pName) => {
+          fetchUdharData();
+          refreshContacts();
         }}
       />
 
