@@ -157,13 +157,26 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
             </div>
 
             {/* User Identity Banner */}
-            <div>
-              <h4 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                {qrInfo?.publicName || user?.displayName}
-              </h4>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Scan with any My Money Manager camera to link
-              </p>
+            <div className="flex items-center justify-center gap-2.5">
+              {user?.avatar_url || user?.avatarUrl ? (
+                <img
+                  src={user?.avatar_url || user?.avatarUrl || ''}
+                  alt={qrInfo?.publicName || user?.displayName || 'User'}
+                  className="w-8 h-8 rounded-full object-cover border-2 border-emerald-500/40 shadow-sm"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center">
+                  {(qrInfo?.publicName || user?.displayName || 'U').charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="text-left">
+                <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 leading-tight">
+                  {qrInfo?.publicName || user?.displayName}
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Scan with My Money Manager to link
+                </p>
+              </div>
             </div>
 
             {/* Pairing Code Pill */}
