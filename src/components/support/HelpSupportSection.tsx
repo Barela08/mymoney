@@ -76,16 +76,16 @@ export const HelpSupportSection: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'feedback' | 'complaint' | 'support' | 'history'>('feedback');
 
-  // FEEDBACK FORM STATE
-  const [rating, setRating] = useState<number>(5);
+  // FEEDBACK FORM STATE (Rating defaults to 0 - no star preselected; categories removed from user UI)
+  const [rating, setRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number | null>(null);
-  const [feedbackCategory, setFeedbackCategory] = useState<string>('App Experience');
+  const [feedbackCategory, setFeedbackCategory] = useState<string>('General');
   const [feedbackMessage, setFeedbackMessage] = useState<string>('');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
   const [feedbackSubmittedSuccess, setFeedbackSubmittedSuccess] = useState<boolean>(false);
 
-  // COMPLAINT FORM STATE
-  const [complaintCategory, setComplaintCategory] = useState<string>('Account & Login');
+  // COMPLAINT FORM STATE (Simplified strictly to Subject + Description + Submit only)
+  const [complaintCategory, setComplaintCategory] = useState<string>('General');
   const [complaintSubject, setComplaintSubject] = useState<string>('');
   const [complaintDescription, setComplaintDescription] = useState<string>('');
   const [complaintAttachment, setComplaintAttachment] = useState<string>('');
@@ -193,7 +193,7 @@ export const HelpSupportSection: React.FC = () => {
   // 1. SUBMIT FEEDBACK
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rating) {
+    if (!rating || rating === 0) {
       toast.error('Rating Required', 'Please select an overall star rating (1 to 5).');
       return;
     }
@@ -508,31 +508,8 @@ export const HelpSupportSection: React.FC = () => {
                     );
                   })}
                   <span className="ml-3 text-sm font-bold text-slate-800 dark:text-slate-200">
-                    {STAR_LABELS[effectiveRating]}
+                    {effectiveRating > 0 ? STAR_LABELS[effectiveRating] : 'Select rating (1 to 5)'}
                   </span>
-                </div>
-              </div>
-
-              {/* Feedback Category */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Feedback Category (Optional)
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {FEEDBACK_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setFeedbackCategory(cat)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                        feedbackCategory === cat
-                          ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -643,24 +620,6 @@ export const HelpSupportSection: React.FC = () => {
                 </p>
               </div>
 
-              {/* Category */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Complaint Category <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={complaintCategory}
-                  onChange={(e) => setComplaintCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
-                >
-                  {COMPLAINT_CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* Subject */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
@@ -688,20 +647,6 @@ export const HelpSupportSection: React.FC = () => {
                   placeholder="Please describe the issue thoroughly, including steps to reproduce, device, or relevant details..."
                   required
                   className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 resize-y"
-                />
-              </div>
-
-              {/* Optional Attachment */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Attachment / Screenshot Link (Optional)
-                </label>
-                <input
-                  type="url"
-                  value={complaintAttachment}
-                  onChange={(e) => setComplaintAttachment(e.target.value)}
-                  placeholder="https://your-screenshot-or-drive-link..."
-                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
               </div>
 
