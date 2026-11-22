@@ -74,8 +74,8 @@ export const adminClient = {
       return await adminRequest(`/api/admin/users?${params.toString()}`, { method: 'GET' });
     } catch (err: any) {
       console.warn('Backend admin users API unreachable, fetching directly via Supabase:', err.message);
-      const list = await authApi.getAdminUsersList();
-      return { success: true, users: list.map((u: any) => ({ ...u, status: u.status || 'active' })) };
+      const res = await authApi.adminGetUsers();
+      return { success: true, users: (res.users || []).map((u: any) => ({ ...u, status: u.status || 'active' })) };
     }
   },
 
