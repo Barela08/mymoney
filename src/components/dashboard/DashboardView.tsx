@@ -98,7 +98,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           className="flex items-center justify-center gap-2 px-5 py-3 bg-white text-emerald-800 hover:bg-emerald-50 active:scale-95 rounded-2xl text-sm font-bold shadow-lg transition-all cursor-pointer w-full md:w-auto"
         >
           <PlusCircle className="w-4 h-4 text-emerald-600" />
-          <span>+ Add New Transaction</span>
+          <span>Add Transaction</span>
         </button>
       </div>
 
@@ -202,7 +202,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 onClick={() => onOpenAddModal('home', 'received_home')}
                 className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950 text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
               >
-                + Add Home Money
+                Add Home Money
               </button>
             </div>
           </div>
@@ -426,7 +426,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 onClick={() => onOpenAddModal('people', 'money_given')}
                 className="w-full py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-slate-700 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
               >
-                + Record Udhar
+                Record Udhar
               </button>
             </div>
           </div>
@@ -475,9 +475,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
 
         {isLoading ? (
-          <SkeletonCardsGrid count={8} />
+          <SkeletonCardsGrid count={9} />
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
             <StatCard
               title="Total Income"
               amount={summary.totalIncome}
@@ -588,7 +588,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           <EmptyState
             title="No transactions recorded yet"
             description="Your cashflow and daily transactions will appear here. Start by recording your first entry."
-            actionLabel="+ Add New Transaction"
+            actionLabel="Add Transaction"
             onAction={() => onOpenAddModal()}
           />
         ) : (
@@ -703,8 +703,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       {/* Confirm Delete Modal */}
       <ConfirmModal
         isOpen={!!transactionToDelete}
-        title="Delete Transaction"
-        message="Are you sure you want to permanently delete this transaction? Only this specific record will be removed."
+        title="Move to Recycle Bin"
+        message="Are you sure you want to move this transaction to the Recycle Bin? You can restore it anytime within 30 days."
+        confirmLabel={isDeleting ? 'Moving...' : 'Move to Recycle Bin'}
         itemDetails={
           transactionToDelete
             ? {

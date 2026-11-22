@@ -193,7 +193,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             className="px-4 py-2.5 rounded-xl bg-white text-emerald-700 font-extrabold text-xs shadow-md shadow-emerald-950/20 hover:bg-emerald-50 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <PlusCircle className="w-4 h-4 text-emerald-600" />
-            <span>+ Add Udhar</span>
+            <span>Add Udhar</span>
           </button>
 
           <button
@@ -328,7 +328,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             >
               <span>Pending Confirmation</span>
               {pendingConfirmationCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white">
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white">
                   {pendingConfirmationCount}
                 </span>
               )}
@@ -344,7 +344,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             >
               <span>Overdue</span>
               {overdueCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-red-600 text-white">
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-red-600 text-white">
                   {overdueCount}
                 </span>
               )}

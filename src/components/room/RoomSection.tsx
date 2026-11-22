@@ -1052,8 +1052,9 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={!!transactionToDelete}
-        title="Delete Room Record"
-        message="Are you sure you want to permanently delete this room expense record? Only this selected transaction will be removed."
+        title="Move to Recycle Bin"
+        message="Are you sure you want to move this room expense record to the Recycle Bin? You can restore it anytime within 30 days."
+        confirmLabel={isDeleting ? 'Moving...' : 'Move to Recycle Bin'}
         itemDetails={
           transactionToDelete
             ? {

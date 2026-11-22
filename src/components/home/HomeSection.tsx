@@ -724,8 +724,9 @@ export const HomeSection: React.FC<HomeSectionProps> = ({ onOpenAddModal }) => {
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={!!transactionToDelete}
-        title="Delete Home Record"
-        message="Are you sure you want to permanently delete this home record? Only this selected transaction will be removed, and balances will update automatically."
+        title="Move to Recycle Bin"
+        message="Are you sure you want to move this home record to the Recycle Bin? You can restore it anytime within 30 days, and balances will update automatically."
+        confirmLabel={isDeleting ? 'Moving...' : 'Move to Recycle Bin'}
         itemDetails={
           transactionToDelete
             ? {

@@ -275,7 +275,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
             onClick={() => onOpenAddModal()}
             className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
           >
-            <span>+ Add Transaction</span>
+            <span>Add Transaction</span>
           </button>
         </div>
       </div>
@@ -605,8 +605,9 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={!!transactionToDelete}
-        title="Delete Transaction"
-        message="Are you sure you want to permanently delete this transaction? Only this specific record will be removed from the ledger."
+        title="Move to Recycle Bin"
+        message="Are you sure you want to move this transaction to the Recycle Bin? You can restore it anytime within 30 days."
+        confirmLabel={isDeleting ? 'Moving...' : 'Move to Recycle Bin'}
         itemDetails={
           transactionToDelete
             ? {

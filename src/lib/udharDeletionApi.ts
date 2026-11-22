@@ -26,6 +26,7 @@ export interface UdharContact {
   linked_user_name?: string | null;
   linked_user_email?: string | null;
   linked_user_avatar?: string | null;
+  reciprocallyLinked?: boolean;
 }
 
 export interface SearchUserResult {
@@ -190,7 +191,29 @@ export const udharDeletionApi = {
   // Saved Contacts (People)
   // -------------------------------------------------------------
   async getContacts(): Promise<{ success: boolean; contacts: UdharContact[] }> {
-    return apiRequest('/api/udhar/contacts', { method: 'GET' });
+    try {
+      const res = await apiRequest('/api/udhar/contacts', { method: 'GET' });
+      if (res && res.success && Array.isArray(res.contacts)) {
+        try {
+          const authUser = getStoredAuthUser();
+          const userId = authUser?.id || authUser?.uid || 'guest';
+          localStorage.setItem(`mymoney_cached_contacts_${userId}`, JSON.stringify(res.contacts));
+        } catch {}
+        return res;
+      }
+      return res;
+    } catch (err: any) {
+      console.warn('Backend getContacts notice, falling back to local cache:', err.message);
+      try {
+        const authUser = getStoredAuthUser();
+        const userId = authUser?.id || authUser?.uid || 'guest';
+        const cached = localStorage.getItem(`mymoney_cached_contacts_${userId}`);
+        if (cached) {
+          return { success: true, contacts: JSON.parse(cached) };
+        }
+      } catch {}
+      return { success: true, contacts: [] };
+    }
   },
 
   async saveContact(contact: {
@@ -200,11 +223,47 @@ export const udharDeletionApi = {
     relationship_type?: string;
     notes?: string;
     linked_user_id?: string;
-  }): Promise<{ success: boolean; contact: UdharContact }> {
-    return apiRequest('/api/udhar/contacts', {
-      method: 'POST',
-      body: JSON.stringify(contact),
-    });
+  }): Promise<{ success: boolean; contact: UdharContact; reciprocallyLinked?: boolean }> {
+    try {
+      const res = await apiRequest('/api/udhar/contacts', {
+        method: 'POST',
+        body: JSON.stringify(contact),
+      });
+      if (res && res.contact) {
+        try {
+          const authUser = getStoredAuthUser();
+          const userId = authUser?.id || authUser?.uid || 'guest';
+          const key = `mymoney_cached_contacts_${userId}`;
+          const existing: UdharContact[] = JSON.parse(localStorage.getItem(key) || '[]');
+          const updated = [res.contact, ...existing.filter((c) => c.name.toLowerCase() !== res.contact.name.toLowerCase())];
+          localStorage.setItem(key, JSON.stringify(updated));
+        } catch {}
+      }
+      return res;
+    } catch (err: any) {
+      console.warn('Backend saveContact notice, saving locally:', err.message);
+      const authUser = getStoredAuthUser();
+      const userId = authUser?.id || authUser?.uid || 'guest';
+      const key = `mymoney_cached_contacts_${userId}`;
+      const newContact: UdharContact = {
+        id: `local_${Date.now()}`,
+        user_id: userId,
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        relationship_type: contact.relationship_type || 'Friend',
+        notes: contact.notes,
+        linked_user_id: contact.linked_user_id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      try {
+        const existing: UdharContact[] = JSON.parse(localStorage.getItem(key) || '[]');
+        const updated = [newContact, ...existing.filter((c) => c.name.toLowerCase() !== newContact.name.toLowerCase())];
+        localStorage.setItem(key, JSON.stringify(updated));
+      } catch {}
+      return { success: true, contact: newContact, reciprocallyLinked: Boolean(contact.linked_user_id) };
+    }
   },
 
   async updateContact(
@@ -217,7 +276,7 @@ export const udharDeletionApi = {
       notes?: string;
       linked_user_id?: string;
     }>
-  ): Promise<{ success: boolean; contact: UdharContact }> {
+  ): Promise<{ success: boolean; contact: UdharContact; reciprocallyLinked?: boolean }> {
     return apiRequest(`/api/udhar/contacts/${id}`, {
       method: 'PUT',
       body: JSON.stringify(contact),

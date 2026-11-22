@@ -11,6 +11,11 @@ import {
   Edit3,
   X,
   Eye,
+  Search,
+  Filter,
+  UserCheck,
+  UserX,
+  ExternalLink,
 } from 'lucide-react';
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
@@ -31,6 +36,11 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ initialSubView =
   const [logs, setLogs] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Email Logs Filtering & Inspect State
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logStatusFilter, setLogStatusFilter] = useState('all');
+  const [selectedLog, setSelectedLog] = useState<any>(null);
 
   // Template Edit State
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
@@ -66,6 +76,114 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ initialSubView =
   useEffect(() => {
     loadData();
   }, [subView]);
+
+  const handleRetryEmail = async (id: string) => {
+    try {
+      const res = await adminClient.retryEmail(id);
+      if (res.success) {
+        toast.success('Retried', 'Email redelivery triggered.');
+        await loadData();
+        if (selectedLog && selectedLog.id === id) {
+          setSelectedLog(null);
+        }
+      }
+    } catch (err: any) {
+      toast.error('Error', err.message);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return {
+          label: 'Sent',
+          classes: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800',
+        };
+      case 'pending':
+        return {
+          label: 'Pending',
+          classes: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800',
+        };
+      case 'retrying':
+        return {
+          label: 'Retrying',
+          classes: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800',
+        };
+      case 'failed':
+        return {
+          label: 'Failed',
+          classes: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800',
+        };
+      case 'skipped_not_registered':
+        return {
+          label: 'Skipped — recipient is not a registered user',
+          classes: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700',
+        };
+      case 'skipped_unverified':
+        return {
+          label: 'Skipped — identity could not be verified',
+          classes: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 border border-orange-300 dark:border-orange-800',
+        };
+      default:
+        return {
+          label: status,
+          classes: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+        };
+    }
+  };
+
+  const getNotificationTypeLabel = (type: string) => {
+    switch (type) {
+      case 'feedback_user_confirmation':
+        return 'Feedback User';
+      case 'feedback_admin_notification':
+        return 'Feedback Admin';
+      case 'udhar_created_initiator':
+        return 'Udhar Initiator';
+      case 'udhar_created_counterpart':
+        return 'Udhar Counterpart';
+      case 'udhar_settled_initiator':
+        return 'Settlement Initiator';
+      case 'udhar_settled_counterpart':
+        return 'Settlement Counterpart';
+      case 'udhar_updated_initiator':
+        return 'Udhar Update (Init)';
+      case 'udhar_updated_counterpart':
+        return 'Udhar Update (CP)';
+      case 'welcome_email':
+        return 'Welcome Email';
+      case 'password_reset':
+        return 'Password Reset';
+      case 'account_deletion_requested':
+        return 'Deletion Requested';
+      case 'account_deletion_cancelled':
+        return 'Deletion Cancelled';
+      case 'account_deletion_completed':
+        return 'Deletion Completed';
+      default:
+        return type ? type.replace(/_/g, ' ') : 'General Notification';
+    }
+  };
+
+  const filteredLogs = logs.filter((log) => {
+    if (logStatusFilter !== 'all') {
+      if (logStatusFilter === 'skipped') {
+        if (!log.status?.startsWith('skipped')) return false;
+      } else if (log.status !== logStatusFilter) {
+        return false;
+      }
+    }
+    if (!logSearchQuery) return true;
+    const q = logSearchQuery.toLowerCase();
+    return (
+      (log.email && log.email.toLowerCase().includes(q)) ||
+      (log.recipient_name && log.recipient_name.toLowerCase().includes(q)) ||
+      (log.subject && log.subject.toLowerCase().includes(q)) ||
+      (log.reference_id && log.reference_id.toLowerCase().includes(q)) ||
+      (log.user_id && log.user_id.toLowerCase().includes(q)) ||
+      (log.trigger_event && log.trigger_event.toLowerCase().includes(q))
+    );
+  });
 
   const handleRetryEmail = async (id: string) => {
     try {

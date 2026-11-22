@@ -114,6 +114,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'all_transactions' as NavTab, label: 'All Transactions Ledger', icon: ListOrdered, count: summary.totalTransactionsCount },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
     { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
+    { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
     { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
     ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
   ];
@@ -337,7 +338,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }`}
         >
           <LayoutDashboard className="w-4 h-4 mb-0.5" />
-          <span className="truncate">Home</span>
+          <span className="truncate">Dash</span>
         </button>
 
         {/* 2. Home Section */}
@@ -350,7 +351,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }`}
         >
           <Home className="w-4 h-4 mb-0.5" />
-          <span className="truncate">Ghar</span>
+          <span className="truncate">Home</span>
         </button>
 
         {/* 3. Room Section */}

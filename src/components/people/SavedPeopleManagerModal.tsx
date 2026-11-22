@@ -58,6 +58,12 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
   const [isSearchingRegistered, setIsSearchingRegistered] = useState<boolean>(false);
   const [isLinking, setIsLinking] = useState<boolean>(false);
 
+  // Live Registered User Search inside Add Mode for instant 2-way sync
+  const [selectedRegisteredUser, setSelectedRegisteredUser] = useState<SearchUserResult | null>(null);
+  const [addModeUserSearch, setAddModeUserSearch] = useState<string>('');
+  const [addModeSearchResults, setAddModeSearchResults] = useState<SearchUserResult[]>([]);
+  const [isSearchingAddMode, setIsSearchingAddMode] = useState<boolean>(false);
+
   const fetchContacts = async () => {
     try {
       setIsLoading(true);
@@ -102,10 +108,37 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     return () => clearTimeout(t);
   }, [searchRegisteredQuery, linkingContact]);
 
+  // Handle Search in Add Mode
+  useEffect(() => {
+    if (!isAddMode || addModeUserSearch.trim().length < 2) {
+      setAddModeSearchResults([]);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        setIsSearchingAddMode(true);
+        const res = await udharDeletionApi.searchUsers(addModeUserSearch);
+        if (res.success) {
+          setAddModeSearchResults(res.users);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setIsSearchingAddMode(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [addModeUserSearch, isAddMode]);
+
   if (!isOpen) return null;
 
   const handleOpenAdd = () => {
     setEditingContact(null);
+    setSelectedRegisteredUser(null);
+    setAddModeUserSearch('');
+    setAddModeSearchResults([]);
     setFormName('');
     setFormEmail('');
     setFormPhone('');
@@ -116,12 +149,22 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
   const handleOpenEdit = (c: UdharContact) => {
     setEditingContact(c);
+    setSelectedRegisteredUser(null);
+    setAddModeUserSearch('');
+    setAddModeSearchResults([]);
     setFormName(c.name);
     setFormEmail(c.email || '');
     setFormPhone(c.phone || '');
     setFormRelationship(c.relationship_type || 'Friend');
     setFormNotes(c.notes || '');
     setIsAddMode(true);
+  };
+
+  const handleSelectRegisteredUserInAdd = (u: SearchUserResult) => {
+    setSelectedRegisteredUser(u);
+    setFormName(u.displayName || u.fullName);
+    setAddModeSearchResults([]);
+    setAddModeUserSearch('');
   };
 
   const handleSaveContact = async (e: React.FormEvent) => {
@@ -140,9 +183,17 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
           phone: formPhone.trim() || undefined,
           relationship_type: formRelationship,
           notes: formNotes.trim() || undefined,
+          linked_user_id: selectedRegisteredUser?.id || editingContact.linked_user_id || undefined,
         });
         if (res.success) {
-          toast.success('Updated', `Saved contact for ${formName.trim()} updated.`);
+          if (res.reciprocallyLinked || selectedRegisteredUser || editingContact.linked_user_id) {
+            toast.success(
+              'Updated & 2-Way Synced!',
+              `Saved contact for ${formName.trim()} updated. Synced in both users' Saved People.`
+            );
+          } else {
+            toast.success('Updated', `Saved contact for ${formName.trim()} updated.`);
+          }
         }
       } else {
         const res = await udharDeletionApi.saveContact({
@@ -151,12 +202,21 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
           phone: formPhone.trim() || undefined,
           relationship_type: formRelationship,
           notes: formNotes.trim() || undefined,
+          linked_user_id: selectedRegisteredUser?.id,
         });
         if (res.success) {
-          toast.success('Contact Added', `${formName.trim()} added to your saved people.`);
+          if (res.reciprocallyLinked || selectedRegisteredUser) {
+            toast.success(
+              'Contact Added & 2-Way Synced!',
+              `${formName.trim()} saved. You are also automatically added to their Saved People!`
+            );
+          } else {
+            toast.success('Contact Added', `${formName.trim()} added to your saved people.`);
+          }
         }
       }
       setIsAddMode(false);
+      setSelectedRegisteredUser(null);
       await fetchContacts();
       if (onContactsUpdated) onContactsUpdated();
     } catch (err: any) {
@@ -317,6 +377,78 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
               {editingContact ? `Edit Contact: ${editingContact.name}` : '+ Add New Person to Contacts'}
             </h4>
 
+            {/* Registered User Search for instant 2-way sync */}
+            {!editingContact && (
+              <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 space-y-2">
+                <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
+                  <Sparkles className="w-4 h-4 text-emerald-600" />
+                  <span>Search Registered User (Instant 2-Way Sync)</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  User ko search karke add karein, vo aapke saved people me add ho jayenge aur aap unke saved people me turant jud jayenge!
+                </p>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search by registered name, email or phone..."
+                    value={addModeUserSearch}
+                    onChange={(e) => setAddModeUserSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-medium"
+                  />
+                </div>
+
+                {isSearchingAddMode && (
+                  <p className="text-[10px] text-slate-400 animate-pulse">Searching users...</p>
+                )}
+
+                {addModeSearchResults.length > 0 && (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md">
+                    {addModeSearchResults.map((usr) => (
+                      <div
+                        key={usr.id}
+                        onClick={() => handleSelectRegisteredUserInAdd(usr)}
+                        className="p-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center">
+                            {usr.displayName.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-800 dark:text-slate-200">{usr.displayName}</p>
+                            <p className="text-[10px] text-slate-400">{usr.emailMasked}</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                          + Select & Sync
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {selectedRegisteredUser && (
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-100/70 dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-200 text-xs font-semibold">
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Selected: <strong>{selectedRegisteredUser.displayName}</strong> (2-Way Synced)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRegisteredUser(null);
+                        setFormName('');
+                        setFormEmail('');
+                      }}
+                      className="text-[10px] text-rose-600 hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                 Person Name <span className="text-rose-500">*</span>
@@ -460,13 +592,16 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                             <span className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
                               {c.name}
                             </span>
-                            <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                               {c.relationship_type || 'Contact'}
                             </span>
                             {isLinked && (
-                              <span className="text-[9.5px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 flex items-center gap-0.5">
+                              <span
+                                className="text-[9.5px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 flex items-center gap-0.5"
+                                title="Connected in both users' Saved People for mutual Udhar tracking"
+                              >
                                 <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>Linked User</span>
+                                <span>2-Way Synced</span>
                               </span>
                             )}
                           </div>

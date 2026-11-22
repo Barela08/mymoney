@@ -289,7 +289,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <span className="truncate max-w-[100px]">{user.displayName}</span>
               {isAdmin && (
-                <span className="px-1 py-0.2 rounded text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold">
+                <span className="px-1 py-0.5 rounded text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold">
                   Admin
                 </span>
               )}
@@ -302,7 +302,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer whitespace-nowrap"
           >
             <PlusCircle className="w-4 h-4 shrink-0" />
-            <span>+ Add</span>
+            <span>Add</span>
           </button>
 
           {/* Theme Switcher */}

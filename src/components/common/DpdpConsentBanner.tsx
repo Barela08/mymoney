@@ -69,7 +69,7 @@ export const DpdpConsentBanner: React.FC<DpdpConsentBannerProps> = ({ onOpenPriv
               <span className="font-extrabold text-xs uppercase tracking-wider text-emerald-400">
                 DPDP Act 2023 Compliance
               </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                 डिजिटल व्यक्तिगत डेटा संरक्षण
               </span>
             </div>

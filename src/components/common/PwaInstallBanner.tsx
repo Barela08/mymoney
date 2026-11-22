@@ -28,7 +28,7 @@ export const PwaInstallBanner: React.FC = () => {
             <span className="font-extrabold text-xs tracking-tight truncate">
               Install My Money App
             </span>
-            <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-white/20 text-emerald-100">
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-white/20 text-emerald-100">
               Free App
             </span>
           </div>

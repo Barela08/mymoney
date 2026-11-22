@@ -31,6 +31,10 @@ import {
   sendAccountDeletionCancelledEmail,
   sendAccountDeletionCompletedEmail,
   sendFeedbackConfirmationEmail,
+  sendFeedbackSubmissionEmails,
+  sendUdharCreatedEmails,
+  sendUdharSettledEmails,
+  sendUdharUpdatedEmails,
   sendComplaintConfirmationEmail,
   sendSupportTicketConfirmationEmail,
 } from './email';
@@ -1675,8 +1679,96 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // =========================================================================
-    // SECTION B: UDHAR CONTACTS (SAVED PEOPLE)
+    // SECTION B: UDHAR CONTACTS (SAVED PEOPLE) & BIDIRECTIONAL SYNC
     // =========================================================================
+
+    // Helper: Ensure 2-Way (Reciprocal) Mutual Contact in Saved People
+    // When User A adds User B, User A automatically gets added to User B's saved contacts too!
+    async function ensureReciprocalContact(
+      targetUserId: string,
+      sourceUser: { id: string; full_name?: string; email?: string; phone?: string },
+      relationshipType: string = 'Friend'
+    ) {
+      if (!targetUserId || targetUserId === sourceUser.id) return;
+
+      const sourceName = (sourceUser.full_name || sourceUser.email?.split('@')[0] || 'Friend').trim();
+      const sourceEmail = (sourceUser.email || '').trim().toLowerCase() || null;
+      const sourcePhone = (sourceUser.phone || '').trim() || null;
+
+      try {
+        // 1. Check if target user already has a contact linked to sourceUser.id
+        const existingLinked = await query(
+          `SELECT id, name FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
+          [targetUserId, sourceUser.id]
+        );
+
+        if (existingLinked.rows.length > 0) {
+          await query(
+            `UPDATE public.udhar_contacts 
+             SET email = COALESCE(email, $1), 
+                 phone = COALESCE(phone, $2), 
+                 updated_at = NOW() 
+             WHERE id = $3`,
+            [sourceEmail, sourcePhone, existingLinked.rows[0].id]
+          );
+        } else {
+          // 2. Check if contact exists by name for target user
+          const existingByName = await query(
+            `SELECT id FROM public.udhar_contacts WHERE user_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+            [targetUserId, sourceName]
+          );
+
+          if (existingByName.rows.length > 0) {
+            await query(
+              `UPDATE public.udhar_contacts 
+               SET linked_user_id = $1, 
+                   email = COALESCE($2, email), 
+                   phone = COALESCE($3, phone), 
+                   updated_at = NOW() 
+               WHERE id = $4`,
+              [sourceUser.id, sourceEmail, sourcePhone, existingByName.rows[0].id]
+            );
+          } else {
+            // 3. Insert fresh reciprocal contact for target user
+            await query(
+              `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, notes, linked_user_id, updated_at)
+               VALUES ($1, $2, $3, $4, $5, 'Added via 2-Way Sync', $6, NOW())
+               ON CONFLICT (user_id, name) DO UPDATE 
+               SET linked_user_id = EXCLUDED.linked_user_id, 
+                   email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+                   phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+                   updated_at = NOW()`,
+              [targetUserId, sourceName, sourceEmail, sourcePhone, relationshipType, sourceUser.id]
+            );
+          }
+        }
+
+        // 4. Ensure mutual friendship connection in user_connections
+        await query(
+          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+           VALUES ($1, $2, 'connected')
+           ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+          [sourceUser.id, targetUserId]
+        ).catch(() => {});
+
+        await query(
+          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+           VALUES ($1, $2, 'connected')
+           ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+          [targetUserId, sourceUser.id]
+        ).catch(() => {});
+
+        // 5. Retroactively bind counterpart_user_id on previous transactions if any
+        await query(
+          `UPDATE public.udhar_transactions 
+           SET counterpart_user_id = $1, updated_at = NOW() 
+           WHERE user_id = $2 AND LOWER(counterpart_name) = LOWER($3) AND counterpart_user_id IS NULL`,
+          [sourceUser.id, targetUserId, sourceName]
+        ).catch(() => {});
+      } catch (err) {
+        console.warn('[ensureReciprocalContact notice]:', err);
+      }
+    }
 
     // 6. GET CONTACTS: GET /api/udhar/contacts
     if (pathname === '/api/udhar/contacts' && method === 'GET') {
@@ -1714,28 +1806,58 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const phone = (body.phone || '').trim();
       const relationshipType = (body.relationship_type || body.relationshipType || 'Friend').trim();
       const notes = (body.notes || '').trim();
-      const linkedUserId = body.linked_user_id || body.linkedUserId || null;
+      let linkedUserId = body.linked_user_id || body.linkedUserId || null;
 
       if (!name) {
         sendJson(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
 
+      // Auto-match registered user if linkedUserId wasn't explicitly provided but email, phone or name matches
+      if (!linkedUserId && (email || phone || name)) {
+        try {
+          const matchRes = await query(
+            `SELECT id, full_name, email, phone FROM public.app_users 
+             WHERE id <> $1 AND status = 'active' AND (
+               (LOWER(email) = $2 AND $2 <> '') OR 
+               (phone = $3 AND $3 <> '') OR
+               (LOWER(full_name) = $4 AND $4 <> '')
+             ) LIMIT 1`,
+            [authUser.id, email || '__none__', phone || '__none__', name.toLowerCase()]
+          );
+          if (matchRes.rows.length > 0) {
+            linkedUserId = matchRes.rows[0].id;
+          }
+        } catch (e) {
+          console.warn('Auto match registered user notice:', e);
+        }
+      }
+
       const upsertRes = await query(
         `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, notes, linked_user_id, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
          ON CONFLICT (user_id, name) DO UPDATE 
-         SET email = EXCLUDED.email, 
-             phone = EXCLUDED.phone, 
+         SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
              relationship_type = EXCLUDED.relationship_type, 
-             notes = EXCLUDED.notes, 
+             notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
              linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
              updated_at = NOW()
          RETURNING *`,
         [authUser.id, name, email || null, phone || null, relationshipType, notes || null, linkedUserId]
       );
 
-      sendJson(res, 200, { success: true, contact: upsertRes.rows[0] });
+      // BIDIRECTIONAL RECIPROCAL SYNC:
+      // If contact is linked to a registered user, also save authUser in target user's saved people!
+      if (linkedUserId && linkedUserId !== authUser.id) {
+        await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        contact: upsertRes.rows[0],
+        reciprocallyLinked: Boolean(linkedUserId && linkedUserId !== authUser.id),
+      });
       return true;
     }
 
@@ -1755,11 +1877,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const phone = (body.phone || '').trim();
       const relationshipType = (body.relationship_type || body.relationshipType || 'Friend').trim();
       const notes = (body.notes || '').trim();
-      const linkedUserId = body.linked_user_id || body.linkedUserId || null;
+      let linkedUserId = body.linked_user_id || body.linkedUserId || null;
 
       if (!name) {
         sendJson(res, 400, { success: false, message: "Person's name is required." });
         return true;
+      }
+
+      // Auto-match registered user if linkedUserId wasn't explicitly provided
+      if (!linkedUserId && (email || phone || name)) {
+        try {
+          const matchRes = await query(
+            `SELECT id, full_name, email, phone FROM public.app_users 
+             WHERE id <> $1 AND status = 'active' AND (
+               (LOWER(email) = $2 AND $2 <> '') OR 
+               (phone = $3 AND $3 <> '') OR
+               (LOWER(full_name) = $4 AND $4 <> '')
+             ) LIMIT 1`,
+            [authUser.id, email || '__none__', phone || '__none__', name.toLowerCase()]
+          );
+          if (matchRes.rows.length > 0) {
+            linkedUserId = matchRes.rows[0].id;
+          }
+        } catch (e) {
+          console.warn('Auto match registered user notice in PUT:', e);
+        }
       }
 
       const updRes = await query(
@@ -1775,7 +1917,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      sendJson(res, 200, { success: true, contact: updRes.rows[0] });
+      // Reciprocal sync
+      if (linkedUserId && linkedUserId !== authUser.id) {
+        await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        contact: updRes.rows[0],
+        reciprocallyLinked: Boolean(linkedUserId && linkedUserId !== authUser.id),
+      });
       return true;
     }
 
@@ -1842,6 +1993,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
          WHERE id = $2`,
         [registeredUserId, contactId]
       );
+
+      // Reciprocally save authUser in target user's saved people (2-way sync)
+      await ensureReciprocalContact(registeredUserId, authUser, contact.relationship_type || 'Friend');
 
       // Link user connection
       await query(
@@ -2126,22 +2280,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       );
 
       // 2. Save target user in current user's udhar_contacts
+      const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split('@')[0] || 'Friend').trim();
       await query(
         `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())
          ON CONFLICT (user_id, name) DO UPDATE 
-         SET linked_user_id = EXCLUDED.linked_user_id, email = EXCLUDED.email, updated_at = NOW()`,
-        [authUser.id, tokenRecord.full_name, tokenRecord.email, tokenRecord.phone, relationshipType, targetUserId]
-      );
+         SET linked_user_id = EXCLUDED.linked_user_id, 
+             email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+             updated_at = NOW()`,
+        [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, relationshipType, targetUserId]
+      ).catch(err => console.warn('QR user contact insert notice:', err));
 
-      // 3. Reciprocally save current user in target user's contacts
-      await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, 'Friend', $5, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE 
-         SET linked_user_id = EXCLUDED.linked_user_id, email = EXCLUDED.email, updated_at = NOW()`,
-        [targetUserId, authUser.full_name, authUser.email, authUser.phone, authUser.id]
-      );
+      // 3. Reciprocally save current user in target user's contacts (2-way sync)
+      await ensureReciprocalContact(targetUserId, authUser, relationshipType);
 
       // 4. Mark single-use token if configured
       if (tokenRecord.is_single_use) {
@@ -2316,6 +2468,24 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
+      if (!isRegisteredCounterpart && counterpartName) {
+        try {
+          const contactCheck = await query(
+            `SELECT linked_user_id FROM public.udhar_contacts 
+             WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND linked_user_id IS NOT NULL LIMIT 1`,
+            [authUser.id, counterpartName]
+          );
+          const autoLinkedId = contactCheck.rows[0]?.linked_user_id;
+          if (autoLinkedId) {
+            const uCheck = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [autoLinkedId]);
+            if (uCheck.rows.length > 0) {
+              isRegisteredCounterpart = true;
+              registeredUser = uCheck.rows[0];
+            }
+          }
+        } catch {}
+      }
+
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -2369,11 +2539,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
           await client.query('COMMIT');
 
+          // Ensure reciprocal 2-way saved people sync
+          await ensureReciprocalContact(registeredUser.id, authUser, 'Friend');
+
           await logSecurityEvent('UDHAR_TWO_SIDED_CREATED', {
             userId: authUser.id,
             userEmail: authUser.email,
             details: { linkId, counterpartId: registeredUser.id, amount, direction },
           });
+
+          // Non-blocking automated email notifications for registered users
+          sendUdharCreatedEmails({
+            transactionId: userARes.rows[0].id,
+            linkId,
+            initiatorUserId: authUser.id,
+            initiatorName: authUser.full_name || 'My Money User',
+            initiatorEmail: authUser.email,
+            counterpartUserId: registeredUser.id,
+            counterpartName: registeredUser.full_name,
+            counterpartEmail: registeredUser.email,
+            direction,
+            amount,
+            description: notes || undefined,
+            transactionDate: txDate,
+            status: userAStatus,
+          }).catch((e) => console.warn('[Udhar Created Two-Sided Email Error]:', e));
 
           sendJson(res, 201, {
             success: true,
@@ -2408,6 +2598,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             userEmail: authUser.email,
             details: { counterpartName, amount, direction },
           });
+
+          // Non-blocking automated email notifications (initiator gets email, unverified counterpart safely skipped & logged)
+          sendUdharCreatedEmails({
+            transactionId: singleRes.rows[0].id,
+            linkId,
+            initiatorUserId: authUser.id,
+            initiatorName: authUser.full_name || 'My Money User',
+            initiatorEmail: authUser.email,
+            counterpartUserId: null,
+            counterpartName,
+            counterpartEmail: body.email || null,
+            direction,
+            amount,
+            description: notes || undefined,
+            transactionDate: txDate,
+            status: 'confirmed',
+          }).catch((e) => console.warn('[Udhar Created Single Email Error]:', e));
 
           sendJson(res, 201, {
             success: true,
@@ -2568,6 +2775,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           details: { txId, linkId: tx.link_id, amount: repayAmount, remainingBalance: newBalance, isSettled },
         });
 
+        // Automated Udhar Settlement Emails (if fully cleared / settled)
+        if (isSettled) {
+          sendUdharSettledEmails({
+            transactionId: tx.id,
+            linkId: tx.link_id,
+            initiatorUserId: authUser.id,
+            initiatorName: authUser.full_name || 'My Money User',
+            initiatorEmail: authUser.email,
+            counterpartUserId: tx.counterpart_user_id || null,
+            counterpartName: tx.counterpart_name,
+            amountSettled: repayAmount,
+            settlementDate: repayDate,
+            updatedBalance: newBalance,
+            direction: tx.direction,
+          }).catch((e) => console.warn('[Udhar Settled Email Error]:', e));
+        }
+
         sendJson(res, 200, {
           success: true,
           message: isSettled
@@ -2583,6 +2807,64 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       } finally {
         client.release();
       }
+    }
+
+    // 20. UPDATE UDHAAR TRANSACTION: PUT /api/udhar/transactions/:id
+    const updateTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)$/);
+    if (updateTxMatch && method === 'PUT') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = updateTxMatch[1];
+      const body = await parseJsonBody(req);
+      const newAmount = body.amount !== undefined ? parseFloat(body.amount) : undefined;
+      const newNotes = body.notes !== undefined ? (body.notes || '').trim() : undefined;
+      const newDate = body.transaction_date || body.date;
+      const newDueDate = body.due_date || body.dueDate;
+
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      const updatedAmt = newAmount !== undefined && !isNaN(newAmount) && newAmount > 0 ? newAmount : parseFloat(tx.original_amount);
+      const updatedNotes = newNotes !== undefined ? newNotes : tx.notes;
+      const updatedDate = newDate || tx.transaction_date;
+      const updatedDueDate = newDueDate !== undefined ? newDueDate : tx.due_date;
+
+      await query(
+        `UPDATE public.udhar_transactions 
+         SET original_amount = $1, current_balance = $1, notes = $2, transaction_date = $3, due_date = $4, updated_at = NOW() 
+         WHERE link_id = $5`,
+        [updatedAmt, updatedNotes || null, updatedDate, updatedDueDate || null, tx.link_id]
+      );
+
+      // Automated update email notifications to participants
+      sendUdharUpdatedEmails({
+        transactionId: tx.id,
+        linkId: tx.link_id,
+        initiatorUserId: authUser.id,
+        initiatorName: authUser.full_name || 'My Money User',
+        initiatorEmail: authUser.email,
+        counterpartUserId: tx.counterpart_user_id || null,
+        counterpartName: tx.counterpart_name,
+        amount: updatedAmt,
+        direction: tx.direction,
+        description: updatedNotes || undefined,
+        transactionDate: updatedDate,
+        status: tx.status,
+      }).catch((e) => console.warn('[Udhar Updated Email Error]:', e));
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Udhar transaction updated successfully.',
+      });
+      return true;
     }
 
     // =========================================================================
@@ -2836,14 +3118,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
-      // Async send acknowledgement email
-      sendFeedbackConfirmationEmail({
-        email: trustedEmail,
+      // Automated Dual Feedback Emails: Instant User Confirmation + Admin Notification (hackifypro@gmail.com)
+      sendFeedbackSubmissionEmails({
+        feedbackId,
+        userId: authUser.id,
         userName: trustedName,
+        userEmail: trustedEmail,
         rating: rating || 5,
+        feedbackMessage: message,
         category,
-        message,
-      }).catch((e) => console.warn('[Feedback Ack Email Error]:', e));
+        submittedAt: feedback.created_at ? new Date(feedback.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : undefined,
+      }).catch((e) => console.warn('[Feedback Dual Emails Dispatch Error]:', e));
 
       await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
         userId: authUser.id,

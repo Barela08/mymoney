@@ -550,7 +550,7 @@ export const AdminTicketsSection: React.FC<AdminTicketsSectionProps> = ({ ticket
                               {r.sender_name}
                             </span>
                             <span
-                              className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
                                 r.is_internal
                                   ? 'bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200'
                                   : r.sender_type === 'admin'
