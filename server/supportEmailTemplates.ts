@@ -144,6 +144,7 @@ export function generateFeedbackReceivedEmail(data: {
           <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;">
             <strong>Rating:</strong> <span style="font-size: 15px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml(ratingText)})
           </p>
+          ${data.category ? `<p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;"><strong>Category:</strong> ${escapeHtml(data.category)}</p>` : ''}
           <div style="margin: 10px 0 0 0;">
             <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase;">Your Feedback:</p>
             <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
@@ -167,7 +168,7 @@ export function generateFeedbackReceivedEmail(data: {
   `;
 
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `Hello ${data.userName || 'User'},\n\nThank you for sharing your feedback with My Money Manager.\n\nYour feedback has been successfully submitted to our team. We appreciate your time and suggestions, and your feedback helps us improve the application and user experience.\n\nFeedback ID: #${fbId}\nRating: ${ratingText}\nYour Feedback: ${messageContent}\n\nOur team will review your feedback.\n\nRegards,\nHackifyPro Support Team\nMy Money Manager\n`;
+  const text = `Hello ${data.userName || 'User'},\n\nThank you for sharing your feedback with My Money Manager.\n\nYour feedback has been successfully submitted to our team. We appreciate your time and suggestions, and your feedback helps us improve the application and user experience.\n\nFeedback ID: #${fbId}\nRating: ${ratingText}\n${data.category ? `Category: ${data.category}\n` : ''}Your Feedback: ${messageContent}\n\nOur team will review your feedback.\n\nRegards,\nHackifyPro Support Team\nMy Money Manager\n`;
   return { subject, html, text };
 }
 

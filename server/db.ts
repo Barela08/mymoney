@@ -72,8 +72,8 @@ export const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
   lookup: customLookup,
   max: 10,
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 3500,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
 });
@@ -85,7 +85,7 @@ pool.on('error', (err) => {
 export async function query<T extends pg.QueryResultRow = any>(
   text: string,
   params?: any[],
-  retries = 1
+  retries = 2
 ): Promise<pg.QueryResult<T>> {
   const start = Date.now();
   try {
@@ -106,7 +106,7 @@ export async function query<T extends pg.QueryResultRow = any>(
 
     if (isConnErr && retries > 0) {
       console.warn(`[DB Reconnect] Query failed (${msg}), retrying (${retries} attempts left)...`);
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 600));
       return query<T>(text, params, retries - 1);
     }
     throw err;

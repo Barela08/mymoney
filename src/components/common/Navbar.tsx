@@ -53,7 +53,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   // Active notifications for this user or all users
   const activeNotifs = notifications.filter(
-    (n) => n.is_active && (!n.target_user_id || n.target_user_id === user?.uid)
+    (n) =>
+      n.is_active &&
+      (!n.target_user_id ||
+        n.target_user_id === 'all' ||
+        n.target_user_id === user?.uid ||
+        n.target_user_id === user?.id)
   );
 
   // Live IST Clock (Without seconds churn)
