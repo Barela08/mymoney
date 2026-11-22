@@ -220,9 +220,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
               title={isAdmin ? 'Open Admin Control' : 'View Profile Settings'}
             >
-              {user.avatarUrl ? (
+              {user.avatar_url || user.avatarUrl ? (
                 <img
-                  src={user.avatarUrl}
+                  src={user.avatar_url || user.avatarUrl || ''}
                   alt={user.displayName}
                   className="w-5 h-5 rounded-lg object-cover border border-emerald-500/30"
                 />

@@ -311,10 +311,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl cursor-pointer transition-colors"
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            {user?.avatarUrl ? (
+            {user?.avatar_url || user?.avatarUrl ? (
               <img
-                src={user.avatarUrl}
-                alt={user.displayName}
+                src={user?.avatar_url || user?.avatarUrl || ''}
+                alt={user?.displayName}
                 className="w-8 h-8 rounded-xl object-cover shrink-0 border border-emerald-500/30"
               />
             ) : (

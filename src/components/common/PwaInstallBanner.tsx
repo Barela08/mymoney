@@ -48,9 +48,15 @@ export const PwaInstallBanner: React.FC = () => {
         </button>
         <button
           onClick={dismissBanner}
+          className="py-1.5 px-2.5 bg-white/15 hover:bg-white/25 active:scale-95 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap text-white"
+        >
+          <span>Cancel</span>
+        </button>
+        <button
+          onClick={dismissBanner}
           className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-          aria-label="Dismiss banner"
-          title="Dismiss"
+          aria-label="Close"
+          title="Close"
         >
           <X className="w-4 h-4" />
         </button>
