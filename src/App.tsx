@@ -35,6 +35,9 @@ import { PwaInstallModal } from './components/common/PwaInstallModal';
 import { HelpSupportModal } from './components/support/HelpSupportModal';
 import { HelpSupportSection } from './components/support/HelpSupportSection';
 import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
+import { DpdpConsentModal } from './components/common/DpdpConsentModal';
+import { StartupPermissionsModal } from './components/common/StartupPermissionsModal';
+import { PullToRefresh } from './components/common/PullToRefresh';
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
@@ -181,120 +184,122 @@ const MainContent: React.FC = () => {
       {currentTab === 'admin' ? (
         <AdminDashboard onExit={() => setCurrentTab('dashboard')} />
       ) : (
-        <div className="flex flex-1 min-h-0">
-          {/* Sidebar for Desktop */}
-          <Sidebar
-            currentTab={currentTab}
-            onSelectTab={setCurrentTab}
-            onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
-            onOpenHelpModal={handleOpenHelpModal}
-            onOpenMyQr={() => setIsMyQrOpen(true)}
-            onOpenScanQr={() => setIsScanQrOpen(true)}
-          />
-
-          {/* Main Content Area */}
-          <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-            {/* Top Navbar */}
-            <Navbar
+        <PullToRefresh onRefresh={refreshTransactions} className="flex flex-1 min-h-0 flex-col">
+          <div className="flex flex-1 min-h-0">
+            {/* Sidebar for Desktop */}
+            <Sidebar
               currentTab={currentTab}
-              onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-              onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
               onSelectTab={setCurrentTab}
+              onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
               onOpenHelpModal={handleOpenHelpModal}
+              onOpenMyQr={() => setIsMyQrOpen(true)}
+              onOpenScanQr={() => setIsScanQrOpen(true)}
             />
 
-            {/* Dynamic Section Views */}
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-              {currentTab === 'dashboard' && (
-                <DashboardView
-                  onNavigate={setCurrentTab}
-                  onOpenAddModal={handleOpenAddModal}
-                />
-              )}
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+              {/* Top Navbar */}
+              <Navbar
+                currentTab={currentTab}
+                onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+                onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+                onSelectTab={setCurrentTab}
+                onOpenHelpModal={handleOpenHelpModal}
+              />
 
-              {currentTab === 'home' && (
-                <HomeSection onOpenAddModal={handleOpenAddModal} />
-              )}
+              {/* Dynamic Section Views */}
+              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+                {currentTab === 'dashboard' && (
+                  <DashboardView
+                    onNavigate={setCurrentTab}
+                    onOpenAddModal={handleOpenAddModal}
+                  />
+                )}
 
-              {currentTab === 'room' && (
-                <RoomSection onOpenAddModal={handleOpenAddModal} />
-              )}
+                {currentTab === 'home' && (
+                  <HomeSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {currentTab === 'food' && (
-                <FoodSection onOpenAddModal={handleOpenAddModal} />
-              )}
+                {currentTab === 'room' && (
+                  <RoomSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {currentTab === 'other' && (
-                <OtherSection onOpenAddModal={handleOpenAddModal} />
-              )}
+                {currentTab === 'food' && (
+                  <FoodSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {currentTab === 'people' && (
-                <PeopleSection onOpenAddModal={handleOpenAddModal} />
-              )}
+                {currentTab === 'other' && (
+                  <OtherSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {currentTab === 'calculator' && (
-                <CalculatorSection onOpenAddModal={handleOpenAddModal} />
-              )}
+                {currentTab === 'people' && (
+                  <PeopleSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {currentTab === 'reports' && (
-                <ReportsSection />
-              )}
+                {currentTab === 'calculator' && (
+                  <CalculatorSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {currentTab === 'all_transactions' && (
-                <AllTransactionsSection onOpenAddModal={handleOpenAddModal} />
-              )}
+                {currentTab === 'reports' && (
+                  <ReportsSection />
+                )}
 
-              {currentTab === 'recycle_bin' && (
-                <RecycleBinSection />
-              )}
+                {currentTab === 'all_transactions' && (
+                  <AllTransactionsSection onOpenAddModal={handleOpenAddModal} />
+                )}
 
-              {/* Custom Dynamic Sections */}
-              {dynamicSections.some((s) => s.id === currentTab && !['home', 'room', 'food', 'other', 'people'].includes(s.id)) && (
-                <DynamicCustomSection
-                  section={dynamicSections.find((s) => s.id === currentTab)!}
-                  onOpenAddModal={handleOpenAddModal}
-                />
-              )}
+                {currentTab === 'recycle_bin' && (
+                  <RecycleBinSection />
+                )}
 
-              {currentTab === 'help_support' && (
-                <HelpSupportSection />
-              )}
+                {/* Custom Dynamic Sections */}
+                {dynamicSections.some((s) => s.id === currentTab && !['home', 'room', 'food', 'other', 'people'].includes(s.id)) && (
+                  <DynamicCustomSection
+                    section={dynamicSections.find((s) => s.id === currentTab)!}
+                    onOpenAddModal={handleOpenAddModal}
+                  />
+                )}
 
-              {currentTab === 'settings' && (
-                <SettingsSection
-                  initialTab="profile"
-                  initialLegalPolicy={initialLegalPolicy}
-                />
-              )}
+                {currentTab === 'help_support' && (
+                  <HelpSupportSection />
+                )}
 
-              {currentTab === 'privacy_policy' && (
-                <LegalCenterSection
-                  initialPolicyId="privacy_policy"
-                  onNavigateToAccountDeletion={() => setCurrentTab('settings')}
-                />
-              )}
+                {currentTab === 'settings' && (
+                  <SettingsSection
+                    initialTab="profile"
+                    initialLegalPolicy={initialLegalPolicy}
+                  />
+                )}
 
-              {currentTab === 'legal' && (
-                <LegalCenterSection
-                  initialPolicyId={initialLegalPolicy}
-                  onNavigateToAccountDeletion={() => setCurrentTab('settings')}
-                />
-              )}
-            </main>
+                {currentTab === 'privacy_policy' && (
+                  <LegalCenterSection
+                    initialPolicyId="privacy_policy"
+                    onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+                  />
+                )}
+
+                {currentTab === 'legal' && (
+                  <LegalCenterSection
+                    initialPolicyId={initialLegalPolicy}
+                    onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+                  />
+                )}
+              </main>
+            </div>
+
+            {/* Mobile Drawer & Bottom Navigation */}
+            <MobileNav
+              isOpen={isMobileMenuOpen}
+              onClose={() => setIsMobileMenuOpen(false)}
+              currentTab={currentTab}
+              onSelectTab={setCurrentTab}
+              onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+              onOpenHelpModal={handleOpenHelpModal}
+              onOpenMyQr={() => setIsMyQrOpen(true)}
+              onOpenScanQr={() => setIsScanQrOpen(true)}
+            />
           </div>
-
-          {/* Mobile Drawer & Bottom Navigation */}
-          <MobileNav
-            isOpen={isMobileMenuOpen}
-            onClose={() => setIsMobileMenuOpen(false)}
-            currentTab={currentTab}
-            onSelectTab={setCurrentTab}
-            onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
-            onOpenHelpModal={handleOpenHelpModal}
-            onOpenMyQr={() => setIsMyQrOpen(true)}
-            onOpenScanQr={() => setIsScanQrOpen(true)}
-          />
-        </div>
+        </PullToRefresh>
       )}
 
         {/* Universal Add Transaction Modal */}
@@ -335,8 +340,12 @@ const MainContent: React.FC = () => {
           }}
         />
 
-        {/* DPDP Act 2023 Statutory Consent Banner */}
+        {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}
         <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
+        <DpdpConsentModal onOpenPrivacyPolicy={() => handleOpenHelpModal('dpdp')} />
+
+        {/* Startup Permissions Modal for Notification & Camera (for QR scanning) */}
+        <StartupPermissionsModal />
     </div>
   );
 };
