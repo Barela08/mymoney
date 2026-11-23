@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, ArrowRight, X, Home, Utensils, Users } from 'lucide-react';
+import { CheckCircle2, ArrowRight, X, ArrowDownLeft, Utensils, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
 
@@ -34,11 +34,11 @@ export const FirstTimeOnboarding: React.FC<FirstTimeOnboardingProps> = ({ onOpen
   const steps = [
     {
       num: 1,
-      title: 'Record Starting Balance / Home Money',
-      desc: 'Add money received from parents, allowance, or salary in Home Section.',
+      title: 'Record Starting Balance / Received Money',
+      desc: 'Add salary, freelancing earnings, business income, or family support.',
       category: 'home',
-      subcategory: 'received_home',
-      icon: Home,
+      subcategory: 'salary',
+      icon: ArrowDownLeft,
     },
     {
       num: 2,

@@ -46,7 +46,12 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
   const [qrError, setQrError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
+  const [avatarError, setAvatarError] = useState<boolean>(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const displayName = qrInfo?.publicName || user?.displayName || user?.full_name || user?.email?.split('@')[0] || 'User';
+  const initial = (displayName.charAt(0) || 'U').toUpperCase();
+  const avatarUrl = user?.avatar_url || user?.avatarUrl;
 
   const handleRegenerateQr = async () => {
     try {
@@ -205,22 +210,23 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
 
             {/* User Identity Banner */}
             <div className="flex items-center justify-center gap-2.5">
-              {user?.avatar_url || user?.avatarUrl ? (
+              {!avatarError && avatarUrl ? (
                 <img
-                  src={user?.avatar_url || user?.avatarUrl || ''}
-                  alt={qrInfo?.publicName || user?.displayName || 'User'}
-                  className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+                  src={avatarUrl}
+                  alt={displayName}
+                  onError={() => setAvatarError(true)}
+                  className="w-9 h-9 rounded-full object-cover border border-emerald-500/30 shrink-0"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-medium text-xs flex items-center justify-center">
-                  {(qrInfo?.publicName || user?.displayName || 'U').charAt(0).toUpperCase()}
+                <div className="w-9 h-9 rounded-full bg-emerald-600 text-white font-bold text-sm flex items-center justify-center border border-emerald-500/30 shrink-0">
+                  {initial}
                 </div>
               )}
-              <div className="text-left">
-                <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-tight">
-                  {qrInfo?.publicName || user?.displayName}
+              <div className="text-left min-w-0">
+                <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-tight truncate max-w-[200px]">
+                  {displayName}
                 </h4>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   Scan with My Money Manager to link
                 </p>
               </div>

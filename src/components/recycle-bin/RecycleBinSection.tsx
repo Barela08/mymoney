@@ -159,7 +159,7 @@ export const RecycleBinSection: React.FC = () => {
           className="w-full sm:w-48 py-2 px-3 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer"
         >
           <option value="all">All Categories</option>
-          <option value="home">Home Money</option>
+          <option value="home">Received Money</option>
           <option value="room">Room Expenses</option>
           <option value="food">Food & Dining</option>
           <option value="other">Other Expenses</option>

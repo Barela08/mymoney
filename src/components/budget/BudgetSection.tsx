@@ -15,6 +15,7 @@ import {
   Sparkles,
   ChevronRight,
   ArrowUpRight,
+  ArrowDownLeft,
   X,
   Wallet,
 } from 'lucide-react';
@@ -26,7 +27,7 @@ import { formatINR, getCurrentMonthName, getCurrentISTDate } from '../../lib/dat
 const DEFAULT_BUDGET_CATEGORIES = [
   { id: 'food', name: 'Food & Dining', icon: Utensils, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-900/50' },
   { id: 'room', name: 'Room Expenses', icon: DoorOpen, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/40', border: 'border-blue-200 dark:border-blue-900/50' },
-  { id: 'home', name: 'Home Money', icon: Home, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-900/50' },
+  { id: 'home', name: 'Received Money', icon: ArrowDownLeft, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-900/50' },
   { id: 'other', name: 'Other Expenses', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-900/50' },
 ];
 
@@ -377,7 +378,7 @@ export const BudgetSection: React.FC = () => {
                 >
                   <option value="food">Food & Dining</option>
                   <option value="room">Room Expenses</option>
-                  <option value="home">Home Money</option>
+                  <option value="home">Received Money</option>
                   <option value="other">Other Expenses</option>
                 </select>
               </div>

@@ -738,36 +738,61 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Dynamic Category-Specific Fields */}
 
-          {/* Home Section Fields */}
-          {category === 'home' && subcategory === 'received_home' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Purpose / Reason <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={homePurpose}
-                onChange={(e) => setHomePurpose(e.target.value)}
-                placeholder="e.g. Monthly Expenses, College Fees, Medical emergency"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          )}
-
-          {category === 'home' && subcategory === 'home_expense' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                What was the money requested or spent for? <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={homeExpenseReason}
-                onChange={(e) => setHomeExpenseReason(e.target.value)}
-                placeholder="e.g. Home medicines, Courier to parents, Grocery sent home"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
+          {/* Received Money Fields */}
+          {(category === 'home' || category === 'received') && (
+            <div className="space-y-3 p-3.5 bg-emerald-50/40 dark:bg-emerald-950/20 rounded-xl border border-emerald-500/20">
+              {(() => {
+                const config = getReceivedCategoryConfig(subcategory);
+                return (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        {config.sourceField.label} <span className="text-[10px] text-slate-400 font-normal lowercase">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={receivedSource}
+                        onChange={(e) => setReceivedSource(e.target.value)}
+                        placeholder={config.sourceField.placeholder}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        {config.descriptionField.label} <span className="text-[10px] text-slate-400 font-normal lowercase">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={receivedPurpose}
+                        onChange={(e) => setReceivedPurpose(e.target.value)}
+                        placeholder={config.descriptionField.placeholder}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Payment Method
+                      </label>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                        {PAYMENT_METHODS.map((pm) => (
+                          <button
+                            key={pm.id}
+                            type="button"
+                            onClick={() => setReceivedPaymentMethod(pm.id)}
+                            className={`py-1.5 px-2 rounded-lg border text-[11px] font-semibold text-center transition-all cursor-pointer ${
+                              receivedPaymentMethod === pm.id
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {pm.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 

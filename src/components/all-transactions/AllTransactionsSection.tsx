@@ -329,7 +329,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="all">All Categories</option>
-              <option value="home">Home Money</option>
+              <option value="home">Received Money</option>
               <option value="room">Room Expenses</option>
               <option value="food">Food & Dining</option>
               <option value="other">Other Expenses</option>
