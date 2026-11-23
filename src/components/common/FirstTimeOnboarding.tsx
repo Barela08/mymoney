@@ -128,7 +128,7 @@ export const FirstTimeOnboarding: React.FC<FirstTimeOnboardingProps> = ({ onOpen
           Tip: Setting your starting balance gives you accurate net calculations across all sections.
         </p>
         <button
-          onClick={() => onOpenAddModal('home', 'received_home')}
+          onClick={() => onOpenAddModal('home', 'salary')}
           className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1.5 shrink-0"
         >
           <span>Start with Step 1</span>

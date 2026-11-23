@@ -100,8 +100,12 @@ export async function query<T extends pg.QueryResultRow = any>(
     const isConnErr =
       msg.includes('Connection terminated') ||
       msg.includes('ECONNRESET') ||
+      msg.includes('ETIMEDOUT') ||
+      msg.includes('ENOTFOUND') ||
+      msg.includes('EAI_AGAIN') ||
       msg.includes('connection timeout') ||
       msg.includes('timeout expired') ||
+      msg.includes('timeout') ||
       msg.includes('closed');
 
     if (isConnErr && retries > 0) {
