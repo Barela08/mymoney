@@ -125,7 +125,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 Edit Transaction
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Category: <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">{transaction.category}</span>
+                Category: <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">{transaction.category === 'home' ? 'Received Money' : transaction.category}</span>
                 {' · '}
                 Created on {formatDisplayDate(transaction.created_at.slice(0, 10))} (original creation timestamp preserved)
               </p>
