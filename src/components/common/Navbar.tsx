@@ -85,7 +85,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const titles: Record<string, { title: string; subtitle: string; shortTitle: string }> = {
     dashboard: { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: 'Overview & Main Sections' },
-    home: { title: 'Home Section', shortTitle: 'Home Money', subtitle: 'Money received & spent for home' },
+    home: { title: 'Received Money', shortTitle: 'Received Money', subtitle: 'Salary, business, freelancing & all money received' },
     room: { title: 'Room Section', shortTitle: 'Room Expenses', subtitle: 'Gas, grocery, room rent & power bill' },
     food: { title: 'Food & Dining Section', shortTitle: 'Food & Dining', subtitle: 'Restaurant, fast food, snacks, tea/coffee & food delivery' },
     other: { title: 'Other Expenses', shortTitle: 'Other Expenses', subtitle: 'Shopping, travel, medical, bills & personal' },

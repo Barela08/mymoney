@@ -31,6 +31,7 @@ import {
   deactivateNotificationInSupabase,
 } from '../lib/supabase';
 import { getCurrentISTDate, getCurrentISTTime, formatDisplayTime, getPresetDateRange } from '../lib/dateUtils';
+import { classifyFinancialTransaction } from '../lib/receivedMoneyCategories';
 import { useAuth } from './AuthContext';
 import {
   validateTransactionPayload,
@@ -110,7 +111,7 @@ const LOCAL_MAINTENANCE_KEY = 'my_money_maintenance_cache';
 const LOCAL_BRANDING_KEY = 'my_money_branding_cache';
 
 const DEFAULT_SECTIONS: DynamicSection[] = [
-  { id: 'home', name: 'Home Money', icon: 'Home', description: 'Money received & spent for home', display_order: 1, is_enabled: true },
+  { id: 'home', name: 'Received Money', icon: 'ArrowDownLeft', description: 'Salary, business, freelancing & all money received', display_order: 1, is_enabled: true },
   { id: 'room', name: 'Room Expenses', icon: 'DoorOpen', description: 'Gas, grocery, room rent & power bill', display_order: 2, is_enabled: true },
   { id: 'food', name: 'Food & Dining', icon: 'Utensils', description: 'Restaurant, fast food, snacks, tea, coffee & delivery', display_order: 3, is_enabled: true },
   { id: 'other', name: 'Other Expenses', icon: 'ShoppingBag', description: 'Shopping, travel, bills & personal spending', display_order: 4, is_enabled: true },
@@ -967,6 +968,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const summary: FinancialSummary = useMemo(() => {
     let totalHomeReceived = 0;
     let totalHomeSpent = 0;
+    let totalReceivedMoney = 0;
+    let totalEarnedIncome = 0;
+    let totalOtherIncome = 0;
+    let totalBorrowedReceived = 0;
+
     let totalGas = 0;
     let totalGrocery = 0;
     let totalRent = 0;
@@ -979,11 +985,22 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     for (const tx of userTransactions) {
       const amt = Number(tx.amount) || 0;
 
-      if (tx.category === 'home') {
-        if (tx.subcategory === 'received_home' || tx.transaction_type === 'income') {
-          totalHomeReceived += amt;
-        } else {
+      // Handle Received Money (category === 'home' or 'received')
+      if (tx.category === 'home' || tx.category === 'received') {
+        if (tx.subcategory === 'home_expense') {
           totalHomeSpent += amt;
+        } else {
+          totalHomeReceived += amt;
+          totalReceivedMoney += amt;
+
+          const classification = classifyFinancialTransaction(tx.subcategory);
+          if (classification === 'earned_income') {
+            totalEarnedIncome += amt;
+          } else if (classification === 'borrowed') {
+            totalBorrowedReceived += amt;
+          } else {
+            totalOtherIncome += amt;
+          }
         }
       }
 
@@ -1016,13 +1033,19 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const netPeopleBalance = totalMoneyGiven - totalMoneyReceived;
 
     const totalExpenses = totalHomeSpent + totalRoomExpenses + totalFoodExpenses + totalOtherExpenses;
-    const totalIncome = totalHomeReceived;
-    const availableBalance = totalIncome - totalExpenses;
+    // Earned income + Other income (excluding loans/udhar) represents pure income/profit
+    const totalIncome = totalEarnedIncome + totalOtherIncome;
+    // Available balance reflects actual liquid cash in hand
+    const availableBalance = totalReceivedMoney - totalExpenses;
 
     return {
       totalIncome,
       totalExpenses,
       availableBalance,
+      totalReceivedMoney,
+      totalEarnedIncome,
+      totalOtherIncome,
+      totalBorrowedReceived,
       totalHomeReceived,
       totalHomeSpent,
       remainingHomeBalance,

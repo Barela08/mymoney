@@ -107,7 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .eq('id', session.user.id)
             .single();
 
-          const isAdm = email.toLowerCase() === 'admin@mymoney.com' || prof?.role === 'admin' || prof?.role === 'superadmin';
+          const isAdm = email.toLowerCase() === 'hackifypro@gmail.com' || email.toLowerCase() === 'admin@mymoney.com' || prof?.role === 'admin' || prof?.role === 'superadmin';
           const authUser: AuthUser = {
             uid: session.user.id,
             id: session.user.id,
@@ -168,7 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (!supaErr && supaData?.user) {
-          const isAdm = email.trim().toLowerCase() === 'admin@mymoney.com';
+          const isAdm = email.trim().toLowerCase() === 'hackifypro@gmail.com' || email.trim().toLowerCase() === 'admin@mymoney.com';
           const authUser: AuthUser = {
             uid: supaData.user.id,
             id: supaData.user.id,
@@ -528,7 +528,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isMasterAdmin = Boolean(user?.email && user.email.toLowerCase().trim() === 'admin@mymoney.com');
+  const isMasterAdmin = Boolean(
+    user?.email &&
+    (user.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+     user.email.toLowerCase().trim() === 'admin@mymoney.com')
+  );
   const userRole = (user?.role || '').toLowerCase().trim();
   const isAdmin = Boolean(
     isMasterAdmin ||

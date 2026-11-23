@@ -1,7 +1,20 @@
-export type TransactionCategory = 'home' | 'room' | 'food' | 'other' | 'people' | string;
+export type TransactionCategory = 'home' | 'received' | 'room' | 'food' | 'other' | 'people' | string;
 
 export type TransactionSubcategory =
-  // Home subcategories
+  // Received Money / Income subcategories
+  | 'salary'
+  | 'business'
+  | 'freelancing'
+  | 'family'
+  | 'gift'
+  | 'refund'
+  | 'rental'
+  | 'investment'
+  | 'interest'
+  | 'loan_received'
+  | 'udhar_received'
+  | 'other_income'
+  // Legacy / Backwards compatibility subcategories
   | 'received_home'
   | 'home_expense'
   // Room subcategories
@@ -34,6 +47,16 @@ export type TransactionSubcategory =
 export type TransactionType = 'income' | 'expense' | 'transfer';
 
 export interface TransactionMetadata {
+  // Received Money specific
+  received_from?: string;
+  payment_method?: 'cash' | 'upi' | 'bank_transfer' | 'card' | 'wallet' | 'other' | string;
+  utr?: string;
+  bank_name?: string;
+  account_reference?: string;
+  card_last4?: string;
+  financial_classification?: 'earned_income' | 'other_income' | 'borrowed' | string;
+  attachment_url?: string;
+  attachment_name?: string;
   // Grocery specific
   grocery_item?: string;
   quantity?: string;
@@ -187,6 +210,12 @@ export interface FinancialSummary {
   totalIncome: number;
   totalExpenses: number;
   availableBalance: number;
+  // Received Money metrics
+  totalReceivedMoney: number;
+  totalEarnedIncome: number;
+  totalOtherIncome: number;
+  totalBorrowedReceived: number;
+  // Legacy alias for backwards compatibility
   totalHomeReceived: number;
   totalHomeSpent: number;
   remainingHomeBalance: number;

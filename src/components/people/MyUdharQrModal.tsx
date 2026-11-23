@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 import { udharDeletionApi, MyQrCodeResponse } from '../../lib/udharDeletionApi';
 
 interface MyUdharQrModalProps {
@@ -28,6 +29,16 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
 }) => {
   const { user } = useAuth();
   const toast = useToast();
+  const { setScannerActive } = usePwaInstall();
+
+  useEffect(() => {
+    if (isOpen) {
+      setScannerActive(true);
+    } else {
+      setScannerActive(false);
+    }
+    return () => setScannerActive(false);
+  }, [isOpen, setScannerActive]);
 
   const [qrInfo, setQrInfo] = useState<MyQrCodeResponse | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');

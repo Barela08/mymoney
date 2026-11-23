@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { parse as parseUrl } from 'url';
+import crypto from 'crypto';
 import { query, pool } from './db';
 import {
   validatePasswordPolicy,
@@ -2511,28 +2512,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-      const qrPayload = JSON.stringify({
-        v: 1,
-        app: 'my-money',
-        type: 'udhar-pair',
-        code: pairingCode,
-        token: pairingToken,
-        userId: authUser.id,
-        name: authUser.full_name || 'My Money User',
-      });
-
-      sendJson(res, 200, {
-        success: true,
-        message: 'New Udhar QR code generated successfully.',
-        pairingCode,
-        pairingToken,
-        publicName: authUser.full_name || 'My Money User',
-        qrData: qrPayload,
-        expiresAt: expiresAt.toISOString(),
-      });
-      return true;
-    }
-
     // 14. CONNECT PERSON VIA QR: POST /api/udhar/qr/connect
     if (pathname === '/api/udhar/qr/connect' && method === 'POST') {
       const authUser = await authenticateRequest(req);
@@ -2572,6 +2551,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 400, { success: false, message: 'Cannot connect with your own QR code.' });
         return true;
       }
+
+      // Check existing connection
+      const existingConn = await query(
+        `SELECT id FROM public.user_connections 
+         WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
+        [authUser.id, targetUserId]
+      );
+      const wasAlreadyConnected = existingConn.rows.length > 0;
 
       // 1. Create mutual bidirectional connection (idempotent ON CONFLICT DO UPDATE)
       await query(

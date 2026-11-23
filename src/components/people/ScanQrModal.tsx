@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import jsQR from 'jsqr';
 import {
   X,
@@ -8,15 +8,18 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  AlertTriangle,
   Users,
   ArrowRight,
   Sparkles,
   RefreshCw,
   RotateCcw,
+  Zap,
+  ZapOff,
+  SwitchCamera,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 import { udharDeletionApi, ResolveQrResponse } from '../../lib/udharDeletionApi';
 
 interface ScanQrModalProps {
@@ -32,6 +35,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 }) => {
   const { user } = useAuth();
   const toast = useToast();
+  const { setScannerActive } = usePwaInstall();
 
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'code'>('camera');
   const [isResolving, setIsResolving] = useState<boolean>(false);
@@ -39,6 +43,12 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const [scanError, setScanError] = useState<{ title: string; message: string; code?: string } | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // Multi-camera & Torch capabilities
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
+  const [supportsTorch, setSupportsTorch] = useState<boolean>(false);
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
 
   // Manual code form
   const [manualCode, setManualCode] = useState<string>('');
@@ -51,39 +61,139 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const isScanningActiveRef = useRef<boolean>(false);
 
-  // Stop media stream helper
-  const stopCamera = () => {
+  // Notify PWA Install Context to suppress install banner when scanner is open
+  useEffect(() => {
+    if (isOpen) {
+      setScannerActive(true);
+    } else {
+      setScannerActive(false);
+    }
+    return () => setScannerActive(false);
+  }, [isOpen, setScannerActive]);
+
+  // Stop media stream helper & turn off torch
+  const stopCamera = useCallback(() => {
     isScanningActiveRef.current = false;
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          if (isTorchOn) {
+            (track as any).applyConstraints?.({ advanced: [{ torch: false }] });
+          }
+        } catch {}
+        track.stop();
+      });
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsTorchOn(false);
+  }, [isTorchOn]);
+
+  // Enumerate video devices on mount
+  const refreshDevices = useCallback(async () => {
+    try {
+      if (navigator.mediaDevices?.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter((d) => d.kind === 'videoinput');
+        setVideoDevices(inputs);
+      }
+    } catch (e) {
+      console.warn('Could not enumerate devices:', e);
+    }
+  }, []);
+
+  // Start media stream for live QR scan with environment camera preference
+  const startCamera = useCallback(
+    async (deviceIdOverride?: string | null) => {
+      stopCamera();
+      setCameraError(null);
+      setScanError(null);
+
+      const targetDeviceId = deviceIdOverride !== undefined ? deviceIdOverride : currentDeviceId;
+
+      try {
+        const constraints: MediaStreamConstraints = {
+          audio: false,
+          video: targetDeviceId
+            ? {
+                deviceId: { exact: targetDeviceId },
+                width: { ideal: 720 },
+                height: { ideal: 720 },
+              }
+            : {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 720 },
+                height: { ideal: 720 },
+              },
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        // Check torch support on the active video track
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack?.getCapabilities) {
+          const caps = videoTrack.getCapabilities() as any;
+          setSupportsTorch(Boolean(caps && 'torch' in caps));
+        } else {
+          setSupportsTorch(false);
+        }
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute('playsinline', 'true');
+          await videoRef.current.play();
+          isScanningActiveRef.current = true;
+          scanFrame();
+        }
+
+        // Refresh enumerated devices now that permission is granted
+        refreshDevices();
+      } catch (err: any) {
+        console.warn('Camera stream error:', err);
+        let msg = 'Camera access unavailable. You can upload an image or enter the pairing code manually.';
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          msg = 'Camera permission was denied. Please allow camera permissions in your browser address bar, or use the "Upload" or "Pair Code" options below.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          msg = 'No camera found on this device. Please upload a QR image or enter the pairing code manually.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          msg = 'Camera is currently being used by another application or tab. Please close other camera sessions and retry.';
+        }
+        setCameraError(msg);
+      }
+    },
+    [currentDeviceId, stopCamera, refreshDevices]
+  );
+
+  // Switch camera if multiple cameras exist
+  const handleSwitchCamera = () => {
+    if (videoDevices.length <= 1) return;
+    const currentIndex = videoDevices.findIndex((d) => d.deviceId === currentDeviceId);
+    const nextIndex = (currentIndex + 1) % videoDevices.length;
+    const nextDevice = videoDevices[nextIndex];
+    const newId = nextDevice?.deviceId || null;
+    setCurrentDeviceId(newId);
+    startCamera(newId);
   };
 
-  // Start media stream for live QR scan
-  const startCamera = async () => {
-    stopCamera();
-    setCameraError(null);
-    setScanError(null);
+  // Toggle torch / flashlight
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+      const nextState = !isTorchOn;
+      await (track as any).applyConstraints({
+        advanced: [{ torch: nextState }],
       });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        await videoRef.current.play();
-        isScanningActiveRef.current = true;
-        scanFrame();
-      }
-    } catch (err: any) {
-      console.warn('Camera error:', err.message);
-      setCameraError('Camera access unavailable or permission denied. You can upload an image or enter the pairing code manually.');
+      setIsTorchOn(nextState);
+    } catch (err) {
+      console.warn('Torch toggle error:', err);
     }
   };
 
@@ -95,7 +205,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    if (ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
+    if (ctx && video.readyState >= video.HAVE_CURRENT_DATA) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -106,7 +216,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       });
 
       if (code && code.data) {
-        // Detected a QR code!
+        // Detected a QR code! Lock scanner immediately to avoid duplicate scans
         stopCamera();
         handleQrPayloadDetected(code.data);
         return;
@@ -130,8 +240,47 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     return () => stopCamera();
   }, [isOpen, activeTab]);
 
+  // Client-side payload format validation helper
+  const validateQrPayload = (raw: string): { isValid: boolean; error?: string } => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return { isValid: false, error: 'Empty QR code detected.' };
+    }
+
+    // 1. JSON payload from My Money Manager
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && (parsed.app === 'my-money' || parsed.type === 'udhar-pair')) {
+        return { isValid: true };
+      }
+    } catch {}
+
+    // 2. Direct pairing code (MM-XXXXXX)
+    if (trimmed.startsWith('MM-') && trimmed.length >= 6) {
+      return { isValid: true };
+    }
+
+    // 3. Hex 64-char pairing token
+    if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+      return { isValid: true };
+    }
+
+    return {
+      isValid: false,
+      error: 'Not a valid My Money Manager QR code. Please scan a genuine QR code generated inside My Money Manager.',
+    };
+  };
+
   // Handle detected QR data string
   const handleQrPayloadDetected = async (rawQrData: string) => {
+    const validation = validateQrPayload(rawQrData);
+    if (!validation.isValid) {
+      const errorMsg = validation.error || 'Not a valid My Money Manager QR code.';
+      setScanError({ title: 'Invalid QR Code', message: errorMsg, code: 'INVALID_QR' });
+      toast.error('Invalid QR Code', errorMsg);
+      return;
+    }
+
     try {
       setIsResolving(true);
       setScanError(null);
@@ -151,10 +300,10 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
       if (code === 'SELF_CONNECTION') {
         title = 'Self-Connection Not Allowed';
-        message = 'This is your own QR code. You cannot link your account with yourself.';
+        message = 'You cannot add yourself. This is your own My Money Manager QR code.';
       } else if (code === 'QR_EXPIRED') {
         title = 'QR Code Expired';
-        message = 'This QR code has expired. Please ask the person to tap "Regenerate QR" to get a fresh code.';
+        message = 'This QR code has expired. Please ask the person to tap "Reset QR" to get a fresh code.';
       } else if (code === 'QR_REVOKED') {
         title = 'QR Code Revoked';
         message = 'This QR code is no longer active because the user has generated a newer code.';
@@ -228,9 +377,19 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       }
     } catch (err: any) {
       const code = err.data?.code || '';
-      const message = err.message || 'Failed to verify pairing code.';
-      setScanError({ title: 'Verification Failed', message, code });
-      toast.error('Error', message);
+      let title = 'Verification Failed';
+      let message = err.message || 'Failed to verify pairing code.';
+
+      if (code === 'SELF_CONNECTION') {
+        title = 'Self-Connection Not Allowed';
+        message = 'You cannot add yourself. This is your own pairing code.';
+      } else if (code === 'QR_EXPIRED') {
+        title = 'Pairing Code Expired';
+        message = 'This pairing code has expired. Please ask the person to regenerate their QR code.';
+      }
+
+      setScanError({ title, message, code });
+      toast.error(title, message);
     } finally {
       setIsResolving(false);
     }
@@ -251,7 +410,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       if (res.success) {
         toast.success(
           'Connected Successfully!',
-          `You and ${res.connectedUser.displayName} are now linked for 2-way Udhar tracking.`
+          `You and ${res.connectedUser.displayName} are now linked for two-way Udhar tracking.`
         );
         if (onConnected) {
           onConnected({
@@ -288,8 +447,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-800">
-              <Camera className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
+              <Camera className="w-5 h-5 stroke-[2]" />
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-slate-100">
@@ -302,8 +461,9 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           <button
             onClick={onClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            aria-label="Close"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 stroke-[2]" />
           </button>
         </div>
 
@@ -311,7 +471,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         {scanError && !resolvedOwner && (
           <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-center space-y-3 animate-fade-in">
             <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
-              <AlertCircle className="w-6 h-6" />
+              <AlertCircle className="w-6 h-6 stroke-[2]" />
             </div>
             <div>
               <h4 className="font-bold text-sm text-rose-900 dark:text-rose-200">
@@ -520,6 +680,36 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-bounce" />
                   </div>
 
+                  {/* Top-Right Camera Quick Controls: Switch Camera & Torch */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                    {supportsTorch && (
+                      <button
+                        type="button"
+                        onClick={toggleTorch}
+                        className={`p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer ${
+                          isTorchOn
+                            ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/30'
+                            : 'bg-slate-900/70 text-white hover:bg-slate-900'
+                        }`}
+                        title={isTorchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
+                        aria-label="Toggle Flashlight"
+                      >
+                        {isTorchOn ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+                      </button>
+                    )}
+                    {videoDevices.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleSwitchCamera}
+                        className="p-2 rounded-xl bg-slate-900/70 text-white hover:bg-slate-900 backdrop-blur-md transition-all cursor-pointer"
+                        title="Switch Camera"
+                        aria-label="Switch Camera"
+                      >
+                        <SwitchCamera className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
                   {isResolving && (
                     <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center text-white space-y-2">
                       <div className="w-7 h-7 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
@@ -545,7 +735,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               <div className="space-y-4 py-4">
                 <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 rounded-3xl cursor-pointer bg-slate-50 dark:bg-slate-800/40 transition-colors">
                   <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 text-center">
                     Click to select a QR code screenshot or photo
                   </span>
                   <span className="text-[10px] text-slate-400 mt-1">PNG, JPG, JPEG</span>
@@ -575,7 +765,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     maxLength={14}
                   />
                   <p className="text-[10px] text-slate-400">
-                    Enter the 6-character code shown below your friend's My QR code
+                    Enter the code shown below your friend's My QR code
                   </p>
                 </div>
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
+  ArrowDownLeft,
   Home,
   DoorOpen,
   ShoppingBag,
@@ -88,7 +89,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
+  const { isInstalled, triggerInstallPrompt, isBannerVisible } = usePwaInstall();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
 
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -106,7 +107,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   const navItems: MobileNavItem[] = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'home' as NavTab, label: 'Home Section', icon: Home, badge: formatINR(summary.remainingHomeBalance) },
+    { id: 'home' as NavTab, label: 'Received Money', icon: ArrowDownLeft, badge: formatINR(summary.totalReceivedMoney || summary.totalHomeReceived) },
     { id: 'room' as NavTab, label: 'Room Section', icon: DoorOpen, badge: formatINR(summary.totalRoomExpenses) },
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
@@ -329,7 +330,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       </div>
 
       {/* Floating Action Button (FAB) for Mobile Quick Add */}
-      <div className="fixed bottom-20 right-4 z-40 lg:hidden">
+      <div
+        className={`fixed right-4 z-40 lg:hidden transition-all duration-300 ease-out ${
+          isBannerVisible ? 'bottom-36' : 'bottom-20'
+        }`}
+      >
         <button
           onClick={onOpenAddModal}
           className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-md border border-emerald-500/30 transition-transform p-3 cursor-pointer"
@@ -558,8 +563,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   }}
                   className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
                 >
-                  <Home className="w-4 h-4 text-emerald-500" />
-                  <span>Home Money</span>
+                  <ArrowDownLeft className="w-4 h-4 text-emerald-500" />
+                  <span>Received Money</span>
                 </button>
                 <button
                   onClick={() => {

@@ -108,7 +108,11 @@ async function resolveUserViaSupabaseRest(userId: string): Promise<Authenticated
       const rows = await res.json();
       if (Array.isArray(rows) && rows.length > 0 && rows[0].status === 'active') {
         const row = rows[0];
-        const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+        const isMasterAdmin = Boolean(
+          row.email &&
+          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+           row.email.toLowerCase().trim() === 'admin@mymoney.com')
+        );
         return {
           id: row.id,
           full_name: row.full_name,
@@ -149,7 +153,11 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
         );
         if (directRes.rows.length > 0 && directRes.rows[0].status === 'active') {
           const row = directRes.rows[0];
-          const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+          const isMasterAdmin = Boolean(
+          row.email &&
+          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+           row.email.toLowerCase().trim() === 'admin@mymoney.com')
+        );
           return {
             id: row.id,
             full_name: row.full_name,
@@ -190,7 +198,11 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
         );
         if (jwtRes.rows.length > 0 && jwtRes.rows[0].status === 'active') {
           const row = jwtRes.rows[0];
-          const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+          const isMasterAdmin = Boolean(
+          row.email &&
+          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+           row.email.toLowerCase().trim() === 'admin@mymoney.com')
+        );
           return {
             id: row.id,
             full_name: row.full_name,
@@ -262,7 +274,11 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
     // Update session last active time
     query(`UPDATE public.user_sessions SET last_active_at = NOW() WHERE id = $1`, [row.session_id]).catch(() => {});
 
-    const isMasterAdmin = Boolean(row.email && row.email.toLowerCase().trim() === 'admin@mymoney.com');
+    const isMasterAdmin = Boolean(
+      row.email &&
+      (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+       row.email.toLowerCase().trim() === 'admin@mymoney.com')
+    );
 
     return {
       id: row.id,

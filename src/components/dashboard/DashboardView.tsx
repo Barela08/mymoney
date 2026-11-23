@@ -407,40 +407,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
         {/* 5 Mobile-First Section Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {/* 1. Home Section */}
+          {/* 1. Received Money Section */}
           <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-5 transition-colors flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
                 <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/15">
-                  <Home className="w-5 h-5 stroke-[1.75]" />
+                  <ArrowDownLeft className="w-5 h-5 stroke-[2]" />
                 </div>
               </div>
 
               <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-3">
-                Home section
+                Received Money
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                Track money received from home and expenses spent for household
+                Track salary, business, freelancing, gifts & all money received
               </p>
 
-              {/* Home Balance Stats */}
+              {/* Received Money Stats */}
               <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>Received from home</span>
+                  <span>Total received</span>
                   <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {formatINR(summary.totalHomeReceived)}
+                    {formatINR(summary.totalReceivedMoney || summary.totalHomeReceived)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>Home spent</span>
-                  <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                    {formatINR(summary.totalHomeSpent)}
+                  <span>Earned income</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-200 tabular-nums">
+                    {formatINR(summary.totalEarnedIncome || 0)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
-                  <span>Remaining balance</span>
+                  <span>Other inflow</span>
                   <span className="text-teal-600 dark:text-teal-400 tabular-nums">
-                    {formatINR(summary.remainingHomeBalance)}
+                    {formatINR(summary.totalOtherIncome || 0)}
                   </span>
                 </div>
               </div>
@@ -452,14 +452,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 onClick={() => onNavigate('home')}
                 className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
-                <span>Open home</span>
+                <span>Open Received</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
-                onClick={() => onOpenAddModal('home', 'received_home')}
+                onClick={() => onOpenAddModal('home', 'salary')}
                 className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
-                + Add home entry
+                + Add Received Money
               </button>
             </div>
           </div>

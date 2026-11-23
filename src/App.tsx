@@ -22,7 +22,7 @@ import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
 import { TransactionCategory, TransactionSubcategory } from './types';
 import { AlertTriangle } from 'lucide-react';
-import { PwaInstallProvider } from './context/PwaInstallContext';
+import { PwaInstallProvider, usePwaInstall } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
 import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
@@ -126,6 +126,24 @@ const MainContent: React.FC = () => {
   // Help & Feedback Modal State
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [helpModalInitialTab, setHelpModalInitialTab] = useState<'help' | 'feedback' | 'complaint' | 'dpdp'>('help');
+
+  const { setScannerActive, setModalsSuppressed } = usePwaInstall();
+
+  const isAnyInteractiveModalOpen =
+    isAddModalOpen ||
+    isHelpModalOpen ||
+    isMyQrOpen ||
+    isScanQrOpen ||
+    isNotifCenterOpen ||
+    isNotifPrefsOpen;
+
+  useEffect(() => {
+    setModalsSuppressed(isAnyInteractiveModalOpen);
+  }, [isAnyInteractiveModalOpen, setModalsSuppressed]);
+
+  useEffect(() => {
+    setScannerActive(isScanQrOpen);
+  }, [isScanQrOpen, setScannerActive]);
 
   const handleOpenHelpModal = (tab: 'help' | 'feedback' | 'complaint' | 'dpdp' = 'help') => {
     setHelpModalInitialTab(tab);

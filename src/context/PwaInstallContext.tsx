@@ -19,11 +19,18 @@ interface PwaInstallContextType {
   triggerInstallPrompt: () => Promise<void>;
   isBannerDismissed: boolean;
   dismissBanner: () => void;
+  isScannerActive: boolean;
+  setScannerActive: (active: boolean) => void;
+  activeModalCount: number;
+  setModalsSuppressed: (suppressed: boolean) => void;
+  isBannerVisible: boolean;
 }
 
 const PwaInstallContext = createContext<PwaInstallContextType | undefined>(undefined);
 
 const DISMISSED_STORAGE_KEY = 'my_money_pwa_install_dismissed';
+// 14 days dismissal cooldown period
+const DISMISS_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
 
 export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -31,13 +38,18 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
   const [isIOS, setIsIOS] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
+  const [activeModalCount, setActiveModalCount] = useState<number>(0);
+
   const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(DISMISSED_STORAGE_KEY);
       if (saved) {
         const time = parseInt(saved, 10);
-        // Dismiss banner for 2 days once dismissed
-        return Date.now() - time < 2 * 24 * 60 * 60 * 1000;
+        if (!isNaN(time)) {
+          // Banner dismissed within the 14-day window
+          return Date.now() - time < DISMISS_COOLDOWN_MS;
+        }
       }
       return false;
     } catch {
@@ -46,7 +58,7 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   });
 
   useEffect(() => {
-    // Check if running in standalone mode (already installed)
+    // Check if running in standalone mode (already installed PWA)
     const checkStandalone = () => {
       const isStandalone =
         window.matchMedia('(display-mode: standalone)').matches ||
@@ -95,11 +107,20 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsModalOpen(false);
   }, []);
 
+  // Dismissing only hides the banner and saves timestamp; never triggers prompt, modal or redirects
   const dismissBanner = useCallback(() => {
     setIsBannerDismissed(true);
     try {
       localStorage.setItem(DISMISSED_STORAGE_KEY, Date.now().toString());
     } catch {}
+  }, []);
+
+  const setScannerActive = useCallback((active: boolean) => {
+    setIsScannerActive(active);
+  }, []);
+
+  const setModalsSuppressed = useCallback((suppressed: boolean) => {
+    setActiveModalCount((prev) => (suppressed ? prev + 1 : Math.max(0, prev - 1)));
   }, []);
 
   const triggerInstallPrompt = useCallback(async () => {
@@ -118,10 +139,17 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setIsModalOpen(true);
       }
     } else {
-      // If deferred prompt is not natively available (e.g. iOS or custom browser), open guide modal
+      // If deferred prompt is not natively available (e.g. iOS Safari or manual instruction), show guide modal
       setIsModalOpen(true);
     }
   }, [deferredPrompt]);
+
+  // Banner is visible only if:
+  // 1. Not already installed / not standalone
+  // 2. Not dismissed within cooldown
+  // 3. Scanner / camera is not active
+  // 4. No full modals active
+  const isBannerVisible = !isInstalled && !isBannerDismissed && !isScannerActive && activeModalCount === 0;
 
   return (
     <PwaInstallContext.Provider
@@ -135,6 +163,11 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         triggerInstallPrompt,
         isBannerDismissed,
         dismissBanner,
+        isScannerActive,
+        setScannerActive,
+        activeModalCount,
+        setModalsSuppressed,
+        isBannerVisible,
       }}
     >
       {children}

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard,
+  ArrowDownLeft,
   Home as HomeIcon,
   DoorOpen,
   ShoppingBag,
@@ -136,7 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Money Management',
       items: [
-        { id: 'home' as NavTab, label: 'Home Money', icon: HomeIcon, countBadge: formatINR(summary.remainingHomeBalance) },
+        { id: 'home' as NavTab, label: 'Received Money', icon: ArrowDownLeft, countBadge: formatINR(summary.totalReceivedMoney || summary.totalHomeReceived) },
         { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
         { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
         { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },

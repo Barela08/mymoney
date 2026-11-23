@@ -113,7 +113,11 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 // Used automatically if backend serverless endpoints are offline, 404, or unreachable
 // -----------------------------------------------------------------------------
 function mapRawUserToAuthUser(u: any): AuthUser {
-  const isMasterAdmin = Boolean(u.email && u.email.toLowerCase().trim() === 'admin@mymoney.com');
+  const isMasterAdmin = Boolean(
+    u.email &&
+    (u.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+     u.email.toLowerCase().trim() === 'admin@mymoney.com')
+  );
   const rawRole = (u.role || '').toLowerCase().trim();
   const effectiveRole = isMasterAdmin ? 'superadmin' : (rawRole || 'user');
 
@@ -316,7 +320,11 @@ async function directSupabaseGetProfile(): Promise<{ success: boolean; profile: 
         const rows = await res.json();
         if (Array.isArray(rows) && rows.length > 0) {
           const u = rows[0];
-          const isMasterAdmin = Boolean(u.email && u.email.toLowerCase().trim() === 'admin@mymoney.com');
+          const isMasterAdmin = Boolean(
+    u.email &&
+    (u.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
+     u.email.toLowerCase().trim() === 'admin@mymoney.com')
+  );
           const rawRole = (u.role || '').toLowerCase().trim();
           const effectiveRole = isMasterAdmin ? 'superadmin' : (rawRole || 'user');
 
