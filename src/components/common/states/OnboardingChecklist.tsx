@@ -26,11 +26,11 @@ export const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
   const steps = [
     {
       id: 'home_income',
-      title: 'Record Starting Balance or Home Income',
-      description: 'Add money received from home or your initial bank balance.',
+      title: 'Record Starting Balance or Received Money',
+      description: 'Add salary, business earnings, freelancing, or initial balance.',
       completed: hasHomeIncome,
       action: () => onOpenAddModal('home'),
-      actionLabel: 'Add Income',
+      actionLabel: 'Add Received',
     },
     {
       id: 'daily_expense',
