@@ -160,7 +160,7 @@ runTest('Error Prevention: Payload validator enforces required fields, positive 
     userId
   );
   assert.strictEqual(neg.isValid, false);
-  assert.ok(neg.errors.some((e) => e.toLowerCase().includes('positive')));
+  assert.ok(neg.errors.some((e) => e.toLowerCase().includes('greater than 0')));
 
   // Missing title fails
   const noTitle = validateTransactionPayload(
@@ -209,21 +209,17 @@ runTest('Financial Integrity: Transfers between own accounts are excluded from I
 });
 
 runTest('Financial Integrity: Net Worth strictly computes Assets minus Liabilities', () => {
-  const assets = [
-    { id: 'a1', name: 'Savings Account', category: 'cash_bank' as const, amount: 100000, isIncluded: true },
-    { id: 'a2', name: 'Mutual Funds', category: 'mutual_funds' as const, amount: 250000, isIncluded: true },
-  ];
-
-  const liabilities = [
-    { id: 'l1', name: 'Car Loan', category: 'car_loan' as const, amount: 80000, isIncluded: true },
-  ];
-
-  const netWorthResult = calculateNetWorth({
-    assets,
-    liabilities,
-    liquidBalance: 20000,
-    udharReceivables: 10000,
-    udharPayables: 5000,
+  const calc = calculateNetWorth({
+    assets: [
+      { id: 'a1', name: 'Savings Account', category: 'bank_account', current_value: 100000, valuation_date: '2026-11-25', updated_at: '' },
+      { id: 'a2', name: 'Mutual Funds', category: 'mutual_funds', current_value: 250000, valuation_date: '2026-11-25', updated_at: '' },
+    ],
+    liabilities: [
+      { id: 'l1', name: 'Car Loan', category: 'car_loan', current_balance: 80000, valuation_date: '2026-11-25', updated_at: '' },
+    ],
+    availableBalance: 20000,
+    udharReceivable: 10000,
+    udharPayable: 5000,
     settings: {
       includeLiquidBalance: true,
       includeUdharReceivables: true,
@@ -234,59 +230,50 @@ runTest('Financial Integrity: Net Worth strictly computes Assets minus Liabiliti
   // Assets = 100000 + 250000 + 20000 + 10000 = 380,000
   // Liabilities = 80000 + 5000 = 85,000
   // Net Worth = 380,000 - 85,000 = 295,000
-  assert.strictEqual(netWorthResult.totalAssets, 380000);
-  assert.strictEqual(netWorthResult.totalLiabilities, 85000);
-  assert.strictEqual(netWorthResult.netWorth, 295000);
-  assert.strictEqual(netWorthResult.isPositive, true);
+  assert.strictEqual(calc.totalAssets, 380000);
+  assert.strictEqual(calc.totalLiabilities, 85000);
+  assert.strictEqual(calc.netWorth, 295000);
+  assert.strictEqual(calc.netWorth > 0, true);
 });
 
 runTest('Financial Integrity: Safe-to-Spend avoids double subtraction of already-paid bills', () => {
-  const today = '2026-11-25';
+  const refDate = new Date(2026, 10, 21); // Nov 21, 2026
   const bills = [
-    { id: 'b1', title: 'WiFi', amount: 1000, due_day: 28, is_active: true, last_paid_date: '2026-11-01' }, // Unpaid for this cycle
-    { id: 'b2', title: 'Rent', amount: 10000, due_day: 1, is_active: true, last_paid_date: '2026-11-25' }, // Already paid today!
+    { id: 'b1', user_id: 'u1', title: 'WiFi', amount: 1000, due_day: 25, is_active: true, last_paid_date: null, frequency: 'monthly', reminder_enabled: true, created_at: '', updated_at: '' } as any,
+    { id: 'b2', user_id: 'u1', title: 'Rent', amount: 8000, due_day: 5, is_active: true, last_paid_date: '2026-11-05', frequency: 'monthly', reminder_enabled: true, created_at: '', updated_at: '' } as any,
   ];
 
-  const stsResult = calculateSafeToSpend({
-    liquidCash: 50000,
-    bills,
+  const res = calculateSafeToSpend({
+    availableBalance: 15000,
+    transactions: [{ id: 'tx-1', amount: 8000, transaction_date: '2026-11-05', transaction_type: 'expense', category: 'room', subcategory: 'rent', is_deleted: false, user_id: 'u1', title: 'Rent', created_at: '', updated_at: '', metadata: {} }],
+    recurringBills: bills,
+    budgets: [],
     savingsGoals: [],
-    todayIso: today,
     preferences: {
       ...DEFAULT_SAFE_TO_SPEND_PREFS,
-      emergencyReservePercent: 0,
-      emergencyReserveFixed: 0,
+      emergencyReserve: 0,
+      minimumBalanceReserve: 2000,
+      savingsCommitment: 2000,
+      essentialExpenseReserve: 0,
     },
+    referenceDate: refDate,
   });
 
-  // b2 is already paid today, so upcoming deductions should only deduct b1 (₹1,000), not b2 (₹10,000)
-  assert.strictEqual(stsResult.upcomingBillsTotal, 1000);
-  assert.strictEqual(stsResult.safeToSpendMonthly, 49000);
+  // b2 (Rent) was already paid on 2026-11-05, so upcoming deduction only counts b1 (WiFi: ₹1,000)
+  assert.strictEqual(res.upcomingBillsCommitment, 1000);
+  assert.strictEqual(res.safeToSpendThisMonth, 10000);
 });
 
 runTest('Error Prevention: Receipt scanner detects duplicate file hashes accurately', () => {
-  const existingReceipts = [
-    {
-      id: 'rec-1',
-      file_hash: 'abc123hash',
-      merchant: 'DMart Supermarket',
-      total_amount: 1850,
-      receipt_date: '2026-11-24',
-      created_at: new Date().toISOString(),
-    },
-  ];
-
   const duplicateCheck = detectDuplicateReceipt({
+    extraction: { merchant: 'DMart Supermarket', receiptDate: '2026-11-24', totalAmount: 1850, receiptNumber: '' },
     fileHash: 'abc123hash',
-    merchant: 'DMart',
-    totalAmount: 1850,
-    receiptDate: '2026-11-24',
-    existingReceipts,
+    existingTransactions: [],
+    knownReceiptHashes: [{ file_hash: 'abc123hash', merchant: 'DMart Supermarket', amount: 1850, receipt_date: '2026-11-24' }],
   });
 
   assert.strictEqual(duplicateCheck.isDuplicate, true);
-  assert.strictEqual(duplicateCheck.matchedReceiptId, 'rec-1');
-  assert.ok(duplicateCheck.reason.includes('Identical receipt file'));
+  assert.ok(duplicateCheck.reason.includes('already scanned earlier'));
 });
 
 console.log('\n================================================================');
