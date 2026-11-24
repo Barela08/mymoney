@@ -9,6 +9,7 @@
     "server": "vite --host",
     "build": "tsc -b && vite build",
     "test:security": "tsx scripts/run-security-tests.ts",
+    "test:admin": "tsx scripts/test-admin-complete-system.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },
