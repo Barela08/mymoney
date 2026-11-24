@@ -877,7 +877,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Prevent Email Enumeration: Always return identical success response
       const standardResponse = {
         success: true,
-        message: 'If an account exists with that email address, password reset instructions have been sent.',
+        message: 'If an account exists with this email, a password reset link has been sent.',
       };
 
       if (userRes.rows.length === 0) {
@@ -908,7 +908,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [user.id, tokenHash, expiresAt, clientIp, userAgent]
       );
 
-      const resetLink = `${origin}/#reset-password&token=${rawToken}&email=${encodeURIComponent(user.email)}`;
+      const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
+      const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
       // Dispatch real email via Nodemailer
       await sendPasswordResetEmail(user.email, user.full_name, resetLink);
@@ -1283,7 +1284,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [targetUserId, tokenHash, expiresAt, clientIp, 'Admin-Initiated-Dispatch']
       );
 
-      const resetLink = `${origin}/#reset-password&token=${rawToken}&email=${encodeURIComponent(targetUser.email)}`;
+      const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
+      const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(targetUser.email)}`;
 
       // Dispatch email
       const sent = await sendPasswordResetEmail(targetUser.email, targetUser.full_name, resetLink);
