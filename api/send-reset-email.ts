@@ -127,10 +127,10 @@ export async function sendPasswordResetEmail(payload: {
   `;
 
   return transporter.sendMail({
-    from: '"HackifyPro Alert" <hackifypro@gmail.com>',
+    from: '"My Money Manager" <hackifypro@gmail.com>',
     to: email,
-    subject: `🔐 ${otp} is your My Money Manager Password Reset OTP`,
-    text: `Your password reset OTP is ${otp}. Direct reset link: ${resetLink}. Contact support at +91 74149 35405 or hackifypro@gmail.com.`,
+    subject: 'Reset Your My Money Manager Password',
+    text: `Hello ${name || 'User'},\n\nWe received a request to reset your password for My Money Manager (${email}).\n\nYour 6-digit OTP is: ${otp}\nDirect reset link: ${resetLink}\n\nThis link is valid for 15 minutes. If you did not request this, please ignore this email.\n\nMy Money Manager Security Team`,
     html: htmlContent,
   });
 }

@@ -74,7 +74,7 @@ export async function sendEmail(opts: EmailOptions): Promise<boolean> {
 // 1. Password Reset Email
 // -------------------------------------------------------------
 export async function sendPasswordResetEmail(email: string, name: string, resetLink: string): Promise<boolean> {
-  const subject = `[Action Required] Reset Your Password - ${APP_CONFIG.appName}`;
+  const subject = 'Reset Your My Money Manager Password';
   const html = `
     <!DOCTYPE html>
     <html>
