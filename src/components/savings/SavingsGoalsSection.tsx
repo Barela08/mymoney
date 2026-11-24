@@ -62,6 +62,18 @@ export const SavingsGoalsSection: React.FC = () => {
     loadGoals();
   }, []);
 
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (contributeGoal && !isProcessingContribute) setContributeGoal(null);
+        else if (isModalOpen && !isSaving) setIsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen, contributeGoal, isSaving, isProcessingContribute]);
+
   const totalSavedAllGoals = goals.reduce((sum, g) => sum + Number(g.current_amount), 0);
   const totalTargetAllGoals = goals.reduce((sum, g) => sum + Number(g.target_amount), 0);
   const completedGoalsCount = goals.filter((g) => g.is_completed || Number(g.current_amount) >= Number(g.target_amount)).length;

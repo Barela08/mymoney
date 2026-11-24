@@ -23,6 +23,7 @@ import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateU
 import { SUPPORT_CONTACT } from '../../config/contact';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { HeaderInstallButton } from './HeaderInstallButton';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -158,6 +159,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">Maintenance active</span>
             </div>
           )}
+
+          {/* Live Cloud & System Synchronization Status */}
+          <SyncStatusIndicator />
 
           {/* Top-right PWA Install Entry Point (only visible when installable & not installed) */}
           <HeaderInstallButton />

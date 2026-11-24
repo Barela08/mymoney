@@ -43,6 +43,7 @@ import { Transaction } from '../../types';
 import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { NavTab } from '../common/Sidebar';
 import { AiIntelligenceWidgets } from './AiIntelligenceWidgets';
+import { SearchVoiceBar } from '../common/SearchVoiceBar';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -764,34 +765,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </button>
         </div>
 
-        {/* Search Bar with dedicated Search Button */}
-        <div className="flex items-center gap-2 pt-3 pb-2">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search recent transactions by title, person, amount..."
-              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-xs"
-          >
-            <Search className="w-3.5 h-3.5" />
-            <span>Search</span>
-          </button>
+        {/* Search Bar with Voice Mic & dedicated Search Button */}
+        <div className="pt-3 pb-2">
+          <SearchVoiceBar
+            value={searchQuery}
+            onChange={(val) => setSearchQuery(val)}
+            onSearch={(val) => setSearchQuery(val)}
+            placeholder="Search recent transactions by title, person, amount..."
+          />
         </div>
 
         {isLoading ? (

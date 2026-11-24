@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Download,
   X,
@@ -41,6 +41,17 @@ export const PwaInstallModal: React.FC = () => {
     // Dismisses the install suggestion immediately without installing
     dismissBanner();
   };
+
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isModalOpen) {
+        handleDismiss();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen]);
 
   return (
     <div

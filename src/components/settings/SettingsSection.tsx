@@ -28,6 +28,7 @@ import { ConfirmModal } from '../common/ConfirmModal';
 import { UserProfileSection } from '../profile/UserProfileSection';
 import { AccountDeletionSection } from '../profile/AccountDeletionSection';
 import { LegalCenterSection } from '../legal/LegalCenterSection';
+import { PermissionsSettingsCard } from './PermissionsSettingsCard';
 
 interface SettingsSectionProps {
   initialTab?: 'profile' | 'preferences' | 'deletion' | 'legal';
@@ -151,6 +152,9 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
       {/* Preferences & Data Tab */}
       {activeTab === 'preferences' && (
         <div className="space-y-6">
+          {/* Device Hardware Permissions Card */}
+          <PermissionsSettingsCard />
+
           {/* Theme Selector */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">

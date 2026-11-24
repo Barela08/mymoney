@@ -32,6 +32,12 @@ interface ScanQrModalProps {
     emailMasked?: string;
     avatarUrl?: string | null;
   }) => void;
+  onRecordExpense?: (expense: {
+    title: string;
+    amount?: string;
+    category?: string;
+    notes?: string;
+  }) => void;
 }
 
 export const ScanQrModal: React.FC<ScanQrModalProps> = ({
@@ -39,6 +45,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   onClose,
   initialPairCode,
   onConnected,
+  onRecordExpense,
 }) => {
   const toast = useToast();
   const { setScannerActive } = usePwaInstall();
@@ -53,6 +60,14 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   } | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [upiDetails, setUpiDetails] = useState<{
+    pa: string;
+    pn: string;
+    am?: string;
+    cu?: string;
+    tn?: string;
+    rawUri: string;
+  } | null>(null);
 
   // Multi-camera & Torch capabilities
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
@@ -106,6 +121,18 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     setIsTorchOn(false);
   }, []);
 
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling & camera cleanup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        stopCamera();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, stopCamera]);
+
   const refreshDevices = useCallback(async () => {
     try {
       if (navigator.mediaDevices?.enumerateDevices) {
@@ -146,6 +173,41 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const resolveRawInput = useCallback(
     async (rawInput: string) => {
       if (isResolvingRef.current) return;
+
+      const trimmed = (rawInput || '').trim();
+
+      // 1. Check if this is a standard UPI Payment QR code (upi://pay?...)
+      if (trimmed.toLowerCase().startsWith('upi://')) {
+        try {
+          const upiUrl = new URL(trimmed);
+          const pa = upiUrl.searchParams.get('pa') || '';
+          const pn = decodeURIComponent(upiUrl.searchParams.get('pn') || 'Merchant / Recipient');
+          const am = upiUrl.searchParams.get('am') || undefined;
+          const cu = upiUrl.searchParams.get('cu') || 'INR';
+          const tn = upiUrl.searchParams.get('tn') || undefined;
+          if (pa) {
+            setUpiDetails({ pa, pn, am, cu, tn, rawUri: trimmed });
+            setScanError(null);
+            toast.info('UPI QR Detected', `Payee: ${pn}`);
+            return;
+          }
+        } catch {
+          const paMatch = trimmed.match(/[?&]pa=([^&]+)/i);
+          const pnMatch = trimmed.match(/[?&]pn=([^&]+)/i);
+          const amMatch = trimmed.match(/[?&]am=([^&]+)/i);
+          const tnMatch = trimmed.match(/[?&]tn=([^&]+)/i);
+          if (paMatch && paMatch[1]) {
+            const pa = decodeURIComponent(paMatch[1]);
+            const pn = pnMatch ? decodeURIComponent(pnMatch[1]) : 'Merchant';
+            const am = amMatch ? decodeURIComponent(amMatch[1]) : undefined;
+            const tn = tnMatch ? decodeURIComponent(tnMatch[1]) : undefined;
+            setUpiDetails({ pa, pn, am, cu: 'INR', tn, rawUri: trimmed });
+            setScanError(null);
+            toast.info('UPI QR Detected', `Payee: ${pn}`);
+            return;
+          }
+        }
+      }
 
       const parsed = parseQrPayload(rawInput);
       if (!parsed.valid) {
@@ -503,7 +565,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         </div>
 
         {/* State 1: Scan Error Alert Card */}
-        {scanError && !resolvedOwner && (
+        {scanError && !resolvedOwner && !upiDetails && (
           <div
             role="alert"
             className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-center space-y-3 animate-fade-in"
@@ -527,6 +589,90 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Try Again</span>
             </button>
+          </div>
+        )}
+
+        {/* State 1.5: Standard UPI Payment QR Code Review Screen */}
+        {upiDetails && (
+          <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4 text-left animate-fade-in">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-200 dark:border-indigo-800">
+                UPI
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  UPI Payment QR Detected
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Review recipient details before opening payment app
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-3.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400">Recipient Name</span>
+                <span className="font-bold text-slate-900 dark:text-slate-100">{upiDetails.pn}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400">UPI ID (VPA)</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300 text-[11px]">{upiDetails.pa}</span>
+              </div>
+              {upiDetails.am && (
+                <div className="flex justify-between items-center pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-slate-500 dark:text-slate-400">Amount</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                    ₹{upiDetails.am}
+                  </span>
+                </div>
+              )}
+              {upiDetails.tn && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-slate-400">Note</span>
+                  <span className="text-slate-700 dark:text-slate-300">{upiDetails.tn}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/40 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+              <strong>Security Guarantee:</strong> My Money Manager never executes payments directly or reads bank credentials. You can open your verified UPI banking app to pay, or record this entry directly into your expense ledger.
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <a
+                href={upiDetails.rawUri}
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold text-center block transition-all shadow-md shadow-emerald-600/20"
+              >
+                Open in UPI Banking App
+              </a>
+              {onRecordExpense && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRecordExpense({
+                      title: upiDetails.pn,
+                      amount: upiDetails.am,
+                      notes: `Paid to UPI: ${upiDetails.pa} (${upiDetails.tn || 'QR Payment'})`,
+                    });
+                    setUpiDetails(null);
+                    onClose();
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Record into Expense Ledger
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setUpiDetails(null);
+                  handleRetryScan();
+                }}
+                className="w-full py-2 text-center text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
+              >
+                Scan Another QR Code
+              </button>
+            </div>
           </div>
         )}
 

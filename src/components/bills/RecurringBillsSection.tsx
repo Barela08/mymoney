@@ -66,6 +66,17 @@ export const RecurringBillsSection: React.FC = () => {
     loadBills();
   }, []);
 
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isModalOpen && !isSaving) {
+        setIsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen, isSaving]);
+
   const totalMonthlyBills = bills
     .filter((b) => b.is_active)
     .reduce((sum, b) => sum + Number(b.amount), 0);

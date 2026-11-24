@@ -152,7 +152,13 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
         const name = typeof parsed.name === 'string' ? parsed.name.trim() : undefined;
         const email = typeof parsed.email === 'string' ? parsed.email.trim() : undefined;
         if (token || code || userId) {
-          return { valid: true, kind: 'json', token, code, userId, name, email };
+          const result: ParsedQrPayload = { valid: true, kind: 'json' };
+          if (token !== undefined) result.token = token;
+          if (code !== undefined) result.code = code;
+          if (userId !== undefined) result.userId = userId;
+          if (name !== undefined) result.name = name;
+          if (email !== undefined) result.email = email;
+          return result;
         }
       }
       return {

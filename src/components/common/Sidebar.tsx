@@ -147,10 +147,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
         { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
         { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
-        { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
-        { id: 'budget' as NavTab, label: 'Budget Planner', icon: PieChart },
-        { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
-        { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
         { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
         ...customSections.map((sec) => ({
           id: sec.id as NavTab,
@@ -160,24 +156,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'People & Payments',
+      title: 'Planning',
+      items: [
+        { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
+        { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
+        { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
+      ],
+    },
+    {
+      title: 'Financial Tools',
       items: [
         { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
-      ],
-    },
-    {
-      title: 'AI & Intelligence',
-      items: [
-        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-        { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
+        { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
-      ],
-    },
-    {
-      title: 'Tools',
-      items: [
-        { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner', icon: Receipt },
-        { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
+        { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
         { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
         ...(onOpenMyQr ? [{ id: 'my_qr' as NavTab, label: 'My QR Code', icon: QrCode, onClick: onOpenMyQr }] : []),
         ...(onOpenScanQr ? [{ id: 'scan_qr' as NavTab, label: 'Scan QR Code', icon: ScanLine, onClick: onOpenScanQr }] : []),
@@ -186,8 +178,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'Support',
+      title: 'Intelligence',
       items: [
+        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
+        { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
+        { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
+      ],
+    },
+    {
+      title: 'Account',
+      items: [
+        { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
+        { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
         {
           id: 'help_support' as NavTab,
           label: 'Help & Feedback',
@@ -195,7 +197,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick: onOpenHelpModal ? () => onOpenHelpModal('help') : undefined,
         },
         { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
-        { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
       ],
     },
     ...(isAdmin ? [{

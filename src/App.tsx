@@ -513,6 +513,17 @@ const MainContent: React.FC = () => {
               setCurrentTab('people');
               toast.success('Connected!', `${person.name} is now connected for 2-way Shared Udhar.`);
             }}
+            onRecordExpense={(draft) => {
+              setIsScanQrOpen(false);
+              setInitialPairCode(null);
+              handleOpenAddModal(
+                'other',
+                'miscellaneous',
+                undefined,
+                draft.amount ? Number(draft.amount) : undefined,
+                draft.title
+              );
+            }}
           />
 
           {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}

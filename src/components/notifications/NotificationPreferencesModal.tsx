@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Bell,
@@ -52,6 +52,17 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
   const [quietStart, setQuietStart] = useState(preferences?.quiet_hours_start ?? '22:00');
   const [quietEnd, setQuietEnd] = useState(preferences?.quiet_hours_end ?? '07:00');
   const [privacyAmounts, setPrivacyAmounts] = useState(preferences?.privacy_hide_amounts ?? false);
+
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !isSaving) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSaving, onClose]);
 
   if (!isOpen) return null;
 

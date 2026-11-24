@@ -82,6 +82,17 @@ export const StartupPermissionsModal: React.FC<StartupPermissionsModalProps> = (
     if (onComplete) onComplete();
   };
 
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isVisible && !isRequesting) {
+        handleSkip();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isVisible, isRequesting]);
+
   if (!isVisible) return null;
 
   return (

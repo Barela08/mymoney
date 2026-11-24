@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   PlusCircle,
@@ -23,9 +23,17 @@ import {
   Upload,
   Trash2,
   Image as ImageIcon,
+  Mic,
+  MicOff,
+  CheckCircle2,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
+import { useVoiceInput } from '../../lib/useVoiceInput';
+import { parseVoiceTransaction, ParsedVoiceDraft } from '../../lib/voiceTransactionParser';
+import { MicrophonePermissionModal } from '../common/MicrophonePermissionModal';
 import {
   TransactionCategory,
   TransactionSubcategory,
@@ -138,6 +146,47 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [isSuggestingAi, setIsSuggestingAi] = useState(false);
   const [showLearnedRules, setShowLearnedRules] = useState(false);
   const [userAppliedSuggestion, setUserAppliedSuggestion] = useState(false);
+
+  // Feature: Voice Transaction Entry & Dictation
+  const [voiceDraft, setVoiceDraft] = useState<ParsedVoiceDraft | null>(null);
+  const [showMicModal, setShowMicModal] = useState(false);
+  const [activeDictationField, setActiveDictationField] = useState<'transaction' | 'title' | 'notes' | null>(null);
+
+  const {
+    isListening,
+    transcript: voiceTranscript,
+    isPermissionDenied,
+    startListening,
+    stopListening,
+    language: voiceLang,
+    setLanguage: setVoiceLang,
+  } = useVoiceInput({
+    onResult: (text) => {
+      if (activeDictationField === 'title') {
+        setTitle(text);
+      } else if (activeDictationField === 'notes') {
+        setNotes(text);
+      } else if (activeDictationField === 'transaction') {
+        const parsed = parseVoiceTransaction(text);
+        setVoiceDraft(parsed);
+        if (parsed.amount) setAmount(parsed.amount);
+        if (parsed.category) setCategory(parsed.category);
+        if (parsed.subcategory) setSubcategory(parsed.subcategory as any);
+        if (parsed.title) setTitle(parsed.title);
+        if (parsed.notes) setNotes(parsed.notes);
+        if (parsed.personName) setPersonName(parsed.personName);
+      }
+    },
+    onError: (err) => {
+      toast.error('Voice Error', err);
+    },
+  });
+
+  useEffect(() => {
+    if (isPermissionDenied) {
+      setShowMicModal(true);
+    }
+  }, [isPermissionDenied]);
 
   // Compress & handle receipt attachment
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -377,6 +426,30 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     setPaymentMethod('UPI');
     setTransactionType('expense');
   };
+
+  // Nielsen Heuristic: Error Prevention — Duplicate Transaction Warning
+  const duplicateCandidate = useMemo(() => {
+    const parsedAmt = parseFloat(amount);
+    if (!parsedAmt || isNaN(parsedAmt) || parsedAmt <= 0) return null;
+    return transactions.find((t) => {
+      if (t.is_deleted) return false;
+      const amtMatch = Math.abs(Number(t.amount) - parsedAmt) < 0.01;
+      const catMatch = t.category === category;
+      const dateMatch = t.transaction_date === date;
+      return amtMatch && catMatch && dateMatch;
+    });
+  }, [amount, category, date, transactions]);
+
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !showUnsavedConfirm && !showMicModal) {
+        handleAttemptClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isDirty, showUnsavedConfirm, showMicModal]);
 
   if (!isOpen) return null;
 
@@ -652,6 +725,86 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               ))}
             </div>
           )}
+
+          {/* Voice Input Assistant Bar */}
+          <div className="p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50/50 to-blue-50/40 dark:from-emerald-950/40 dark:via-slate-800 dark:to-slate-900 border border-emerald-200/80 dark:border-emerald-800/60 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isListening && activeDictationField === 'transaction') {
+                      stopListening();
+                      setActiveDictationField(null);
+                    } else {
+                      setActiveDictationField('transaction');
+                      void startListening();
+                    }
+                  }}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    isListening && activeDictationField === 'transaction'
+                      ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/30 ring-2 ring-rose-400'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                  }`}
+                >
+                  {isListening && activeDictationField === 'transaction' ? (
+                    <>
+                      <MicOff className="w-3.5 h-3.5" />
+                      <span>Listening... (Tap to stop)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-3.5 h-3.5" />
+                      <span>Speak Transaction (बोलकर जोड़ें)</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Language Toggle Pill */}
+                <button
+                  type="button"
+                  onClick={() => setVoiceLang(voiceLang === 'hi-IN' ? 'en-IN' : 'hi-IN')}
+                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Switch speech language between Hindi and English"
+                >
+                  {voiceLang === 'hi-IN' ? '🇮🇳 Hindi' : '🌐 English'}
+                </button>
+              </div>
+
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                Say: &quot;Spent 500 on food&quot; or &quot;2000 salary received&quot;
+              </span>
+            </div>
+
+            {/* Live speech feedback or detected draft banner */}
+            {isListening && activeDictationField === 'transaction' && (
+              <div className="p-2.5 rounded-xl bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-xs text-rose-800 dark:text-rose-200 flex items-center gap-2 animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+                <span className="font-mono truncate">{voiceTranscript || 'Listening to your voice...'}</span>
+              </div>
+            )}
+
+            {voiceDraft && !isListening && (
+              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/90 border border-emerald-500/30 text-xs space-y-1">
+                <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Voice Draft Applied — Please Review
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setVoiceDraft(null)}
+                    className="text-[10px] text-slate-400 hover:text-slate-600 underline cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Recognized: &quot;{voiceDraft.rawTranscript}&quot;. Amount: <strong>₹{amount || '0'}</strong>, Category: <strong>{category}</strong>. Please review details below before saving.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Smart Categorization Live Suggestion Banner */}
           {(smartSuggestion || isSuggestingAi) && (
@@ -964,6 +1117,17 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
+            {duplicateCandidate && (
+              <div className="mt-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5 animate-fade-in">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold">Possible duplicate transaction detected</p>
+                  <p className="text-[11px] leading-relaxed opacity-90">
+                    A record of ₹{duplicateCandidate.amount} ("{duplicateCandidate.title}") is already saved on {duplicateCandidate.transaction_date}. If this is a separate legitimate transaction, you can proceed.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Dynamic Category-Specific Fields */}
@@ -1435,32 +1599,44 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           </div>
 
           {/* Form Actions */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
             <button
               type="button"
-              onClick={handleAttemptClose}
-              disabled={isSubmitting}
-              className="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
+              onClick={resetForm}
+              disabled={isSubmitting || !isDirty}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all disabled:opacity-40 cursor-pointer"
+              title="Reset all form fields to default"
             >
-              Cancel
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset</span>
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 rounded-xl shadow-lg shadow-emerald-600/25 transition-all cursor-pointer"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Save Record</span>
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleAttemptClose}
+                disabled={isSubmitting}
+                className="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 rounded-xl shadow-lg shadow-emerald-600/25 transition-all cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <PlusCircle className="w-4 h-4" />
+                    <span>Save Record</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -1470,6 +1646,15 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         documentName="New Transaction"
         onStay={() => setShowUnsavedConfirm(false)}
         onDiscard={handleDiscardChanges}
+      />
+
+      <MicrophonePermissionModal
+        isOpen={showMicModal}
+        onClose={() => setShowMicModal(false)}
+        onRetry={() => {
+          setShowMicModal(false);
+          void startListening();
+        }}
       />
     </div>
   );

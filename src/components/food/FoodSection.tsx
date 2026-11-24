@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { SkeletonTable } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, SortOrder, TransactionSubcategory } from '../../types';
@@ -480,25 +481,12 @@ export const FoodSection: React.FC<FoodSectionProps> = ({ onOpenAddModal }) => {
 
         {/* Search & Sort Bar */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="flex items-center gap-1.5">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search food item, place, notes..."
-                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
-              />
-            </div>
-            <button
-              type="button"
-              className="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>Search</span>
-            </button>
-          </div>
+          <SearchVoiceBar
+            value={searchQuery}
+            onChange={(val) => setSearchQuery(val)}
+            onSearch={(val) => setSearchQuery(val)}
+            placeholder="Search food item, place, notes..."
+          />
 
           <div className="flex items-center gap-2">
             <input

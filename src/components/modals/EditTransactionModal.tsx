@@ -72,6 +72,17 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     onClose();
   };
 
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !showUnsavedConfirm) {
+        handleAttemptClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isDirty, showUnsavedConfirm]);
+
   if (!isOpen || !transaction) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {

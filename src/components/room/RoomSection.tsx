@@ -21,6 +21,7 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
+import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { SkeletonTable, SkeletonCardsGrid } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction, TransactionSubcategory, SortOrder } from '../../types';
@@ -878,25 +879,12 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
           {/* History Filters */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="flex items-center gap-1.5">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search item, month, notes..."
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  <span>Search</span>
-                </button>
-              </div>
+              <SearchVoiceBar
+                value={searchQuery}
+                onChange={(val) => setSearchQuery(val)}
+                onSearch={(val) => setSearchQuery(val)}
+                placeholder="Search item, month, notes..."
+              />
 
               <div>
                 <input

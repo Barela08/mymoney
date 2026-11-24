@@ -65,6 +65,17 @@ export const BudgetSection: React.FC = () => {
     loadBudgets();
   }, []);
 
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isModalOpen && !isSaving) {
+        setIsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen, isSaving]);
+
   // Compute current month's real spend per category
   const currentMonthPrefix = getCurrentISTDate().slice(0, 7); // YYYY-MM
   const monthSpending = useMemo(() => {

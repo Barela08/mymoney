@@ -25,6 +25,7 @@ import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
 import { SkeletonTable } from '../common/states/SkeletonLoaders';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
+import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import {
   Transaction,
   TransactionCategory,
@@ -302,35 +303,16 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
 
         {/* Filter Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* 1. Search Box with Search Button */}
-          <div className="flex items-center gap-1.5">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    setCurrentPage(1);
-                  }
-                }}
-                placeholder="Search title, description, person..."
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => setCurrentPage(1)}
-              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors shadow-xs cursor-pointer"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>Search</span>
-            </button>
-          </div>
+          {/* 1. Search Box with Voice Mic & Search Button */}
+          <SearchVoiceBar
+            value={searchQuery}
+            onChange={(val) => {
+              setSearchQuery(val);
+              setCurrentPage(1);
+            }}
+            onSearch={() => setCurrentPage(1)}
+            placeholder="Search title, description, person..."
+          />
 
           {/* 2. Category Selector */}
           <div>

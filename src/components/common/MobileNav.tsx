@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   ArrowDownLeft,
@@ -93,6 +93,19 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { user, isAdmin, logout } = useAuth();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
+
+  // Nielsen Heuristic: User Control & Freedom — Escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isAiMenuOpen) setIsAiMenuOpen(false);
+        else if (isMoreSheetOpen) setIsMoreSheetOpen(false);
+        else if (isOpen) onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isMoreSheetOpen, isAiMenuOpen, onClose]);
 
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
   const customSections = dynamicSections.filter(

@@ -27,6 +27,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
+import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
 import { SkeletonCardsGrid, SkeletonTable } from '../common/states';
@@ -573,26 +574,14 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             </button>
           </div>
 
-          {/* Search Box with Search Button */}
-          <div className="flex items-center gap-1.5 min-w-[240px]">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search by person, notes, amount..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <button
-              type="button"
-              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>Search</span>
-            </button>
-          </div>
+          {/* Search Box with Voice Mic & Search Button */}
+          <SearchVoiceBar
+            value={searchQuery}
+            onChange={(val) => setSearchQuery(val)}
+            onSearch={(val) => setSearchQuery(val)}
+            placeholder="Search by person, notes, amount..."
+            className="w-full sm:w-auto sm:min-w-[280px]"
+          />
         </div>
 
         {/* Transactions Feed */}
