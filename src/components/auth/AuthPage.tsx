@@ -24,7 +24,6 @@ import { useToast } from '../../context/ToastContext';
 import { authApi } from '../../lib/authApi';
 import { DpdpConsentModal } from '../common/DpdpConsentModal';
 import { getStoredDpdpConsent, saveDpdpConsent } from '../common/DpdpConsentBanner';
-import { StartupPermissionsModal } from '../common/StartupPermissionsModal';
 
 export const AuthPage: React.FC = () => {
   const {
@@ -40,7 +39,24 @@ export const AuthPage: React.FC = () => {
   } = useAuth();
   const toast = useToast();
 
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot_password' | 'reset_password'>('login');
+  const getInitialMode = (): 'login' | 'register' | 'forgot_password' | 'reset_password' => {
+    if (typeof window === 'undefined') return 'login';
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    const hash = window.location.hash;
+    const search = window.location.search;
+    if (path === '/reset-password' || hash.includes('reset-password') || search.includes('token=')) {
+      return 'reset_password';
+    }
+    if (path === '/forgot-password' || hash === '#forgot-password') {
+      return 'forgot_password';
+    }
+    if (path === '/register' || hash === '#register') {
+      return 'register';
+    }
+    return 'login';
+  };
+
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot_password' | 'reset_password'>(getInitialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -56,9 +72,30 @@ export const AuthPage: React.FC = () => {
   const [generatedResetLink, setGeneratedResetLink] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Statutory DPDP Consent & Permissions Modal States
+  // Navigate between auth modes and synchronize URL
+  const navigateToMode = (newMode: 'login' | 'register' | 'forgot_password' | 'reset_password') => {
+    setMode(newMode);
+    setErrorMessage(null);
+    setValidationErrors([]);
+    setResetSuccessMessage(null);
+
+    if (typeof window !== 'undefined') {
+      if (newMode === 'forgot_password') {
+        window.history.pushState(null, '', '/forgot-password');
+      } else if (newMode === 'reset_password') {
+        const qs = activeToken ? `?token=${encodeURIComponent(activeToken)}` : '';
+        window.history.pushState(null, '', `/reset-password${qs}`);
+      } else if (newMode === 'register') {
+        window.history.pushState(null, '', '/register');
+      } else {
+        window.history.pushState(null, '', '/login');
+        setIsRecoveryMode(false);
+      }
+    }
+  };
+
+  // Statutory DPDP Consent State
   const [isDpdpModalOpen, setIsDpdpModalOpen] = useState(false);
-  const [isPermsModalOpen, setIsPermsModalOpen] = useState(false);
   const [isDpdpAgreed, setIsDpdpAgreed] = useState(() => {
     const c = getStoredDpdpConsent();
     return c.hasAnswered && c.isConsented;
@@ -75,11 +112,6 @@ export const AuthPage: React.FC = () => {
   const handleAcceptDpdp = () => {
     setIsDpdpAgreed(true);
     setIsDpdpModalOpen(false);
-    // After DPDP is accepted, prompt for startup permissions if not yet handled
-    const handled = localStorage.getItem('my_money_startup_perms_handled_v1');
-    if (!handled) {
-      setIsPermsModalOpen(true);
-    }
   };
 
   // Token Verification for reset_password mode
@@ -98,36 +130,65 @@ export const AuthPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
-  // When in recovery mode, verify the token
+  // Synchronize route and verify reset token across pathname, search query, and hash
   useEffect(() => {
-    if (isRecoveryMode || window.location.hash.includes('reset-password')) {
-      setMode('reset_password');
+    const detectTokenAndRoute = () => {
+      if (typeof window === 'undefined') return;
+      const path = window.location.pathname.replace(/\/+$/, '') || '/';
       const hash = window.location.hash;
-      const matchToken = hash.match(/token=([a-zA-Z0-9_-]+)/);
-      const token = matchToken?.[1] || recoveryToken || '';
-      setActiveToken(token);
+      const searchParams = new URLSearchParams(window.location.search);
 
-      if (token) {
-        setTokenStatus('checking');
-        authApi
-          .verifyResetToken(token)
-          .then((res) => {
-            if (res.valid) {
-              setTokenStatus('valid');
-              if (res.email) setTokenTargetEmail(res.email);
-            } else {
+      const isReset = path === '/reset-password' || hash.includes('reset-password') || isRecoveryMode;
+      const isForgot = path === '/forgot-password' || hash === '#forgot-password';
+      const isReg = path === '/register' || hash === '#register';
+
+      if (isReset) {
+        setMode('reset_password');
+        let token = searchParams.get('token');
+        if (!token) {
+          const matchToken = hash.match(/token=([a-zA-Z0-9_-]+)/);
+          if (matchToken && matchToken[1]) token = matchToken[1];
+        }
+        if (!token && recoveryToken) token = recoveryToken;
+
+        const foundToken = token || '';
+        setActiveToken(foundToken);
+
+        if (foundToken) {
+          setTokenStatus('checking');
+          authApi
+            .verifyResetToken(foundToken)
+            .then((res) => {
+              if (res.valid) {
+                setTokenStatus('valid');
+                if (res.email) setTokenTargetEmail(res.email);
+              } else {
+                setTokenStatus('invalid');
+                setErrorMessage(res.message || 'This reset link is invalid, expired, or has already been used.');
+              }
+            })
+            .catch(() => {
               setTokenStatus('invalid');
-              setErrorMessage(res.message || 'Reset link is invalid or has expired.');
-            }
-          })
-          .catch(() => {
-            setTokenStatus('invalid');
-            setErrorMessage('Unable to verify reset link.');
-          });
-      } else {
-        setTokenStatus('invalid');
+              setErrorMessage('Unable to verify reset link. Please check your network or request a new link.');
+            });
+        } else {
+          setTokenStatus('invalid');
+          setErrorMessage('Reset recovery token is missing. Please request a new link.');
+        }
+      } else if (isForgot) {
+        setMode('forgot_password');
+      } else if (isReg) {
+        setMode('register');
       }
-    }
+    };
+
+    detectTokenAndRoute();
+    window.addEventListener('popstate', detectTokenAndRoute);
+    window.addEventListener('hashchange', detectTokenAndRoute);
+    return () => {
+      window.removeEventListener('popstate', detectTokenAndRoute);
+      window.removeEventListener('hashchange', detectTokenAndRoute);
+    };
   }, [isRecoveryMode, recoveryToken]);
 
   // Live password strength calculation (12 to 128 characters, character diversity)
@@ -204,8 +265,7 @@ export const AuthPage: React.FC = () => {
           setConfirmPassword('');
           setActiveToken('');
           setTimeout(() => {
-            setMode('login');
-            setIsRecoveryMode(false);
+            navigateToMode('login');
           }, 2000);
         } else {
           setErrorMessage(res.message || 'Failed to update password.');
@@ -220,19 +280,22 @@ export const AuthPage: React.FC = () => {
 
     // 2. Forgot Password Mode
     if (mode === 'forgot_password') {
-      if (!email.trim()) {
-        setErrorMessage('Please enter your account email address.');
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email.trim() || !emailRegex.test(email.trim())) {
+        setErrorMessage('Please enter a valid email address (e.g. name@example.com).');
         return;
       }
       try {
         setIsSubmitting(true);
         const res = await requestPasswordReset(email);
-        setResetSuccessMessage(res.message);
+        setResetSuccessMessage(
+          res.message || 'If an account exists with this email, a password reset link has been sent.'
+        );
         setResendCooldown(60);
         if (res.resetLink) {
           setGeneratedResetLink(res.resetLink);
         }
-        toast.success('Reset Dispatched', res.message);
+        toast.success('Reset Request Dispatched', res.message || 'Instructions sent if account exists.');
       } catch (err: any) {
         setErrorMessage(err.message || 'Failed to dispatch reset request.');
       } finally {
@@ -327,11 +390,7 @@ export const AuthPage: React.FC = () => {
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl mb-6">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('login');
-                  setErrorMessage(null);
-                  setValidationErrors([]);
-                }}
+                onClick={() => navigateToMode('login')}
                 className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
                   mode === 'login'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
@@ -342,11 +401,7 @@ export const AuthPage: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMode('register');
-                  setErrorMessage(null);
-                  setValidationErrors([]);
-                }}
+                onClick={() => navigateToMode('register')}
                 className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
                   mode === 'register'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
@@ -445,245 +500,302 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Full Name (Register Only) */}
-            {mode === 'register' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Full Name <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Rahul Sharma"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-            )}
+          {/* Reset Password Token Checking & Invalid State Cards */}
+          {mode === 'reset_password' && tokenStatus === 'checking' && (
+            <div className="py-10 text-center space-y-3">
+              <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                Verifying password recovery token...
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Checking validity with authentication server
+              </p>
+            </div>
+          )}
 
-            {/* Email (All modes except reset_password) */}
-            {mode !== 'reset_password' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Email Address <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Mail className="h-4 w-4" />
-                  </div>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
+          {mode === 'reset_password' && tokenStatus === 'invalid' && (
+            <div className="py-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+                <AlertCircle className="w-6 h-6" />
               </div>
-            )}
-
-            {/* Phone Number (Register Only) */}
-            {mode === 'register' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Phone Number (Optional)
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Phone className="h-4 w-4" />
-                  </div>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Reset Link Invalid or Expired
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+                  {errorMessage || 'For your security, password reset tokens are single-use and expire 15 minutes after issuance.'}
+                </p>
               </div>
-            )}
+              <div className="pt-2 space-y-2 max-w-xs mx-auto">
+                <button
+                  type="button"
+                  onClick={() => navigateToMode('forgot_password')}
+                  className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition-all"
+                >
+                  Request a New Reset Link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateToMode('login')}
+                  className="w-full py-2 px-4 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  &larr; Back to Sign In
+                </button>
+              </div>
+            </div>
+          )}
 
-            {/* Password (Login, Register, Reset Password) */}
-            {mode !== 'forgot_password' && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {mode === 'reset_password' ? 'New Password' : 'Password'}{' '}
-                    <span className="text-rose-500">*</span>
+          {/* Form (Rendered when not in checking/invalid reset mode) */}
+          {(mode !== 'reset_password' || tokenStatus === 'valid') && (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Full Name (Register Only) */}
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Full Name <span className="text-rose-500">*</span>
                   </label>
-                  {mode === 'login' && (
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. Rahul Sharma"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Email (All modes except reset_password) */}
+              {mode !== 'reset_password' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Email Address <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Mail className="h-4 w-4" />
+                    </div>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Phone Number (Register Only) */}
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Phone Number (Optional)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Phone className="h-4 w-4" />
+                    </div>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Password (Login, Register, Reset Password) */}
+              {mode !== 'forgot_password' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {mode === 'reset_password' ? 'New Password' : 'Password'}{' '}
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    {mode === 'login' && (
+                      <button
+                        type="button"
+                        onClick={() => navigateToMode('forgot_password')}
+                        className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        Forgot Password?
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="h-4 w-4" />
+                    </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={mode === 'login' ? '••••••••••••' : 'Min 12 characters passphrase'}
+                      className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 font-mono"
+                    />
                     <button
                       type="button"
-                      onClick={() => {
-                        setMode('forgot_password');
-                        setErrorMessage(null);
-                        setValidationErrors([]);
-                      }}
-                      className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
-                      Forgot password?
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
+                  </div>
+
+                  {/* Password strength visualizer for Register & Reset */}
+                  {(mode === 'register' || mode === 'reset_password') && passwordStrength && (
+                    <div className="mt-2 space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-500">Strength Policy (min 12 chars):</span>
+                        <span
+                          className={`font-bold ${
+                            passwordStrength.isValid ? 'text-emerald-600' : 'text-rose-500'
+                          }`}
+                        >
+                          {passwordStrength.label}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${passwordStrength.color} transition-all duration-300`}
+                          style={{ width: passwordStrength.width }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Prominent Forgot Password Link directly below password input on Login */}
+                  {mode === 'login' && (
+                    <div className="mt-1.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => navigateToMode('forgot_password')}
+                        className="text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Forgot Password? Recover Account</span>
+                      </button>
+                    </div>
                   )}
                 </div>
+              )}
 
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Lock className="h-4 w-4" />
-                  </div>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={mode === 'login' ? '••••••••••••' : 'Min 12 characters passphrase'}
-                    className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-
-                {/* Password strength visualizer for Register & Reset */}
-                {(mode === 'register' || mode === 'reset_password') && passwordStrength && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-slate-500">Strength Policy (min 12 chars):</span>
-                      <span
-                        className={`font-bold ${
-                          passwordStrength.isValid ? 'text-emerald-600' : 'text-rose-500'
-                        }`}
-                      >
-                        {passwordStrength.label}
-                      </span>
+              {/* Confirm Password (Register and Reset Password) */}
+              {(mode === 'register' || mode === 'reset_password') && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Confirm Password <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="h-4 w-4" />
                     </div>
-                    <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${passwordStrength.color} transition-all duration-300`}
-                        style={{ width: passwordStrength.width }}
-                      />
-                    </div>
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter password"
+                      className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Confirm Password (Register and Reset Password) */}
-            {(mode === 'register' || mode === 'reset_password') && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Confirm Password <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Lock className="h-4 w-4" />
-                  </div>
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter password"
-                    className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Remember Me Checkbox (Login Only) */}
-            {mode === 'login' && (
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
+              {/* Remember Me Checkbox (Login Only) */}
+              {mode === 'login' && (
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                    />
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Remember Me (30 days)</span>
+                  </label>
+                </div>
+              )}
+
+              {/* DPDP Consent Acceptance Checkbox for Registration */}
+              {mode === 'register' && (
+                <div className="flex items-start gap-2.5 pt-1 text-left">
                   <input
                     type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                    id="register-dpdp-consent"
+                    checked={isDpdpAgreed}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsDpdpAgreed(checked);
+                      saveDpdpConsent(checked);
+                      if (!checked) {
+                        setIsDpdpModalOpen(true);
+                      }
+                    }}
+                    className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
                   />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Remember Me (30 days)</span>
-                </label>
-              </div>
-            )}
-
-            {/* DPDP Consent Acceptance Checkbox for Registration */}
-            {mode === 'register' && (
-              <div className="flex items-start gap-2.5 pt-1 text-left">
-                <input
-                  type="checkbox"
-                  id="register-dpdp-consent"
-                  checked={isDpdpAgreed}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setIsDpdpAgreed(checked);
-                    saveDpdpConsent(checked);
-                    if (!checked) {
-                      setIsDpdpModalOpen(true);
-                    }
-                  }}
-                  className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
-                />
-                <label
-                  htmlFor="register-dpdp-consent"
-                  className="text-xs text-slate-600 dark:text-slate-300 cursor-pointer leading-relaxed"
-                >
-                  I agree to the{' '}
-                  <button
-                    type="button"
-                    onClick={() => setIsDpdpModalOpen(true)}
-                    className="text-emerald-600 dark:text-emerald-400 font-bold underline cursor-pointer"
+                  <label
+                    htmlFor="register-dpdp-consent"
+                    className="text-xs text-slate-600 dark:text-slate-300 cursor-pointer leading-relaxed"
                   >
-                    DPDP Act 2023 Consent & Privacy Terms
-                  </button>{' '}
-                  for cloud sync and financial ledger security.
-                </label>
-              </div>
-            )}
+                    I agree to the{' '}
+                    <button
+                      type="button"
+                      onClick={() => setIsDpdpModalOpen(true)}
+                      className="text-emerald-600 dark:text-emerald-400 font-bold underline cursor-pointer"
+                    >
+                      DPDP Act 2023 Consent & Privacy Terms
+                    </button>{' '}
+                    for cloud sync and financial ledger security.
+                  </label>
+                </div>
+              )}
 
-            {/* Submit Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      {mode === 'login' && 'Sign In Securely'}
-                      {mode === 'register' && 'Create Account'}
-                      {mode === 'forgot_password' && 'Send Reset Link'}
-                      {mode === 'reset_password' && 'Set New Password'}
-                    </span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+              {/* Submit Button */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {mode === 'login' && 'Sign In Securely'}
+                        {mode === 'register' && 'Create Account'}
+                        {mode === 'forgot_password' && 'Send Reset Link'}
+                        {mode === 'reset_password' && 'Set New Password'}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
 
           {/* Navigation between modes */}
           <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-center text-xs">
@@ -707,11 +819,7 @@ export const AuthPage: React.FC = () => {
                 )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('login');
-                    setErrorMessage(null);
-                    setResetSuccessMessage(null);
-                  }}
+                  onClick={() => navigateToMode('login')}
                   className="font-bold text-slate-600 dark:text-slate-300 hover:underline block mx-auto"
                 >
                   &larr; Back to Sign In
@@ -722,11 +830,7 @@ export const AuthPage: React.FC = () => {
             {mode === 'reset_password' && (
               <button
                 type="button"
-                onClick={() => {
-                  setMode('login');
-                  setIsRecoveryMode(false);
-                  window.location.hash = '';
-                }}
+                onClick={() => navigateToMode('login')}
                 className="font-bold text-slate-600 dark:text-slate-300 hover:underline"
               >
                 &larr; Back to Sign In
@@ -738,7 +842,7 @@ export const AuthPage: React.FC = () => {
                 Don't have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setMode('register')}
+                  onClick={() => navigateToMode('register')}
                   className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
                 >
                   Create one now
@@ -751,7 +855,7 @@ export const AuthPage: React.FC = () => {
                 Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
+                  onClick={() => navigateToMode('login')}
                   className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
                 >
                   Sign in
@@ -766,12 +870,6 @@ export const AuthPage: React.FC = () => {
       <DpdpConsentModal
         isOpen={isDpdpModalOpen}
         onAccept={handleAcceptDpdp}
-      />
-
-      {/* Startup Permissions Modal for Notification & Camera (for QR) */}
-      <StartupPermissionsModal
-        isOpen={isPermsModalOpen}
-        onComplete={() => setIsPermsModalOpen(false)}
       />
     </div>
   );

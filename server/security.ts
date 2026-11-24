@@ -136,7 +136,7 @@ export function checkRateLimit(key: string, maxAttempts: number, windowMs: numbe
 }
 
 // Cleanup expired rate limit records periodically
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, record] of rateLimitStore.entries()) {
     if (now > record.resetAt) {
@@ -144,6 +144,9 @@ setInterval(() => {
     }
   }
 }, 60000);
+if (typeof cleanupTimer?.unref === 'function') {
+  cleanupTimer.unref();
+}
 
 // -------------------------------------------------------------
 // SECURITY AUDIT LOGGING (PostgreSQL Immutable Ledger)

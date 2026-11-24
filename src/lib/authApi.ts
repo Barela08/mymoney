@@ -596,8 +596,10 @@ async function directSupabaseForgotPassword(email: string): Promise<{ success: b
           }),
         }).catch(() => {});
 
-        const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        const resetLink = `${origin}/#reset-password?token=${token}`;
+        const baseDomain = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? window.location.origin
+          : 'https://mymoney.nileshbarela.site';
+        const resetLink = `${baseDomain}/reset-password?token=${token}`;
 
         fetch('/api/send-reset-email', {
           method: 'POST',
@@ -607,7 +609,7 @@ async function directSupabaseForgotPassword(email: string): Promise<{ success: b
 
         return {
           success: true,
-          message: 'A password reset link has been dispatched to your email address.',
+          message: 'If an account exists with this email, a password reset link has been sent.',
           resetLink,
         };
       }
@@ -616,7 +618,7 @@ async function directSupabaseForgotPassword(email: string): Promise<{ success: b
 
   return {
     success: true,
-    message: 'If an account exists with this email address, a password reset link has been dispatched.',
+    message: 'If an account exists with this email, a password reset link has been sent.',
   };
 }
 

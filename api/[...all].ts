@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
 
     // 3. Delegate to API router
     const handled = await handleApiRequest(req, res);
-    if (!handled && !res.writableEnded) {
+    if (!handled && !res.writableEnded && !res.headersSent) {
       if (typeof res.status === 'function') {
         res.status(404).json({ success: false, message: 'API route not found' });
       } else {
@@ -33,7 +33,7 @@ export default async function handler(req: any, res: any) {
     }
   } catch (error: any) {
     console.error('API Serverless Error:', error);
-    if (!res.writableEnded) {
+    if (!res.writableEnded && !res.headersSent) {
       if (typeof res.status === 'function') {
         res.status(500).json({ success: false, message: error.message || 'Internal server error' });
       } else {

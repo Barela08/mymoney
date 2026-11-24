@@ -29,6 +29,7 @@ import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
 import { DpdpConsentModal } from './components/common/DpdpConsentModal';
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
+import { PermissionProvider } from './context/PermissionContext';
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
@@ -265,8 +266,16 @@ const MainContent: React.FC = () => {
     );
   }
 
-  // If user is in password recovery mode or not logged in, render AuthPage
-  if (isRecoveryMode || !user) {
+  // If user is in password recovery mode, visiting auth routes, or not logged in, render AuthPage
+  const isAuthRoute =
+    typeof window !== 'undefined' &&
+    (window.location.pathname === '/forgot-password' ||
+      window.location.pathname === '/reset-password' ||
+      window.location.pathname === '/login' ||
+      window.location.hash.includes('reset-password') ||
+      window.location.hash === '#forgot-password');
+
+  if (isRecoveryMode || isAuthRoute || !user) {
     return <AuthPage />;
   }
 

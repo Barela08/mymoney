@@ -54,26 +54,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
 
-  // Check URL hash for reset password token on initial load
+  // Check URL pathname, search params, and hash for reset password token and recovery mode
   useEffect(() => {
-    const handleHashChange = () => {
+    const checkRecoveryRoute = () => {
+      if (typeof window === 'undefined') return;
+      const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+      const search = window.location.search;
       const hash = window.location.hash;
-      if (hash.includes('reset-password')) {
+
+      const isResetPath = pathname === '/reset-password';
+      const isResetHash = hash.includes('reset-password');
+
+      if (isResetPath || isResetHash) {
         setIsRecoveryMode(true);
-        const matchToken = hash.match(/token=([a-zA-Z0-9_-]+)/);
-        if (matchToken && matchToken[1]) {
-          setRecoveryToken(matchToken[1]);
+        // Extract token from search query or hash
+        const searchParams = new URLSearchParams(search);
+        let token = searchParams.get('token');
+        let email = searchParams.get('email');
+
+        if (!token) {
+          const matchToken = hash.match(/token=([a-zA-Z0-9_-]+)/);
+          if (matchToken && matchToken[1]) {
+            token = matchToken[1];
+          }
         }
-        const matchEmail = hash.match(/email=([^&]+)/);
-        if (matchEmail && matchEmail[1]) {
-          setRecoveryEmail(decodeURIComponent(matchEmail[1]));
+        if (!email) {
+          const matchEmail = hash.match(/email=([^&]+)/);
+          if (matchEmail && matchEmail[1]) {
+            email = decodeURIComponent(matchEmail[1]);
+          }
         }
+
+        if (token) setRecoveryToken(token);
+        if (email) setRecoveryEmail(email);
       }
     };
 
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    checkRecoveryRoute();
+    window.addEventListener('hashchange', checkRecoveryRoute);
+    window.addEventListener('popstate', checkRecoveryRoute);
+    return () => {
+      window.removeEventListener('hashchange', checkRecoveryRoute);
+      window.removeEventListener('popstate', checkRecoveryRoute);
+    };
   }, []);
 
   // Fetch current user from server session or Supabase session

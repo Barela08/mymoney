@@ -257,18 +257,22 @@ export async function processExpiredAccountDeletions(): Promise<number> {
   return count;
 }
 
-// Background timer: runs check every 60 seconds (only when PostgreSQL is connected)
-if (isDatabaseConfigured && !(globalThis as any).__accountDeletionWorkerTimer) {
-  (globalThis as any).__accountDeletionWorkerTimer = setInterval(() => {
+// Background timer: runs check every 60 seconds (only when PostgreSQL is connected and not running in Vercel serverless)
+if (isDatabaseConfigured && !process.env.VERCEL && !(globalThis as any).__accountDeletionWorkerTimer) {
+  const timer = setInterval(() => {
     processExpiredAccountDeletions().catch(() => {});
   }, 60000);
+  if (typeof timer?.unref === 'function') timer.unref();
+  (globalThis as any).__accountDeletionWorkerTimer = timer;
 }
 
-// Background timer: runs scheduled notification campaigns every 60 seconds (only when PostgreSQL is connected)
-if (isDatabaseConfigured && !(globalThis as any).__scheduledCampaignsWorkerTimer) {
-  (globalThis as any).__scheduledCampaignsWorkerTimer = setInterval(() => {
+// Background timer: runs scheduled notification campaigns every 60 seconds (only when PostgreSQL is connected and not running in Vercel serverless)
+if (isDatabaseConfigured && !process.env.VERCEL && !(globalThis as any).__scheduledCampaignsWorkerTimer) {
+  const timer = setInterval(() => {
     processScheduledCampaigns().catch(() => {});
   }, 60000);
+  if (typeof timer?.unref === 'function') timer.unref();
+  (globalThis as any).__scheduledCampaignsWorkerTimer = timer;
 }
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
