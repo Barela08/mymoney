@@ -22,6 +22,7 @@ import { NavTab } from './Sidebar';
 import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { HeaderInstallButton } from './HeaderInstallButton';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -157,6 +158,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">Maintenance active</span>
             </div>
           )}
+
+          {/* Top-right PWA Install Entry Point (only visible when installable & not installed) */}
+          <HeaderInstallButton />
 
           {/* Quick Calculator Access (Standardized secondary button h-9) */}
           <button

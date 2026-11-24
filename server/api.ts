@@ -45,8 +45,16 @@ import { handleAdminApiRequest } from './adminApi';
 import { handleAiFinanceRequest } from './aiFinanceApi';
 import {
   getUserNotificationPreferences,
+  updateUserNotificationPreferences,
+  registerPushSubscription,
+  listUserPushSubscriptions,
+  removePushSubscriptionByEndpoint,
+  removePushSubscriptionById,
+  getPushDeliveryStatus,
   createNotification,
   notifyTransactionCreated,
+  notifyFinancialAlert,
+  notifySecurityAlert,
   notifyUdharCreated,
   notifyUdharRepayment,
   notifyQrConnected,
@@ -301,17 +309,52 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
   const clientIp = getClientIp(req);
   const userAgent = (req.headers['user-agent'] as string) || '';
-  const origin = (req.headers['origin'] as string) || 'http://localhost:3000';
+  const requestOrigin = (req.headers['origin'] as string) || '';
+  const hostHeader = String(req.headers['x-forwarded-host'] || req.headers['host'] || '').split(',')[0].trim();
 
-  // Enable standard CORS headers
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  const isAllowedOrigin = (orig: string): boolean => {
+    if (!orig) return false;
+    try {
+      const parsed = new URL(orig);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+      if (hostHeader && parsed.host === hostHeader) return true;
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return true;
+      if (parsed.hostname === 'mymoney-two-rho.vercel.app') return true;
+      if (parsed.hostname.endsWith('.run.app')) return true;
+      const configuredAppUrl = process.env.APP_URL || '';
+      if (configuredAppUrl) {
+        try {
+          if (new URL(configuredAppUrl).origin === parsed.origin) return true;
+        } catch {}
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  if (requestOrigin && isAllowedOrigin(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return true;
+  }
+
+  // Lightweight health check (no secrets exposed)
+  if (pathname === '/api/health' && method === 'GET') {
+    sendJson(res, 200, {
+      success: true,
+      status: 'ok',
+      databaseAvailable: isDatabaseAvailable(),
+      timestamp: new Date().toISOString(),
+    });
     return true;
   }
 
@@ -5087,75 +5130,104 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = checkRateLimit(`notif_prefs:${authUser.id}`, 30, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Too many preference updates. Please try again shortly.' });
+        return true;
+      }
+
       const body = await parseJsonBody(req);
-      const inApp = body.in_app_enabled !== undefined ? !!body.in_app_enabled : true;
-      const push = body.push_enabled !== undefined ? !!body.push_enabled : true;
-      const email = body.email_enabled !== undefined ? !!body.email_enabled : true;
-      const income = body.notify_income !== undefined ? !!body.notify_income : true;
-      const expense = body.notify_expense !== undefined ? !!body.notify_expense : true;
-      const udhar = body.notify_udhar !== undefined ? !!body.notify_udhar : true;
-      const support = body.notify_support !== undefined ? !!body.notify_support : true;
-      const announcements = body.notify_announcements !== undefined ? !!body.notify_announcements : true;
-      const offers = body.notify_offers !== undefined ? !!body.notify_offers : true;
-      const quietHours = body.quiet_hours_enabled !== undefined ? !!body.quiet_hours_enabled : false;
-      const quietStart = (body.quiet_hours_start || '22:00').trim();
-      const quietEnd = (body.quiet_hours_end || '07:00').trim();
-      const hideAmounts = body.privacy_hide_amounts !== undefined ? !!body.privacy_hide_amounts : false;
+      const updated = await updateUserNotificationPreferences(authUser.id, {
+        in_app_enabled: body.in_app_enabled,
+        push_enabled: body.push_enabled,
+        email_enabled: body.email_enabled,
+        notify_income: body.notify_income,
+        notify_expense: body.notify_expense,
+        notify_budget: body.notify_budget,
+        notify_bills: body.notify_bills,
+        notify_udhar: body.notify_udhar,
+        notify_savings: body.notify_savings,
+        notify_receipts: body.notify_receipts,
+        notify_security: body.notify_security,
+        notify_support: body.notify_support,
+        notify_announcements: body.notify_announcements,
+        notify_offers: body.notify_offers,
+        quiet_hours_enabled: body.quiet_hours_enabled,
+        quiet_hours_start: body.quiet_hours_start,
+        quiet_hours_end: body.quiet_hours_end,
+        privacy_hide_amounts: body.privacy_hide_amounts,
+      });
 
-      const upRes = await query(
-        `INSERT INTO public.user_notification_preferences (
-          user_id, in_app_enabled, push_enabled, email_enabled,
-          notify_income, notify_expense, notify_udhar, notify_support,
-          notify_announcements, notify_offers,
-          quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
-          updated_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
-        )
-        ON CONFLICT (user_id) DO UPDATE SET
-          in_app_enabled = EXCLUDED.in_app_enabled,
-          push_enabled = EXCLUDED.push_enabled,
-          email_enabled = EXCLUDED.email_enabled,
-          notify_income = EXCLUDED.notify_income,
-          notify_expense = EXCLUDED.notify_expense,
-          notify_udhar = EXCLUDED.notify_udhar,
-          notify_support = EXCLUDED.notify_support,
-          notify_announcements = EXCLUDED.notify_announcements,
-          notify_offers = EXCLUDED.notify_offers,
-          quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
-          quiet_hours_start = EXCLUDED.quiet_hours_start,
-          quiet_hours_end = EXCLUDED.quiet_hours_end,
-          privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
-          updated_at = NOW()
-        RETURNING *`,
-        [
-          authUser.id,
-          inApp,
-          push,
-          email,
-          income,
-          expense,
-          udhar,
-          support,
-          announcements,
-          offers,
-          quietHours,
-          quietStart,
-          quietEnd,
-          hideAmounts,
-        ]
-      );
-
-      sendJson(res, 200, { success: true, preferences: upRes.rows[0] });
+      sendJson(res, 200, { success: true, preferences: updated });
       return true;
     }
 
     // 8. PUSH VAPID PUBLIC KEY: GET /api/notifications/push/vapid-public-key
+    // Public key only — private key NEVER leaves server
     if (pathname === '/api/notifications/push/vapid-public-key' && method === 'GET') {
       sendJson(res, 200, {
         success: true,
         publicKey: APP_CONFIG.vapid.publicKey,
+        configured: Boolean(APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey),
+        persistent: APP_CONFIG.vapid.isPersistent,
       });
+      return true;
+    }
+
+    // 8b. LIST AUTHENTICATED USER'S REGISTERED PUSH DEVICES: GET /api/notifications/push/subscriptions
+    if (pathname === '/api/notifications/push/subscriptions' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const devices = await listUserPushSubscriptions(authUser.id);
+      sendJson(res, 200, {
+        success: true,
+        subscriptions: devices,
+        count: devices.length,
+      });
+      return true;
+    }
+
+    // 8c. REMOVE A SPECIFIC REGISTERED DEVICE SUBSCRIPTION: DELETE /api/notifications/push/subscriptions/:id
+    const pushSubDeleteMatch = pathname.match(/^\/api\/notifications\/push\/subscriptions\/([a-zA-Z0-9_-]+)$/);
+    if (pushSubDeleteMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const rate = checkRateLimit(`push_del:${authUser.id}`, 20, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Too many requests. Please wait a minute.' });
+        return true;
+      }
+
+      const subId = pushSubDeleteMatch[1];
+      const { deleted } = await removePushSubscriptionById(authUser.id, subId);
+      if (!deleted) {
+        sendJson(res, 404, { success: false, message: 'Device subscription not found for your account.' });
+        return true;
+      }
+
+      logSecurityEvent('PUSH_DEVICE_REMOVED', { userId: authUser.id, subscriptionId: subId });
+      sendJson(res, 200, { success: true, message: 'Device removed from push notifications.' });
+      return true;
+    }
+
+    // 8d. GET PUSH DELIVERY STATUS & LOGS: GET /api/notifications/push/status
+    if (pathname === '/api/notifications/push/status' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const status = await getPushDeliveryStatus(authUser.id);
+      sendJson(res, 200, { success: true, ...status });
       return true;
     }
 
@@ -5167,33 +5239,45 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = checkRateLimit(`push_sub:${authUser.id}`, 20, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Too many subscription requests. Try again shortly.' });
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       const endpoint = (body.endpoint || '').trim();
       const p256dh = body.keys?.p256dh || body.p256dh || '';
       const authKey = body.keys?.auth || body.auth || '';
-      const userAgent = req.headers['user-agent'] || null;
+      const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+      const deviceName = typeof body.deviceName === 'string' ? body.deviceName : null;
 
-      if (!endpoint || !p256dh || !authKey) {
+      const reg = await registerPushSubscription({
+        userId: authUser.id,
+        endpoint,
+        p256dh,
+        auth: authKey,
+        userAgent,
+        deviceName,
+      });
+
+      if (!reg.success) {
         sendJson(res, 400, {
           success: false,
-          message: 'Invalid push subscription payload (missing endpoint or cryptographic keys).',
+          message: reg.error || 'Invalid push subscription payload.',
         });
         return true;
       }
 
-      await query(
-        `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         ON CONFLICT (endpoint) DO UPDATE SET
-           user_id = EXCLUDED.user_id,
-           p256dh = EXCLUDED.p256dh,
-           auth = EXCLUDED.auth,
-           user_agent = EXCLUDED.user_agent,
-           updated_at = NOW()`,
-        [authUser.id, endpoint, p256dh, authKey, userAgent]
-      );
-
-      sendJson(res, 200, { success: true, message: 'Push notifications registered successfully.' });
+      logSecurityEvent('PUSH_SUBSCRIPTION_REGISTERED', {
+        userId: authUser.id,
+        device: reg.subscription?.device_name,
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: 'Push notifications registered successfully.',
+        subscription: reg.subscription,
+      });
       return true;
     }
 
@@ -5205,17 +5289,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = checkRateLimit(`push_unsub:${authUser.id}`, 20, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Too many requests. Please wait a minute.' });
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       const endpoint = (body.endpoint || '').trim();
 
       if (endpoint) {
-        await query(
-          `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2`,
-          [authUser.id, endpoint]
-        );
+        await removePushSubscriptionByEndpoint(authUser.id, endpoint);
       }
 
-      sendJson(res, 200, { success: true, message: 'Push notifications disabled.' });
+      sendJson(res, 200, { success: true, message: 'Push notifications disabled for this device.' });
       return true;
     }
 
@@ -5227,20 +5314,36 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = checkRateLimit(`push_test:${authUser.id}`, 5, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, {
+          success: false,
+          message: 'Test notification rate limit reached (max 5 per minute).',
+        });
+        return true;
+      }
+
       const result = await createNotification({
         userId: authUser.id,
-        title: '🔔 Test Notification · My Money Manager',
-        message: 'Push and In-App notification delivery verified! You will now receive instant financial and Udhar updates.',
+        title: 'Test Notification · My Money Manager',
+        message: 'Real Web Push delivery is active on this device. Tap to open your dashboard.',
         category: 'general',
         type: 'info',
         deepLink: 'dashboard',
+        tag: `mm-test-${Date.now()}`,
         channels: ['in_app', 'push'],
         skipPreferenceCheck: true,
       });
 
       sendJson(res, 200, {
         success: true,
-        message: 'Test notification dispatched successfully.',
+        message:
+          result.pushDelivered > 0
+            ? `Test push delivered to ${result.pushDelivered} of ${result.deviceCount} registered device(s).`
+            : result.deviceCount === 0
+              ? 'In-app test created, but no push devices are currently registered for your account.'
+              : 'Push delivery failed for registered device(s). Expired subscriptions were cleaned up.',
+        vapidPersistent: APP_CONFIG.vapid.isPersistent,
         result,
       });
       return true;
@@ -5254,16 +5357,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = checkRateLimit(`notif_tx:${authUser.id}`, 30, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Notification event rate limit reached.' });
+        return true;
+      }
+
       const body = await parseJsonBody(req);
-      const txId = body.id || body.transaction_id;
-      const title = (body.title || 'Transaction').trim();
+      const txId = String(body.id || body.transaction_id || '').trim().slice(0, 100);
+      const title = String(body.title || 'Transaction').trim().slice(0, 120);
       const amount = Number(body.amount) || 0;
       const type = body.type === 'income' ? 'income' : 'expense';
-      const category = body.category || 'General';
-      const section = body.section || '';
+      const category = String(body.category || 'General').trim().slice(0, 60);
+      const section = String(body.section || '').trim().slice(0, 60);
 
+      let delivery = null;
       if (txId && amount > 0) {
-        await notifyTransactionCreated(authUser.id, {
+        delivery = await notifyTransactionCreated(authUser.id, {
           id: txId,
           title,
           amount,
@@ -5273,7 +5383,62 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         });
       }
 
-      sendJson(res, 200, { success: true, message: 'Transaction notification processed.' });
+      sendJson(res, 200, { success: true, message: 'Transaction notification processed.', delivery });
+      return true;
+    }
+
+    // 13. EVENT TRIGGER: FINANCIAL INTELLIGENCE & SECURITY ALERTS: POST /api/notifications/events/financial-alert
+    if (pathname === '/api/notifications/events/financial-alert' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const rate = checkRateLimit(`notif_fin:${authUser.id}`, 30, 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, { success: false, message: 'Alert event rate limit reached.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const allowedCategories = new Set([
+        'budget',
+        'bill',
+        'anomaly',
+        'low_balance',
+        'savings',
+        'udhar',
+        'receipt',
+        'security',
+      ]);
+      const category = String(body.category || '').trim();
+      const title = String(body.title || '').trim();
+      const message = String(body.message || '').trim();
+      const dedupeKey = String(body.dedupeKey || '').trim().slice(0, 160);
+
+      if (!allowedCategories.has(category) || !title || !message || !dedupeKey) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Valid category, title, message, and dedupeKey are required.',
+        });
+        return true;
+      }
+
+      const delivery = await notifyFinancialAlert({
+        userId: authUser.id,
+        category: category as any,
+        title,
+        message,
+        severity: ['info', 'warning', 'critical', 'success'].includes(body.severity)
+          ? body.severity
+          : 'info',
+        deepLink: typeof body.deepLink === 'string' ? body.deepLink : undefined,
+        dedupeKey,
+        relatedEntityId: typeof body.relatedEntityId === 'string' ? body.relatedEntityId : undefined,
+      });
+
+      sendJson(res, 200, { success: true, delivery });
       return true;
     }
 

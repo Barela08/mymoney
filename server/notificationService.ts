@@ -1,12 +1,16 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import * as webpushModule from 'web-push';
 import { query } from './db';
 import { APP_CONFIG } from './config';
 import { sendEmail } from './email';
 import { generateCampaignEmail } from './notificationEmailTemplates';
+import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils';
 
 const webpush = (webpushModule as any).default || webpushModule;
 
-// Initialize web-push VAPID details
+// Initialize web-push VAPID details (private key stays strictly server-side)
 try {
   if (APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey) {
     webpush.setVapidDetails(
@@ -23,6 +27,12 @@ export type NotificationCategory =
   | 'general'
   | 'income'
   | 'expense'
+  | 'budget'
+  | 'bill'
+  | 'anomaly'
+  | 'low_balance'
+  | 'savings'
+  | 'receipt'
   | 'udhar'
   | 'repay'
   | 'settlement'
@@ -52,6 +62,8 @@ export interface CreateNotificationParams {
   relatedEntityType?: string;
   relatedEntityId?: string;
   deepLink?: string;
+  dedupeKey?: string;
+  tag?: string;
   metadata?: Record<string, any>;
   channels?: Array<'in_app' | 'push' | 'email'>;
   skipPreferenceCheck?: boolean;
@@ -70,104 +82,687 @@ export interface UserPreferences {
   email_enabled: boolean;
   notify_income: boolean;
   notify_expense: boolean;
+  notify_budget: boolean;
+  notify_bills: boolean;
   notify_udhar: boolean;
+  notify_savings: boolean;
+  notify_receipts: boolean;
+  notify_security: boolean;
   notify_support: boolean;
   notify_announcements: boolean;
   notify_offers: boolean;
   quiet_hours_enabled: boolean;
   quiet_hours_start: string;
   quiet_hours_end: string;
+  /** Default true: hide sensitive rupee amounts from lock-screen push previews unless user opts in */
   privacy_hide_amounts: boolean;
+}
+
+export interface StoredPushSubscription {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  device_name: string;
+  browser: string;
+  os: string;
+  is_active: boolean;
+  failure_count: number;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SafePushSubscriptionView {
+  id: string;
+  device_name: string;
+  browser: string;
+  os: string;
+  endpoint_preview: string;
+  endpoint_hash: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeliveryLogRecord {
+  id: string;
+  notification_id: string | null;
+  channel: 'in_app' | 'push' | 'email';
+  status: 'sent' | 'failed' | 'suppressed';
+  error_message: string | null;
+  created_at: string;
+}
+
+interface LocalUserPushStore {
+  preferences: UserPreferences;
+  subscriptions: StoredPushSubscription[];
+  dedupeKeys: Record<string, number>;
+  deliveryLogs: DeliveryLogRecord[];
+}
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+  in_app_enabled: true,
+  push_enabled: true,
+  email_enabled: true,
+  notify_income: true,
+  notify_expense: true,
+  notify_budget: true,
+  notify_bills: true,
+  notify_udhar: true,
+  notify_savings: true,
+  notify_receipts: true,
+  notify_security: true,
+  notify_support: true,
+  notify_announcements: true,
+  notify_offers: true,
+  quiet_hours_enabled: false,
+  quiet_hours_start: '22:00',
+  quiet_hours_end: '07:00',
+  privacy_hide_amounts: true,
+};
+
+// Path-confined per-user fallback store when DATABASE_URL is absent (dev / sandbox)
+const PUSH_FALLBACK_DIR = path.resolve(process.cwd(), '.data', 'push-notifications');
+
+function safeUserPushFile(userId: string): string {
+  const safeId = crypto.createHash('sha256').update(String(userId || 'unknown')).digest('hex');
+  const resolved = path.resolve(PUSH_FALLBACK_DIR, `${safeId}.json`);
+  if (!resolved.startsWith(PUSH_FALLBACK_DIR + path.sep)) {
+    throw new Error('Invalid storage path');
+  }
+  return resolved;
+}
+
+function readLocalStore(userId: string): LocalUserPushStore {
+  try {
+    const file = safeUserPushFile(userId);
+    if (fs.existsSync(file)) {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return {
+        preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences || {}) },
+        subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
+        dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === 'object' ? parsed.dedupeKeys : {},
+        deliveryLogs: Array.isArray(parsed.deliveryLogs) ? parsed.deliveryLogs : [],
+      };
+    }
+  } catch {
+    // Fallback to clean defaults
+  }
+  return {
+    preferences: { ...DEFAULT_PREFERENCES },
+    subscriptions: [],
+    dedupeKeys: {},
+    deliveryLogs: [],
+  };
+}
+
+function writeLocalStore(userId: string, store: LocalUserPushStore): void {
+  try {
+    fs.mkdirSync(PUSH_FALLBACK_DIR, { recursive: true });
+    // Prune stale dedupe keys older than 35 days and cap delivery logs to 50
+    const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
+    const prunedDedupe: Record<string, number> = {};
+    for (const [k, ts] of Object.entries(store.dedupeKeys)) {
+      if (typeof ts === 'number' && ts >= cutoff) {
+        prunedDedupe[k] = ts;
+      }
+    }
+    store.dedupeKeys = prunedDedupe;
+    store.deliveryLogs = store.deliveryLogs.slice(0, 50);
+    const file = safeUserPushFile(userId);
+    fs.writeFileSync(file, JSON.stringify(store, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[Push] Local fallback write notice:', err);
+  }
+}
+
+export function hashEndpoint(endpoint: string): string {
+  return crypto.createHash('sha256').update(endpoint).digest('hex').slice(0, 24);
+}
+
+function formatEndpointPreview(endpoint: string): string {
+  try {
+    const parsed = new URL(endpoint);
+    const tail = endpoint.slice(-10);
+    return `${parsed.hostname}/…${tail}`;
+  } catch {
+    return 'push-endpoint';
+  }
+}
+
+export function toSafeSubscriptionView(sub: StoredPushSubscription): SafePushSubscriptionView {
+  return {
+    id: sub.id,
+    device_name: sub.device_name || `${sub.browser || 'Browser'} on ${sub.os || 'Device'}`,
+    browser: sub.browser || 'Browser',
+    os: sub.os || 'Device',
+    endpoint_preview: formatEndpointPreview(sub.endpoint),
+    endpoint_hash: hashEndpoint(sub.endpoint),
+    is_active: sub.is_active !== false,
+    last_used_at: sub.last_used_at || null,
+    created_at: sub.created_at,
+    updated_at: sub.updated_at,
+  };
 }
 
 /**
  * Checks if current IST time falls in the user's quiet hours
  */
-function isCurrentTimeInQuietHours(startTime: string, endTime: string): boolean {
+export function isCurrentTimeInQuietHours(
+  startTime: string,
+  endTime: string,
+  nowDate: Date = new Date()
+): boolean {
   try {
-    const now = new Date();
     // Convert to IST (UTC + 5:30)
     const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(now.getTime() + istOffset);
+    const istDate = new Date(nowDate.getTime() + istOffset);
     const curHour = istDate.getUTCHours();
     const curMin = istDate.getUTCMinutes();
     const curTotalMin = curHour * 60 + curMin;
 
     const [startH, startM] = startTime.split(':').map((n) => parseInt(n, 10));
     const [endH, endM] = endTime.split(':').map((n) => parseInt(n, 10));
-    const startTotalMin = startH * 60 + (startM || 0);
-    const endTotalMin = endH * 60 + (endM || 0);
+    if (!Number.isFinite(startH) || !Number.isFinite(endH)) return false;
+    const startTotalMin = startH * 60 + (Number.isFinite(startM) ? startM : 0);
+    const endTotalMin = endH * 60 + (Number.isFinite(endM) ? endM : 0);
 
     if (startTotalMin <= endTotalMin) {
       return curTotalMin >= startTotalMin && curTotalMin < endTotalMin;
-    } else {
-      // Overnight (e.g. 22:00 to 07:00)
-      return curTotalMin >= startTotalMin || curTotalMin < endTotalMin;
     }
+    // Overnight (e.g. 22:00 to 07:00)
+    return curTotalMin >= startTotalMin || curTotalMin < endTotalMin;
   } catch {
     return false;
   }
 }
 
 /**
- * Mask monetary values (₹500, ₹ 10,000, 5000) for privacy mode
+ * Mask monetary values (₹500, ₹10,000, INR 2500) for lock-screen privacy mode
  */
-function maskFinancialData(text: string): string {
-  return text.replace(/(?:₹|INR|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, '₹[Hidden]');
+export function maskFinancialData(text: string): string {
+  return text.replace(/(?:₹|INR|Rs\.?|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, '₹••••');
 }
 
 /**
- * Fetches user notification preferences or returns defaults
+ * Normalize a deep link to a safe same-origin SPA URL
+ */
+export function buildSafeDeepLinkUrl(deepLink?: string): string {
+  if (!deepLink || !deepLink.trim()) return '/';
+  const clean = deepLink.trim();
+  const pathRoutes = new Set([
+    '/ai-assistant',
+    '/expense-calendar',
+    '/smart-alerts',
+    '/receipt-scanner',
+    '/net-worth',
+    '/safe-to-spend',
+  ]);
+  if (pathRoutes.has(clean)) return clean;
+  if (clean.startsWith('/#')) return clean;
+  if (clean.startsWith('/')) {
+    const slug = clean.replace(/^\/+/, '');
+    return slug ? `/#${slug}` : '/';
+  }
+  return `/#${clean}`;
+}
+
+/**
+ * Fetches user notification preferences or returns safe privacy-first defaults
  */
 export async function getUserNotificationPreferences(userId: string): Promise<UserPreferences> {
-  const defaults: UserPreferences = {
-    in_app_enabled: true,
-    push_enabled: true,
-    email_enabled: true,
-    notify_income: true,
-    notify_expense: true,
-    notify_udhar: true,
-    notify_support: true,
-    notify_announcements: true,
-    notify_offers: true,
-    quiet_hours_enabled: false,
-    quiet_hours_start: '22:00',
-    quiet_hours_end: '07:00',
-    privacy_hide_amounts: false,
-  };
-
   try {
     const res = await query(
       `SELECT * FROM public.user_notification_preferences WHERE user_id = $1`,
       [userId]
     );
     if (res.rows.length > 0) {
-      return { ...defaults, ...res.rows[0] };
+      return { ...DEFAULT_PREFERENCES, ...res.rows[0] };
     }
-    // Auto-create defaults if missing
     await query(
-      `INSERT INTO public.user_notification_preferences (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+      `INSERT INTO public.user_notification_preferences (user_id, privacy_hide_amounts)
+       VALUES ($1, TRUE)
+       ON CONFLICT (user_id) DO NOTHING`,
       [userId]
     ).catch(() => {});
-    return defaults;
+    return { ...DEFAULT_PREFERENCES };
   } catch {
-    return defaults;
+    const local = readLocalStore(userId);
+    return { ...DEFAULT_PREFERENCES, ...local.preferences };
   }
+}
+
+/**
+ * Persists user notification preferences in PostgreSQL (with local fallback when DB unavailable)
+ */
+export async function updateUserNotificationPreferences(
+  userId: string,
+  patch: Partial<UserPreferences>
+): Promise<UserPreferences> {
+  const current = await getUserNotificationPreferences(userId);
+  const next: UserPreferences = {
+    in_app_enabled: patch.in_app_enabled !== undefined ? Boolean(patch.in_app_enabled) : current.in_app_enabled,
+    push_enabled: patch.push_enabled !== undefined ? Boolean(patch.push_enabled) : current.push_enabled,
+    email_enabled: patch.email_enabled !== undefined ? Boolean(patch.email_enabled) : current.email_enabled,
+    notify_income: patch.notify_income !== undefined ? Boolean(patch.notify_income) : current.notify_income,
+    notify_expense: patch.notify_expense !== undefined ? Boolean(patch.notify_expense) : current.notify_expense,
+    notify_budget: patch.notify_budget !== undefined ? Boolean(patch.notify_budget) : current.notify_budget,
+    notify_bills: patch.notify_bills !== undefined ? Boolean(patch.notify_bills) : current.notify_bills,
+    notify_udhar: patch.notify_udhar !== undefined ? Boolean(patch.notify_udhar) : current.notify_udhar,
+    notify_savings: patch.notify_savings !== undefined ? Boolean(patch.notify_savings) : current.notify_savings,
+    notify_receipts: patch.notify_receipts !== undefined ? Boolean(patch.notify_receipts) : current.notify_receipts,
+    notify_security: patch.notify_security !== undefined ? Boolean(patch.notify_security) : current.notify_security,
+    notify_support: patch.notify_support !== undefined ? Boolean(patch.notify_support) : current.notify_support,
+    notify_announcements:
+      patch.notify_announcements !== undefined ? Boolean(patch.notify_announcements) : current.notify_announcements,
+    notify_offers: patch.notify_offers !== undefined ? Boolean(patch.notify_offers) : current.notify_offers,
+    quiet_hours_enabled:
+      patch.quiet_hours_enabled !== undefined ? Boolean(patch.quiet_hours_enabled) : current.quiet_hours_enabled,
+    quiet_hours_start:
+      typeof patch.quiet_hours_start === 'string' && /^\d{2}:\d{2}$/.test(patch.quiet_hours_start.trim())
+        ? patch.quiet_hours_start.trim()
+        : current.quiet_hours_start,
+    quiet_hours_end:
+      typeof patch.quiet_hours_end === 'string' && /^\d{2}:\d{2}$/.test(patch.quiet_hours_end.trim())
+        ? patch.quiet_hours_end.trim()
+        : current.quiet_hours_end,
+    privacy_hide_amounts:
+      patch.privacy_hide_amounts !== undefined ? Boolean(patch.privacy_hide_amounts) : current.privacy_hide_amounts,
+  };
+
+  // Persist to PostgreSQL (try extended columns first, gracefully fall back to legacy columns if migration not run yet)
+  try {
+    const upRes = await query(
+      `INSERT INTO public.user_notification_preferences (
+        user_id, in_app_enabled, push_enabled, email_enabled,
+        notify_income, notify_expense, notify_budget, notify_bills,
+        notify_udhar, notify_savings, notify_receipts, notify_security,
+        notify_support, notify_announcements, notify_offers,
+        quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW()
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        in_app_enabled = EXCLUDED.in_app_enabled,
+        push_enabled = EXCLUDED.push_enabled,
+        email_enabled = EXCLUDED.email_enabled,
+        notify_income = EXCLUDED.notify_income,
+        notify_expense = EXCLUDED.notify_expense,
+        notify_budget = EXCLUDED.notify_budget,
+        notify_bills = EXCLUDED.notify_bills,
+        notify_udhar = EXCLUDED.notify_udhar,
+        notify_savings = EXCLUDED.notify_savings,
+        notify_receipts = EXCLUDED.notify_receipts,
+        notify_security = EXCLUDED.notify_security,
+        notify_support = EXCLUDED.notify_support,
+        notify_announcements = EXCLUDED.notify_announcements,
+        notify_offers = EXCLUDED.notify_offers,
+        quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
+        quiet_hours_start = EXCLUDED.quiet_hours_start,
+        quiet_hours_end = EXCLUDED.quiet_hours_end,
+        privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
+        updated_at = NOW()
+      RETURNING *`,
+      [
+        userId,
+        next.in_app_enabled,
+        next.push_enabled,
+        next.email_enabled,
+        next.notify_income,
+        next.notify_expense,
+        next.notify_budget,
+        next.notify_bills,
+        next.notify_udhar,
+        next.notify_savings,
+        next.notify_receipts,
+        next.notify_security,
+        next.notify_support,
+        next.notify_announcements,
+        next.notify_offers,
+        next.quiet_hours_enabled,
+        next.quiet_hours_start,
+        next.quiet_hours_end,
+        next.privacy_hide_amounts,
+      ]
+    );
+    if (upRes.rows.length > 0) {
+      return { ...next, ...upRes.rows[0] };
+    }
+  } catch {
+    // Fallback to legacy schema columns if extended columns are not yet migrated, else local store
+    try {
+      await query(
+        `INSERT INTO public.user_notification_preferences (
+          user_id, in_app_enabled, push_enabled, email_enabled,
+          notify_income, notify_expense, notify_udhar, notify_support,
+          notify_announcements, notify_offers,
+          quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
+          updated_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          in_app_enabled = EXCLUDED.in_app_enabled,
+          push_enabled = EXCLUDED.push_enabled,
+          email_enabled = EXCLUDED.email_enabled,
+          notify_income = EXCLUDED.notify_income,
+          notify_expense = EXCLUDED.notify_expense,
+          notify_udhar = EXCLUDED.notify_udhar,
+          notify_support = EXCLUDED.notify_support,
+          notify_announcements = EXCLUDED.notify_announcements,
+          notify_offers = EXCLUDED.notify_offers,
+          quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
+          quiet_hours_start = EXCLUDED.quiet_hours_start,
+          quiet_hours_end = EXCLUDED.quiet_hours_end,
+          privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
+          updated_at = NOW()`,
+        [
+          userId,
+          next.in_app_enabled,
+          next.push_enabled,
+          next.email_enabled,
+          next.notify_income,
+          next.notify_expense,
+          next.notify_udhar,
+          next.notify_support,
+          next.notify_announcements,
+          next.notify_offers,
+          next.quiet_hours_enabled,
+          next.quiet_hours_start,
+          next.quiet_hours_end,
+          next.privacy_hide_amounts,
+        ]
+      );
+    } catch {
+      // Persist to local store below
+    }
+  }
+
+  const local = readLocalStore(userId);
+  local.preferences = next;
+  writeLocalStore(userId, local);
+  return next;
+}
+
+/**
+ * Registers or updates a Web Push subscription for an authenticated user (supports multiple devices).
+ */
+export async function registerPushSubscription(params: {
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userAgent?: string | null;
+  deviceName?: string | null;
+}): Promise<{ success: boolean; subscription?: SafePushSubscriptionView; error?: string }> {
+  const endpoint = (params.endpoint || '').trim();
+  const p256dh = (params.p256dh || '').trim();
+  const auth = (params.auth || '').trim();
+
+  if (!isValidPushEndpoint(endpoint)) {
+    return { success: false, error: 'Push endpoint must be a valid public HTTPS URL.' };
+  }
+  if (p256dh.length < 16 || p256dh.length > 512 || auth.length < 8 || auth.length > 256) {
+    return { success: false, error: 'Invalid cryptographic push subscription keys.' };
+  }
+
+  const ua = (params.userAgent || '').slice(0, 500);
+  const compat = detectPlatformCompatibility(ua);
+  const deviceName = (params.deviceName || compat.deviceLabel || 'Web Device').trim().slice(0, 120);
+  const nowIso = new Date().toISOString();
+
+  try {
+    const res = await query(
+      `INSERT INTO public.push_subscriptions
+         (user_id, endpoint, p256dh, auth, user_agent, device_name, browser, os, is_active, failure_count, last_used_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 0, NOW(), NOW())
+       ON CONFLICT (endpoint) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         p256dh = EXCLUDED.p256dh,
+         auth = EXCLUDED.auth,
+         user_agent = EXCLUDED.user_agent,
+         device_name = EXCLUDED.device_name,
+         browser = EXCLUDED.browser,
+         os = EXCLUDED.os,
+         is_active = TRUE,
+         failure_count = 0,
+         last_used_at = NOW(),
+         updated_at = NOW()
+       RETURNING *`,
+      [params.userId, endpoint, p256dh, auth, ua || null, deviceName, compat.browserLabel, compat.osLabel]
+    );
+    if (res.rows.length > 0) {
+      return { success: true, subscription: toSafeSubscriptionView(res.rows[0]) };
+    }
+  } catch {
+    // Try legacy table columns if migration hasn't added device_name/browser/os yet
+    try {
+      const legacy = await query(
+        `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (endpoint) DO UPDATE SET
+           user_id = EXCLUDED.user_id,
+           p256dh = EXCLUDED.p256dh,
+           auth = EXCLUDED.auth,
+           user_agent = EXCLUDED.user_agent,
+           updated_at = NOW()
+         RETURNING *`,
+        [params.userId, endpoint, p256dh, auth, ua || null]
+      );
+      if (legacy.rows.length > 0) {
+        const row = legacy.rows[0];
+        return {
+          success: true,
+          subscription: toSafeSubscriptionView({
+            ...row,
+            device_name: deviceName,
+            browser: compat.browserLabel,
+            os: compat.osLabel,
+            is_active: true,
+            failure_count: 0,
+            last_used_at: nowIso,
+          }),
+        };
+      }
+    } catch {
+      // Fallback to local per-user storage in sandbox/offline-DB environments
+    }
+  }
+
+  const local = readLocalStore(params.userId);
+  const existingIdx = local.subscriptions.findIndex((s) => s.endpoint === endpoint);
+  const record: StoredPushSubscription = {
+    id: existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto.randomUUID(),
+    user_id: params.userId,
+    endpoint,
+    p256dh,
+    auth,
+    user_agent: ua || null,
+    device_name: deviceName,
+    browser: compat.browserLabel,
+    os: compat.osLabel,
+    is_active: true,
+    failure_count: 0,
+    last_used_at: nowIso,
+    created_at: existingIdx >= 0 ? local.subscriptions[existingIdx].created_at : nowIso,
+    updated_at: nowIso,
+  };
+
+  if (existingIdx >= 0) {
+    local.subscriptions[existingIdx] = record;
+  } else {
+    local.subscriptions.unshift(record);
+  }
+  writeLocalStore(params.userId, local);
+
+  return { success: true, subscription: toSafeSubscriptionView(record) };
+}
+
+/**
+ * Lists all active push subscriptions strictly owned by `userId`.
+ */
+export async function listUserPushSubscriptions(userId: string): Promise<SafePushSubscriptionView[]> {
+  const raw = await getRawUserPushSubscriptions(userId);
+  return raw.map(toSafeSubscriptionView);
+}
+
+async function getRawUserPushSubscriptions(userId: string): Promise<StoredPushSubscription[]> {
+  try {
+    const res = await query(
+      `SELECT * FROM public.push_subscriptions WHERE user_id = $1 ORDER BY updated_at DESC`,
+      [userId]
+    );
+    return res.rows.map((row: any) => {
+      const compat = detectPlatformCompatibility(row.user_agent || '');
+      return {
+        id: String(row.id),
+        user_id: String(row.user_id),
+        endpoint: String(row.endpoint),
+        p256dh: String(row.p256dh),
+        auth: String(row.auth),
+        user_agent: row.user_agent || null,
+        device_name: row.device_name || compat.deviceLabel,
+        browser: row.browser || compat.browserLabel,
+        os: row.os || compat.osLabel,
+        is_active: row.is_active !== false,
+        failure_count: Number(row.failure_count) || 0,
+        last_used_at: row.last_used_at || null,
+        created_at: row.created_at || new Date().toISOString(),
+        updated_at: row.updated_at || new Date().toISOString(),
+      };
+    });
+  } catch {
+    return readLocalStore(userId).subscriptions.filter((s) => s.user_id === userId && s.is_active !== false);
+  }
+}
+
+/**
+ * Removes a push subscription by endpoint strictly owned by `userId`.
+ */
+export async function removePushSubscriptionByEndpoint(
+  userId: string,
+  endpoint: string
+): Promise<{ deleted: boolean }> {
+  const cleanEndpoint = (endpoint || '').trim();
+  if (!cleanEndpoint) return { deleted: false };
+
+  let deletedFromDb = false;
+  try {
+    const res = await query(
+      `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2 RETURNING id`,
+      [userId, cleanEndpoint]
+    );
+    deletedFromDb = res.rows.length > 0;
+  } catch {
+    // Fallback below
+  }
+
+  const local = readLocalStore(userId);
+  const before = local.subscriptions.length;
+  local.subscriptions = local.subscriptions.filter((s) => s.endpoint !== cleanEndpoint);
+  const deletedFromLocal = local.subscriptions.length < before;
+  if (deletedFromLocal) {
+    writeLocalStore(userId, local);
+  }
+
+  return { deleted: deletedFromDb || deletedFromLocal };
+}
+
+/**
+ * Removes a specific device push subscription by ID strictly owned by `userId` (anti-IDOR).
+ */
+export async function removePushSubscriptionById(
+  userId: string,
+  subscriptionId: string
+): Promise<{ deleted: boolean }> {
+  const cleanId = (subscriptionId || '').trim();
+  if (!cleanId) return { deleted: false };
+
+  let deletedFromDb = false;
+  try {
+    const res = await query(
+      `DELETE FROM public.push_subscriptions WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [cleanId, userId]
+    );
+    deletedFromDb = res.rows.length > 0;
+  } catch {
+    // Fallback below
+  }
+
+  const local = readLocalStore(userId);
+  const before = local.subscriptions.length;
+  local.subscriptions = local.subscriptions.filter(
+    (s) => !(s.id === cleanId && s.user_id === userId)
+  );
+  const deletedFromLocal = local.subscriptions.length < before;
+  if (deletedFromLocal) {
+    writeLocalStore(userId, local);
+  }
+
+  return { deleted: deletedFromDb || deletedFromLocal };
+}
+
+/**
+ * Returns real push infrastructure readiness & recent delivery status for the user.
+ */
+export async function getPushDeliveryStatus(userId: string): Promise<{
+  vapidConfigured: boolean;
+  vapidPersistent: boolean;
+  activeDeviceCount: number;
+  recentDeliveryLogs: DeliveryLogRecord[];
+}> {
+  const devices = await listUserPushSubscriptions(userId);
+  let logs: DeliveryLogRecord[] = [];
+  try {
+    const res = await query(
+      `SELECT id, notification_id, channel, status, error_message, created_at
+       FROM public.notification_delivery_logs
+       WHERE user_id = $1 AND channel = 'push'
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [userId]
+    );
+    logs = res.rows;
+  } catch {
+    logs = readLocalStore(userId).deliveryLogs.filter((l) => l.channel === 'push').slice(0, 10);
+  }
+
+  return {
+    vapidConfigured: Boolean(APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey),
+    vapidPersistent: APP_CONFIG.vapid.isPersistent,
+    activeDeviceCount: devices.length,
+    recentDeliveryLogs: logs,
+  };
 }
 
 /**
  * Check if category is enabled in user preferences
  */
-function isCategoryEnabled(prefs: UserPreferences, category: NotificationCategory): boolean {
+export function isCategoryEnabled(prefs: UserPreferences, category: NotificationCategory): boolean {
   switch (category) {
     case 'income':
       return prefs.notify_income;
     case 'expense':
       return prefs.notify_expense;
+    case 'budget':
+    case 'anomaly':
+    case 'low_balance':
+      return prefs.notify_budget;
+    case 'bill':
+      return prefs.notify_bills;
+    case 'savings':
+      return prefs.notify_savings;
+    case 'receipt':
+      return prefs.notify_receipts;
     case 'udhar':
     case 'repay':
     case 'settlement':
       return prefs.notify_udhar;
+    case 'security':
+      return prefs.notify_security;
     case 'feedback':
     case 'complaint':
     case 'support':
@@ -176,7 +771,6 @@ function isCategoryEnabled(prefs: UserPreferences, category: NotificationCategor
       return prefs.notify_announcements;
     case 'offer':
       return prefs.notify_offers;
-    case 'security':
     case 'system':
     case 'general':
     default:
@@ -185,13 +779,55 @@ function isCategoryEnabled(prefs: UserPreferences, category: NotificationCategor
 }
 
 /**
- * Create a multi-channel notification for a user
+ * Checks whether an event with `dedupeKey` was already processed for this user.
+ */
+async function hasDuplicateEvent(userId: string, dedupeKey?: string): Promise<boolean> {
+  if (!dedupeKey) return false;
+  try {
+    const res = await query(
+      `SELECT id FROM public.user_notifications
+       WHERE user_id = $1 AND (dedupe_key = $2 OR metadata->>'dedupeKey' = $2)
+       LIMIT 1`,
+      [userId, dedupeKey]
+    );
+    if (res.rows.length > 0) return true;
+  } catch {
+    // Check local fallback below
+  }
+  const local = readLocalStore(userId);
+  return Boolean(local.dedupeKeys[dedupeKey]);
+}
+
+function recordLocalDedupeKey(userId: string, dedupeKey?: string): void {
+  if (!dedupeKey) return;
+  const local = readLocalStore(userId);
+  local.dedupeKeys[dedupeKey] = Date.now();
+  writeLocalStore(userId, local);
+}
+
+function appendLocalDeliveryLog(userId: string, log: Omit<DeliveryLogRecord, 'id' | 'created_at'>): void {
+  const local = readLocalStore(userId);
+  local.deliveryLogs.unshift({
+    id: crypto.randomUUID(),
+    ...log,
+    created_at: new Date().toISOString(),
+  });
+  writeLocalStore(userId, local);
+}
+
+/**
+ * Create a multi-channel notification for a user with deduplication, quiet hours,
+ * lock-screen privacy masking, and real Web Push delivery across all active devices.
  */
 export async function createNotification(params: CreateNotificationParams): Promise<{
   success: boolean;
+  deduplicated?: boolean;
   notificationId?: string;
   inAppDelivered: boolean;
   pushDelivered: number;
+  pushFailed: number;
+  deviceCount: number;
+  suppressedByQuietHours?: boolean;
   emailDelivered: boolean;
 }> {
   const {
@@ -203,6 +839,8 @@ export async function createNotification(params: CreateNotificationParams): Prom
     relatedEntityType,
     relatedEntityId,
     deepLink,
+    dedupeKey,
+    tag,
     metadata = {},
     channels = ['in_app', 'push'],
     skipPreferenceCheck = false,
@@ -210,123 +848,204 @@ export async function createNotification(params: CreateNotificationParams): Prom
     campaignId,
   } = params;
 
+  // Deduplication guard: never send duplicate notifications for the same event
+  if (dedupeKey && (await hasDuplicateEvent(userId, dedupeKey))) {
+    return {
+      success: true,
+      deduplicated: true,
+      inAppDelivered: false,
+      pushDelivered: 0,
+      pushFailed: 0,
+      deviceCount: 0,
+      emailDelivered: false,
+    };
+  }
+
   let inAppDelivered = false;
   let pushDelivered = 0;
+  let pushFailed = 0;
+  let deviceCount = 0;
   let emailDelivered = false;
   let notificationId: string | undefined;
 
   const prefs = await getUserNotificationPreferences(userId);
   const categoryAllowed = skipPreferenceCheck || isCategoryEnabled(prefs, category);
+  // Security alerts can bypass quiet hours if critical
   const inQuietHours =
     !skipPreferenceCheck &&
+    category !== 'security' &&
     prefs.quiet_hours_enabled &&
     isCurrentTimeInQuietHours(prefs.quiet_hours_start, prefs.quiet_hours_end);
+
+  const enrichedMetadata = dedupeKey ? { ...metadata, dedupeKey } : metadata;
 
   // 1. IN-APP NOTIFICATION
   if (channels.includes('in_app') && (skipPreferenceCheck || (prefs.in_app_enabled && categoryAllowed))) {
     try {
-      const insRes = await query(
-        `INSERT INTO public.user_notifications 
-         (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id`,
-        [
-          userId,
-          title,
-          message,
-          category,
-          type,
-          relatedEntityType || null,
-          relatedEntityId || null,
-          deepLink || null,
-          JSON.stringify(metadata),
-        ]
-      );
+      let insRes;
+      try {
+        insRes = await query(
+          `INSERT INTO public.user_notifications
+           (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, dedupe_key, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id`,
+          [
+            userId,
+            title,
+            message,
+            category,
+            type,
+            relatedEntityType || null,
+            relatedEntityId || null,
+            deepLink || null,
+            dedupeKey || null,
+            JSON.stringify(enrichedMetadata),
+          ]
+        );
+      } catch {
+        // Legacy table fallback without dedupe_key column
+        insRes = await query(
+          `INSERT INTO public.user_notifications
+           (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id`,
+          [
+            userId,
+            title,
+            message,
+            category,
+            type,
+            relatedEntityType || null,
+            relatedEntityId || null,
+            deepLink || null,
+            JSON.stringify(enrichedMetadata),
+          ]
+        );
+      }
       if (insRes.rows.length > 0) {
         notificationId = insRes.rows[0].id;
         inAppDelivered = true;
         await query(
-          `INSERT INTO public.notification_delivery_logs 
+          `INSERT INTO public.notification_delivery_logs
            (campaign_id, notification_id, user_id, channel, status)
            VALUES ($1, $2, $3, 'in_app', 'sent')`,
           [campaignId || null, notificationId, userId]
         ).catch(() => {});
       }
-    } catch (e: any) {
-      console.error('[NotificationService] In-App delivery failed:', e.message);
-      await query(
-        `INSERT INTO public.notification_delivery_logs 
-         (campaign_id, user_id, channel, status, error_message)
-         VALUES ($1, $2, 'in_app', 'failed', $3)`,
-        [campaignId || null, userId, e.message]
-      ).catch(() => {});
+    } catch {
+      // Do not log sensitive financial content
+      appendLocalDeliveryLog(userId, {
+        notification_id: null,
+        channel: 'in_app',
+        status: 'failed',
+        error_message: 'Database unavailable for in-app storage',
+      });
     }
   }
 
-  // 2. MOBILE PUSH NOTIFICATION
-  if (
-    channels.includes('push') &&
-    (skipPreferenceCheck || (prefs.push_enabled && categoryAllowed && !inQuietHours))
-  ) {
-    try {
-      const subRes = await query(
-        `SELECT id, endpoint, p256dh, auth FROM public.push_subscriptions WHERE user_id = $1`,
-        [userId]
-      );
+  // 2. REAL WEB PUSH NOTIFICATION (Delivered to all active user devices via Web Push VAPID)
+  if (channels.includes('push')) {
+    const subs = await getRawUserPushSubscriptions(userId);
+    deviceCount = subs.length;
 
-      if (subRes.rows.length > 0) {
-        const pushTitle = title;
-        const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message) : message;
+    if (inQuietHours && subs.length > 0) {
+      appendLocalDeliveryLog(userId, {
+        notification_id: notificationId || null,
+        channel: 'push',
+        status: 'suppressed',
+        error_message: 'Suppressed during quiet hours',
+      });
+    } else if (
+      subs.length > 0 &&
+      (skipPreferenceCheck || (prefs.push_enabled && categoryAllowed))
+    ) {
+      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title) : title;
+      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message) : message;
+      const targetUrl = buildSafeDeepLinkUrl(deepLink);
+      const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}`);
+      const timestamp = Date.now();
 
-        const pushPayload = JSON.stringify({
-          title: pushTitle,
-          body: pushBody,
-          icon: '/logo.jpg',
-          badge: '/icon-192.png',
-          tag: `notif-${category}`,
-          data: {
-            url: deepLink ? `/#${deepLink.replace(/^\//, '')}` : '/',
-            notificationId: notificationId || null,
-            category,
-          },
-        });
+      const pushPayload = JSON.stringify({
+        title: pushTitle,
+        body: pushBody,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: notifTag,
+        category,
+        timestamp,
+        requireInteraction: category === 'security' || type === 'error',
+        data: {
+          url: targetUrl,
+          notificationId: notificationId || null,
+          category,
+          dedupeKey: dedupeKey || null,
+          timestamp,
+        },
+      });
 
-        for (const sub of subRes.rows) {
-          try {
-            await webpush.sendNotification(
-              {
-                endpoint: sub.endpoint,
-                keys: {
-                  p256dh: sub.p256dh,
-                  auth: sub.auth,
-                },
+      for (const sub of subs) {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.p256dh,
+                auth: sub.auth,
               },
-              pushPayload
-            );
-            pushDelivered++;
+            },
+            pushPayload,
+            { TTL: 60 * 60 * 12 } // 12 hours TTL
+          );
+          pushDelivered++;
+
+          await query(
+            `UPDATE public.push_subscriptions SET last_used_at = NOW(), failure_count = 0 WHERE id = $1`,
+            [sub.id]
+          ).catch(() => {});
+
+          await query(
+            `INSERT INTO public.notification_delivery_logs
+             (campaign_id, notification_id, user_id, channel, status)
+             VALUES ($1, $2, $3, 'push', 'sent')`,
+            [campaignId || null, notificationId || null, userId]
+          ).catch(() => {
+            appendLocalDeliveryLog(userId, {
+              notification_id: notificationId || null,
+              channel: 'push',
+              status: 'sent',
+              error_message: null,
+            });
+          });
+        } catch (pushErr: any) {
+          pushFailed++;
+          const statusCode = Number(pushErr?.statusCode) || 0;
+          const safeError = statusCode ? `Web Push HTTP ${statusCode}` : 'Web Push delivery error';
+
+          // Automatically clean up expired or invalid subscriptions (404 Not Found / 410 Gone)
+          if (statusCode === 404 || statusCode === 410) {
+            await removePushSubscriptionById(userId, sub.id);
+          } else {
             await query(
-              `INSERT INTO public.notification_delivery_logs 
-               (campaign_id, notification_id, user_id, channel, status)
-               VALUES ($1, $2, $3, 'push', 'sent')`,
-              [campaignId || null, notificationId || null, userId]
-            ).catch(() => {});
-          } catch (pushErr: any) {
-            console.warn('[NotificationService] Web Push failed for subscription:', pushErr.statusCode);
-            // 404 Not Found or 410 Gone means the subscription is no longer active
-            if (pushErr.statusCode === 404 || pushErr.statusCode === 410) {
-              await query(`DELETE FROM public.push_subscriptions WHERE id = $1`, [sub.id]).catch(() => {});
-            }
-            await query(
-              `INSERT INTO public.notification_delivery_logs 
-               (campaign_id, notification_id, user_id, channel, status, error_message)
-               VALUES ($1, $2, $3, 'push', 'failed', $4)`,
-              [campaignId || null, notificationId || null, userId, pushErr.message]
+              `UPDATE public.push_subscriptions SET failure_count = COALESCE(failure_count, 0) + 1 WHERE id = $1`,
+              [sub.id]
             ).catch(() => {});
           }
+
+          await query(
+            `INSERT INTO public.notification_delivery_logs
+             (campaign_id, notification_id, user_id, channel, status, error_message)
+             VALUES ($1, $2, $3, 'push', 'failed', $4)`,
+            [campaignId || null, notificationId || null, userId, safeError]
+          ).catch(() => {
+            appendLocalDeliveryLog(userId, {
+              notification_id: notificationId || null,
+              channel: 'push',
+              status: 'failed',
+              error_message: safeError,
+            });
+          });
         }
       }
-    } catch (e: any) {
-      console.error('[NotificationService] Push delivery block error:', e.message);
     }
   }
 
@@ -342,7 +1061,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
       );
       if (uRes.rows.length > 0 && uRes.rows[0].email) {
         const u = uRes.rows[0];
-        let subject = emailOptions?.subject || title;
+        const subject = emailOptions?.subject || title;
         let htmlContent = emailOptions?.html;
         let textContent = emailOptions?.text;
 
@@ -370,30 +1089,30 @@ export async function createNotification(params: CreateNotificationParams): Prom
         if (sent) {
           emailDelivered = true;
           await query(
-            `INSERT INTO public.notification_delivery_logs 
+            `INSERT INTO public.notification_delivery_logs
              (campaign_id, notification_id, user_id, channel, status)
              VALUES ($1, $2, $3, 'email', 'sent')`,
             [campaignId || null, notificationId || null, userId]
           ).catch(() => {});
-        } else {
-          await query(
-            `INSERT INTO public.notification_delivery_logs 
-             (campaign_id, notification_id, user_id, channel, status, error_message)
-             VALUES ($1, $2, $3, 'email', 'failed', 'SMTP send failure')`,
-            [campaignId || null, notificationId || null, userId]
-          ).catch(() => {});
         }
       }
-    } catch (e: any) {
-      console.error('[NotificationService] Email delivery failed:', e.message);
+    } catch {
+      // Do not log sensitive email content
     }
   }
 
+  if (dedupeKey) {
+    recordLocalDedupeKey(userId, dedupeKey);
+  }
+
   return {
-    success: inAppDelivered || pushDelivered > 0 || emailDelivered,
+    success: inAppDelivered || pushDelivered > 0 || emailDelivered || inQuietHours,
     notificationId,
     inAppDelivered,
     pushDelivered,
+    pushFailed,
+    deviceCount,
+    suppressedByQuietHours: inQuietHours || undefined,
     emailDelivered,
   };
 }
@@ -403,7 +1122,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
 // -------------------------------------------------------------
 
 /**
- * Triggered when a new income/expense transaction is added
+ * Triggered when a new income/expense transaction is saved
  */
 export async function notifyTransactionCreated(
   userId: string,
@@ -420,18 +1139,14 @@ export async function notifyTransactionCreated(
   const category: NotificationCategory = isIncome ? 'income' : 'expense';
   const formattedAmount = `₹${Number(tx.amount).toLocaleString('en-IN')}`;
 
-  const title = isIncome
-    ? `Income Added: +${formattedAmount} 📈`
-    : `Expense Recorded: -${formattedAmount} 💸`;
-
+  const title = isIncome ? 'Income Saved' : 'Transaction Saved';
   const message = isIncome
-    ? `You received ${formattedAmount} for "${tx.title}" in ${tx.section || 'General'}.`
-    : `You spent ${formattedAmount} on "${tx.title}" (${tx.category || tx.section || 'Expense'}).`;
+    ? `Your income of ${formattedAmount} for "${tx.title}" has been recorded.`
+    : `Your expense of ${formattedAmount} for "${tx.title}" has been recorded.`;
 
-  // Route directly to the matching tab
   const deepLink = tx.section ? tx.section.toLowerCase() : 'all_transactions';
 
-  await createNotification({
+  return createNotification({
     userId,
     title,
     message,
@@ -440,8 +1155,87 @@ export async function notifyTransactionCreated(
     relatedEntityType: 'transaction',
     relatedEntityId: tx.id,
     deepLink,
+    dedupeKey: `tx:${tx.id}`,
+    tag: `tx-${tx.id}`,
     channels: ['in_app', 'push'],
-    metadata: { amount: tx.amount, type: tx.type, section: tx.section },
+    metadata: { type: tx.type, section: tx.section },
+  });
+}
+
+/**
+ * Triggered for financial intelligence alerts (budget thresholds, anomalies, recurring bills,
+ * low available balance, savings goal milestones, Udhar reminders, receipt confirmations, security alerts)
+ */
+export async function notifyFinancialAlert(params: {
+  userId: string;
+  title: string;
+  message: string;
+  category:
+    | 'budget'
+    | 'bill'
+    | 'anomaly'
+    | 'low_balance'
+    | 'savings'
+    | 'udhar'
+    | 'receipt'
+    | 'security';
+  severity?: 'info' | 'warning' | 'critical' | 'success';
+  deepLink?: string;
+  dedupeKey: string;
+  relatedEntityId?: string;
+}) {
+  const typeMap: Record<string, NotificationType> = {
+    critical: 'error',
+    warning: 'warning',
+    success: 'success',
+    info: 'info',
+  };
+
+  const defaultDeepLinks: Record<string, string> = {
+    budget: 'budget',
+    bill: 'recurring_bills',
+    anomaly: '/smart-alerts',
+    low_balance: '/safe-to-spend',
+    savings: 'savings_goals',
+    udhar: 'people',
+    receipt: '/receipt-scanner',
+    security: 'settings',
+  };
+
+  return createNotification({
+    userId: params.userId,
+    title: params.title.slice(0, 140),
+    message: params.message.slice(0, 320),
+    category: params.category,
+    type: typeMap[params.severity || 'info'] || 'info',
+    relatedEntityType: params.category,
+    relatedEntityId: params.relatedEntityId,
+    deepLink: params.deepLink || defaultDeepLinks[params.category] || '/smart-alerts',
+    dedupeKey: params.dedupeKey,
+    tag: `alert-${params.dedupeKey.slice(0, 70)}`,
+    channels: ['in_app', 'push'],
+  });
+}
+
+/**
+ * Triggered on critical account security events (password changed, all sessions revoked, etc.)
+ */
+export async function notifySecurityAlert(params: {
+  userId: string;
+  title: string;
+  message: string;
+  dedupeKey?: string;
+}) {
+  return createNotification({
+    userId: params.userId,
+    title: params.title,
+    message: params.message,
+    category: 'security',
+    type: 'warning',
+    deepLink: 'settings',
+    dedupeKey: params.dedupeKey,
+    tag: `security-${Date.now()}`,
+    channels: ['in_app', 'push'],
   });
 }
 
@@ -462,7 +1256,6 @@ export async function notifyUdharCreated(params: {
   const isGiven = params.direction === 'given' || params.direction === 'gave';
   const initiatorDisplayName = params.initiatorName || 'Friend';
 
-  // 1. Initiator notification
   await createNotification({
     userId: params.initiatorUserId,
     title: isGiven ? `Udhar Given: ${formattedAmount}` : `Udhar Taken: ${formattedAmount}`,
@@ -474,10 +1267,10 @@ export async function notifyUdharCreated(params: {
     relatedEntityType: 'udhar_transaction',
     relatedEntityId: params.transactionId,
     deepLink: 'people',
+    dedupeKey: `udhar-init:${params.transactionId}`,
     channels: ['in_app', 'push'],
   });
 
-  // 2. Recipient notification if registered in My Money Manager
   if (params.recipientUserId) {
     await createNotification({
       userId: params.recipientUserId,
@@ -490,6 +1283,7 @@ export async function notifyUdharCreated(params: {
       relatedEntityType: 'udhar_transaction',
       relatedEntityId: params.transactionId,
       deepLink: 'people',
+      dedupeKey: `udhar-recip:${params.transactionId}`,
       channels: ['in_app', 'push', 'email'],
     });
   }
@@ -504,10 +1298,9 @@ export async function notifyQrConnected(params: {
   userBId: string;
   userBName: string;
 }) {
-  // 1. Notification for User A (Scanner)
   await createNotification({
     userId: params.userAId,
-    title: `Connected with ${params.userBName} 🤝`,
+    title: `Connected with ${params.userBName}`,
     message: `You are now linked with ${params.userBName}. Mutual 2-way Udhar tracking and settlements are active.`,
     category: 'udhar',
     type: 'success',
@@ -515,10 +1308,9 @@ export async function notifyQrConnected(params: {
     channels: ['in_app', 'push'],
   });
 
-  // 2. Notification for User B (Whose QR was scanned)
   await createNotification({
     userId: params.userBId,
-    title: `New Friend Connected: ${params.userAName} 🤝`,
+    title: `New Friend Connected: ${params.userAName}`,
     message: `${params.userAName} scanned your QR code and connected with you! Added to your Saved People.`,
     category: 'udhar',
     type: 'success',
@@ -545,9 +1337,8 @@ export async function notifyUdharRepayment(params: {
   const initiatorDisplayName = params.initiatorName || 'Friend';
 
   if (params.isFullySettled) {
-    // 1. Fully settled congratulatory alert!
-    const title = `🎉 Udhar Settled with ${params.contactName}! 💚`;
-    const message = `Full repayment of ${formattedRepayment} completed. Remaining balance is ₹0. Udhar khata marked as settled.`;
+    const title = `Udhar Settled with ${params.contactName}`;
+    const message = `Full repayment of ${formattedRepayment} completed. Remaining balance is ₹0.`;
 
     await createNotification({
       userId: params.initiatorUserId,
@@ -558,13 +1349,13 @@ export async function notifyUdharRepayment(params: {
       relatedEntityType: 'udhar_repayment',
       relatedEntityId: params.repaymentId,
       deepLink: 'people',
+      dedupeKey: `udhar-repay-init:${params.repaymentId}`,
       channels: ['in_app', 'push', 'email'],
     });
 
-    // Auto-cancel / deactivate any pending reminder notifications for this contact
     await query(
-      `UPDATE public.user_notifications 
-       SET is_read = TRUE, metadata = metadata || '{"settled": true}'::jsonb 
+      `UPDATE public.user_notifications
+       SET is_read = TRUE, metadata = metadata || '{"settled": true}'::jsonb
        WHERE user_id = $1 AND category = 'udhar' AND related_entity_type = 'udhar_transaction'`,
       [params.initiatorUserId]
     ).catch(() => {});
@@ -572,18 +1363,18 @@ export async function notifyUdharRepayment(params: {
     if (params.recipientUserId) {
       await createNotification({
         userId: params.recipientUserId,
-        title: `🎉 Udhar Settled with ${initiatorDisplayName}! 💚`,
+        title: `Udhar Settled with ${initiatorDisplayName}`,
         message: `Your Udhar balance of ${formattedRepayment} with ${initiatorDisplayName} is fully settled (₹0 balance).`,
         category: 'settlement',
         type: 'success',
         relatedEntityType: 'udhar_repayment',
         relatedEntityId: params.repaymentId,
         deepLink: 'people',
+        dedupeKey: `udhar-repay-recip:${params.repaymentId}`,
         channels: ['in_app', 'push', 'email'],
       });
     }
   } else {
-    // Partial repayment alert with dynamic remaining balance
     const title = `Udhar Repayment Received: ${formattedRepayment}`;
     const message = `Payment of ${formattedRepayment} recorded for ${params.contactName}. Remaining balance: ${formattedRemaining}.`;
 
@@ -596,6 +1387,7 @@ export async function notifyUdharRepayment(params: {
       relatedEntityType: 'udhar_repayment',
       relatedEntityId: params.repaymentId,
       deepLink: 'people',
+      dedupeKey: `udhar-repay-init:${params.repaymentId}`,
       channels: ['in_app', 'push'],
     });
 
@@ -609,23 +1401,21 @@ export async function notifyUdharRepayment(params: {
         relatedEntityType: 'udhar_repayment',
         relatedEntityId: params.repaymentId,
         deepLink: 'people',
+        dedupeKey: `udhar-repay-recip:${params.repaymentId}`,
         channels: ['in_app', 'push'],
       });
     }
   }
 }
 
-/**
- * Triggered when a user submits feedback
- */
 export async function notifyFeedbackSubmitted(
   userId: string,
   feedback: { id: string; rating: number; category?: string }
 ) {
   await createNotification({
     userId,
-    title: 'Thank You for Your Feedback! 💚',
-    message: `We received your ${feedback.rating}-star review. Your suggestions help us improve My Money Manager for everyone!`,
+    title: 'Thank You for Your Feedback',
+    message: `We received your ${feedback.rating}-star review. Your suggestions help us improve My Money Manager!`,
     category: 'feedback',
     type: 'success',
     relatedEntityType: 'feedback',
@@ -635,9 +1425,6 @@ export async function notifyFeedbackSubmitted(
   });
 }
 
-/**
- * Triggered when a complaint / support ticket is submitted
- */
 export async function notifyComplaintSubmitted(
   userId: string,
   ticket: { id: string; subject: string; category?: string }
@@ -656,9 +1443,6 @@ export async function notifyComplaintSubmitted(
   });
 }
 
-/**
- * Triggered when an admin replies to a support ticket
- */
 export async function notifyAdminTicketReply(
   userId: string,
   ticket: { id: string; subject: string; replyText: string; adminName?: string }
@@ -674,7 +1458,7 @@ export async function notifyAdminTicketReply(
     relatedEntityId: ticket.id,
     deepLink: `help:ticket:${ticket.id}`,
     channels: ['in_app', 'push', 'email'],
-    skipPreferenceCheck: true, // Support responses are vital communications
+    skipPreferenceCheck: true,
   });
 }
 
@@ -682,9 +1466,6 @@ export async function notifyAdminTicketReply(
 // Admin Campaign Dispatcher & Scheduler
 // -------------------------------------------------------------
 
-/**
- * Dispatches an admin notification campaign across selected channels
- */
 export async function dispatchCampaign(campaignId: string): Promise<{
   success: boolean;
   totalTargets: number;
@@ -702,7 +1483,6 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     [campaignId]
   );
 
-  // Determine target users
   let userIds: string[] = [];
 
   if (campaign.target_type === 'all') {
@@ -710,7 +1490,7 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     userIds = allUsers.rows.map((r) => r.id);
   } else if (campaign.target_type === 'active') {
     const activeUsers = await query(
-      `SELECT DISTINCT user_id as id FROM public.transactions 
+      `SELECT DISTINCT user_id as id FROM public.transactions
        WHERE created_at > NOW() - INTERVAL '30 days'`
     );
     userIds = activeUsers.rows.map((r) => r.id);
@@ -732,6 +1512,7 @@ export async function dispatchCampaign(campaignId: string): Promise<{
         deepLink: campaign.deepLink || undefined,
         channels: campaign.channels,
         campaignId: campaign.id,
+        dedupeKey: `campaign:${campaign.id}:${uid}`,
       });
 
       if (res.success) {
@@ -744,7 +1525,6 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     }
   }
 
-  // Also reflect in public.notifications so existing legacy banners show it
   if (campaign.channels.includes('in_app')) {
     await query(
       `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
@@ -760,8 +1540,8 @@ export async function dispatchCampaign(campaignId: string): Promise<{
   }
 
   await query(
-    `UPDATE public.notification_campaigns 
-     SET status = 'sent', total_targets = $1, delivered_count = $2, failed_count = $3, sent_at = NOW(), updated_at = NOW() 
+    `UPDATE public.notification_campaigns
+     SET status = 'sent', total_targets = $1, delivered_count = $2, failed_count = $3, sent_at = NOW(), updated_at = NOW()
      WHERE id = $4`,
     [userIds.length, deliveredCount, failedCount, campaignId]
   );
@@ -774,12 +1554,9 @@ export async function dispatchCampaign(campaignId: string): Promise<{
   };
 }
 
-/**
- * Checks and processes scheduled campaigns that reached their send time
- */
 export async function processScheduledCampaigns(): Promise<number> {
   const pending = await query(
-    `SELECT id FROM public.notification_campaigns 
+    `SELECT id FROM public.notification_campaigns
      WHERE status = 'scheduled' AND scheduled_for <= NOW()`
   );
 

@@ -27,7 +27,6 @@ import {
   AlertTriangle,
   Utensils,
   Coffee,
-  Download,
   HelpCircle,
   MessageSquare,
   Calculator,
@@ -46,7 +45,6 @@ import {
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import { usePwaInstall } from '../../context/PwaInstallContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 
@@ -114,7 +112,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
 
   // Find enabled custom sections that aren't the standard 5 (home, room, food, other, people)
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -326,28 +323,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer / User Profile & Controls */}
       <div className="p-3.5 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
-        {/* Dedicated Desktop PWA Install Prompt */}
-        {!isInstalled && triggerInstallPrompt && (
-          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                Install App
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                Fast offline desktop access
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={triggerInstallPrompt}
-              className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-            >
-              <Download className="w-3 h-3 stroke-[2]" />
-              <span>Install</span>
-            </button>
-          </div>
-        )}
-
         {/* User Profile Card */}
         <div
           onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}

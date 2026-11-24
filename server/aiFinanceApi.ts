@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { authenticateRequest } from './auth';
 import { query, isDatabaseAvailable } from './db';
+import { logSecurityEvent } from './security';
 import {
   getAiProviderStatus,
   askFinancialAssistant,
@@ -15,6 +16,7 @@ import {
   categorizeTransactionDeterministic,
   upsertUserCategorizationRule,
   validateReceiptUpload,
+  validateReceiptFileSignature,
   DEFAULT_SAFE_TO_SPEND_PREFS,
   DEFAULT_SMART_ALERT_PREFS,
   type UserCategorizationRule,
@@ -110,7 +112,11 @@ const DATA_DIR = path.resolve(process.cwd(), '.data', 'ai-finance');
 
 function safeUserFilePath(userId: string): string {
   const hash = crypto.createHash('sha256').update(String(userId)).digest('hex').slice(0, 32);
-  return path.join(DATA_DIR, `u_${hash}.json`);
+  const resolved = path.resolve(DATA_DIR, `u_${hash}.json`);
+  if (!resolved.startsWith(DATA_DIR + path.sep)) {
+    throw new Error('PATH_CONFINEMENT_VIOLATION');
+  }
+  return resolved;
 }
 
 function readUserStore(userId: string): UserAiFinanceStore {
@@ -302,6 +308,14 @@ export async function handleAiFinanceRequest(
       const store = readUserStore(userId);
       store.conversations = [];
       writeUserStore(userId, store);
+      if (useDb) {
+        logSecurityEvent('AI_HISTORY_CLEARED', {
+          userId,
+          userEmail: authUser.email,
+          actorRole: authUser.role,
+          details: { scope: 'all_conversations' },
+        }).catch(() => {});
+      }
       sendJson(res, 200, { success: true, message: 'All conversations cleared.' });
       return true;
     }
@@ -356,6 +370,14 @@ export async function handleAiFinanceRequest(
 
     if (pathname === '/api/ai/assistant/chat' && method === 'POST') {
       if (!checkAiRateLimit(`chat:${userId}`, 25, 60 * 1000)) {
+        if (useDb) {
+          logSecurityEvent('AI_RATE_LIMITED', {
+            userId,
+            userEmail: authUser.email,
+            actorRole: authUser.role,
+            details: { endpoint: '/api/ai/assistant/chat' },
+          }).catch(() => {});
+        }
         sendJson(res, 429, {
           success: false,
           code: 'RATE_LIMITED',
@@ -519,6 +541,21 @@ export async function handleAiFinanceRequest(
       );
       writeUserStore(userId, store);
 
+      if (useDb) {
+        const latest = store.categorizationRules.find(
+          (r) => r.merchant_pattern === merchantPattern.toLowerCase().trim()
+        );
+        if (latest) {
+          query(
+            `INSERT INTO public.user_categorization_rules (id, user_id, merchant_pattern, category, subcategory, transaction_type, usage_count, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (user_id, merchant_pattern) DO UPDATE
+             SET category = EXCLUDED.category, subcategory = EXCLUDED.subcategory, transaction_type = EXCLUDED.transaction_type, usage_count = EXCLUDED.usage_count, updated_at = EXCLUDED.updated_at`,
+            [latest.id, userId, latest.merchant_pattern, latest.category, latest.subcategory, latest.transaction_type, latest.usage_count, latest.updated_at]
+          ).catch(() => {});
+        }
+      }
+
       sendJson(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
@@ -529,6 +566,9 @@ export async function handleAiFinanceRequest(
       const store = readUserStore(userId);
       store.categorizationRules = store.categorizationRules.filter((r) => r.id !== ruleId);
       writeUserStore(userId, store);
+      if (useDb) {
+        query(`DELETE FROM public.user_categorization_rules WHERE id = $1 AND user_id = $2`, [ruleId, userId]).catch(() => {});
+      }
       sendJson(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
@@ -616,6 +656,21 @@ export async function handleAiFinanceRequest(
         return true;
       }
 
+      // Security: verify binary magic-byte file signature, not just extension/MIME header
+      const sigValidation = validateReceiptFileSignature(base64Data, mimeType);
+      if (!sigValidation.valid) {
+        if (useDb) {
+          logSecurityEvent('RECEIPT_INVALID_SIGNATURE', {
+            userId,
+            userEmail: authUser.email,
+            actorRole: authUser.role,
+            details: { declaredMimeType: mimeType, estimatedBytes },
+          }).catch(() => {});
+        }
+        sendJson(res, 400, { success: false, code: 'INVALID_FILE_SIGNATURE', message: sigValidation.error });
+        return true;
+      }
+
       const fileHash = crypto.createHash('sha256').update(base64Data).digest('hex');
 
       try {
@@ -677,6 +732,13 @@ export async function handleAiFinanceRequest(
       store.receiptRecords.unshift(record);
       store.receiptRecords = store.receiptRecords.slice(0, 500);
       writeUserStore(userId, store);
+      if (useDb) {
+        query(
+          `INSERT INTO public.receipt_records (id, user_id, transaction_id, file_hash, merchant, amount, receipt_date, receipt_number, payment_method, confidence, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, '')::date, $8, $9, $10, $11)`,
+          [record.id, userId, record.transaction_id, record.file_hash, record.merchant, record.amount, record.receipt_date, record.receipt_number || null, record.payment_method || null, record.confidence ?? null, record.created_at]
+        ).catch(() => {});
+      }
       sendJson(res, 201, { success: true, receipt: record });
       return true;
     }
@@ -721,6 +783,14 @@ export async function handleAiFinanceRequest(
       if (idx >= 0) store.netWorthAssets[idx] = asset;
       else store.netWorthAssets.unshift(asset);
       writeUserStore(userId, store);
+      if (useDb) {
+        query(
+          `INSERT INTO public.net_worth_assets (id, user_id, name, category, current_value, valuation_date, notes, is_archived, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, current_value = EXCLUDED.current_value, valuation_date = EXCLUDED.valuation_date, notes = EXCLUDED.notes, is_archived = EXCLUDED.is_archived, updated_at = EXCLUDED.updated_at`,
+          [asset.id, userId, asset.name, asset.category, asset.current_value, asset.valuation_date, asset.notes || null, asset.is_archived, asset.updated_at]
+        ).catch(() => {});
+      }
       sendJson(res, 200, { success: true, asset, assets: store.netWorthAssets });
       return true;
     }
@@ -731,6 +801,15 @@ export async function handleAiFinanceRequest(
       const store = readUserStore(userId);
       store.netWorthAssets = store.netWorthAssets.filter((a) => a.id !== id);
       writeUserStore(userId, store);
+      if (useDb) {
+        query(`DELETE FROM public.net_worth_assets WHERE id = $1 AND user_id = $2`, [id, userId]).catch(() => {});
+        logSecurityEvent('NET_WORTH_ITEM_DELETED', {
+          userId,
+          userEmail: authUser.email,
+          actorRole: authUser.role,
+          details: { type: 'asset', id },
+        }).catch(() => {});
+      }
       sendJson(res, 200, { success: true, assets: store.netWorthAssets });
       return true;
     }
@@ -759,6 +838,14 @@ export async function handleAiFinanceRequest(
       if (idx >= 0) store.netWorthLiabilities[idx] = liability;
       else store.netWorthLiabilities.unshift(liability);
       writeUserStore(userId, store);
+      if (useDb) {
+        query(
+          `INSERT INTO public.net_worth_liabilities (id, user_id, name, category, current_balance, valuation_date, notes, is_archived, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, current_balance = EXCLUDED.current_balance, valuation_date = EXCLUDED.valuation_date, notes = EXCLUDED.notes, is_archived = EXCLUDED.is_archived, updated_at = EXCLUDED.updated_at`,
+          [liability.id, userId, liability.name, liability.category, liability.current_balance, liability.valuation_date, liability.notes || null, liability.is_archived, liability.updated_at]
+        ).catch(() => {});
+      }
       sendJson(res, 200, { success: true, liability, liabilities: store.netWorthLiabilities });
       return true;
     }
@@ -769,6 +856,15 @@ export async function handleAiFinanceRequest(
       const store = readUserStore(userId);
       store.netWorthLiabilities = store.netWorthLiabilities.filter((l) => l.id !== id);
       writeUserStore(userId, store);
+      if (useDb) {
+        query(`DELETE FROM public.net_worth_liabilities WHERE id = $1 AND user_id = $2`, [id, userId]).catch(() => {});
+        logSecurityEvent('NET_WORTH_ITEM_DELETED', {
+          userId,
+          userEmail: authUser.email,
+          actorRole: authUser.role,
+          details: { type: 'liability', id },
+        }).catch(() => {});
+      }
       sendJson(res, 200, { success: true, liabilities: store.netWorthLiabilities });
       return true;
     }
@@ -792,6 +888,14 @@ export async function handleAiFinanceRequest(
         snap,
       ].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
       writeUserStore(userId, store);
+      if (useDb) {
+        query(
+          `INSERT INTO public.net_worth_snapshots (id, user_id, snapshot_date, total_assets, total_liabilities, net_worth, linked_liquid_balance, linked_udhar_receivable, linked_udhar_payable)
+           VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (user_id, snapshot_date) DO UPDATE SET total_assets = EXCLUDED.total_assets, total_liabilities = EXCLUDED.total_liabilities, net_worth = EXCLUDED.net_worth, linked_liquid_balance = EXCLUDED.linked_liquid_balance, linked_udhar_receivable = EXCLUDED.linked_udhar_receivable, linked_udhar_payable = EXCLUDED.linked_udhar_payable`,
+          [snap.id, userId, snap.snapshot_date, snap.total_assets, snap.total_liabilities, snap.net_worth, snap.linked_liquid_balance, snap.linked_udhar_receivable, snap.linked_udhar_payable]
+        ).catch(() => {});
+      }
       sendJson(res, 200, { success: true, snapshot: snap, snapshots: store.netWorthSnapshots });
       return true;
     }
@@ -845,9 +949,26 @@ export async function handleAiFinanceRequest(
           typeof body.includeExpectedIncome === 'boolean'
             ? body.includeExpectedIncome
             : store.safeToSpendPrefs.includeExpectedIncome,
-        period: body.period === 'week' ? 'week' : 'month',
+        period: body.period === 'day' ? 'day' : body.period === 'week' ? 'week' : 'month',
       };
       writeUserStore(userId, store);
+      if (useDb) {
+        query(
+          `INSERT INTO public.safe_to_spend_preferences (user_id, minimum_balance_reserve, emergency_reserve, savings_commitment, essential_expense_reserve, expected_remaining_income, include_expected_income, period, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET minimum_balance_reserve = EXCLUDED.minimum_balance_reserve, emergency_reserve = EXCLUDED.emergency_reserve, savings_commitment = EXCLUDED.savings_commitment, essential_expense_reserve = EXCLUDED.essential_expense_reserve, expected_remaining_income = EXCLUDED.expected_remaining_income, include_expected_income = EXCLUDED.include_expected_income, period = EXCLUDED.period, updated_at = NOW()`,
+          [
+            userId,
+            store.safeToSpendPrefs.minimumBalanceReserve,
+            store.safeToSpendPrefs.emergencyReserve,
+            store.safeToSpendPrefs.savingsCommitment,
+            store.safeToSpendPrefs.essentialExpenseReserve,
+            store.safeToSpendPrefs.expectedRemainingIncome,
+            store.safeToSpendPrefs.includeExpectedIncome,
+            store.safeToSpendPrefs.period,
+          ]
+        ).catch(() => {});
+      }
       sendJson(res, 200, { success: true, preferences: store.safeToSpendPrefs });
       return true;
     }
@@ -904,6 +1025,14 @@ export async function handleAiFinanceRequest(
         quietHoursEnd: typeof body.quietHoursEnd === 'string' ? body.quietHoursEnd.slice(0, 5) : store.smartAlertPrefs.quietHoursEnd,
       };
       writeUserStore(userId, store);
+      if (useDb) {
+        query(
+          `INSERT INTO public.smart_alert_preferences (user_id, config_json, updated_at)
+           VALUES ($1, $2::jsonb, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET config_json = EXCLUDED.config_json, updated_at = NOW()`,
+          [userId, JSON.stringify(store.smartAlertPrefs)]
+        ).catch(() => {});
+      }
       sendJson(res, 200, { success: true, preferences: store.smartAlertPrefs });
       return true;
     }
@@ -929,6 +1058,17 @@ export async function handleAiFinanceRequest(
         dismissedKeys: Array.from(dismissedSet).slice(-400),
       };
       writeUserStore(userId, store);
+      if (useDb && (action === 'mark_read' || action === 'mark_all_read' || action === 'dismiss')) {
+        const status = action === 'dismiss' ? 'dismissed' : 'read';
+        for (const k of keys.slice(0, 100)) {
+          query(
+            `INSERT INTO public.smart_alert_events (user_id, dedupe_key, status, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (user_id, dedupe_key) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()`,
+            [userId, k, status]
+          ).catch(() => {});
+        }
+      }
       sendJson(res, 200, { success: true, eventState: store.smartAlertState });
       return true;
     }

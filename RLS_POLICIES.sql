@@ -514,6 +514,80 @@ BEGIN
 END $$;
 
 -- ==============================================================================
+-- 12. AI FINANCIAL INTELLIGENCE TABLES — ROW LEVEL SECURITY (STRICT USER ISOLATION)
+-- ==============================================================================
+-- Applies auth.uid()::text = user_id isolation to all tables introduced for
+-- AI Money Assistant, Smart Categorization, Receipt Scanner, Net Worth Tracker,
+-- Safe-to-Spend Calculator, and Smart Financial Alerts.
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'ai_conversations',
+    'ai_messages',
+    'user_categorization_rules',
+    'receipt_records',
+    'net_worth_assets',
+    'net_worth_liabilities',
+    'net_worth_settings',
+    'net_worth_snapshots',
+    'safe_to_spend_preferences',
+    'smart_alert_preferences',
+    'smart_alert_events'
+  ]
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_owner_isolation" ON public.%I', tbl, tbl);
+      EXECUTE format(
+        'CREATE POLICY "%s_owner_isolation" ON public.%I FOR ALL USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id)',
+        tbl,
+        tbl
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ==============================================================================
+-- 12. AI FINANCIAL INTELLIGENCE TABLES — ROW LEVEL SECURITY (STRICT USER ISOLATION)
+-- ==============================================================================
+-- Applies auth.uid()::text = user_id isolation to all tables introduced for
+-- AI Money Assistant, Smart Categorization, Receipt Scanner, Net Worth Tracker,
+-- Safe-to-Spend Calculator, and Smart Financial Alerts.
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'ai_conversations',
+    'ai_messages',
+    'user_categorization_rules',
+    'receipt_records',
+    'net_worth_assets',
+    'net_worth_liabilities',
+    'net_worth_settings',
+    'net_worth_snapshots',
+    'safe_to_spend_preferences',
+    'smart_alert_preferences',
+    'smart_alert_events'
+  ]
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_owner_isolation" ON public.%I', tbl, tbl);
+      EXECUTE format(
+        'CREATE POLICY "%s_owner_isolation" ON public.%I FOR ALL USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id)',
+        tbl,
+        tbl
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================
+
+
 

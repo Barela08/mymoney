@@ -6,6 +6,9 @@ function backendApiPlugin(): Plugin {
     name: 'backend-api-plugin',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api')) {
+          return next();
+        }
         try {
           const apiModule = await server.ssrLoadModule('./server/api.ts');
           const handled = await apiModule.handleApiRequest(req, res);
@@ -36,6 +39,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3000,
+    strictPort: true,
     allowedHosts: true,
     headers: {
       'Content-Security-Policy': [

@@ -31,6 +31,7 @@ import { StartupPermissionsModal } from './components/common/StartupPermissionsM
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
 import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
+import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
@@ -555,7 +556,9 @@ export default function App() {
           <ExpenseProvider>
             <PwaInstallProvider>
               <NotificationProvider>
-                <MainContent />
+                <AppErrorBoundary>
+                  <MainContent />
+                </AppErrorBoundary>
                 <PwaInstallBanner />
                 <PwaInstallModal />
               </NotificationProvider>

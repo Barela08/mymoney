@@ -27,7 +27,6 @@ import {
   Sparkles,
   Utensils,
   Coffee,
-  Download,
   HelpCircle,
   MessageSquare,
   Calculator,
@@ -48,7 +47,6 @@ import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import { usePwaInstall } from '../../context/PwaInstallContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 
@@ -92,7 +90,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt, isBannerVisible } = usePwaInstall();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
 
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -339,11 +336,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       </div>
 
       {/* Floating Action Button (FAB) for Mobile Quick Add */}
-      <div
-        className={`fixed right-4 z-40 lg:hidden transition-all duration-300 ease-out ${
-          isBannerVisible ? 'bottom-36' : 'bottom-20'
-        }`}
-      >
+      <div className="fixed right-4 bottom-20 z-40 lg:hidden transition-all duration-300 ease-out">
         <button
           onClick={onOpenAddModal}
           className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-md border border-emerald-500/30 transition-transform p-3 cursor-pointer"

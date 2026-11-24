@@ -43,7 +43,8 @@ const ASSET_CATEGORIES: Array<{ id: AssetCategory; label: string }> = [
   { id: 'savings', label: 'Savings' },
   { id: 'fixed_deposit', label: 'Fixed Deposit (FD)' },
   { id: 'investments', label: 'Investments' },
-  { id: 'stocks', label: 'Stocks & Mutual Funds' },
+  { id: 'stocks', label: 'Stocks' },
+  { id: 'mutual_funds', label: 'Mutual Funds' },
   { id: 'gold', label: 'Gold' },
   { id: 'vehicle', label: 'Vehicle' },
   { id: 'property', label: 'Property' },
@@ -52,6 +53,8 @@ const ASSET_CATEGORIES: Array<{ id: AssetCategory; label: string }> = [
 
 const LIABILITY_CATEGORIES: Array<{ id: LiabilityCategory; label: string }> = [
   { id: 'personal_loan', label: 'Personal Loan' },
+  { id: 'home_loan', label: 'Home Loan' },
+  { id: 'vehicle_loan', label: 'Vehicle Loan' },
   { id: 'credit_card', label: 'Credit Card Outstanding' },
   { id: 'emi', label: 'EMI Outstanding' },
   { id: 'borrowed_money', label: 'Borrowed Money' },

@@ -15,17 +15,17 @@ function isValidVapidKeyPair(publicKey?: string, privateKey?: string): boolean {
   }
 }
 
-function resolveVapidKeys(): { publicKey: string; privateKey: string } {
+function resolveVapidKeys(): { publicKey: string; privateKey: string; isPersistent: boolean } {
   const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
   const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
   if (isValidVapidKeyPair(envPublic, envPrivate)) {
-    return { publicKey: envPublic!, privateKey: envPrivate! };
+    return { publicKey: envPublic!, privateKey: envPrivate!, isPersistent: true };
   }
   const g = globalThis as { __myMoneyVapidKeys?: { publicKey: string; privateKey: string } };
   if (!g.__myMoneyVapidKeys) {
     g.__myMoneyVapidKeys = webpush.generateVAPIDKeys();
   }
-  return g.__myMoneyVapidKeys;
+  return { ...g.__myMoneyVapidKeys, isPersistent: false };
 }
 
 // Parse .env if not loaded
@@ -86,6 +86,7 @@ export const APP_CONFIG = {
     return {
       publicKey: keys.publicKey,
       privateKey: keys.privateKey,
+      isPersistent: keys.isPersistent,
       subject: process.env.VAPID_SUBJECT || 'mailto:hackifypro@gmail.com',
     };
   })(),

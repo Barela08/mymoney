@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  toPaise,
+  fromPaise,
+  roundMoney,
   categorizeTransactionDeterministic,
   upsertUserCategorizationRule,
   buildExpenseCalendarMonth,
@@ -12,6 +15,7 @@ import {
   DEFAULT_SMART_ALERT_PREFS,
   isWithinQuietHours,
   validateReceiptUpload,
+  validateReceiptFileSignature,
   detectDuplicateReceipt,
   buildAiFinancialContext,
 } from './financialIntelligenceEngine';
@@ -325,3 +329,79 @@ test('AI Context Aggregator: separates earned income, borrowed funds, transfers,
   assert.equal(ctx.totals.thisMonthExpenses, 2500); // Udhar & Transfer NOT counted as expense
   assert.equal(ctx.udharSummary.totalReceivable, 4000);
 });
+
+// 8. DECIMAL-SAFE PAISE ARITHMETIC TESTS
+test('Money arithmetic: avoids IEEE-754 floating-point drift using integer paise', () => {
+  const sum = fromPaise(toPaise(0.1) + toPaise(0.2));
+  assert.equal(sum, 0.3);
+  assert.equal(roundMoney(199.995), 200);
+
+  const nw = calculateNetWorth({
+    assets: [
+      { id: 'a1', name: 'Nifty 50 SIP', category: 'mutual_funds', current_value: 10000.1, valuation_date: '2026-11-24', updated_at: '' },
+      { id: 'a2', name: 'Bank', category: 'bank_account', current_value: 20000.2, valuation_date: '2026-11-24', updated_at: '' },
+    ],
+    liabilities: [
+      { id: 'l1', name: 'Home Loan', category: 'home_loan', current_balance: 5000.1, valuation_date: '2026-11-24', updated_at: '' },
+      { id: 'l2', name: 'Vehicle Loan', category: 'vehicle_loan', current_balance: 2500.2, valuation_date: '2026-11-24', updated_at: '' },
+    ],
+    availableBalance: 0,
+    udharReceivable: 0,
+    udharPayable: 0,
+    settings: { includeLiquidBalance: false, includeUdharReceivables: false, includeUdharPayables: false },
+  });
+
+  assert.equal(nw.totalAssets, 30000.3);
+  assert.equal(nw.totalLiabilities, 7500.3);
+  assert.equal(nw.netWorth, 22500);
+});
+
+// 9. BINARY MAGIC-BYTE RECEIPT SIGNATURE VALIDATION TESTS
+test('Receipt Security: validates real JPEG/PNG/WEBP magic bytes and rejects spoofed HTML/SVG payloads', () => {
+  const validJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01]).toString('base64');
+  const validPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49]).toString('base64');
+  const validWebp = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56]).toString('base64');
+  const spoofedSvg = Buffer.from('<svg onload="alert(1)"></svg>').toString('base64');
+
+  assert.equal(validateReceiptFileSignature(validJpeg, 'image/jpeg').valid, true);
+  assert.equal(validateReceiptFileSignature(validPng, 'image/png').valid, true);
+  assert.equal(validateReceiptFileSignature(validWebp, 'image/webp').valid, true);
+
+  // Spoofed SVG/XSS payload masquerading as image/jpeg MUST be rejected
+  assert.equal(validateReceiptFileSignature(spoofedSvg, 'image/jpeg').valid, false);
+  // Mismatched MIME (PNG bytes declared as JPEG) MUST be rejected
+  assert.equal(validateReceiptFileSignature(validPng, 'image/jpeg').valid, false);
+});
+
+// 10. SAFE-TO-SPEND DAILY / WEEKLY / MONTHLY PERIODS TEST
+test('Safe-to-Spend: supports Daily, Weekly, and Monthly focus periods accurately', () => {
+  const refDate = new Date(2026, 10, 21); // Nov 21 -> 10 remaining days in Nov (21..30)
+  const baseParams = {
+    availableBalance: 20000,
+    transactions: [makeTx({ category: 'home', subcategory: 'salary', transaction_type: 'income', amount: 20000, transaction_date: '2026-11-01' })],
+    recurringBills: [],
+    budgets: [],
+    savingsGoals: [],
+    referenceDate: refDate,
+  };
+
+  const dailyRes = calculateSafeToSpend({
+    ...baseParams,
+    preferences: { ...DEFAULT_SAFE_TO_SPEND_PREFS, emergencyReserve: 10000, period: 'day' },
+  });
+  const weeklyRes = calculateSafeToSpend({
+    ...baseParams,
+    preferences: { ...DEFAULT_SAFE_TO_SPEND_PREFS, emergencyReserve: 10000, period: 'week' },
+  });
+  const monthlyRes = calculateSafeToSpend({
+    ...baseParams,
+    preferences: { ...DEFAULT_SAFE_TO_SPEND_PREFS, emergencyReserve: 10000, period: 'month' },
+  });
+
+  assert.equal(monthlyRes.safeToSpendThisMonth, 10000);
+  assert.equal(dailyRes.safeToSpendToday, 1000);
+  assert.equal(dailyRes.safeToSpendPeriod, 1000);
+  assert.equal(weeklyRes.safeToSpendPeriod, weeklyRes.safeToSpendThisWeek);
+  assert.equal(monthlyRes.safeToSpendPeriod, 10000);
+});
+

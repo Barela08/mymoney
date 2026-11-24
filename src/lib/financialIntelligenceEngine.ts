@@ -6,6 +6,20 @@ import type { UserBudget, SavingsGoal, RecurringBill } from './financialFeatures
 // SHARED ACCOUNTING HELPERS (Canonical separation of Income, Expense, Transfers, Udhar)
 // ============================================================================
 
+export function toPaise(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round(amount * 100);
+}
+
+export function fromPaise(paise: number): number {
+  if (!Number.isFinite(paise)) return 0;
+  return Math.round(paise) / 100;
+}
+
+export function roundMoney(amount: number): number {
+  return fromPaise(toPaise(amount));
+}
+
 export function isTransferTransaction(tx: Transaction): boolean {
   if (!tx) return false;
   if (tx.metadata?.is_transfer === true || tx.metadata?.transfer_type) return true;
@@ -740,6 +754,7 @@ export type AssetCategory =
   | 'fixed_deposit'
   | 'investments'
   | 'stocks'
+  | 'mutual_funds'
   | 'gold'
   | 'vehicle'
   | 'property'
@@ -747,6 +762,8 @@ export type AssetCategory =
 
 export type LiabilityCategory =
   | 'personal_loan'
+  | 'home_loan'
+  | 'vehicle_loan'
   | 'credit_card'
   | 'emi'
   | 'borrowed_money'
@@ -810,7 +827,8 @@ const ASSET_LABELS: Record<AssetCategory, string> = {
   savings: 'Savings',
   fixed_deposit: 'Fixed Deposits',
   investments: 'Investments',
-  stocks: 'Stocks & Mutual Funds',
+  stocks: 'Stocks',
+  mutual_funds: 'Mutual Funds',
   gold: 'Gold',
   vehicle: 'Vehicle',
   property: 'Property',
@@ -819,6 +837,8 @@ const ASSET_LABELS: Record<AssetCategory, string> = {
 
 const LIABILITY_LABELS: Record<LiabilityCategory, string> = {
   personal_loan: 'Personal Loans',
+  home_loan: 'Home Loans',
+  vehicle_loan: 'Vehicle Loans',
   credit_card: 'Credit Card Outstanding',
   emi: 'EMI Outstanding',
   borrowed_money: 'Borrowed Money',
@@ -836,27 +856,35 @@ export function calculateNetWorth(params: {
   const activeAssets = params.assets.filter((a) => !a.is_archived);
   const activeLiabilities = params.liabilities.filter((l) => !l.is_archived);
 
-  const manualAssetsTotal = activeAssets.reduce((sum, a) => sum + Math.max(0, Number(a.current_value) || 0), 0);
-  const manualLiabilitiesTotal = activeLiabilities.reduce(
-    (sum, l) => sum + Math.max(0, Number(l.current_balance) || 0),
+  const manualAssetsPaise = activeAssets.reduce((sum, a) => sum + toPaise(Math.max(0, Number(a.current_value) || 0)), 0);
+  const manualLiabilitiesPaise = activeLiabilities.reduce(
+    (sum, l) => sum + toPaise(Math.max(0, Number(l.current_balance) || 0)),
     0
   );
 
   // If availableBalance is negative and included, treat deficit as liability (never inflate assets)
-  const linkedLiquidAsset = params.settings.includeLiquidBalance ? Math.max(0, params.availableBalance) : 0;
-  const linkedLiquidDeficit = params.settings.includeLiquidBalance ? Math.max(0, -params.availableBalance) : 0;
+  const linkedLiquidAssetPaise = params.settings.includeLiquidBalance ? toPaise(Math.max(0, params.availableBalance)) : 0;
+  const linkedLiquidDeficitPaise = params.settings.includeLiquidBalance ? toPaise(Math.max(0, -params.availableBalance)) : 0;
 
-  const linkedUdharReceivableAsset = params.settings.includeUdharReceivables
-    ? Math.max(0, params.udharReceivable)
+  const linkedUdharReceivablePaise = params.settings.includeUdharReceivables
+    ? toPaise(Math.max(0, params.udharReceivable))
     : 0;
-  const linkedUdharPayableLiability = params.settings.includeUdharPayables
-    ? Math.max(0, params.udharPayable)
+  const linkedUdharPayablePaise = params.settings.includeUdharPayables
+    ? toPaise(Math.max(0, params.udharPayable))
     : 0;
 
-  const totalAssets = Math.round((manualAssetsTotal + linkedLiquidAsset + linkedUdharReceivableAsset) * 100) / 100;
-  const totalLiabilities =
-    Math.round((manualLiabilitiesTotal + linkedUdharPayableLiability + linkedLiquidDeficit) * 100) / 100;
-  const netWorth = Math.round((totalAssets - totalLiabilities) * 100) / 100;
+  const totalAssetsPaise = manualAssetsPaise + linkedLiquidAssetPaise + linkedUdharReceivablePaise;
+  const totalLiabilitiesPaise = manualLiabilitiesPaise + linkedUdharPayablePaise + linkedLiquidDeficitPaise;
+
+  const manualAssetsTotal = fromPaise(manualAssetsPaise);
+  const linkedLiquidAsset = fromPaise(linkedLiquidAssetPaise);
+  const linkedLiquidDeficit = fromPaise(linkedLiquidDeficitPaise);
+  const linkedUdharReceivableAsset = fromPaise(linkedUdharReceivablePaise);
+  const manualLiabilitiesTotal = fromPaise(manualLiabilitiesPaise);
+  const linkedUdharPayableLiability = fromPaise(linkedUdharPayablePaise);
+  const totalAssets = fromPaise(totalAssetsPaise);
+  const totalLiabilities = fromPaise(totalLiabilitiesPaise);
+  const netWorth = fromPaise(totalAssetsPaise - totalLiabilitiesPaise);
 
   const assetMap = new Map<string, { label: string; amount: number }>();
   for (const a of activeAssets) {
@@ -950,7 +978,7 @@ export interface SafeToSpendPreferences {
   essentialExpenseReserve: number;
   expectedRemainingIncome: number;
   includeExpectedIncome: boolean;
-  period: 'month' | 'week';
+  period: 'day' | 'week' | 'month';
 }
 
 export const DEFAULT_SAFE_TO_SPEND_PREFS: SafeToSpendPreferences = {
@@ -1120,24 +1148,31 @@ export function calculateSafeToSpend(params: {
       ? Number(params.preferences.expectedRemainingIncome)
       : 0;
 
-  const effectiveBalance = Math.round((params.availableBalance + expectedIncomeBoost) * 100) / 100;
-  const totalCommitments =
-    Math.round(
-      (upcomingBillsCommitment + reservedSavings + essentialReserve + emergencyReserve + minimumBalanceReserve) * 100
-    ) / 100;
+  const effectiveBalance = fromPaise(toPaise(params.availableBalance) + toPaise(expectedIncomeBoost));
+  const totalCommitments = fromPaise(
+    toPaise(upcomingBillsCommitment) +
+      toPaise(reservedSavings) +
+      toPaise(essentialReserve) +
+      toPaise(emergencyReserve) +
+      toPaise(minimumBalanceReserve)
+  );
 
-  const safeToSpendThisMonth = Math.round((effectiveBalance - totalCommitments) * 100) / 100;
+  const safeToSpendThisMonth = fromPaise(toPaise(effectiveBalance) - toPaise(totalCommitments));
   const safeToSpendToday =
-    safeToSpendThisMonth > 0 ? Math.round((safeToSpendThisMonth / remainingDaysInMonth) * 100) / 100 : 0;
+    safeToSpendThisMonth > 0 ? roundMoney(safeToSpendThisMonth / remainingDaysInMonth) : 0;
 
   const weekDaysFraction = Math.min(remainingDaysInWeek, remainingDaysInMonth);
   const safeToSpendThisWeek =
     safeToSpendThisMonth > 0
-      ? Math.round((safeToSpendToday * weekDaysFraction) * 100) / 100
+      ? roundMoney(safeToSpendToday * weekDaysFraction)
       : 0;
 
   const safeToSpendPeriod =
-    params.preferences.period === 'week' ? safeToSpendThisWeek : safeToSpendThisMonth;
+    params.preferences.period === 'day'
+      ? safeToSpendToday
+      : params.preferences.period === 'week'
+      ? safeToSpendThisWeek
+      : safeToSpendThisMonth;
 
   // Budget awareness (non-double-subtracted informational metric)
   const monthBudgetLimitTotal = params.budgets.reduce((s, b) => s + Math.max(0, Number(b.monthly_limit) || 0), 0);
@@ -1599,6 +1634,68 @@ export function validateReceiptUpload(mimeType: string, sizeBytes: number): Rece
     };
   }
   return { valid: true };
+}
+
+/**
+ * Validates the actual binary magic-byte signature of a base64-encoded image
+ * so spoofed HTML/SVG/script/executable payloads renamed as .jpg/.png/.webp are rejected.
+ */
+export function validateReceiptFileSignature(
+  base64Data: string,
+  declaredMimeType: string
+): ReceiptValidationResult {
+  const cleanB64 = String(base64Data || '').replace(/\s+/g, '');
+  if (cleanB64.length < 16) {
+    return { valid: false, error: 'Uploaded receipt file is corrupted or incomplete.' };
+  }
+
+  let bytes: Uint8Array;
+  try {
+    const headerSlice = cleanB64.slice(0, 32);
+    if (typeof Buffer !== 'undefined') {
+      bytes = new Uint8Array(Buffer.from(headerSlice, 'base64'));
+    } else {
+      const bin = atob(headerSlice);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    }
+  } catch {
+    return { valid: false, error: 'Invalid base64 image payload.' };
+  }
+
+  if (bytes.length < 12) {
+    return { valid: false, error: 'Uploaded file is too small to be a valid image.' };
+  }
+
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isPng =
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a;
+  const isWebp =
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50;
+
+  const mime = String(declaredMimeType || '').toLowerCase().trim();
+  if ((mime === 'image/jpeg' || mime === 'image/jpg') && isJpeg) return { valid: true };
+  if (mime === 'image/png' && isPng) return { valid: true };
+  if (mime === 'image/webp' && isWebp) return { valid: true };
+
+  return {
+    valid: false,
+    error: 'File content signature does not match a valid JPG, PNG, or WEBP image. Upload rejected for security.',
+  };
 }
 
 export interface ReceiptOcrExtraction {

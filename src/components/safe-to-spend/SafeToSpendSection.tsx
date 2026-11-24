@@ -277,6 +277,34 @@ export const SafeToSpendSection: React.FC<SafeToSpendSectionProps> = ({ onSelect
 
               <div className="space-y-3">
                 <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Primary Focus Period
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80">
+                    {(
+                      [
+                        { id: 'day', label: 'Daily' },
+                        { id: 'week', label: 'Weekly' },
+                        { id: 'month', label: 'Monthly' },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPrefs((p) => ({ ...p, period: opt.id }))}
+                        className={`py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                          prefs.period === opt.id
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/60'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Minimum Balance Floor (₹)
                   </label>
