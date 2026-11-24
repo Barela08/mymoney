@@ -70,6 +70,9 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const [showMicPermissionModal, setShowMicPermissionModal] = useState(false);
+  const [speechLang, setSpeechLang] = useState<'hi-IN' | 'en-IN'>('hi-IN');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [lastError, setLastError] = useState<{ message: string; code?: string; retryQuestion?: string } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -279,7 +282,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
   }, [initialPrompt, isLoadingInitial, handleSend, onClearInitialPrompt]);
 
   // Speech Recognition (Voice Input / Mic)
-  const toggleListening = () => {
+  const toggleListening = useCallback(async () => {
     if (isListening) {
       try {
         recognitionRef.current?.stop();
@@ -294,21 +297,42 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
     if (!SpeechRecognition) {
       toast.error(
         'Voice Input Unavailable',
-        'Your browser does not support voice recognition. Please try using Google Chrome or Microsoft Edge.'
+        'Aapka browser voice recognition support nahi karta. Google Chrome ya Edge use karein.'
       );
       return;
+    }
+
+    // Step 1: Explicitly request audio permission via getUserMedia
+    // This triggers Chrome's native "Allow microphone" bar if unprompted!
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+        setShowMicPermissionModal(false);
+      } catch (err: any) {
+        console.warn('Microphone permission check failed:', err);
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setShowMicPermissionModal(true);
+          return;
+        }
+      }
     }
 
     try {
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
-      recognition.lang = 'en-IN';
+      recognition.lang = speechLang;
       recognition.continuous = false;
       recognition.interimResults = true;
 
       recognition.onstart = () => {
         setIsListening(true);
-        toast.info('Listening...', 'Speak your financial question now.');
+        toast.info(
+          speechLang === 'hi-IN' ? 'सुन रहे हैं...' : 'Listening...',
+          speechLang === 'hi-IN'
+            ? 'अपना सवाल बोलें (उदा: इस महीने कितना खर्चा हुआ?)'
+            : 'Speak your question now...'
+        );
       };
 
       recognition.onresult = (event: any) => {
@@ -324,7 +348,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
         console.warn('Speech recognition error:', event?.error);
         setIsListening(false);
         if (event?.error === 'not-allowed') {
-          toast.error('Microphone Denied', 'Please allow microphone access in your browser settings.');
+          setShowMicPermissionModal(true);
         } else if (event?.error !== 'no-speech') {
           toast.error('Mic Error', `Speech error: ${event?.error || 'Unknown error'}`);
         }
@@ -337,9 +361,34 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       recognition.start();
     } catch (err: any) {
       setIsListening(false);
-      toast.error('Microphone Error', err?.message || 'Could not start microphone.');
+      if (err?.name === 'NotAllowedError') {
+        setShowMicPermissionModal(true);
+      } else {
+        toast.error('Microphone Error', err?.message || 'Could not start microphone.');
+      }
     }
-  };
+  }, [isListening, speechLang, toast]);
+
+  // Listen for speed-dial custom events from floating AI menu (Voice AI or Chat AI)
+  useEffect(() => {
+    const handleVoiceTrigger = () => {
+      setTimeout(() => {
+        toggleListening();
+      }, 300);
+    };
+    const handleChatTrigger = () => {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 300);
+    };
+
+    window.addEventListener('start-ai-voice', handleVoiceTrigger);
+    window.addEventListener('focus-ai-chat', handleChatTrigger);
+    return () => {
+      window.removeEventListener('start-ai-voice', handleVoiceTrigger);
+      window.removeEventListener('focus-ai-chat', handleChatTrigger);
+    };
+  }, [toggleListening]);
 
   const handleNewConversation = () => {
     setActiveConvId(null);
@@ -709,10 +758,11 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
             className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/80 flex items-center gap-2"
           >
             <input
+              ref={inputRef}
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={isListening ? 'Listening... speak now' : 'Ask about your spending, budgets, bills, savings, Udhar, or Net Worth...'}
+              placeholder={isListening ? 'Listening (सुन रहे हैं)... speak now' : 'Ask about your spending, budgets, bills, savings, Udhar, or Net Worth...'}
               maxLength={1500}
               disabled={isSending}
               className={`flex-1 min-w-0 h-11 px-4 rounded-xl border text-sm transition-all focus:outline-none focus:ring-2 ${
@@ -721,6 +771,15 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
                   : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-emerald-500'
               }`}
             />
+            {/* Language toggle: Hindi or English */}
+            <button
+              type="button"
+              onClick={() => setSpeechLang((prev) => (prev === 'hi-IN' ? 'en-IN' : 'hi-IN'))}
+              className="h-11 px-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+              title="Click to toggle Voice Language (Hindi / English)"
+            >
+              {speechLang === 'hi-IN' ? '🇮🇳 HI' : '🌐 EN'}
+            </button>
             {/* Mic Voice Input Button */}
             <button
               type="button"
@@ -752,6 +811,86 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
           </form>
         </section>
       </div>
+
+      {/* Microphone Permission Modal (Help user allow mic in browser) */}
+      {showMicPermissionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl relative text-left">
+            <button
+              onClick={() => setShowMicPermissionModal(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3.5 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <MicOff className="w-6 h-6 stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                  Microphone Access Required
+                </h3>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                  Browser me mic permission block hai
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
+              Voice AI chalane ke liye browser me microphone allow karna jaroori hai. Bas yeh 2 aasan steps karein:
+            </p>
+
+            <div className="space-y-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl p-3.5 mb-5 text-xs text-slate-700 dark:text-slate-300">
+              <div className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                  1
+                </span>
+                <span>
+                  Browser ke sabse upar URL bar me <strong className="text-slate-900 dark:text-white">🔒 (Lock) / ⚙️ (Site Settings)</strong> icon par click karein.
+                </span>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                  2
+                </span>
+                <span>
+                  Wahan <strong className="text-slate-900 dark:text-white">Microphone</strong> ko toggle karke <strong className="text-emerald-600 dark:text-emerald-400">"Allow" (ON)</strong> kar dein.
+                </span>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                  3
+                </span>
+                <span>
+                  Neeche <strong className="text-emerald-600 dark:text-emerald-400">"Try Again"</strong> button dabayein ya page Refresh (F5) karein.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMicPermissionModal(false);
+                  toggleListening();
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Try Again (फिर से चेक करें)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMicPermissionModal(false)}
+                className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={confirmClearAll}

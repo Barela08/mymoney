@@ -149,7 +149,7 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
 
   const unreadAlertsCount = smartAlerts.filter((a) => !a.isRead).length;
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     if (isListening) {
       setIsListening(false);
       return;
@@ -158,9 +158,18 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch {
+        return;
+      }
+    }
+
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'en-IN';
+      recognition.lang = 'hi-IN';
       recognition.continuous = false;
       recognition.interimResults = true;
 

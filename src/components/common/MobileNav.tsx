@@ -29,6 +29,7 @@ import {
   Coffee,
   HelpCircle,
   MessageSquare,
+  Mic,
   Calculator,
   ShieldCheck,
   QrCode,
@@ -91,6 +92,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
+  const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
 
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
   const customSections = dynamicSections.filter(
@@ -336,22 +338,81 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       </div>
 
       {/* Floating Action Buttons (FAB) for Mobile Quick Add & AI Assistant */}
-      <div className="fixed right-4 bottom-20 z-40 flex flex-col gap-2.5 items-center lg:hidden transition-all duration-300 ease-out">
-        {/* Floating AI Assistant Button */}
+      <div className="fixed right-4 bottom-20 z-40 flex flex-col gap-2.5 items-center transition-all duration-300 ease-out">
+        {/* Speed-dial Popup Options for Voice AI & Chat AI */}
+        {isAiMenuOpen && (
+          <>
+            {/* Backdrop to dismiss when tapped outside */}
+            <div
+              className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[1px]"
+              onClick={() => setIsAiMenuOpen(false)}
+            />
+
+            <div className="flex flex-col items-end gap-2 mb-1 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+              {/* Option 1: Voice AI (बोलकर पूछें) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAiMenuOpen(false);
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('ai_assistant');
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('start-ai-voice'));
+                  }, 350);
+                }}
+                className="flex items-center gap-2.5 py-2 px-3.5 bg-white dark:bg-slate-900 border border-emerald-500/50 hover:border-emerald-500 shadow-xl rounded-2xl text-slate-800 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400 active:scale-95 transition-all cursor-pointer group"
+              >
+                <div className="flex flex-col text-right">
+                  <span className="text-xs font-bold flex items-center justify-end gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    Voice AI
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  </span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">बोलकर पूछें</span>
+                </div>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center shadow-md shadow-emerald-500/30 group-hover:scale-105 transition-transform">
+                  <Mic className="w-4 h-4 stroke-[2.5]" />
+                </div>
+              </button>
+
+              {/* Option 2: Chat AI (चैट करके पूछें) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAiMenuOpen(false);
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('ai_assistant');
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('focus-ai-chat'));
+                  }, 350);
+                }}
+                className="flex items-center gap-2.5 py-2 px-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-xl rounded-2xl text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 transition-all cursor-pointer group"
+              >
+                <div className="flex flex-col text-right">
+                  <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Chat AI</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">टाइप करके चैट करें</span>
+                </div>
+                <div className="w-8 h-8 rounded-xl bg-blue-500 text-white flex items-center justify-center shadow-md shadow-blue-500/30 group-hover:scale-105 transition-transform">
+                  <MessageSquare className="w-4 h-4 stroke-[2.5]" />
+                </div>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Floating AI Assistant Trigger Button */}
         <button
-          onClick={() => {
-            setIsMoreSheetOpen(false);
-            onSelectTab('ai_assistant');
-          }}
+          onClick={() => setIsAiMenuOpen((prev) => !prev)}
           className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg border transition-all duration-200 cursor-pointer ${
-            currentTab === 'ai_assistant'
+            isAiMenuOpen
+              ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 rotate-90 scale-105 z-50'
+              : currentTab === 'ai_assistant'
               ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 scale-105'
               : 'bg-slate-900 dark:bg-slate-800 text-emerald-400 hover:text-emerald-300 border-slate-700/80 hover:scale-105 active:scale-95 shadow-slate-900/30'
           }`}
           aria-label="Ask AI Assistant"
-          title="Ask AI Assistant"
+          title="Ask AI Assistant (Voice or Chat)"
         >
-          <Sparkles className="w-5 h-5 stroke-[2.2]" />
+          {isAiMenuOpen ? <X className="w-5 h-5 stroke-[2.5]" /> : <Sparkles className="w-5 h-5 stroke-[2.2]" />}
         </button>
 
         {/* Floating Add Transaction (+) Button */}
