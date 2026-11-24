@@ -50,6 +50,7 @@ import {
   notifyUdharRepayment,
   notifyQrConnected,
   notifyFeedbackSubmitted,
+  notifyAdminNewFeedback,
   notifyComplaintSubmitted,
   processScheduledCampaigns,
 } from './notificationService';
@@ -4154,12 +4155,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         submittedAt: feedback.created_at ? new Date(feedback.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : undefined,
       }).catch((e) => console.warn('[Feedback Dual Emails Dispatch Error]:', e));
 
-      // In-app thank you notification
+      // In-app + Push notification for the submitting USER (thank-you)
       notifyFeedbackSubmitted(authUser.id, {
         id: feedback.id,
         rating: rating || 5,
         category,
-      }).catch((e) => console.warn('[Notify Feedback Error]:', e));
+      }).catch((e) => console.warn('[Notify Feedback User Error]:', e));
+
+      // In-app + Push notification for ALL ADMINS (new feedback alert)
+      notifyAdminNewFeedback({
+        feedbackId,
+        feedbackDbId: feedback.id,
+        submitterName: trustedName,
+        submitterEmail: trustedEmail,
+        rating: rating || 5,
+        category,
+        message,
+      }).catch((e) => console.warn('[Notify Admin Feedback Error]:', e));
 
       await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
         userId: authUser.id,

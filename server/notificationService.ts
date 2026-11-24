@@ -612,7 +612,8 @@ export async function notifyUdharRepayment(params: {
 }
 
 /**
- * Triggered when a user submits feedback
+ * Triggered when a user submits feedback.
+ * Sends in-app + push notification to the submitting user.
  */
 export async function notifyFeedbackSubmitted(
   userId: string,
@@ -627,8 +628,53 @@ export async function notifyFeedbackSubmitted(
     relatedEntityType: 'feedback',
     relatedEntityId: feedback.id,
     deepLink: 'help:feedback',
-    channels: ['in_app'],
+    channels: ['in_app', 'push'],
   });
+}
+
+/**
+ * Triggered when any user submits feedback — notifies ALL admin users.
+ * Sends in-app + push notification to each admin/superadmin.
+ */
+export async function notifyAdminNewFeedback(opts: {
+  feedbackId: string;
+  feedbackDbId: string;
+  submitterName: string;
+  submitterEmail: string;
+  rating: number;
+  category?: string;
+  message: string;
+}): Promise<void> {
+  try {
+    // Fetch all active admin and superadmin user IDs
+    const adminsRes = await query(
+      `SELECT id FROM public.app_users WHERE role IN ('admin', 'superadmin') AND status = 'active'`
+    );
+
+    if (adminsRes.rows.length === 0) return;
+
+    const stars = '⭐'.repeat(Math.max(1, Math.min(5, opts.rating)));
+    const shortMsg = opts.message.length > 80 ? opts.message.slice(0, 80) + '…' : opts.message;
+
+    for (const admin of adminsRes.rows) {
+      await createNotification({
+        userId: admin.id,
+        title: `New Feedback Received ${stars}`,
+        message: `${opts.submitterName} (${opts.submitterEmail}) left a ${opts.rating}-star review in "${opts.category || 'General'}": "${shortMsg}"`,
+        category: 'feedback',
+        type: 'info',
+        relatedEntityType: 'feedback',
+        relatedEntityId: opts.feedbackDbId,
+        deepLink: 'admin:feedback',
+        channels: ['in_app', 'push'],
+        skipPreferenceCheck: true, // Admin alerts are always delivered
+      }).catch((e) =>
+        console.warn(`[notifyAdminNewFeedback] Failed for admin ${admin.id}:`, e?.message)
+      );
+    }
+  } catch (e: any) {
+    console.warn('[notifyAdminNewFeedback] Error fetching admin list:', e?.message);
+  }
 }
 
 /**
