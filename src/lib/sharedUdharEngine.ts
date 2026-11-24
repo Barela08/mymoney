@@ -88,6 +88,9 @@ export interface ParsedQrPayload {
   kind?: 'json' | 'pair_url' | 'pair_code' | 'hex_token';
   token?: string;
   code?: string;
+  userId?: string;
+  name?: string;
+  email?: string;
   error?: string;
 }
 
@@ -142,11 +145,14 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed = JSON.parse(trimmed);
-      if (parsed && parsed.app === 'my-money' && parsed.type === 'udhar-pair') {
+      if (parsed && (parsed.app === 'my-money' || parsed.type === 'udhar-pair')) {
         const token = typeof parsed.token === 'string' ? parsed.token.trim() : undefined;
         const code = typeof parsed.code === 'string' ? parsed.code.trim().toUpperCase() : undefined;
-        if (token || code) {
-          return { valid: true, kind: 'json', token, code };
+        const userId = typeof parsed.userId === 'string' ? parsed.userId.trim() : undefined;
+        const name = typeof parsed.name === 'string' ? parsed.name.trim() : undefined;
+        const email = typeof parsed.email === 'string' ? parsed.email.trim() : undefined;
+        if (token || code || userId) {
+          return { valid: true, kind: 'json', token, code, userId, name, email };
         }
       }
       return {

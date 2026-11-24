@@ -586,6 +586,82 @@ BEGIN
 END $$;
 
 -- ==============================================================================
+-- 13. UDHAR & QR PAIRING SYSTEM TABLES
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.qr_pairing_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    pairing_token TEXT NOT NULL UNIQUE,
+    pairing_code TEXT NOT NULL,
+    is_single_use BOOLEAN NOT NULL DEFAULT FALSE,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    used_by_user_id UUID,
+    used_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_qr_pairing_token ON public.qr_pairing_tokens(pairing_token);
+CREATE INDEX IF NOT EXISTS idx_qr_pairing_user ON public.qr_pairing_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_qr_pairing_code ON public.qr_pairing_tokens(pairing_code);
+
+ALTER TABLE public.qr_pairing_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "qr_pairing_select_all" ON public.qr_pairing_tokens;
+CREATE POLICY "qr_pairing_select_all" ON public.qr_pairing_tokens
+    FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "qr_pairing_insert_own" ON public.qr_pairing_tokens;
+CREATE POLICY "qr_pairing_insert_own" ON public.qr_pairing_tokens
+    FOR INSERT WITH CHECK (auth.uid() = user_id OR auth.uid() IS NULL);
+
+DROP POLICY IF EXISTS "qr_pairing_update_own" ON public.qr_pairing_tokens;
+CREATE POLICY "qr_pairing_update_own" ON public.qr_pairing_tokens
+    FOR UPDATE USING (auth.uid() = user_id OR auth.uid() IS NULL);
+
+CREATE TABLE IF NOT EXISTS public.udhar_contacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    relationship_type TEXT DEFAULT 'friend',
+    notes TEXT,
+    linked_user_id UUID,
+    photo_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_udhar_contact_user_name UNIQUE (user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_udhar_contacts_user ON public.udhar_contacts(user_id);
+CREATE INDEX IF NOT EXISTS idx_udhar_contacts_linked ON public.udhar_contacts(linked_user_id);
+
+ALTER TABLE public.udhar_contacts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "udhar_contacts_owner_all" ON public.udhar_contacts;
+CREATE POLICY "udhar_contacts_owner_all" ON public.udhar_contacts
+    FOR ALL USING (auth.uid() = user_id OR auth.uid() IS NULL);
+
+CREATE TABLE IF NOT EXISTS public.user_connections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_a_id UUID NOT NULL,
+    user_b_id UUID NOT NULL,
+    status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'blocked')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_user_connection_pair UNIQUE (user_a_id, user_b_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_conn_a ON public.user_connections(user_a_id);
+CREATE INDEX IF NOT EXISTS idx_user_conn_b ON public.user_connections(user_b_id);
+
+ALTER TABLE public.user_connections ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_connections_member_all" ON public.user_connections;
+CREATE POLICY "user_connections_member_all" ON public.user_connections
+    FOR ALL USING (auth.uid() = user_a_id OR auth.uid() = user_b_id OR auth.uid() IS NULL);
+
+-- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================
 

@@ -27,6 +27,8 @@ import {
   Bell,
   TrendingUp,
   BarChart3,
+  Search,
+  Sparkles,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -57,6 +59,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Time-of-day greeting
   const currentHour = new Date().getHours();
@@ -100,8 +103,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
     ...monthlyChartData.map((m: any) => Math.max(m.income, m.expense))
   );
 
-  // Recent transactions (top 8)
-  const recentTransactions = transactions.slice(0, 8);
+  // Recent transactions (top 8 or filtered by search)
+  const displayRecentTransactions = useMemo(() => {
+    if (!searchQuery.trim()) return transactions.slice(0, 8);
+    const q = searchQuery.toLowerCase().trim();
+    return transactions
+      .filter(
+        (tx) =>
+          tx.title.toLowerCase().includes(q) ||
+          (tx.description && tx.description.toLowerCase().includes(q)) ||
+          (tx.person_name && tx.person_name.toLowerCase().includes(q)) ||
+          tx.category.toLowerCase().includes(q) ||
+          tx.subcategory.toLowerCase().includes(q) ||
+          String(tx.amount).includes(q)
+      )
+      .slice(0, 8);
+  }, [transactions, searchQuery]);
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
@@ -221,15 +238,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
-
-      {/* 2B. AI Financial Intelligence Hub (Safe-to-Spend, Net Worth, AI Assistant, Smart Alerts, Calendar & Receipt OCR) */}
-      <AiIntelligenceWidgets
-        onNavigate={onNavigate}
-        onAskAiPrompt={(q) => {
-          if (onAskAiPrompt) onAskAiPrompt(q);
-          else onNavigate('ai_assistant');
-        }}
-      />
 
       {/* 3. Quick Action Buttons Row (Consolidated: No duplicate calculator) */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
@@ -756,18 +764,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </button>
         </div>
 
+        {/* Search Bar with dedicated Search Button */}
+        <div className="flex items-center gap-2 pt-3 pb-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search recent transactions by title, person, amount..."
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-xs"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Search</span>
+          </button>
+        </div>
+
         {isLoading ? (
           <SkeletonTable rows={5} />
-        ) : recentTransactions.length === 0 ? (
+        ) : displayRecentTransactions.length === 0 ? (
           <EmptyState
-            title="No transactions recorded yet"
-            description="Your cashflow and daily transactions will appear here. Start by recording your first entry."
-            actionLabel="Add Transaction"
-            onAction={() => onOpenAddModal()}
+            title={searchQuery ? 'No matching transactions found' : 'No transactions recorded yet'}
+            description={
+              searchQuery
+                ? `No results match "${searchQuery}". Try a different keyword.`
+                : 'Your cashflow and daily transactions will appear here. Start by recording your first entry.'
+            }
+            actionLabel={searchQuery ? 'Clear Search' : 'Add Transaction'}
+            onAction={searchQuery ? () => setSearchQuery('') : () => onOpenAddModal()}
           />
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-            {recentTransactions.map((tx) => {
+            {displayRecentTransactions.map((tx) => {
               const isIncome = tx.transaction_type === 'income';
               const categoryBadgeColors = {
                 home: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
@@ -865,6 +907,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             })}
           </div>
         )}
+      </div>
+
+      {/* AI Financial Intelligence Hub (Safe-to-Spend, Net Worth, AI Assistant & Smart Alerts - Moved to Bottom) */}
+      <div className="pt-2">
+        <div className="mb-3.5 px-1">
+          <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-500" />
+            <span>AI & Financial Intelligence</span>
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Safe-to-spend today, live net worth tracker, AI financial assistant & smart alerts
+          </p>
+        </div>
+        <AiIntelligenceWidgets
+          onNavigate={onNavigate}
+          onAskAiPrompt={(q) => {
+            if (onAskAiPrompt) onAskAiPrompt(q);
+            else onNavigate('ai_assistant');
+          }}
+        />
       </div>
 
       {/* Edit Modal */}

@@ -497,15 +497,24 @@ export const OtherSection: React.FC<OtherSectionProps> = ({ onOpenAddModal }) =>
 
           {/* Search & Sort Controls */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className="pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 w-40 sm:w-52"
-              />
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search..."
+                  className="pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 w-32 sm:w-44"
+                />
+              </div>
+              <button
+                type="button"
+                className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Search</span>
+              </button>
             </div>
 
             <select

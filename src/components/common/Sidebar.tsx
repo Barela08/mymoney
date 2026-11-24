@@ -138,9 +138,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Overview',
       items: [
         { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-        { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
-        { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
       ],
     },
     {
@@ -166,6 +163,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'People & Payments',
       items: [
         { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
+      ],
+    },
+    {
+      title: 'AI & Intelligence',
+      items: [
+        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
+        { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
+        { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
       ],
     },
     {
