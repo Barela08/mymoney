@@ -361,4 +361,120 @@ export const adminClient = {
   async getNotificationAnalytics() {
     return adminRequest('/api/admin/notifications/analytics', { method: 'GET' });
   },
+
+  // 11. Sensitive Financial Data Access Workflow (PART F)
+  async getFinancialAccessRequests(status?: string, targetUserId?: string) {
+    const params = new URLSearchParams();
+    if (status && status !== 'all') params.append('status', status);
+    if (targetUserId) params.append('targetUserId', targetUserId);
+    return adminRequest(`/api/admin/financial-access/requests?${params.toString()}`, { method: 'GET' });
+  },
+
+  async requestFinancialAccess(data: {
+    targetUserId: string;
+    reason: string;
+    purpose?: string;
+    dataScopes?: string[];
+    durationMinutes?: number;
+  }) {
+    return adminRequest('/api/admin/financial-access/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async approveFinancialAccess(id: string) {
+    return adminRequest(`/api/admin/financial-access/requests/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+    });
+  },
+
+  async rejectFinancialAccess(id: string, reason?: string) {
+    return adminRequest(`/api/admin/financial-access/requests/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async revokeFinancialAccess(id: string, reason?: string) {
+    return adminRequest(`/api/admin/financial-access/requests/${encodeURIComponent(id)}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async getUserFinancialData(userId: string) {
+    return adminRequest(`/api/admin/users/${encodeURIComponent(userId)}/financial-data`, {
+      method: 'GET',
+    });
+  },
+
+  async exportUserFinancialData(userId: string) {
+    return adminRequest(`/api/admin/users/${encodeURIComponent(userId)}/financial-data/export`, {
+      method: 'POST',
+    });
+  },
+
+  async getFinancialAccessLogs() {
+    return adminRequest('/api/admin/financial-access/logs', { method: 'GET' });
+  },
+
+  // 12. Multi-Admin Accounts (PART C & E)
+  async getAdmins() {
+    return adminRequest('/api/admin/admins', { method: 'GET' });
+  },
+
+  async assignAdmin(data: { email: string; role: string; customPermissions?: string[] }) {
+    return adminRequest('/api/admin/admins', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async revokeAdmin(id: string) {
+    return adminRequest(`/api/admin/admins/${encodeURIComponent(id)}/revoke`, {
+      method: 'POST',
+    });
+  },
+
+  // 13. Custom Roles (PART C)
+  async createAdminRole(data: { name: string; slug: string; description: string; permissions: string[] }) {
+    return adminRequest('/api/admin/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminRole(id: string) {
+    return adminRequest(`/api/admin/roles/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // 14. Transaction Monitoring (PART H)
+  async getTransactionMonitoring() {
+    return adminRequest('/api/admin/transactions/monitoring', { method: 'GET' });
+  },
+
+  // 15. AI Management (PART J)
+  async getAiStatus() {
+    return adminRequest('/api/admin/ai/status', { method: 'GET' });
+  },
+
+  // 16. App Settings (PART P)
+  async getAppSettings() {
+    return adminRequest('/api/admin/settings', { method: 'GET' });
+  },
+
+  async updateAppSettings(data: any) {
+    return adminRequest('/api/admin/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // 17. Database Diagnostics (PART N)
+  async getDatabaseDiagnostics() {
+    return adminRequest('/api/admin/system/database', { method: 'GET' });
+  },
 };

@@ -55,6 +55,7 @@ const NotificationCenterModal = lazy(() => import('./components/notifications/No
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
+  '/admin': 'admin',
   '/ai-assistant': 'ai_assistant',
   '/expense-calendar': 'expense_calendar',
   '/smart-alerts': 'smart_alerts',
@@ -65,6 +66,7 @@ const PATH_TO_TAB: Record<string, NavTab> = {
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
+  admin: '/admin',
   ai_assistant: '/ai-assistant',
   expense_calendar: '/expense-calendar',
   smart_alerts: '/smart-alerts',
@@ -86,8 +88,18 @@ const MainContent: React.FC = () => {
   const toast = useToast();
 
   const [currentTab, setCurrentTabState] = useState<NavTab>(() => {
-    const p = window.location.pathname.replace(/\/+$/, '') || '/';
-    return PATH_TO_TAB[p] || 'dashboard';
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.replace(/\/+$/, '') || '/';
+      const hash = window.location.hash;
+      if (p === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+        return 'admin';
+      }
+      if (hash === '#privacy-policy') return 'privacy_policy';
+      if (hash === '#delete-account') return 'settings';
+      if (hash.includes('legal=')) return 'legal';
+      return PATH_TO_TAB[p] || 'dashboard';
+    }
+    return 'dashboard';
   });
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -121,10 +133,17 @@ const MainContent: React.FC = () => {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
   const [isNotifPrefsOpen, setIsNotifPrefsOpen] = useState(false);
 
-  // Hash routing listener (for deletion email cancellation links, direct legal links, etc.)
+  // Hash & URL routing listener (for deletion email cancellation links, direct legal links, admin routes, etc.)
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
+      const path = window.location.pathname;
+
+      if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+        setCurrentTab('admin');
+        return;
+      }
+
       if (!hash) return;
 
       if (hash.includes('cancel-deletion=')) {
@@ -287,7 +306,19 @@ const MainContent: React.FC = () => {
 
       {currentTab === 'admin' ? (
         <Suspense fallback={<SectionFallback />}>
-          <AdminDashboard onExit={() => setCurrentTab('dashboard')} />
+          <AdminDashboard
+            onExit={() => {
+              if (typeof window !== 'undefined') {
+                if (window.location.pathname === '/admin') {
+                  window.history.pushState(null, '', '/');
+                }
+                if (window.location.hash.startsWith('#admin')) {
+                  window.location.hash = '';
+                }
+              }
+              setCurrentTab('dashboard');
+            }}
+          />
         </Suspense>
       ) : (
         <PullToRefresh onRefresh={refreshTransactions} className="flex flex-1 min-h-0 flex-col">

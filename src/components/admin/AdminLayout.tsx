@@ -31,6 +31,9 @@ import {
   CheckCircle2,
   Lock,
   ArrowLeft,
+  KeyRound,
+  Bot,
+  UserCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { adminClient } from '../../lib/adminApi';
@@ -38,7 +41,10 @@ import { adminClient } from '../../lib/adminApi';
 export type AdminSectionKey =
   | 'dashboard'
   | 'users'
+  | 'admins'
   | 'activity'
+  | 'financial_access'
+  | 'transactions'
   | 'security'
   | 'login_attempts'
   | 'sessions'
@@ -49,7 +55,9 @@ export type AdminSectionKey =
   | 'support'
   | 'legal'
   | 'analytics'
+  | 'ai'
   | 'system'
+  | 'database'
   | 'backups'
   | 'audit_logs'
   | 'settings'
@@ -70,69 +78,54 @@ interface NavGroup {
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Overview',
-    items: [{ key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }],
-  },
-  {
-    label: 'User Directory',
     items: [
-      { key: 'users', label: 'User Management', icon: Users, requiredPermission: 'users.read' },
-      { key: 'activity', label: 'User Activity', icon: Activity, requiredPermission: 'users.read' },
+      { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { key: 'analytics', label: 'Platform Analytics', icon: BarChart3, requiredPermission: 'analytics.read' },
+      { key: 'system', label: 'System Health', icon: Server, requiredPermission: 'system.read' },
     ],
   },
   {
-    label: 'Security & Access',
+    label: 'User Management',
     items: [
-      { key: 'security', label: 'Security Center', icon: ShieldAlert, requiredPermission: 'security.read' },
-      { key: 'login_attempts', label: 'Login Attempts', icon: Lock, requiredPermission: 'security.read' },
-      { key: 'sessions', label: 'Active Sessions', icon: Laptop, requiredPermission: 'security.read' },
+      { key: 'users', label: 'All Users', icon: Users, requiredPermission: 'users.read' },
+      { key: 'admins', label: 'Admin Accounts', icon: UserCheck, requiredPermission: 'admins.view' },
+      { key: 'roles', label: 'Roles & Permissions', icon: Shield, requiredPermission: 'roles.read' },
+      { key: 'sessions', label: 'Sessions & Devices', icon: Laptop, requiredPermission: 'security.read' },
     ],
   },
   {
-    label: 'Account Lifecycle',
+    label: 'Financial Monitoring',
     items: [
-      { key: 'deletions', label: 'Deletion Requests', icon: Trash2, requiredPermission: 'deletions.read' },
+      { key: 'transactions', label: 'Transaction Monitoring', icon: Activity, requiredPermission: 'dashboard.view' },
+      { key: 'financial_access', label: 'Financial Access Requests', icon: KeyRound, requiredPermission: 'users.financial_data.request' },
     ],
   },
   {
-    label: 'Communications',
+    label: 'Communication',
     items: [
+      { key: 'notifications', label: 'Push Notifications', icon: Bell, requiredPermission: 'notifications.manage' },
       { key: 'emails', label: 'Email Dispatch Logs', icon: Mail, requiredPermission: 'emails.read' },
       { key: 'email_templates', label: 'Email Templates', icon: FileText, requiredPermission: 'emails.templates.manage' },
-      { key: 'notifications', label: 'Broadcast Notices', icon: Bell, requiredPermission: 'notifications.manage' },
-    ],
-  },
-  {
-    label: 'Customer Support',
-    items: [
       { key: 'support', label: 'Support & Feedback', icon: MessageSquare, requiredPermission: 'support.read' },
     ],
   },
   {
-    label: 'Compliance',
+    label: 'Application Control',
     items: [
+      { key: 'features', label: 'Feature Flags', icon: Sliders, requiredPermission: 'features.manage' },
+      { key: 'ai', label: 'AI Management', icon: Bot, requiredPermission: 'ai.manage' },
+      { key: 'settings', label: 'Website Settings', icon: Settings, requiredPermission: 'settings.manage' },
       { key: 'legal', label: 'Legal & Policies', icon: Scale, requiredPermission: 'legal.read' },
     ],
   },
   {
-    label: 'Intelligence',
+    label: 'Security & Infrastructure',
     items: [
-      { key: 'analytics', label: 'Reports & Analytics', icon: BarChart3, requiredPermission: 'analytics.read' },
-    ],
-  },
-  {
-    label: 'Infrastructure',
-    items: [
-      { key: 'system', label: 'System Health', icon: Server, requiredPermission: 'system.read' },
-      { key: 'backups', label: 'Backup & Recovery', icon: Save, requiredPermission: 'backups.read' },
-    ],
-  },
-  {
-    label: 'Administration',
-    items: [
+      { key: 'security', label: 'Security Center', icon: ShieldAlert, requiredPermission: 'security.read' },
       { key: 'audit_logs', label: 'Audit Trail', icon: FileCode, requiredPermission: 'audit.read' },
-      { key: 'settings', label: 'App Settings', icon: Settings, requiredPermission: 'settings.manage' },
-      { key: 'roles', label: 'Roles & RBAC', icon: Shield, requiredPermission: 'roles.read' },
-      { key: 'features', label: 'Feature Flags', icon: Sliders, requiredPermission: 'features.manage' },
+      { key: 'database', label: 'Database & Storage', icon: Database, requiredPermission: 'database.view' },
+      { key: 'backups', label: 'Backups & Snapshots', icon: Save, requiredPermission: 'backups.read' },
+      { key: 'deletions', label: 'Deletion Requests', icon: Trash2, requiredPermission: 'deletions.read' },
     ],
   },
 ];

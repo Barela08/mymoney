@@ -18,6 +18,11 @@ import { AdminAuditLogsTab } from './tabs/AdminAuditLogsTab';
 import { AdminSettingsTab } from './tabs/AdminSettingsTab';
 import { AdminRolesTab } from './tabs/AdminRolesTab';
 import { AdminFeaturesTab } from './tabs/AdminFeaturesTab';
+import { AdminFinancialAccessTab } from './tabs/AdminFinancialAccessTab';
+import { AdminAccountsTab } from './tabs/AdminAccountsTab';
+import { AdminTransactionMonitoringTab } from './tabs/AdminTransactionMonitoringTab';
+import { AdminAiTab } from './tabs/AdminAiTab';
+import { AdminDatabaseTab } from './tabs/AdminDatabaseTab';
 
 interface AdminDashboardProps {
   onExit?: () => void;
@@ -29,7 +34,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialSection = 'dashboard',
 }) => {
   const { user, isAdmin, isLoading } = useAuth();
-  const [currentSection, setCurrentSection] = useState<AdminSectionKey>(initialSection);
+
+  // Parse initial section from URL hash (#admin=section_name) or prop
+  const getInitialSection = (): AdminSectionKey => {
+    if (typeof window !== 'undefined' && window.location.hash.startsWith('#admin=')) {
+      const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
+      if (parsed) return parsed;
+    }
+    return initialSection;
+  };
+
+  const [currentSection, setCurrentSectionState] = React.useState<AdminSectionKey>(getInitialSection);
+
+  // Keep state in sync with URL hash for deep-linking & back/forward navigation
+  React.useEffect(() => {
+    const handleHashChange = () => {
+      if (window.location.hash.startsWith('#admin=')) {
+        const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
+        if (parsed) setCurrentSectionState(parsed);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const setCurrentSection = (section: AdminSectionKey) => {
+    setCurrentSectionState(section);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `#admin=${section}`;
+    }
+  };
 
   // Loading state
   if (isLoading) {
@@ -87,8 +121,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return <AdminOverviewTab />;
       case 'users':
         return <AdminUsersTab initialStatusFilter="all" />;
+      case 'admins':
+        return <AdminAccountsTab />;
       case 'activity':
         return <AdminUsersTab initialStatusFilter="all" />;
+      case 'financial_access':
+        return <AdminFinancialAccessTab />;
+      case 'transactions':
+        return <AdminTransactionMonitoringTab />;
       case 'security':
         return <AdminSecurityTab initialSubView="incidents" />;
       case 'login_attempts':
@@ -109,9 +149,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return <AdminLegalTab />;
       case 'analytics':
         return <AdminAnalyticsTab />;
+      case 'ai':
+        return <AdminAiTab />;
       case 'system':
-      case 'backups':
         return <AdminSystemTab />;
+      case 'database':
+      case 'backups':
+        return <AdminDatabaseTab />;
       case 'audit_logs':
         return <AdminAuditLogsTab />;
       case 'settings':
