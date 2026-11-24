@@ -61,7 +61,19 @@ const MainContent: React.FC = () => {
   const { maintenanceSettings, dynamicSections, refreshTransactions } = useExpense();
   const toast = useToast();
 
-  const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+        return 'admin';
+      }
+      if (hash === '#privacy-policy') return 'privacy_policy';
+      if (hash === '#delete-account') return 'settings';
+      if (hash.includes('legal=')) return 'legal';
+    }
+    return 'dashboard';
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Global QR Modals State
@@ -73,10 +85,17 @@ const MainContent: React.FC = () => {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
   const [isNotifPrefsOpen, setIsNotifPrefsOpen] = useState(false);
 
-  // Hash routing listener (for deletion email cancellation links, direct legal links, etc.)
+  // Hash & URL routing listener (for deletion email cancellation links, direct legal links, admin routes, etc.)
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
+      const path = window.location.pathname;
+
+      if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+        setCurrentTab('admin');
+        return;
+      }
+
       if (!hash) return;
 
       if (hash.includes('cancel-deletion=')) {
@@ -225,7 +244,19 @@ const MainContent: React.FC = () => {
 
       {currentTab === 'admin' ? (
         <Suspense fallback={<SectionFallback />}>
-          <AdminDashboard onExit={() => setCurrentTab('dashboard')} />
+          <AdminDashboard
+            onExit={() => {
+              if (typeof window !== 'undefined') {
+                if (window.location.pathname === '/admin') {
+                  window.history.pushState(null, '', '/');
+                }
+                if (window.location.hash.startsWith('#admin')) {
+                  window.location.hash = '';
+                }
+              }
+              setCurrentTab('dashboard');
+            }}
+          />
         </Suspense>
       ) : (
         <PullToRefresh onRefresh={refreshTransactions} className="flex flex-1 min-h-0 flex-col">
