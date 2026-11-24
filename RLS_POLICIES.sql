@@ -483,5 +483,37 @@ CREATE POLICY "calc_settings_user_all" ON public.user_calculator_settings
     FOR ALL USING (auth.uid() = user_id);
 
 -- ==============================================================================
+-- 11. SHARED UDHAR & PEOPLE REALTIME PUBLICATION
+-- ==============================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_transactions') THEN
+    ALTER TABLE public.udhar_transactions REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'udhar_transactions') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.udhar_transactions;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_repayments') THEN
+    ALTER TABLE public.udhar_repayments REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'udhar_repayments') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.udhar_repayments;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_contacts') THEN
+    ALTER TABLE public.udhar_contacts REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'udhar_contacts') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.udhar_contacts;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_connections') THEN
+    ALTER TABLE public.user_connections REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'user_connections') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.user_connections;
+    END IF;
+  END IF;
+END $$;
+
+-- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================
+

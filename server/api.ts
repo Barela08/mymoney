@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { parse as parseUrl } from 'url';
 import crypto from 'crypto';
-import { query, pool } from './db';
+import { query, pool, isDatabaseConfigured, isDatabaseAvailable } from './db';
 import {
   validatePasswordPolicy,
   validateEmail,
@@ -42,6 +42,7 @@ import {
 } from './email';
 import { APP_CONFIG } from './config';
 import { handleAdminApiRequest } from './adminApi';
+import { handleAiFinanceRequest } from './aiFinanceApi';
 import {
   getUserNotificationPreferences,
   createNotification,
@@ -53,6 +54,44 @@ import {
   notifyComplaintSubmitted,
   processScheduledCampaigns,
 } from './notificationService';
+import {
+  normalizeSearchQuery,
+  maskEmailForPrivacy,
+  maskPhoneForPrivacy,
+  parseQrPayload,
+  calculateRepaymentApplication,
+  validateUdharEdit,
+  canCancelUdhar,
+  calculatePeopleDashboardSummary,
+  packStructuredNote,
+  unpackStructuredNote,
+  roundMoney,
+} from '../src/lib/sharedUdharEngine';
+import {
+  searchUsersRest,
+  connectUserRest,
+  getContactsRest,
+  getContactsWithBalancesRest,
+  saveContactRest,
+  updateContactRest,
+  deleteContactRest,
+  linkContactRest,
+  getMyQrRest,
+  regenerateQrRest,
+  resolveQrRest,
+  connectQrRest,
+  getUdharTransactionsRest,
+  createUdharTransactionRest,
+  confirmUdharTransactionRest,
+  disputeUdharTransactionRest,
+  repayUdharRest,
+  confirmRepaymentRest,
+  rejectRepaymentRest,
+  editUdharRest,
+  settleUdharRest,
+  cancelUdharRest,
+  getUdharHistoryRest,
+} from './supabaseRestUdhar';
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
@@ -150,6 +189,7 @@ function clearSessionCookie(res: ServerResponse) {
 // - Retains only legally mandated audit logs
 // -----------------------------------------------------------------------------
 export async function processExpiredAccountDeletions(): Promise<number> {
+  if (!isDatabaseAvailable()) return 0;
   let count = 0;
   try {
     const expiredRes = await query(
@@ -203,20 +243,20 @@ export async function processExpiredAccountDeletions(): Promise<number> {
       });
     }
   } catch (err: any) {
-    console.error('[Account Deletion Worker Error]:', err.message);
+    console.warn('[Account Deletion Worker Notice]:', err.message);
   }
   return count;
 }
 
-// Background timer: runs check every 60 seconds
-if (!(globalThis as any).__accountDeletionWorkerTimer) {
+// Background timer: runs check every 60 seconds (only when PostgreSQL is connected)
+if (isDatabaseConfigured && !(globalThis as any).__accountDeletionWorkerTimer) {
   (globalThis as any).__accountDeletionWorkerTimer = setInterval(() => {
     processExpiredAccountDeletions().catch(() => {});
   }, 60000);
 }
 
-// Background timer: runs scheduled notification campaigns every 60 seconds
-if (!(globalThis as any).__scheduledCampaignsWorkerTimer) {
+// Background timer: runs scheduled notification campaigns every 60 seconds (only when PostgreSQL is connected)
+if (isDatabaseConfigured && !(globalThis as any).__scheduledCampaignsWorkerTimer) {
   (globalThis as any).__scheduledCampaignsWorkerTimer = setInterval(() => {
     processScheduledCampaigns().catch(() => {});
   }, 60000);
@@ -244,13 +284,28 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     return false;
   }
 
+  // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile/admin-users routes
+  // so the client's built-in Supabase HTTPS fallback activates immediately instead of returning false 401s.
+  if (
+    !isDatabaseAvailable() &&
+    (pathname.startsWith('/api/auth/') ||
+      pathname.startsWith('/api/profile') ||
+      pathname.startsWith('/api/admin/users'))
+  ) {
+    sendJson(res, 503, {
+      success: false,
+      message: 'PostgreSQL database is not connected in this preview environment.',
+    });
+    return true;
+  }
+
   const clientIp = getClientIp(req);
   const userAgent = (req.headers['user-agent'] as string) || '';
-  const origin = (req.headers['origin'] as string) || 'http://localhost:5173';
+  const origin = (req.headers['origin'] as string) || 'http://localhost:3000';
 
   // Enable standard CORS headers
   res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
@@ -266,6 +321,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/admin/')) {
       const handled = await handleAdminApiRequest(req, res, pathname, method);
+      if (handled) return true;
+    }
+
+    // ---------------------------------------------------------
+    // 0B. AI & FINANCIAL INTELLIGENCE DISPATCH (Auth Protected)
+    // ---------------------------------------------------------
+    if (pathname.startsWith('/api/ai/') || pathname.startsWith('/api/finance/')) {
+      const handled = await handleAiFinanceRequest(req, res, pathname, method);
       if (handled) return true;
     }
 
@@ -1813,8 +1876,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      if (!isDatabaseAvailable()) {
+        const restRes = await getContactsRest(authUser);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const contactsRes = await query(
-        `SELECT c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
+        `SELECT c.id, c.name, c.email, c.phone, c.photo_url, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
                 u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
          FROM public.udhar_contacts c
          LEFT JOIN public.app_users u ON c.linked_user_id = u.id
@@ -1835,6 +1904,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      if (!isDatabaseAvailable()) {
+        const restRes = await getContactsWithBalancesRest(authUser);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const contactsRes = await query(
         `SELECT 
           c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.photo_url, c.created_at, c.updated_at,
@@ -1847,13 +1922,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_receivable,
           COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_payable,
           MAX(t.transaction_date) AS last_transaction_date,
-          COUNT(t.id) AS total_transactions_count,
+          COUNT(CASE WHEN t.status <> 'cancelled' THEN 1 END) AS total_transactions_count,
           COUNT(CASE WHEN t.status NOT IN ('settled', 'cancelled') AND t.current_balance > 0 THEN 1 END) AS pending_transactions_count
         FROM public.udhar_contacts c
         LEFT JOIN public.app_users u ON c.linked_user_id = u.id
         LEFT JOIN public.udhar_transactions t ON t.user_id = c.user_id AND (
           (c.linked_user_id IS NOT NULL AND t.counterpart_user_id = c.linked_user_id) OR
-          (LOWER(TRIM(t.counterpart_name)) = LOWER(TRIM(c.name)))
+          (c.linked_user_id IS NULL AND t.counterpart_user_id IS NULL AND LOWER(TRIM(t.counterpart_name)) = LOWER(TRIM(c.name)))
         )
         WHERE c.user_id = $1
         GROUP BY c.id, u.full_name, u.email, u.avatar_url
@@ -1877,7 +1952,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // 7. SAVE CONTACT: POST /api/udhar/contacts
+    // 7. SAVE CONTACT: POST /api/udhar/contacts (Manual contacts NEVER silently auto-link by name!)
     if (pathname === '/api/udhar/contacts' && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -1886,55 +1961,65 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await saveContactRest(authUser, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const name = (body.name || '').trim();
       const email = (body.email || '').trim().toLowerCase();
       const phone = (body.phone || '').trim();
       const relationshipType = (body.relationship_type || body.relationshipType || 'Friend').trim();
       const notes = (body.notes || '').trim();
-      let linkedUserId = body.linked_user_id || body.linkedUserId || null;
+      const photoUrl = (body.photo_url || body.photoUrl || '').trim() || null;
+      let linkedUserId = (body.linked_user_id || body.linkedUserId || '').trim() || null;
 
       if (!name) {
         sendJson(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
 
-      // Auto-match registered user if linkedUserId wasn't explicitly provided but email, phone or name matches
-      if (!linkedUserId && (email || phone || name)) {
-        try {
-          const matchRes = await query(
-            `SELECT id, full_name, email, phone FROM public.app_users 
-             WHERE id <> $1 AND status = 'active' AND (
-               (LOWER(email) = $2 AND $2 <> '') OR 
-               (phone = $3 AND $3 <> '') OR
-               (LOWER(full_name) = $4 AND $4 <> '')
-             ) LIMIT 1`,
-            [authUser.id, email || '__none__', phone || '__none__', name.toLowerCase()]
-          );
-          if (matchRes.rows.length > 0) {
-            linkedUserId = matchRes.rows[0].id;
-          }
-        } catch (e) {
-          console.warn('Auto match registered user notice:', e);
+      // Only connect when an explicit linkedUserId is chosen via Search/QR/Link (never auto-link manual names!)
+      if (linkedUserId) {
+        if (linkedUserId === authUser.id) {
+          sendJson(res, 400, { success: false, message: 'You cannot add yourself as a contact.' });
+          return true;
+        }
+        const targetRes = await query(
+          `SELECT id, full_name, status, COALESCE(deletion_status, 'none') AS deletion_status
+           FROM public.app_users WHERE id = $1`,
+          [linkedUserId]
+        );
+        if (targetRes.rows.length === 0 || targetRes.rows[0].status !== 'active' || targetRes.rows[0].deletion_status !== 'none') {
+          sendJson(res, 404, { success: false, message: 'Selected user account is unavailable.' });
+          return true;
         }
       }
 
       const upsertRes = await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, relationship_type, notes, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, notes, linked_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
          ON CONFLICT (user_id, name) DO UPDATE 
          SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
              phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
              relationship_type = EXCLUDED.relationship_type, 
              notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
              linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
              updated_at = NOW()
          RETURNING *`,
-        [authUser.id, name, email || null, phone || null, relationshipType, notes || null, linkedUserId]
+        [authUser.id, name, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId]
       );
 
-      // BIDIRECTIONAL RECIPROCAL SYNC:
-      // If contact is linked to a registered user, also save authUser in target user's saved people!
       if (linkedUserId && linkedUserId !== authUser.id) {
+        await query(
+          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+           VALUES ($1, $2, 'connected')
+           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+          [authUser.id, linkedUserId]
+        ).catch(() => {});
         await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
       }
 
@@ -1957,44 +2042,34 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const contactId = contactUpdateMatch[1];
       const body = await parseJsonBody(req);
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await updateContactRest(authUser, contactId, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const name = (body.name || '').trim();
       const email = (body.email || '').trim().toLowerCase();
       const phone = (body.phone || '').trim();
       const relationshipType = (body.relationship_type || body.relationshipType || 'Friend').trim();
       const notes = (body.notes || '').trim();
-      let linkedUserId = body.linked_user_id || body.linkedUserId || null;
+      const photoUrl = body.photo_url !== undefined ? (body.photo_url || null) : undefined;
+      const linkedUserId = body.linked_user_id || body.linkedUserId || null;
 
       if (!name) {
         sendJson(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
 
-      // Auto-match registered user if linkedUserId wasn't explicitly provided
-      if (!linkedUserId && (email || phone || name)) {
-        try {
-          const matchRes = await query(
-            `SELECT id, full_name, email, phone FROM public.app_users 
-             WHERE id <> $1 AND status = 'active' AND (
-               (LOWER(email) = $2 AND $2 <> '') OR 
-               (phone = $3 AND $3 <> '') OR
-               (LOWER(full_name) = $4 AND $4 <> '')
-             ) LIMIT 1`,
-            [authUser.id, email || '__none__', phone || '__none__', name.toLowerCase()]
-          );
-          if (matchRes.rows.length > 0) {
-            linkedUserId = matchRes.rows[0].id;
-          }
-        } catch (e) {
-          console.warn('Auto match registered user notice in PUT:', e);
-        }
-      }
-
       const updRes = await query(
         `UPDATE public.udhar_contacts 
-         SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5, linked_user_id = $6, updated_at = NOW()
-         WHERE id = $7 AND user_id = $8
+         SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5,
+             photo_url = COALESCE($6, photo_url),
+             linked_user_id = COALESCE($7, linked_user_id), updated_at = NOW()
+         WHERE id = $8 AND user_id = $9
          RETURNING *`,
-        [name, email || null, phone || null, relationshipType, notes || null, linkedUserId, contactId, authUser.id]
+        [name, email || null, phone || null, relationshipType, notes || null, photoUrl ?? null, linkedUserId, contactId, authUser.id]
       );
 
       if (updRes.rows.length === 0) {
@@ -2002,15 +2077,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Reciprocal sync
-      if (linkedUserId && linkedUserId !== authUser.id) {
-        await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
+      const finalLinkedId = updRes.rows[0].linked_user_id;
+      if (finalLinkedId && finalLinkedId !== authUser.id) {
+        await ensureReciprocalContact(finalLinkedId, authUser, relationshipType);
       }
 
       sendJson(res, 200, {
         success: true,
         contact: updRes.rows[0],
-        reciprocallyLinked: Boolean(linkedUserId && linkedUserId !== authUser.id),
+        reciprocallyLinked: Boolean(finalLinkedId && finalLinkedId !== authUser.id),
       });
       return true;
     }
@@ -2025,6 +2100,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const contactId = contactDeleteMatch[1];
+      if (!isDatabaseAvailable()) {
+        const restRes = await deleteContactRest(authUser, contactId);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       await query('DELETE FROM public.udhar_contacts WHERE id = $1 AND user_id = $2', [contactId, authUser.id]);
       sendJson(res, 200, { success: true, message: 'Saved contact removed.' });
       return true;
@@ -2042,6 +2123,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const contactId = contactLinkMatch[1];
       const body = await parseJsonBody(req);
       const registeredUserId = body.registeredUserId || body.userId || '';
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await linkContactRest(authUser, contactId, registeredUserId);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
 
       if (!registeredUserId) {
         sendJson(res, 400, { success: false, message: 'Target registered user ID is required.' });
@@ -2064,14 +2151,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
       const contact = contactRes.rows[0];
 
-      // Verify target user exists
-      const targetUserRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [registeredUserId]);
-      if (targetUserRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Registered user not found.' });
+      const targetUserRes = await query(
+        `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+         FROM public.app_users WHERE id = $1`,
+        [registeredUserId]
+      );
+      if (targetUserRes.rows.length === 0 || targetUserRes.rows[0].status !== 'active' || targetUserRes.rows[0].deletion_status !== 'none') {
+        sendJson(res, 404, { success: false, message: 'Registered user not found or unavailable.' });
         return true;
       }
 
-      // Link contact
       await query(
         `UPDATE public.udhar_contacts 
          SET linked_user_id = $1, updated_at = NOW() 
@@ -2079,28 +2168,147 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [registeredUserId, contactId]
       );
 
-      // Reciprocally save authUser in target user's saved people (2-way sync)
       await ensureReciprocalContact(registeredUserId, authUser, contact.relationship_type || 'Friend');
 
-      // Link user connection
       await query(
         `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
          VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
         [authUser.id, registeredUserId]
       );
-
-      // Retroactively bind counterpart_user_id on previous transactions with this contact name
       await query(
-        `UPDATE public.udhar_transactions 
-         SET counterpart_user_id = $1, updated_at = NOW() 
-         WHERE user_id = $2 AND counterpart_name = $3 AND counterpart_user_id IS NULL`,
-        [registeredUserId, authUser.id, contact.name]
-      );
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+        [registeredUserId, authUser.id]
+      ).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
-        message: `Successfully linked ${contact.name} with registered user ${targetUserRes.rows[0].full_name}.`,
+        message: `Successfully linked ${contact.name} with verified account ${targetUserRes.rows[0].full_name}.`,
+      });
+      return true;
+    }
+
+    // 10C. EXPLICIT USER CONNECTION: POST /api/udhar/connections/connect
+    if (pathname === '/api/udhar/connections/connect' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      if (!isDatabaseAvailable()) {
+        const restRes = await connectUserRest(authUser, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const targetUserId = (body.targetUserId || body.target_user_id || '').trim();
+      const relationshipType = (body.relationshipType || body.relationship_type || 'Friend').trim();
+
+      if (!targetUserId) {
+        sendJson(res, 400, { success: false, message: 'Target user ID is required.' });
+        return true;
+      }
+      if (targetUserId === authUser.id) {
+        sendJson(res, 400, { success: false, message: 'You cannot connect with your own account.' });
+        return true;
+      }
+
+      const targetRes = await query(
+        `SELECT id, full_name, email, phone, avatar_url, status, COALESCE(deletion_status, 'none') AS deletion_status
+         FROM public.app_users WHERE id = $1`,
+        [targetUserId]
+      );
+      if (targetRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'User account not found.' });
+        return true;
+      }
+      const target = targetRes.rows[0];
+      if (target.status !== 'active' || target.deletion_status !== 'none') {
+        sendJson(res, 403, { success: false, message: 'This user account is deactivated or unavailable.' });
+        return true;
+      }
+
+      const blockRes = await query(
+        `SELECT id FROM public.user_connections
+         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+           AND status = 'blocked' LIMIT 1`,
+        [authUser.id, targetUserId]
+      );
+      if (blockRes.rows.length > 0) {
+        sendJson(res, 403, { success: false, message: 'Connection is blocked between these accounts.' });
+        return true;
+      }
+
+      const existingConn = await query(
+        `SELECT id FROM public.user_connections
+         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+           AND status = 'connected' LIMIT 1`,
+        [authUser.id, targetUserId]
+      );
+      const alreadyConnected = existingConn.rows.length > 0;
+
+      await query(
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+        [authUser.id, targetUserId]
+      );
+      await query(
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+        [targetUserId, authUser.id]
+      ).catch(() => {});
+
+      const targetDisplayName = (target.full_name || target.email?.split('@')[0] || 'Friend').trim();
+      await query(
+        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (user_id, name) DO UPDATE
+         SET linked_user_id = EXCLUDED.linked_user_id,
+             email = COALESCE(EXCLUDED.email, public.udhar_contacts.email),
+             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone),
+             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
+             relationship_type = EXCLUDED.relationship_type,
+             updated_at = NOW()`,
+        [authUser.id, targetDisplayName, target.email, target.phone, target.avatar_url, relationshipType, targetUserId]
+      );
+
+      await ensureReciprocalContact(targetUserId, authUser, relationshipType);
+
+      if (!alreadyConnected) {
+        await query(
+          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+           VALUES ($1, $2, 'connection', $3, $4, $5, TRUE)`,
+          [
+            `Connected with ${authUser.full_name}`,
+            `${authUser.full_name} connected with you on My Money Manager for Shared Udhar.`,
+            targetUserId,
+            authUser.id,
+            authUser.id,
+          ]
+        ).catch(() => {});
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        alreadyConnected,
+        message: alreadyConnected
+          ? `Already connected with ${targetDisplayName}.`
+          : `Connected with ${targetDisplayName}! Shared 2-way Udhar is now enabled.`,
+        connectedUser: {
+          id: target.id,
+          name: targetDisplayName,
+          displayName: targetDisplayName,
+          fullName: targetDisplayName,
+          emailMasked: maskEmailForPrivacy(target.email),
+          phoneMasked: maskPhoneForPrivacy(target.phone),
+          avatarUrl: target.avatar_url || null,
+        },
       });
       return true;
     }
@@ -2156,7 +2364,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Generate secure invitation token
       const tokenHash = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
-      const appBaseUrl = process.env.APP_URL || 'http://localhost:5173';
+      const appBaseUrl = process.env.APP_URL || 'http://localhost:3000';
       const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
 
       await query(
@@ -2212,54 +2420,89 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const rate = checkRateLimit(`user_search:${authUser.id}`, 40, 60 * 1000);
+      const rate = checkRateLimit(`user_search:${authUser.id}`, 60, 60 * 1000);
       if (!rate.allowed) {
         sendJson(res, 429, { success: false, message: 'Search rate limit exceeded. Please wait a moment.' });
         return true;
       }
 
-      const q = ((parsed.query.q as string) || '').trim().toLowerCase();
+      const rawQ = (parsed.query.q as string) || '';
+      const q = normalizeSearchQuery(rawQ);
       if (!q || q.length < 2) {
         sendJson(res, 200, { success: true, users: [] });
         return true;
       }
 
-      // Query registered active users excluding requesting user with connection status
+      if (!isDatabaseAvailable()) {
+        const restRes = await searchUsersRest(authUser, rawQ);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const digitsOnly = q.replace(/\D/g, '');
+      const phoneLike = digitsOnly.length >= 4 ? `%${digitsOnly}%` : `%${q}%`;
+
+      // Query registered active non-deleted users (including self so UI can show "You" with connect disabled; excluding blocked users)
       const usersRes = await query(
-        `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.role,
-           EXISTS(
-             SELECT 1 FROM public.user_connections uc 
-             WHERE (uc.user_a_id = $1 AND uc.user_b_id = u.id) 
+        `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username,
+           COALESCE(u.is_verified, TRUE) AS is_verified,
+           (
+             SELECT uc.status FROM public.user_connections uc
+             WHERE (uc.user_a_id = $1 AND uc.user_b_id = u.id)
                 OR (uc.user_b_id = $1 AND uc.user_a_id = u.id)
-           ) AS is_connected,
+             ORDER BY CASE uc.status WHEN 'blocked' THEN 1 WHEN 'connected' THEN 2 WHEN 'pending' THEN 3 ELSE 4 END
+             LIMIT 1
+           ) AS conn_status,
            EXISTS(
              SELECT 1 FROM public.udhar_contacts c
-             WHERE c.user_id = $1 AND (c.linked_user_id = u.id OR LOWER(TRIM(c.name)) = LOWER(TRIM(u.full_name)))
+             WHERE c.user_id = $1 AND c.linked_user_id = u.id
            ) AS is_saved_contact
          FROM public.app_users u 
-         WHERE u.id <> $1 AND u.status = 'active' AND (
-           LOWER(u.email) = $2 OR 
-           u.phone = $2 OR 
-           LOWER(u.email) LIKE $3 OR 
-           LOWER(u.full_name) LIKE $3
-         )
-         ORDER BY u.full_name ASC
+         WHERE u.status = 'active'
+           AND COALESCE(u.deletion_status, 'none') = 'none'
+           AND NOT EXISTS (
+             SELECT 1 FROM public.user_connections blk
+             WHERE ((blk.user_a_id = $1 AND blk.user_b_id = u.id) OR (blk.user_b_id = $1 AND blk.user_a_id = u.id))
+               AND blk.status = 'blocked'
+           )
+           AND (
+             LOWER(u.email) = $2 OR 
+             LOWER(u.email) LIKE $3 OR 
+             LOWER(u.full_name) LIKE $3 OR
+             LOWER(COALESCE(u.username, '')) LIKE $3 OR
+             REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') LIKE $4
+           )
+         ORDER BY (u.id = $1) ASC, u.full_name ASC
          LIMIT 20`,
-        [authUser.id, q, `%${q}%`]
+        [authUser.id, q, `%${q}%`, phoneLike]
       );
 
-      // Return real verified profile details with connection status
-      const sanitizedUsers = usersRes.rows.map((u: any) => ({
-        id: u.id,
-        displayName: u.full_name,
-        fullName: u.full_name,
-        email: u.email,
-        emailMasked: maskEmail(u.email),
-        phoneMasked: maskPhone(u.phone),
-        avatarUrl: u.avatar_url,
-        isAlreadyConnected: Boolean(u.is_connected || u.is_saved_contact),
-        isSavedContact: Boolean(u.is_saved_contact),
-      }));
+      // Privacy-preserving output: NEVER expose raw email or raw phone to unconnected searchers!
+      const sanitizedUsers = usersRes.rows.map((u: any) => {
+        const isSelf = u.id === authUser.id;
+        const isConnected = !isSelf && (u.conn_status === 'connected' || Boolean(u.is_saved_contact));
+        const connectionStatus = isSelf
+          ? 'self'
+          : isConnected
+            ? 'connected'
+            : u.conn_status === 'pending'
+              ? 'pending'
+              : 'none';
+        return {
+          id: u.id,
+          displayName: u.full_name || u.username || 'My Money User',
+          fullName: u.full_name || u.username || 'My Money User',
+          username: u.username || null,
+          emailMasked: maskEmailForPrivacy(u.email),
+          phoneMasked: maskPhoneForPrivacy(u.phone),
+          avatarUrl: u.avatar_url || null,
+          isSelf,
+          isVerified: Boolean(u.is_verified),
+          connectionStatus,
+          isAlreadyConnected: isConnected,
+          isSavedContact: Boolean(u.is_saved_contact),
+        };
+      });
 
       sendJson(res, 200, { success: true, users: sanitizedUsers });
       return true;
@@ -2274,6 +2517,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await getMyQrRest(authUser);
+        sendJson(res, restRes.status, restRes.body);
         return true;
       }
 
@@ -2302,18 +2551,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         pairingToken = crypto.randomBytes(32).toString('hex');
         pairingCode = `MM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
-        try {
-          await query(
-            `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
-             VALUES ($1, $2, $3, FALSE, $4)`,
-            [authUser.id, pairingToken, pairingCode, expiresAt]
-          );
-        } catch (dbErr) {
-          console.warn('[QR Pairing DB Notice]:', dbErr);
-        }
+        await query(
+          `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
+           VALUES ($1, $2, $3, FALSE, $4)`,
+          [authUser.id, pairingToken, pairingCode, expiresAt]
+        );
       }
 
-      // Opaque, secure QR payload containing only application identifier and pairing credentials (no plaintext personal data)
       const qrPayload = JSON.stringify({
         app: 'my-money',
         v: 2,
@@ -2344,31 +2588,28 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+      if (!isDatabaseAvailable()) {
+        const restRes = await resolveQrRest(authUser, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       let targetToken = (body.pairingToken || '').trim();
-      let targetCode = (body.pairingCode || '').trim();
+      let targetCode = (body.pairingCode || '').trim().toUpperCase();
       const rawData = (body.qrData || '').trim();
 
       if (rawData) {
-        try {
-          const parsedQr = JSON.parse(rawData);
-          if (parsedQr.app !== 'my-money' || parsedQr.type !== 'udhar-pair') {
-            sendJson(res, 400, {
-              success: false,
-              code: 'INVALID_QR',
-              message: 'Invalid QR format. Please scan a genuine My Money Manager user QR code.',
-            });
-            return true;
-          }
-          if (parsedQr.token) targetToken = String(parsedQr.token).trim();
-          if (parsedQr.code) targetCode = String(parsedQr.code).trim();
-        } catch {
-          // If a raw string token or code was scanned
-          if (rawData.startsWith('MM-')) {
-            targetCode = rawData;
-          } else {
-            targetToken = rawData;
-          }
+        const parsedQr = parseQrPayload(rawData);
+        if (!parsedQr.valid) {
+          sendJson(res, 400, {
+            success: false,
+            code: 'INVALID_QR',
+            message: parsedQr.error || 'Invalid QR format. Please scan a genuine My Money Manager user QR code.',
+          });
+          return true;
         }
+        if (parsedQr.token) targetToken = parsedQr.token;
+        if (parsedQr.code) targetCode = parsedQr.code;
       }
 
       if (!targetToken && !targetCode) {
@@ -2380,10 +2621,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Query token from database joining actual registered account
       const tokenRes = await query(
         `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
-                u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
+                u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+                COALESCE(u.deletion_status, 'none') AS deletion_status
          FROM public.qr_pairing_tokens t
          JOIN public.app_users u ON t.user_id = u.id
          WHERE (t.pairing_token = $1 OR t.pairing_code = $2)
@@ -2402,7 +2643,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const qrRecord = tokenRes.rows[0];
 
-      // Check revoked / used state
       if (qrRecord.used) {
         sendJson(res, 410, {
           success: false,
@@ -2412,7 +2652,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Check expiration
       if (new Date(qrRecord.expires_at) <= new Date()) {
         sendJson(res, 410, {
           success: false,
@@ -2422,8 +2661,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Check account status
-      if (qrRecord.status !== 'active') {
+      if (qrRecord.status !== 'active' || qrRecord.deletion_status !== 'none') {
         sendJson(res, 403, {
           success: false,
           code: 'ACCOUNT_UNAVAILABLE',
@@ -2432,7 +2670,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Prevent self-connection
       if (qrRecord.user_id === authUser.id) {
         sendJson(res, 400, {
           success: false,
@@ -2442,13 +2679,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Check if already linked
       const connRes = await query(
-        `SELECT id FROM public.user_connections 
+        `SELECT id, status FROM public.user_connections 
          WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
         [authUser.id, qrRecord.user_id]
       );
-      const isAlreadyConnected = connRes.rows.length > 0;
+      if (connRes.rows.some((r: any) => r.status === 'blocked')) {
+        sendJson(res, 403, {
+          success: false,
+          code: 'BLOCKED',
+          message: 'You cannot connect with this account.',
+        });
+        return true;
+      }
+      const isAlreadyConnected = connRes.rows.some((r: any) => r.status === 'connected');
 
       sendJson(res, 200, {
         success: true,
@@ -2456,8 +2700,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           id: qrRecord.user_id,
           displayName: qrRecord.full_name || qrRecord.email?.split('@')[0] || 'User',
           fullName: qrRecord.full_name || qrRecord.email?.split('@')[0] || 'User',
-          emailMasked: maskEmail(qrRecord.email),
-          phoneMasked: maskPhone(qrRecord.phone),
+          emailMasked: maskEmailForPrivacy(qrRecord.email),
+          phoneMasked: maskPhoneForPrivacy(qrRecord.phone),
           avatarUrl: qrRecord.avatar_url || null,
           isVerified: true,
         },
@@ -2476,13 +2720,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Deactivate/expire all old QR tokens for this user
+      if (!isDatabaseAvailable()) {
+        const restRes = await regenerateQrRest(authUser);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       await query('UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1', [authUser.id]);
 
-      // Generate cryptographically fresh token & unique code
       const pairingToken = crypto.randomBytes(32).toString('hex');
       const pairingCode = `MM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
       await query(
         `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
@@ -2521,13 +2769,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+      if (!isDatabaseAvailable()) {
+        const restRes = await connectQrRest(authUser, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const pairingToken = (body.pairingToken || '').trim();
-      const pairingCode = (body.pairingCode || '').trim();
+      const pairingCode = (body.pairingCode || '').trim().toUpperCase();
       const relationshipType = (body.relationshipType || 'Friend').trim();
 
-      // Find token
       const tokenRes = await query(
-        `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status 
+        `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+                COALESCE(u.deletion_status, 'none') AS deletion_status
          FROM public.qr_pairing_tokens t
          JOIN public.app_users u ON t.user_id = u.id
          WHERE (t.pairing_token = $1 OR t.pairing_code = $2) AND t.expires_at > NOW() AND t.used = FALSE`,
@@ -2542,7 +2796,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const tokenRecord = tokenRes.rows[0];
       const targetUserId = tokenRecord.user_id;
 
-      if (tokenRecord.status !== 'active') {
+      if (tokenRecord.status !== 'active' || tokenRecord.deletion_status !== 'none') {
         sendJson(res, 403, { success: false, message: 'This user account is currently deactivated or suspended.' });
         return true;
       }
@@ -2552,15 +2806,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Check existing connection
       const existingConn = await query(
-        `SELECT id FROM public.user_connections 
+        `SELECT id, status FROM public.user_connections 
          WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
         [authUser.id, targetUserId]
       );
-      const wasAlreadyConnected = existingConn.rows.length > 0;
+      if (existingConn.rows.some((r: any) => r.status === 'blocked')) {
+        sendJson(res, 403, { success: false, message: 'Connection is blocked between these accounts.' });
+        return true;
+      }
+      const wasAlreadyConnected = existingConn.rows.some((r: any) => r.status === 'connected');
 
-      // 1. Create mutual bidirectional connection (idempotent ON CONFLICT DO UPDATE)
       await query(
         `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
          VALUES ($1, $2, 'connected')
@@ -2574,7 +2830,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [targetUserId, authUser.id]
       ).catch(() => {});
 
-      // 2. Save target user in current user's udhar_contacts with safe matching
       const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split('@')[0] || 'Friend').trim();
       const existingLinked = await query(
         `SELECT id, name FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
@@ -2589,36 +2844,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           [targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, existingLinked.rows[0].id]
         );
       } else {
-        const existingByName = await query(
-          `SELECT id FROM public.udhar_contacts WHERE user_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-          [authUser.id, targetDisplayName]
-        );
-        if (existingByName.rows.length > 0) {
-          await query(
-            `UPDATE public.udhar_contacts 
-             SET linked_user_id = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), photo_url = COALESCE($4, photo_url), relationship_type = $5, updated_at = NOW() 
-             WHERE id = $6`,
-            [targetUserId, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, existingByName.rows[0].id]
-          );
-        } else {
-          await query(
-            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-             ON CONFLICT (user_id, name) DO UPDATE 
-             SET linked_user_id = EXCLUDED.linked_user_id, 
-                 email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
-                 phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
-                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url), 
-                 updated_at = NOW()`,
-            [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
-          ).catch(err => console.warn('QR user contact insert notice:', err));
-        }
+        await query(
+          `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           ON CONFLICT (user_id, name) DO UPDATE 
+           SET linked_user_id = EXCLUDED.linked_user_id, 
+               email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+               phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+               photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url), 
+               updated_at = NOW()`,
+          [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
+        ).catch(err => console.warn('QR user contact insert notice:', err));
       }
 
-      // 3. Reciprocally save current user in target user's contacts (2-way sync)
       await ensureReciprocalContact(targetUserId, authUser, relationshipType);
 
-      // 4. Mark single-use token if configured
       if (tokenRecord.is_single_use) {
         await query(
           `UPDATE public.qr_pairing_tokens 
@@ -2628,7 +2868,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         );
       }
 
-      // 5. Send Realtime in-app & Push Notifications to both users
       notifyQrConnected({
         userAId: authUser.id,
         userAName: authUser.full_name || 'My Money User',
@@ -2653,9 +2892,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           name: tokenRecord.full_name,
           displayName: tokenRecord.full_name,
           fullName: tokenRecord.full_name,
-          email: tokenRecord.email,
-          emailMasked: maskEmail(tokenRecord.email),
-          phone: tokenRecord.phone,
+          emailMasked: maskEmailForPrivacy(tokenRecord.email),
+          phoneMasked: maskPhoneForPrivacy(tokenRecord.phone),
           avatarUrl: tokenRecord.avatar_url || null,
         },
       });
@@ -2674,31 +2912,39 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Fetch all transactions for this user
-      const txRes = await query(
-        `SELECT t.*, 
-                u.full_name AS counterpart_registered_name, 
-                u.email AS counterpart_email,
-                u.avatar_url AS counterpart_avatar
-         FROM public.udhar_transactions t
-         LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
-         WHERE t.user_id = $1
-         ORDER BY t.transaction_date DESC, t.created_at DESC`,
-        [authUser.id]
-      );
+      if (!isDatabaseAvailable()) {
+        const restRes = await getUdharTransactionsRest(authUser);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
 
-      // Fetch repayments for these transactions (linked by link_id or udhar_id so both parties see settlements)
-      const repayRes = await query(
-        `SELECT r.*, t.id AS tx_id, u.full_name AS recorded_by_name
-         FROM public.udhar_repayments r
-         JOIN public.udhar_transactions t ON (r.link_id = t.link_id OR r.udhar_id = t.id)
-         LEFT JOIN public.app_users u ON r.recorded_by_user_id = u.id
-         WHERE t.user_id = $1
-         ORDER BY r.repayment_date DESC, r.created_at DESC`,
-        [authUser.id]
-      );
+      const [txRes, repayRes, contactsRes] = await Promise.all([
+        query(
+          `SELECT t.*, 
+                  u.full_name AS counterpart_registered_name, 
+                  u.email AS counterpart_email,
+                  u.avatar_url AS counterpart_avatar
+           FROM public.udhar_transactions t
+           LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
+           WHERE t.user_id = $1
+           ORDER BY t.transaction_date DESC, t.created_at DESC`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT r.*, t.id AS tx_id, u.full_name AS recorded_by_name
+           FROM public.udhar_repayments r
+           JOIN public.udhar_transactions t ON (r.link_id = t.link_id OR r.udhar_id = t.id)
+           LEFT JOIN public.app_users u ON r.recorded_by_user_id = u.id
+           WHERE t.user_id = $1
+           ORDER BY r.repayment_date DESC, r.created_at DESC`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT name, linked_user_id FROM public.udhar_contacts WHERE user_id = $1`,
+          [authUser.id]
+        ),
+      ]);
 
-      // Fetch edit history for audit trail
       let editHistRes: any = { rows: [] };
       try {
         editHistRes = await query(
@@ -2714,81 +2960,51 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         console.warn('Audit history query notice:', e);
       }
 
-      // Group repayments by transaction id
       const repaymentsByUdhar: Record<string, any[]> = {};
       for (const rep of repayRes.rows) {
         const key = rep.tx_id || rep.udhar_id;
-        if (!repaymentsByUdhar[key]) {
-          repaymentsByUdhar[key] = [];
-        }
-        repaymentsByUdhar[key].push(rep);
+        if (!repaymentsByUdhar[key]) repaymentsByUdhar[key] = [];
+        const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
+        repaymentsByUdhar[key].push({
+          ...rep,
+          notes: repNote || null,
+          transaction_ref: rep.transaction_ref || repMeta.transaction_ref || null,
+          repayment_time: rep.repayment_time || repMeta.repayment_time || null,
+          attachment_url: rep.attachment_url || repMeta.attachment_url || null,
+        });
       }
 
-      // Group edit history by link_id
       const editHistoryByLink: Record<string, any[]> = {};
       for (const hist of editHistRes.rows) {
-        if (!editHistoryByLink[hist.link_id]) {
-          editHistoryByLink[hist.link_id] = [];
-        }
+        if (!editHistoryByLink[hist.link_id]) editHistoryByLink[hist.link_id] = [];
         editHistoryByLink[hist.link_id].push(hist);
       }
 
       const transactions = txRes.rows.map((r: any) => {
         const orig = parseFloat(r.original_amount) || 0;
         const cur = parseFloat(r.current_balance) || 0;
-        const computedPaid = Math.max(0, Math.round((orig - cur) * 100) / 100);
+        const computedPaid = Math.max(0, roundMoney(orig - cur));
+        const { note, meta } = unpackStructuredNote(r.notes);
         return {
           ...r,
           paid_amount: r.paid_amount !== null && r.paid_amount !== undefined ? parseFloat(r.paid_amount) : computedPaid,
+          category: r.category || meta.category || 'Personal Loan',
+          payment_method: r.payment_method || meta.payment_method || 'UPI',
+          description: r.description || meta.description || null,
+          clean_notes: note || null,
+          notes: note || null,
+          attachment_url: r.attachment_url || meta.attachment_url || null,
           repayments: repaymentsByUdhar[r.id] || [],
           edit_history: editHistoryByLink[r.link_id] || [],
         };
       });
 
-      // Calculate totals
-      let totalLent = 0;
-      let totalBorrowed = 0;
-      let outstandingReceivable = 0;
-      let outstandingPayable = 0;
-      let settledAmount = 0;
-      let overdueAmount = 0;
-
-      const todayStr = new Date().toISOString().split('T')[0];
-
-      for (const t of transactions) {
-        const orig = parseFloat(t.original_amount) || 0;
-        const cur = parseFloat(t.current_balance) || 0;
-
-        if (t.direction === 'gave') {
-          totalLent += orig;
-          if (t.status !== 'settled') {
-            outstandingReceivable += cur;
-          }
-        } else {
-          totalBorrowed += orig;
-          if (t.status !== 'settled') {
-            outstandingPayable += cur;
-          }
-        }
-
-        settledAmount += Math.max(0, orig - cur);
-
-        if (t.due_date && t.due_date < todayStr && t.status !== 'settled' && cur > 0) {
-          overdueAmount += cur;
-        }
-      }
+      const summary = calculatePeopleDashboardSummary(transactions, contactsRes.rows);
 
       sendJson(res, 200, {
         success: true,
         transactions,
-        summary: {
-          totalLent: Math.round(totalLent * 100) / 100,
-          totalBorrowed: Math.round(totalBorrowed * 100) / 100,
-          outstandingReceivable: Math.round(outstandingReceivable * 100) / 100,
-          outstandingPayable: Math.round(outstandingPayable * 100) / 100,
-          settledAmount: Math.round(settledAmount * 100) / 100,
-          overdueAmount: Math.round(overdueAmount * 100) / 100,
-        },
+        summary,
       });
       return true;
     }
@@ -2802,62 +3018,88 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+      if (!isDatabaseAvailable()) {
+        const restRes = await createUdharTransactionRest(authUser, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const counterpartName = (body.counterpart_name || body.person_name || '').trim();
-      const counterpartUserId = body.counterpart_user_id || body.counterpartUserId || null;
-      const direction = body.direction; // 'gave' (Lend) or 'took' (Borrow)
-      const amount = parseFloat(body.amount);
+      const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || '').trim() || null;
+      const direction = body.direction;
+      const amount = roundMoney(parseFloat(body.amount));
       const txDate = body.transaction_date || body.date || new Date().toISOString().split('T')[0];
       const dueDate = body.due_date || body.dueDate || null;
-      const notes = (body.notes || '').trim();
+      const plainNotes = (body.notes || '').trim();
+      const category = (body.category || 'Personal Loan').trim();
+      const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
+      const description = (body.description || '').trim();
       const attachmentUrl = body.attachment_url || null;
+      const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
       if (!counterpartName) {
         sendJson(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
-
       if (!['gave', 'took'].includes(direction)) {
         sendJson(res, 400, { success: false, message: "Transaction type must be 'gave' (I Gave) or 'took' (I Took)." });
         return true;
       }
-
-      if (isNaN(amount) || amount <= 0) {
+      if (!Number.isFinite(amount) || amount <= 0) {
         sendJson(res, 400, { success: false, message: 'Please enter a valid amount greater than ₹0.' });
         return true;
       }
 
-      // Generate shared link ID
-      const linkRes = await query('SELECT gen_random_uuid() AS link_id');
-      const linkId = linkRes.rows[0].link_id;
+      if (idempotencyKey) {
+        const dupRes = await query(
+          `SELECT * FROM public.udhar_transactions WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1`,
+          [authUser.id, idempotencyKey]
+        );
+        if (dupRes.rows.length > 0) {
+          sendJson(res, 200, {
+            success: true,
+            deduplicated: true,
+            message: 'Udhar already recorded.',
+            transaction: dupRes.rows[0],
+            isLinked: Boolean(dupRes.rows[0].counterpart_user_id),
+          });
+          return true;
+        }
+      }
 
-      // Check if counterpart is a registered user
+      const packedNotes = packStructuredNote(plainNotes, {
+        category,
+        payment_method: paymentMethod,
+        description: description || undefined,
+        attachment_url: attachmentUrl || undefined,
+      });
+
+      const linkId = crypto.randomUUID();
+
+      // Verify registered counterpart ONLY when explicit counterpartUserId is provided
       let isRegisteredCounterpart = false;
       let registeredUser: any = null;
 
       if (counterpartUserId && counterpartUserId !== authUser.id) {
-        const uCheck = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [counterpartUserId]);
-        if (uCheck.rows.length > 0) {
+        const uCheck = await query(
+          `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+           FROM public.app_users WHERE id = $1`,
+          [counterpartUserId]
+        );
+        if (uCheck.rows.length > 0 && uCheck.rows[0].status === 'active' && uCheck.rows[0].deletion_status === 'none') {
+          const blk = await query(
+            `SELECT 1 FROM public.user_connections
+             WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+               AND status = 'blocked' LIMIT 1`,
+            [authUser.id, counterpartUserId]
+          );
+          if (blk.rows.length > 0) {
+            sendJson(res, 403, { success: false, message: 'Cannot create shared Udhar with a blocked user.' });
+            return true;
+          }
           isRegisteredCounterpart = true;
           registeredUser = uCheck.rows[0];
         }
-      }
-
-      if (!isRegisteredCounterpart && counterpartName) {
-        try {
-          const contactCheck = await query(
-            `SELECT linked_user_id FROM public.udhar_contacts 
-             WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND linked_user_id IS NOT NULL LIMIT 1`,
-            [authUser.id, counterpartName]
-          );
-          const autoLinkedId = contactCheck.rows[0]?.linked_user_id;
-          if (autoLinkedId) {
-            const uCheck = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [autoLinkedId]);
-            if (uCheck.rows.length > 0) {
-              isRegisteredCounterpart = true;
-              registeredUser = uCheck.rows[0];
-            }
-          }
-        } catch {}
       }
 
       const client = await pool.connect();
@@ -2865,30 +3107,37 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         await client.query('BEGIN');
 
         if (isRegisteredCounterpart) {
-          // TWO-SIDED SYNCHRONIZATION:
-          // User A (Initiator): Confirmed active transaction
-          const userAStatus = 'confirmed';
           const userARes = await client.query(
             `INSERT INTO public.udhar_transactions (
-              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
-              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'confirmed', TRUE)
+              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
+              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'confirmed', 'confirmed', TRUE, $12)
             RETURNING *`,
-            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, notes || null, attachmentUrl, userAStatus]
+            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, packedNotes, attachmentUrl, idempotencyKey]
           );
 
-          // User B (Counterpart): Inverted direction!
-          // If User A gave, User B took. If User A took, User B gave.
           const counterpartDirection = direction === 'gave' ? 'took' : 'gave';
           await client.query(
             `INSERT INTO public.udhar_transactions (
-              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
-              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'confirmed', 'confirmed', FALSE)`,
-            [linkId, registeredUser.id, authUser.id, authUser.full_name, counterpartDirection, amount, amount, txDate, dueDate, notes || null, attachmentUrl]
+              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
+              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'confirmed', 'confirmed', FALSE, $12)`,
+            [
+              linkId,
+              registeredUser.id,
+              authUser.id,
+              authUser.full_name,
+              counterpartDirection,
+              amount,
+              amount,
+              txDate,
+              dueDate,
+              packedNotes,
+              attachmentUrl,
+              idempotencyKey ? `${idempotencyKey}:counterpart` : null,
+            ]
           );
 
-          // Auto-save contacts for both users
           await client.query(
             `INSERT INTO public.udhar_contacts (user_id, name, email, relationship_type, linked_user_id, updated_at)
              VALUES ($1, $2, $3, 'Friend', $4, NOW())
@@ -2903,66 +3152,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             [registeredUser.id, authUser.full_name, authUser.email, authUser.id]
           );
 
-          // Auto-sync into public.transactions for general ledger, reports and dashboard
-          try {
-            await client.query(
-              `INSERT INTO public.transactions (
-                id, user_id, user_email, category, subcategory, transaction_type, amount,
-                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
-              ) VALUES (
-                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
-                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
-              )`,
-              [
-                authUser.id,
-                authUser.email,
-                direction === 'gave' ? 'money_given' : 'money_taken',
-                direction === 'gave' ? 'expense' : 'income',
-                amount,
-                direction === 'gave' ? `Money Lent to ${registeredUser.full_name}` : `Money Borrowed from ${registeredUser.full_name}`,
-                registeredUser.full_name,
-                txDate,
-                notes || null,
-                JSON.stringify({ link_id: linkId, udhar_id: userARes.rows[0].id, direction, due_date: dueDate }),
-              ]
-            );
-
-            await client.query(
-              `INSERT INTO public.transactions (
-                id, user_id, user_email, category, subcategory, transaction_type, amount,
-                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
-              ) VALUES (
-                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
-                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
-              )`,
-              [
-                registeredUser.id,
-                registeredUser.email,
-                counterpartDirection === 'gave' ? 'money_given' : 'money_taken',
-                counterpartDirection === 'gave' ? 'expense' : 'income',
-                amount,
-                counterpartDirection === 'gave' ? `Money Lent to ${authUser.full_name || 'Friend'}` : `Money Borrowed from ${authUser.full_name || 'Friend'}`,
-                authUser.full_name || 'Friend',
-                txDate,
-                notes || null,
-                JSON.stringify({ link_id: linkId, direction: counterpartDirection, due_date: dueDate }),
-              ]
-            );
-          } catch (txSyncErr) {
-            console.warn('[Sync to public.transactions notice]:', txSyncErr);
-          }
-
-          // Create in-app notification for User B
-          const notifMsg = `${authUser.full_name} recorded an Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? 'You Borrowed' : 'You Lent'}). Please confirm or dispute.`;
+          // FIXED PRIVACY LEAK: Always scope notification strictly to registeredUser.id (NEVER default to 'all')
+          const notifMsg = `${authUser.full_name} recorded a shared Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? "You'll Pay" : "You'll Receive"}).`;
           await client.query(
-            `INSERT INTO public.notifications (title, message, type, is_active)
-             VALUES ($1, $2, 'info', TRUE)`,
-            [`New Udhar Request from ${authUser.full_name}`, notifMsg]
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'udhar_created', $3, $4, $5, TRUE)`,
+            [`New Shared Udhar from ${authUser.full_name}`, notifMsg, registeredUser.id, linkId, authUser.id]
           ).catch(() => {});
 
           await client.query('COMMIT');
 
-          // Ensure reciprocal 2-way saved people sync
           await ensureReciprocalContact(registeredUser.id, authUser, 'Friend');
 
           await logSecurityEvent('UDHAR_TWO_SIDED_CREATED', {
@@ -2971,7 +3170,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             details: { linkId, counterpartId: registeredUser.id, amount, direction },
           });
 
-          // Multi-channel notifications for both parties
           notifyUdharCreated({
             initiatorUserId: authUser.id,
             initiatorName: authUser.full_name || 'Friend',
@@ -2983,7 +3181,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             dueDate,
           }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
 
-          // Non-blocking automated email notifications for registered users
           sendUdharCreatedEmails({
             transactionId: userARes.rows[0].id,
             linkId,
@@ -2995,63 +3192,44 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             counterpartEmail: registeredUser.email,
             direction,
             amount,
-            description: notes || undefined,
+            description: description || plainNotes || undefined,
             transactionDate: txDate,
-            status: userAStatus,
+            status: 'confirmed',
           }).catch((e) => console.warn('[Udhar Created Two-Sided Email Error]:', e));
 
+          const createdRow = userARes.rows[0];
           sendJson(res, 201, {
             success: true,
-            message: `Udhar recorded with ${registeredUser.full_name}. A linked entry was synchronized for their account.`,
-            transaction: userARes.rows[0],
+            message: `Shared Udhar recorded with ${registeredUser.full_name}. Synchronized across both accounts.`,
+            transaction: {
+              ...createdRow,
+              category,
+              payment_method: paymentMethod,
+              description: description || null,
+              notes: plainNotes || null,
+              clean_notes: plainNotes || null,
+              repayments: [],
+              edit_history: [],
+            },
             isLinked: true,
           });
           return true;
         } else {
-          // Unregistered contact or self-managed entry
           const singleRes = await client.query(
             `INSERT INTO public.udhar_transactions (
-              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance,
-              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator
-            ) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed', 'confirmed', TRUE)
+              link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
+              transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
+            ) VALUES ($1, $2, NULL, $3, $4, $5, $6, 0, $7, $8, $9, $10, 'confirmed', 'confirmed', TRUE, $11)
             RETURNING *`,
-            [linkId, authUser.id, counterpartName, direction, amount, amount, txDate, dueDate, notes || null, attachmentUrl]
+            [linkId, authUser.id, counterpartName, direction, amount, amount, txDate, dueDate, packedNotes, attachmentUrl, idempotencyKey]
           );
 
-          // Ensure saved in udhar_contacts
           await client.query(
             `INSERT INTO public.udhar_contacts (user_id, name, relationship_type, updated_at)
              VALUES ($1, $2, 'Friend', NOW())
              ON CONFLICT (user_id, name) DO NOTHING`,
             [authUser.id, counterpartName]
           );
-
-          // Auto-sync into public.transactions for general ledger, reports and dashboard
-          try {
-            await client.query(
-              `INSERT INTO public.transactions (
-                id, user_id, user_email, category, subcategory, transaction_type, amount,
-                title, person_name, transaction_date, transaction_time, notes, metadata, is_deleted, created_at, updated_at
-              ) VALUES (
-                gen_random_uuid(), $1, $2, 'people', $3, $4, $5,
-                $6, $7, $8, '12:00', $9, $10, FALSE, NOW(), NOW()
-              )`,
-              [
-                authUser.id,
-                authUser.email,
-                direction === 'gave' ? 'money_given' : 'money_taken',
-                direction === 'gave' ? 'expense' : 'income',
-                amount,
-                direction === 'gave' ? `Money Lent to ${counterpartName}` : `Money Borrowed from ${counterpartName}`,
-                counterpartName,
-                txDate,
-                notes || null,
-                JSON.stringify({ link_id: linkId, udhar_id: singleRes.rows[0].id, direction, due_date: dueDate }),
-              ]
-            );
-          } catch (txSyncErr) {
-            console.warn('[Sync to public.transactions single notice]:', txSyncErr);
-          }
 
           await client.query('COMMIT');
 
@@ -3061,7 +3239,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             details: { counterpartName, amount, direction },
           });
 
-          // Multi-channel notification for initiator
           notifyUdharCreated({
             initiatorUserId: authUser.id,
             recipientUserId: null,
@@ -3072,27 +3249,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             dueDate,
           }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
 
-          // Non-blocking automated email notifications (initiator gets email, unverified counterpart safely skipped & logged)
-          sendUdharCreatedEmails({
-            transactionId: singleRes.rows[0].id,
-            linkId,
-            initiatorUserId: authUser.id,
-            initiatorName: authUser.full_name || 'My Money User',
-            initiatorEmail: authUser.email,
-            counterpartUserId: null,
-            counterpartName,
-            counterpartEmail: body.email || null,
-            direction,
-            amount,
-            description: notes || undefined,
-            transactionDate: txDate,
-            status: 'confirmed',
-          }).catch((e) => console.warn('[Udhar Created Single Email Error]:', e));
-
+          const createdRow = singleRes.rows[0];
           sendJson(res, 201, {
             success: true,
-            message: `Udhar recorded for ${counterpartName}.`,
-            transaction: singleRes.rows[0],
+            message: `Local Udhar recorded for ${counterpartName}.`,
+            transaction: {
+              ...createdRow,
+              category,
+              payment_method: paymentMethod,
+              description: description || null,
+              notes: plainNotes || null,
+              clean_notes: plainNotes || null,
+              repayments: [],
+              edit_history: [],
+            },
             isLinked: false,
           });
           return true;
@@ -3115,6 +3285,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const txId = confirmMatch[1];
+      if (!isDatabaseAvailable()) {
+        const restRes = await confirmUdharTransactionRest(authUser, txId);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
       if (txRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Transaction not found.' });
@@ -3122,8 +3298,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
-
-      // Update both sides sharing link_id
       await query(
         `UPDATE public.udhar_transactions 
          SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
@@ -3154,6 +3328,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const body = await parseJsonBody(req);
       const disputeReason = (body.reason || 'Transaction disputed by user').trim();
 
+      if (!isDatabaseAvailable()) {
+        const restRes = await disputeUdharTransactionRest(authUser, txId, disputeReason);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
       if (txRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Transaction not found.' });
@@ -3161,8 +3341,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
-
-      // Mark both sides as disputed
       await query(
         `UPDATE public.udhar_transactions 
          SET status = 'disputed', confirmation_status = 'disputed', dispute_reason = $1, disputed_at = NOW(), disputed_by = $2, updated_at = NOW() 
@@ -3191,77 +3369,109 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const txId = repayMatch[1];
       const body = await parseJsonBody(req);
-      const repayAmount = parseFloat(body.amount);
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await repayUdharRest(authUser, txId, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const repayAmount = roundMoney(parseFloat(body.amount));
       const repayDate = body.repayment_date || body.date || new Date().toISOString().split('T')[0];
-      const notes = (body.notes || '').trim();
+      const repayTime = (body.repayment_time || body.repaymentTime || '').trim();
+      const plainNotes = (body.notes || '').trim();
       const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
+      const transactionRef = (body.transaction_ref || body.transactionRef || '').trim();
+      const attachmentUrl = (body.attachment_url || body.attachmentUrl || '').trim();
+      const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
-      if (isNaN(repayAmount) || repayAmount <= 0) {
-        sendJson(res, 400, { success: false, message: 'Please enter a valid repayment amount greater than ₹0.' });
-        return true;
-      }
-
-      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
-      if (txRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
-        return true;
-      }
-
-      const tx = txRes.rows[0];
-      const currentBal = parseFloat(tx.current_balance);
-
-      if (repayAmount > currentBal + 0.05) {
-        sendJson(res, 400, {
-          success: false,
-          message: `Repayment amount (₹${repayAmount}) cannot exceed remaining balance (₹${currentBal}).`,
-        });
-        return true;
-      }
-
-      const isTwoSided = Boolean(tx.counterpart_user_id);
-      const isBorrower = tx.direction === 'took';
-      // When two registered users are linked, a borrower's repayment claim requires lender confirmation
-      const repaymentStatus = (isTwoSided && isBorrower) ? 'pending_confirmation' : 'confirmed';
+      const packedRepayNotes = packStructuredNote(plainNotes, {
+        transaction_ref: transactionRef || undefined,
+        repayment_time: repayTime || undefined,
+        attachment_url: attachmentUrl || undefined,
+      });
 
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
 
-        // Record repayment entry
+        // Lock canonical row to prevent concurrent over-repayment race conditions
+        const txRes = await client.query(
+          `SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+          [txId, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+          return true;
+        }
+        const tx = txRes.rows[0];
+
+        if (idempotencyKey) {
+          const dupRep = await client.query(
+            `SELECT * FROM public.udhar_repayments WHERE link_id = $1 AND idempotency_key = $2 LIMIT 1`,
+            [tx.link_id, idempotencyKey]
+          );
+          if (dupRep.rows.length > 0) {
+            await client.query('COMMIT');
+            sendJson(res, 200, {
+              success: true,
+              deduplicated: true,
+              repayment: dupRep.rows[0],
+              isPendingConfirmation: dupRep.rows[0].status === 'pending_confirmation',
+              remainingBalance: parseFloat(tx.current_balance) || 0,
+              isSettled: tx.status === 'settled',
+              message: 'Repayment already recorded.',
+            });
+            return true;
+          }
+        }
+
+        const sumsRes = await client.query(
+          `SELECT
+             COALESCE(SUM(CASE WHEN status = 'confirmed' THEN amount ELSE 0 END), 0) AS confirmed_paid,
+             COALESCE(SUM(CASE WHEN status = 'pending_confirmation' THEN amount ELSE 0 END), 0) AS pending_paid
+           FROM public.udhar_repayments
+           WHERE link_id = $1`,
+          [tx.link_id]
+        );
+
+        const calc = calculateRepaymentApplication({
+          originalAmount: parseFloat(tx.original_amount) || 0,
+          confirmedPaidAmount: parseFloat(sumsRes.rows[0].confirmed_paid) || 0,
+          pendingRepaymentsAmount: parseFloat(sumsRes.rows[0].pending_paid) || 0,
+          repayAmount,
+          isShared: Boolean(tx.counterpart_user_id),
+          actorRole: tx.direction === 'gave' ? 'lender' : 'borrower',
+          udharStatus: tx.status,
+        });
+
+        if (!calc.valid) {
+          await client.query('ROLLBACK');
+          sendJson(res, 400, { success: false, message: calc.error || 'Invalid repayment amount.' });
+          return true;
+        }
+
+        const repaymentStatus = calc.repaymentStatus!;
         const repInsertRes = await client.query(
           `INSERT INTO public.udhar_repayments (
             link_id, udhar_id, recorded_by_user_id, amount, repayment_date, payment_method, notes, status,
-            confirmed_at, confirmed_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (CASE WHEN $8 = 'confirmed' THEN NOW() ELSE NULL END), (CASE WHEN $8 = 'confirmed' THEN $3 ELSE NULL END))
+            idempotency_key, confirmed_at, confirmed_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (CASE WHEN $8 = 'confirmed' THEN NOW() ELSE NULL END), (CASE WHEN $8 = 'confirmed' THEN $3 ELSE NULL END))
           RETURNING *`,
-          [tx.link_id, tx.id, authUser.id, repayAmount, repayDate, paymentMethod, notes || null, repaymentStatus]
+          [tx.link_id, tx.id, authUser.id, repayAmount, repayDate, paymentMethod, packedRepayNotes, repaymentStatus, idempotencyKey]
         );
 
-        let newBalance = currentBal;
-        let isSettled = false;
-        let totalConfirmedRepaid = 0;
+        const newBalance = calc.nextRemainingAmount ?? parseFloat(tx.current_balance);
+        const isSettled = Boolean(calc.isSettled);
 
         if (repaymentStatus === 'confirmed') {
-          // Recompute confirmed repayments sum
-          const sumRes = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) AS total_repaid
-             FROM public.udhar_repayments
-             WHERE link_id = $1 AND status = 'confirmed'`,
-            [tx.link_id]
-          );
-          totalConfirmedRepaid = parseFloat(sumRes.rows[0].total_repaid) || 0;
-          const origAmt = parseFloat(tx.original_amount) || 0;
-          newBalance = Math.max(0, Math.round((origAmt - totalConfirmedRepaid) * 100) / 100);
-          isSettled = newBalance <= 0.01;
-          const newStatus = isSettled ? 'settled' : 'confirmed';
-
-          // Update balances on all transactions sharing this link_id
           await client.query(
             `UPDATE public.udhar_transactions 
              SET current_balance = $1, paid_amount = $2, status = $3, 
                  settled_at = (CASE WHEN $4 = TRUE THEN NOW() ELSE settled_at END), updated_at = NOW() 
              WHERE link_id = $5`,
-            [newBalance, totalConfirmedRepaid, newStatus, isSettled, tx.link_id]
+            [newBalance, calc.nextPaidAmount, calc.nextUdharStatus, isSettled, tx.link_id]
           );
         }
 
@@ -3273,7 +3483,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           details: { txId, linkId: tx.link_id, amount: repayAmount, status: repaymentStatus, remainingBalance: newBalance, isSettled },
         });
 
-        // Notifications
         if (repaymentStatus === 'pending_confirmation' && tx.counterpart_user_id) {
           await query(
             `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
@@ -3360,8 +3569,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const repaymentId = confirmRepaymentMatch[1];
-      const repRes = await query(`SELECT r.* FROM public.udhar_repayments r WHERE r.id = $1`, [repaymentId]);
+      if (!isDatabaseAvailable()) {
+        const restRes = await confirmRepaymentRest(authUser, repaymentId);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
 
+      const repRes = await query(`SELECT r.* FROM public.udhar_repayments r WHERE r.id = $1`, [repaymentId]);
       if (repRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
         return true;
@@ -3373,19 +3587,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Check transaction for authUser to verify role
       const txRes = await query(
         `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
         [rep.link_id, authUser.id]
       );
-
       if (txRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Associated transaction not found for your account.' });
         return true;
       }
 
       const tx = txRes.rows[0];
-      // Role enforcement: Only the lender (direction === 'gave') can confirm repayment!
       if (tx.direction !== 'gave') {
         sendJson(res, 403, {
           success: false,
@@ -3398,7 +3609,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       try {
         await client.query('BEGIN');
 
-        // 1. Mark repayment confirmed
         await client.query(
           `UPDATE public.udhar_repayments 
            SET status = 'confirmed', confirmed_at = NOW(), confirmed_by = $1, rejection_reason = NULL
@@ -3406,38 +3616,35 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           [authUser.id, repaymentId]
         );
 
-        // 2. Recompute total confirmed repayments
         const sumRes = await client.query(
           `SELECT COALESCE(SUM(amount), 0) AS total_repaid
            FROM public.udhar_repayments
            WHERE link_id = $1 AND status = 'confirmed'`,
           [tx.link_id]
         );
-        const totalConfirmedRepaid = parseFloat(sumRes.rows[0].total_repaid) || 0;
-        const origAmt = parseFloat(tx.original_amount) || 0;
-        const newBalance = Math.max(0, Math.round((origAmt - totalConfirmedRepaid) * 100) / 100);
+        const totalConfirmedRepaid = roundMoney(parseFloat(sumRes.rows[0].total_repaid) || 0);
+        const origAmt = roundMoney(parseFloat(tx.original_amount) || 0);
+        const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmedRepaid));
         const isSettled = newBalance <= 0.01;
         const newStatus = isSettled ? 'settled' : 'confirmed';
 
-        // 3. Update all transaction rows with link_id
         await client.query(
           `UPDATE public.udhar_transactions 
            SET current_balance = $1, paid_amount = $2, status = $3, 
                settled_at = (CASE WHEN $4 = TRUE THEN NOW() ELSE settled_at END), updated_at = NOW() 
            WHERE link_id = $5`,
-          [newBalance, totalConfirmedRepaid, newStatus, isSettled, tx.link_id]
+          [isSettled ? 0 : newBalance, isSettled ? origAmt : totalConfirmedRepaid, newStatus, isSettled, tx.link_id]
         );
 
         await client.query('COMMIT');
 
-        // Notify borrower
         if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
           await query(
             `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
              VALUES ($1, $2, 'repayment_confirmed', $3, $4, $5, TRUE)`,
             [
               `Repayment Confirmed by ${authUser.full_name}`,
-              `${authUser.full_name} confirmed receiving your repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
+              `${authUser.full_name} confirmed receiving your repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}. Remaining balance: ₹${(isSettled ? 0 : newBalance).toLocaleString('en-IN')}.`,
               rep.recorded_by_user_id,
               tx.link_id,
               authUser.id,
@@ -3448,7 +3655,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 200, {
           success: true,
           message: `Repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')} confirmed successfully!`,
-          remainingBalance: newBalance,
+          remainingBalance: isSettled ? 0 : newBalance,
           isSettled,
         });
         return true;
@@ -3473,6 +3680,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const body = await parseJsonBody(req);
       const rejectionReason = (body.reason || body.rejection_reason || 'Payment not received').trim();
 
+      if (!isDatabaseAvailable()) {
+        const restRes = await rejectRepaymentRest(authUser, repaymentId, rejectionReason);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const repRes = await query(`SELECT * FROM public.udhar_repayments WHERE id = $1`, [repaymentId]);
       if (repRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
@@ -3484,7 +3697,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
         [rep.link_id, authUser.id]
       );
-
       if (txRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Associated transaction not found.' });
         return true;
@@ -3506,7 +3718,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [rejectionReason, authUser.id, repaymentId]
       );
 
-      // Notify borrower
       if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
         await query(
           `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
@@ -3540,45 +3751,87 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const txId = updateTxMatch[1];
       const body = await parseJsonBody(req);
-      const newAmount = body.amount !== undefined ? parseFloat(body.amount) : undefined;
-      const newNotes = body.notes !== undefined ? (body.notes || '').trim() : undefined;
-      const newDate = body.transaction_date || body.date;
-      const newDueDate = body.due_date || body.dueDate;
-      const editReason = (body.reason_for_edit || body.reason || body.edit_reason || 'Details updated').trim();
 
-      const txRes = await query(
-        'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2)',
-        [txId, authUser.id]
-      );
-      if (txRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+      if (!isDatabaseAvailable()) {
+        const restRes = await editUdharRest(authUser, txId, body);
+        sendJson(res, restRes.status, restRes.body);
         return true;
       }
-
-      const tx = txRes.rows[0];
-      const prevAmt = parseFloat(tx.original_amount);
-      const updatedAmt = newAmount !== undefined && !isNaN(newAmount) && newAmount > 0 ? newAmount : prevAmt;
-      const updatedNotes = newNotes !== undefined ? newNotes : tx.notes;
-      const updatedDate = newDate || tx.transaction_date;
-      const updatedDueDate = newDueDate !== undefined ? newDueDate : tx.due_date;
 
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
 
-        // 1. Calculate confirmed repayments to NEVER wipe out repayments
+        const txRes = await client.query(
+          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2) FOR UPDATE',
+          [txId, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+          return true;
+        }
+        const tx = txRes.rows[0];
+
         const repaySumRes = await client.query(
           `SELECT COALESCE(SUM(amount), 0) AS total_repaid
            FROM public.udhar_repayments
            WHERE link_id = $1 AND status = 'confirmed'`,
           [tx.link_id]
         );
-        const totalConfirmedRepaid = parseFloat(repaySumRes.rows[0].total_repaid) || 0;
-        const newBalance = Math.max(0, Math.round((updatedAmt - totalConfirmedRepaid) * 100) / 100);
-        const isSettled = newBalance <= 0.01;
-        const newStatus = isSettled ? 'settled' : 'confirmed';
+        const totalConfirmedRepaid = roundMoney(parseFloat(repaySumRes.rows[0].total_repaid) || 0);
+        const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+        const editReason = (body.reason_for_edit || body.reason || body.edit_reason || '').trim();
 
-        // 2. Insert into audit history table
+        const validation = validateUdharEdit(
+          {
+            original_amount: parseFloat(tx.original_amount) || 0,
+            paid_amount: totalConfirmedRepaid,
+            status: tx.status,
+            notes: prevPlainNote,
+            transaction_date: tx.transaction_date,
+            due_date: tx.due_date,
+            category: prevMeta.category || 'Personal Loan',
+            payment_method: prevMeta.payment_method || 'UPI',
+            description: prevMeta.description || null,
+          },
+          {
+            amount: body.amount !== undefined ? parseFloat(body.amount) : undefined,
+            notes: body.notes !== undefined ? (body.notes || '').trim() : undefined,
+            transaction_date: body.transaction_date || body.date || undefined,
+            due_date: body.due_date !== undefined ? body.due_date : (body.dueDate !== undefined ? body.dueDate : undefined),
+            category: body.category !== undefined ? body.category : undefined,
+            payment_method: body.payment_method !== undefined ? body.payment_method : undefined,
+            description: body.description !== undefined ? body.description : undefined,
+            reason_for_edit: editReason,
+          }
+        );
+
+        if (!validation.valid) {
+          await client.query('ROLLBACK');
+          sendJson(res, 400, { success: false, message: validation.error || 'Invalid edit.' });
+          return true;
+        }
+
+        const updatedAmt = validation.nextOriginalAmount!;
+        const newBalance = validation.nextRemainingAmount!;
+        const isSettled = Boolean(validation.isSettled);
+        const newStatus = validation.nextStatus!;
+        const nextPlainNote = body.notes !== undefined ? (body.notes || '').trim() : prevPlainNote;
+        const nextPackedNotes = packStructuredNote(nextPlainNote, {
+          category: body.category !== undefined ? body.category : prevMeta.category,
+          payment_method: body.payment_method !== undefined ? body.payment_method : prevMeta.payment_method,
+          description: body.description !== undefined ? body.description : prevMeta.description,
+          attachment_url: body.attachment_url !== undefined ? body.attachment_url : prevMeta.attachment_url,
+        });
+        const updatedDate = body.transaction_date || body.date || tx.transaction_date;
+        const updatedDueDate =
+          body.due_date !== undefined
+            ? body.due_date || null
+            : body.dueDate !== undefined
+              ? body.dueDate || null
+              : tx.due_date;
+
         await client.query(
           `INSERT INTO public.udhar_edit_history (
             udhar_id, link_id, edited_by_user_id, previous_amount, new_amount,
@@ -3589,19 +3842,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             tx.id,
             tx.link_id,
             authUser.id,
-            prevAmt,
+            parseFloat(tx.original_amount) || 0,
             updatedAmt,
-            tx.notes,
-            updatedNotes || null,
+            prevPlainNote || null,
+            nextPlainNote || null,
             tx.transaction_date,
             updatedDate,
             tx.due_date,
-            updatedDueDate || null,
+            updatedDueDate,
             editReason,
           ]
         );
 
-        // 3. Update both sides of udhar_transactions
         await client.query(
           `UPDATE public.udhar_transactions 
            SET original_amount = $1, current_balance = $2, paid_amount = $3, status = $4,
@@ -3613,9 +3865,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             newBalance,
             totalConfirmedRepaid,
             newStatus,
-            updatedNotes || null,
+            nextPackedNotes,
             updatedDate,
-            updatedDueDate || null,
+            updatedDueDate,
             authUser.id,
             editReason,
             tx.link_id,
@@ -3624,7 +3876,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         await client.query('COMMIT');
 
-        // Notify counterpart if registered
         if (tx.counterpart_user_id) {
           const targetUser = tx.user_id === authUser.id ? tx.counterpart_user_id : tx.user_id;
           await query(
@@ -3640,7 +3891,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           ).catch(() => {});
         }
 
-        // Automated update email
         sendUdharUpdatedEmails({
           transactionId: tx.id,
           linkId: tx.link_id,
@@ -3651,7 +3901,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           counterpartName: tx.counterpart_name,
           amount: updatedAmt,
           direction: tx.direction,
-          description: updatedNotes || undefined,
+          description: nextPlainNote || undefined,
           transactionDate: updatedDate,
           status: newStatus,
         }).catch((e) => console.warn('[Udhar Updated Email Error]:', e));
@@ -3661,6 +3911,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           message: `Udhar transaction updated successfully. Remaining balance: ₹${newBalance.toLocaleString('en-IN')}.`,
           remainingBalance: newBalance,
           isSettled,
+          changes: validation.changes,
         });
         return true;
       } catch (err) {
@@ -3682,48 +3933,61 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const txId = settleTxMatch[1];
       const body = await parseJsonBody(req);
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await settleUdharRest(authUser, txId, body);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const notes = (body.notes || 'Settled in full').trim();
+      const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
       const settleDate = body.settlement_date || body.date || new Date().toISOString().split('T')[0];
-
-      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
-      if (txRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
-        return true;
-      }
-
-      const tx = txRes.rows[0];
-
-      // ROLE & DIRECTION PERMISSION CHECK:
-      // If two-sided (counterpart_user_id exists) and authUser is borrower (direction === 'took'),
-      // borrower CANNOT unilaterally declare debt settled without lender's confirmation!
-      if (tx.counterpart_user_id && tx.direction === 'took') {
-        sendJson(res, 403, {
-          success: false,
-          message: 'Only the lender who gave the money can mark an Udhar as settled. As the borrower, please record a repayment for their confirmation.',
-        });
-        return true;
-      }
-
-      const currentBal = parseFloat(tx.current_balance);
-      if (currentBal <= 0) {
-        sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
-        return true;
-      }
 
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
 
-        // Record settlement repayment
+        const txRes = await client.query(
+          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE',
+          [txId, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+          return true;
+        }
+
+        const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === 'took') {
+          await client.query('ROLLBACK');
+          sendJson(res, 403, {
+            success: false,
+            message: 'Only the lender who gave the money can mark an Udhar as settled. As the borrower, please record a repayment for their confirmation.',
+          });
+          return true;
+        }
+
+        const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
+        if (tx.status === 'settled' || currentBal <= 0.01) {
+          await client.query('ROLLBACK');
+          sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
+          return true;
+        }
+        if (tx.status === 'cancelled') {
+          await client.query('ROLLBACK');
+          sendJson(res, 400, { success: false, message: 'Cannot settle a cancelled transaction.' });
+          return true;
+        }
+
         await client.query(
           `INSERT INTO public.udhar_repayments (
             link_id, udhar_id, recorded_by_user_id, amount, repayment_date, payment_method, notes, status,
             confirmed_at, confirmed_by
-          ) VALUES ($1, $2, $3, $4, $5, 'Cash', $6, 'confirmed', NOW(), $7)`,
-          [tx.link_id, tx.id, authUser.id, currentBal, settleDate, notes, authUser.id]
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', NOW(), $8)`,
+          [tx.link_id, tx.id, authUser.id, currentBal, settleDate, paymentMethod, notes, authUser.id]
         );
 
-        // Update balance on all rows sharing link_id to 0 and settled
         await client.query(
           `UPDATE public.udhar_transactions 
            SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
@@ -3731,7 +3995,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           [tx.link_id]
         );
 
-        // Notify counterpart if registered
         if (tx.counterpart_user_id) {
           await client.query(
             `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
@@ -3748,7 +4011,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         await client.query('COMMIT');
 
-        // Automated Udhar Settlement Emails
         sendUdharSettledEmails({
           transactionId: tx.id,
           linkId: tx.link_id,
@@ -3783,7 +4045,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // 20C. CANCEL / DELETE UDHAAR TRANSACTION: DELETE /api/udhar/transactions/:id
+    // 20C. CANCEL UDHAAR TRANSACTION (BLOCKED IF REPAYMENTS EXIST): DELETE /api/udhar/transactions/:id
     const deleteTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)$/);
     if (deleteTxMatch && method === 'DELETE') {
       const authUser = await authenticateRequest(req);
@@ -3793,6 +4055,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const txId = deleteTxMatch[1];
+      if (!isDatabaseAvailable()) {
+        const restRes = await cancelUdharRest(authUser, txId);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
       if (txRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Transaction not found.' });
@@ -3800,8 +4068,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
+      const repsRes = await query(
+        `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
+        [tx.link_id]
+      );
 
-      // Mark transaction as cancelled across both sides preserving audit trail
+      const guard = canCancelUdhar({
+        status: tx.status,
+        paid_amount: tx.paid_amount,
+        repayments: repsRes.rows,
+      });
+
+      if (!guard.allowed) {
+        sendJson(res, 409, {
+          success: false,
+          message: guard.reason,
+        });
+        return true;
+      }
+
       await query(
         `UPDATE public.udhar_transactions 
          SET status = 'cancelled', current_balance = 0, updated_at = NOW() 
@@ -3809,7 +4094,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [tx.link_id]
       );
 
-      // Notify counterpart if registered
       if (tx.counterpart_user_id) {
         await query(
           `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
@@ -3847,6 +4131,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const txId = historyTxMatch[1];
+      if (!isDatabaseAvailable()) {
+        const restRes = await getUdharHistoryRest(authUser, txId);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
       const txRes = await query(
         'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2)',
         [txId, authUser.id]
@@ -3857,6 +4147,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
+      const { note, meta } = unpackStructuredNote(tx.notes);
 
       let editHistory: any[] = [];
       try {
@@ -3882,11 +4173,29 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [tx.link_id]
       );
 
+      const repayments = repaymentsRes.rows.map((r: any) => {
+        const { note: repNote, meta: repMeta } = unpackStructuredNote(r.notes);
+        return {
+          ...r,
+          notes: repNote || null,
+          transaction_ref: r.transaction_ref || repMeta.transaction_ref || null,
+          repayment_time: r.repayment_time || repMeta.repayment_time || null,
+          attachment_url: r.attachment_url || repMeta.attachment_url || null,
+        };
+      });
+
       sendJson(res, 200, {
         success: true,
-        transaction: tx,
+        transaction: {
+          ...tx,
+          category: tx.category || meta.category || 'Personal Loan',
+          payment_method: tx.payment_method || meta.payment_method || 'UPI',
+          description: tx.description || meta.description || null,
+          notes: note || null,
+          clean_notes: note || null,
+        },
         editHistory,
-        repayments: repaymentsRes.rows,
+        repayments,
       });
       return true;
     }

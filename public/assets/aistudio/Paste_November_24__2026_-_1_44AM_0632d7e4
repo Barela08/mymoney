@@ -1,0 +1,1554 @@
+# MY MONEY MANAGER — COMPLETE WEBSITE REDESIGN & PAGE-BY-PAGE IMPLEMENTATION PROMPT
+
+## ROLE
+
+Act as a Senior Product Designer, UI/UX Architect, Fintech Product Engineer, Frontend Developer, Backend Engineer, Accessibility Specialist, and QA Engineer.
+
+Your task is to transform the existing **My Money Manager by HackifyPro** application into a premium, modern, production-quality personal finance management platform.
+
+This is an EXISTING project.
+
+**Do not rebuild from scratch. Do not remove working features. Do not break existing data, authentication, backend, database, or functionality.**
+
+Your goal is to improve the complete website page by page, with a consistent premium fintech experience across desktop, tablet, and mobile.
+
+---
+
+# 1. FIRST — AUDIT THE EXISTING PROJECT
+
+Before modifying any code:
+
+- Inspect the complete repository.
+- Identify frontend framework, backend architecture, database, authentication, routing, state management, component library, CSS system and deployment configuration.
+- Discover every route and page.
+- Discover all sidebar menu items.
+- Discover every form, button, modal, drawer, chart, table and interaction.
+- Inspect existing transaction/accounting logic.
+- Identify current APIs, database tables, authentication and permissions.
+- Identify reusable components.
+- Identify bugs, duplicated components and inconsistent design patterns.
+
+Create an internal page inventory before beginning implementation.
+
+Do not assume that the page list in this prompt is complete. Inspect the real application and include every existing route and feature.
+
+---
+
+# 2. DESIGN DIRECTION
+
+Create a premium fintech design system inspired by modern financial applications.
+
+## Brand identity
+
+Product: My Money Manager  
+Brand: by HackifyPro
+
+Primary color: Emerald green
+
+Design characteristics:
+
+- Premium
+- Minimal
+- Clean
+- Professional
+- Trustworthy
+- Financially focused
+- Modern
+- Accessible
+- Responsive
+- Easy for non-technical users
+
+## Color system
+
+Use consistent design tokens.
+
+Primary:
+- Emerald/Green
+- Green hover
+- Green light background
+- Green borders
+
+Neutral:
+- White
+- Light gray
+- Slate
+- Dark navy
+- Black
+
+Semantic:
+- Income: Green
+- Expense: Red
+- Transfer: Blue
+- Udhar: Amber
+- Savings: Teal
+- Warning: Orange
+- Error: Red
+- Success: Green
+
+Do not use random colors for every component.
+
+Maintain a consistent color palette throughout the application.
+
+## Typography
+
+Use one consistent modern font system.
+
+Hierarchy:
+
+- Page title
+- Page subtitle
+- Section title
+- Card title
+- Main metric
+- Body
+- Secondary text
+- Labels
+- Helper text
+
+Avoid tiny text.
+
+Primary body text should generally be 14–16px or appropriately scaled for mobile.
+
+## UI components
+
+Create a reusable design system:
+
+- Primary button
+- Secondary button
+- Outline button
+- Ghost button
+- Destructive button
+- Icon button
+- Input
+- Search input
+- Select
+- Date picker
+- Currency input
+- Checkbox
+- Switch
+- Tabs
+- Badge
+- Tooltip
+- Card
+- Summary card
+- Modal
+- Drawer
+- Toast
+- Alert
+- Empty state
+- Loading skeleton
+- Error state
+- Table
+- Pagination
+- Chart container
+- Dropdown menu
+
+Use a maximum of 4–5 button variants.
+
+Avoid creating a different button style for every page.
+
+---
+
+# 3. GLOBAL APPLICATION LAYOUT
+
+Redesign the complete application shell.
+
+## Desktop
+
+Layout:
+
+- Left sidebar
+- Top header
+- Main content area
+- Responsive content container
+- Optional contextual actions
+
+Sidebar should have:
+
+- Logo
+- My Money Manager
+- Available Balance
+- Add Transaction button
+- Navigation sections
+- User profile
+- Install app
+- Light/Dark theme
+- Logout
+
+Header should have:
+
+- Current page title
+- Subtitle
+- Calculator
+- Help
+- Notifications
+- Date/time only if useful
+- User profile menu
+- Theme switcher
+
+## Sidebar behavior
+
+- Sidebar should scroll independently when needed.
+- Footer should not overlap menu items.
+- Long menus must not hide content.
+- Active page must be clearly highlighted.
+- Navigation groups should be collapsible where appropriate.
+- On mobile, convert sidebar into a drawer.
+- On smaller screens, avoid permanently occupying horizontal space.
+
+## Suggested navigation groups
+
+### Overview
+- Dashboard
+
+### Money Management
+- Received Money
+- Spent Money
+- All Transactions
+- Transfers
+
+### Financial Planning
+- Budget Planner
+- Savings Goals
+- Recurring Bills
+- Accounts & Wallets
+
+### People & Payments
+- People
+- Udhar
+- Settlements
+
+### Tools
+- Calculator
+- My QR Code
+- Scan QR Code
+- Reports & Analytics
+
+### Other
+- Notifications
+- Recycle Bin
+- Help & Feedback
+- Privacy Policy
+- Settings & Profile
+
+Inspect existing routes and preserve all features, including any additional pages.
+
+Do not remove category functionality.
+
+---
+
+# 4. PAGE 1 — DASHBOARD
+
+Redesign the dashboard as the main financial overview.
+
+## Header
+
+Show:
+
+- Personalized greeting
+- User name
+- Current month
+- Financial overview subtitle
+
+## Main balance card
+
+Display:
+
+- Available balance
+- Visibility toggle
+- Add transaction action
+- Optional account balance breakdown
+
+The balance card should be premium and visually balanced.
+
+Avoid oversized dark cards consuming unnecessary space.
+
+Support light and dark themes.
+
+## Summary cards
+
+Show:
+
+- Total Income
+- Total Expenses
+- Net Savings
+- Net Udhar
+
+Each card should have:
+
+- Icon
+- Amount
+- Label
+- Comparison if data is available
+- Optional click-through
+
+## Quick Actions
+
+- Add Transaction
+- Received Money
+- Spent Money
+- People & Udhar
+- Budgets
+- Savings Goals
+- Reports
+
+Use consistent card dimensions.
+
+## Financial charts
+
+- Monthly Income vs Expenses
+- Spending by Category
+- Financial Flow
+- Savings Trend
+
+Charts must be connected to actual data.
+
+Include:
+
+- Tooltips
+- Proper currency formatting
+- Date filters
+- Empty states
+- Responsive rendering
+
+## Recent transactions
+
+Show recent transaction entries:
+
+- Transaction name
+- Category
+- Date
+- Payment method
+- Amount
+- Transaction type
+- Quick details/edit action
+
+## Financial insights
+
+Where data is available, show:
+
+- Highest spending category
+- Monthly savings
+- Budget alerts
+- Outstanding Udhar
+- Upcoming recurring bills
+- Monthly comparison
+- Savings percentage
+
+Do not generate fake insights.
+
+---
+
+# 5. PAGE 2 — ADD TRANSACTION
+
+Create a unified, user-friendly transaction form.
+
+Transaction types:
+
+- Income
+- Expense
+- Transfer
+- Udhar
+
+## Form fields
+
+- Transaction type
+- Amount
+- Category
+- Account
+- Date
+- Time
+- Description
+- Payment method
+- Recipient/source
+- Notes
+- Receipt/attachment
+
+Only show fields relevant to the selected transaction type.
+
+## UX
+
+- Amount should be the primary input.
+- Form should be fast.
+- Avoid unnecessary fields.
+- Allow keyboard navigation.
+- Show validation immediately.
+- Prevent duplicate submissions.
+- Save safely.
+- Show success feedback.
+- Preserve input if an error occurs.
+- Allow cancellation.
+
+Mobile should use a full-screen form or bottom-sheet experience where appropriate.
+
+---
+
+# 6. PAGE 3 — ALL TRANSACTIONS
+
+Create a complete transaction history page.
+
+Features:
+
+- All
+- Income
+- Expenses
+- Transfers
+- Udhar
+
+## Filters
+
+- Today
+- Yesterday
+- This week
+- This month
+- Last month
+- This year
+- Custom range
+- Category
+- Account
+- Payment method
+
+## Search
+
+Search by:
+
+- Description
+- Amount
+- Category
+- Source
+- Recipient
+- UTR
+- Reference number
+
+## Transaction list
+
+Each transaction should display:
+
+- Icon
+- Description
+- Category
+- Date
+- Account
+- Type
+- Amount
+
+Actions:
+
+- View
+- Edit
+- Duplicate
+- Delete
+- Export
+
+Add:
+
+- Pagination or efficient loading
+- Empty states
+- Loading states
+- Filter reset
+- Export options if supported
+
+---
+
+# 7. PAGE 4 — RECEIVED MONEY
+
+Create a universal income/received-money management page.
+
+Do not restrict this feature to family or home money.
+
+It must support:
+
+- Salary
+- Business
+- Freelancing
+- Family Support
+- Gifts
+- Refunds
+- Rental Income
+- Investment Returns
+- Interest
+- Loan Received
+- Udhar Received
+- Other Income
+
+## Summary cards
+
+- Total Received This Month
+- Total Received Today
+- All-Time Total Received
+
+## Category analytics
+
+Show:
+
+- Category breakdown
+- Percentage
+- Amount
+- Monthly income trend
+
+## Filters
+
+- Date
+- Category
+- Source
+- Account
+- Payment method
+
+## Transactions
+
+Provide complete received-money history.
+
+## Add received money form
+
+Fields:
+
+- Amount
+- Category
+- Source
+- Description
+- Payment method
+- Date
+- Time
+- Account
+- UTR/reference
+- Notes
+- Receipt
+
+Dynamically change labels based on category.
+
+Examples:
+
+Salary → Employer  
+Freelancing → Client/project  
+Family Support → Person  
+Gift → Occasion  
+Refund → Merchant  
+Rental Income → Tenant/property  
+Investment Return → Investment source  
+Loan Received → Lender  
+Udhar Received → Person
+
+Make adding income possible within 5–10 seconds.
+
+---
+
+# 8. PAGE 5 — SPENT MONEY
+
+Create a complete expense management page.
+
+## Expense categories
+
+- Food & Dining
+- Shopping
+- Transport
+- Fuel
+- Bills & Utilities
+- Rent
+- Health
+- Education
+- Travel
+- Entertainment
+- Business
+- Family
+- Mobile & Internet
+- EMI & Loans
+- Pets
+- Other
+
+## Summary cards
+
+- Total Spent This Month
+- Total Spent Today
+- All-Time Expenses
+
+## Analytics
+
+- Expense by category
+- Monthly spending
+- Highest spending
+- Daily spending
+- Category comparison
+
+## Filters
+
+- Date
+- Category
+- Account
+- Payment method
+- Merchant
+
+## Add expense form
+
+Fields:
+
+- Amount
+- Category
+- Merchant/recipient
+- Description
+- Account
+- Payment method
+- Date
+- Time
+- Notes
+- Receipt
+
+Category-specific dynamic fields must be implemented only where relevant.
+
+Examples:
+
+Food → Restaurant/food details  
+Shopping → Item/store  
+Fuel → Fuel type/vehicle  
+Transport → Purpose  
+Bills → Bill type  
+Health → Doctor/medicine  
+Education → Course/institution  
+Travel → Destination  
+Business → Business expense details  
+EMI → Loan reference
+
+Avoid unnecessary compulsory fields.
+
+---
+
+# 9. PAGE 6 — PEOPLE & UDHAR
+
+Create a modern people and shared-ledger experience.
+
+## Summary
+
+- You'll Receive
+- You'll Pay
+- Net Udhar
+
+## People list
+
+Each person should show:
+
+- Profile photo
+- Name
+- Amount
+- Given/Taken status
+- Due date
+- Settlement status
+
+## Tabs
+
+- All People
+- Active Udhar
+- Settled
+
+## Search
+
+Search people by name and supported identifiers.
+
+## Add people
+
+Methods:
+
+- Search registered users
+- Scan QR
+- Add manually
+- Invite
+
+## Person details
+
+Each person should have:
+
+- Ledger
+- Udhar given
+- Udhar taken
+- Repayments
+- Activity
+- Balance
+- Due dates
+- Settlement history
+
+---
+
+# 10. PAGE 7 — ADD / SEARCH PEOPLE
+
+Create a modern connection interface.
+
+Features:
+
+- Live search
+- Search by supported name/email/phone
+- Registered user results
+- Connection status
+- Connect button
+- Pending requests
+- Already connected status
+- Invite option
+
+Search must be:
+
+- Fast
+- Debounced
+- Secure
+- Paginated when needed
+
+Do not expose private information of other users.
+
+Prevent:
+
+- Connecting to yourself
+- Duplicate connections
+- Unauthorized connections
+- Fake user results
+
+---
+
+# 11. PAGE 8 — MY QR CODE
+
+Create a personal QR connection page.
+
+Show:
+
+- User profile
+- User name
+- QR code
+- Unique identity
+- Share QR
+- Download QR
+- Copy link if supported
+
+QR must contain a secure, unique, opaque identifier or token.
+
+Do not encode sensitive profile data directly into QR.
+
+Do not use:
+
+- Shared QR for all users
+- Hardcoded IDs
+- Sequential IDs
+- Guest fallback
+- Fake identity
+
+QR identity must be resolved securely by the backend.
+
+---
+
+# 12. PAGE 9 — SCAN QR CODE
+
+Create a professional QR scanning experience.
+
+Features:
+
+- Camera permission
+- Camera preview
+- QR detection
+- Scan feedback
+- Rear/front camera selection where supported
+- Torch where supported
+- Camera cleanup
+- Error states
+
+After scanning:
+
+1. Resolve QR through backend.
+2. Fetch the actual registered profile.
+3. Check self-connection.
+4. Check existing connection.
+5. Check blocked/deleted account.
+6. Show profile confirmation.
+7. User confirms connection.
+8. Create persistent connection.
+9. Update People list.
+
+Never display a generic Guest profile for an invalid QR.
+
+---
+
+# 13. PAGE 10 — BUDGET PLANNER
+
+Create a modern budget management dashboard.
+
+Show:
+
+- Total monthly budget
+- Total spending
+- Remaining budget
+- Budget utilization
+
+Budget categories:
+
+- Food
+- Rent
+- Shopping
+- Travel
+- Transport
+- Bills
+- Health
+- Education
+- Custom categories
+
+Features:
+
+- Create budget
+- Edit budget
+- Delete budget
+- Monthly budget
+- Category budget
+- Progress bar
+- Spending alerts
+- Budget exceeded alert
+- Remaining amount
+- Period selection
+
+Clicking a category should show related expenses.
+
+Use clear warning levels.
+
+---
+
+# 14. PAGE 11 — SAVINGS GOALS
+
+Create a savings goal management experience.
+
+Examples:
+
+- New Laptop
+- Bike
+- Vacation
+- Emergency Fund
+- Education
+- House
+- Custom Goal
+
+Each goal card should show:
+
+- Goal name
+- Target amount
+- Saved amount
+- Remaining amount
+- Progress
+- Deadline
+- Estimated completion
+
+Features:
+
+- Create goal
+- Edit goal
+- Add contribution
+- Remove contribution with proper transaction handling
+- Pause goal
+- Complete goal
+- Goal history
+
+Do not falsely modify account balance when contributions are internal allocations.
+
+---
+
+# 15. PAGE 12 — RECURRING BILLS
+
+Create recurring payments and bill tracking.
+
+Examples:
+
+- Rent
+- Electricity
+- Mobile recharge
+- Internet
+- Subscription
+- EMI
+- Insurance
+- Custom
+
+Features:
+
+- Upcoming bills
+- Due today
+- Overdue
+- Paid
+- Monthly/weekly/yearly recurrence
+- Next due date
+- Amount
+- Reminder
+- Payment status
+- Bill history
+
+Allow users to:
+
+- Add bill
+- Edit
+- Pause
+- Resume
+- Mark paid
+- View history
+
+Do not automatically deduct money unless the application genuinely supports safe automated payment functionality.
+
+---
+
+# 16. PAGE 13 — ACCOUNTS & WALLETS
+
+Create an account management page.
+
+Accounts:
+
+- Cash
+- Bank Account
+- UPI
+- Wallet
+- Savings
+- Custom
+
+Show:
+
+- Account name
+- Balance
+- Account type
+- Transactions
+- Opening balance
+- Current balance
+
+Features:
+
+- Add account
+- Edit account
+- Archive account
+- View account transactions
+- Account transfer
+
+## Transfers
+
+Transfers between owned accounts must not count as income or expenses.
+
+Ensure:
+
+- Source account decreases.
+- Destination account increases.
+- Overall balance remains unchanged.
+- Transfer is recorded correctly.
+- No duplicate transfer is created.
+
+---
+
+# 17. PAGE 14 — REPORTS & ANALYTICS
+
+Create a professional financial analytics center.
+
+## Reports
+
+- Income report
+- Expense report
+- Cash flow
+- Category report
+- Monthly report
+- Yearly report
+- Account report
+- Savings report
+- Udhar report
+- Budget report
+
+## Charts
+
+- Income vs expenses
+- Monthly cash flow
+- Expense category breakdown
+- Income category breakdown
+- Savings trend
+- Account balance comparison
+
+## Date ranges
+
+- This week
+- This month
+- Last month
+- Last 3 months
+- Last 6 months
+- This year
+- Custom
+
+## Financial insights
+
+- Total income
+- Total expenses
+- Net cash flow
+- Savings rate
+- Average spending
+- Highest category
+- Month-over-month changes
+
+## Export
+
+Where supported:
+
+- PDF
+- CSV
+- Excel
+
+Reports must be generated from actual database records.
+
+---
+
+# 18. PAGE 15 — NOTIFICATIONS
+
+Create a notification center.
+
+Notification types:
+
+- Transaction
+- Budget warning
+- Budget exceeded
+- Savings milestone
+- Udhar created
+- Udhar repayment
+- Settlement
+- Connection request
+- Upcoming bill
+- Overdue bill
+- Security alert
+
+Features:
+
+- Read/unread
+- Mark all read
+- Clear
+- Notification preferences
+- Relevant page navigation
+
+Do not generate fake notifications.
+
+---
+
+# 19. PAGE 16 — RECYCLE BIN
+
+Create a secure recycle bin.
+
+Features:
+
+- Deleted transactions
+- Deleted budgets
+- Deleted goals
+- Deleted accounts where applicable
+- Deleted records history
+
+Actions:
+
+- Restore
+- Permanently delete
+- Bulk restore
+- Bulk delete
+
+Use confirmation for permanent deletion.
+
+Preserve financial integrity.
+
+If an item has related records, handle dependencies correctly.
+
+---
+
+# 20. PAGE 17 — SETTINGS & PROFILE
+
+Create a modern profile and settings center.
+
+## Profile
+
+- Profile picture
+- Name
+- Email
+- Phone
+- Profile information
+- Edit profile
+
+## Preferences
+
+- Currency
+- Date format
+- Language
+- Theme
+- Notifications
+- Privacy
+
+## Security
+
+- Change password if supported
+- Session management if supported
+- Authentication
+- Account security
+- Logout
+
+## Data management
+
+- Export data
+- Backup
+- Delete account
+
+All account deletion and irreversible operations must require appropriate confirmation.
+
+---
+
+# 21. PAGE 18 — CALCULATOR
+
+Improve the financial calculator.
+
+Features:
+
+- Basic operations
+- Percentage
+- GST calculations if supported
+- EMI calculator if supported
+- Split calculations if supported
+
+The calculator should:
+
+- Work correctly
+- Support keyboard input
+- Have a clear display
+- Have responsive buttons
+- Avoid obstructing the application
+
+Do not unnecessarily duplicate calculators across pages.
+
+---
+
+# 22. PAGE 19 — HELP & FEEDBACK
+
+Create a support center.
+
+Features:
+
+- FAQs
+- How to use the app
+- Financial feature explanations
+- Contact support
+- Report a bug
+- Send feedback
+- Feedback history if supported
+
+Forms must have:
+
+- Validation
+- Submission states
+- Success messages
+- Error messages
+
+---
+
+# 23. PAGE 20 — PRIVACY POLICY
+
+Improve privacy policy readability.
+
+Use:
+
+- Clear headings
+- Data collected
+- Data usage
+- Data storage
+- User rights
+- Security
+- Data deletion
+- Contact details
+
+Make it mobile readable.
+
+Do not invent legal claims or guarantees.
+
+---
+
+# 24. LIGHT MODE & DARK MODE
+
+Both themes must be professionally designed.
+
+## Light mode
+
+- White cards
+- Light neutral backgrounds
+- Subtle borders
+- Emerald accents
+- Readable text
+
+## Dark mode
+
+- Dark charcoal/navy surfaces
+- Not pure black everywhere
+- Proper contrast
+- Readable charts
+- Consistent borders
+- Accessible text
+
+Theme must persist across sessions.
+
+No component should remain incorrectly styled when theme changes.
+
+---
+
+# 25. RESPONSIVE DESIGN
+
+Test the entire application at:
+
+### Mobile
+
+- 320px
+- 360px
+- 375px
+- 390px
+- 430px
+
+### Tablet
+
+- 768px
+- 1024px
+
+### Desktop
+
+- 1280px
+- 1440px
+- 1920px
+
+## Mobile requirements
+
+- Sidebar drawer
+- Compact header
+- Proper bottom navigation where appropriate
+- Touch-friendly controls
+- Minimum practical touch target
+- Cards stack correctly
+- No horizontal overflow
+- Tables become mobile cards or suitable responsive views
+- Forms fit screen
+- Modals become mobile-friendly
+- Charts fit
+- QR scanner works
+- Buttons don't overlap
+- Safe-area support
+
+---
+
+# 26. UX STATES — EVERY PAGE
+
+Every page and component must support appropriate:
+
+- Loading
+- Skeleton
+- Empty
+- Success
+- Error
+- Disabled
+- Saving
+- Retry
+- Permission denied
+- Offline
+- No search results
+
+Never leave a blank screen.
+
+Never show a broken loading spinner permanently.
+
+---
+
+# 27. ACCESSIBILITY
+
+Implement:
+
+- Semantic HTML
+- Keyboard navigation
+- Visible focus
+- Accessible labels
+- Screen reader support
+- Color contrast
+- Proper button types
+- Input error messages
+- Keyboard-accessible menus
+- Reduced motion support
+
+Do not rely only on color to communicate financial status.
+
+---
+
+# 28. PERFORMANCE
+
+Optimize:
+
+- Initial page load
+- Route loading
+- Database requests
+- Charts
+- Large transactions lists
+- Re-rendering
+- Image loading
+- Search
+- Pagination
+
+Implement appropriate:
+
+- Lazy loading
+- Code splitting
+- Query optimization
+- Debouncing
+- Caching where safe
+- Reusable components
+
+Do not introduce unnecessary dependencies.
+
+---
+
+# 29. SECURITY & DATA INTEGRITY
+
+Audit and maintain:
+
+- Authentication
+- Authorization
+- Backend validation
+- Database permissions
+- RLS if applicable
+- User isolation
+- IDOR protection
+- Rate limiting
+- Input validation
+- XSS prevention
+- CSRF protection where applicable
+- Secure file uploads
+- Sensitive data handling
+- Secrets protection
+- API protection
+
+Never rely on frontend-only authorization.
+
+Never allow one user to access another user's financial information.
+
+Do not expose:
+
+- Passwords
+- Tokens
+- Private account data
+- Financial records
+- Sensitive personal information
+
+---
+
+# 30. ACCOUNTING RULES — CRITICAL
+
+Do not break existing accounting logic.
+
+## Income
+
+Regular earned or received income contributes to income totals.
+
+## Expenses
+
+Actual spending contributes to expense totals.
+
+## Transfers
+
+Transfers between a user's own accounts do not increase income or expenses.
+
+## Loans
+
+Loan received increases available funds but is not earned income.
+
+## Udhar
+
+Money borrowed is not income.
+
+Money lent is not an expense.
+
+## Repayments
+
+Repayment received reduces receivable.
+
+Repayment paid reduces payable.
+
+Do not count repayment as new income or expense incorrectly.
+
+## Refunds
+
+Refunds must be classified and accounted for correctly to avoid inflating income.
+
+## Savings goals
+
+Internal savings allocations must not incorrectly duplicate cash or account balances.
+
+All financial totals across Dashboard, Transactions, Accounts, Reports and Analytics must reconcile.
+
+---
+
+# 31. IMPLEMENTATION RULES
+
+- Work directly in the existing project.
+- Preserve existing technology stack.
+- Preserve all working features.
+- Preserve existing data.
+- Use reusable components.
+- Use the existing backend.
+- Use the existing authentication.
+- Use the existing database.
+- Make migrations safe.
+- Avoid duplicate APIs.
+- Avoid duplicate components.
+- Avoid unnecessary dependencies.
+- Do not hardcode financial figures.
+- Do not use fake production data.
+- Do not create mock functionality.
+- Do not leave dead buttons.
+- Do not leave unfinished pages.
+- Do not leave TODOs for core functionality.
+- Do not replace working functionality with static UI.
+- Do not claim features work unless tested.
+
+If an existing feature is broken, fix its root cause.
+
+If a feature is unsupported by the existing architecture, clearly report it rather than faking it.
+
+---
+
+# 32. IMPLEMENTATION WORKFLOW
+
+## Phase 1 — Audit
+
+Inspect the full application and create page inventory.
+
+## Phase 2 — Design System
+
+Create shared design tokens, buttons, cards, inputs, layout, typography and navigation.
+
+## Phase 3 — Application Shell
+
+Redesign sidebar, header, responsive layout and theme system.
+
+## Phase 4 — Dashboard
+
+Implement the complete dashboard.
+
+## Phase 5 — Money Management
+
+Implement and polish:
+
+- Received Money
+- Spent Money
+- All Transactions
+- Add Transaction
+- Transfers
+
+## Phase 6 — People & Payments
+
+Implement:
+
+- People
+- Search
+- QR
+- Scanner
+- Udhar
+- Repayments
+- Settlements
+
+## Phase 7 — Financial Planning
+
+Implement:
+
+- Budgets
+- Savings Goals
+- Recurring Bills
+- Accounts & Wallets
+
+## Phase 8 — Reports & Utilities
+
+Implement:
+
+- Analytics
+- Notifications
+- Recycle Bin
+- Calculator
+- Help
+- Settings
+- Profile
+- Privacy Policy
+
+## Phase 9 — Responsive QA
+
+Test all pages across mobile, tablet and desktop.
+
+## Phase 10 — Functional QA
+
+Verify every form, button, chart, filter, navigation, database action and transaction flow.
+
+## Phase 11 — Production QA
+
+Run:
+
+- Lint
+- Typecheck
+- Tests
+- Production build
+- Console inspection
+- API checks
+- Database checks
+- Responsive checks
+
+Fix all critical errors before completion.
+
+---
+
+# 33. FINAL ACCEPTANCE CRITERIA
+
+The project is complete only when:
+
+- Every existing page has been inspected.
+- Every existing page has been redesigned consistently.
+- All routes work.
+- Navigation works.
+- Every button has a real action.
+- All forms validate.
+- Data persists.
+- Financial calculations are correct.
+- Existing features are preserved.
+- Search and filters work.
+- Charts use real data.
+- QR functionality is tested.
+- Shared Udhar is tested with multiple accounts if applicable.
+- Repayment and settlement are correct.
+- Light mode works.
+- Dark mode works.
+- Mobile layout works.
+- Tablet layout works.
+- Desktop layout works.
+- No critical console errors remain.
+- No horizontal overflow exists at supported widths.
+- No fake data is presented as real.
+- No sensitive data is exposed.
+- Production build passes.
+
+---
+
+# 34. FINAL REPORT
+
+At completion, provide:
+
+1. Complete page inventory
+2. Pages redesigned
+3. UI components created/reused
+4. Functional changes implemented
+5. Bugs fixed
+6. Backend changes
+7. Database migrations
+8. Security improvements
+9. Responsive testing results
+10. Test results
+11. Build status
+12. Remaining issues
+13. Unverified features
+14. Screenshots of redesigned pages
+
+For every item, distinguish:
+
+- Completed
+- Tested and verified
+- Partially completed
+- Not completed
+- Blocked
+
+Do not claim unverified work is complete.
+
+---
+
+# FINAL GOAL
+
+Transform My Money Manager into a complete, polished, modern, responsive personal finance platform.
+
+The entire application should feel like one cohesive premium fintech product — not a collection of unrelated pages.
+
+Every page must be beautiful, consistent, practical, fast, accessible and genuinely functional.
+
+**Inspect first. Plan internally. Implement directly. Test thoroughly. Fix issues. Preserve existing features. Do not stop after creating a plan or redesigning the Dashboard. Finish the complete application page by page.**

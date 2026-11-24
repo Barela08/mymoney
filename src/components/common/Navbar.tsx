@@ -85,6 +85,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const titles: Record<string, { title: string; subtitle: string; shortTitle: string }> = {
     dashboard: { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: 'Overview & Main Sections' },
+    ai_assistant: { title: 'AI Money Assistant', shortTitle: 'AI Assistant', subtitle: 'Conversational financial advisor grounded in your real data' },
+    expense_calendar: { title: 'Expense Calendar', shortTitle: 'Calendar', subtitle: 'Daily, weekly & monthly spending heatmap and ledger' },
+    smart_alerts: { title: 'Smart Financial Alerts', shortTitle: 'Smart Alerts', subtitle: 'Budget thresholds, upcoming bills, anomalies & Udhar reminders' },
+    receipt_scanner: { title: 'Receipt Scanner (OCR)', shortTitle: 'Receipt OCR', subtitle: 'Scan receipts & review extracted details before saving' },
+    net_worth: { title: 'Net Worth Tracker', shortTitle: 'Net Worth', subtitle: 'Assets minus liabilities with real snapshot history' },
+    safe_to_spend: { title: 'Safe-to-Spend Calculator', shortTitle: 'Safe-to-Spend', subtitle: 'True spendable cash after upcoming bills & protected reserves' },
     home: { title: 'Received Money', shortTitle: 'Received Money', subtitle: 'Salary, business, freelancing & all money received' },
     room: { title: 'Room Section', shortTitle: 'Room Expenses', subtitle: 'Gas, grocery, room rent & power bill' },
     food: { title: 'Food & Dining Section', shortTitle: 'Food & Dining', subtitle: 'Restaurant, fast food, snacks, tea/coffee & food delivery' },

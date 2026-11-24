@@ -1,0 +1,8 @@
+{
+  "name": "My Money Manager",
+  "description": "AI-powered personal money, expense, budget, receipt OCR, net worth, safe-to-spend, and people Udhar manager by HackifyPro.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

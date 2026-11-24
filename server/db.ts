@@ -33,9 +33,50 @@ try {
   console.warn('Notice loading .env in db.ts:', e);
 }
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5432/postgres';
+function normalizeDatabaseUrl(raw?: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  if (!trimmed || !/^postgres(ql)?:\/\//i.test(trimmed)) return '';
+  try {
+    const parsed = new URL(trimmed);
+    // Auto-correct common typo "/postgre" -> "/postgres"
+    if (parsed.pathname === '/postgre') {
+      console.warn('[DB Config] Normalized DATABASE_URL database name from "postgre" to "postgres".');
+      parsed.pathname = '/postgres';
+      return parsed.toString();
+    }
+    return trimmed;
+  } catch {
+    return trimmed.replace(/\/postgre(\?|$)/, '/postgres$1');
+  }
+}
+
+const normalizedConnectionString = normalizeDatabaseUrl(process.env.DATABASE_URL);
+export const isDatabaseConfigured = Boolean(normalizedConnectionString);
+
+let databaseFatalError: string | null = null;
+export function isDatabaseAvailable(): boolean {
+  return isDatabaseConfigured && databaseFatalError === null;
+}
+
+const emptyResult = <T extends pg.QueryResultRow = any>(): pg.QueryResult<T> => ({
+  rows: [],
+  rowCount: 0,
+  command: '',
+  oid: 0,
+  fields: [],
+});
+
+const createMockPool = () =>
+  ({
+    query: async <T extends pg.QueryResultRow = any>() => emptyResult<T>(),
+    connect: async () => ({
+      query: async <T extends pg.QueryResultRow = any>() => emptyResult<T>(),
+      release: () => {},
+    }),
+    on: () => {},
+    end: async () => {},
+  }) as unknown as pg.Pool;
 
 const dnsResolver = new dns.promises.Resolver();
 try {
@@ -67,26 +108,43 @@ const customLookup = (
   });
 };
 
-export const pool = new pg.Pool({
-  connectionString,
-  ssl: { rejectUnauthorized: false },
-  lookup: customLookup,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 25000,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 5000,
-});
+let poolInstance: pg.Pool;
+if (!isDatabaseConfigured) {
+  console.warn('[AI Studio] DATABASE_URL not set — PostgreSQL mock active (using Supabase HTTPS fallback where supported)');
+  poolInstance = createMockPool();
+} else {
+  try {
+    poolInstance = new pg.Pool({
+      connectionString: normalizedConnectionString,
+      ssl: { rejectUnauthorized: false },
+      lookup: customLookup,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 5000,
+    });
 
-pool.on('error', (err) => {
-  console.warn('PostgreSQL idle client notice (will reconnect on next query):', err.message);
-});
+    poolInstance.on('error', (err) => {
+      console.warn('PostgreSQL idle client notice (will reconnect on next query):', err.message);
+    });
+  } catch (err: any) {
+    console.warn('[AI Studio] PostgreSQL init failed — mock active:', err?.message);
+    databaseFatalError = err?.message || 'Pool initialization failed';
+    poolInstance = createMockPool();
+  }
+}
+
+export const pool = poolInstance;
 
 export async function query<T extends pg.QueryResultRow = any>(
   text: string,
   params?: any[],
   retries = 2
 ): Promise<pg.QueryResult<T>> {
+  if (!isDatabaseAvailable()) {
+    return emptyResult<T>();
+  }
   const start = Date.now();
   try {
     const res = await pool.query<T>(text, params);
@@ -97,12 +155,29 @@ export async function query<T extends pg.QueryResultRow = any>(
     return res;
   } catch (err: any) {
     const msg = err.message || '';
+    const code = err.code || '';
+
+    // Fatal DB configuration/availability errors (e.g., 3D000 database does not exist, 28P01 bad password)
+    if (
+      code === '3D000' ||
+      code === '28P01' ||
+      code === '28000' ||
+      msg.includes('does not exist') && msg.includes('database')
+    ) {
+      if (!databaseFatalError) {
+        databaseFatalError = msg;
+        console.warn(`[AI Studio] PostgreSQL unavailable (${msg}) — switching to mock fallback.`);
+      }
+      return emptyResult<T>();
+    }
+
     const isConnErr =
       msg.includes('Connection terminated') ||
       msg.includes('ECONNRESET') ||
       msg.includes('ETIMEDOUT') ||
       msg.includes('ENOTFOUND') ||
       msg.includes('EAI_AGAIN') ||
+      msg.includes('ECONNREFUSED') ||
       msg.includes('connection timeout') ||
       msg.includes('timeout expired') ||
       msg.includes('timeout') ||

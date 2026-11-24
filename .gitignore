@@ -32,3 +32,4 @@ dist-ssr
 *.jpg
 !public/logo.jpg
 unslop/
+.data/

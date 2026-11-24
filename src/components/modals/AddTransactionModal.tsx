@@ -44,6 +44,12 @@ import {
   getReceivedCategoryConfig,
   classifyFinancialTransaction,
 } from '../../lib/receivedMoneyCategories';
+import {
+  categorizeTransactionDeterministic,
+  CategorizationSuggestion,
+  UserCategorizationRule,
+} from '../../lib/financialIntelligenceEngine';
+import { aiFinanceApi } from '../../lib/aiFinanceApi';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
@@ -53,6 +59,8 @@ interface AddTransactionModalProps {
   initialPersonName?: string;
   initialAmount?: number | string;
   initialTitle?: string;
+  initialDate?: string;
+  onOpenReceiptScanner?: () => void;
 }
 
 export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
@@ -63,8 +71,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   initialPersonName,
   initialAmount,
   initialTitle,
+  initialDate,
+  onOpenReceiptScanner,
 }) => {
-  const { addTransaction } = useExpense();
+  const { addTransaction, transactions } = useExpense();
   const toast = useToast();
 
   const [category, setCategory] = useState<TransactionCategory>(initialCategory);
@@ -122,6 +132,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [isCompressingReceipt, setIsCompressingReceipt] = useState(false);
 
+  // Feature 2: Smart Transaction Categorization State (Non-blocking)
+  const [userCatRules, setUserCatRules] = useState<UserCategorizationRule[]>([]);
+  const [smartSuggestion, setSmartSuggestion] = useState<CategorizationSuggestion | null>(null);
+  const [isSuggestingAi, setIsSuggestingAi] = useState(false);
+  const [showLearnedRules, setShowLearnedRules] = useState(false);
+  const [userAppliedSuggestion, setUserAppliedSuggestion] = useState(false);
+
   // Compress & handle receipt attachment
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -176,8 +193,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setShowUnsavedConfirm(false);
-      setDate(getCurrentISTDate());
+      setDate(initialDate || getCurrentISTDate());
       setTime(getCurrentISTTime());
+      setSmartSuggestion(null);
+      setUserAppliedSuggestion(false);
       if (initialCategory) setCategory(initialCategory);
       if (initialSubcategory) {
         setSubcategory(initialSubcategory);
@@ -193,8 +212,103 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       if (initialTitle) setTitle(initialTitle);
       setRentMonth(getCurrentMonthName());
       setElecMonth(getCurrentMonthName());
+      aiFinanceApi.getCategorizationRules().then(setUserCatRules).catch(() => {});
     }
-  }, [isOpen, initialCategory, initialSubcategory, initialPersonName, initialAmount, initialTitle]);
+  }, [isOpen, initialCategory, initialSubcategory, initialPersonName, initialAmount, initialTitle, initialDate]);
+
+  // Debounced live Smart Categorization as user types merchant/description
+  const liveMerchantText = [
+    title,
+    foodPlace,
+    foodItem,
+    spentAt,
+    spentFor,
+    groceryItem,
+    receivedSource,
+    receivedPurpose,
+    notes,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  useEffect(() => {
+    if (!isOpen || category === 'people' || transactionType === 'transfer') {
+      setSmartSuggestion(null);
+      return;
+    }
+    if (liveMerchantText.length < 3) {
+      setSmartSuggestion(null);
+      return;
+    }
+
+    const det = categorizeTransactionDeterministic(
+      {
+        title: title || foodItem || spentFor || groceryItem,
+        merchant: spentAt || foodPlace || receivedSource,
+        description: liveMerchantText,
+        amount: parseFloat(amount) || undefined,
+      },
+      userCatRules,
+      transactions
+    );
+
+    if (det && !det.needsAiFallback) {
+      setSmartSuggestion(det);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setIsSuggestingAi(true);
+      aiFinanceApi
+        .predictCategory({
+          title: title || foodItem || spentFor || groceryItem,
+          merchant: spentAt || foodPlace || receivedSource,
+          description: liveMerchantText,
+          amount: parseFloat(amount) || undefined,
+        })
+        .then((res) => {
+          if (res.suggestion && res.suggestion.confidence >= 0.55) {
+            setSmartSuggestion(res.suggestion);
+          } else {
+            setSmartSuggestion(null);
+          }
+        })
+        .catch(() => {
+          setSmartSuggestion(null);
+        })
+        .finally(() => setIsSuggestingAi(false));
+    }, 550);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, liveMerchantText, category, transactionType, amount, userCatRules, transactions, title, foodItem, spentFor, groceryItem, spentAt, foodPlace, receivedSource]);
+
+  const handleApplySmartSuggestion = () => {
+    if (!smartSuggestion) return;
+    setCategory(smartSuggestion.category);
+    setSubcategory(smartSuggestion.subcategory);
+    setTransactionType(smartSuggestion.transaction_type);
+    if (smartSuggestion.category === 'food' && !foodItem) {
+      setFoodItem(smartSuggestion.merchant || title || spentFor || groceryItem || 'Meal');
+      if (!foodPlace && spentAt) setFoodPlace(spentAt);
+    } else if (smartSuggestion.category === 'room' && smartSuggestion.subcategory === 'grocery' && !groceryItem) {
+      setGroceryItem(smartSuggestion.merchant || title || spentFor || foodItem || 'Grocery');
+    } else if (smartSuggestion.category === 'other' && !spentAt && !spentFor) {
+      setSpentAt(smartSuggestion.merchant || title || foodPlace || '');
+      setSpentFor(smartSuggestion.suggestedDescription || title || foodItem || '');
+    }
+    setUserAppliedSuggestion(true);
+    toast.success('Category applied', `Set to ${smartSuggestion.displayCategory}.`);
+  };
+
+  const handleDeleteLearnedRule = async (ruleId: string) => {
+    try {
+      const updated = await aiFinanceApi.deleteCategorizationRule(ruleId);
+      setUserCatRules(updated);
+    } catch {
+      // ignore
+    }
+  };
 
   // Adjust subcategory when category changes
   const handleCategoryChange = (cat: TransactionCategory) => {
@@ -418,6 +532,36 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     try {
       setIsSubmitting(true);
       await addTransaction(payload);
+
+      // Learn merchant rule asynchronously (never mutates historical records)
+      const merchantCandidate = (
+        spentAt ||
+        foodPlace ||
+        receivedSource ||
+        groceryItem ||
+        payload.title ||
+        ''
+      ).trim();
+      if (
+        merchantCandidate.length >= 3 &&
+        category !== 'people' &&
+        transactionType !== 'transfer' &&
+        (!smartSuggestion ||
+          !userAppliedSuggestion ||
+          smartSuggestion.category !== category ||
+          smartSuggestion.subcategory !== subcategory)
+      ) {
+        aiFinanceApi
+          .saveCategorizationRule({
+            merchant_pattern: merchantCandidate,
+            category,
+            subcategory,
+            transaction_type: finalType,
+          })
+          .then(setUserCatRules)
+          .catch(() => {});
+      }
+
       toast.success(
         'Transaction Added!',
         `${payload.title} (₹${parsedAmount.toLocaleString('en-IN')}) recorded successfully.`
@@ -459,6 +603,92 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          {/* Quick Smart Actions: Scan Receipt OCR + Learned Rules */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {onOpenReceiptScanner && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenReceiptScanner();
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60 text-xs font-semibold cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Scan Receipt (OCR)</span>
+              </button>
+            )}
+            {userCatRules.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowLearnedRules((v) => !v)}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer ml-auto"
+              >
+                <Sparkles className="w-3 h-3 text-emerald-500" />
+                <span>{showLearnedRules ? 'Hide' : 'Manage'} Learned Rules ({userCatRules.length})</span>
+              </button>
+            )}
+          </div>
+
+          {showLearnedRules && userCatRules.length > 0 && (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5 max-h-32 overflow-y-auto">
+              <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Learned Merchant Rules (applied automatically on future entries)
+              </p>
+              {userCatRules.map((rule) => (
+                <div key={rule.id} className="flex items-center justify-between text-xs py-1">
+                  <span className="truncate text-slate-700 dark:text-slate-300">
+                    <strong>{rule.merchant_pattern}</strong> &rarr; {rule.category}/{rule.subcategory}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteLearnedRule(rule.id)}
+                    className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                    title="Delete rule"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Smart Categorization Live Suggestion Banner */}
+          {(smartSuggestion || isSuggestingAi) && (
+            <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/35 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                {isSuggestingAi ? (
+                  <span className="text-emerald-800 dark:text-emerald-200">Checking smart category suggestion...</span>
+                ) : smartSuggestion ? (
+                  <span className="text-emerald-900 dark:text-emerald-100 truncate">
+                    Suggested: <strong>{smartSuggestion.displayCategory}</strong>{' '}
+                    <span className="opacity-75">
+                      ({Math.round(smartSuggestion.confidence * 100)}% ·{' '}
+                      {smartSuggestion.source === 'user_rule'
+                        ? 'learned rule'
+                        : smartSuggestion.source === 'history'
+                        ? 'your history'
+                        : smartSuggestion.source === 'ai'
+                        ? 'AI'
+                        : 'merchant match'})
+                    </span>
+                  </span>
+                ) : null}
+              </div>
+              {smartSuggestion &&
+                (smartSuggestion.category !== category || smartSuggestion.subcategory !== subcategory) && (
+                  <button
+                    type="button"
+                    onClick={handleApplySmartSuggestion}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shrink-0 cursor-pointer"
+                  >
+                    Apply
+                  </button>
+                )}
+            </div>
+          )}
+
           {/* Transaction Type: Expense / Income / Transfer */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">

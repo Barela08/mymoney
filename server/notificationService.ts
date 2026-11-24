@@ -1,16 +1,20 @@
-import * as webpush from 'web-push';
+import * as webpushModule from 'web-push';
 import { query } from './db';
 import { APP_CONFIG } from './config';
 import { sendEmail } from './email';
 import { generateCampaignEmail } from './notificationEmailTemplates';
 
+const webpush = (webpushModule as any).default || webpushModule;
+
 // Initialize web-push VAPID details
 try {
-  webpush.setVapidDetails(
-    APP_CONFIG.vapid.subject,
-    APP_CONFIG.vapid.publicKey,
-    APP_CONFIG.vapid.privateKey
-  );
+  if (APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey) {
+    webpush.setVapidDetails(
+      APP_CONFIG.vapid.subject,
+      APP_CONFIG.vapid.publicKey,
+      APP_CONFIG.vapid.privateKey
+    );
+  }
 } catch (e) {
   console.warn('[Push] Error configuring VAPID:', e);
 }

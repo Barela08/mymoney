@@ -1,4 +1,4 @@
-import { query } from './db';
+import { query, isDatabaseAvailable } from './db';
 import { generateCryptoToken, hashToken } from './security';
 import type { IncomingMessage } from 'http';
 
@@ -228,6 +228,36 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
 
   const tokenHash = hashToken(token);
 
+  async function resolveSessionViaSupabaseRest(): Promise<AuthenticatedUser | null> {
+    try {
+      const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
+      const supabaseKey =
+        process.env.SUPABASE_SECRET_KEY ||
+        process.env.SUPABASE_PUBLISHABLE_KEY ||
+        'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+      const sessRes = await fetch(
+        `${supabaseUrl}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}&is_revoked=eq.false&select=id,user_id,expires_at`,
+        {
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
+        }
+      );
+      if (sessRes.ok) {
+        const sessRows = await sessRes.json();
+        if (Array.isArray(sessRows) && sessRows.length > 0) {
+          const s = sessRows[0];
+          if (new Date(s.expires_at) >= new Date()) {
+            return await resolveUserViaSupabaseRest(s.user_id);
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  if (!isDatabaseAvailable()) {
+    return await resolveSessionViaSupabaseRest();
+  }
+
   try {
     // Query active session and join with app_users
     const res = await query(
@@ -296,29 +326,7 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
     };
   } catch (err: any) {
     console.warn('authenticateRequest query failed, attempting Supabase REST fallback:', err.message);
-    try {
-      const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
-      const supabaseKey =
-        process.env.SUPABASE_SECRET_KEY ||
-        process.env.SUPABASE_PUBLISHABLE_KEY ||
-        'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
-      const sessRes = await fetch(
-        `${supabaseUrl}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}&is_revoked=eq.false&select=id,user_id,expires_at`,
-        {
-          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
-        }
-      );
-      if (sessRes.ok) {
-        const sessRows = await sessRes.json();
-        if (Array.isArray(sessRows) && sessRows.length > 0) {
-          const s = sessRows[0];
-          if (new Date(s.expires_at) >= new Date()) {
-            return await resolveUserViaSupabaseRest(s.user_id);
-          }
-        }
-      }
-    } catch {}
-    return null;
+    return await resolveSessionViaSupabaseRest();
   }
 }
 
