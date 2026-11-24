@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/lib/financialIntelligenceEngine';
 
-const AI_MODEL = 'gemini-4-hydrogen';
+const AI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const REQUEST_TIMEOUT_MS = 28000;
 
 export interface AiProviderStatus {
@@ -28,7 +28,7 @@ export class AiProviderError extends Error {
 }
 
 function getApiKey(): string {
-  return (process.env.GEMINI_API_KEY || '').trim();
+  return (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
 }
 
 export function getAiProviderStatus(): AiProviderStatus {

@@ -96,7 +96,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       const [convRes, budRes, billRes, goalRes, nwRes, stsRes] = await Promise.all([
         aiFinanceApi.getConversations().catch(async () => {
           const st = await aiFinanceApi.getAiStatus().catch(() => null);
-          return { conversations: [], status: st || { configured: false, provider: 'gemini' as const, model: 'gemini-4-hydrogen', ocrSupported: false } };
+          return { conversations: [], status: st || { configured: false, provider: 'gemini' as const, model: 'gemini-2.5-flash', ocrSupported: false } };
         }),
         budgetApi.getBudgets().catch(() => ({ success: true, budgets: [] })),
         recurringBillsApi.getBills().catch(() => ({ success: true, bills: [] })),
