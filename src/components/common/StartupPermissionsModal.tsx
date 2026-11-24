@@ -20,22 +20,13 @@ export const StartupPermissionsModal: React.FC<StartupPermissionsModalProps> = (
   const [cameraStatus, setCameraStatus] = useState<'default' | 'granted' | 'denied'>('default');
 
   useEffect(() => {
-    // Check initial notification status
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotifStatus(Notification.permission);
     }
 
-    // Check if already handled
-    const handled = localStorage.getItem(PERMISSIONS_STORAGE_KEY);
-    if (forcedIsOpen !== undefined) {
-      setIsVisible(forcedIsOpen);
-    } else if (!handled) {
-      // Delay slightly so it opens smoothly after DPDP consent
-      const timer = setTimeout(() => {
-        setIsVisible(true);
-      }, 700);
-      return () => clearTimeout(timer);
-    }
+    // Never request notification permission automatically on first page load.
+    // Only open when explicitly triggered via forcedIsOpen === true.
+    setIsVisible(forcedIsOpen === true);
   }, [forcedIsOpen]);
 
   const handleGrantPermissions = async () => {

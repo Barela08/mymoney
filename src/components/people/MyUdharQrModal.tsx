@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import {
   X,
@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Smartphone,
   RefreshCw,
+  Link2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -32,11 +33,7 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
   const { setScannerActive } = usePwaInstall();
 
   useEffect(() => {
-    if (isOpen) {
-      setScannerActive(true);
-    } else {
-      setScannerActive(false);
-    }
+    setScannerActive(isOpen);
     return () => setScannerActive(false);
   }, [isOpen, setScannerActive]);
 
@@ -44,63 +41,70 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [qrError, setQrError] = useState<string | null>(null);
-  const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [isCodeCopied, setIsCodeCopied] = useState<boolean>(false);
+  const [isLinkCopied, setIsLinkCopied] = useState<boolean>(false);
   const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
   const [avatarError, setAvatarError] = useState<boolean>(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const displayName = qrInfo?.publicName || user?.displayName || user?.full_name || user?.email?.split('@')[0] || 'User';
+  const displayName =
+    qrInfo?.publicName ||
+    user?.displayName ||
+    user?.full_name ||
+    user?.email?.split('@')[0] ||
+    '';
   const initial = (displayName.charAt(0) || 'U').toUpperCase();
-  const avatarUrl = user?.avatar_url || user?.avatarUrl;
+  const avatarUrl = qrInfo?.avatarUrl || user?.avatar_url || user?.avatarUrl || null;
+  const pairingLink = qrInfo?.pairingCode
+    ? `${window.location.origin}/#pair=${encodeURIComponent(qrInfo.pairingCode)}`
+    : '';
 
-  const handleRegenerateQr = async () => {
-    try {
-      setIsRegenerating(true);
-      setQrError(null);
-      const res = await udharDeletionApi.regenerateQrCode();
-      if (res.success) {
-        setQrInfo(res);
-        const dataUrl = await QRCode.toDataURL(res.qrData, {
-          width: 320,
-          margin: 2,
-          color: { dark: '#0f172a', light: '#ffffff' },
-          errorCorrectionLevel: 'H',
-        });
-        setQrDataUrl(dataUrl);
-        toast.success('Regenerated', 'Fresh QR code generated. Previous codes expired.');
-      }
-    } catch (err: any) {
-      toast.error('Error', err.message || 'Could not regenerate QR code.');
-    } finally {
-      setIsRegenerating(false);
-    }
+  const renderHighResQr = async (payload: string) => {
+    const dataUrl = await QRCode.toDataURL(payload, {
+      width: 640,
+      margin: 2,
+      color: { dark: '#0f172a', light: '#ffffff' },
+      errorCorrectionLevel: 'H',
+    });
+    setQrDataUrl(dataUrl);
   };
 
   const fetchQrCode = async () => {
     try {
       setIsLoading(true);
       setQrError(null);
+      setAvatarError(false);
       const res = await udharDeletionApi.getMyQrCode();
-      if (res.success) {
+      if (res.success && res.qrData) {
         setQrInfo(res);
-        // Generate QR code data URL using qrcode package
-        const dataUrl = await QRCode.toDataURL(res.qrData, {
-          width: 320,
-          margin: 2,
-          color: {
-            dark: '#0f172a',
-            light: '#ffffff',
-          },
-          errorCorrectionLevel: 'H',
-        });
-        setQrDataUrl(dataUrl);
+        await renderHighResQr(res.qrData);
+      } else {
+        setQrError(res.message || 'Unable to retrieve your unique pairing QR from server.');
       }
     } catch (err: any) {
-      const msg = err.message || 'Unable to generate Udhar QR code. Please ensure you are logged in and connected.';
+      const msg =
+        err?.message ||
+        'Unable to load your official Udhar QR code. Please ensure you are logged in and connected.';
       setQrError(msg);
-      toast.error('QR Error', msg);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRegenerateQr = async () => {
+    if (isRegenerating) return;
+    try {
+      setIsRegenerating(true);
+      setQrError(null);
+      const res = await udharDeletionApi.regenerateQrCode();
+      if (res.success && res.qrData) {
+        setQrInfo(res);
+        await renderHighResQr(res.qrData);
+        toast.success('QR Reset Complete', 'New unique QR generated. Previous QR codes are revoked.');
+      }
+    } catch (err: any) {
+      toast.error('Reset Failed', err?.message || 'Could not regenerate QR code.');
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -112,69 +116,146 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopyCode = () => {
+  const handleCopyCode = async () => {
     if (!qrInfo?.pairingCode) return;
-    navigator.clipboard.writeText(qrInfo.pairingCode);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-    toast.success('Copied', `Pairing code ${qrInfo.pairingCode} copied.`);
+    try {
+      await navigator.clipboard.writeText(qrInfo.pairingCode);
+      setIsCodeCopied(true);
+      setTimeout(() => setIsCodeCopied(false), 2000);
+      toast.success('Code Copied', `Pairing code ${qrInfo.pairingCode} copied.`);
+    } catch {
+      toast.error('Copy Failed', 'Could not access clipboard.');
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!pairingLink) return;
+    try {
+      await navigator.clipboard.writeText(pairingLink);
+      setIsLinkCopied(true);
+      setTimeout(() => setIsLinkCopied(false), 2000);
+      toast.success('Link Copied', 'Connection link copied to clipboard.');
+    } catch {
+      toast.error('Copy Failed', 'Could not access clipboard.');
+    }
   };
 
   const handleDownloadQr = () => {
-    if (!qrDataUrl) return;
-    const link = document.createElement('a');
-    link.href = qrDataUrl;
-    link.download = `my_money_qr_${qrInfo?.pairingCode || 'user'}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Downloaded', 'Udhar QR image saved to downloads.');
+    if (!qrDataUrl || !qrInfo) return;
+
+    // Compose high-resolution shareable identity card PNG
+    const canvas = document.createElement('canvas');
+    canvas.width = 760;
+    canvas.height = 920;
+    const ctx = canvas.getContext('2d');
+    const qrImg = new Image();
+
+    qrImg.onload = () => {
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Top accent bar
+        ctx.fillStyle = '#059669';
+        ctx.fillRect(0, 0, canvas.width, 16);
+
+        // App Title
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('My Money Manager', canvas.width / 2, 74);
+
+        // User Name
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '800 36px system-ui, -apple-system, sans-serif';
+        ctx.fillText(displayName || 'Account Holder', canvas.width / 2, 126);
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '500 20px system-ui, -apple-system, sans-serif';
+        ctx.fillText('Scan to connect for 2-Way Shared Udhar', canvas.width / 2, 162);
+
+        // Crisp 560x560 QR
+        ctx.drawImage(qrImg, 100, 195, 560, 560);
+
+        // Pairing Code Footer
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(160, 785, 440, 74);
+        ctx.fillStyle = '#047857';
+        ctx.font = 'bold 30px monospace';
+        ctx.fillText(`Code: ${qrInfo.pairingCode}`, canvas.width / 2, 833);
+
+        const cardUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = cardUrl;
+        link.download = `my_money_qr_${qrInfo.pairingCode}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('QR Downloaded', 'High-resolution My Money Manager QR card saved.');
+      } else {
+        const link = document.createElement('a');
+        link.href = qrDataUrl;
+        link.download = `my_money_qr_${qrInfo.pairingCode}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    };
+    qrImg.src = qrDataUrl;
   };
 
   const handleShareQr = async () => {
     if (!qrInfo) return;
-    const shareText = `Connect with me on My Money Manager for 2-way Udhar tracking!\nMy Pairing Code: ${qrInfo.pairingCode}\nPairing Link: ${window.location.origin}/#pair=${qrInfo.pairingCode}`;
+    const shareText = `Connect with ${displayName} on My Money Manager for 2-way Shared Udhar!\nPairing Code: ${qrInfo.pairingCode}\nConnection Link: ${pairingLink}`;
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'My Udhar QR - My Money Manager',
+          title: `${displayName} — My Money Manager QR`,
           text: shareText,
-          url: `${window.location.origin}/#pair=${qrInfo.pairingCode}`,
+          url: pairingLink,
         });
-        toast.success('Shared', 'Pairing details shared.');
-      } catch (e) {
-        // User cancelled share
+        toast.success('Shared', 'Connection details shared.');
+        return;
+      } catch {
+        // User cancelled share sheet
       }
-    } else {
-      navigator.clipboard.writeText(shareText);
-      toast.success('Copied to Clipboard', 'Share text copied to clipboard.');
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareText);
+      toast.success('Copied to Clipboard', 'Connection details copied to clipboard.');
+    } catch {
+      toast.error('Share Unavailable', 'Could not share or copy details.');
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm sm:max-w-md w-full p-6 border border-slate-200/80 dark:border-slate-800 shadow-xl space-y-4 text-center relative overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-4 text-center relative max-h-[92vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5 text-left">
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20">
-              <QrIcon className="w-4 h-4 stroke-[1.75]" />
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+              <QrIcon className="w-4 h-4 stroke-[2]" />
             </div>
             <div>
-              <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-100">
-                My Udhar QR
+              <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100">
+                My Unique QR
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">One-time user pairing code</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Verified My Money Manager identity
+              </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-            aria-label="Close"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Close My QR Modal"
           >
-            <X className="w-4 h-4 stroke-[1.75]" />
+            <X className="w-4 h-4 stroke-[2]" />
           </button>
         </div>
 
@@ -182,99 +263,132 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
         {isLoading ? (
           <div className="py-16 flex flex-col items-center justify-center space-y-3">
             <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs text-slate-500 font-medium">Generating official pairing QR...</p>
+            <p className="text-xs text-slate-500 font-medium">
+              Loading your unique server-signed QR...
+            </p>
           </div>
         ) : qrError ? (
           <div className="py-10 px-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-center space-y-3 animate-fade-in">
             <p className="text-xs text-rose-700 dark:text-rose-300 font-medium">{qrError}</p>
             <button
+              type="button"
               onClick={fetchQrCode}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5 mx-auto cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Retry Generation</span>
+              <span>Retry</span>
             </button>
           </div>
         ) : (
           <div className="space-y-4">
-            {/* White QR Card Container */}
-            <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs inline-block mx-auto max-w-[240px]">
-              {qrDataUrl && (
-                <img
-                  src={qrDataUrl}
-                  alt="My Udhar QR Code"
-                  className="w-48 h-48 sm:w-52 sm:h-52 object-contain rounded-lg mx-auto"
-                />
-              )}
-            </div>
-
             {/* User Identity Banner */}
-            <div className="flex items-center justify-center gap-2.5">
+            <div className="flex items-center justify-center gap-3">
               {!avatarError && avatarUrl ? (
                 <img
                   src={avatarUrl}
                   alt={displayName}
                   onError={() => setAvatarError(true)}
-                  className="w-9 h-9 rounded-full object-cover border border-emerald-500/30 shrink-0"
+                  className="w-11 h-11 rounded-2xl object-cover border-2 border-emerald-500/40 shrink-0"
                 />
               ) : (
-                <div className="w-9 h-9 rounded-full bg-emerald-600 text-white font-bold text-sm flex items-center justify-center border border-emerald-500/30 shrink-0">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-base flex items-center justify-center border-2 border-emerald-500/30 shrink-0">
                   {initial}
                 </div>
               )}
               <div className="text-left min-w-0">
-                <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-tight truncate max-w-[200px]">
+                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 leading-tight truncate max-w-[210px]">
                   {displayName}
                 </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Scan with My Money Manager to link
-                </p>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>My Money Manager ID</span>
+                </span>
               </div>
             </div>
 
-            {/* Pairing Code Pill */}
+            {/* Pure White High-Contrast QR Card (Always Scannable in Dark Mode) */}
+            <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm inline-block mx-auto">
+              {qrDataUrl && (
+                <img
+                  src={qrDataUrl}
+                  alt={`${displayName} My Money Manager QR Code`}
+                  className="w-52 h-52 sm:w-56 sm:h-56 object-contain rounded-lg mx-auto"
+                />
+              )}
+            </div>
+
+            {/* Pairing Code Pill & Copy Link */}
             {qrInfo?.pairingCode && (
-              <div className="flex items-center justify-center gap-2 py-2 px-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200/80 dark:border-slate-700/80 max-w-xs mx-auto text-xs">
-                <span className="font-medium text-slate-500 dark:text-slate-400">
-                  Pairing code:
-                </span>
-                <span className="font-mono font-semibold text-sm text-emerald-600 dark:text-emerald-400 tracking-wider">
-                  {qrInfo.pairingCode}
-                </span>
+              <div className="space-y-2 max-w-xs mx-auto">
+                <div className="flex items-center justify-between gap-2 py-2 px-3.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-slate-500 dark:text-slate-400">Code:</span>
+                    <span className="font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400 tracking-wider">
+                      {qrInfo.pairingCode}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    {isCodeCopied ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-500" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={handleCopyCode}
-                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer ml-1"
-                  title="Copy Pairing Code"
+                  onClick={handleCopyLink}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/70 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 stroke-[1.75]" />}
+                  {isLinkCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Connection Link Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Copy Connection Link</span>
+                    </>
+                  )}
                 </button>
               </div>
             )}
 
             {/* Security Guarantee */}
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium px-2">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 stroke-[1.75] shrink-0" />
-              <span>Contains secure pairing reference. No sensitive passwords embedded.</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Opaque server-issued token. No personal credentials embedded.</span>
             </div>
 
-            {/* Action Buttons: Download, Share, Regenerate */}
+            {/* Action Buttons: Download, Share, Reset */}
             <div className="grid grid-cols-3 gap-2 pt-1">
               <button
                 type="button"
                 onClick={handleDownloadQr}
-                className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer active:scale-[0.99]"
+                className="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5 stroke-[1.75]" />
+                <Download className="w-3.5 h-3.5" />
                 <span>Download</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleShareQr}
-                className="py-2 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer active:scale-[0.99]"
+                className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm shadow-emerald-600/30"
               >
-                <Share2 className="w-3.5 h-3.5 stroke-[1.75]" />
+                <Share2 className="w-3.5 h-3.5" />
                 <span>Share</span>
               </button>
 
@@ -282,11 +396,13 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
                 type="button"
                 onClick={handleRegenerateQr}
                 disabled={isRegenerating}
-                className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer active:scale-[0.99]"
-                title="Regenerate pairing QR code"
+                className="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                title="Revoke current QR and generate a fresh code"
               >
-                <RefreshCw className={`w-3.5 h-3.5 stroke-[1.75] ${isRegenerating ? 'animate-spin text-emerald-600' : ''}`} />
-                <span>Reset</span>
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin text-emerald-600' : ''}`}
+                />
+                <span>Reset QR</span>
               </button>
             </div>
 
@@ -297,10 +413,10 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
                   onClose();
                   onOpenScanner();
                 }}
-                className="w-full py-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-400 transition-colors flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
+                className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Smartphone className="w-3.5 h-3.5 text-slate-500 stroke-[1.75]" />
-                <span>Scan someone else's QR</span>
+                <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Scan Someone Else&apos;s QR</span>
               </button>
             )}
           </div>

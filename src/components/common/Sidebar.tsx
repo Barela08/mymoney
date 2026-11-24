@@ -27,7 +27,6 @@ import {
   AlertTriangle,
   Utensils,
   Coffee,
-  Download,
   HelpCircle,
   MessageSquare,
   Calculator,
@@ -39,16 +38,24 @@ import {
   Target,
   CalendarClock,
   Bell,
+  Calendar,
+  Landmark,
+  Receipt,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import { usePwaInstall } from '../../context/PwaInstallContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 
 export type NavTab =
   | 'dashboard'
+  | 'ai_assistant'
+  | 'expense_calendar'
+  | 'smart_alerts'
+  | 'receipt_scanner'
+  | 'net_worth'
+  | 'safe_to_spend'
   | 'home'
   | 'room'
   | 'food'
@@ -105,7 +112,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
 
   // Find enabled custom sections that aren't the standard 5 (home, room, food, other, people)
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -132,6 +138,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Overview',
       items: [
         { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
+        { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
+        { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
       ],
     },
     {
@@ -141,6 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
         { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
         { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
+        { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'budget' as NavTab, label: 'Budget Planner', icon: PieChart },
         { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
         { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
@@ -161,6 +171,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Tools',
       items: [
+        { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner', icon: Receipt },
+        { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
         { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
         ...(onOpenMyQr ? [{ id: 'my_qr' as NavTab, label: 'My QR Code', icon: QrCode, onClick: onOpenMyQr }] : []),
         ...(onOpenScanQr ? [{ id: 'scan_qr' as NavTab, label: 'Scan QR Code', icon: ScanLine, onClick: onOpenScanQr }] : []),
@@ -311,28 +323,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer / User Profile & Controls */}
       <div className="p-3.5 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
-        {/* Dedicated Desktop PWA Install Prompt */}
-        {!isInstalled && triggerInstallPrompt && (
-          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                Install App
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                Fast offline desktop access
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={triggerInstallPrompt}
-              className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-            >
-              <Download className="w-3 h-3 stroke-[2]" />
-              <span>Install</span>
-            </button>
-          </div>
-        )}
-
         {/* User Profile Card */}
         <div
           onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}

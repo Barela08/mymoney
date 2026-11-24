@@ -982,7 +982,14 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let totalMoneyGiven = 0;
     let totalMoneyReceived = 0;
 
+    const round2 = (v: number) => Math.round(v * 100) / 100;
+
     for (const tx of userTransactions) {
+      // Transfers between own accounts are never counted as income or expenses
+      if (tx.transaction_type === 'transfer' || tx.metadata?.is_transfer === true) {
+        continue;
+      }
+
       const amt = Number(tx.amount) || 0;
 
       // Handle Received Money (category === 'home' or 'received')
@@ -1028,36 +1035,36 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
-    const totalRoomExpenses = totalGas + totalGrocery + totalRent + totalElectricity;
-    const remainingHomeBalance = totalHomeReceived - totalHomeSpent;
-    const netPeopleBalance = totalMoneyGiven - totalMoneyReceived;
+    const totalRoomExpenses = round2(totalGas + totalGrocery + totalRent + totalElectricity);
+    const remainingHomeBalance = round2(totalHomeReceived - totalHomeSpent);
+    const netPeopleBalance = round2(totalMoneyGiven - totalMoneyReceived);
 
-    const totalExpenses = totalHomeSpent + totalRoomExpenses + totalFoodExpenses + totalOtherExpenses;
+    const totalExpenses = round2(totalHomeSpent + totalRoomExpenses + totalFoodExpenses + totalOtherExpenses);
     // Earned income + Other income (excluding loans/udhar) represents pure income/profit
-    const totalIncome = totalEarnedIncome + totalOtherIncome;
+    const totalIncome = round2(totalEarnedIncome + totalOtherIncome);
     // Available balance reflects actual liquid cash in hand
-    const availableBalance = totalReceivedMoney - totalExpenses;
+    const availableBalance = round2(totalReceivedMoney - totalExpenses);
 
     return {
       totalIncome,
       totalExpenses,
       availableBalance,
-      totalReceivedMoney,
-      totalEarnedIncome,
-      totalOtherIncome,
-      totalBorrowedReceived,
-      totalHomeReceived,
-      totalHomeSpent,
+      totalReceivedMoney: round2(totalReceivedMoney),
+      totalEarnedIncome: round2(totalEarnedIncome),
+      totalOtherIncome: round2(totalOtherIncome),
+      totalBorrowedReceived: round2(totalBorrowedReceived),
+      totalHomeReceived: round2(totalHomeReceived),
+      totalHomeSpent: round2(totalHomeSpent),
       remainingHomeBalance,
-      totalGas,
-      totalGrocery,
-      totalRent,
-      totalElectricity,
+      totalGas: round2(totalGas),
+      totalGrocery: round2(totalGrocery),
+      totalRent: round2(totalRent),
+      totalElectricity: round2(totalElectricity),
       totalRoomExpenses,
-      totalFoodExpenses,
-      totalOtherExpenses,
-      totalMoneyGiven,
-      totalMoneyReceived,
+      totalFoodExpenses: round2(totalFoodExpenses),
+      totalOtherExpenses: round2(totalOtherExpenses),
+      totalMoneyGiven: round2(totalMoneyGiven),
+      totalMoneyReceived: round2(totalMoneyReceived),
       netPeopleBalance,
       totalTransactionsCount: userTransactions.length,
     };

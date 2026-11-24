@@ -31,6 +31,7 @@ import { StartupPermissionsModal } from './components/common/StartupPermissionsM
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
 import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
+import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
@@ -45,9 +46,36 @@ const BudgetSection = lazy(() => import('./components/budget/BudgetSection').the
 const SavingsGoalsSection = lazy(() => import('./components/savings/SavingsGoalsSection').then(m => ({ default: m.SavingsGoalsSection })));
 const RecurringBillsSection = lazy(() => import('./components/bills/RecurringBillsSection').then(m => ({ default: m.RecurringBillsSection })));
 const NotificationsSection = lazy(() => import('./components/notifications/NotificationsSection').then(m => ({ default: m.NotificationsSection })));
+const AiAssistantSection = lazy(() => import('./components/ai/AiAssistantSection').then(m => ({ default: m.AiAssistantSection })));
+const ExpenseCalendarSection = lazy(() => import('./components/calendar/ExpenseCalendarSection').then(m => ({ default: m.ExpenseCalendarSection })));
+const SmartAlertsSection = lazy(() => import('./components/alerts/SmartAlertsSection').then(m => ({ default: m.SmartAlertsSection })));
+const ReceiptScannerSection = lazy(() => import('./components/receipts/ReceiptScannerSection').then(m => ({ default: m.ReceiptScannerSection })));
+const NetWorthSection = lazy(() => import('./components/net-worth/NetWorthSection').then(m => ({ default: m.NetWorthSection })));
+const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToSpendSection').then(m => ({ default: m.SafeToSpendSection })));
 const HelpSupportModal = lazy(() => import('./components/support/HelpSupportModal').then(m => ({ default: m.HelpSupportModal })));
 const NotificationCenterModal = lazy(() => import('./components/notifications/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
+
+const PATH_TO_TAB: Record<string, NavTab> = {
+  '/admin': 'admin',
+  '/ai-assistant': 'ai_assistant',
+  '/expense-calendar': 'expense_calendar',
+  '/smart-alerts': 'smart_alerts',
+  '/receipt-scanner': 'receipt_scanner',
+  '/net-worth': 'net_worth',
+  '/safe-to-spend': 'safe_to_spend',
+};
+
+const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
+  dashboard: '/',
+  admin: '/admin',
+  ai_assistant: '/ai-assistant',
+  expense_calendar: '/expense-calendar',
+  smart_alerts: '/smart-alerts',
+  receipt_scanner: '/receipt-scanner',
+  net_worth: '/net-worth',
+  safe_to_spend: '/safe-to-spend',
+};
 
 const SectionFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-20 min-h-[300px] space-y-3 animate-pulse">
@@ -61,24 +89,46 @@ const MainContent: React.FC = () => {
   const { maintenanceSettings, dynamicSections, refreshTransactions } = useExpense();
   const toast = useToast();
 
-  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
+  const [currentTab, setCurrentTabState] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
+      const p = window.location.pathname.replace(/\/+$/, '') || '/';
       const hash = window.location.hash;
-      if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+      if (p === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
         return 'admin';
       }
       if (hash === '#privacy-policy') return 'privacy_policy';
       if (hash === '#delete-account') return 'settings';
       if (hash.includes('legal=')) return 'legal';
+      return PATH_TO_TAB[p] || 'dashboard';
     }
     return 'dashboard';
   });
+  const [aiInitialPrompt, setAiInitialPrompt] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const setCurrentTab = (tab: NavTab) => {
+    setCurrentTabState(tab);
+    const targetPath = TAB_TO_PATH[tab];
+    if (targetPath && window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    } else if (!targetPath && PATH_TO_TAB[window.location.pathname]) {
+      window.history.pushState(null, '', '/');
+    }
+  };
+
+  useEffect(() => {
+    const onPopState = () => {
+      const p = window.location.pathname.replace(/\/+$/, '') || '/';
+      setCurrentTabState(PATH_TO_TAB[p] || 'dashboard');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // Global QR Modals State
   const [isMyQrOpen, setIsMyQrOpen] = useState(false);
   const [isScanQrOpen, setIsScanQrOpen] = useState(false);
+  const [initialPairCode, setInitialPairCode] = useState<string | null>(null);
   const [initialLegalPolicy, setInitialLegalPolicy] = useState('privacy_policy');
 
   // Notification Center & Preferences Modals State
@@ -122,6 +172,14 @@ const MainContent: React.FC = () => {
           setInitialLegalPolicy(policy);
           setCurrentTab('legal');
         }
+      } else if (hash.includes('pair=')) {
+        const pairCode = hash.split('pair=')[1]?.split('&')[0]?.trim();
+        if (pairCode) {
+          setInitialPairCode(decodeURIComponent(pairCode));
+          setCurrentTab('people');
+          setIsScanQrOpen(true);
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
       } else if (hash === '#privacy-policy') {
         setCurrentTab('privacy_policy');
       } else if (hash === '#delete-account') {
@@ -141,6 +199,7 @@ const MainContent: React.FC = () => {
   const [modalInitialPerson, setModalInitialPerson] = useState<string | undefined>(undefined);
   const [modalInitialAmount, setModalInitialAmount] = useState<string | undefined>(undefined);
   const [modalInitialTitle, setModalInitialTitle] = useState<string | undefined>(undefined);
+  const [modalInitialDate, setModalInitialDate] = useState<string | undefined>(undefined);
 
   // Help & Feedback Modal State
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
@@ -174,14 +233,22 @@ const MainContent: React.FC = () => {
     subcategory?: TransactionSubcategory,
     personName?: string,
     amount?: number | string,
-    title?: string
+    title?: string,
+    dateKey?: string
   ) => {
-    setModalInitialCategory(category);
+    const validCategories: TransactionCategory[] = ['home', 'room', 'food', 'other', 'people', 'received'];
+    setModalInitialCategory(validCategories.includes(category) ? category : 'other');
     setModalInitialSubcategory(subcategory);
     setModalInitialPerson(personName);
     setModalInitialAmount(amount !== undefined ? String(amount) : undefined);
     setModalInitialTitle(title);
+    setModalInitialDate(dateKey);
     setIsAddModalOpen(true);
+  };
+
+  const handleAskAiPrompt = (prompt: string) => {
+    setAiInitialPrompt(prompt);
+    setCurrentTab('ai_assistant');
   };
 
   // Loading state
@@ -292,7 +359,39 @@ const MainContent: React.FC = () => {
                       onNavigate={setCurrentTab}
                       onOpenAddModal={handleOpenAddModal}
                       onOpenScanQr={() => setIsScanQrOpen(true)}
+                      onAskAiPrompt={handleAskAiPrompt}
                     />
+                  )}
+
+                  {currentTab === 'ai_assistant' && (
+                    <AiAssistantSection
+                      initialPrompt={aiInitialPrompt}
+                      onClearInitialPrompt={() => setAiInitialPrompt(null)}
+                    />
+                  )}
+
+                  {currentTab === 'expense_calendar' && (
+                    <ExpenseCalendarSection
+                      onOpenAddModalForDate={(dateKey) =>
+                        handleOpenAddModal('other', undefined, undefined, undefined, undefined, dateKey)
+                      }
+                    />
+                  )}
+
+                  {currentTab === 'smart_alerts' && (
+                    <SmartAlertsSection onSelectTab={setCurrentTab} />
+                  )}
+
+                  {currentTab === 'receipt_scanner' && (
+                    <ReceiptScannerSection />
+                  )}
+
+                  {currentTab === 'net_worth' && (
+                    <NetWorthSection />
+                  )}
+
+                  {currentTab === 'safe_to_spend' && (
+                    <SafeToSpendSection onSelectTab={setCurrentTab} />
                   )}
 
                   {currentTab === 'home' && (
@@ -407,6 +506,8 @@ const MainContent: React.FC = () => {
           initialPersonName={modalInitialPerson}
           initialAmount={modalInitialAmount}
           initialTitle={modalInitialTitle}
+          initialDate={modalInitialDate}
+          onOpenReceiptScanner={() => setCurrentTab('receipt_scanner')}
         />
 
         <Suspense fallback={null}>
@@ -432,10 +533,16 @@ const MainContent: React.FC = () => {
           {/* Scan QR Modal */}
           <ScanQrModal
             isOpen={isScanQrOpen}
-            onClose={() => setIsScanQrOpen(false)}
+            initialPairCode={initialPairCode}
+            onClose={() => {
+              setIsScanQrOpen(false);
+              setInitialPairCode(null);
+            }}
             onConnected={(person) => {
               setIsScanQrOpen(false);
-              handleOpenAddModal('people', undefined, person.name);
+              setInitialPairCode(null);
+              setCurrentTab('people');
+              toast.success('Connected!', `${person.name} is now connected for 2-way Shared Udhar.`);
             }}
           />
 
@@ -480,7 +587,9 @@ export default function App() {
           <ExpenseProvider>
             <PwaInstallProvider>
               <NotificationProvider>
-                <MainContent />
+                <AppErrorBoundary>
+                  <MainContent />
+                </AppErrorBoundary>
                 <PwaInstallBanner />
                 <PwaInstallModal />
               </NotificationProvider>

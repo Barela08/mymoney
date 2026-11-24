@@ -1,6 +1,13 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import {
+  DEFAULT_DISMISS_COOLDOWN_MS,
+  detectPlatformCompatibility,
+  isInstallSuggestionSuppressed,
+  isRunningStandalone,
+  PlatformCompatibilityInfo,
+} from '../lib/pwaUtils';
 
-interface BeforeInstallPromptEvent extends Event {
+export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
   readonly userChoice: Promise<{
     outcome: 'accepted' | 'dismissed';
@@ -9,16 +16,35 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+export type InstallPromptResult =
+  | { status: 'accepted' }
+  | { status: 'dismissed' }
+  | { status: 'manual_guide' }
+  | { status: 'already_installed' }
+  | { status: 'unavailable' };
+
 interface PwaInstallContextType {
+  /** Native beforeinstallprompt event has been captured and is ready to invoke */
   isInstallable: boolean;
+  /** App is confirmed installed (standalone display mode or appinstalled event fired) */
   isInstalled: boolean;
+  /** Legacy convenience flag for iOS Safari */
   isIOS: boolean;
+  /** Detailed browser/OS compatibility metadata */
+  compatibility: PlatformCompatibilityInfo;
+  /** True when the header Install App button should be displayed */
+  canOfferInstall: boolean;
+  /** Modal state for manual instructions or install confirmation */
   isModalOpen: boolean;
   openInstallModal: () => void;
   closeInstallModal: () => void;
-  triggerInstallPrompt: () => Promise<void>;
+  /** Triggers native browser install prompt when supported, otherwise opens platform-specific guide */
+  triggerInstallPrompt: () => Promise<InstallPromptResult>;
+  /** True when the user dismissed an install suggestion during this session or cooldown window */
   isBannerDismissed: boolean;
+  /** Dismiss install prompt/suggestion without installing */
   dismissBanner: () => void;
+  /** Reset dismissal state if user explicitly re-opens install UI */
   isScannerActive: boolean;
   setScannerActive: (active: boolean) => void;
   activeModalCount: number;
@@ -28,91 +54,156 @@ interface PwaInstallContextType {
 
 const PwaInstallContext = createContext<PwaInstallContextType | undefined>(undefined);
 
-const DISMISSED_STORAGE_KEY = 'my_money_pwa_install_dismissed';
-// 14 days dismissal cooldown period
-const DISMISS_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
+const DISMISSED_STORAGE_KEY = 'my_money_pwa_install_dismissed_at';
+const SESSION_DISMISSED_KEY = 'my_money_pwa_install_session_dismissed';
+
+function readPersistedDismissedAt(): number | null {
+  try {
+    const raw = localStorage.getItem(DISMISSED_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readSessionDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_DISMISSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallable, setIsInstallable] = useState<boolean>(false);
-  const [isInstalled, setIsInstalled] = useState<boolean>(false);
-  const [isIOS, setIsIOS] = useState<boolean>(false);
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => isRunningStandalone());
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
   const [activeModalCount, setActiveModalCount] = useState<number>(0);
 
-  const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(DISMISSED_STORAGE_KEY);
-      if (saved) {
-        const time = parseInt(saved, 10);
-        if (!isNaN(time)) {
-          // Banner dismissed within the 14-day window
-          return Date.now() - time < DISMISS_COOLDOWN_MS;
-        }
-      }
-      return false;
-    } catch {
-      return false;
+  const [sessionDismissed, setSessionDismissed] = useState<boolean>(() => readSessionDismissed());
+  const [persistedDismissedAt, setPersistedDismissedAt] = useState<number | null>(() =>
+    readPersistedDismissedAt()
+  );
+
+  const compatibility = useMemo<PlatformCompatibilityInfo>(() => {
+    if (typeof window === 'undefined') {
+      return detectPlatformCompatibility('');
     }
-  });
+    return detectPlatformCompatibility(
+      window.navigator.userAgent || '',
+      window.navigator.maxTouchPoints || 0
+    );
+  }, []);
+
+  const isIOS = compatibility.platform === 'ios_safari';
 
   useEffect(() => {
-    // Check if running in standalone mode (already installed PWA)
-    const checkStandalone = () => {
-      const isStandalone =
-        window.matchMedia('(display-mode: standalone)').matches ||
-        (window.navigator as any).standalone === true ||
-        document.referrer.includes('android-app://');
-      setIsInstalled(isStandalone);
+    if (typeof window === 'undefined') return;
+
+    const updateStandalone = () => {
+      const standalone = isRunningStandalone();
+      if (standalone) {
+        setIsInstalled(true);
+        setDeferredPrompt(null);
+        setIsModalOpen(false);
+      }
     };
 
-    checkStandalone();
+    updateStandalone();
 
-    // Check iOS device
-    const ua = window.navigator.userAgent.toLowerCase();
-    const isIosDevice = /iphone|ipad|ipod/.test(ua);
-    setIsIOS(isIosDevice);
+    // Check installed related apps on Chromium where supported
+    const navWithRelated = navigator as Navigator & {
+      getInstalledRelatedApps?: () => Promise<Array<{ platform: string; url?: string }>>;
+    };
+    if (typeof navWithRelated.getInstalledRelatedApps === 'function') {
+      navWithRelated
+        .getInstalledRelatedApps()
+        .then((apps) => {
+          if (Array.isArray(apps) && apps.length > 0) {
+            setIsInstalled(true);
+            setDeferredPrompt(null);
+          }
+        })
+        .catch(() => {});
+    }
 
-    // Listen for beforeinstallprompt event (Chromium, Android, Edge, Desktop Chrome)
+    const standaloneMql = window.matchMedia?.('(display-mode: standalone)');
+    const handleDisplayModeChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        setIsInstalled(true);
+        setDeferredPrompt(null);
+        setIsModalOpen(false);
+      }
+    };
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setIsInstallable(true);
+      if (!isRunningStandalone()) {
+        setDeferredPrompt(e as BeforeInstallPromptEvent);
+      }
     };
 
-    // Listen for appinstalled event
     const handleAppInstalled = () => {
       setIsInstalled(true);
-      setIsInstallable(false);
       setDeferredPrompt(null);
       setIsModalOpen(false);
-      console.log('[PWA] App successfully installed!');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
+    standaloneMql?.addEventListener?.('change', handleDisplayModeChange);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
+      standaloneMql?.removeEventListener?.('change', handleDisplayModeChange);
     };
   }, []);
 
-  const openInstallModal = useCallback(() => {
-    setIsModalOpen(true);
+  const isInstallable = Boolean(deferredPrompt) && !isInstalled;
+
+  // Show the header Install App button ONLY when not installed AND either:
+  // 1) Browser fired native `beforeinstallprompt` (Chrome/Edge Desktop & Android), OR
+  // 2) Browser is Safari iOS/iPadOS or Safari macOS where manual Home Screen/Dock installation is supported.
+  const canOfferInstall =
+    !isInstalled &&
+    (isInstallable ||
+      compatibility.platform === 'ios_safari' ||
+      compatibility.platform === 'macos_safari');
+
+  const isBannerDismissed = useMemo(
+    () =>
+      isInstallSuggestionSuppressed({
+        sessionDismissed,
+        persistedDismissedAt,
+        cooldownMs: DEFAULT_DISMISS_COOLDOWN_MS,
+      }),
+    [sessionDismissed, persistedDismissedAt]
+  );
+
+  const dismissBanner = useCallback(() => {
+    const now = Date.now();
+    setSessionDismissed(true);
+    setPersistedDismissedAt(now);
+    setIsModalOpen(false);
+    try {
+      sessionStorage.setItem(SESSION_DISMISSED_KEY, 'true');
+      localStorage.setItem(DISMISSED_STORAGE_KEY, String(now));
+    } catch {
+      // Ignore storage quota errors
+    }
   }, []);
+
+  const openInstallModal = useCallback(() => {
+    if (isInstalled) return;
+    setIsModalOpen(true);
+  }, [isInstalled]);
 
   const closeInstallModal = useCallback(() => {
     setIsModalOpen(false);
-  }, []);
-
-  // Dismissing only hides the banner and saves timestamp; never triggers prompt, modal or redirects
-  const dismissBanner = useCallback(() => {
-    setIsBannerDismissed(true);
-    try {
-      localStorage.setItem(DISMISSED_STORAGE_KEY, Date.now().toString());
-    } catch {}
   }, []);
 
   const setScannerActive = useCallback((active: boolean) => {
@@ -123,33 +214,48 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setActiveModalCount((prev) => (suppressed ? prev + 1 : Math.max(0, prev - 1)));
   }, []);
 
-  const triggerInstallPrompt = useCallback(async () => {
+  const triggerInstallPrompt = useCallback(async (): Promise<InstallPromptResult> => {
+    if (isInstalled) {
+      return { status: 'already_installed' };
+    }
+
     if (deferredPrompt) {
       try {
         await deferredPrompt.prompt();
-        const choiceResult = await deferredPrompt.userChoice;
-        if (choiceResult.outcome === 'accepted') {
-          setIsInstalled(true);
-          setIsInstallable(false);
-          setIsModalOpen(false);
-        }
+        const choice = await deferredPrompt.userChoice;
+        // Per Chromium spec, each BeforeInstallPromptEvent can only be used once
         setDeferredPrompt(null);
-      } catch (err) {
-        console.warn('[PWA] Prompt trigger notice:', err);
-        setIsModalOpen(true);
-      }
-    } else {
-      // If deferred prompt is not natively available (e.g. iOS Safari or manual instruction), show guide modal
-      setIsModalOpen(true);
-    }
-  }, [deferredPrompt]);
 
-  // Banner is visible only if:
-  // 1. Not already installed / not standalone
-  // 2. Not dismissed within cooldown
-  // 3. Scanner / camera is not active
-  // 4. No full modals active
-  const isBannerVisible = !isInstalled && !isBannerDismissed && !isScannerActive && activeModalCount === 0;
+        if (choice.outcome === 'accepted') {
+          // Wait for `appinstalled` to confirm, while closing our modal immediately.
+          // Note: We do NOT fake success if the user cancels.
+          setIsModalOpen(false);
+          return { status: 'accepted' };
+        }
+
+        // User dismissed/cancelled native prompt: do NOT mark installed; record dismissal
+        dismissBanner();
+        return { status: 'dismissed' };
+      } catch (err) {
+        console.warn('[PWA] Native install prompt notice:', err);
+        setDeferredPrompt(null);
+        setIsModalOpen(true);
+        return { status: 'manual_guide' };
+      }
+    }
+
+    // Native prompt unavailable (e.g., iOS Safari, macOS Safari, or manual guide requested)
+    if (compatibility.supportsManualInstall) {
+      setIsModalOpen(true);
+      return { status: 'manual_guide' };
+    }
+
+    return { status: 'unavailable' };
+  }, [isInstalled, deferredPrompt, dismissBanner, compatibility.supportsManualInstall]);
+
+  // Promotional suggestion visibility (never shown if installed or dismissed)
+  const isBannerVisible =
+    canOfferInstall && !isBannerDismissed && !isScannerActive && activeModalCount === 0;
 
   return (
     <PwaInstallContext.Provider
@@ -157,6 +263,8 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isInstallable,
         isInstalled,
         isIOS,
+        compatibility,
+        canOfferInstall,
         isModalOpen,
         openInstallModal,
         closeInstallModal,

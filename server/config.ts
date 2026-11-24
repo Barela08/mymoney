@@ -1,5 +1,32 @@
 import fs from 'fs';
 import path from 'path';
+import * as webpushModule from 'web-push';
+
+const webpush = (webpushModule as any).default || webpushModule;
+
+function isValidVapidKeyPair(publicKey?: string, privateKey?: string): boolean {
+  if (!publicKey || !privateKey) return false;
+  try {
+    const pubBytes = Buffer.from(publicKey.trim(), 'base64url');
+    const privBytes = Buffer.from(privateKey.trim(), 'base64url');
+    return pubBytes.length === 65 && privBytes.length === 32;
+  } catch {
+    return false;
+  }
+}
+
+function resolveVapidKeys(): { publicKey: string; privateKey: string; isPersistent: boolean } {
+  const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
+  const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
+  if (isValidVapidKeyPair(envPublic, envPrivate)) {
+    return { publicKey: envPublic!, privateKey: envPrivate!, isPersistent: true };
+  }
+  const g = globalThis as { __myMoneyVapidKeys?: { publicKey: string; privateKey: string } };
+  if (!g.__myMoneyVapidKeys) {
+    g.__myMoneyVapidKeys = webpush.generateVAPIDKeys();
+  }
+  return { ...g.__myMoneyVapidKeys, isPersistent: false };
+}
 
 // Parse .env if not loaded
 try {
@@ -39,7 +66,7 @@ export const APP_CONFIG = {
   supportPhoneRaw: '+917414935405',
   supportWhatsAppUrl:
     'https://wa.me/917414935405?text=Hello%20HackifyPro%20Support%20Team%2C%0A%0AI%20need%20assistance%20regarding%20My%20Money%20Manager%20app.%20I%20have%20a%20query%20and%20would%20like%20some%20help.%0A%0APlease%20guide%20me%20regarding%20my%20issue.%0A%0AThank%20you.',
-  appLoginUrl: process.env.APP_LOGIN_URL || 'http://localhost:5173/#login',
+  appLoginUrl: process.env.APP_LOGIN_URL || 'http://localhost:3000/#login',
   appLogoUrl: process.env.APP_LOGO_URL || '',
   footerCopyright: `© ${new Date().getFullYear()} My Money Manager · Powered by HackifyPro`,
   
@@ -53,16 +80,16 @@ export const APP_CONFIG = {
     from: process.env.SMTP_FROM || '"My Money Manager" <hackifypro@gmail.com>',
   },
 
-  // Web Push VAPID Configuration
-  vapid: {
-    publicKey:
-      process.env.VAPID_PUBLIC_KEY ||
-      'BO9W43xYOjB1hjIt5iqTHA0Q0hFRnYOGXZqVc_UJoIkVgd5tbnDdewJG6tmbmoaXjxjsihA1uTxMC4h2MxMqYn4',
-    privateKey:
-      process.env.VAPID_PRIVATE_KEY ||
-      '7TH3qBHXc-OcLSgsdqizeRZym3jPEvnHBImAalNdQhY',
-    subject: process.env.VAPID_SUBJECT || 'mailto:hackifypro@gmail.com',
-  },
+  // Web Push VAPID Configuration (validated env keys or runtime-generated ephemeral keypair)
+  vapid: (() => {
+    const keys = resolveVapidKeys();
+    return {
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      isPersistent: keys.isPersistent,
+      subject: process.env.VAPID_SUBJECT || 'mailto:hackifypro@gmail.com',
+    };
+  })(),
 } as const;
 
 export type AppConfig = typeof APP_CONFIG;

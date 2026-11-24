@@ -2,7 +2,7 @@
   "id": "/",
   "name": "My Money Manager",
   "short_name": "My Money",
-  "description": "Smart personal money, expense, room budget and people udhar manager by HackifyPro.",
+  "description": "Smart personal money, expense, budget, recurring bills and people udhar manager by HackifyPro.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -32,24 +32,19 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/logo.jpg",
-      "sizes": "512x512",
-      "type": "image/jpeg",
-      "purpose": "any"
     }
   ],
   "shortcuts": [
     {
       "name": "Add Transaction",
-      "short_name": "+ Add",
-      "description": "Record a new expense or income",
+      "short_name": "Add",
+      "description": "Record a new income or expense",
       "url": "/#add",
       "icons": [
         {
           "src": "/icon-192.png",
-          "sizes": "192x192"
+          "sizes": "192x192",
+          "type": "image/png"
         }
       ]
     },
@@ -61,7 +56,34 @@
       "icons": [
         {
           "src": "/icon-192.png",
-          "sizes": "192x192"
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Safe-to-Spend",
+      "short_name": "Safe Cash",
+      "description": "Check safe spendable balance",
+      "url": "/safe-to-spend",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Smart Alerts",
+      "short_name": "Alerts",
+      "description": "Review budget and bill alerts",
+      "url": "/smart-alerts",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
         }
       ]
     }

@@ -1,5 +1,4 @@
-import { getStoredSessionToken, getStoredAuthUser } from './authApi';
-import { getSupabaseClient } from './supabase';
+import { getStoredSessionToken } from './authApi';
 
 export interface DeletionStatusResponse {
   success: boolean;
@@ -43,10 +42,14 @@ export interface SearchUserResult {
   id: string;
   displayName: string;
   fullName: string;
+  username?: string | null;
   email?: string;
   emailMasked: string;
   phoneMasked?: string | null;
   avatarUrl?: string | null;
+  isSelf?: boolean;
+  isVerified?: boolean;
+  connectionStatus?: 'self' | 'connected' | 'pending' | 'none';
   isAlreadyConnected?: boolean;
   isSavedContact?: boolean;
 }
@@ -56,12 +59,15 @@ export interface MyQrCodeResponse {
   pairingToken: string;
   pairingCode: string;
   publicName: string;
+  avatarUrl?: string | null;
   qrData: string;
   expiresAt: string;
+  message?: string;
 }
 
 export interface ResolveQrResponse {
   success: boolean;
+  code?: string;
   message?: string;
   owner?: {
     id: string;
@@ -78,6 +84,16 @@ export interface ResolveQrResponse {
   isAlreadyConnected?: boolean;
 }
 
+export interface ConnectedPersonPayload {
+  id: string;
+  name: string;
+  displayName: string;
+  fullName?: string;
+  emailMasked?: string;
+  phoneMasked?: string | null;
+  avatarUrl?: string | null;
+}
+
 export interface UdharRepayment {
   id: string;
   link_id: string;
@@ -86,8 +102,11 @@ export interface UdharRepayment {
   recorded_by_name?: string;
   amount: number | string;
   repayment_date: string;
-  payment_method?: 'UPI' | 'Cash' | 'Bank Transfer' | string;
-  notes?: string;
+  repayment_time?: string | null;
+  payment_method?: 'UPI' | 'Cash' | 'Bank Transfer' | 'Card' | 'Wallet' | 'Other' | string;
+  transaction_ref?: string | null;
+  attachment_url?: string | null;
+  notes?: string | null;
   status: 'pending_confirmation' | 'confirmed' | 'rejected' | string;
   rejection_reason?: string | null;
   confirmed_at?: string | null;
@@ -126,6 +145,10 @@ export interface UdharTransactionItem {
   original_amount: number | string;
   current_balance: number | string;
   paid_amount?: number | string;
+  category?: string;
+  payment_method?: string;
+  description?: string | null;
+  clean_notes?: string | null;
   transaction_date: string;
   due_date?: string | null;
   notes?: string | null;
@@ -150,15 +173,20 @@ export interface UdharSummaryData {
   totalBorrowed: number;
   outstandingReceivable: number;
   outstandingPayable: number;
+  netBalance: number;
   settledAmount: number;
   overdueAmount: number;
+  totalConnectedPeople?: number;
+  totalManualPeople?: number;
+  peopleWithActiveUdhar?: number;
+  pendingConfirmationsCount?: number;
 }
 
 async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredSessionToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
 
   if (token && !headers['Authorization']) {
@@ -177,20 +205,21 @@ async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}):
   if (contentType.includes('application/json')) {
     try {
       data = await res.json();
-    } catch (e) {
-      data = { success: false, message: 'Invalid response from server' };
+    } catch {
+      data = { success: false, message: 'Invalid JSON response from server.' };
     }
   } else {
-    const err = new Error(`Server returned non-JSON response (${res.status})`);
+    const err = new Error(`Server returned non-JSON response (${res.status}).`);
     (err as any).status = res.status;
     (err as any).isNonJson = true;
     throw err;
   }
 
   if (!res.ok) {
-    const errorMsg = data?.message || data?.error || `Request failed with status ${res.status}`;
+    const errorMsg = data?.message || data?.error || `Request failed with status ${res.status}.`;
     const err = new Error(errorMsg);
     (err as any).status = res.status;
+    (err as any).code = data?.code;
     (err as any).data = data;
     throw err;
   }
@@ -231,47 +260,24 @@ export const udharDeletionApi = {
   },
 
   // -------------------------------------------------------------
-  // Saved Contacts (People)
+  // Saved Contacts & Explicit User Connections (Real Server Data Only)
   // -------------------------------------------------------------
   async getContacts(): Promise<{ success: boolean; contacts: UdharContact[] }> {
-    try {
-      const res = await apiRequest('/api/udhar/contacts', { method: 'GET' });
-      if (res && res.success && Array.isArray(res.contacts)) {
-        try {
-          const authUser = getStoredAuthUser();
-          const userId = authUser?.id || authUser?.uid || 'guest';
-          localStorage.setItem(`mymoney_cached_contacts_${userId}`, JSON.stringify(res.contacts));
-        } catch {}
-        return res;
-      }
-      return res;
-    } catch (err: any) {
-      console.warn('Backend getContacts notice, falling back to local cache:', err.message);
-      try {
-        const authUser = getStoredAuthUser();
-        const userId = authUser?.id || authUser?.uid || 'guest';
-        const cached = localStorage.getItem(`mymoney_cached_contacts_${userId}`);
-        if (cached) {
-          return { success: true, contacts: JSON.parse(cached) };
-        }
-      } catch {}
-      return { success: true, contacts: [] };
-    }
+    return apiRequest('/api/udhar/contacts', { method: 'GET' });
   },
 
   async getContactsWithBalances(): Promise<{ success: boolean; contacts: UdharContact[] }> {
-    try {
-      const res = await apiRequest('/api/udhar/contacts/with-balances', { method: 'GET' });
-      if (res && res.success && Array.isArray(res.contacts)) {
-        return res;
-      }
-      return await this.getContacts();
-    } catch {
-      return await this.getContacts();
-    }
+    return apiRequest('/api/udhar/contacts/with-balances', { method: 'GET' });
   },
 
-  async inviteContact(contactId: string): Promise<{ success: boolean; message: string; inviteLink?: string; emailSent?: boolean }> {
+  async inviteContact(contactId: string): Promise<{
+    success: boolean;
+    message: string;
+    inviteLink?: string;
+    emailSent?: boolean;
+    alreadyRegistered?: boolean;
+    linkedUserId?: string;
+  }> {
     return apiRequest(`/api/udhar/contacts/${contactId}/invite`, { method: 'POST' });
   },
 
@@ -279,50 +285,15 @@ export const udharDeletionApi = {
     name: string;
     email?: string;
     phone?: string;
+    photo_url?: string | null;
     relationship_type?: string;
     notes?: string;
-    linked_user_id?: string;
+    linked_user_id?: string | null;
   }): Promise<{ success: boolean; contact: UdharContact; reciprocallyLinked?: boolean }> {
-    try {
-      const res = await apiRequest('/api/udhar/contacts', {
-        method: 'POST',
-        body: JSON.stringify(contact),
-      });
-      if (res && res.contact) {
-        try {
-          const authUser = getStoredAuthUser();
-          const userId = authUser?.id || authUser?.uid || 'guest';
-          const key = `mymoney_cached_contacts_${userId}`;
-          const existing: UdharContact[] = JSON.parse(localStorage.getItem(key) || '[]');
-          const updated = [res.contact, ...existing.filter((c) => c.name.toLowerCase() !== res.contact.name.toLowerCase())];
-          localStorage.setItem(key, JSON.stringify(updated));
-        } catch {}
-      }
-      return res;
-    } catch (err: any) {
-      console.warn('Backend saveContact notice, saving locally:', err.message);
-      const authUser = getStoredAuthUser();
-      const userId = authUser?.id || authUser?.uid || 'guest';
-      const key = `mymoney_cached_contacts_${userId}`;
-      const newContact: UdharContact = {
-        id: `local_${Date.now()}`,
-        user_id: userId,
-        name: contact.name,
-        email: contact.email,
-        phone: contact.phone,
-        relationship_type: contact.relationship_type || 'Friend',
-        notes: contact.notes,
-        linked_user_id: contact.linked_user_id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      try {
-        const existing: UdharContact[] = JSON.parse(localStorage.getItem(key) || '[]');
-        const updated = [newContact, ...existing.filter((c) => c.name.toLowerCase() !== newContact.name.toLowerCase())];
-        localStorage.setItem(key, JSON.stringify(updated));
-      } catch {}
-      return { success: true, contact: newContact, reciprocallyLinked: Boolean(contact.linked_user_id) };
-    }
+    return apiRequest('/api/udhar/contacts', {
+      method: 'POST',
+      body: JSON.stringify(contact),
+    });
   },
 
   async updateContact(
@@ -331,9 +302,10 @@ export const udharDeletionApi = {
       name: string;
       email?: string;
       phone?: string;
+      photo_url?: string | null;
       relationship_type?: string;
       notes?: string;
-      linked_user_id?: string;
+      linked_user_id?: string | null;
     }>
   ): Promise<{ success: boolean; contact: UdharContact; reciprocallyLinked?: boolean }> {
     return apiRequest(`/api/udhar/contacts/${id}`, {
@@ -356,129 +328,43 @@ export const udharDeletionApi = {
     });
   },
 
-  // -------------------------------------------------------------
-  // User Search
-  // -------------------------------------------------------------
-  async searchUsers(queryStr: string): Promise<{ success: boolean; users: SearchUserResult[] }> {
-    return apiRequest(`/api/udhar/users/search?q=${encodeURIComponent(queryStr)}`, {
-      method: 'GET',
+  async connectUser(payload: {
+    targetUserId: string;
+    relationshipType?: string;
+  }): Promise<{
+    success: boolean;
+    alreadyConnected?: boolean;
+    message: string;
+    connectedUser: ConnectedPersonPayload;
+  }> {
+    return apiRequest('/api/udhar/connections/connect', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
   // -------------------------------------------------------------
-  // QR Pairing
+  // Live Registered User Search (Abortable, Zero Fake Data)
+  // -------------------------------------------------------------
+  async searchUsers(
+    queryStr: string,
+    signal?: AbortSignal
+  ): Promise<{ success: boolean; users: SearchUserResult[] }> {
+    return apiRequest(`/api/udhar/users/search?q=${encodeURIComponent(queryStr)}`, {
+      method: 'GET',
+      signal,
+    });
+  },
+
+  // -------------------------------------------------------------
+  // Unique Server-Backed QR Identity & Pairing (Zero Fake Fallbacks)
   // -------------------------------------------------------------
   async getMyQrCode(): Promise<MyQrCodeResponse> {
-    const authUser = getStoredAuthUser();
-    const userId = authUser?.id || authUser?.uid || 'guest';
-    const cacheKey = `mymoney_qr_cache_${userId}`;
-
-    // 1. Try server endpoint
-    try {
-      const res = await apiRequest('/api/udhar/qr/my-code', { method: 'GET' });
-      if (res && res.success && res.qrData) {
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(res));
-        } catch {}
-        return res;
-      }
-    } catch (err: any) {
-      console.warn('[QR Service] Server getMyQrCode notice, falling back:', err.message);
-    }
-
-    // 2. Try cached QR token
-    try {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed: MyQrCodeResponse = JSON.parse(cached);
-        if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() > Date.now()) {
-          return parsed;
-        }
-      }
-    } catch {}
-
-    // 3. Fallback: generate resilient pairing QR code for the authenticated user
-    const cleanId = userId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
-    const pairingCode = `MM-${cleanId || 'PAIR'}`;
-    const pairingToken = `token_${userId.slice(0, 12)}_${cleanId}`;
-    const publicName = authUser?.displayName || authUser?.full_name || authUser?.email?.split('@')[0] || 'User';
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    const qrPayload = JSON.stringify({
-      app: 'my-money',
-      v: 2,
-      type: 'udhar-pair',
-      token: pairingToken,
-      code: pairingCode,
-      uid: userId,
-      name: publicName,
-      exp: new Date(expiresAt).getTime(),
-    });
-
-    const fallbackRes: MyQrCodeResponse = {
-      success: true,
-      pairingToken,
-      pairingCode,
-      publicName,
-      qrData: qrPayload,
-      expiresAt,
-    };
-
-    try {
-      localStorage.setItem(cacheKey, JSON.stringify(fallbackRes));
-    } catch {}
-
-    return fallbackRes;
+    return apiRequest('/api/udhar/qr/my-code', { method: 'GET' });
   },
 
   async regenerateQrCode(): Promise<MyQrCodeResponse> {
-    const authUser = getStoredAuthUser();
-    const userId = authUser?.id || authUser?.uid || 'guest';
-    const cacheKey = `mymoney_qr_cache_${userId}`;
-
-    try {
-      const res = await apiRequest('/api/udhar/qr/regenerate', { method: 'POST' });
-      if (res && res.success && res.qrData) {
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(res));
-        } catch {}
-        return res;
-      }
-    } catch (err: any) {
-      console.warn('[QR Service] Server regenerateQrCode notice, generating fresh token:', err.message);
-    }
-
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const pairingCode = `MM-${randomSuffix}`;
-    const pairingToken = `token_${userId.slice(0, 8)}_${randomSuffix}_${Date.now()}`;
-    const publicName = authUser?.displayName || authUser?.full_name || authUser?.email?.split('@')[0] || 'User';
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    const qrPayload = JSON.stringify({
-      app: 'my-money',
-      v: 2,
-      type: 'udhar-pair',
-      token: pairingToken,
-      code: pairingCode,
-      uid: userId,
-      name: publicName,
-      exp: new Date(expiresAt).getTime(),
-    });
-
-    const fallbackRes: MyQrCodeResponse = {
-      success: true,
-      pairingToken,
-      pairingCode,
-      publicName,
-      qrData: qrPayload,
-      expiresAt,
-    };
-
-    try {
-      localStorage.setItem(cacheKey, JSON.stringify(fallbackRes));
-    } catch {}
-
-    return fallbackRes;
+    return apiRequest('/api/udhar/qr/regenerate', { method: 'POST' });
   },
 
   async resolveQrCode(payload: {
@@ -486,161 +372,37 @@ export const udharDeletionApi = {
     pairingToken?: string;
     pairingCode?: string;
   }): Promise<ResolveQrResponse> {
-    try {
-      return await apiRequest('/api/udhar/qr/resolve', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    } catch (err: any) {
-      // If server unreachable, check if qrData contains client-verified payload
-      if (payload.qrData) {
-        try {
-          const parsed = JSON.parse(payload.qrData);
-          if (parsed.app === 'my-money' && (parsed.uid || parsed.name)) {
-            const authUser = getStoredAuthUser();
-            if (parsed.uid && (parsed.uid === authUser?.id || parsed.uid === authUser?.uid)) {
-              const errSelf = new Error('You cannot scan your own pairing QR code.');
-              (errSelf as any).code = 'SELF_SCAN';
-              throw errSelf;
-            }
-            return {
-              success: true,
-              owner: {
-                id: parsed.uid || `user_${parsed.code || 'partner'}`,
-                displayName: parsed.name || 'Partner',
-                fullName: parsed.name || 'Partner',
-                emailMasked: `${parsed.name || 'user'}@...`,
-                avatarUrl: null,
-                isVerified: true,
-              },
-              pairingToken: parsed.token || payload.pairingToken,
-              pairingCode: parsed.code || payload.pairingCode,
-              isAlreadyConnected: false,
-            };
-          }
-        } catch (e: any) {
-          if (e.code === 'SELF_SCAN') throw e;
-        }
-      }
-      throw err;
-    }
+    return apiRequest('/api/udhar/qr/resolve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   async connectViaQr(payload: {
     pairingToken?: string;
     pairingCode?: string;
     relationshipType?: string;
-  }): Promise<{ success: boolean; message: string; connectedUser: { id: string; displayName: string } }> {
-    return await apiRequest('/api/udhar/qr/connect', {
+  }): Promise<{
+    success: boolean;
+    alreadyConnected?: boolean;
+    message: string;
+    connectedUser: ConnectedPersonPayload;
+  }> {
+    return apiRequest('/api/udhar/qr/connect', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
 
   // -------------------------------------------------------------
-  // Udhar Transactions
+  // Shared Canonical Udhar Transactions & Repayments
   // -------------------------------------------------------------
   async getUdharTransactions(): Promise<{
     success: boolean;
     transactions: UdharTransactionItem[];
     summary: UdharSummaryData;
   }> {
-    try {
-      return await apiRequest('/api/udhar/transactions', { method: 'GET' });
-    } catch (err: any) {
-      console.warn('Backend udhar transactions API unreachable, falling back to Supabase:', err.message);
-      const client = getSupabaseClient();
-      const storedUser = getStoredAuthUser();
-      const defaultSummary: UdharSummaryData = {
-        totalLent: 0,
-        totalBorrowed: 0,
-        outstandingReceivable: 0,
-        outstandingPayable: 0,
-        settledAmount: 0,
-        overdueAmount: 0,
-      };
-
-      if (!client || !storedUser) {
-        return { success: true, transactions: [], summary: defaultSummary };
-      }
-
-      const { data, error } = await client
-        .from('transactions')
-        .select('*')
-        .eq('category', 'people')
-        .eq('is_deleted', false)
-        .order('transaction_date', { ascending: false });
-
-      if (error || !data) {
-        return { success: true, transactions: [], summary: defaultSummary };
-      }
-
-      const todayStr = new Date().toISOString().split('T')[0];
-      let totalLent = 0;
-      let totalBorrowed = 0;
-      let outstandingReceivable = 0;
-      let outstandingPayable = 0;
-      let settledAmount = 0;
-      let overdueAmount = 0;
-
-      const items: UdharTransactionItem[] = data.map((row: any) => {
-        const amt = Number(row.amount) || 0;
-        const isGave = row.transaction_type === 'expense';
-        const direction: 'gave' | 'took' = isGave ? 'gave' : 'took';
-        const isSettled = Boolean(row.metadata?.is_settled);
-        const curBal = isSettled ? 0 : amt;
-        const dueDate = row.metadata?.due_date || null;
-        const isOverdue = dueDate && dueDate < todayStr && !isSettled;
-
-        if (direction === 'gave') {
-          totalLent += amt;
-          if (isSettled) settledAmount += amt;
-          else {
-            outstandingReceivable += amt;
-            if (isOverdue) overdueAmount += amt;
-          }
-        } else {
-          totalBorrowed += amt;
-          if (isSettled) settledAmount += amt;
-          else {
-            outstandingPayable += amt;
-            if (isOverdue) overdueAmount += amt;
-          }
-        }
-
-        return {
-          id: row.id,
-          link_id: row.metadata?.link_id || row.id,
-          user_id: row.user_id,
-          counterpart_name: row.person_name || 'Person',
-          direction,
-          original_amount: amt,
-          current_balance: curBal,
-          status: isSettled ? 'settled' : 'confirmed',
-          confirmation_status: isSettled ? 'confirmed' : 'confirmed',
-          transaction_date: row.transaction_date,
-          due_date: dueDate,
-          notes: row.notes,
-          is_initiator: true,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          repayments: [],
-        };
-      });
-
-      return {
-        success: true,
-        transactions: items,
-        summary: {
-          totalLent,
-          totalBorrowed,
-          outstandingReceivable,
-          outstandingPayable,
-          settledAmount,
-          overdueAmount,
-        },
-      };
-    }
+    return apiRequest('/api/udhar/transactions', { method: 'GET' });
   },
 
   async createUdharTransaction(payload: {
@@ -648,159 +410,63 @@ export const udharDeletionApi = {
     counterpart_user_id?: string | null;
     direction: 'gave' | 'took';
     amount: number;
+    category?: string;
+    payment_method?: string;
+    description?: string;
     transaction_date?: string;
     due_date?: string | null;
     notes?: string;
     attachment_url?: string | null;
+    idempotency_key?: string;
   }): Promise<{
     success: boolean;
+    deduplicated?: boolean;
     message: string;
     transaction: UdharTransactionItem;
     isLinked: boolean;
   }> {
-    try {
-      return await apiRequest('/api/udhar/transactions', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    } catch (err: any) {
-      console.warn('Backend udhar create API unreachable, saving directly to Supabase:', err.message);
-      const client = getSupabaseClient();
-      const storedUser = getStoredAuthUser();
-      if (!client) throw err;
-
-      const nowIso = new Date().toISOString();
-      const txDate = payload.transaction_date || nowIso.split('T')[0];
-      const txTime = new Date().toTimeString().split(' ')[0].slice(0, 5);
-
-      const txPayload = {
-        user_id: storedUser?.id || storedUser?.uid || null,
-        user_email: storedUser?.email || null,
-        category: 'people',
-        subcategory: 'other',
-        transaction_type: payload.direction === 'gave' ? 'expense' : 'income',
-        amount: payload.amount,
-        title: `${payload.direction === 'gave' ? 'Money Lent to' : 'Money Borrowed from'} ${payload.counterpart_name}`,
-        person_name: payload.counterpart_name,
-        transaction_date: txDate,
-        transaction_time: txTime,
-        notes: payload.notes || null,
-        is_deleted: false,
-        metadata: {
-          direction: payload.direction,
-          due_date: payload.due_date || null,
-          is_settled: false,
-        },
-        created_at: nowIso,
-        updated_at: nowIso,
-      };
-
-      const { data, error } = await client.from('transactions').insert([txPayload]).select().single();
-      if (error) throw error;
-
-      return {
-        success: true,
-        message: 'Transaction saved successfully.',
-        isLinked: false,
-        transaction: {
-          id: data.id,
-          link_id: data.id,
-          user_id: data.user_id,
-          counterpart_name: payload.counterpart_name,
-          direction: payload.direction,
-          original_amount: payload.amount,
-          current_balance: payload.amount,
-          status: 'confirmed',
-          confirmation_status: 'confirmed',
-          transaction_date: txDate,
-          due_date: payload.due_date || null,
-          notes: payload.notes,
-          is_initiator: true,
-          created_at: nowIso,
-          updated_at: nowIso,
-        },
-      };
-    }
+    return apiRequest('/api/udhar/transactions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   async confirmUdharTransaction(id: string): Promise<{ success: boolean; message: string }> {
-    try {
-      return await apiRequest(`/api/udhar/transactions/${id}/confirm`, {
-        method: 'POST',
-      });
-    } catch (err: any) {
-      const client = getSupabaseClient();
-      if (!client) throw err;
-      await client.from('transactions').update({ updated_at: new Date().toISOString() }).eq('id', id);
-      return { success: true, message: 'Transaction confirmed.' };
-    }
+    return apiRequest(`/api/udhar/transactions/${id}/confirm`, { method: 'POST' });
   },
 
-  async disputeUdharTransaction(
-    id: string,
-    reason: string
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await apiRequest(`/api/udhar/transactions/${id}/dispute`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-      });
-    } catch (err: any) {
-      const client = getSupabaseClient();
-      if (!client) throw err;
-      await client.from('transactions').update({
-        updated_at: new Date().toISOString(),
-        metadata: { dispute_reason: reason },
-      }).eq('id', id);
-      return { success: true, message: 'Dispute recorded.' };
-    }
+  async disputeUdharTransaction(id: string, reason: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest(`/api/udhar/transactions/${id}/dispute`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
   },
 
   async repayUdharTransaction(
     id: string,
-    payload: { amount: number; repayment_date?: string; notes?: string; payment_method?: string }
+    payload: {
+      amount: number;
+      repayment_date?: string;
+      repayment_time?: string;
+      payment_method?: string;
+      transaction_ref?: string;
+      notes?: string;
+      attachment_url?: string | null;
+      idempotency_key?: string;
+    }
   ): Promise<{
     success: boolean;
+    deduplicated?: boolean;
     message: string;
     remainingBalance: number;
     isSettled: boolean;
     isPendingConfirmation?: boolean;
     repayment?: UdharRepayment;
   }> {
-    try {
-      return await apiRequest(`/api/udhar/transactions/${id}/repay`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    } catch (err: any) {
-      console.warn('Backend repay API unreachable, updating directly in Supabase:', err.message);
-      const client = getSupabaseClient();
-      if (!client) throw err;
-
-      const { data: tx, error: fetchErr } = await client.from('transactions').select('*').eq('id', id).single();
-      if (fetchErr || !tx) throw fetchErr || new Error('Transaction not found');
-
-      const originalAmt = Number(tx.amount) || 0;
-      const repaidSoFar = Number(tx.metadata?.repaid_amount || 0) + payload.amount;
-      const remainingBal = Math.max(0, originalAmt - repaidSoFar);
-      const isSettled = remainingBal <= 0.01;
-
-      await client.from('transactions').update({
-        updated_at: new Date().toISOString(),
-        metadata: {
-          ...(tx.metadata || {}),
-          repaid_amount: repaidSoFar,
-          is_settled: isSettled,
-        },
-      }).eq('id', id);
-
-      return {
-        success: true,
-        message: isSettled ? 'Loan fully cleared and marked as settled!' : `Repayment recorded.`,
-        remainingBalance: remainingBal,
-        isSettled,
-      };
-    }
+    return apiRequest(`/api/udhar/transactions/${id}/repay`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   async confirmRepayment(repaymentId: string): Promise<{
@@ -809,9 +475,7 @@ export const udharDeletionApi = {
     remainingBalance?: number;
     isSettled?: boolean;
   }> {
-    return apiRequest(`/api/udhar/repayments/${repaymentId}/confirm`, {
-      method: 'POST',
-    });
+    return apiRequest(`/api/udhar/repayments/${repaymentId}/confirm`, { method: 'POST' });
   },
 
   async rejectRepayment(repaymentId: string, reason: string): Promise<{
@@ -829,10 +493,13 @@ export const udharDeletionApi = {
     id: string,
     payload: {
       amount?: number;
+      category?: string;
+      payment_method?: string;
+      description?: string;
       notes?: string;
       transaction_date?: string;
       due_date?: string | null;
-      reason_for_edit?: string;
+      reason_for_edit: string;
     }
   ): Promise<{
     success: boolean;
@@ -852,14 +519,12 @@ export const udharDeletionApi = {
     editHistory: UdharEditHistoryItem[];
     repayments: UdharRepayment[];
   }> {
-    return apiRequest(`/api/udhar/transactions/${id}/history`, {
-      method: 'GET',
-    });
+    return apiRequest(`/api/udhar/transactions/${id}/history`, { method: 'GET' });
   },
 
   async settleUdharTransaction(
     id: string,
-    payload?: { notes?: string; settlement_date?: string }
+    payload?: { notes?: string; settlement_date?: string; payment_method?: string }
   ): Promise<{ success: boolean; message: string; isSettled: boolean }> {
     return apiRequest(`/api/udhar/transactions/${id}/settle`, {
       method: 'POST',
@@ -868,8 +533,6 @@ export const udharDeletionApi = {
   },
 
   async cancelUdharTransaction(id: string): Promise<{ success: boolean; message: string }> {
-    return apiRequest(`/api/udhar/transactions/${id}`, {
-      method: 'DELETE',
-    });
+    return apiRequest(`/api/udhar/transactions/${id}`, { method: 'DELETE' });
   },
 };

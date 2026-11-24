@@ -1,0 +1,1733 @@
+# MY MONEY MANAGER — COMPLETE PEOPLE, LIVE SEARCH, QR CONNECTION & SHARED UDHAR SYSTEM
+
+## MASTER IMPLEMENTATION PROMPT
+
+**Project:** My Money Manager  
+**Brand:** My Money Manager by HackifyPro  
+**Website:** https://mymoney-two-rho.vercel.app/
+
+---
+
+## 1. OBJECTIVE
+
+Perform a complete audit, fix, upgrade, and implementation of the existing My Money Manager application’s:
+
+- People system
+- Add People
+- Instant Live Search
+- QR Code Generation
+- QR Scanner
+- User Connection System
+- Shared Udhar / Borrowing & Lending
+- Repayment
+- Partial Repayment
+- Settlement
+- Edit / Correction
+- Notifications
+- Real-time Synchronization
+- People-wise Ledger
+- Transaction History
+- Security and Database Integrity
+
+This is an existing application. Do not create a separate application or unnecessarily rewrite the project.
+
+First inspect the existing architecture, frontend, backend, authentication, database, navigation, transaction models, realtime infrastructure, notification system, and current implementations.
+
+Implement the complete feature using the existing architecture and technologies.
+
+**Do not just provide a plan. Implement the actual working features.**
+
+---
+
+# 2. PEOPLE MODULE — COMPLETE REDESIGN
+
+Create a fully functional People module that serves as the central system for managing connections and shared financial records.
+
+## People Dashboard
+
+Show:
+
+- Total connected people
+- People with active Udhar
+- Total You'll Receive
+- Total You'll Pay
+- Net balance
+- Recent people activity
+
+Provide:
+
+- Search People
+- Add People
+- Scan QR
+- My QR
+- People List
+- Active Udhar
+- Settled History
+
+Use a clean, modern, responsive interface.
+
+Avoid unnecessary cards, oversized headings, excessive colors, and clutter.
+
+---
+
+# 3. ADD PEOPLE — THREE CONNECTION METHODS
+
+The Add People screen must contain three primary methods.
+
+### A. Search People
+Find registered users through live search.
+
+### B. Scan QR
+Scan another user's unique QR code and resolve their actual profile.
+
+### C. Add Manually
+Add a person who is not registered in My Money Manager.
+
+All three methods must integrate with the same People and Udhar ecosystem.
+
+---
+
+# 4. INSTANT LIVE SEARCH — CRITICAL REQUIREMENT
+
+Implement real-time search results while the user is typing.
+
+## Expected behavior
+
+When the user opens Add People and enters text into the search input, matching results must automatically appear below the search box.
+
+No Search button should be required.
+
+Examples:
+
+- Type `Rah` → show matching Rahul users.
+- Type `Rahul` → show matching Rahul profiles.
+- Type a partial email → show matching registered users.
+- Type a mobile number → search according to permitted discoverability rules.
+- Delete text → results automatically update.
+- Change query → previous results disappear and new results load.
+
+## Search requirements
+
+- Search by name.
+- Search by partial name.
+- Search by email where privacy rules allow.
+- Search by mobile number where privacy rules allow.
+- Case-insensitive matching.
+- Trim whitespace.
+- Handle partial queries.
+- Handle Unicode names.
+- Support Indian names and international names.
+- Search must work with actual database users.
+- No fake, static, hardcoded or dummy search results.
+
+## Performance
+
+Implement:
+
+- Debounced search: approximately 250–350 ms.
+- Cancellation or ignoring of outdated requests.
+- Avoid duplicate API requests.
+- Pagination or reasonable result limits.
+- Efficient server-side queries.
+- Loading state.
+- No-result state.
+- Error state.
+- Retry action.
+
+When a user changes the search query quickly, results from an older query must never overwrite the latest results.
+
+## Search UI states
+
+### Initial state
+Display:
+
+- Search input
+- Scan QR option
+- Add Manually option
+- Helpful empty-state message
+
+### Searching state
+Show subtle loading indicator or skeleton rows.
+
+### Results state
+
+Each user result should show:
+
+- Profile photo
+- Actual profile name
+- Verified/registered status if available
+- Relevant secondary information, subject to privacy
+- Connection status
+- Add / Connect action
+
+### No results
+
+Display:
+
+"No people found"
+
+Actions:
+
+- Try another search
+- Add Person Manually
+
+### Already connected
+
+Display:
+
+- Connected
+- Open Profile
+
+Do not show another Add button.
+
+### Pending request
+
+Display:
+
+- Request Sent
+- Cancel Request if supported
+
+### Self-search
+
+Show:
+
+- You
+
+Do not allow users to connect with their own account.
+
+### Error state
+
+Display a meaningful error and Retry option.
+
+Do not silently convert backend errors into "No results found."
+
+---
+
+# 5. USER CONNECTION SYSTEM
+
+Implement a secure and reliable connection system.
+
+## Connection workflow
+
+1. User searches for another registered user.
+2. User selects a profile.
+3. Show a confirmation screen with the real identity.
+4. User clicks Connect.
+5. Backend validates the connection.
+6. Connection is created according to the application's connection policy.
+7. People lists update.
+8. The connected person becomes available in Udhar.
+9. Notification is delivered if notifications are supported.
+10. Realtime updates appear without refresh.
+
+## Connection statuses
+
+Support appropriate states:
+
+- Not Connected
+- Pending
+- Connected
+- Request Sent
+- Request Received
+- Blocked
+- Removed
+
+Use the existing connection architecture if one exists.
+
+Prevent:
+
+- Duplicate connections
+- Self-connections
+- Invalid user IDs
+- Unauthorized connections
+- Connecting to deleted accounts
+- Connecting blocked accounts
+- Repeated connection requests
+
+Both users must have a consistent connection state.
+
+---
+
+# 6. MY QR — UNIQUE QR FOR EVERY USER
+
+Implement a dedicated My QR screen.
+
+Every registered account must have its own unique QR identity.
+
+## My QR screen
+
+Display:
+
+- Actual profile photo
+- Actual user name
+- My Money Manager identity
+- Unique QR code
+- Share QR
+- Download QR
+- Scan QR
+- Copy/share connection link if supported
+
+QR must be unique per account.
+
+Never use:
+
+- One common QR for all users
+- Hardcoded user identities
+- Guest fallback identity
+- Random IDs generated only on the frontend
+- Direct exposure of sensitive personal information
+- Easily enumerable sequential user IDs
+
+## QR design
+
+Use a reliable QR implementation.
+
+Ensure:
+
+- QR is readable on small screens.
+- Downloaded QR maintains sufficient resolution.
+- QR works in dark and light environments.
+- QR is compatible with external scanning apps where intended.
+- QR payload is validated.
+- QR can be shared safely.
+
+## QR token architecture
+
+Prefer a secure opaque QR token or verified QR payload.
+
+The QR should contain only the minimum information required to resolve the user.
+
+The backend must resolve the token to the actual authenticated account.
+
+If token rotation, revocation, or expiry is appropriate for the existing architecture, implement it properly.
+
+Do not put financial records, passwords, authentication tokens, private contact information, or sensitive profile information directly into the QR code.
+
+---
+
+# 7. QR SCANNER — FULL FUNCTIONAL IMPLEMENTATION
+
+Implement a working camera-based QR scanner.
+
+## Scanner features
+
+- Request camera permission.
+- Open camera correctly.
+- Prefer rear camera on mobile devices.
+- Scan QR in real time.
+- Detect QR without requiring a photo.
+- Stop scanning after a valid scan.
+- Prevent duplicate scan events.
+- Show scanner frame.
+- Show scanning guidance.
+- Handle invalid QR.
+- Handle expired or revoked QR.
+- Handle camera permission denied.
+- Handle unavailable camera.
+- Handle network failure.
+- Allow cancel/back.
+- Clean up camera streams when closing the scanner.
+- Do not keep camera running in the background after leaving the screen.
+
+Where supported:
+
+- Flashlight / Torch
+- Switch camera
+- Manual camera selection
+
+## Mobile support
+
+Test:
+
+- Android Chrome
+- Android installed PWA
+- iOS Safari where supported
+- Desktop webcam
+
+Use proper camera permissions and HTTPS requirements.
+
+---
+
+# 8. QR SCAN — PROFILE RESOLUTION
+
+After QR detection:
+
+1. Extract QR payload.
+2. Validate payload format.
+3. Send payload to backend.
+4. Verify token and identity server-side.
+5. Fetch actual profile.
+6. Check account availability.
+7. Check whether user is self.
+8. Check whether connection already exists.
+9. Check whether connection is blocked.
+10. Return the correct response.
+
+## Profile confirmation screen
+
+Show:
+
+- Real name
+- Actual profile photo if available
+- Registered user indicator
+- Connection status
+- Connect Person button
+- Cancel button
+
+Do not display:
+
+- Guest when a real user exists
+- Fake identity
+- Incorrect email
+- Incorrect photo
+- Another person's profile
+
+If identity cannot be verified, show a real error.
+
+Never silently fallback to a generic Guest profile.
+
+---
+
+# 9. ADD PERSON MANUALLY
+
+Users must be able to add people who are not registered.
+
+Form:
+
+- Name — required
+- Mobile — optional
+- Email — optional
+- Note — optional
+- Profile image — optional
+
+## Manual person rules
+
+A manually added contact is a local contact unless a verified registered-account connection is established.
+
+Do not pretend that an unregistered contact is synchronized across two My Money Manager accounts.
+
+Allow:
+
+- Local People list
+- Create Udhar record
+- Edit contact
+- Search
+- Delete/archive contact
+- Invite to My Money Manager if invitation functionality is available
+
+If the contact later registers:
+
+- Offer verified account linking.
+- Never automatically merge accounts based solely on similar names.
+- Validate ownership of phone/email where necessary.
+- Preserve existing financial history.
+- Prevent duplicate people and duplicate ledgers.
+
+---
+
+# 10. SHARED UDHAR — CORE REQUIREMENT
+
+This is the most important part of the implementation.
+
+## RULE
+
+If two users are connected, and either user adds Udhar involving the other user, that Udhar must automatically appear in both accounts.
+
+There must not be two independent Udhar entries.
+
+There must be one canonical shared Udhar record with correct lender and borrower identities.
+
+The same record must be displayed from each user's perspective.
+
+## Example
+
+User A and User B are connected.
+
+User A gives User B ₹5,000.
+
+User A creates:
+
+- Person: User B
+- Direction: I Gave Money
+- Amount: ₹5,000
+- Reason: Personal Loan
+- Date: Today
+
+After saving:
+
+### User A sees
+
+- You'll Receive: ₹5,000
+- Given Udhar: ₹5,000
+- Person: User B
+- Status: Outstanding
+
+### User B sees
+
+- You'll Pay: ₹5,000
+- Taken Udhar: ₹5,000
+- Person: User A
+- Status: Outstanding
+
+The entry must automatically appear in both accounts.
+
+User B must not manually recreate the transaction.
+
+---
+
+# 11. UDHAR DIRECTION LOGIC
+
+Use canonical lender and borrower fields.
+
+Never rely only on a frontend label such as "Given" or "Taken."
+
+## Scenario 1 — User A gives money to User B
+
+Canonical record:
+
+- Lender = User A
+- Borrower = User B
+- Amount = ₹1,000
+
+User A sees:
+
+- Given
+- You'll Receive
+- Receivable ₹1,000
+
+User B sees:
+
+- Taken
+- You'll Pay
+- Payable ₹1,000
+
+## Scenario 2 — User B gives money to User A
+
+Canonical record:
+
+- Lender = User B
+- Borrower = User A
+- Amount = ₹1,000
+
+User A sees:
+
+- Taken
+- You'll Pay
+- Payable ₹1,000
+
+User B sees:
+
+- Given
+- You'll Receive
+- Receivable ₹1,000
+
+The direction must always be correct for both users.
+
+---
+
+# 12. ADD UDHAR FORM
+
+Create a clean and easy-to-use Add Udhar flow.
+
+## Fields
+
+- Person
+- Direction
+  - I Gave Money
+  - I Took Money
+- Amount
+- Date
+- Reason / Category
+- Description
+- Payment method
+- Due date — optional
+- Note — optional
+- Attachment / receipt — optional
+
+## Udhar categories
+
+- Personal Loan
+- Emergency
+- Business
+- Family
+- Shopping
+- Medical
+- Education
+- Travel
+- Rent
+- Other
+
+## Payment methods
+
+- Cash
+- UPI
+- Bank Transfer
+- Card
+- Wallet
+- Other
+
+## UX requirements
+
+- Amount should be the first prominent field.
+- Amount input must be easy on mobile.
+- Do not show unnecessary fields.
+- Category selection must be simple.
+- Optional fields should be expandable.
+- Save action must be clear.
+- Prevent double submission.
+- Show success feedback.
+- Navigate to the correct Udhar details page after saving.
+
+## Connected user behavior
+
+When the selected person is a connected registered user:
+
+- Create a shared canonical record.
+- Both accounts must receive the same record.
+- Calculate lender and borrower from the selected direction.
+- Send notifications to both parties as appropriate.
+- Update both dashboards.
+- Update both People pages.
+- Update both Udhar totals.
+- Update both history lists.
+
+## Manual contact behavior
+
+When the selected person is not a registered connected user:
+
+- Create a local ledger record.
+- Display the record only in the owner's account.
+- Clearly identify it as a local/manual ledger.
+- Do not falsely claim that the other person has received the entry.
+- Allow invitation or linking if supported.
+
+---
+
+# 13. SHARED UDHAR — REALTIME SYNCHRONIZATION
+
+Implement actual synchronization, not a fake frontend update.
+
+Whenever a shared Udhar is created:
+
+- Save to the canonical backend record.
+- Verify successful persistence.
+- Publish realtime update.
+- Update lender's account.
+- Update borrower's account.
+- Update People page.
+- Update active Udhar.
+- Update balance summaries.
+- Update recent activity.
+- Update notifications.
+
+## Realtime should cover
+
+- New Udhar
+- Repayment initiated
+- Repayment confirmed
+- Partial repayment
+- Settlement
+- Authorized edits
+- Corrections
+- Cancellation
+- Due date changes
+- Status changes
+
+Users must not need to refresh the page.
+
+If realtime is temporarily unavailable:
+
+- Maintain correct backend state.
+- Retry connection where appropriate.
+- Reconcile stale state.
+- Avoid duplicate records.
+- Display appropriate connection status only when useful.
+
+---
+
+# 14. REPAYMENT SYSTEM
+
+Repayment must be recorded as a separate event.
+
+Never overwrite the original Udhar amount.
+
+## Example
+
+Original Udhar: ₹5,000
+
+Borrower repays ₹2,000.
+
+After confirmed repayment:
+
+- Original amount: ₹5,000
+- Total repaid: ₹2,000
+- Remaining amount: ₹3,000
+
+Lender sees:
+
+- You will receive: ₹3,000 remaining
+
+Borrower sees:
+
+- You will pay: ₹3,000 remaining
+
+Both users see the same repayment event in the ledger.
+
+## Repayment form
+
+- Amount
+- Payment method
+- Repayment date/time
+- Transaction reference / UTR — optional
+- Note — optional
+- Attachment — optional
+
+Validate:
+
+- Repayment amount greater than zero.
+- Repayment cannot exceed remaining balance unless an explicitly authorized correction process exists.
+- Prevent duplicate submissions.
+- Handle concurrent repayment safely.
+- Maintain complete history.
+
+## Repayment statuses
+
+Where needed, support:
+
+- Initiated
+- Pending Confirmation
+- Confirmed
+- Rejected
+- Cancelled
+
+---
+
+# 15. REPAYMENT CONFIRMATION — PREVENT FALSE SETTLEMENT
+
+For shared Udhar, repayment confirmation must be reliable.
+
+The borrower may initiate repayment.
+
+The lender should confirm that money has actually been received if the workflow requires confirmation.
+
+Do not let the borrower falsely mark the lender's account as paid without appropriate confirmation.
+
+After confirmation:
+
+- Update canonical remaining amount.
+- Update both user views.
+- Add immutable repayment history.
+- Send notifications.
+- Update receivable/payable summaries.
+
+Support partial repayments.
+
+Example:
+
+Original amount: ₹10,000
+
+Repayment 1: ₹2,000
+
+Repayment 2: ₹3,000
+
+Remaining: ₹5,000
+
+All events must remain visible in history.
+
+---
+
+# 16. SETTLEMENT SYSTEM
+
+When remaining Udhar becomes zero:
+
+- Status = Settled.
+- Remaining amount = ₹0.
+- Move it from Active Udhar to Settled History.
+- Preserve original record.
+- Preserve all repayment history.
+- Update both users.
+- Send settlement notification.
+- Prevent accidental duplicate settlement.
+
+Do not delete settled records.
+
+Provide:
+
+- Settlement date
+- Original amount
+- Total repayments
+- Settlement details
+- Complete transaction history
+
+Both users must see consistent settlement status.
+
+---
+
+# 17. EDIT / CORRECTION / CANCELLATION
+
+Implement authorized correction workflows.
+
+## Edit
+
+Where editing is allowed:
+
+- Update canonical shared record.
+- Validate user permission.
+- Notify both parties.
+- Synchronize both views.
+- Maintain audit history of changes.
+
+Do not silently modify financial history.
+
+## Cancellation
+
+Cancellation must be explicit.
+
+Where a record has no repayment:
+
+- Allow authorized cancellation according to business rules.
+- Preserve audit trail.
+- Notify both users.
+- Update both accounts.
+
+Where repayment already exists:
+
+- Do not casually delete or cancel the transaction.
+- Use a correction/reversal workflow.
+- Preserve the complete history.
+
+## Correction history
+
+Store:
+
+- Previous value
+- New value
+- Changed field
+- Changed by
+- Reason, if required
+- Timestamp
+
+---
+
+# 18. NET BALANCE CALCULATION
+
+Each user must see the correct net relationship with each connected person.
+
+## Example
+
+Rahul gave Amit: ₹5,000
+
+Amit gave Rahul: ₹2,000
+
+Result:
+
+Rahul:
+
+- You'll Receive: ₹5,000
+- You'll Pay: ₹2,000
+- Net Receivable: ₹3,000
+
+Amit:
+
+- You'll Receive: ₹2,000
+- You'll Pay: ₹5,000
+- Net Payable: ₹3,000
+
+Formula:
+
+Net Balance = Total Receivable − Total Payable
+
+Do not incorrectly merge different loans into a single record.
+
+Show:
+
+- Total Given
+- Total Taken
+- Total Repaid
+- Outstanding Receivable
+- Outstanding Payable
+- Net Balance
+
+Maintain individual records and calculate summaries separately.
+
+---
+
+# 19. PEOPLE-WISE UDHAR DETAILS
+
+When opening a person, show a complete relationship dashboard.
+
+## Profile header
+
+- Profile image
+- Name
+- Connection status
+- Connected date if available
+- Actions
+
+## Financial summary
+
+- Total Given
+- Total Taken
+- Total You'll Receive
+- Total You'll Pay
+- Net Balance
+
+## Tabs or sections
+
+- Active Udhar
+- Given
+- Taken
+- Repayment History
+- Settled History
+- Activity
+
+## Actions
+
+- Add Udhar
+- Record Repayment
+- View Details
+- Share Details where appropriate
+- Contact person if permitted
+
+Use the same shared record from both perspectives.
+
+---
+
+# 20. NOTIFICATION SYSTEM
+
+Implement notifications for shared Udhar activities.
+
+## Events
+
+- Connection created
+- New shared Udhar
+- Udhar edited
+- Udhar correction
+- Repayment initiated
+- Repayment awaiting confirmation
+- Repayment confirmed
+- Repayment rejected
+- Partial repayment
+- Udhar fully settled
+- Udhar cancelled
+- Due date approaching
+- Overdue Udhar
+
+## Notification behavior
+
+- In-app notifications
+- Push notifications if the existing system supports them
+- Realtime badge updates
+- Correct notification recipient
+- Notification deep link to relevant record
+- Avoid duplicate notifications
+
+Notification examples:
+
+"Rahul added ₹5,000 Udhar with you."
+
+"₹2,000 repayment is awaiting confirmation."
+
+"₹2,000 repayment has been confirmed."
+
+"Your Udhar with Rahul has been settled."
+
+Do not send notifications to unauthorized users.
+
+---
+
+# 21. DATABASE AND BACKEND ARCHITECTURE
+
+Inspect the existing database and backend before changing anything.
+
+Reuse existing architecture wherever possible.
+
+If the existing schema cannot support reliable shared Udhar, create a safe migration.
+
+## Suggested canonical shared Udhar model
+
+Each shared record should contain logically equivalent fields such as:
+
+- id
+- lender_user_id
+- borrower_user_id
+- amount
+- remaining_amount or derived balance
+- currency
+- category
+- description
+- payment_method
+- due_date
+- status
+- created_by
+- created_at
+- updated_at
+- version where needed
+
+## Repayment table/event model
+
+Each repayment should be a separate record:
+
+- id
+- udhar_id
+- amount
+- initiated_by
+- confirmed_by
+- payment_method
+- payment_reference
+- status
+- created_at
+- confirmed_at
+- note
+
+## Connection model
+
+Connection records should contain:
+
+- id
+- user_id
+- connected_user_id or equivalent relationship
+- status
+- created_by
+- created_at
+- updated_at
+
+Use the actual existing database conventions instead of blindly adopting these exact names.
+
+## Important
+
+- One canonical Udhar record.
+- No duplicate lender-side and borrower-side financial records.
+- Repayments are separate records.
+- Settled history is retained.
+- Use appropriate indexes.
+- Use transaction-safe operations.
+- Use constraints where applicable.
+- Prevent race conditions.
+- Preserve existing user data.
+- Do not perform destructive migrations.
+
+---
+
+# 22. AUTHORIZATION AND SECURITY
+
+Audit and fix security across the entire feature.
+
+## Authentication
+
+Every operation must verify the authenticated user.
+
+## Authorization
+
+Only authorized users may:
+
+- View shared Udhar records.
+- Create shared Udhar with connected users.
+- Initiate permitted repayments.
+- Confirm repayment when authorized.
+- Edit records where allowed.
+- Cancel or reverse records.
+- View private profile information.
+
+## Protect against
+
+- IDOR
+- Unauthorized data access
+- User ID manipulation
+- QR token forgery
+- QR enumeration
+- Search enumeration
+- Duplicate connection requests
+- Duplicate Udhar creation
+- Duplicate repayments
+- Concurrent repayment race conditions
+- Self-connections
+- Unauthorized settlement
+- Fake borrower/lender identities
+- Privilege escalation
+- Frontend-only validation
+- Unprotected APIs
+- Excessive search requests
+
+## Database security
+
+Audit:
+
+- RLS policies if applicable.
+- Database access permissions.
+- Backend authorization.
+- User ownership.
+- Connection authorization.
+- Realtime subscription permissions.
+- Storage access.
+- Notification permissions.
+
+The frontend must never be the only security boundary.
+
+---
+
+# 23. QR PRIVACY AND USER DISCOVERABILITY
+
+Implement appropriate privacy controls.
+
+Search must not reveal every user by default.
+
+Where possible, support:
+
+- Discoverability preferences.
+- Privacy-aware search.
+- Verified contact matching.
+- Rate limiting.
+- Restricted profile details before connection.
+- Secure QR identity resolution.
+
+A user must not be able to access another user's:
+
+- Transactions
+- Income
+- Expenses
+- Bank details
+- Private Udhar records
+- Private account balances
+
+Simply being able to scan a QR does not grant financial access.
+
+Only the permitted shared record and approved profile data should be visible.
+
+---
+
+# 24. UI/UX DESIGN REQUIREMENTS
+
+Use the existing My Money Manager design system and improve consistency.
+
+## Visual direction
+
+- Modern fintech UI
+- Clean layout
+- Professional
+- Minimal clutter
+- Mobile-first
+- Consistent spacing
+- Clear typography
+- Accessible contrast
+- Consistent icons
+- Responsive components
+- Light/dark mode compatibility
+
+## Mobile
+
+Test widths:
+
+- 320px
+- 360px
+- 375px
+- 390px
+- 430px
+
+Ensure:
+
+- No horizontal overflow.
+- Search is usable.
+- QR is centered.
+- Scanner works.
+- Forms are usable.
+- Buttons are touch-friendly.
+- Dialogs fit the viewport.
+- Bottom sheets respect safe areas.
+- Keyboard does not hide critical actions.
+
+## Tablet
+
+Test:
+
+- 768px
+- 1024px
+
+## Desktop
+
+Test:
+
+- 1280px
+- 1440px
+- 1920px
+
+Avoid:
+
+- Oversized cards.
+- Excessive whitespace.
+- Duplicate labels.
+- Too many colors.
+- Huge forms.
+- Unnecessary animations.
+- Confusing navigation.
+
+---
+
+# 25. REALTIME IMPLEMENTATION
+
+Use the project's actual realtime technology.
+
+When User A creates a shared Udhar for User B:
+
+1. Backend creates canonical record.
+2. Backend validates both users.
+3. Backend verifies connection rules.
+4. Record is persisted atomically.
+5. Realtime event is delivered to authorized subscribers.
+6. User A's dashboard updates.
+7. User B's dashboard updates.
+8. User A's People page updates.
+9. User B's People page updates.
+10. Both outstanding balances update.
+11. Both activity histories update.
+12. Notifications update.
+
+Do not use frontend-only fake synchronization.
+
+If a realtime event is missed, the application must recover through backend refresh/reconciliation.
+
+---
+
+# 26. FINANCIAL ACCOUNTING RULES
+
+Shared Udhar must remain separate from normal Income and Expense accounting.
+
+## Borrowed money
+
+Loan Received / Udhar Taken is not earned income.
+
+## Money lent
+
+Udhar Given is not an ordinary expense.
+
+## Repayment received
+
+A repayment received should reduce receivable balance and must not automatically be treated as new income.
+
+## Repayment paid
+
+A repayment paid should reduce payable balance and must not automatically be counted as a normal expense again.
+
+Avoid double-counting money in:
+
+- Income
+- Expenses
+- Net worth
+- Cash flow
+- Financial Flow
+- Available balance
+- Reports
+- Charts
+
+Integrate the Udhar system with the main dashboard only where financially logic supports it.
+
+---
+
+# 27. TRANSACTION HISTORY AND AUDIT LOG
+
+Maintain an accurate event history.
+
+Track:
+
+- Record created
+- Amount changed
+- Description changed
+- Due date changed
+- Repayment initiated
+- Repayment confirmed
+- Repayment rejected
+- Settlement
+- Cancellation
+- Correction
+- Actor
+- Timestamp
+
+Do not silently overwrite important financial events.
+
+Financial history should be explainable.
+
+---
+
+# 28. ERROR HANDLING
+
+Implement meaningful error handling for:
+
+- Internet unavailable
+- Search failed
+- QR invalid
+- QR expired
+- User not found
+- User deleted
+- Camera denied
+- Camera unavailable
+- Connection failed
+- Duplicate connection
+- Udhar save failed
+- Repayment failed
+- Realtime disconnected
+- Unauthorized operation
+- Database conflict
+
+Do not display success messages before the backend operation succeeds.
+
+Do not hide errors behind generic "Something went wrong" if a meaningful explanation can be provided.
+
+---
+
+# 29. TESTING — MANDATORY
+
+Do not mark this feature complete without testing it.
+
+Create or update appropriate tests.
+
+## A. Search testing
+
+- Search full name.
+- Search partial name.
+- Search email.
+- Search mobile number.
+- Search no results.
+- Empty query.
+- Rapid typing.
+- Delete query.
+- Network failure.
+- Old results do not overwrite new results.
+- Privacy restrictions are enforced.
+
+## B. QR testing
+
+Use at least 3 test accounts.
+
+Example:
+
+- Account A
+- Account B
+- Account C
+
+Verify:
+
+- A has a unique QR.
+- B has a unique QR.
+- C has a unique QR.
+- All QR identities are different.
+- A scans B → correct B profile.
+- B scans A → correct A profile.
+- A scans C → correct C profile.
+- No QR resolves to Guest incorrectly.
+- Invalid QR fails correctly.
+- Expired/revoked QR fails correctly if supported.
+- Self-connection is blocked.
+- Repeated scans do not create duplicate connections.
+- Camera cleanup works.
+- Permission denied behavior works.
+
+## C. Shared Udhar testing
+
+### Test 1 — User A gives User B ₹1,000
+
+Expected:
+
+User A:
+
+- You'll Receive ₹1,000
+
+User B:
+
+- You'll Pay ₹1,000
+
+Both have the same canonical record.
+
+### Test 2 — User B gives User A ₹2,000
+
+Expected:
+
+User A:
+
+- You'll Pay ₹2,000
+
+User B:
+
+- You'll Receive ₹2,000
+
+### Test 3 — Partial repayment ₹400
+
+For a ₹1,000 Udhar:
+
+- Repaid = ₹400
+- Remaining = ₹600
+
+Both users must show ₹600 outstanding.
+
+### Test 4 — Multiple repayments
+
+Original: ₹10,000
+
+Repayment 1: ₹2,000
+
+Repayment 2: ₹3,000
+
+Expected:
+
+- Total repaid = ₹5,000
+- Remaining = ₹5,000
+
+Both views must match.
+
+### Test 5 — Full settlement
+
+Remaining becomes zero.
+
+Expected:
+
+- Status Settled.
+- Active Udhar removed from active list.
+- Settled History updated.
+- Record retained.
+- Both users updated.
+
+### Test 6 — Edit
+
+Edit an authorized record.
+
+Expected:
+
+- Both views updated.
+- Audit history retained.
+- Notification delivered if enabled.
+
+### Test 7 — Cancellation
+
+Cancel a permitted record.
+
+Expected:
+
+- Both views updated.
+- History preserved.
+- Correct status.
+- No unexplained deletion.
+
+### Test 8 — Manual contact
+
+Create a manual contact.
+
+Expected:
+
+- Contact appears only in owner's local People.
+- Udhar can be recorded.
+- It is clearly local/manual.
+- No false remote synchronization is claimed.
+
+### Test 9 — Duplicate prevention
+
+Repeatedly submit the same action.
+
+Expected:
+
+- No duplicate Udhar.
+- No duplicate repayment.
+- No duplicate connection.
+
+### Test 10 — Concurrent operations
+
+Attempt simultaneous repayments or record updates.
+
+Expected:
+
+- No negative remaining balance.
+- No over-repayment.
+- No inconsistent balances.
+- Atomic database behavior.
+
+---
+
+# 30. IMPLEMENTATION WORKFLOW
+
+Follow this workflow.
+
+## Phase 1 — Audit
+
+Inspect:
+
+- Existing People page.
+- Add People page.
+- Search implementation.
+- QR generation.
+- QR scanner.
+- Authentication.
+- User profiles.
+- Database schema.
+- Existing Udhar module.
+- Existing transaction models.
+- Realtime.
+- Notifications.
+- API endpoints.
+- Security policies.
+- Mobile responsiveness.
+
+Identify actual root causes of existing bugs.
+
+## Phase 2 — Architecture
+
+Document internally:
+
+- Current implementation.
+- Required changes.
+- Existing components to reuse.
+- Database changes.
+- API changes.
+- Realtime requirements.
+- Migration strategy.
+- Security risks.
+
+Do not stop at the audit. Continue implementation.
+
+## Phase 3 — Backend
+
+Implement:
+
+- Live search API.
+- Secure QR resolution.
+- User connection APIs.
+- Shared canonical Udhar API.
+- Repayment API.
+- Repayment confirmation.
+- Settlement.
+- Authorized corrections.
+- Notification events.
+- Realtime subscriptions.
+- Database migration.
+- Authorization.
+- Validation.
+- Idempotency.
+- Race-condition prevention.
+
+## Phase 4 — Frontend
+
+Implement:
+
+- People dashboard.
+- Add People.
+- Live Search.
+- Search result profiles.
+- Connect flow.
+- My QR.
+- QR scanner.
+- QR profile resolution.
+- Add Manually.
+- Add Udhar.
+- Udhar detail.
+- Repayment.
+- Confirmation.
+- Settlement.
+- People-wise ledger.
+- Active Udhar.
+- Settled History.
+- Notification UI.
+
+## Phase 5 — Integration
+
+Connect every feature to the actual backend.
+
+Verify that:
+
+- Search returns actual registered users.
+- QR resolves actual users.
+- Connections are persisted.
+- Shared Udhar is persisted.
+- Both users see the same record.
+- Repayments are synchronized.
+- Settlements are synchronized.
+- Notifications are correctly delivered.
+- Financial totals are correct.
+
+## Phase 6 — QA
+
+Run:
+
+- Lint
+- Typecheck
+- Unit tests
+- Integration tests
+- Database tests
+- Security checks
+- Build
+- Responsive QA
+- Realtime QA
+- Multi-account QA
+
+Fix failures.
+
+Do not ignore warnings or failing tests that relate to these features.
+
+---
+
+# 31. IMPORTANT DEVELOPMENT RULES
+
+1. Do not rewrite the entire application.
+2. Do not break existing Money Manager functionality.
+3. Do not remove existing user data.
+4. Do not create dummy search users.
+5. Do not fake QR profiles.
+6. Do not use Guest as a fallback for real registered users.
+7. Do not create duplicate shared Udhar entries.
+8. Do not create independent lender and borrower financial records.
+9. Do not implement synchronization only in the frontend.
+10. Do not rely exclusively on client-side authorization.
+11. Do not expose financial records to unconnected users.
+12. Do not overwrite repayment history.
+13. Do not silently delete settled records.
+14. Do not claim that manual contacts are synced.
+15. Do not leave buttons non-functional.
+16. Do not leave TODOs for core functionality.
+17. Do not stop after UI implementation.
+18. Do not stop after creating APIs without integrating the frontend.
+19. Do not mark features complete without actual testing.
+20. Reuse existing components and architecture whenever practical.
+
+---
+
+# 32. FINAL ACCEPTANCE CRITERIA
+
+The task is complete only when all of the following work:
+
+### People
+- People dashboard works.
+- Connections are accurate.
+- Search is functional.
+- Manual add works.
+
+### Live Search
+- Results appear automatically as the user types.
+- Name/email/mobile matching works as permitted.
+- Debouncing works.
+- Loading, empty, error and connected states work.
+
+### QR
+- Every account has unique QR.
+- My QR displays correctly.
+- Download/share works.
+- Scanner works.
+- Camera permission works.
+- Correct identity resolves.
+- No incorrect Guest profile.
+- Duplicate connections are prevented.
+
+### Shared Udhar
+- A adds Udhar for B → appears in both.
+- B adds Udhar for A → correct reverse direction appears in both.
+- Both users see the same shared record.
+- Given and Taken calculations are correct.
+- Receivable and Payable are correct.
+- Partial repayments synchronize.
+- Multiple repayments synchronize.
+- Full settlement synchronizes.
+- Edit/correction permissions work.
+- Cancellation rules work.
+- History is preserved.
+
+### Realtime
+- No page refresh required.
+- Both accounts update automatically.
+- Notifications work where enabled.
+- Reconnection/recovery works.
+
+### Security
+- Users cannot access unauthorized financial records.
+- Search respects privacy.
+- QR resolution is secure.
+- Connection permissions work.
+- Repayment permissions work.
+- Database rules are enforced.
+
+### UI/UX
+- Mobile is fully usable.
+- Desktop is fully usable.
+- No overflow.
+- No broken layouts.
+- No unnecessary clutter.
+- All controls work.
+
+### Quality
+- Build passes.
+- Typecheck passes.
+- Relevant tests pass.
+- No critical console errors.
+- No broken API calls.
+- No unresolved critical bugs.
+
+---
+
+# 33. GITHUB WORKFLOW
+
+After implementation and testing:
+
+1. Review all modified files.
+2. Ensure no secrets are committed.
+3. Ensure environment variables are not exposed.
+4. Review database migrations.
+5. Verify tests and build.
+6. Create a descriptive commit.
+7. Push to the existing configured GitHub branch if authorized and available.
+8. Never use force push to overwrite existing history.
+9. If push fails, diagnose the failure without destroying remote changes.
+
+---
+
+# 34. FINAL REPORT
+
+After completing the work, provide a factual implementation report.
+
+Include:
+
+- Audit findings.
+- Root causes identified.
+- Features implemented.
+- Files changed.
+- Database changes.
+- APIs added/updated.
+- Search implementation details.
+- QR implementation details.
+- Shared Udhar architecture.
+- Realtime implementation.
+- Notification implementation.
+- Security changes.
+- Tests executed.
+- Build results.
+- Mobile QA results.
+- Git commit hash.
+- Git push status.
+
+Clearly separate:
+
+- Completed and verified.
+- Completed but not fully tested.
+- Not implemented.
+- Blocked by configuration or environment.
+
+Do not claim successful testing, deployment, synchronization, or GitHub push unless it was actually verified.
+
+---
+
+# FINAL GOAL
+
+Create a reliable, secure, fully integrated People + Search + QR + Shared Udhar system for My Money Manager.
+
+**Core user experience:**
+
+Search a person → matching results appear instantly → Connect.
+
+OR
+
+Scan QR → correct real profile appears → Connect.
+
+OR
+
+Add manually → create a local contact.
+
+Once two registered users are connected:
+
+**If either user adds Udhar with the other user, the same canonical Udhar entry must automatically appear in both accounts, with the correct lender, borrower, Given/Taken perspective, Receivable/Payable amount, history, repayment, settlement and realtime updates.**
+
+One entry. One canonical record. Two synchronized user views. No duplicate ledgers. No fake synchronization. No incorrect identities.
+
+Build the entire system properly and production-ready within the existing My Money Manager application.

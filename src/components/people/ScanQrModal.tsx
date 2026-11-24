@@ -17,30 +17,40 @@ import {
   ZapOff,
   SwitchCamera,
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
 import { udharDeletionApi, ResolveQrResponse } from '../../lib/udharDeletionApi';
+import { parseQrPayload } from '../../lib/sharedUdharEngine';
 
 interface ScanQrModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConnected?: (person: { id: string; name: string; emailMasked?: string; avatarUrl?: string | null }) => void;
+  initialPairCode?: string | null;
+  onConnected?: (person: {
+    id: string;
+    name: string;
+    emailMasked?: string;
+    avatarUrl?: string | null;
+  }) => void;
 }
 
 export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   isOpen,
   onClose,
+  initialPairCode,
   onConnected,
 }) => {
-  const { user } = useAuth();
   const toast = useToast();
   const { setScannerActive } = usePwaInstall();
 
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'code'>('camera');
   const [isResolving, setIsResolving] = useState<boolean>(false);
   const [resolvedOwner, setResolvedOwner] = useState<ResolveQrResponse | null>(null);
-  const [scanError, setScanError] = useState<{ title: string; message: string; code?: string } | null>(null);
+  const [scanError, setScanError] = useState<{
+    title: string;
+    message: string;
+    code?: string;
+  } | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -50,7 +60,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const [supportsTorch, setSupportsTorch] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
 
-  // Manual code form
+  // Manual code / link form
   const [manualCode, setManualCode] = useState<string>('');
   const [relationshipType, setRelationshipType] = useState<string>('Friend');
 
@@ -60,18 +70,16 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const isScanningActiveRef = useRef<boolean>(false);
+  const isResolvingRef = useRef<boolean>(false);
+  const isTorchOnRef = useRef<boolean>(false);
+  const autoResolvedCodeRef = useRef<string | null>(null);
 
-  // Notify PWA Install Context to suppress install banner when scanner is open
   useEffect(() => {
-    if (isOpen) {
-      setScannerActive(true);
-    } else {
-      setScannerActive(false);
-    }
+    setScannerActive(isOpen);
     return () => setScannerActive(false);
   }, [isOpen, setScannerActive]);
 
-  // Stop media stream helper & turn off torch
+  // Strict media stream & torch cleanup
   const stopCamera = useCallback(() => {
     isScanningActiveRef.current = false;
     if (animFrameRef.current) {
@@ -81,10 +89,12 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
         try {
-          if (isTorchOn) {
+          if (isTorchOnRef.current) {
             (track as any).applyConstraints?.({ advanced: [{ torch: false }] });
           }
-        } catch {}
+        } catch {
+          // ignore torch cleanup error
+        }
         track.stop();
       });
       streamRef.current = null;
@@ -92,10 +102,10 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    isTorchOnRef.current = false;
     setIsTorchOn(false);
-  }, [isTorchOn]);
+  }, []);
 
-  // Enumerate video devices on mount
   const refreshDevices = useCallback(async () => {
     try {
       if (navigator.mediaDevices?.enumerateDevices) {
@@ -103,17 +113,120 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         const inputs = devices.filter((d) => d.kind === 'videoinput');
         setVideoDevices(inputs);
       }
-    } catch (e) {
-      console.warn('Could not enumerate devices:', e);
+    } catch {
+      // ignore
     }
   }, []);
 
-  // Start media stream for live QR scan with environment camera preference
+  const mapResolveError = (err: any): { title: string; message: string; code?: string } => {
+    const code = err?.code || err?.data?.code || '';
+    let title = 'QR Verification Failed';
+    let message = err?.message || 'Failed to verify QR code.';
+
+    if (code === 'SELF_CONNECTION') {
+      title = 'Self-Connection Not Allowed';
+      message = 'You cannot connect with your own My Money Manager QR code.';
+    } else if (code === 'QR_EXPIRED') {
+      title = 'QR Code Expired';
+      message = 'This QR code has expired. Ask the person to tap "Reset QR" to generate a new code.';
+    } else if (code === 'QR_REVOKED') {
+      title = 'QR Code Revoked';
+      message = 'This QR code was replaced by a newer code. Please scan their latest QR.';
+    } else if (code === 'NOT_FOUND' || code === 'INVALID_QR') {
+      title = 'Unrecognized QR Code';
+      message = 'This QR code is not linked to an active My Money Manager account.';
+    } else if (code === 'ACCOUNT_UNAVAILABLE') {
+      title = 'Account Unavailable';
+      message = 'This user account is currently deactivated, blocked, or scheduled for deletion.';
+    }
+    return { title, message, code };
+  };
+
+  // Resolve any scanned payload, uploaded QR, deep link, or pair code
+  const resolveRawInput = useCallback(
+    async (rawInput: string) => {
+      if (isResolvingRef.current) return;
+
+      const parsed = parseQrPayload(rawInput);
+      if (!parsed.valid) {
+        const errorMsg = parsed.error || 'Not a valid My Money Manager QR code.';
+        setScanError({ title: 'Invalid QR Code', message: errorMsg, code: 'INVALID_QR' });
+        toast.error('Invalid QR Code', errorMsg);
+        return;
+      }
+
+      try {
+        isResolvingRef.current = true;
+        setIsResolving(true);
+        setScanError(null);
+
+        const res = await udharDeletionApi.resolveQrCode({
+          qrData: parsed.kind === 'json' ? rawInput.trim() : undefined,
+          pairingToken: parsed.token,
+          pairingCode: parsed.code,
+        });
+
+        if (res.success && res.owner && res.owner.displayName) {
+          setResolvedOwner(res);
+          toast.info('Profile Verified', `Found ${res.owner.displayName}`);
+        } else {
+          const errorMsg = res.message || 'Could not verify this pairing code.';
+          setScanError({ title: 'Invalid QR Code', message: errorMsg, code: res.code });
+          toast.error('Invalid QR', errorMsg);
+        }
+      } catch (err: any) {
+        const mapped = mapResolveError(err);
+        setScanError(mapped);
+        toast.error(mapped.title, mapped.message);
+      } finally {
+        isResolvingRef.current = false;
+        setIsResolving(false);
+      }
+    },
+    [toast]
+  );
+
+  // Frame scanning loop
+  const scanFrame = useCallback(() => {
+    if (!isScanningActiveRef.current || !videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    if (ctx && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert',
+      });
+
+      if (code && code.data) {
+        stopCamera();
+        void resolveRawInput(code.data);
+        return;
+      }
+    }
+
+    animFrameRef.current = requestAnimationFrame(scanFrame);
+  }, [stopCamera, resolveRawInput]);
+
+  // Start camera with rear camera preference
   const startCamera = useCallback(
     async (deviceIdOverride?: string | null) => {
       stopCamera();
       setCameraError(null);
       setScanError(null);
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError(
+          'Live camera scanning is not supported in this browser. Use "Upload" or "Pair Code" below.'
+        );
+        return;
+      }
 
       const targetDeviceId = deviceIdOverride !== undefined ? deviceIdOverride : currentDeviceId;
 
@@ -136,8 +249,11 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
 
-        // Check torch support on the active video track
         const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack?.getSettings?.().deviceId && !targetDeviceId) {
+          setCurrentDeviceId(videoTrack.getSettings().deviceId || null);
+        }
+
         if (videoTrack?.getCapabilities) {
           const caps = videoTrack.getCapabilities() as any;
           setSupportsTorch(Boolean(caps && 'torch' in caps));
@@ -153,178 +269,84 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           scanFrame();
         }
 
-        // Refresh enumerated devices now that permission is granted
-        refreshDevices();
+        await refreshDevices();
       } catch (err: any) {
-        console.warn('Camera stream error:', err);
-        let msg = 'Camera access unavailable. You can upload an image or enter the pairing code manually.';
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          msg = 'Camera permission was denied. Please allow camera permissions in your browser address bar, or use the "Upload" or "Pair Code" options below.';
-        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-          msg = 'No camera found on this device. Please upload a QR image or enter the pairing code manually.';
-        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-          msg = 'Camera is currently being used by another application or tab. Please close other camera sessions and retry.';
+        let msg =
+          'Camera access unavailable. You can upload a QR image or enter the pairing code manually.';
+        if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+          msg =
+            'Camera permission was denied. Allow camera access in browser settings, or use "Upload" / "Pair Code" below.';
+        } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+          msg = 'No camera detected on this device. Use "Upload" or "Pair Code" instead.';
+        } else if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
+          msg = 'Camera is currently in use by another app or tab. Close it and tap Try Again.';
         }
         setCameraError(msg);
       }
     },
-    [currentDeviceId, stopCamera, refreshDevices]
+    [currentDeviceId, stopCamera, refreshDevices, scanFrame]
   );
 
-  // Switch camera if multiple cameras exist
-  const handleSwitchCamera = () => {
-    if (videoDevices.length <= 1) return;
-    const currentIndex = videoDevices.findIndex((d) => d.deviceId === currentDeviceId);
-    const nextIndex = (currentIndex + 1) % videoDevices.length;
-    const nextDevice = videoDevices[nextIndex];
-    const newId = nextDevice?.deviceId || null;
-    setCurrentDeviceId(newId);
-    startCamera(newId);
-  };
-
-  // Toggle torch / flashlight
-  const toggleTorch = async () => {
-    const track = streamRef.current?.getVideoTracks()[0];
-    if (!track) return;
-    try {
-      const nextState = !isTorchOn;
-      await (track as any).applyConstraints({
-        advanced: [{ torch: nextState }],
-      });
-      setIsTorchOn(nextState);
-    } catch (err) {
-      console.warn('Torch toggle error:', err);
-    }
-  };
-
-  // Scan frame loop
-  const scanFrame = () => {
-    if (!isScanningActiveRef.current || !videoRef.current || !canvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    if (ctx && video.readyState >= video.HAVE_CURRENT_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert',
-      });
-
-      if (code && code.data) {
-        // Detected a QR code! Lock scanner immediately to avoid duplicate scans
-        stopCamera();
-        handleQrPayloadDetected(code.data);
-        return;
-      }
-    }
-
-    animFrameRef.current = requestAnimationFrame(scanFrame);
-  };
-
+  // Handle #pair=... deep links when modal opens with initialPairCode
   useEffect(() => {
-    if (isOpen) {
-      setResolvedOwner(null);
-      setScanError(null);
-      setCameraError(null);
-      if (activeTab === 'camera') {
+    if (!isOpen) {
+      autoResolvedCodeRef.current = null;
+      return;
+    }
+
+    if (initialPairCode && autoResolvedCodeRef.current !== initialPairCode) {
+      autoResolvedCodeRef.current = initialPairCode;
+      setActiveTab('code');
+      setManualCode(initialPairCode.toUpperCase());
+      stopCamera();
+      void resolveRawInput(initialPairCode);
+    }
+  }, [isOpen, initialPairCode, stopCamera, resolveRawInput]);
+
+  // Manage camera lifecycle based on modal open & active tab
+  useEffect(() => {
+    if (isOpen && !resolvedOwner) {
+      if (activeTab === 'camera' && !initialPairCode) {
         startCamera();
+      } else {
+        stopCamera();
       }
     } else {
       stopCamera();
     }
     return () => stopCamera();
-  }, [isOpen, activeTab]);
+  }, [isOpen, activeTab, resolvedOwner, initialPairCode]);
 
-  // Client-side payload format validation helper
-  const validateQrPayload = (raw: string): { isValid: boolean; error?: string } => {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return { isValid: false, error: 'Empty QR code detected.' };
-    }
-
-    // 1. JSON payload from My Money Manager
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && (parsed.app === 'my-money' || parsed.type === 'udhar-pair')) {
-        return { isValid: true };
-      }
-    } catch {}
-
-    // 2. Direct pairing code (MM-XXXXXX)
-    if (trimmed.startsWith('MM-') && trimmed.length >= 6) {
-      return { isValid: true };
-    }
-
-    // 3. Hex 64-char pairing token
-    if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-      return { isValid: true };
-    }
-
-    return {
-      isValid: false,
-      error: 'Not a valid My Money Manager QR code. Please scan a genuine QR code generated inside My Money Manager.',
-    };
+  const handleSwitchCamera = () => {
+    if (videoDevices.length <= 1) return;
+    const currentIndex = videoDevices.findIndex((d) => d.deviceId === currentDeviceId);
+    const nextDevice = videoDevices[(currentIndex + 1) % videoDevices.length];
+    const newId = nextDevice?.deviceId || null;
+    setCurrentDeviceId(newId);
+    void startCamera(newId);
   };
 
-  // Handle detected QR data string
-  const handleQrPayloadDetected = async (rawQrData: string) => {
-    const validation = validateQrPayload(rawQrData);
-    if (!validation.isValid) {
-      const errorMsg = validation.error || 'Not a valid My Money Manager QR code.';
-      setScanError({ title: 'Invalid QR Code', message: errorMsg, code: 'INVALID_QR' });
-      toast.error('Invalid QR Code', errorMsg);
-      return;
-    }
+  const handleSelectCamera = (deviceId: string) => {
+    setCurrentDeviceId(deviceId);
+    void startCamera(deviceId);
+  };
 
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
     try {
-      setIsResolving(true);
-      setScanError(null);
-      const res = await udharDeletionApi.resolveQrCode({ qrData: rawQrData });
-      if (res.success && res.owner) {
-        setResolvedOwner(res);
-        toast.info('QR Recognized', `Found user: ${res.owner.displayName}`);
-      } else {
-        const errorMsg = res.message || 'Could not verify user pairing token.';
-        setScanError({ title: 'Invalid QR Code', message: errorMsg });
-        toast.error('Invalid QR', errorMsg);
-      }
-    } catch (err: any) {
-      const code = err.data?.code || '';
-      let title = 'QR Scan Error';
-      let message = err.message || 'Failed to resolve QR token.';
-
-      if (code === 'SELF_CONNECTION') {
-        title = 'Self-Connection Not Allowed';
-        message = 'You cannot add yourself. This is your own My Money Manager QR code.';
-      } else if (code === 'QR_EXPIRED') {
-        title = 'QR Code Expired';
-        message = 'This QR code has expired. Please ask the person to tap "Reset QR" to get a fresh code.';
-      } else if (code === 'QR_REVOKED') {
-        title = 'QR Code Revoked';
-        message = 'This QR code is no longer active because the user has generated a newer code.';
-      } else if (code === 'NOT_FOUND' || code === 'INVALID_QR') {
-        title = 'Unrecognized QR Code';
-        message = 'This QR code is not recognized as a registered My Money Manager account.';
-      } else if (code === 'ACCOUNT_UNAVAILABLE') {
-        title = 'Account Unavailable';
-        message = 'This user account is currently deactivated or suspended.';
-      }
-
-      setScanError({ title, message, code });
-      toast.error(title, message);
-    } finally {
-      setIsResolving(false);
+      const nextState = !isTorchOn;
+      await (track as any).applyConstraints({ advanced: [{ torch: nextState }] });
+      isTorchOnRef.current = nextState;
+      setIsTorchOn(nextState);
+    } catch {
+      toast.error('Flashlight Unavailable', 'This camera does not allow toggling the flashlight.');
     }
   };
 
-  // Image Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     const reader = new FileReader();
@@ -341,11 +363,12 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         const code = jsQR(imageData.data, imageData.width, imageData.height);
 
         if (code && code.data) {
-          handleQrPayloadDetected(code.data);
+          void resolveRawInput(code.data);
         } else {
           setScanError({
             title: 'QR Not Detected',
-            message: 'Could not find a valid QR code in this image. Please ensure the QR code is clearly visible or enter the pairing code manually.',
+            message:
+              'Could not decode a QR code from this image. Try a clearer screenshot or enter the pairing code manually.',
           });
           toast.error('QR Not Detected', 'Could not find a valid QR code in this image.');
         }
@@ -355,49 +378,15 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Manual Code Submit
   const handleManualCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = manualCode.trim();
     if (!clean) return;
-
-    try {
-      setIsResolving(true);
-      setScanError(null);
-      const res = await udharDeletionApi.resolveQrCode({ pairingCode: clean });
-      if (res.success && res.owner) {
-        setResolvedOwner(res);
-        toast.info('Code Verified', `Found user: ${res.owner.displayName}`);
-      } else {
-        setScanError({
-          title: 'Invalid Pairing Code',
-          message: res.message || 'Invalid or expired code.',
-        });
-        toast.error('Invalid Code', res.message || 'Invalid or expired code.');
-      }
-    } catch (err: any) {
-      const code = err.data?.code || '';
-      let title = 'Verification Failed';
-      let message = err.message || 'Failed to verify pairing code.';
-
-      if (code === 'SELF_CONNECTION') {
-        title = 'Self-Connection Not Allowed';
-        message = 'You cannot add yourself. This is your own pairing code.';
-      } else if (code === 'QR_EXPIRED') {
-        title = 'Pairing Code Expired';
-        message = 'This pairing code has expired. Please ask the person to regenerate their QR code.';
-      }
-
-      setScanError({ title, message, code });
-      toast.error(title, message);
-    } finally {
-      setIsResolving(false);
-    }
+    await resolveRawInput(clean);
   };
 
-  // Confirm Linking
   const handleConfirmConnect = async () => {
-    if (!resolvedOwner) return;
+    if (!resolvedOwner || isConnecting) return;
 
     try {
       setIsConnecting(true);
@@ -410,22 +399,23 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       if (res.success) {
         toast.success(
           'Connected Successfully!',
-          `You and ${res.connectedUser.displayName} are now linked for two-way Udhar tracking.`
+          `You and ${res.connectedUser.displayName} are now linked for two-way Shared Udhar.`
         );
         if (onConnected) {
           onConnected({
             id: res.connectedUser.id,
             name: res.connectedUser.displayName,
-            emailMasked: resolvedOwner?.owner?.emailMasked,
-            avatarUrl: resolvedOwner?.owner?.avatarUrl || null,
+            emailMasked: resolvedOwner.owner?.emailMasked,
+            avatarUrl: resolvedOwner.owner?.avatarUrl || null,
           });
         }
+        setResolvedOwner(null);
         onClose();
       } else {
-        toast.error('Connection Failed', res.message);
+        toast.error('Connection Failed', res.message || 'Could not create connection.');
       }
     } catch (err: any) {
-      toast.error('Error', err.message || 'Could not create connection.');
+      toast.error('Connection Error', err?.message || 'Could not create connection.');
     } finally {
       setIsConnecting(false);
     }
@@ -435,7 +425,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     setScanError(null);
     setResolvedOwner(null);
     if (activeTab === 'camera') {
-      startCamera();
+      void startCamera();
     }
   };
 
@@ -443,7 +433,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm sm:max-w-md w-full p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 relative">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 relative max-h-[92vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -451,17 +441,21 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               <Camera className="w-5 h-5 stroke-[2]" />
             </div>
             <div>
-              <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-slate-100">
+              <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100">
                 Scan Udhar QR Code
               </h3>
-              <p className="text-[11px] text-slate-500">Connect Person & 2-Way Ledger Sync</p>
+              <p className="text-[11px] text-slate-500">Connect Person &amp; 2-Way Ledger Sync</p>
             </div>
           </div>
 
           <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-            aria-label="Close"
+            type="button"
+            onClick={() => {
+              stopCamera();
+              onClose();
+            }}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            aria-label="Close QR Scanner"
           >
             <X className="w-5 h-5 stroke-[2]" />
           </button>
@@ -469,19 +463,23 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
         {/* State 1: Scan Error Alert Card */}
         {scanError && !resolvedOwner && (
-          <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-center space-y-3 animate-fade-in">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+          <div
+            role="alert"
+            className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-center space-y-3 animate-fade-in"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
               <AlertCircle className="w-6 h-6 stroke-[2]" />
             </div>
             <div>
               <h4 className="font-bold text-sm text-rose-900 dark:text-rose-200">
                 {scanError.title}
               </h4>
-              <p className="text-xs text-rose-700 dark:text-rose-400 mt-1 leading-relaxed">
+              <p className="text-xs text-rose-700 dark:text-rose-300 mt-1 leading-relaxed">
                 {scanError.message}
               </p>
             </div>
             <button
+              type="button"
               onClick={handleRetryScan}
               className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5 mx-auto cursor-pointer"
             >
@@ -491,11 +489,10 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           </div>
         )}
 
-        {/* State 2: Confirmation Screen: Verified Real Profile Found */}
+        {/* State 2: Verified Real Profile Confirmation Screen */}
         {resolvedOwner?.owner ? (
-          <div className="space-y-5 animate-fade-in">
+          <div className="space-y-4 animate-fade-in">
             <div className="p-5 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-blue-50/40 dark:from-emerald-950/40 dark:via-slate-800 dark:to-slate-900 rounded-3xl border border-emerald-200 dark:border-emerald-800 text-center space-y-3">
-              {/* Profile Avatar / Photo */}
               <div className="relative inline-block mx-auto">
                 {resolvedOwner.owner.avatarUrl ? (
                   <img
@@ -529,37 +526,41 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     {resolvedOwner.owner.emailMasked}
                   </p>
                 )}
+                {resolvedOwner.owner.phoneMasked && (
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {resolvedOwner.owner.phoneMasked}
+                  </p>
+                )}
               </div>
 
               {resolvedOwner.isAlreadyConnected ? (
                 <div className="p-2.5 rounded-xl bg-blue-100/60 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                  <span>Already in your connected Saved People!</span>
+                  <span>Already connected for 2-way Shared Udhar!</span>
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-emerald-100/60 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center justify-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>Connect with this person for two-way Udhar sync?</span>
+                  <span>Connect with this verified user for 2-way Udhar sync?</span>
                 </div>
               )}
             </div>
 
-            {/* Relationship selector (only if not already connected) */}
             {!resolvedOwner.isAlreadyConnected && (
               <div className="space-y-1.5 text-left">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Relationship Tag:
+                  Relationship Tag
                 </label>
                 <select
                   value={relationshipType}
                   onChange={(e) => setRelationshipType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="Friend">Friend (दोस्त)</option>
-                  <option value="Roommate">Roommate (कमरेदार)</option>
-                  <option value="Colleague">Colleague (सहकर्मी)</option>
-                  <option value="Family">Family (परिवार)</option>
-                  <option value="Business">Business (व्यापार)</option>
+                  <option value="Friend">Friend</option>
+                  <option value="Family">Family</option>
+                  <option value="Roommate">Roommate</option>
+                  <option value="Colleague">Colleague</option>
+                  <option value="Business">Business</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
@@ -571,11 +572,11 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 onClick={() => {
                   setResolvedOwner(null);
                   setScanError(null);
-                  if (activeTab === 'camera') startCamera();
+                  if (activeTab === 'camera') void startCamera();
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
               >
-                Cancel / Scan Another
+                Scan Another
               </button>
               <button
                 type="button"
@@ -586,26 +587,29 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                           onConnected({
                             id: resolvedOwner.owner.id,
                             name: resolvedOwner.owner.displayName,
+                            emailMasked: resolvedOwner.owner.emailMasked,
+                            avatarUrl: resolvedOwner.owner.avatarUrl || null,
                           });
                         }
+                        setResolvedOwner(null);
                         onClose();
                       }
                     : handleConfirmConnect
                 }
                 disabled={isConnecting}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {isConnecting ? (
                   <span>Connecting...</span>
                 ) : resolvedOwner.isAlreadyConnected ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>View Connected Profile</span>
+                    <span>Open Profile</span>
                   </>
                 ) : (
                   <>
                     <Users className="w-3.5 h-3.5" />
-                    <span>Confirm & Connect</span>
+                    <span>Confirm &amp; Connect</span>
                   </>
                 )}
               </button>
@@ -614,7 +618,6 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         ) : (
           /* State 3: Scan Methods (Camera, Upload, Code) */
           <div className="space-y-4">
-            {/* Mode Tabs */}
             <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl text-xs font-bold">
               <button
                 type="button"
@@ -625,7 +628,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   activeTab === 'camera'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
                 }`}
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -640,7 +643,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   activeTab === 'upload'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
@@ -655,7 +658,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   activeTab === 'code'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
                 }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
@@ -675,12 +678,11 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                   />
                   <canvas ref={canvasRef} className="hidden" />
 
-                  {/* QR Aim Reticle Overlay */}
-                  <div className="absolute inset-8 border-2 border-emerald-400/80 rounded-2xl pointer-events-none animate-pulse-subtle flex items-center justify-center">
-                    <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-bounce" />
+                  <div className="absolute inset-8 border-2 border-emerald-400/80 rounded-2xl pointer-events-none flex items-center justify-center">
+                    <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
                   </div>
 
-                  {/* Top-Right Camera Quick Controls: Switch Camera & Torch */}
+                  {/* Camera Controls: Torch & Switch Camera */}
                   <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
                     {supportsTorch && (
                       <button
@@ -694,7 +696,11 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                         title={isTorchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
                         aria-label="Toggle Flashlight"
                       >
-                        {isTorchOn ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+                        {isTorchOn ? (
+                          <Zap className="w-4 h-4 fill-current" />
+                        ) : (
+                          <ZapOff className="w-4 h-4" />
+                        )}
                       </button>
                     )}
                     {videoDevices.length > 1 && (
@@ -711,20 +717,45 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                   </div>
 
                   {isResolving && (
-                    <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center text-white space-y-2">
+                    <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm flex flex-col items-center justify-center text-white space-y-2">
                       <div className="w-7 h-7 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
                       <span className="text-xs font-bold">Verifying registered profile...</span>
                     </div>
                   )}
                 </div>
 
+                {/* Camera Selector Dropdown when multiple cameras exist */}
+                {videoDevices.length > 1 && (
+                  <div className="max-w-[280px] mx-auto">
+                    <select
+                      aria-label="Select camera"
+                      value={currentDeviceId || ''}
+                      onChange={(e) => handleSelectCamera(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300"
+                    >
+                      {videoDevices.map((dev, idx) => (
+                        <option key={dev.deviceId} value={dev.deviceId}>
+                          {dev.label || `Camera ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {cameraError ? (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300">
-                    {cameraError}
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                    <p>{cameraError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void startCamera()}
+                      className="text-[11px] font-bold underline cursor-pointer"
+                    >
+                      Retry Camera
+                    </button>
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500 text-center">
-                    Point camera steadily at another user's My Money Manager QR code
+                    Point camera steadily at another user&apos;s My Money Manager QR code
                   </p>
                 )}
               </div>
@@ -738,7 +769,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 text-center">
                     Click to select a QR code screenshot or photo
                   </span>
-                  <span className="text-[10px] text-slate-400 mt-1">PNG, JPG, JPEG</span>
+                  <span className="text-[10px] text-slate-400 mt-1">PNG, JPG, JPEG, WEBP</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -749,23 +780,22 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               </div>
             )}
 
-            {/* Tab C: Enter Pairing Code Manually */}
+            {/* Tab C: Enter Pairing Code or Connection Link */}
             {activeTab === 'code' && (
               <form onSubmit={handleManualCodeSubmit} className="space-y-4 py-2">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Enter Friend's Pairing Code:
+                    Pairing Code or Connection Link
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. MM-A1B2C3"
+                    placeholder="e.g. MM-A1B2C3 or paste #pair=... link"
                     value={manualCode}
-                    onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-mono tracking-widest text-center uppercase font-bold focus:ring-2 focus:ring-emerald-500"
-                    maxLength={14}
+                    onChange={(e) => setManualCode(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-mono tracking-wider text-center font-bold focus:ring-2 focus:ring-emerald-500"
                   />
-                  <p className="text-[10px] text-slate-400">
-                    Enter the code shown below your friend's My QR code
+                  <p className="text-[11px] text-slate-400 text-center">
+                    Enter the code shown under your friend&apos;s My QR or paste their connection link
                   </p>
                 </div>
 
@@ -778,7 +808,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <span>Verify Code & Find Profile</span>
+                      <span>Verify Code &amp; Find Profile</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}

@@ -6,6 +6,9 @@ function backendApiPlugin(): Plugin {
     name: 'backend-api-plugin',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api')) {
+          return next();
+        }
         try {
           const apiModule = await server.ssrLoadModule('./server/api.ts');
           const handled = await apiModule.handleApiRequest(req, res);
@@ -34,7 +37,10 @@ function backendApiPlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), backendApiPlugin()],
   server: {
-    port: 5173,
+    host: '0.0.0.0',
+    port: 3000,
+    strictPort: true,
+    allowedHosts: true,
     headers: {
       'Content-Security-Policy': [
         "default-src 'self'",
@@ -43,20 +49,19 @@ export default defineConfig({
         "font-src 'self' https://fonts.gstatic.com",
         "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
         "img-src 'self' data: https:",
-        "frame-ancestors 'none'",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
       ].join('; '),
-      'X-Frame-Options': 'DENY',
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
-      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
     },
   },
   preview: {
-    port: 4173,
+    host: '0.0.0.0',
+    port: 3000,
+    allowedHosts: true,
     headers: {
       'Content-Security-Policy': [
         "default-src 'self'",
@@ -65,16 +70,13 @@ export default defineConfig({
         "font-src 'self' https://fonts.gstatic.com",
         "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
         "img-src 'self' data: https:",
-        "frame-ancestors 'none'",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
       ].join('; '),
-      'X-Frame-Options': 'DENY',
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
-      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
     },
   },
   build: {

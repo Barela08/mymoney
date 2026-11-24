@@ -40,14 +40,16 @@ import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { Transaction } from '../../types';
 import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { NavTab } from '../common/Sidebar';
+import { AiIntelligenceWidgets } from './AiIntelligenceWidgets';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
   onOpenAddModal: (category?: any, subcategory?: any) => void;
   onOpenScanQr?: () => void;
+  onAskAiPrompt?: (prompt: string) => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal, onOpenScanQr }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal, onOpenScanQr, onAskAiPrompt }) => {
   const { transactions, summary, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const { user, isAdmin } = useAuth();
   const toast = useToast();
@@ -219,6 +221,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
+
+      {/* 2B. AI Financial Intelligence Hub (Safe-to-Spend, Net Worth, AI Assistant, Smart Alerts, Calendar & Receipt OCR) */}
+      <AiIntelligenceWidgets
+        onNavigate={onNavigate}
+        onAskAiPrompt={(q) => {
+          if (onAskAiPrompt) onAskAiPrompt(q);
+          else onNavigate('ai_assistant');
+        }}
+      />
 
       {/* 3. Quick Action Buttons Row (Consolidated: No duplicate calculator) */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">

@@ -12,25 +12,86 @@ import {
 const STORAGE_KEY_URL = 'my_money_supabase_url';
 const STORAGE_KEY_KEY = 'my_money_supabase_key';
 
+const DEFAULT_SUPABASE_URL = 'https://frgrfajnrzqwnevhlrio.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+
+export function normalizeValidSupabaseUrl(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let candidate = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  if (!candidate) return '';
+
+  // Allow bare Supabase domain without scheme (e.g. "xyz.supabase.co")
+  if (!/^https?:\/\//i.test(candidate)) {
+    if (/^[a-z0-9-]+\.supabase\.co(\/.*)?$/i.test(candidate)) {
+      candidate = `https://${candidate}`;
+    } else {
+      return '';
+    }
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (
+      (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+      parsed.hostname &&
+      (parsed.hostname.includes('.') || parsed.hostname === 'localhost')
+    ) {
+      return parsed.origin + (parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, ''));
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function normalizeValidSupabaseKey(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const candidate = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  if (!candidate) return '';
+  // Reject URLs accidentally pasted into the key field
+  if (/^(https?|postgres(ql)?):\/\//i.test(candidate)) return '';
+  return candidate;
+}
+
 export function getSavedSupabaseConfig(): { url: string; key: string } {
-  const defaultUrl = 'https://frgrfajnrzqwnevhlrio.supabase.co';
-  const defaultKey = 'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  const localUrl = localStorage.getItem(STORAGE_KEY_URL) || '';
-  const localKey = localStorage.getItem(STORAGE_KEY_KEY) || '';
+  const envUrl = normalizeValidSupabaseUrl(import.meta.env.VITE_SUPABASE_URL);
+  const envKey = normalizeValidSupabaseKey(import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+  let rawLocalUrl = '';
+  let rawLocalKey = '';
+  try {
+    rawLocalUrl = localStorage.getItem(STORAGE_KEY_URL) || '';
+    rawLocalKey = localStorage.getItem(STORAGE_KEY_KEY) || '';
+  } catch {}
+
+  const localUrl = normalizeValidSupabaseUrl(rawLocalUrl);
+  const localKey = normalizeValidSupabaseKey(rawLocalKey);
+
+  // Self-heal corrupted localStorage values so invalid URLs don't persist
+  if (rawLocalUrl && !localUrl) {
+    try {
+      localStorage.removeItem(STORAGE_KEY_URL);
+    } catch {}
+  }
+  if (rawLocalKey && !localKey) {
+    try {
+      localStorage.removeItem(STORAGE_KEY_KEY);
+    } catch {}
+  }
 
   return {
-    url: localUrl || envUrl || defaultUrl,
-    key: localKey || envKey || defaultKey,
+    url: localUrl || envUrl || DEFAULT_SUPABASE_URL,
+    key: localKey || envKey || DEFAULT_SUPABASE_KEY,
   };
 }
 
 export function saveSupabaseConfig(url: string, key: string) {
-  if (url) localStorage.setItem(STORAGE_KEY_URL, url.trim());
+  const validUrl = normalizeValidSupabaseUrl(url);
+  if (validUrl) localStorage.setItem(STORAGE_KEY_URL, validUrl);
   else localStorage.removeItem(STORAGE_KEY_URL);
 
-  if (key) localStorage.setItem(STORAGE_KEY_KEY, key.trim());
+  const validKey = normalizeValidSupabaseKey(key);
+  if (validKey) localStorage.setItem(STORAGE_KEY_KEY, validKey);
   else localStorage.removeItem(STORAGE_KEY_KEY);
 
   resetSupabaseClient();
@@ -40,12 +101,13 @@ let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient | null {
   const { url, key } = getSavedSupabaseConfig();
-  if (!url || !key) {
+  const safeUrl = normalizeValidSupabaseUrl(url);
+  if (!safeUrl || !key) {
     return null;
   }
   if (!supabaseInstance) {
     try {
-      supabaseInstance = createClient(url, key, {
+      supabaseInstance = createClient(safeUrl, key, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -58,7 +120,7 @@ export function getSupabaseClient(): SupabaseClient | null {
         },
       });
     } catch (e) {
-      console.error('Failed to initialize Supabase client:', e);
+      console.warn('Failed to initialize Supabase client:', e);
       return null;
     }
   }
@@ -75,7 +137,14 @@ export async function testSupabaseConnection(
   key: string
 ): Promise<{ success: boolean; message: string; user?: User | null }> {
   try {
-    const client = createClient(url, key);
+    const safeUrl = normalizeValidSupabaseUrl(url);
+    if (!safeUrl) {
+      return {
+        success: false,
+        message: 'Invalid Supabase URL. Please enter a valid https:// project URL.',
+      };
+    }
+    const client = createClient(safeUrl, key.trim());
     // Test auth session first
     const { data: authData } = await client.auth.getSession();
 
@@ -677,3 +746,33 @@ export function subscribeToSupabaseFeedbacks(onChanged: () => void): () => void 
     } catch {}
   };
 }
+
+export function subscribeToSupabaseUdharRealtime(
+  onChanged: (table: 'udhar_transactions' | 'udhar_repayments' | 'udhar_contacts' | 'user_connections') => void
+): () => void {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+
+  const channel = client
+    .channel('realtime_shared_udhar_' + Math.random().toString(36).substring(2, 7))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_transactions' }, () => {
+      onChanged('udhar_transactions');
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_repayments' }, () => {
+      onChanged('udhar_repayments');
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_contacts' }, () => {
+      onChanged('udhar_contacts');
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections' }, () => {
+      onChanged('user_connections');
+    })
+    .subscribe();
+
+  return () => {
+    try {
+      client.removeChannel(channel);
+    } catch {}
+  };
+}
+

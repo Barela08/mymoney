@@ -27,7 +27,6 @@ import {
   Sparkles,
   Utensils,
   Coffee,
-  Download,
   HelpCircle,
   MessageSquare,
   Calculator,
@@ -40,12 +39,14 @@ import {
   Bell,
   MoreHorizontal,
   Grid,
+  Calendar,
+  Landmark,
+  Receipt,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import { usePwaInstall } from '../../context/PwaInstallContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 
@@ -89,7 +90,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt, isBannerVisible } = usePwaInstall();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
 
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -107,6 +107,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   const navItems: MobileNavItem[] = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
+    { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
+    { id: 'net_worth' as NavTab, label: 'Net Worth Tracker', icon: Landmark },
+    { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
+    { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
+    { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
     { id: 'home' as NavTab, label: 'Received Money', icon: ArrowDownLeft, badge: formatINR(summary.totalReceivedMoney || summary.totalHomeReceived) },
     { id: 'room' as NavTab, label: 'Room Section', icon: DoorOpen, badge: formatINR(summary.totalRoomExpenses) },
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
@@ -330,11 +336,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       </div>
 
       {/* Floating Action Button (FAB) for Mobile Quick Add */}
-      <div
-        className={`fixed right-4 z-40 lg:hidden transition-all duration-300 ease-out ${
-          isBannerVisible ? 'bottom-36' : 'bottom-20'
-        }`}
-      >
+      <div className="fixed right-4 bottom-20 z-40 lg:hidden transition-all duration-300 ease-out">
         <button
           onClick={onOpenAddModal}
           className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-md border border-emerald-500/30 transition-transform p-3 cursor-pointer"
@@ -415,7 +417,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         <button
           onClick={() => setIsMoreSheetOpen(!isMoreSheetOpen)}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            isMoreSheetOpen || ['budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'privacy_policy'].includes(currentTab)
+            isMoreSheetOpen || ['ai_assistant', 'expense_calendar', 'smart_alerts', 'receipt_scanner', 'net_worth', 'safe_to_spend', 'budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'privacy_policy'].includes(currentTab)
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
@@ -453,6 +455,78 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
             {/* Grid of features */}
             <div className="grid grid-cols-4 gap-2.5 pt-1">
+              {/* AI Assistant */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('ai_assistant');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 stroke-[1.75]" />
+                <span className="text-xs font-medium">AI Chat</span>
+              </button>
+
+              {/* Receipt OCR */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('receipt_scanner');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">OCR</span>
+              </button>
+
+              {/* Calendar */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('expense_calendar');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">Calendar</span>
+              </button>
+
+              {/* Safe-to-Spend */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('safe_to_spend');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">Safe</span>
+              </button>
+
+              {/* Net Worth */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('net_worth');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">Net Worth</span>
+              </button>
+
+              {/* Smart Alerts */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('smart_alerts');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">Smart</span>
+              </button>
+
               {/* Budget */}
               <button
                 onClick={() => {

@@ -71,6 +71,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     totalBorrowed: 0,
     outstandingReceivable: 0,
     outstandingPayable: 0,
+    netBalance: 0,
     settledAmount: 0,
     overdueAmount: 0,
   });

@@ -483,5 +483,111 @@ CREATE POLICY "calc_settings_user_all" ON public.user_calculator_settings
     FOR ALL USING (auth.uid() = user_id);
 
 -- ==============================================================================
+-- 11. SHARED UDHAR & PEOPLE REALTIME PUBLICATION
+-- ==============================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_transactions') THEN
+    ALTER TABLE public.udhar_transactions REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'udhar_transactions') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.udhar_transactions;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_repayments') THEN
+    ALTER TABLE public.udhar_repayments REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'udhar_repayments') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.udhar_repayments;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_contacts') THEN
+    ALTER TABLE public.udhar_contacts REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'udhar_contacts') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.udhar_contacts;
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_connections') THEN
+    ALTER TABLE public.user_connections REPLICA IDENTITY FULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'user_connections') THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.user_connections;
+    END IF;
+  END IF;
+END $$;
+
+-- ==============================================================================
+-- 12. AI FINANCIAL INTELLIGENCE TABLES — ROW LEVEL SECURITY (STRICT USER ISOLATION)
+-- ==============================================================================
+-- Applies auth.uid()::text = user_id isolation to all tables introduced for
+-- AI Money Assistant, Smart Categorization, Receipt Scanner, Net Worth Tracker,
+-- Safe-to-Spend Calculator, and Smart Financial Alerts.
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'ai_conversations',
+    'ai_messages',
+    'user_categorization_rules',
+    'receipt_records',
+    'net_worth_assets',
+    'net_worth_liabilities',
+    'net_worth_settings',
+    'net_worth_snapshots',
+    'safe_to_spend_preferences',
+    'smart_alert_preferences',
+    'smart_alert_events'
+  ]
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_owner_isolation" ON public.%I', tbl, tbl);
+      EXECUTE format(
+        'CREATE POLICY "%s_owner_isolation" ON public.%I FOR ALL USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id)',
+        tbl,
+        tbl
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ==============================================================================
+-- 12. AI FINANCIAL INTELLIGENCE TABLES — ROW LEVEL SECURITY (STRICT USER ISOLATION)
+-- ==============================================================================
+-- Applies auth.uid()::text = user_id isolation to all tables introduced for
+-- AI Money Assistant, Smart Categorization, Receipt Scanner, Net Worth Tracker,
+-- Safe-to-Spend Calculator, and Smart Financial Alerts.
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'ai_conversations',
+    'ai_messages',
+    'user_categorization_rules',
+    'receipt_records',
+    'net_worth_assets',
+    'net_worth_liabilities',
+    'net_worth_settings',
+    'net_worth_snapshots',
+    'safe_to_spend_preferences',
+    'smart_alert_preferences',
+    'smart_alert_events'
+  ]
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_owner_isolation" ON public.%I', tbl, tbl);
+      EXECUTE format(
+        'CREATE POLICY "%s_owner_isolation" ON public.%I FOR ALL USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id)',
+        tbl,
+        tbl
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================
+
+
+
