@@ -122,13 +122,13 @@ runTest('User Control and Freedom: Soft deletion to Recycle Bin preserves comple
 // HEURISTIC 3: ERROR PREVENTION & FINANCIAL INTEGRITY
 // -----------------------------------------------------------------------------
 runTest('Error Prevention: Amount validation rejects zero, negative, and invalid numeric values', () => {
-  assert.strictEqual(validateAmount(0), false);
-  assert.strictEqual(validateAmount(-50), false);
-  assert.strictEqual(validateAmount(NaN), false);
-  assert.strictEqual(validateAmount(Infinity), false);
-  assert.strictEqual(validateAmount(100.5), true);
-  assert.strictEqual(validateAmount('500'), true);
-  assert.strictEqual(validateAmount('invalid'), false);
+  assert.strictEqual(validateAmount(0).isValid, false);
+  assert.strictEqual(validateAmount(-50).isValid, false);
+  assert.strictEqual(validateAmount(NaN).isValid, false);
+  assert.strictEqual(validateAmount(Infinity).isValid, false);
+  assert.strictEqual(validateAmount(100.5).isValid, true);
+  assert.strictEqual(validateAmount('500').isValid, true);
+  assert.strictEqual(validateAmount('invalid').isValid, false);
 });
 
 runTest('Error Prevention: Payload validator enforces required fields, positive amount, and valid category', () => {
