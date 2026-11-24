@@ -1,7 +1,14 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/lib/financialIntelligenceEngine';
 
-const AI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const CANDIDATE_MODELS = [
+  process.env.GEMINI_MODEL,
+  'gemini-3.5-flash',
+  'gemini-3.8-flash',
+  'gemini-4-hydrogen',
+].filter(Boolean) as string[];
+
+const AI_MODEL = CANDIDATE_MODELS[0] || 'gemini-3.5-flash';
 const REQUEST_TIMEOUT_MS = 28000;
 
 export interface AiProviderStatus {
@@ -119,38 +126,48 @@ ${JSON.stringify(params.context)}`;
     parts: [{ text: m.content.slice(0, 2000) }],
   }));
 
-  try {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: AI_MODEL,
-        contents: [
-          ...recentHistory,
-          { role: 'user', parts: [{ text: params.question.slice(0, 1500) }] },
-        ],
-        config: {
-          systemInstruction,
-        },
-      })
-    );
+  let answer = '';
+  let usedModel = AI_MODEL;
+  let lastError: any = null;
 
-    const answer = (response.text || '').trim();
-    if (!answer) {
-      throw new AiProviderError(
-        'AI_PROVIDER_ERROR',
-        'AI returned an empty response. Please try asking again.',
-        502
+  for (const model of CANDIDATE_MODELS) {
+    try {
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model,
+          contents: [
+            ...recentHistory,
+            { role: 'user', parts: [{ text: params.question.slice(0, 1500) }] },
+          ],
+          config: {
+            systemInstruction,
+          },
+        })
       );
-    }
 
-    return { answer, model: AI_MODEL };
-  } catch (err: any) {
-    if (err instanceof AiProviderError) throw err;
-    throw new AiProviderError(
-      'AI_PROVIDER_ERROR',
-      'Unable to reach the AI assistant right now. Please retry in a moment.',
-      502
-    );
+      const text = (response.text || '').trim();
+      if (text) {
+        answer = text;
+        usedModel = model;
+        break;
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[AI Assistant] Model ${model} failed, trying next candidate:`, err?.message || err);
+    }
   }
+
+  if (answer) {
+    return { answer, model: usedModel };
+  }
+
+  console.error('[AI Assistant Final Error]:', lastError);
+  if (lastError instanceof AiProviderError) throw lastError;
+  throw new AiProviderError(
+    'AI_PROVIDER_ERROR',
+    lastError?.message || 'Unable to reach the AI assistant right now. Please retry in a moment.',
+    502
+  );
 }
 
 // ============================================================================
