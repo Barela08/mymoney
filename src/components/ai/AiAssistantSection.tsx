@@ -15,6 +15,8 @@ import {
   PanelLeftClose,
   Bot,
   User as UserIcon,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -66,6 +68,8 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
   const [inputText, setInputText] = useState('');
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const [lastError, setLastError] = useState<{ message: string; code?: string; retryQuestion?: string } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -96,7 +100,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       const [convRes, budRes, billRes, goalRes, nwRes, stsRes] = await Promise.all([
         aiFinanceApi.getConversations().catch(async () => {
           const st = await aiFinanceApi.getAiStatus().catch(() => null);
-          return { conversations: [], status: st || { configured: false, provider: 'gemini' as const, model: 'gemini-2.5-flash', ocrSupported: false } };
+          return { conversations: [], status: st || { configured: false, provider: 'gemini' as const, model: 'gemini-3.5-flash-lite', ocrSupported: false } };
         }),
         budgetApi.getBudgets().catch(() => ({ success: true, budgets: [] })),
         recurringBillsApi.getBills().catch(() => ({ success: true, bills: [] })),
@@ -273,6 +277,69 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       onClearInitialPrompt?.();
     }
   }, [initialPrompt, isLoadingInitial, handleSend, onClearInitialPrompt]);
+
+  // Speech Recognition (Voice Input / Mic)
+  const toggleListening = () => {
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop();
+      } catch {}
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      toast.error(
+        'Voice Input Unavailable',
+        'Your browser does not support voice recognition. Please try using Google Chrome or Microsoft Edge.'
+      );
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.lang = 'en-IN';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        toast.info('Listening...', 'Speak your financial question now.');
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0]?.transcript || '')
+          .join('');
+        if (transcript) {
+          setInputText(transcript);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event?.error);
+        setIsListening(false);
+        if (event?.error === 'not-allowed') {
+          toast.error('Microphone Denied', 'Please allow microphone access in your browser settings.');
+        } else if (event?.error !== 'no-speech') {
+          toast.error('Mic Error', `Speech error: ${event?.error || 'Unknown error'}`);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (err: any) {
+      setIsListening(false);
+      toast.error('Microphone Error', err?.message || 'Could not start microphone.');
+    }
+  };
 
   const handleNewConversation = () => {
     setActiveConvId(null);
@@ -645,11 +712,34 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Ask about your spending, budgets, bills, savings, Udhar, or Net Worth..."
+              placeholder={isListening ? 'Listening... speak now' : 'Ask about your spending, budgets, bills, savings, Udhar, or Net Worth...'}
               maxLength={1500}
               disabled={isSending}
-              className="flex-1 min-w-0 h-11 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className={`flex-1 min-w-0 h-11 px-4 rounded-xl border text-sm transition-all focus:outline-none focus:ring-2 ${
+                isListening
+                  ? 'border-rose-400 bg-rose-50/40 dark:bg-rose-950/20 text-rose-900 dark:text-rose-100 placeholder:text-rose-400 focus:ring-rose-500'
+                  : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-emerald-500'
+              }`}
             />
+            {/* Mic Voice Input Button */}
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={isSending}
+              className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                isListening
+                  ? 'bg-rose-500 text-white animate-pulse ring-4 ring-rose-500/30 shadow-lg shadow-rose-500/20'
+                  : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs'
+              }`}
+              aria-label={isListening ? 'Stop listening' : 'Voice input'}
+              title={isListening ? 'Listening... click to stop' : 'Tap to speak your question (Voice Input)'}
+            >
+              {isListening ? (
+                <MicOff className="w-4 h-4 text-white" />
+              ) : (
+                <Mic className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              )}
+            </button>
             <button
               type="submit"
               disabled={isSending || !inputText.trim()}

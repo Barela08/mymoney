@@ -335,11 +335,29 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         </div>
       </div>
 
-      {/* Floating Action Button (FAB) for Mobile Quick Add */}
-      <div className="fixed right-4 bottom-20 z-40 lg:hidden transition-all duration-300 ease-out">
+      {/* Floating Action Buttons (FAB) for Mobile Quick Add & AI Assistant */}
+      <div className="fixed right-4 bottom-20 z-40 flex flex-col gap-2.5 items-center lg:hidden transition-all duration-300 ease-out">
+        {/* Floating AI Assistant Button */}
+        <button
+          onClick={() => {
+            setIsMoreSheetOpen(false);
+            onSelectTab('ai_assistant');
+          }}
+          className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg border transition-all duration-200 cursor-pointer ${
+            currentTab === 'ai_assistant'
+              ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 scale-105'
+              : 'bg-slate-900 dark:bg-slate-800 text-emerald-400 hover:text-emerald-300 border-slate-700/80 hover:scale-105 active:scale-95 shadow-slate-900/30'
+          }`}
+          aria-label="Ask AI Assistant"
+          title="Ask AI Assistant"
+        >
+          <Sparkles className="w-5 h-5 stroke-[2.2]" />
+        </button>
+
+        {/* Floating Add Transaction (+) Button */}
         <button
           onClick={onOpenAddModal}
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-md border border-emerald-500/30 transition-transform p-3 cursor-pointer"
+          className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-md border border-emerald-500/30 transition-transform cursor-pointer"
           aria-label="Add transaction"
           title="Add transaction"
         >

@@ -3,12 +3,14 @@ import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/li
 
 const CANDIDATE_MODELS = [
   process.env.GEMINI_MODEL,
+  'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
+  'gemini-3.6-flash',
   'gemini-3.8-flash',
   'gemini-4-hydrogen',
 ].filter(Boolean) as string[];
 
-const AI_MODEL = CANDIDATE_MODELS[0] || 'gemini-3.5-flash';
+const AI_MODEL = CANDIDATE_MODELS[0] || 'gemini-3.5-flash-lite';
 const REQUEST_TIMEOUT_MS = 28000;
 
 export interface AiProviderStatus {

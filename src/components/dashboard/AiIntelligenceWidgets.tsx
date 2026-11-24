@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   AlertCircle,
   CheckCircle2,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { budgetApi, recurringBillsApi, savingsGoalsApi, UserBudget, RecurringBill, SavingsGoal } from '../../lib/financialFeaturesApi';
@@ -43,6 +45,7 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
 }) => {
   const { transactions, summary, peopleSummaries } = useExpense();
   const [quickQuestion, setQuickQuestion] = useState('');
+  const [isListening, setIsListening] = useState(false);
 
   const [budgets, setBudgets] = useState<UserBudget[]>([]);
   const [bills, setBills] = useState<RecurringBill[]>([]);
@@ -145,6 +148,36 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
   );
 
   const unreadAlertsCount = smartAlerts.filter((a) => !a.isRead).length;
+
+  const toggleListening = () => {
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0]?.transcript || '')
+          .join('');
+        if (transcript) setQuickQuestion(transcript);
+      };
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
+      recognition.start();
+    } catch {
+      setIsListening(false);
+    }
+  };
 
   const handleSubmitQuickAsk = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,9 +321,25 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
               type="text"
               value={quickQuestion}
               onChange={(e) => setQuickQuestion(e.target.value)}
-              placeholder="e.g. Where did most of my money go this month?"
-              className="flex-1 min-w-0 h-10 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder={isListening ? 'Listening... speak now' : 'e.g. Where did most of my money go this month?'}
+              className={`flex-1 min-w-0 h-10 px-3.5 rounded-xl border text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 ${
+                isListening
+                  ? 'border-rose-400 bg-rose-50/40 dark:bg-rose-950/20 text-rose-900 dark:text-rose-100 placeholder:text-rose-400 focus:ring-rose-500'
+                  : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-emerald-500'
+              }`}
             />
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                isListening
+                  ? 'bg-rose-500 text-white animate-pulse ring-4 ring-rose-500/30'
+                  : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600'
+              }`}
+              title={isListening ? 'Listening... click to stop' : 'Tap to speak (Voice input)'}
+            >
+              {isListening ? <MicOff className="w-3.5 h-3.5 text-white" /> : <Mic className="w-3.5 h-3.5" />}
+            </button>
             <button
               type="submit"
               className="h-10 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shrink-0"
