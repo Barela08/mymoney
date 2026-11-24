@@ -596,17 +596,19 @@ export default function App() {
     <ThemeProvider>
       <ToastProvider>
         <AuthProvider>
-          <ExpenseProvider>
-            <PwaInstallProvider>
-              <NotificationProvider>
-                <AppErrorBoundary>
-                  <MainContent />
-                </AppErrorBoundary>
-                <PwaInstallBanner />
-                <PwaInstallModal />
-              </NotificationProvider>
-            </PwaInstallProvider>
-          </ExpenseProvider>
+          <PermissionProvider>
+            <ExpenseProvider>
+              <PwaInstallProvider>
+                <NotificationProvider>
+                  <AppErrorBoundary>
+                    <MainContent />
+                  </AppErrorBoundary>
+                  <PwaInstallBanner />
+                  <PwaInstallModal />
+                </NotificationProvider>
+              </PwaInstallProvider>
+            </ExpenseProvider>
+          </PermissionProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>
