@@ -27,10 +27,8 @@ import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
 import { DpdpConsentBanner } from './components/common/DpdpConsentBanner';
 import { DpdpConsentModal } from './components/common/DpdpConsentModal';
-import { StartupPermissionsModal } from './components/common/StartupPermissionsModal';
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
-import { PushPermissionBanner } from './components/notifications/PushPermissionBanner';
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
@@ -268,9 +266,6 @@ const MainContent: React.FC = () => {
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* State 11 & 12: Offline and Reconnecting Status Banner */}
       <OfflineBanner />
-
-      {/* Push Notification Opt-in Value Proposition Banner */}
-      <PushPermissionBanner />
 
       {/* Admin Maintenance Mode Banner */}
       {maintenanceSettings.isEnabled && isAdmin && (
@@ -529,9 +524,6 @@ const MainContent: React.FC = () => {
           {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}
           <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
           <DpdpConsentModal onOpenPrivacyPolicy={() => handleOpenHelpModal('dpdp')} />
-
-          {/* Startup Permissions Modal for Notification & Camera (for QR scanning) */}
-          <StartupPermissionsModal />
 
           {/* Full Notification Center Modal */}
           {isNotifCenterOpen && (
