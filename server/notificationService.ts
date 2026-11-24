@@ -1540,6 +1540,25 @@ export async function dispatchCampaign(campaignId: string): Promise<{
   if (campaign.target_type === 'all') {
     const allUsers = await query(`SELECT id FROM public.app_users`);
     userIds = allUsers.rows.map((r) => r.id);
+  } else if (campaign.target_type === 'installed') {
+    const installedUsers = await query(
+      `SELECT DISTINCT user_id as id FROM public.installed_devices WHERE is_installed = TRUE
+       UNION
+       SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
+    );
+    userIds = installedUsers.rows.map((r) => r.id);
+  } else if (campaign.target_type === 'push_subscribed') {
+    const pushUsers = await query(
+      `SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
+    );
+    userIds = pushUsers.rows.map((r) => r.id);
+  } else if (campaign.target_type === 'admins') {
+    const adminUsers = await query(
+      `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+    );
+    userIds = adminUsers.rows.map((r) => r.id);
+  } else if (campaign.target_type === 'specific' && (campaign.target_user_id || (campaign.target_user_ids && campaign.target_user_ids[0]))) {
+    userIds = [campaign.target_user_id || campaign.target_user_ids[0]];
   } else if (campaign.target_type === 'active') {
     const activeUsers = await query(
       `SELECT DISTINCT user_id as id FROM public.transactions
