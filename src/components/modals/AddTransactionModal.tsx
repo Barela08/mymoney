@@ -33,7 +33,6 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { useVoiceInput } from '../../lib/useVoiceInput';
 import { parseVoiceTransaction, ParsedVoiceDraft } from '../../lib/voiceTransactionParser';
-import { MicrophonePermissionModal } from '../common/MicrophonePermissionModal';
 import {
   TransactionCategory,
   TransactionSubcategory,
@@ -149,13 +148,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
   // Feature: Voice Transaction Entry & Dictation
   const [voiceDraft, setVoiceDraft] = useState<ParsedVoiceDraft | null>(null);
-  const [showMicModal, setShowMicModal] = useState(false);
   const [activeDictationField, setActiveDictationField] = useState<'transaction' | 'title' | 'notes' | null>(null);
 
   const {
     isListening,
     transcript: voiceTranscript,
-    isPermissionDenied,
     startListening,
     stopListening,
     language: voiceLang,
@@ -181,12 +178,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       toast.error('Voice Error', err);
     },
   });
-
-  useEffect(() => {
-    if (isPermissionDenied) {
-      setShowMicModal(true);
-    }
-  }, [isPermissionDenied]);
 
   // Compress & handle receipt attachment
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,13 +434,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   // Nielsen Heuristic: User Control & Freedom — Escape key handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !showUnsavedConfirm && !showMicModal) {
+      if (e.key === 'Escape' && isOpen && !showUnsavedConfirm) {
         handleAttemptClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isDirty, showUnsavedConfirm, showMicModal]);
+  }, [isOpen, isDirty, showUnsavedConfirm]);
 
   if (!isOpen) return null;
 
@@ -1646,15 +1637,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         documentName="New Transaction"
         onStay={() => setShowUnsavedConfirm(false)}
         onDiscard={handleDiscardChanges}
-      />
-
-      <MicrophonePermissionModal
-        isOpen={showMicModal}
-        onClose={() => setShowMicModal(false)}
-        onRetry={() => {
-          setShowMicModal(false);
-          void startListening();
-        }}
       />
     </div>
   );

@@ -25,8 +25,6 @@ export const PwaInstallModal: React.FC = () => {
 
   const [isTriggering, setIsTriggering] = useState(false);
 
-  if (!isModalOpen) return null;
-
   const handleInstallClick = async () => {
     if (isTriggering) return;
     setIsTriggering(true);
@@ -52,6 +50,8 @@ export const PwaInstallModal: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isModalOpen]);
+
+  if (!isModalOpen) return null;
 
   return (
     <div

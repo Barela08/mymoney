@@ -70,7 +70,6 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
-  const [showMicPermissionModal, setShowMicPermissionModal] = useState(false);
   const [speechLang, setSpeechLang] = useState<'hi-IN' | 'en-IN'>('hi-IN');
   const inputRef = useRef<HTMLInputElement>(null);
   const [lastError, setLastError] = useState<{ message: string; code?: string; retryQuestion?: string } | null>(null);
@@ -303,16 +302,18 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
     }
 
     // Step 1: Explicitly request audio permission via getUserMedia
-    // This triggers Chrome's native "Allow microphone" bar if unprompted!
+    // This triggers Chrome's native "Allow microphone" bar directly!
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach((track) => track.stop());
-        setShowMicPermissionModal(false);
       } catch (err: any) {
         console.warn('Microphone permission check failed:', err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setShowMicPermissionModal(true);
+          toast.error(
+            'Microphone Blocked',
+            'Browser me mic blocked hai. Address bar me 🔒 icon par click karke Microphone ko "Allow" kar dein.'
+          );
           return;
         }
       }
@@ -348,7 +349,10 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
         console.warn('Speech recognition error:', event?.error);
         setIsListening(false);
         if (event?.error === 'not-allowed') {
-          setShowMicPermissionModal(true);
+          toast.error(
+            'Microphone Blocked',
+            'Browser me mic blocked hai. Address bar me 🔒 icon par click karke Microphone ko "Allow" kar dein.'
+          );
         } else if (event?.error !== 'no-speech') {
           toast.error('Mic Error', `Speech error: ${event?.error || 'Unknown error'}`);
         }
@@ -361,11 +365,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       recognition.start();
     } catch (err: any) {
       setIsListening(false);
-      if (err?.name === 'NotAllowedError') {
-        setShowMicPermissionModal(true);
-      } else {
-        toast.error('Microphone Error', err?.message || 'Could not start microphone.');
-      }
+      toast.error('Microphone Error', err?.message || 'Could not start microphone.');
     }
   }, [isListening, speechLang, toast]);
 
@@ -811,86 +811,6 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
           </form>
         </section>
       </div>
-
-      {/* Microphone Permission Modal (Help user allow mic in browser) */}
-      {showMicPermissionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl relative text-left">
-            <button
-              onClick={() => setShowMicPermissionModal(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3.5 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                <MicOff className="w-6 h-6 stroke-[2.2]" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                  Microphone Access Required
-                </h3>
-                <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-                  Browser me mic permission block hai
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
-              Voice AI chalane ke liye browser me microphone allow karna jaroori hai. Bas yeh 2 aasan steps karein:
-            </p>
-
-            <div className="space-y-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl p-3.5 mb-5 text-xs text-slate-700 dark:text-slate-300">
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  1
-                </span>
-                <span>
-                  Browser ke sabse upar URL bar me <strong className="text-slate-900 dark:text-white">🔒 (Lock) / ⚙️ (Site Settings)</strong> icon par click karein.
-                </span>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  2
-                </span>
-                <span>
-                  Wahan <strong className="text-slate-900 dark:text-white">Microphone</strong> ko toggle karke <strong className="text-emerald-600 dark:text-emerald-400">"Allow" (ON)</strong> kar dein.
-                </span>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  3
-                </span>
-                <span>
-                  Neeche <strong className="text-emerald-600 dark:text-emerald-400">"Try Again"</strong> button dabayein ya page Refresh (F5) karein.
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMicPermissionModal(false);
-                  toggleListening();
-                }}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Try Again (फिर से चेक करें)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowMicPermissionModal(false)}
-                className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <ConfirmModal
         isOpen={confirmClearAll}

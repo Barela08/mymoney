@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Search, Mic, MicOff, X } from 'lucide-react';
-import { useVoiceInput, VoiceLanguage } from '../../lib/useVoiceInput';
-import { MicrophonePermissionModal } from './MicrophonePermissionModal';
+import { useVoiceInput } from '../../lib/useVoiceInput';
 
 interface SearchVoiceBarProps {
   value: string;
@@ -20,27 +19,17 @@ export const SearchVoiceBar: React.FC<SearchVoiceBarProps> = ({
   className = '',
   autoFocus = false,
 }) => {
-  const [showMicModal, setShowMicModal] = useState(false);
-
   const {
     isListening,
     startListening,
     stopListening,
-    isPermissionDenied,
     language,
-    setLanguage,
   } = useVoiceInput({
     onResult: (spokenText) => {
       onChange(spokenText);
       onSearch(spokenText);
     },
   });
-
-  useEffect(() => {
-    if (isPermissionDenied) {
-      setShowMicModal(true);
-    }
-  }, [isPermissionDenied]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -121,15 +110,6 @@ export const SearchVoiceBar: React.FC<SearchVoiceBarProps> = ({
         <Search className="w-3.5 h-3.5" />
         <span className="hidden sm:inline">Search</span>
       </button>
-
-      <MicrophonePermissionModal
-        isOpen={showMicModal}
-        onClose={() => setShowMicModal(false)}
-        onRetry={() => {
-          setShowMicModal(false);
-          void startListening();
-        }}
-      />
     </div>
   );
 };
