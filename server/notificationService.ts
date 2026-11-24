@@ -1642,3 +1642,418 @@ export async function processScheduledCampaigns(): Promise<number> {
   }
   return processed;
 }
+
+// ==============================================================================
+// PWA Installed User & Device Registration
+// ==============================================================================
+
+export interface RecordDeviceInstallationParams {
+  userId: string;
+  deviceType?: string;
+  browser?: string;
+  os?: string;
+  userAgent?: string;
+  isInstalled?: boolean;
+  installationStatus?: string;
+  pushPermission?: string;
+  pushSubscriptionStatus?: string;
+  ipAddress?: string;
+}
+
+// In-memory fallback cache for resilience when PostgreSQL is offline or mocking
+const localInstalledDevices = new Map<string, any>();
+
+export async function recordDeviceInstallation(
+  params: RecordDeviceInstallationParams
+): Promise<{ success: boolean; isNewInstall: boolean; record: any }> {
+  const {
+    userId,
+    deviceType = 'desktop',
+    browser = 'Chrome',
+    os = 'Unknown OS',
+    userAgent = '',
+    isInstalled = false,
+    installationStatus = isInstalled ? 'installed_pwa' : 'browser',
+    pushPermission = 'default',
+    pushSubscriptionStatus = 'none',
+    ipAddress = '',
+  } = params;
+
+  if (!userId) {
+    throw new Error('userId is required for device installation registration');
+  }
+
+  let isNewInstall = false;
+  const now = new Date();
+  const installedAt = isInstalled ? now.toISOString() : null;
+
+  try {
+    // Check if device already exists to detect first-time PWA install
+    const existing = await query(
+      `SELECT id, is_installed, installed_at FROM public.installed_devices
+       WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
+      [userId, browser, os, deviceType]
+    );
+
+    if (existing.rows.length > 0) {
+      const prev = existing.rows[0];
+      if (!prev.is_installed && isInstalled) {
+        isNewInstall = true;
+      }
+
+      const updateRes = await query(
+        `UPDATE public.installed_devices
+         SET 
+           installation_status = $1,
+           is_installed = $2,
+           installed_at = COALESCE(installed_at, $3),
+           last_active_at = NOW(),
+           push_permission = $4,
+           push_subscription_status = $5,
+           user_agent = $6,
+           ip_address = $7,
+           updated_at = NOW()
+         WHERE id = $8
+         RETURNING *`,
+        [
+          installationStatus,
+          isInstalled,
+          installedAt,
+          pushPermission,
+          pushSubscriptionStatus,
+          userAgent,
+          ipAddress,
+          prev.id,
+        ]
+      );
+
+      const record = updateRes.rows[0];
+
+      // If user newly installed PWA, notify administrators
+      if (isNewInstall) {
+        recordAdminNotification({
+          eventType: 'pwa_install',
+          title: 'PWA Installed by User',
+          message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+          userId,
+          metadata: { deviceType, browser, os, installedAt },
+        }).catch(() => {});
+      }
+
+      return { success: true, isNewInstall, record };
+    } else {
+      if (isInstalled) {
+        isNewInstall = true;
+      }
+
+      const insertRes = await query(
+        `INSERT INTO public.installed_devices
+         (user_id, device_type, browser, os, user_agent, installation_status, is_installed, installed_at, last_active_at, push_permission, push_subscription_status, ip_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)
+         RETURNING *`,
+        [
+          userId,
+          deviceType,
+          browser,
+          os,
+          userAgent,
+          installationStatus,
+          isInstalled,
+          installedAt,
+          pushPermission,
+          pushSubscriptionStatus,
+          ipAddress,
+        ]
+      );
+
+      const record = insertRes.rows[0];
+
+      if (isNewInstall) {
+        recordAdminNotification({
+          eventType: 'pwa_install',
+          title: 'PWA Installed by User',
+          message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+          userId,
+          metadata: { deviceType, browser, os, installedAt },
+        }).catch(() => {});
+      }
+
+      return { success: true, isNewInstall, record };
+    }
+  } catch (err: any) {
+    // In-memory fallback
+    const key = `${userId}:${browser}:${os}:${deviceType}`;
+    const prev = localInstalledDevices.get(key);
+    if (!prev?.is_installed && isInstalled) {
+      isNewInstall = true;
+    }
+    const record = {
+      id: prev?.id || `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      user_id: userId,
+      device_type: deviceType,
+      browser,
+      os,
+      user_agent: userAgent,
+      installation_status: installationStatus,
+      is_installed: isInstalled,
+      installed_at: prev?.installed_at || (isInstalled ? now.toISOString() : null),
+      last_active_at: now.toISOString(),
+      push_permission: pushPermission,
+      push_subscription_status: pushSubscriptionStatus,
+      last_delivery_result: prev?.last_delivery_result || 'none',
+    };
+    localInstalledDevices.set(key, record);
+    return { success: true, isNewInstall, record };
+  }
+}
+
+export async function getAdminInstalledDevices(filters?: {
+  search?: string;
+  deviceType?: string;
+  installedOnly?: boolean;
+  pushPermission?: string;
+}): Promise<any[]> {
+  try {
+    const res = await query(`
+      SELECT 
+        d.id,
+        d.user_id,
+        COALESCE(u.full_name, u.email, 'Anonymous User') as user_name,
+        u.email as user_email,
+        d.device_type,
+        d.browser,
+        d.os,
+        d.installation_status,
+        d.is_installed,
+        d.installed_at,
+        d.last_active_at,
+        d.push_permission,
+        d.push_subscription_status,
+        d.last_delivery_result,
+        d.created_at,
+        d.updated_at
+      FROM public.installed_devices d
+      LEFT JOIN public.app_users u ON d.user_id = u.id
+      ORDER BY d.last_active_at DESC
+      LIMIT 200
+    `);
+
+    if (res.rows && res.rows.length > 0) {
+      let rows = res.rows;
+      if (filters?.installedOnly) {
+        rows = rows.filter((r) => r.is_installed);
+      }
+      if (filters?.search) {
+        const q = filters.search.toLowerCase();
+        rows = rows.filter(
+          (r) =>
+            r.user_name?.toLowerCase().includes(q) ||
+            r.user_email?.toLowerCase().includes(q) ||
+            r.user_id?.toLowerCase().includes(q) ||
+            r.browser?.toLowerCase().includes(q) ||
+            r.os?.toLowerCase().includes(q)
+        );
+      }
+      return rows;
+    }
+  } catch (err) {
+    // If DB table not queried or empty, check in-memory devices
+  }
+
+  // Fallback to in-memory devices
+  const list = Array.from(localInstalledDevices.values());
+  return list;
+}
+
+// ==============================================================================
+// Two-Way Notification System: User-to-Admin & Admin Preferences
+// ==============================================================================
+
+export interface AdminNotificationRecord {
+  id: string;
+  event_type: 'new_user' | 'pwa_install' | 'support_ticket' | 'critical_alert' | 'push_failure';
+  title: string;
+  message: string;
+  user_id?: string;
+  user_email?: string;
+  metadata?: Record<string, any>;
+  is_read: boolean;
+  read_at?: string | null;
+  created_at: string;
+}
+
+const localAdminNotifications: AdminNotificationRecord[] = [];
+let localAdminPreferences = {
+  alert_new_user_registration: true,
+  alert_app_installation: true,
+  alert_support_ticket: true,
+  alert_critical_security: true,
+  alert_push_failure: true,
+  quiet_hours_enabled: false,
+  quiet_hours_start: '22:00',
+  quiet_hours_end: '07:00',
+  delivery_channel: 'push_and_inapp',
+};
+
+export async function recordAdminNotification(params: {
+  eventType: 'new_user' | 'pwa_install' | 'support_ticket' | 'critical_alert' | 'push_failure';
+  title: string;
+  message: string;
+  userId?: string;
+  userEmail?: string;
+  metadata?: Record<string, any>;
+}): Promise<boolean> {
+  const { eventType, title, message, userId, userEmail, metadata = {} } = params;
+
+  try {
+    await query(
+      `INSERT INTO public.admin_notifications
+       (event_type, title, message, user_id, user_email, metadata, is_read, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())`,
+      [eventType, title, message, userId || null, userEmail || null, JSON.stringify(metadata)]
+    );
+  } catch {
+    localAdminNotifications.unshift({
+      id: `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      event_type: eventType,
+      title,
+      message,
+      user_id: userId,
+      user_email: userEmail,
+      metadata,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  // Check admin alert preference & quiet hours before dispatching live push to admins
+  const prefs = await getAdminNotificationPreferences();
+  const isAlertEnabled =
+    (eventType === 'new_user' && prefs.alert_new_user_registration) ||
+    (eventType === 'pwa_install' && prefs.alert_app_installation) ||
+    (eventType === 'support_ticket' && prefs.alert_support_ticket) ||
+    (eventType === 'critical_alert' && prefs.alert_critical_security) ||
+    (eventType === 'push_failure' && prefs.alert_push_failure);
+
+  if (!isAlertEnabled) {
+    return true;
+  }
+
+  // Find all administrators
+  try {
+    const admins = await query(
+      `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+    );
+    for (const a of admins.rows) {
+      createNotification({
+        userId: a.id,
+        title: `[Admin Alert] ${title}`,
+        message,
+        category: 'security',
+        type: eventType === 'critical_alert' ? 'error' : 'info',
+        channels: prefs.delivery_channel === 'inapp_only' ? ['in_app'] : ['in_app', 'push'],
+        deepLink: 'admin',
+        skipPreferenceCheck: true,
+      }).catch(() => {});
+    }
+  } catch {}
+
+  return true;
+}
+
+export async function getAdminNotifications(limit = 50): Promise<AdminNotificationRecord[]> {
+  try {
+    const res = await query(
+      `SELECT * FROM public.admin_notifications
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    if (res.rows && res.rows.length > 0) {
+      return res.rows;
+    }
+  } catch {}
+  return localAdminNotifications.slice(0, limit);
+}
+
+export async function markAdminNotificationRead(id: string): Promise<boolean> {
+  try {
+    await query(
+      `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
+      [id]
+    );
+  } catch {
+    const found = localAdminNotifications.find((n) => n.id === id);
+    if (found) {
+      found.is_read = true;
+      found.read_at = new Date().toISOString();
+    }
+  }
+  return true;
+}
+
+export async function markAllAdminNotificationsRead(): Promise<boolean> {
+  try {
+    await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
+  } catch {
+    localAdminNotifications.forEach((n) => {
+      n.is_read = true;
+      n.read_at = new Date().toISOString();
+    });
+  }
+  return true;
+}
+
+export async function getAdminNotificationPreferences(adminId?: string): Promise<any> {
+  try {
+    const res = await query(`SELECT * FROM public.admin_notification_preferences LIMIT 1`);
+    if (res.rows && res.rows.length > 0) {
+      return res.rows[0];
+    }
+  } catch {}
+  return localAdminPreferences;
+}
+
+export async function saveAdminNotificationPreferences(payload: any, adminId?: string): Promise<any> {
+  localAdminPreferences = {
+    ...localAdminPreferences,
+    ...payload,
+  };
+
+  try {
+    const res = await query(
+      `INSERT INTO public.admin_notification_preferences
+       (admin_id, alert_new_user_registration, alert_app_installation, alert_support_ticket, alert_critical_security, alert_push_failure, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, delivery_channel, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+       ON CONFLICT (admin_id) DO UPDATE SET
+         alert_new_user_registration = EXCLUDED.alert_new_user_registration,
+         alert_app_installation = EXCLUDED.alert_app_installation,
+         alert_support_ticket = EXCLUDED.alert_support_ticket,
+         alert_critical_security = EXCLUDED.alert_critical_security,
+         alert_push_failure = EXCLUDED.alert_push_failure,
+         quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
+         quiet_hours_start = EXCLUDED.quiet_hours_start,
+         quiet_hours_end = EXCLUDED.quiet_hours_end,
+         delivery_channel = EXCLUDED.delivery_channel,
+         updated_at = NOW()
+       RETURNING *`,
+      [
+        adminId || '00000000-0000-0000-0000-000000000000',
+        Boolean(payload.alert_new_user_registration ?? true),
+        Boolean(payload.alert_app_installation ?? true),
+        Boolean(payload.alert_support_ticket ?? true),
+        Boolean(payload.alert_critical_security ?? true),
+        Boolean(payload.alert_push_failure ?? true),
+        Boolean(payload.quiet_hours_enabled ?? false),
+        payload.quiet_hours_start || '22:00',
+        payload.quiet_hours_end || '07:00',
+        payload.delivery_channel || 'push_and_inapp',
+      ]
+    );
+    if (res.rows && res.rows.length > 0) {
+      return res.rows[0];
+    }
+  } catch {}
+
+  return localAdminPreferences;
+}
