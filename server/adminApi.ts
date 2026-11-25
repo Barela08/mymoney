@@ -16,6 +16,13 @@ import {
 import {
   notifyAdminTicketReply,
   dispatchCampaign,
+  getAdminInstalledDevices,
+  getAdminNotificationPreferences,
+  saveAdminNotificationPreferences,
+  getAdminNotifications,
+  markAdminNotificationRead,
+  markAllAdminNotificationsRead,
+  createNotification,
 } from './notificationService';
 
 // Helper to send JSON responses
@@ -1666,6 +1673,139 @@ export async function handleAdminApiRequest(
         activePushSubscribers: parseInt(subRes.rows[0]?.count || '0', 10),
         inAppTotal: parseInt(notifsRes.rows[0]?.total_in_app || '0', 10),
         inAppRead: parseInt(notifsRes.rows[0]?.read_count || '0', 10),
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 16C. PWA INSTALLED USER & DEVICE MANAGEMENT
+    // =========================================================
+
+    // GET /api/admin/installed-devices
+    if (pathname === '/api/admin/installed-devices' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'users.read');
+      if (!auth) return true;
+
+      const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      const search = (urlObj.searchParams.get('q') || '').trim();
+      const installedOnly = urlObj.searchParams.get('installed_only') === 'true';
+      const deviceType = (urlObj.searchParams.get('device_type') || '').trim();
+      const pushPermission = (urlObj.searchParams.get('push_permission') || '').trim();
+
+      const devices = await getAdminInstalledDevices({
+        search,
+        installedOnly,
+        deviceType: deviceType || undefined,
+        pushPermission: pushPermission || undefined,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        devices,
+        total: devices.length,
+        installedCount: devices.filter((d) => d.is_installed).length,
+        pushSubscribedCount: devices.filter((d) => d.push_subscription_status === 'active').length,
+      });
+      return true;
+    }
+
+    // POST /api/admin/notifications/test (Sends test notification to current admin)
+    if (pathname === '/api/admin/notifications/test' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'notifications.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const testTitle = body.title || 'Test Push Notification';
+      const testMessage = body.message || 'This is a test notification from My Money Manager Admin Control Center.';
+      const deepLink = body.deep_link || 'dashboard';
+
+      const resPush = await createNotification({
+        userId: auth.authUser.id,
+        title: `[Test] ${testTitle}`,
+        message: testMessage,
+        category: 'general',
+        type: 'info',
+        deepLink,
+        channels: ['in_app', 'push'],
+        skipPreferenceCheck: true,
+      });
+
+      sendJson(res, 200, {
+        success: resPush.success,
+        message: resPush.success
+          ? 'Test notification successfully dispatched to your administrator account.'
+          : 'Could not send test push notification. Check if push is enabled on this browser.',
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 16D. TWO-WAY NOTIFICATIONS: USER TO ADMIN NOTIFICATIONS
+    // =========================================================
+
+    // GET /api/admin/system/notifications
+    if (pathname === '/api/admin/system/notifications' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'dashboard.view');
+      if (!auth) return true;
+
+      const notifs = await getAdminNotifications(100);
+      sendJson(res, 200, { success: true, notifications: notifs });
+      return true;
+    }
+
+    // POST /api/admin/system/notifications/:id/read
+    const adminNotifReadMatch = pathname.match(/^\/api\/admin\/system\/notifications\/([a-zA-Z0-9_-]+)\/read$/);
+    if (adminNotifReadMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'dashboard.view');
+      if (!auth) return true;
+
+      await markAdminNotificationRead(adminNotifReadMatch[1]);
+      sendJson(res, 200, { success: true, message: 'Notification marked as read.' });
+      return true;
+    }
+
+    // POST /api/admin/system/notifications/mark-all-read
+    if (pathname === '/api/admin/system/notifications/mark-all-read' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'dashboard.view');
+      if (!auth) return true;
+
+      await markAllAdminNotificationsRead();
+      sendJson(res, 200, { success: true, message: 'All admin notifications marked as read.' });
+      return true;
+    }
+
+    // =========================================================
+    // 16E. ADMIN NOTIFICATION PREFERENCES
+    // =========================================================
+
+    // GET /api/admin/settings/notification-preferences
+    if (pathname === '/api/admin/settings/notification-preferences' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const preferences = await getAdminNotificationPreferences(auth.authUser.id);
+      sendJson(res, 200, { success: true, preferences });
+      return true;
+    }
+
+    // POST /api/admin/settings/notification-preferences
+    if (pathname === '/api/admin/settings/notification-preferences' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const preferences = await saveAdminNotificationPreferences(body, auth.authUser.id);
+
+      await logSecurityEvent('ADMIN_NOTIFICATION_PREFS_UPDATED', {
+        userId: auth.authUser.id,
+        actorRole: auth.role,
+        details: body,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Admin notification preferences updated successfully.',
+        preferences,
       });
       return true;
     }

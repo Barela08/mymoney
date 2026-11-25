@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  PlusCircle,
   Calendar,
   Clock,
   ArrowDownLeft,
   ChevronDown,
   ChevronUp,
-  FileText,
-  Paperclip,
   Check,
   Sparkles,
 } from 'lucide-react';

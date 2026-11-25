@@ -7,15 +7,8 @@ import {
   Share2,
   Calendar,
   Clock,
-  ArrowDownLeft,
-  CheckCircle2,
-  Building,
   CreditCard,
-  FileText,
-  Landmark,
   ShieldCheck,
-  AlertTriangle,
-  RotateCcw,
 } from 'lucide-react';
 import { Transaction } from '../../types';
 import {

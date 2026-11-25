@@ -141,11 +141,10 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
     [transactions, summary.availableBalance, budgets, bills, goals, alertPrefs, alertState]
   );
 
-  const now = new Date();
-  const calendarPreview = useMemo(
-    () => buildExpenseCalendarMonth(transactions, now.getFullYear(), now.getMonth() + 1),
-    [transactions]
-  );
+  const calendarPreview = useMemo(() => {
+    const now = new Date();
+    return buildExpenseCalendarMonth(transactions, now.getFullYear(), now.getMonth() + 1);
+  }, [transactions]);
 
   const unreadAlertsCount = smartAlerts.filter((a) => !a.isRead).length;
 

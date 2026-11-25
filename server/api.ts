@@ -448,6 +448,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         console.error('[Welcome Email Background Error]:', err);
       });
 
+      // Dispatch two-way notification to administrators
+      recordAdminNotification({
+        eventType: 'new_user',
+        title: 'New User Registered',
+        message: `${newUser.full_name} (${email}) created a new account.`,
+        userId: newUser.id,
+        userEmail: email,
+        metadata: { role: 'user', registeredAt: new Date().toISOString() },
+      }).catch(() => {});
+
       await logSecurityEvent('USER_REGISTER_SUCCESS', {
         userId: newUser.id,
         userEmail: email,
@@ -5296,6 +5306,42 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         message: 'Push notifications registered successfully.',
         subscription: reg.subscription,
       });
+      return true;
+    }
+
+    // 9b. REGISTER DEVICE & PWA INSTALLATION STATUS: POST /api/pwa/register-device
+    if (
+      (pathname === '/api/pwa/register-device' ||
+        pathname === '/api/devices/register' ||
+        pathname === '/api/pwa/record-install') &&
+      method === 'POST'
+    ) {
+      const authUser = await authenticateRequest(req);
+      const body = await parseJsonBody(req);
+      const userId = authUser?.id || body.userId;
+
+      if (!userId) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Authenticated user or userId is required to register device installation.',
+        });
+        return true;
+      }
+
+      const resDev = await recordDeviceInstallation({
+        userId,
+        deviceType: body.deviceType,
+        browser: body.browser,
+        os: body.os,
+        userAgent: userAgent || body.userAgent,
+        isInstalled: Boolean(body.isInstalled),
+        installationStatus: body.installationStatus,
+        pushPermission: body.pushPermission,
+        pushSubscriptionStatus: body.pushSubscriptionStatus,
+        ipAddress: clientIp,
+      });
+
+      sendJson(res, 200, { success: true, ...resDev });
       return true;
     }
 
