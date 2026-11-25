@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build && node scripts/build-api.mjs --check",
     "build:api": "node scripts/build-api.mjs",
     "test": "tsx scripts/run-security-tests.ts && tsx scripts/test-nielsen-usability-heuristics.ts && tsx src/lib/financialIntelligenceEngine.test.ts && tsx src/lib/sharedUdharEngine.test.ts && tsx scripts/test-admin-complete-system.ts && tsx scripts/test-permissions-and-qr-system.ts && tsx scripts/test-password-recovery-push-suite.ts && tsx scripts/test-upi-auto-detection.ts && tsx scripts/test-smart-calculator.ts && tsx scripts/test-privacy-consent-center.ts",
-    "test:security": "tsx scripts/run-security-tests.ts",
+    "test:security": "tsx scripts/run-security-tests.ts && tsx scripts/test-auth-token-hardening.ts",
     "test:nielsen": "tsx scripts/test-nielsen-usability-heuristics.ts",
     "test:admin": "tsx scripts/test-admin-complete-system.ts",
     "test:qr": "tsx scripts/test-permissions-and-qr-system.ts",
