@@ -66,6 +66,15 @@ import {
   recordAdminNotification,
 } from './notificationService.js';
 import {
+  insertFeedbackFallback,
+  listFeedbacksFallback,
+  listUserNotificationsFallback,
+  markUserNotificationReadFallback,
+  markAllUserNotificationsReadFallback,
+  deleteUserNotificationFallback,
+  clearAllUserNotificationsFallback,
+} from './supabaseRestFallback.js';
+import {
   normalizeSearchQuery,
   classifyLiveSearchQuery,
   maskEmailForPrivacy,
@@ -5098,42 +5107,81 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Fetch trusted user name and email from app_users
-      const uRes = await query('SELECT full_name, email, phone FROM public.app_users WHERE id = $1', [authUser.id]);
-      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
-      const trustedEmail = uRes.rows[0]?.email || authUser.email;
-      const trustedPhone = uRes.rows[0]?.phone || null;
+      const useDb = isDatabaseAvailable();
+      let trustedName = authUser.full_name || 'Valued User';
+      let trustedEmail = authUser.email;
+      let trustedPhone: string | null = null;
 
-      // Duplicate prevention: check if identical feedback submitted within 15 seconds
-      const dupCheck = await query(
-        `SELECT id FROM public.feedbacks 
-         WHERE user_id = $1 AND message = $2 AND created_at > NOW() - INTERVAL '15 seconds'`,
-        [authUser.id, message]
-      );
-      if (dupCheck.rows.length > 0) {
-        sendJson(res, 409, {
-          success: false,
-          message: 'Duplicate feedback detected. Your previous feedback was already received!',
-        });
-        return true;
+      if (useDb) {
+        const uRes = await query('SELECT full_name, email, phone FROM public.app_users WHERE id = $1', [authUser.id]);
+        trustedName = uRes.rows[0]?.full_name || trustedName;
+        trustedEmail = uRes.rows[0]?.email || trustedEmail;
+        trustedPhone = uRes.rows[0]?.phone || null;
+
+        const dupCheck = await query(
+          `SELECT id FROM public.feedbacks 
+           WHERE user_id = $1 AND message = $2 AND created_at > NOW() - INTERVAL '15 seconds'`,
+          [authUser.id, message]
+        );
+        if (dupCheck.rows.length > 0) {
+          sendJson(res, 409, {
+            success: false,
+            message: 'Duplicate feedback detected. Your previous feedback was already received!',
+          });
+          return true;
+        }
+      } else {
+        const recentFb = await listFeedbacksFallback({ userId: authUser.id });
+        const nowMs = Date.now();
+        const isDup = recentFb.feedbacks.some(
+          (f: any) =>
+            f.message === message &&
+            f.created_at &&
+            nowMs - new Date(f.created_at).getTime() < 15000
+        );
+        if (isDup) {
+          sendJson(res, 409, {
+            success: false,
+            message: 'Duplicate feedback detected. Your previous feedback was already received!',
+          });
+          return true;
+        }
       }
 
       const category = (body.category || 'General Feedback').trim();
       const subject = (body.subject || (rating ? `${rating}-Star User Feedback` : 'User Feedback')).trim();
 
-      const insertRes = await query(
-        `INSERT INTO public.feedbacks (
-          user_id, user_name, user_email, user_phone, type, category, subject, message, rating, dpdp_consent, dpdp_consent_at, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'feedback', $5, $6, $7, $8, $9, $10, 'new', NOW(), NOW())
-        RETURNING *`,
-        [authUser.id, trustedName, trustedEmail, trustedPhone, category, subject, message, rating, dpdpConsent, dpdpConsent ? new Date() : null]
-      );
+      let feedback: any = null;
+      if (useDb) {
+        const insertRes = await query(
+          `INSERT INTO public.feedbacks (
+            user_id, user_name, user_email, user_phone, type, category, subject, message, rating, dpdp_consent, dpdp_consent_at, status, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 'feedback', $5, $6, $7, $8, $9, $10, 'new', NOW(), NOW())
+          RETURNING *`,
+          [authUser.id, trustedName, trustedEmail, trustedPhone, category, subject, message, rating, dpdpConsent, dpdpConsent ? new Date() : null]
+        );
+        feedback = insertRes.rows[0] || null;
+      }
 
-      const feedback = insertRes.rows[0];
-      const feedbackId = `FB-${feedback.id.slice(0, 8).toUpperCase()}`;
+      if (!feedback) {
+        feedback = await insertFeedbackFallback({
+          user_id: authUser.id,
+          user_name: trustedName,
+          user_email: trustedEmail,
+          user_phone: trustedPhone,
+          category,
+          subject,
+          message,
+          rating,
+          dpdp_consent: dpdpConsent,
+          dpdp_consent_at: dpdpConsent ? new Date().toISOString() : null,
+        });
+      }
+
+      const feedbackId = `FB-${String(feedback.id).slice(0, 8).toUpperCase()}`;
 
       // If user explicitly checked dpdp_consent, record in user_consents audit history as well
-      if (dpdpConsent) {
+      if (dpdpConsent && useDb) {
         try {
           await query(
             `INSERT INTO public.user_consents (user_id, user_email, purpose, status, action, policy_version, consent_wording, ip_address, user_agent, created_at)
@@ -5145,46 +5193,59 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
-      // Automated Dual Feedback Emails: Instant User Confirmation + Admin Notification (hackifypro@gmail.com)
-      sendFeedbackSubmissionEmails({
-        feedbackId,
-        userId: authUser.id,
-        userName: trustedName,
-        userEmail: trustedEmail,
-        rating: rating || 5,
-        feedbackMessage: message,
-        category,
-        submittedAt: feedback.created_at ? new Date(feedback.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : undefined,
-      }).catch((e) => console.warn('[Feedback Dual Emails Dispatch Error]:', e));
+      // Automated Dual Feedback Emails + In-App/Push Alerts (awaited so serverless runtimes don't freeze mid-SMTP)
+      let userEmailSent = false;
+      try {
+        const [emailResult] = await Promise.allSettled([
+          sendFeedbackSubmissionEmails({
+            feedbackId,
+            userId: authUser.id,
+            userName: trustedName,
+            userEmail: trustedEmail,
+            rating: rating || 5,
+            feedbackMessage: message,
+            category,
+            submittedAt: feedback.created_at
+              ? new Date(feedback.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST'
+              : undefined,
+          }),
+          notifyFeedbackSubmitted(authUser.id, {
+            id: feedback.id,
+            rating: rating || 5,
+            category,
+          }),
+          notifyAdminNewFeedback({
+            feedbackId,
+            feedbackDbId: feedback.id,
+            submitterName: trustedName,
+            submitterEmail: trustedEmail,
+            rating: rating || 5,
+            category,
+            message,
+          }),
+        ]);
+        if (emailResult.status === 'fulfilled') {
+          userEmailSent = Boolean(emailResult.value?.userEmailSent);
+        }
+      } catch (e) {
+        console.warn('[Feedback Notification/Email Error]:', e);
+      }
 
-      // In-app + Push notification for the submitting USER (thank-you)
-      notifyFeedbackSubmitted(authUser.id, {
-        id: feedback.id,
-        rating: rating || 5,
-        category,
-      }).catch((e) => console.warn('[Notify Feedback User Error]:', e));
-
-      // In-app + Push notification for ALL ADMINS (new feedback alert)
-      notifyAdminNewFeedback({
-        feedbackId,
-        feedbackDbId: feedback.id,
-        submitterName: trustedName,
-        submitterEmail: trustedEmail,
-        rating: rating || 5,
-        category,
-        message,
-      }).catch((e) => console.warn('[Notify Admin Feedback Error]:', e));
-
-      await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
-        userId: authUser.id,
-        userEmail: trustedEmail,
-        details: { rating, feedbackId },
-      });
+      if (useDb) {
+        await logSecurityEvent('USER_SUBMITTED_FEEDBACK', {
+          userId: authUser.id,
+          userEmail: trustedEmail,
+          details: { rating, feedbackId, userEmailSent },
+        });
+      }
 
       sendJson(res, 201, {
         success: true,
-        message: 'Thank you for your feedback! Your opinion helps us improve My Money Manager.',
+        message: userEmailSent
+          ? 'Thank you for your feedback! A confirmation email has been sent to you.'
+          : 'Thank you for your feedback! Your opinion helps us improve My Money Manager.',
         feedback_id: feedbackId,
+        emailDispatched: userEmailSent,
         feedback,
       });
       return true;
@@ -5363,6 +5424,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required. Please log in.' });
+        return true;
+      }
+
+      if (!isDatabaseAvailable()) {
+        const fbRes = await listFeedbacksFallback({ userId: authUser.id });
+        sendJson(res, 200, {
+          success: true,
+          feedbacks: fbRes.feedbacks,
+          tickets: [],
+        });
         return true;
       }
 
@@ -5651,6 +5722,24 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const category = (urlObj.searchParams.get('category') || '').trim();
       const unreadOnly = urlObj.searchParams.get('unread_only') === 'true';
 
+      if (!isDatabaseAvailable()) {
+        const fbRes = await listUserNotificationsFallback(authUser.id, {
+          category: category || undefined,
+          unreadOnly,
+          page,
+          limit,
+        });
+        sendJson(res, 200, {
+          success: true,
+          notifications: fbRes.notifications,
+          unreadCount: fbRes.unreadCount,
+          total: fbRes.total,
+          page,
+          totalPages: Math.ceil(fbRes.total / limit) || 1,
+        });
+        return true;
+      }
+
       const conditions: string[] = ['user_id = $1', 'is_deleted = FALSE'];
       const params: any[] = [authUser.id];
 
@@ -5708,6 +5797,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const notifId = notifReadMatch[1];
+      if (!isDatabaseAvailable() || notifId.startsWith('broadcast_')) {
+        const updated = await markUserNotificationReadFallback(authUser.id, notifId);
+        sendJson(res, 200, { success: true, notification: updated });
+        return true;
+      }
+
       const updateRes = await query(
         `UPDATE public.user_notifications 
          SET is_read = TRUE, read_at = NOW() 
@@ -5733,6 +5828,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      if (!isDatabaseAvailable()) {
+        await markAllUserNotificationsReadFallback(authUser.id);
+        sendJson(res, 200, { success: true, message: 'All notifications marked as read.' });
+        return true;
+      }
+
       await query(
         `UPDATE public.user_notifications 
          SET is_read = TRUE, read_at = NOW() 
@@ -5754,6 +5855,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const notifId = notifDeleteMatch[1];
+      if (!isDatabaseAvailable() || notifId.startsWith('broadcast_')) {
+        await deleteUserNotificationFallback(authUser.id, notifId);
+        sendJson(res, 200, { success: true, message: 'Notification removed.' });
+        return true;
+      }
+
       await query(
         `UPDATE public.user_notifications 
          SET is_deleted = TRUE, deleted_at = NOW() 
@@ -5770,6 +5877,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      if (!isDatabaseAvailable()) {
+        await clearAllUserNotificationsFallback(authUser.id);
+        sendJson(res, 200, { success: true, message: 'All notifications cleared.' });
         return true;
       }
 

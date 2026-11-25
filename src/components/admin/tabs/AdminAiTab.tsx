@@ -8,6 +8,11 @@ import {
   PieChart,
   RefreshCw,
   Power,
+  KeyRound,
+  Sliders,
+  CheckCircle2,
+  Save,
+  Shield,
 } from 'lucide-react';
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
@@ -27,20 +32,63 @@ export const AdminAiTab: React.FC = () => {
   const [modules, setModules] = useState<AiModuleInfo[]>([]);
   const [featureFlags, setFeatureFlags] = useState<any[]>([]);
   const [isGeminiConfigured, setIsGeminiConfigured] = useState<boolean>(false);
+  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
+  const [aiModel, setAiModel] = useState<string>('gemini-2.5-flash-lite');
+  const [allowedModels, setAllowedModels] = useState<string[]>([
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-4-hydrogen',
+  ]);
+  const [integrationsConfig, setIntegrationsConfig] = useState<{
+    senderName: string;
+    siteUrl: string;
+    supportEmail: string;
+    supportPhone: string;
+  }>({
+    senderName: 'My Money Manager by HackifyPro',
+    siteUrl: 'https://mymoney.nileshbarela.site',
+    supportEmail: 'hackifyproofficial@gmail.com',
+    supportPhone: '+91 9685989477',
+  });
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
 
   const fetchAiData = async () => {
     setIsLoading(true);
     try {
-      const [aiRes, featRes] = await Promise.all([
+      const [aiRes, featRes, cfgRes] = await Promise.all([
         adminClient.getAiStatus(),
         adminClient.getFeatureFlags(),
+        adminClient.getIntegrationsConfig().catch(() => null),
       ]);
 
       if (aiRes.success && Array.isArray(aiRes.modules)) {
         setModules(aiRes.modules);
-        setIsGeminiConfigured(aiRes.geminiConfigured);
+        setIsGeminiConfigured(Boolean(aiRes.geminiConfigured));
+        if (typeof aiRes.aiEnabled === 'boolean') setAiEnabled(aiRes.aiEnabled);
+        if (typeof aiRes.activeModel === 'string' && aiRes.activeModel) setAiModel(aiRes.activeModel);
+        if (Array.isArray(aiRes.allowedModels) && aiRes.allowedModels.length > 0) {
+          setAllowedModels(aiRes.allowedModels);
+        }
+      }
+
+      if (cfgRes?.success && cfgRes.config) {
+        if (typeof cfgRes.config.aiEnabled === 'boolean') setAiEnabled(cfgRes.config.aiEnabled);
+        if (typeof cfgRes.config.aiModel === 'string' && cfgRes.config.aiModel) setAiModel(cfgRes.config.aiModel);
+        if (Array.isArray(cfgRes.config.allowedAiModels) && cfgRes.config.allowedAiModels.length > 0) {
+          setAllowedModels(cfgRes.config.allowedAiModels);
+        }
+        setIntegrationsConfig({
+          senderName: cfgRes.config.senderName || 'My Money Manager by HackifyPro',
+          siteUrl: cfgRes.config.siteUrl || 'https://mymoney.nileshbarela.site',
+          supportEmail: cfgRes.config.supportEmail || 'hackifyproofficial@gmail.com',
+          supportPhone: cfgRes.config.supportPhone || '+91 9685989477',
+        });
       }
 
       if (featRes.success && Array.isArray(featRes.features)) {
@@ -56,6 +104,33 @@ export const AdminAiTab: React.FC = () => {
   useEffect(() => {
     fetchAiData();
   }, []);
+
+  const handleSaveAiConfig = async (nextEnabled: boolean = aiEnabled, nextModel: string = aiModel) => {
+    setIsSavingConfig(true);
+    try {
+      const res = await adminClient.updateIntegrationsConfig({
+        aiEnabled: nextEnabled,
+        aiModel: nextModel,
+        senderName: integrationsConfig.senderName,
+        siteUrl: integrationsConfig.siteUrl,
+        supportEmail: integrationsConfig.supportEmail,
+        supportPhone: integrationsConfig.supportPhone,
+      });
+      if (res.success) {
+        setAiEnabled(nextEnabled);
+        setAiModel(nextModel);
+        toast.success(
+          'AI Engine Updated',
+          `AI Assistant is ${nextEnabled ? 'active' : 'paused'} using ${nextModel}.`
+        );
+        await fetchAiData();
+      }
+    } catch (err: any) {
+      toast.error('Save Failed', err.message || 'Could not update AI configuration.');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
 
   const handleToggleFeature = async (featureKey: string, currentEnabled: boolean) => {
     setTogglingKey(featureKey);
@@ -91,18 +166,24 @@ export const AdminAiTab: React.FC = () => {
               <Bot className="w-5 h-5 stroke-[1.75]" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <h2 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
                 AI & Financial Intelligence Management
                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                  isGeminiConfigured
+                  isGeminiConfigured && aiEnabled
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : isGeminiConfigured && !aiEnabled
+                    ? 'bg-slate-800 text-slate-300 border-slate-700'
                     : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                 }`}>
-                  {isGeminiConfigured ? 'Gemini API Connected' : 'Local Fallback Engine'}
+                  {isGeminiConfigured
+                    ? aiEnabled
+                      ? 'Gemini API Connected'
+                      : 'AI Paused by Admin'
+                    : 'Server GEMINI_API_KEY Needed'}
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Centralized telemetry and governance across the 7 financial intelligence modules. API credentials are encrypted server-side; customer financial queries are never logged without explicit purpose-limited grants.
+                Centralized governance across My Money Manager's AI Assistant, Voice Agent, and 7 financial intelligence modules. Secrets stay strictly in server environment variables and are never stored in browser storage.
               </p>
             </div>
           </div>
@@ -113,6 +194,96 @@ export const AdminAiTab: React.FC = () => {
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-purple-400' : ''}`} />
             <span>Refresh AI Health</span>
           </button>
+        </div>
+      </div>
+
+      {/* AI Engine & Model Control */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Sliders className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">AI Engine & Model Control</h3>
+              <p className="text-xs text-slate-400">
+                Select the active Gemini model and control live availability across Chat AI, Voice Agent, and Receipt OCR.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={isSavingConfig}
+            onClick={() => handleSaveAiConfig(!aiEnabled, aiModel)}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer disabled:opacity-50 ${
+              aiEnabled
+                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+            }`}
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span>{aiEnabled ? 'AI Engine: Active' : 'AI Engine: Paused'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+          <div className="lg:col-span-5">
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Active Gemini Model
+            </label>
+            <select
+              value={aiModel}
+              onChange={(e) => setAiModel(e.target.value)}
+              className="w-full h-10 px-3 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {allowedModels.map((modelName) => (
+                <option key={modelName} value={modelName}>
+                  {modelName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="lg:col-span-4 flex items-center gap-2 h-10 px-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+            <KeyRound className={`w-4 h-4 shrink-0 ${isGeminiConfigured ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <div className="min-w-0">
+              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Server API Key</span>
+              <span className={`font-semibold flex items-center gap-1 ${isGeminiConfigured ? 'text-emerald-400' : 'text-amber-300'}`}>
+                {isGeminiConfigured ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    GEMINI_API_KEY Active
+                  </>
+                ) : (
+                  'GEMINI_API_KEY Not Set'
+                )}
+              </span>
+            </div>
+          </div>
+
+          <div className="lg:col-span-3">
+            <button
+              type="button"
+              disabled={isSavingConfig}
+              onClick={() => handleSaveAiConfig(aiEnabled, aiModel)}
+              className="w-full h-10 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSavingConfig ? 'Saving...' : 'Save AI Settings'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300">
+          <Shield className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            <span className="font-semibold text-white">Security Policy:</span> Secret credentials like{' '}
+            <code className="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[11px]">GEMINI_API_KEY</code>{' '}
+            are never entered or exposed in browser forms. Set or rotate{' '}
+            <code className="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[11px]">GEMINI_API_KEY</code>{' '}
+            in <span className="font-semibold text-white">Settings &gt; Secrets</span> (or your Vercel project Environment Variables) and AI Chat, Voice Agent, and Receipt OCR activate automatically.
+          </p>
         </div>
       </div>
 
@@ -186,8 +357,8 @@ export const AdminAiTab: React.FC = () => {
 
               {/* Status footer */}
               <div className="flex items-center justify-between text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-800/40">
-                <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className={`flex items-center gap-1 font-medium ${mod.status === 'operational' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${mod.status === 'operational' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                   {mod.status}
                 </span>
                 <span>Rollout: {matchingFlag?.rollout_percentage || 100}%</span>

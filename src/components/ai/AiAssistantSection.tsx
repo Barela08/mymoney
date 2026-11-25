@@ -17,6 +17,9 @@ import {
   User as UserIcon,
   Mic,
   MicOff,
+  Volume2,
+  VolumeX,
+  Radio,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -75,7 +78,15 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [autoSpeakReplies, setAutoSpeakReplies] = useState(true);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const voiceTranscriptRef = useRef<string>('');
+  const voiceSubmittedRef = useRef<boolean>(false);
+  const speakTextRef = useRef<(text: string, msgId?: string) => void>(() => {});
+  const handleSendRef = useRef<(q?: string, opts?: { fromVoice?: boolean }) => Promise<void>>(async () => {});
   const [speechLang, setSpeechLang] = useState<'hi-IN' | 'en-IN'>('hi-IN');
   const inputRef = useRef<HTMLInputElement>(null);
   const [lastError, setLastError] = useState<{ message: string; code?: string; retryQuestion?: string } | null>(null);
@@ -229,12 +240,97 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages.length, isSending]);
 
+  const stripMarkdownForSpeech = useCallback((text: string): string => {
+    return text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[*_`#>~]/g, '')
+      .replace(/₹\s?/g, 'rupees ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }, []);
+
+  const stopSpeaking = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    setSpeakingMsgId(null);
+    setVoiceState((prev) => (prev === 'speaking' ? 'idle' : prev));
+  }, []);
+
+  const speakText = useCallback(
+    (text: string, msgId?: string) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      const clean = stripMarkdownForSpeech(text);
+      if (!clean) return;
+
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+
+      const utterance = new SpeechSynthesisUtterance(clean);
+      const hasDevanagari = /[\u0900-\u097F]/.test(clean);
+      const targetLang = hasDevanagari ? 'hi-IN' : speechLang;
+      utterance.lang = targetLang;
+      utterance.rate = 1.0;
+
+      const voices = window.speechSynthesis.getVoices?.() || [];
+      const matchingVoice =
+        voices.find((v) => v.lang?.toLowerCase() === targetLang.toLowerCase()) ||
+        voices.find((v) => v.lang?.toLowerCase().startsWith(targetLang.split('-')[0].toLowerCase()));
+      if (matchingVoice) {
+        utterance.voice = matchingVoice;
+      }
+
+      utterance.onstart = () => {
+        setSpeakingMsgId(msgId || 'voice_reply');
+        setVoiceState('speaking');
+      };
+      utterance.onend = () => {
+        setSpeakingMsgId(null);
+        setVoiceState((prev) => (prev === 'speaking' ? 'idle' : prev));
+      };
+      utterance.onerror = () => {
+        setSpeakingMsgId(null);
+        setVoiceState((prev) => (prev === 'speaking' ? 'idle' : prev));
+      };
+
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        setSpeakingMsgId(null);
+        setVoiceState('idle');
+      }
+    },
+    [speechLang, stripMarkdownForSpeech]
+  );
+
+  useEffect(() => {
+    speakTextRef.current = speakText;
+  }, [speakText]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        recognitionRef.current?.stop();
+      } catch {}
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {}
+      }
+    };
+  }, []);
+
   const handleSend = useCallback(
-    async (questionOverride?: string) => {
+    async (questionOverride?: string, options?: { fromVoice?: boolean }) => {
       const q = (questionOverride ?? inputText).trim();
       if (!q || isSending) return;
+      const fromVoice = Boolean(options?.fromVoice);
 
       if (!hasAiConsent) {
+        setVoiceState('idle');
         setLastError({
           code: 'AI_CONSENT_REQUIRED',
           message:
@@ -245,8 +341,11 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       }
 
       setLastError(null);
-      if (!questionOverride) setInputText('');
+      if (!questionOverride && !fromVoice) setInputText('');
       setIsSending(true);
+      if (fromVoice) {
+        setVoiceState('thinking');
+      }
 
       // Optimistic temporary message display
       const tempConvId = activeConvId || `temp_${Date.now()}`;
@@ -280,6 +379,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
           conversationId: activeConvId && !activeConvId.startsWith('temp_') ? activeConvId : undefined,
           question: q,
           financialContext,
+          mode: fromVoice ? 'voice' : 'chat',
         });
 
         setConversations((prev) => {
@@ -296,6 +396,15 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
           return [updatedConv, ...withoutTemp];
         });
         setActiveConvId(res.conversationId);
+
+        if (fromVoice || autoSpeakReplies) {
+          setLiveTranscript('');
+          if (res.assistantMessage?.content) {
+            speakTextRef.current(res.assistantMessage.content, res.assistantMessage.id);
+          } else {
+            setVoiceState('idle');
+          }
+        }
       } catch (err: any) {
         // Rollback optimistic message so user can cleanly retry
         setConversations((prev) =>
@@ -308,19 +417,28 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
             .filter((c) => !(c.id.startsWith('temp_') && c.messages.length === 0))
         );
         if (tempConvId.startsWith('temp_')) setActiveConvId(null);
+        setVoiceState('idle');
 
         const code = err instanceof ApiClientError ? err.code : undefined;
+        const errMsg = err?.message || 'Unable to get a response from AI Money Assistant.';
         setLastError({
-          message: err?.message || 'Unable to get a response from AI Money Assistant.',
+          message: errMsg,
           code,
           retryQuestion: q,
         });
+        if (fromVoice) {
+          speakTextRef.current(errMsg);
+        }
       } finally {
         setIsSending(false);
       }
     },
-    [inputText, isSending, activeConvId, financialContext, hasAiConsent]
+    [inputText, isSending, activeConvId, financialContext, hasAiConsent, autoSpeakReplies]
   );
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
 
   // Trigger initialPrompt if navigated from Dashboard Quick Ask
   useEffect(() => {
@@ -335,13 +453,20 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
     }
   }, [initialPrompt, isLoadingInitial, handleSend, onClearInitialPrompt]);
 
-  // Speech Recognition (Voice Input / Mic)
+  const stopVoiceAgent = useCallback(() => {
+    try {
+      recognitionRef.current?.stop();
+    } catch {}
+    stopSpeaking();
+    setIsListening(false);
+    setLiveTranscript('');
+    setVoiceState('idle');
+  }, [stopSpeaking]);
+
+  // Direct Voice Agent (Speaks question -> auto-submits strictly app-scoped query -> speaks reply aloud)
   const toggleListening = useCallback(async () => {
-    if (isListening) {
-      try {
-        recognitionRef.current?.stop();
-      } catch {}
-      setIsListening(false);
+    if (isListening || voiceState === 'speaking') {
+      stopVoiceAgent();
       return;
     }
 
@@ -350,14 +475,15 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
 
     if (!SpeechRecognition) {
       toast.error(
-        'Voice Input Unavailable',
+        'Voice Agent Unavailable',
         'Aapka browser voice recognition support nahi karta. Google Chrome ya Edge use karein.'
       );
       return;
     }
 
+    stopSpeaking();
+
     // Step 1: Explicitly request audio permission via getUserMedia
-    // This triggers Chrome's native "Allow microphone" bar directly!
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -381,48 +507,77 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       recognition.continuous = false;
       recognition.interimResults = true;
 
+      voiceTranscriptRef.current = '';
+      voiceSubmittedRef.current = false;
+      setLiveTranscript('');
+
+      const submitVoiceTranscript = () => {
+        if (voiceSubmittedRef.current) return;
+        const spoken = voiceTranscriptRef.current.trim();
+        if (!spoken) return;
+        voiceSubmittedRef.current = true;
+        setIsListening(false);
+        void handleSendRef.current(spoken, { fromVoice: true });
+      };
+
       recognition.onstart = () => {
         setIsListening(true);
-        toast.info(
-          speechLang === 'hi-IN' ? 'सुन रहे हैं...' : 'Listening...',
-          speechLang === 'hi-IN'
-            ? 'अपना सवाल बोलें (उदा: इस महीने कितना खर्चा हुआ?)'
-            : 'Speak your question now...'
-        );
+        setVoiceState('listening');
       };
 
       recognition.onresult = (event: any) => {
-        const transcript = Array.from(event.results)
-          .map((result: any) => result[0]?.transcript || '')
-          .join('');
+        const results = Array.from(event.results || []);
+        const transcript = results
+          .map((result: any) => result?.[0]?.transcript || '')
+          .join('')
+          .trim();
         if (transcript) {
-          setInputText(transcript);
+          voiceTranscriptRef.current = transcript;
+          setLiveTranscript(transcript);
+        }
+        const hasFinal = results.some((result: any) => Boolean(result?.isFinal));
+        if (hasFinal && transcript) {
+          try {
+            recognition.stop();
+          } catch {}
+          submitVoiceTranscript();
         }
       };
 
       recognition.onerror = (event: any) => {
         console.warn('Speech recognition error:', event?.error);
         setIsListening(false);
+        if (!voiceSubmittedRef.current) {
+          setVoiceState('idle');
+          setLiveTranscript('');
+        }
         if (event?.error === 'not-allowed') {
           toast.warning(
             'Microphone Blocked',
             'Microphone access is blocked. Click the lock icon in your browser address bar, set Microphone to Allow, and try again.'
           );
-        } else if (event?.error !== 'no-speech') {
-          toast.error('Mic Error', `Speech error: ${event?.error || 'Unknown error'}`);
+        } else if (event?.error !== 'no-speech' && event?.error !== 'aborted') {
+          toast.error('Voice Agent Error', `Speech error: ${event?.error || 'Unknown error'}`);
         }
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        if (!voiceSubmittedRef.current && voiceTranscriptRef.current.trim()) {
+          submitVoiceTranscript();
+        } else if (!voiceSubmittedRef.current) {
+          setVoiceState('idle');
+          setLiveTranscript('');
+        }
       };
 
       recognition.start();
     } catch (err: any) {
       setIsListening(false);
+      setVoiceState('idle');
       toast.error('Microphone Error', err?.message || 'Could not start microphone.');
     }
-  }, [isListening, speechLang, toast]);
+  }, [isListening, voiceState, speechLang, stopSpeaking, stopVoiceAgent, toast]);
 
   // Listen for speed-dial custom events from floating AI menu (Voice AI or Chat AI)
   useEffect(() => {
@@ -578,14 +733,20 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
         </div>
       )}
 
-      {/* Honest Provider Status Banner if GEMINI_API_KEY not configured */}
-      {aiStatus && !aiStatus.configured && (
+      {/* Honest Provider Status Banner if GEMINI_API_KEY not configured or paused */}
+      {aiStatus && (!aiStatus.configured || aiStatus.enabled === false) && (
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs">
           <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold">AI provider is not configured on the server</p>
+            <p className="font-semibold">
+              {aiStatus.enabled === false
+                ? 'AI Money Assistant is currently paused by the administrator'
+                : 'AI provider is not configured on the server'}
+            </p>
             <p className="text-amber-800/80 dark:text-amber-300/80 mt-0.5">
-              Live conversational analysis requires server-side AI credentials to be configured by the administrator. We never fabricate mock AI answers.
+              {aiStatus.enabled === false
+                ? 'Enable the AI Engine from Admin Panel → AI Management to resume Chat & Voice Agent responses.'
+                : 'Live conversational analysis requires GEMINI_API_KEY to be configured in server Settings → Secrets. We never fabricate mock AI answers.'}
             </p>
           </div>
         </div>
@@ -755,6 +916,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
               <>
                 {activeConversation.messages.map((msg) => {
                   const isUser = msg.role === 'user';
+                  const isThisSpeaking = speakingMsgId === msg.id;
                   return (
                     <div
                       key={msg.id}
@@ -765,14 +927,37 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
                           <Bot className="w-4 h-4" />
                         </div>
                       )}
-                      <div
-                        className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                          isUser
-                            ? 'bg-emerald-600 text-white rounded-br-md'
-                            : 'bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/70 text-slate-800 dark:text-slate-100 rounded-bl-md'
-                        }`}
-                      >
-                        {msg.content}
+                      <div className={`max-w-[85%] sm:max-w-[78%] space-y-1.5`}>
+                        <div
+                          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                            isUser
+                              ? 'bg-emerald-600 text-white rounded-br-md'
+                              : 'bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/70 text-slate-800 dark:text-slate-100 rounded-bl-md'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                        {!isUser && (
+                          <div className="flex items-center gap-2 px-1">
+                            <button
+                              type="button"
+                              onClick={() => (isThisSpeaking ? stopSpeaking() : speakText(msg.content, msg.id))}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer transition-colors"
+                            >
+                              {isThisSpeaking ? (
+                                <>
+                                  <VolumeX className="w-3.5 h-3.5 text-rose-500" />
+                                  <span className="text-rose-500">Stop Audio</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 className="w-3.5 h-3.5" />
+                                  <span>Listen</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
                       </div>
                       {isUser && (
                         <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0 mt-0.5">
@@ -837,6 +1022,49 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
             </div>
           )}
 
+          {/* Live Voice Agent HUD */}
+          {voiceState !== 'idle' && (
+            <div className="px-4 py-2.5 border-t border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/30 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                    voiceState === 'listening'
+                      ? 'bg-rose-500 animate-ping'
+                      : voiceState === 'thinking'
+                      ? 'bg-amber-500 animate-pulse'
+                      : 'bg-emerald-500 animate-pulse'
+                  }`}
+                />
+                <div className="min-w-0 text-xs">
+                  <p className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      {voiceState === 'listening'
+                        ? speechLang === 'hi-IN'
+                          ? 'Voice Agent सुन रहा है — सवाल बोलते ही सीधा जवाब मिलेगा'
+                          : 'Voice Agent listening — speak your app finance question'
+                        : voiceState === 'thinking'
+                        ? 'Checking your My Money Manager data...'
+                        : 'Voice Agent speaking reply aloud...'}
+                    </span>
+                  </p>
+                  {liveTranscript && (
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 truncate mt-0.5">
+                      "{liveTranscript}"
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={stopVoiceAgent}
+                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shrink-0 cursor-pointer"
+              >
+                Stop
+              </button>
+            </div>
+          )}
+
           {/* Input Bar */}
           <form
             onSubmit={(e) => {
@@ -850,7 +1078,11 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={isListening ? 'Listening (सुन रहे हैं)... speak now' : 'Ask about your spending, budgets, bills, savings, Udhar, or Net Worth...'}
+              placeholder={
+                isListening
+                  ? 'Voice Agent listening... direct reply will speak automatically'
+                  : 'Ask strictly about your My Money Manager spending, budgets, bills, Udhar, or Net Worth...'
+              }
               maxLength={1500}
               disabled={isSending}
               className={`flex-1 min-w-0 h-11 px-4 rounded-xl border text-sm transition-all focus:outline-none focus:ring-2 ${
@@ -859,6 +1091,23 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
                   : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-emerald-500'
               }`}
             />
+            {/* Auto-Voice Reply toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                if (autoSpeakReplies) stopSpeaking();
+                setAutoSpeakReplies((prev) => !prev);
+              }}
+              className={`h-11 px-2.5 rounded-xl border text-xs font-semibold shrink-0 cursor-pointer transition-colors inline-flex items-center gap-1 ${
+                autoSpeakReplies
+                  ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+              }`}
+              title={autoSpeakReplies ? 'Auto-Voice Reply On (Click to mute)' : 'Auto-Voice Reply Off'}
+            >
+              {autoSpeakReplies ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              <span className="hidden md:inline">{autoSpeakReplies ? 'Voice On' : 'Muted'}</span>
+            </button>
             {/* Language toggle: Hindi or English */}
             <button
               type="button"
@@ -868,18 +1117,18 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
             >
               {speechLang === 'hi-IN' ? '🇮🇳 HI' : '🌐 EN'}
             </button>
-            {/* Mic Voice Input Button */}
+            {/* Direct Voice Agent Mic Button */}
             <button
               type="button"
               onClick={toggleListening}
               disabled={isSending}
               className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
-                isListening
+                isListening || voiceState === 'speaking'
                   ? 'bg-rose-500 text-white animate-pulse ring-4 ring-rose-500/30 shadow-lg shadow-rose-500/20'
                   : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs'
               }`}
-              aria-label={isListening ? 'Stop listening' : 'Voice input'}
-              title={isListening ? 'Listening... click to stop' : 'Tap to speak your question (Voice Input)'}
+              aria-label={isListening ? 'Stop Voice Agent' : 'Talk to Voice Agent'}
+              title={isListening ? 'Listening... tap to stop' : 'Talk directly to AI Voice Agent (answers aloud)'}
             >
               {isListening ? (
                 <MicOff className="w-4 h-4 text-white" />

@@ -18,6 +18,7 @@ import { useToast } from '../../context/ToastContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { NavTab } from '../common/Sidebar';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 interface NotificationsSectionProps {
   onNavigate?: (tab: NavTab) => void;
@@ -44,6 +45,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
   } = useNotifications();
 
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   const handleMarkAsRead = async (id: string) => {
     try {
@@ -63,9 +65,9 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
   };
 
   const handleClearAll = async () => {
-    if (!confirm('Are you sure you want to clear all notifications?')) return;
     try {
       await clearAll();
+      setConfirmClearAll(false);
       toast.success('Cleared', 'All notifications cleared.');
     } catch (err: any) {
       toast.error('Failed to clear', err.message);
@@ -74,9 +76,11 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
 
   const CATEGORIES = [
     { id: 'all', label: 'All' },
+    { id: 'announcement', label: 'Announcements' },
     { id: 'udhar', label: 'Udhar' },
     { id: 'income', label: 'Income' },
     { id: 'expense', label: 'Expense' },
+    { id: 'feedback', label: 'Feedback' },
     { id: 'security', label: 'Security' },
   ];
 
@@ -153,7 +157,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
 
           {notifications.length > 0 && (
             <button
-              onClick={handleClearAll}
+              onClick={() => setConfirmClearAll(true)}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer backdrop-blur-md"
               title="Clear All Notifications"
             >
@@ -251,6 +255,16 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmClearAll}
+        title="Clear all notifications?"
+        message="This will remove all items from your notification feed."
+        confirmLabel="Clear All"
+        isDestructive
+        onConfirm={() => void handleClearAll()}
+        onCancel={() => setConfirmClearAll(false)}
+      />
     </div>
   );
 };

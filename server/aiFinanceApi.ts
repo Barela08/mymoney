@@ -453,12 +453,15 @@ export async function handleAiFinanceRequest(
 
       const history = conv.messages.map((m) => ({ role: m.role, content: m.content }));
 
+      const mode = body.mode === 'voice' ? 'voice' : 'chat';
+
       try {
         const result = await askFinancialAssistant({
           question,
           history,
           context: contextSnapshot,
           userName: authUser.full_name,
+          mode,
         });
 
         const userMsg = {

@@ -16,6 +16,7 @@ import type { TransactionCategory, TransactionSubcategory, TransactionType } fro
 
 export interface AiStatusResponse {
   configured: boolean;
+  enabled?: boolean;
   provider: 'gemini';
   model: string;
   ocrSupported: boolean;
@@ -122,6 +123,7 @@ export const aiFinanceApi = {
     conversationId?: string;
     question: string;
     financialContext: AiFinancialContextSnapshot;
+    mode?: 'chat' | 'voice';
   }): Promise<{
     conversationId: string;
     conversationTitle: string;

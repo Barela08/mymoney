@@ -13,9 +13,11 @@ import {
   Layers,
   ShieldAlert,
   RotateCw,
+  Megaphone,
 } from 'lucide-react';
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
+import { ConfirmModal } from '../../common/ConfirmModal';
 
 export const AdminNotificationsTab: React.FC = () => {
   const toast = useToast();
@@ -47,6 +49,13 @@ export const AdminNotificationsTab: React.FC = () => {
   const [deepLink, setDeepLink] = useState('dashboard');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    isDestructive: boolean;
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
 
   // Example Notification Presets
   const PRESETS = [
@@ -170,34 +179,18 @@ export const AdminNotificationsTab: React.FC = () => {
     loadData();
   }, []);
 
-  const handleSendCampaign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim() || !message.trim()) {
-      toast.error('Validation Error', 'Title and message cannot be empty.');
-      return;
-    }
-
-    const channels: string[] = [];
-    if (channelInApp) channels.push('in_app');
-    if (channelPush) channels.push('push');
-    if (channelEmail) channels.push('email');
-
-    if (channels.length === 0) {
-      toast.error('Channel Required', 'Please select at least one delivery channel.');
-      return;
-    }
-
-    let scheduledFor: string | null = null;
-    if (isScheduled && scheduledDate) {
-      scheduledFor = new Date(`${scheduledDate}T${scheduledTime}:00+05:30`).toISOString();
-    }
-
-    if (!window.confirm(`Are you sure you want to broadcast this campaign across [${channels.join(', ')}] to [${targetType.toUpperCase()}] recipients?`)) {
-      return;
-    }
-
+  const executeSendCampaign = async (channels: string[], scheduledFor: string | null) => {
     setIsSubmitting(true);
     try {
+      const targetUserIds =
+        targetType === 'specific'
+          ? specificUserId.trim()
+            ? [specificUserId.trim()]
+            : undefined
+          : targetType === 'selected'
+          ? selectedUserIds
+          : undefined;
+
       const res = await adminClient.createCampaign({
         title: title.trim(),
         message: message.trim(),
@@ -205,7 +198,7 @@ export const AdminNotificationsTab: React.FC = () => {
         type,
         channels,
         target_type: targetType,
-        target_user_ids: targetType === 'selected' ? selectedUserIds : undefined,
+        target_user_ids: targetUserIds,
         deep_link: deepLink,
         scheduled_for: scheduledFor,
       });
@@ -228,24 +221,75 @@ export const AdminNotificationsTab: React.FC = () => {
     }
   };
 
-  const handleCancelCampaign = async (id: string) => {
-    if (!window.confirm('Cancel this scheduled campaign?')) return;
-    try {
-      const res = await adminClient.cancelCampaign(id);
-      if (res.success) {
-        toast.success('Campaign Cancelled', 'The scheduled broadcast was removed.');
-        loadData();
-      }
-    } catch (err: any) {
-      toast.error('Action Failed', err.message);
+  const handleSendCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !message.trim()) {
+      toast.error('Validation Error', 'Title and message cannot be empty.');
+      return;
     }
+
+    const channels: string[] = [];
+    if (channelInApp) channels.push('in_app');
+    if (channelPush) channels.push('push');
+    if (channelEmail) channels.push('email');
+
+    if (channels.length === 0) {
+      toast.error('Channel Required', 'Please select at least one delivery channel.');
+      return;
+    }
+
+    if (targetType === 'specific' && !specificUserId.trim()) {
+      toast.error('User ID Required', 'Please enter a specific User ID.');
+      return;
+    }
+    if (targetType === 'selected' && selectedUserIds.length === 0) {
+      toast.error('Recipients Required', 'Please select at least one user.');
+      return;
+    }
+
+    let scheduledFor: string | null = null;
+    if (isScheduled && scheduledDate) {
+      scheduledFor = new Date(`${scheduledDate}T${scheduledTime}:00+05:30`).toISOString();
+    }
+
+    setConfirmAction({
+      title: isScheduled ? 'Schedule Broadcast Campaign?' : 'Broadcast Notification Now?',
+      message: `Send "${title.trim()}" across [${channels.join(', ')}] to [${targetType.toUpperCase()}] recipients?`,
+      confirmLabel: isScheduled ? 'Schedule Campaign' : 'Broadcast Now',
+      isDestructive: false,
+      onConfirm: async () => {
+        setConfirmAction(null);
+        await executeSendCampaign(channels, scheduledFor);
+      },
+    });
+  };
+
+  const handleCancelCampaign = (id: string) => {
+    setConfirmAction({
+      title: 'Cancel Scheduled Campaign?',
+      message: 'This scheduled broadcast will not be delivered to users.',
+      confirmLabel: 'Cancel Campaign',
+      isDestructive: true,
+      onConfirm: async () => {
+        setConfirmAction(null);
+        try {
+          const res = await adminClient.cancelCampaign(id);
+          if (res.success) {
+            toast.success('Campaign Cancelled', 'The scheduled broadcast was removed.');
+            loadData();
+          }
+        } catch (err: any) {
+          toast.error('Action Failed', err.message);
+        }
+      },
+    });
   };
 
   const handleRetryCampaign = async (id: string) => {
     try {
       const res = await adminClient.retryCampaign(id);
       if (res.success) {
-        toast.success('Retry Dispatched', 'Retrying delivery for failed recipients.');
+        toast.success('Retry Dispatched', res.message || 'Retrying delivery for failed recipients.');
         loadData();
       }
     } catch (err: any) {
@@ -253,17 +297,35 @@ export const AdminNotificationsTab: React.FC = () => {
     }
   };
 
-  const handleDeactivateBanner = async (id: string) => {
-    if (!window.confirm('Are you sure you want to deactivate this banner for users?')) return;
-    try {
-      const res = await adminClient.deleteNotification(id);
-      if (res.success) {
-        toast.success('Banner Deactivated', 'The banner will no longer appear on user screens.');
-        loadData();
-      }
-    } catch (err: any) {
-      toast.error('Action Failed', err.message);
-    }
+  const handleDeactivateBanner = (id: string) => {
+    setConfirmAction({
+      title: 'Deactivate Broadcast Banner?',
+      message: 'This notification banner will no longer appear to users.',
+      confirmLabel: 'Deactivate',
+      isDestructive: true,
+      onConfirm: async () => {
+        setConfirmAction(null);
+        try {
+          const res = await adminClient.deleteNotification(id);
+          if (res.success) {
+            toast.success('Banner Deactivated', 'The banner will no longer appear on user screens.');
+            loadData();
+          }
+        } catch (err: any) {
+          toast.error('Action Failed', err.message);
+        }
+      },
+    });
+  };
+
+  const openBroadcastAllComposer = () => {
+    setTargetType('all');
+    setCategory('announcement');
+    setType('announcement');
+    setChannelInApp(true);
+    setChannelPush(true);
+    setIsScheduled(false);
+    setIsModalOpen(true);
   };
 
   return (
@@ -350,7 +412,7 @@ export const AdminNotificationsTab: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={loadData}
             disabled={isLoading}
@@ -358,6 +420,14 @@ export const AdminNotificationsTab: React.FC = () => {
             title="Refresh list"
           >
             <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={openBroadcastAllComposer}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+          >
+            <Megaphone className="w-3.5 h-3.5" />
+            <span>Broadcast to All Users</span>
           </button>
           <button
             onClick={() => setIsModalOpen(true)}
@@ -870,6 +940,16 @@ export const AdminNotificationsTab: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={Boolean(confirmAction)}
+        title={confirmAction?.title || 'Confirm Action'}
+        message={confirmAction?.message || ''}
+        confirmLabel={confirmAction?.confirmLabel || 'Confirm'}
+        isDestructive={Boolean(confirmAction?.isDestructive)}
+        isLoading={isSubmitting}
+        onConfirm={() => void confirmAction?.onConfirm()}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 };

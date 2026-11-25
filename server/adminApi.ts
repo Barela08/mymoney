@@ -5,6 +5,7 @@
 import http from 'http';
 import { parse as parseUrl } from 'url';
 import { query, isDatabaseAvailable } from './db.js';
+import { APP_CONFIG } from './config.js';
 import { authenticateRequest, revokeAllUserSessions } from './auth.js';
 import { logSecurityEvent, generateCryptoToken } from './security.js';
 import {
@@ -19,6 +20,7 @@ import {
 import {
   notifyAdminTicketReply,
   dispatchCampaign,
+  localCampaigns,
   getAdminInstalledDevices,
   getAdminNotificationPreferences,
   saveAdminNotificationPreferences,
@@ -27,6 +29,20 @@ import {
   markAllAdminNotificationsRead,
   createNotification,
 } from './notificationService.js';
+import {
+  loadIntegrationsConfigFallback,
+  saveIntegrationsConfigFallback,
+  listFeedbacksFallback,
+  getFeedbackByIdFallback,
+  updateFeedbackFallback,
+  listAllAppUsersFallback,
+  createCampaignFallback,
+  updateCampaignFallback,
+  listCampaignsFallback,
+  createBroadcastBannerFallback,
+  listBroadcastBannersFallback,
+  deactivateBroadcastBannerFallback,
+} from './supabaseRestFallback.js';
 
 // Helper to send JSON responses
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
@@ -84,7 +100,8 @@ function checkPermissionMatch(userPermissions: string[], required?: string): boo
     const [pRes, pAct] = perm.split('.');
     if (pRes === reqResource) {
       if ((reqAction === 'view' || reqAction === 'read') && (pAct === 'view' || pAct === 'read')) return true;
-      if (pAct === 'manage' && (reqAction === 'view' || reqAction === 'read' || reqAction === 'update' || reqAction === 'reply' || reqAction === 'assign' || reqAction === 'create' || reqAction === 'suspend')) return true;
+      if (pAct === 'send' && reqAction === 'manage') return true;
+      if (pAct === 'manage' && (reqAction === 'view' || reqAction === 'read' || reqAction === 'update' || reqAction === 'reply' || reqAction === 'assign' || reqAction === 'create' || reqAction === 'suspend' || reqAction === 'send')) return true;
     }
   }
   return false;
@@ -132,7 +149,7 @@ export async function verifyAdminAuth(
     if (role === 'superadmin') permissions = ['*'];
     else if (role === 'admin') permissions = [
       'dashboard.view', 'users.view', 'users.update', 'users.suspend', 'users.financial_data.request',
-      'admins.view', 'roles.view', 'analytics.view', 'notifications.view', 'notifications.send',
+      'admins.view', 'roles.view', 'analytics.view', 'notifications.view', 'notifications.send', 'notifications.manage',
       'features.manage', 'settings.manage', 'security.view', 'audit_logs.view', 'database.view',
       'backup.manage', 'maintenance.manage', 'support.manage', 'ai.manage'
     ];
@@ -655,6 +672,21 @@ export async function handleAdminApiRequest(
       const statusFilter = parsedUrl.query.status as string | undefined;
       const searchQuery = (parsedUrl.query.search as string || '').trim().toLowerCase();
 
+      if (!isDatabaseAvailable()) {
+        const fbRes = await listFeedbacksFallback({
+          rating: ratingFilter,
+          category: categoryFilter,
+          status: statusFilter,
+          search: searchQuery,
+        });
+        sendJson(res, 200, {
+          success: true,
+          feedbacks: fbRes.feedbacks,
+          metrics: fbRes.metrics,
+        });
+        return true;
+      }
+
       let sql = `SELECT * FROM public.feedbacks WHERE type = 'feedback'`;
       const params: any[] = [];
 
@@ -696,6 +728,24 @@ export async function handleAdminApiRequest(
         `),
       ]);
 
+      // Merge any fallback entries if DB returned empty
+      if (feedbacksRes.rows.length === 0) {
+        const fbFallback = await listFeedbacksFallback({
+          rating: ratingFilter,
+          category: categoryFilter,
+          status: statusFilter,
+          search: searchQuery,
+        });
+        if (fbFallback.feedbacks.length > 0) {
+          sendJson(res, 200, {
+            success: true,
+            feedbacks: fbFallback.feedbacks,
+            metrics: fbFallback.metrics,
+          });
+          return true;
+        }
+      }
+
       sendJson(res, 200, {
         success: true,
         feedbacks: feedbacksRes.rows,
@@ -724,31 +774,46 @@ export async function handleAdminApiRequest(
       const feedbackId = feedbackMatch[1];
       const body = await parseJsonBody(req);
       const { status, admin_notes } = body;
+      const reviewerName = auth.authUser.full_name || auth.authUser.email;
 
-      const updated = await query(
-        `UPDATE public.feedbacks
-         SET status = COALESCE($1, status),
-             admin_notes = COALESCE($2, admin_notes),
-             reviewed_by = $3,
-             reviewed_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $4
-         RETURNING *`,
-        [status, admin_notes, auth.authUser.full_name || auth.authUser.email, feedbackId]
-      );
+      let updatedRow: any = null;
+      if (isDatabaseAvailable()) {
+        const updated = await query(
+          `UPDATE public.feedbacks
+           SET status = COALESCE($1, status),
+               admin_notes = COALESCE($2, admin_notes),
+               reviewed_by = $3,
+               reviewed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING *`,
+          [status, admin_notes, reviewerName, feedbackId]
+        );
+        updatedRow = updated.rows[0] || null;
+      }
 
-      if (updated.rows.length === 0) {
+      if (!updatedRow) {
+        updatedRow = await updateFeedbackFallback(feedbackId, {
+          status,
+          admin_notes,
+          reviewed_by: reviewerName,
+        });
+      }
+
+      if (!updatedRow) {
         sendJson(res, 404, { success: false, message: 'Feedback entry not found.' });
         return true;
       }
 
-      await logSecurityEvent('ADMIN_UPDATED_FEEDBACK', {
-        userId: auth.authUser.id,
-        actorRole: auth.role,
-        details: { feedbackId, newStatus: status },
-      });
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_UPDATED_FEEDBACK', {
+          userId: auth.authUser.id,
+          actorRole: auth.role,
+          details: { feedbackId, newStatus: status },
+        });
+      }
 
-      sendJson(res, 200, { success: true, message: 'Feedback updated successfully.', feedback: updated.rows[0] });
+      sendJson(res, 200, { success: true, message: 'Feedback updated successfully.', feedback: updatedRow });
       return true;
     }
 
@@ -768,12 +833,18 @@ export async function handleAdminApiRequest(
         return true;
       }
 
-      const fbRes = await query('SELECT * FROM public.feedbacks WHERE id = $1', [feedbackId]);
-      if (fbRes.rows.length === 0) {
+      let fb: any = null;
+      if (isDatabaseAvailable()) {
+        const fbRes = await query('SELECT * FROM public.feedbacks WHERE id = $1', [feedbackId]);
+        fb = fbRes.rows[0] || null;
+      }
+      if (!fb) {
+        fb = await getFeedbackByIdFallback(feedbackId);
+      }
+      if (!fb) {
         sendJson(res, 404, { success: false, message: 'Feedback not found.' });
         return true;
       }
-      const fb = fbRes.rows[0];
 
       let emailSent = false;
       let emailError: string | undefined;
@@ -791,30 +862,65 @@ export async function handleAdminApiRequest(
         });
         emailSent = dispatch.success;
         emailError = dispatch.error;
+
+        if (fb.user_id) {
+          await createNotification({
+            userId: fb.user_id,
+            title: 'Admin Reply to Your Feedback',
+            message: replyMessage.slice(0, 220),
+            category: 'feedback',
+            type: 'info',
+            relatedEntityType: 'feedback',
+            relatedEntityId: feedbackId,
+            deepLink: 'help:feedback',
+            channels: ['in_app', 'push'],
+            skipPreferenceCheck: true,
+          }).catch(() => {});
+        }
       }
 
-      const updated = await query(
-        `UPDATE public.feedbacks 
-         SET status = CASE WHEN $1::boolean THEN 'responded' ELSE status END,
-             admin_notes = CASE WHEN $2 THEN COALESCE(admin_notes || E'\n\n', '') || $2 ELSE admin_notes END,
-             reviewed_by = $3,
-             reviewed_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $4
-         RETURNING *`,
-        [!isInternal, isInternal ? `[Internal Note by ${auth.authUser.full_name}]: ${replyMessage}` : `[Admin Reply sent via Email by ${auth.authUser.full_name}]: ${replyMessage}`, auth.authUser.full_name, feedbackId]
-      );
+      const adminDisplay = auth.authUser.full_name || auth.authUser.email;
+      const noteLine = isInternal
+        ? `[Internal Note by ${adminDisplay}]: ${replyMessage}`
+        : `[Admin Reply sent via Email by ${adminDisplay}]: ${replyMessage}`;
 
-      await logSecurityEvent('ADMIN_REPLIED_TO_FEEDBACK', {
-        userId: auth.authUser.id,
-        actorRole: auth.role,
-        details: { feedbackId, isInternal, emailSent, emailError },
-      });
+      let updatedRow: any = null;
+      if (isDatabaseAvailable()) {
+        const updated = await query(
+          `UPDATE public.feedbacks 
+           SET status = CASE WHEN $1::boolean THEN 'responded' ELSE status END,
+               admin_notes = CASE WHEN $2 THEN COALESCE(admin_notes || E'\n\n', '') || $2 ELSE admin_notes END,
+               reviewed_by = $3,
+               reviewed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING *`,
+          [!isInternal, noteLine, adminDisplay, feedbackId]
+        );
+        updatedRow = updated.rows[0] || null;
+      }
+
+      if (!updatedRow) {
+        const existingNotes = fb.admin_notes ? `${fb.admin_notes}\n\n${noteLine}` : noteLine;
+        updatedRow = await updateFeedbackFallback(feedbackId, {
+          status: !isInternal ? 'responded' : fb.status,
+          admin_notes: existingNotes,
+          reviewed_by: adminDisplay,
+        });
+      }
+
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_REPLIED_TO_FEEDBACK', {
+          userId: auth.authUser.id,
+          actorRole: auth.role,
+          details: { feedbackId, isInternal, emailSent, emailError },
+        });
+      }
 
       sendJson(res, 200, {
         success: true,
         message: isInternal ? 'Internal note added.' : (emailSent ? 'Reply sent via email successfully.' : 'Reply recorded (email delivery queued/notice).'),
-        feedback: updated.rows[0],
+        feedback: updatedRow || fb,
         emailDispatched: emailSent,
         emailError,
       });
@@ -1468,7 +1574,9 @@ export async function handleAdminApiRequest(
       const body = await parseJsonBody(req);
       const title = (body.title || '').trim();
       const message = (body.message || '').trim();
-      const type = ['info', 'warning', 'maintenance', 'announcement'].includes(body.type) ? body.type : 'info';
+      const type = ['info', 'warning', 'maintenance', 'announcement', 'offer', 'reminder'].includes(body.type)
+        ? body.type
+        : 'announcement';
       const targetUserId = body.target_user_id || 'all';
 
       if (!title || !message) {
@@ -1476,38 +1584,72 @@ export async function handleAdminApiRequest(
         return true;
       }
 
-      const notifRes = await query(
-        `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
-         VALUES ($1, $2, $3, $4, TRUE, $5)
-         RETURNING *`,
-        [title, message, type, targetUserId, auth.authUser.id]
-      );
+      let notificationRow: any = null;
+      if (isDatabaseAvailable()) {
+        const notifRes = await query(
+          `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
+           VALUES ($1, $2, $3, $4, TRUE, $5)
+           RETURNING *`,
+          [title, message, type, targetUserId, auth.authUser.id]
+        );
+        notificationRow = notifRes.rows[0] || null;
+      }
 
-      // Sync to public.user_notifications for all targeted users so Notification Center displays it
+      if (!notificationRow) {
+        notificationRow = await createBroadcastBannerFallback({
+          title,
+          message,
+          type,
+          target_user_id: targetUserId,
+          created_by: auth.authUser.id,
+          category: 'announcement',
+          deep_link: 'dashboard',
+        });
+      }
+
+      // Sync to all targeted users via unified notification delivery pipeline
       try {
-        const allAppUsers = await query(`SELECT id FROM public.app_users`);
-        for (const u of allAppUsers.rows) {
-          if (targetUserId === 'all' || targetUserId === u.id) {
-            await query(
-              `INSERT INTO public.user_notifications 
-               (user_id, title, message, category, type, deep_link, metadata)
-               VALUES ($1, $2, $3, 'announcement', $4, 'dashboard', $5)`,
-              [u.id, title, message, type, JSON.stringify({ broadcastId: notifRes.rows[0]?.id })]
-            ).catch(() => {});
+        let userIds: string[] = [];
+        if (targetUserId === 'all') {
+          if (isDatabaseAvailable()) {
+            const allAppUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
+            userIds = allAppUsers.rows.map((u) => u.id);
           }
+          if (userIds.length === 0) {
+            const fbUsers = await listAllAppUsersFallback();
+            userIds = fbUsers.map((u) => u.id);
+          }
+        } else {
+          userIds = [targetUserId];
+        }
+
+        for (const uid of Array.from(new Set(userIds.filter(Boolean)))) {
+          await createNotification({
+            userId: uid,
+            title,
+            message,
+            category: 'announcement',
+            type: type as any,
+            deepLink: 'dashboard',
+            channels: ['in_app', 'push'],
+            metadata: { broadcastId: notificationRow?.id },
+            skipPreferenceCheck: targetUserId === 'all',
+          }).catch(() => {});
         }
       } catch (err: any) {
         console.warn('[Sync Broadcast Notice]:', err.message);
       }
 
-      await logSecurityEvent('BROADCAST_NOTIFICATION_SENT', {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { title, type, targetUserId },
-      });
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('BROADCAST_NOTIFICATION_SENT', {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { title, type, targetUserId },
+        });
+      }
 
-      sendJson(res, 201, { success: true, message: 'Notification broadcast dispatched.', notification: notifRes.rows[0] });
+      sendJson(res, 201, { success: true, message: 'Notification broadcast dispatched.', notification: notificationRow });
       return true;
     }
 
@@ -1515,6 +1657,12 @@ export async function handleAdminApiRequest(
     if (pathname === '/api/admin/notifications' && method === 'GET') {
       const auth = await verifyAdminAuth(req, res, 'notifications.manage');
       if (!auth) return true;
+
+      if (!isDatabaseAvailable()) {
+        const banners = await listBroadcastBannersFallback();
+        sendJson(res, 200, { success: true, notifications: banners });
+        return true;
+      }
 
       const notifsRes = await query(
         `SELECT n.*, u.full_name as creator_name, u.email as creator_email 
@@ -1524,7 +1672,8 @@ export async function handleAdminApiRequest(
          LIMIT 100`
       );
 
-      sendJson(res, 200, { success: true, notifications: notifsRes.rows });
+      const rows = notifsRes.rows.length > 0 ? notifsRes.rows : await listBroadcastBannersFallback();
+      sendJson(res, 200, { success: true, notifications: rows });
       return true;
     }
 
@@ -1534,14 +1683,16 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const notifId = pathname.split('/')[4];
-      await query('UPDATE public.notifications SET is_active = FALSE WHERE id = $1', [notifId]);
-
-      await logSecurityEvent('NOTIFICATION_DEACTIVATED', {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { notificationId: notifId },
-      });
+      if (isDatabaseAvailable()) {
+        await query('UPDATE public.notifications SET is_active = FALSE WHERE id = $1', [notifId]);
+        await logSecurityEvent('NOTIFICATION_DEACTIVATED', {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { notificationId: notifId },
+        });
+      }
+      await deactivateBroadcastBannerFallback(notifId);
 
       sendJson(res, 200, { success: true, message: 'Notification deactivated successfully.' });
       return true;
@@ -1556,6 +1707,12 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'notifications.manage');
       if (!auth) return true;
 
+      if (!isDatabaseAvailable()) {
+        const fbCampaigns = await listCampaignsFallback();
+        sendJson(res, 200, { success: true, campaigns: fbCampaigns });
+        return true;
+      }
+
       const cRes = await query(`
         SELECT c.*, u.full_name as creator_name, u.email as creator_email
         FROM public.notification_campaigns c
@@ -1563,7 +1720,8 @@ export async function handleAdminApiRequest(
         ORDER BY c.created_at DESC
         LIMIT 100
       `);
-      sendJson(res, 200, { success: true, campaigns: cRes.rows });
+      const rows = cRes.rows.length > 0 ? cRes.rows : await listCampaignsFallback();
+      sendJson(res, 200, { success: true, campaigns: rows });
       return true;
     }
 
@@ -1578,7 +1736,8 @@ export async function handleAdminApiRequest(
       const category = body.category || 'announcement';
       const type = body.type || 'announcement';
       const channels = Array.isArray(body.channels) && body.channels.length > 0 ? body.channels : ['in_app'];
-      const targetType = ['all', 'active', 'selected'].includes(body.target_type) ? body.target_type : 'all';
+      const allowedTargets = ['all', 'installed', 'push_subscribed', 'admins', 'active', 'selected', 'specific'];
+      const targetType = allowedTargets.includes(body.target_type) ? body.target_type : 'all';
       const targetUserIds = Array.isArray(body.target_user_ids) ? body.target_user_ids : null;
       const deepLink = body.deep_link ? String(body.deep_link).trim() : null;
       const scheduledFor = body.scheduled_for ? new Date(body.scheduled_for) : null;
@@ -1588,34 +1747,78 @@ export async function handleAdminApiRequest(
         return true;
       }
 
-      const isScheduled = scheduledFor && scheduledFor.getTime() > Date.now();
+      const isScheduled = Boolean(scheduledFor && scheduledFor.getTime() > Date.now());
       const initialStatus = isScheduled ? 'scheduled' : 'sending';
 
-      const insRes = await query(
-        `INSERT INTO public.notification_campaigns 
-         (title, message, category, type, channels, target_type, target_user_ids, deep_link, status, scheduled_for, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING *`,
-        [title, message, category, type, channels, targetType, targetUserIds, deepLink, initialStatus, scheduledFor, auth.authUser.id]
-      );
-
-      const campaign = insRes.rows[0];
-
-      if (!isScheduled) {
-        // Dispatch immediately in background
-        dispatchCampaign(campaign.id).catch((e) => console.error('[Campaign Dispatch Error]:', e));
+      let campaign: any = null;
+      if (isDatabaseAvailable()) {
+        const insRes = await query(
+          `INSERT INTO public.notification_campaigns 
+           (title, message, category, type, channels, target_type, target_user_ids, deep_link, status, scheduled_for, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING *`,
+          [title, message, category, type, channels, targetType, targetUserIds, deepLink, initialStatus, scheduledFor, auth.authUser.id]
+        );
+        campaign = insRes.rows[0] || null;
       }
 
-      await logSecurityEvent('ADMIN_CAMPAIGN_CREATED', {
-        userId: auth.authUser.id,
-        actorRole: auth.role,
-        details: { campaignId: campaign.id, title, targetType, channels, isScheduled },
-      });
+      if (!campaign) {
+        campaign = await createCampaignFallback({
+          title,
+          message,
+          category,
+          type,
+          channels,
+          target_type: targetType,
+          target_user_ids: targetUserIds,
+          deep_link: deepLink,
+          status: initialStatus,
+          scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
+          created_by: auth.authUser.id,
+        });
+      }
+
+      localCampaigns.set(campaign.id, campaign);
+
+      let dispatchSummary: { totalTargets: number; deliveredCount: number; failedCount: number } | null = null;
+      if (!isScheduled) {
+        try {
+          const result = await dispatchCampaign(campaign.id);
+          dispatchSummary = {
+            totalTargets: result.totalTargets,
+            deliveredCount: result.deliveredCount,
+            failedCount: result.failedCount,
+          };
+          campaign = {
+            ...campaign,
+            status: 'sent',
+            total_targets: result.totalTargets,
+            delivered_count: result.deliveredCount,
+            failed_count: result.failedCount,
+            sent_at: new Date().toISOString(),
+          };
+        } catch (e) {
+          console.error('[Campaign Dispatch Error]:', e);
+        }
+      }
+
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_CAMPAIGN_CREATED', {
+          userId: auth.authUser.id,
+          actorRole: auth.role,
+          details: { campaignId: campaign.id, title, targetType, channels, isScheduled },
+        });
+      }
 
       sendJson(res, 201, {
         success: true,
-        message: isScheduled ? 'Campaign scheduled successfully.' : 'Campaign dispatched to target recipients.',
+        message: isScheduled
+          ? 'Campaign scheduled successfully.'
+          : dispatchSummary
+          ? `Campaign dispatched to ${dispatchSummary.totalTargets} recipient(s) (${dispatchSummary.deliveredCount} delivered).`
+          : 'Campaign dispatched to target recipients.',
         campaign,
+        dispatchSummary,
       });
       return true;
     }
@@ -1627,12 +1830,15 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const campaignId = cancelCampaignMatch[1];
-      await query(
-        `UPDATE public.notification_campaigns 
-         SET status = 'cancelled', updated_at = NOW() 
-         WHERE id = $1 AND status = 'scheduled'`,
-        [campaignId]
-      );
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.notification_campaigns 
+           SET status = 'cancelled', updated_at = NOW() 
+           WHERE id = $1 AND status = 'scheduled'`,
+          [campaignId]
+        );
+      }
+      await updateCampaignFallback(campaignId, { status: 'cancelled' });
       sendJson(res, 200, { success: true, message: 'Scheduled campaign cancelled.' });
       return true;
     }
@@ -1644,8 +1850,16 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const campaignId = retryCampaignMatch[1];
-      dispatchCampaign(campaignId).catch((e) => console.error('[Campaign Retry Error]:', e));
-      sendJson(res, 200, { success: true, message: 'Retry triggered for failed campaign recipients.' });
+      const result = await dispatchCampaign(campaignId).catch((e) => {
+        console.error('[Campaign Retry Error]:', e);
+        return null;
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: result
+          ? `Retry completed (${result.deliveredCount}/${result.totalTargets} delivered).`
+          : 'Retry triggered for failed campaign recipients.',
+      });
       return true;
     }
 
@@ -1653,6 +1867,21 @@ export async function handleAdminApiRequest(
     if (pathname === '/api/admin/notifications/analytics' && method === 'GET') {
       const auth = await verifyAdminAuth(req, res, 'notifications.manage');
       if (!auth) return true;
+
+      if (!isDatabaseAvailable()) {
+        const fbUsers = await listAllAppUsersFallback();
+        const fbCampaigns = await listCampaignsFallback();
+        const totalInApp = fbCampaigns.reduce((s, c) => s + Number(c.delivered_count || 0), 0);
+        sendJson(res, 200, {
+          success: true,
+          deliveryLogs: [],
+          activePushSubscribers: 0,
+          inAppTotal: totalInApp,
+          inAppRead: 0,
+          totalUsers: fbUsers.length,
+        });
+        return true;
+      }
 
       const [logsRes, subRes, notifsRes] = await Promise.all([
         query(`
@@ -2594,22 +2823,30 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'ai.manage');
       if (!auth) return true;
 
+      const runtimeAi = getRuntimeAiConfig();
+      const geminiConfigured = Boolean(
+        (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim().length > 10
+      );
+
       // Real status of the 7 AI modules
       const aiModules = [
-        { key: 'ai_money_assistant', name: 'AI Money Assistant', status: 'operational', provider: 'Google Gemini Pro / Flash', requests24h: 124, avgLatencyMs: 380, errorRate: 0.0 },
+        { key: 'ai_money_assistant', name: 'AI Money Assistant', status: runtimeAi.enabled ? 'operational' : 'paused', provider: 'Google Gemini Pro / Flash', requests24h: 124, avgLatencyMs: 380, errorRate: 0.0 },
         { key: 'smart_categorization', name: 'Smart Transaction Categorization', status: 'operational', provider: 'Rule Engine & NLP ML', requests24h: 412, avgLatencyMs: 45, errorRate: 0.0 },
         { key: 'expense_calendar', name: 'Expense Calendar View', status: 'operational', provider: 'Timeseries Analytics', requests24h: 89, avgLatencyMs: 65, errorRate: 0.0 },
         { key: 'smart_financial_alerts', name: 'Smart Financial Alerts', status: 'operational', provider: 'Anomaly & Threshold Worker', requests24h: 53, avgLatencyMs: 120, errorRate: 0.0 },
-        { key: 'receipt_scanner_ocr', name: 'Receipt Scanner OCR', status: 'operational', provider: 'Tesseract & Vision Parser', requests24h: 37, avgLatencyMs: 820, errorRate: 0.0 },
+        { key: 'receipt_scanner_ocr', name: 'Receipt Scanner OCR', status: runtimeAi.enabled ? 'operational' : 'paused', provider: 'Tesseract & Vision Parser', requests24h: 37, avgLatencyMs: 820, errorRate: 0.0 },
         { key: 'net_worth_tracker', name: 'Net Worth Tracker', status: 'operational', provider: 'Ledger Aggregator Engine', requests24h: 76, avgLatencyMs: 90, errorRate: 0.0 },
         { key: 'safe_to_spend', name: 'Safe-to-Spend Calculator', status: 'operational', provider: 'Liquidity Buffer Algorithmic Engine', requests24h: 198, avgLatencyMs: 50, errorRate: 0.0 },
       ];
 
       sendJson(res, 200, {
         success: true,
-        health: 'all_systems_operational',
+        health: runtimeAi.enabled ? 'all_systems_operational' : 'paused',
         modules: aiModules,
-        geminiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+        geminiConfigured,
+        aiEnabled: runtimeAi.enabled,
+        activeModel: runtimeAi.model,
+        allowedModels: [...ALLOWED_GEMINI_MODELS],
       });
       return true;
     }
@@ -2684,7 +2921,7 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'settings.manage');
       if (!auth) return true;
 
-      let storedConfig: Record<string, any> = {};
+      let storedConfig: Record<string, any> = loadIntegrationsConfigFallback();
       if (isDatabaseAvailable()) {
         try {
           const cfgRes = await query(
@@ -2692,16 +2929,17 @@ export async function handleAdminApiRequest(
             ['integrations_config']
           );
           if (cfgRes.rows[0]?.value && typeof cfgRes.rows[0].value === 'object') {
-            storedConfig = cfgRes.rows[0].value;
-            setRuntimeAiConfig({
-              model: typeof storedConfig.aiModel === 'string' ? storedConfig.aiModel : undefined,
-              enabled: typeof storedConfig.aiEnabled === 'boolean' ? storedConfig.aiEnabled : undefined,
-            });
+            storedConfig = { ...storedConfig, ...cfgRes.rows[0].value };
           }
         } catch {
-          // Non-fatal: continue with live runtime/env status
+          // Non-fatal: continue with fallback/runtime config
         }
       }
+
+      setRuntimeAiConfig({
+        model: typeof storedConfig.aiModel === 'string' ? storedConfig.aiModel : undefined,
+        enabled: typeof storedConfig.aiEnabled === 'boolean' ? storedConfig.aiEnabled : undefined,
+      });
 
       const runtimeAi = getRuntimeAiConfig();
       const geminiConfigured = Boolean(
@@ -2803,6 +3041,7 @@ export async function handleAdminApiRequest(
       };
 
       setRuntimeAiConfig({ model: requestedModel, enabled: aiEnabled });
+      saveIntegrationsConfigFallback(savedConfig);
 
       if (isDatabaseAvailable()) {
         try {

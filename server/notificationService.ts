@@ -2,11 +2,18 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import * as webpush from 'web-push';
-import { query, isDatabaseConfigured } from './db.js';
+import { query, isDatabaseConfigured, isDatabaseAvailable } from './db.js';
 import { APP_CONFIG } from './config.js';
 import { sendEmail } from './email.js';
 import { generateCampaignEmail } from './notificationEmailTemplates.js';
 import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils.js';
+import {
+  listAllAppUsersFallback,
+  insertUserNotificationFallback,
+  createBroadcastBannerFallback,
+  updateCampaignFallback,
+  listCampaignsFallback,
+} from './supabaseRestFallback.js';
 
 // Initialize web-push VAPID details (private key stays strictly server-side)
 try {
@@ -880,46 +887,49 @@ export async function createNotification(params: CreateNotificationParams): Prom
   // 1. IN-APP NOTIFICATION
   if (channels.includes('in_app') && (skipPreferenceCheck || (prefs.in_app_enabled && categoryAllowed))) {
     try {
-      let insRes;
-      try {
-        insRes = await query(
-          `INSERT INTO public.user_notifications
-           (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, dedupe_key, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           RETURNING id`,
-          [
-            userId,
-            title,
-            message,
-            category,
-            type,
-            relatedEntityType || null,
-            relatedEntityId || null,
-            deepLink || null,
-            dedupeKey || null,
-            JSON.stringify(enrichedMetadata),
-          ]
-        );
-      } catch {
-        // Legacy table fallback without dedupe_key column
-        insRes = await query(
-          `INSERT INTO public.user_notifications
-           (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           RETURNING id`,
-          [
-            userId,
-            title,
-            message,
-            category,
-            type,
-            relatedEntityType || null,
-            relatedEntityId || null,
-            deepLink || null,
-            JSON.stringify(enrichedMetadata),
-          ]
-        );
+      let insRes: { rows: any[] } = { rows: [] };
+      if (isDatabaseAvailable()) {
+        try {
+          insRes = await query(
+            `INSERT INTO public.user_notifications
+             (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, dedupe_key, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING id`,
+            [
+              userId,
+              title,
+              message,
+              category,
+              type,
+              relatedEntityType || null,
+              relatedEntityId || null,
+              deepLink || null,
+              dedupeKey || null,
+              JSON.stringify(enrichedMetadata),
+            ]
+          );
+        } catch {
+          // Legacy table fallback without dedupe_key column
+          insRes = await query(
+            `INSERT INTO public.user_notifications
+             (user_id, title, message, category, type, related_entity_type, related_entity_id, deep_link, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id`,
+            [
+              userId,
+              title,
+              message,
+              category,
+              type,
+              relatedEntityType || null,
+              relatedEntityId || null,
+              deepLink || null,
+              JSON.stringify(enrichedMetadata),
+            ]
+          );
+        }
       }
+
       if (insRes.rows.length > 0) {
         notificationId = insRes.rows[0].id;
         inAppDelivered = true;
@@ -929,15 +939,52 @@ export async function createNotification(params: CreateNotificationParams): Prom
            VALUES ($1, $2, $3, 'in_app', 'sent')`,
           [campaignId || null, notificationId, userId]
         ).catch(() => {});
+      } else {
+        const fbRow = await insertUserNotificationFallback({
+          user_id: userId,
+          title,
+          message,
+          category,
+          type,
+          related_entity_type: relatedEntityType || null,
+          related_entity_id: relatedEntityId || null,
+          deep_link: deepLink || null,
+          dedupe_key: dedupeKey || null,
+          metadata: enrichedMetadata,
+        });
+        notificationId = fbRow?.id;
+        inAppDelivered = true;
+        appendLocalDeliveryLog(userId, {
+          notification_id: notificationId || null,
+          channel: 'in_app',
+          status: 'sent',
+          error_message: null,
+        });
       }
     } catch {
-      // Do not log sensitive financial content
-      appendLocalDeliveryLog(userId, {
-        notification_id: null,
-        channel: 'in_app',
-        status: 'failed',
-        error_message: 'Database unavailable for in-app storage',
-      });
+      try {
+        const fbRow = await insertUserNotificationFallback({
+          user_id: userId,
+          title,
+          message,
+          category,
+          type,
+          related_entity_type: relatedEntityType || null,
+          related_entity_id: relatedEntityId || null,
+          deep_link: deepLink || null,
+          dedupe_key: dedupeKey || null,
+          metadata: enrichedMetadata,
+        });
+        notificationId = fbRow?.id;
+        inAppDelivered = true;
+      } catch {
+        appendLocalDeliveryLog(userId, {
+          notification_id: null,
+          channel: 'in_app',
+          status: 'failed',
+          error_message: 'Database unavailable for in-app storage',
+        });
+      }
     }
   }
 
@@ -1053,12 +1100,25 @@ export async function createNotification(params: CreateNotificationParams): Prom
     (skipPreferenceCheck || (prefs.email_enabled && categoryAllowed && !inQuietHours))
   ) {
     try {
-      const uRes = await query(
-        `SELECT email, full_name FROM public.app_users WHERE id = $1`,
-        [userId]
-      );
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        const u = uRes.rows[0];
+      let recipientUser: { email: string; full_name?: string } | null = null;
+      if (isDatabaseAvailable()) {
+        const uRes = await query(
+          `SELECT email, full_name FROM public.app_users WHERE id = $1`,
+          [userId]
+        );
+        if (uRes.rows.length > 0 && uRes.rows[0].email) {
+          recipientUser = uRes.rows[0];
+        }
+      }
+      if (!recipientUser) {
+        const fallbackUsers = await listAllAppUsersFallback();
+        const found = fallbackUsers.find((u) => u.id === userId && u.email);
+        if (found?.email) {
+          recipientUser = { email: found.email, full_name: found.full_name };
+        }
+      }
+      if (recipientUser && recipientUser.email) {
+        const u = recipientUser;
         const subject = emailOptions?.subject || title;
         let htmlContent = emailOptions?.html;
         let textContent = emailOptions?.text;
@@ -1526,15 +1586,24 @@ export async function dispatchCampaign(campaignId: string): Promise<{
   failedCount: number;
 }> {
   let campaign: any = null;
-  try {
-    const cRes = await query(`SELECT * FROM public.notification_campaigns WHERE id = $1`, [campaignId]);
-    if (cRes.rows && cRes.rows.length > 0) {
-      campaign = cRes.rows[0];
-    }
-  } catch {}
+  if (isDatabaseAvailable()) {
+    try {
+      const cRes = await query(`SELECT * FROM public.notification_campaigns WHERE id = $1`, [campaignId]);
+      if (cRes.rows && cRes.rows.length > 0) {
+        campaign = cRes.rows[0];
+      }
+    } catch {}
+  }
 
   if (!campaign) {
     campaign = localCampaigns.get(campaignId);
+  }
+
+  if (!campaign) {
+    try {
+      const fbCampaigns = await listCampaignsFallback();
+      campaign = fbCampaigns.find((c) => c.id === campaignId) || null;
+    } catch {}
   }
 
   if (!campaign) {
@@ -1543,19 +1612,27 @@ export async function dispatchCampaign(campaignId: string): Promise<{
       target_type: 'installed',
       title: 'Campaign',
       message: 'Campaign message',
+      channels: ['in_app'],
       status: 'sending',
     };
   }
+
   await query(
     `UPDATE public.notification_campaigns SET status = 'sending', updated_at = NOW() WHERE id = $1`,
     [campaignId]
-  );
+  ).catch(() => {});
 
   let userIds: string[] = [];
 
   if (campaign.target_type === 'all') {
-    const allUsers = await query(`SELECT id FROM public.app_users`);
-    userIds = allUsers.rows.map((r) => r.id);
+    if (isDatabaseAvailable()) {
+      const allUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
+      userIds = allUsers.rows.map((r) => r.id);
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers.map((u) => u.id);
+    }
   } else if (campaign.target_type === 'installed') {
     const installedUsers = await query(
       `SELECT DISTINCT user_id as id FROM public.installed_devices WHERE is_installed = TRUE
@@ -1569,21 +1646,38 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     );
     userIds = pushUsers.rows.map((r) => r.id);
   } else if (campaign.target_type === 'admins') {
-    const adminUsers = await query(
-      `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
-    );
-    userIds = adminUsers.rows.map((r) => r.id);
+    if (isDatabaseAvailable()) {
+      const adminUsers = await query(
+        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+      );
+      userIds = adminUsers.rows.map((r) => r.id);
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers
+        .filter((u) => ['superadmin', 'admin'].includes(String(u.role || '').toLowerCase()))
+        .map((u) => u.id);
+    }
   } else if (campaign.target_type === 'specific' && (campaign.target_user_id || (campaign.target_user_ids && campaign.target_user_ids[0]))) {
     userIds = [campaign.target_user_id || campaign.target_user_ids[0]];
   } else if (campaign.target_type === 'active') {
-    const activeUsers = await query(
-      `SELECT DISTINCT user_id as id FROM public.transactions
-       WHERE created_at > NOW() - INTERVAL '30 days'`
-    );
-    userIds = activeUsers.rows.map((r) => r.id);
+    if (isDatabaseAvailable()) {
+      const activeUsers = await query(
+        `SELECT DISTINCT user_id as id FROM public.transactions
+         WHERE created_at > NOW() - INTERVAL '30 days'`
+      );
+      userIds = activeUsers.rows.map((r) => r.id);
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers.map((u) => u.id);
+    }
   } else if (campaign.target_type === 'selected' && Array.isArray(campaign.target_user_ids)) {
     userIds = campaign.target_user_ids;
   }
+
+  userIds = Array.from(new Set(userIds.filter(Boolean)));
+  const channels = Array.isArray(campaign.channels) && campaign.channels.length > 0 ? campaign.channels : ['in_app'];
 
   let deliveredCount = 0;
   let failedCount = 0;
@@ -1594,12 +1688,13 @@ export async function dispatchCampaign(campaignId: string): Promise<{
         userId: uid,
         title: campaign.title,
         message: campaign.message,
-        category: campaign.category,
-        type: campaign.type,
-        deepLink: campaign.deepLink || undefined,
-        channels: campaign.channels,
+        category: campaign.category || 'announcement',
+        type: campaign.type || 'announcement',
+        deepLink: campaign.deep_link || campaign.deepLink || undefined,
+        channels,
         campaignId: campaign.id,
         dedupeKey: `campaign:${campaign.id}:${uid}`,
+        skipPreferenceCheck: campaign.target_type === 'all' && channels.includes('in_app'),
       });
 
       if (res.success) {
@@ -1612,26 +1707,58 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     }
   }
 
-  if (Array.isArray(campaign.channels) && campaign.channels.includes('in_app')) {
-    await query(
-      `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
-       VALUES ($1, $2, $3, $4, TRUE, $5)`,
-      [
-        campaign.title,
-        campaign.message,
-        campaign.type,
-        campaign.target_type === 'all' ? 'all' : userIds[0] || 'all',
-        campaign.created_by || null,
-      ]
-    ).catch(() => {});
+  if (channels.includes('in_app')) {
+    const targetAudienceFlag = campaign.target_type === 'all' ? 'all' : userIds[0] || 'all';
+    if (isDatabaseAvailable()) {
+      await query(
+        `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
+         VALUES ($1, $2, $3, $4, TRUE, $5)`,
+        [
+          campaign.title,
+          campaign.message,
+          campaign.type || 'announcement',
+          targetAudienceFlag,
+          campaign.created_by || null,
+        ]
+      ).catch(() => {});
+    }
+    await createBroadcastBannerFallback({
+      title: campaign.title,
+      message: campaign.message,
+      type: campaign.type || 'announcement',
+      target_user_id: targetAudienceFlag,
+      created_by: campaign.created_by || null,
+      category: campaign.category || 'announcement',
+      deep_link: campaign.deep_link || campaign.deepLink || 'dashboard',
+    }).catch(() => {});
   }
 
+  const sentAt = new Date().toISOString();
   await query(
     `UPDATE public.notification_campaigns
      SET status = 'sent', total_targets = $1, delivered_count = $2, failed_count = $3, sent_at = NOW(), updated_at = NOW()
      WHERE id = $4`,
     [userIds.length, deliveredCount, failedCount, campaignId]
-  );
+  ).catch(() => {});
+
+  await updateCampaignFallback(campaignId, {
+    status: 'sent',
+    total_targets: userIds.length,
+    delivered_count: deliveredCount,
+    failed_count: failedCount,
+    sent_at: sentAt,
+  }).catch(() => {});
+
+  if (localCampaigns.has(campaignId)) {
+    localCampaigns.set(campaignId, {
+      ...localCampaigns.get(campaignId),
+      status: 'sent',
+      total_targets: userIds.length,
+      delivered_count: deliveredCount,
+      failed_count: failedCount,
+      sent_at: sentAt,
+    });
+  }
 
   return {
     success: true,
