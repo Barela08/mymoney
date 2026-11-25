@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   PlusCircle,
-  Home,
   DoorOpen,
   ShoppingBag,
   Users,
@@ -13,16 +12,13 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   ArrowRightLeft,
-  Calendar,
   Clock,
   Sparkles,
   Utensils,
-  Coffee,
   CreditCard,
   Camera,
   Upload,
   Trash2,
-  Image as ImageIcon,
   Mic,
   MicOff,
   CheckCircle2,
@@ -147,6 +143,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [userAppliedSuggestion, setUserAppliedSuggestion] = useState(false);
 
   // Feature: Voice Transaction Entry & Dictation
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const [voiceDraft, setVoiceDraft] = useState<ParsedVoiceDraft | null>(null);
   const [activeDictationField, setActiveDictationField] = useState<'transaction' | 'title' | 'notes' | null>(null);
 
@@ -359,8 +356,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     else if (cat === 'other') setSubcategory('shopping');
     else if (cat === 'people') setSubcategory('money_given');
   };
-
-  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
 
   const isDirty = Boolean(
     amount ||
