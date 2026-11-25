@@ -226,7 +226,14 @@ export const BudgetSection: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-44 rounded-3xl bg-slate-100 dark:bg-slate-800 animate-pulse border border-slate-200 dark:border-slate-800" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {DEFAULT_BUDGET_CATEGORIES.map((catItem) => {
             const Icon = catItem.icon;
             const existingBudget = budgets.find((b) => b.category.toLowerCase() === catItem.id.toLowerCase());
@@ -347,6 +354,7 @@ export const BudgetSection: React.FC = () => {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Add / Edit Budget Modal */}

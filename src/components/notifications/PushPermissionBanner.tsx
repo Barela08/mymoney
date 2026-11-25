@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, X, Bell, CheckCircle } from 'lucide-react';
+import { X, Bell } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 
