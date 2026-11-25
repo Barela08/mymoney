@@ -262,6 +262,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch {}
         }
 
+        syncDeviceRegistration();
         return { success: true, message: res.message };
       }
     } catch (err: any) {
