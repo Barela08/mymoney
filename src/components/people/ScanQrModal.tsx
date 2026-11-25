@@ -274,7 +274,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   );
 
   // Frame scanning loop
-  const scanFrame = useCallback(() => {
+  const scanFrame = useCallback(function tick() {
     if (!isScanningActiveRef.current || !videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
@@ -287,9 +287,16 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      // Try standard orientation first
+      let code = jsQR(imageData.data, imageData.width, imageData.height, {
         inversionAttempts: 'dontInvert',
       });
+      // Fallback: try inversion for high contrast / dark mode QR codes
+      if (!code || !code.data) {
+        code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'onlyInvert',
+        });
+      }
 
       if (code && code.data) {
         stopCamera();
@@ -298,10 +305,10 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       }
     }
 
-    animFrameRef.current = requestAnimationFrame(scanFrame);
+    animFrameRef.current = requestAnimationFrame(tick);
   }, [stopCamera, resolveRawInput]);
 
-  // Start camera with rear camera preference
+  // Start camera with progressive fallback (ideal -> environment -> any)
   const startCamera = useCallback(
     async (deviceIdOverride?: string | null) => {
       stopCamera();
@@ -325,22 +332,41 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       const targetDeviceId = deviceIdOverride !== undefined ? deviceIdOverride : currentDeviceId;
 
       try {
-        const constraints: MediaStreamConstraints = {
-          audio: false,
-          video: targetDeviceId
-            ? {
-                deviceId: { exact: targetDeviceId },
-                width: { ideal: 720 },
-                height: { ideal: 720 },
-              }
-            : {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 720 },
-                height: { ideal: 720 },
-              },
-        };
+        let stream: MediaStream | null = null;
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Progressive constraint negotiation to avoid OverconstrainedError across mobile devices
+        try {
+          const constraints: MediaStreamConstraints = {
+            audio: false,
+            video: targetDeviceId
+              ? {
+                  deviceId: { exact: targetDeviceId },
+                  width: { ideal: 720 },
+                  height: { ideal: 720 },
+                }
+              : {
+                  facingMode: { ideal: 'environment' },
+                  width: { ideal: 720 },
+                  height: { ideal: 720 },
+                },
+          };
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch {
+          try {
+            // Secondary fallback: facingMode without resolution constraint
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: { facingMode: 'environment' },
+            });
+          } catch {
+            // Final fallback: any video input
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: true,
+            });
+          }
+        }
+
         streamRef.current = stream;
 
         const videoTrack = stream.getVideoTracks()[0];
@@ -355,11 +381,28 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           setSupportsTorch(false);
         }
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.setAttribute('playsinline', 'true');
-          await videoRef.current.play();
+        if (videoRef.current && stream) {
+          const video = videoRef.current;
+          video.srcObject = stream;
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('webkit-playsinline', 'true');
+          video.muted = true;
+
+          // Ensure video metadata is loaded before attempting playback
+          await new Promise<void>((resolve) => {
+            if (video.readyState >= 1) {
+              resolve();
+            } else {
+              video.onloadedmetadata = () => resolve();
+              setTimeout(resolve, 500);
+            }
+          });
+
+          await video.play().catch((playErr) => {
+            console.warn('Video play warning:', playErr);
+          });
           isScanningActiveRef.current = true;
+          setIsScanningPaused(false);
           scanFrame();
         }
 
@@ -380,6 +423,23 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     },
     [currentDeviceId, stopCamera, refreshDevices, scanFrame]
   );
+
+  const togglePauseScanning = useCallback(() => {
+    if (isScanningPaused) {
+      isScanningActiveRef.current = true;
+      setIsScanningPaused(false);
+      videoRef.current?.play().catch(() => {});
+      scanFrame();
+    } else {
+      isScanningActiveRef.current = false;
+      setIsScanningPaused(true);
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      videoRef.current?.pause();
+    }
+  }, [isScanningPaused, scanFrame]);
 
   // Handle #pair=... deep links when modal opens with initialPairCode
   useEffect(() => {
@@ -873,8 +933,27 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
                   </div>
 
-                  {/* Camera Controls: Torch & Switch Camera */}
+                  {/* Camera Controls: Torch, Switch Camera & Pause/Resume */}
                   <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                    {/* Pause / Resume Button */}
+                    <button
+                      type="button"
+                      onClick={togglePauseScanning}
+                      className={`p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer ${
+                        isScanningPaused
+                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                          : 'bg-slate-900/70 text-white hover:bg-slate-900'
+                      }`}
+                      title={isScanningPaused ? 'Resume Scanning' : 'Pause Scanning'}
+                      aria-label={isScanningPaused ? 'Resume Scanning' : 'Pause Scanning'}
+                    >
+                      {isScanningPaused ? (
+                        <Play className="w-4 h-4 fill-current" />
+                      ) : (
+                        <Pause className="w-4 h-4" />
+                      )}
+                    </button>
+
                     {supportsTorch && (
                       <button
                         type="button"
@@ -907,6 +986,20 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     )}
                   </div>
 
+                  {isScanningPaused && (
+                    <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex flex-col items-center justify-center text-white space-y-2">
+                      <Pause className="w-8 h-8 text-amber-400" />
+                      <span className="text-xs font-bold">Scanning Paused</span>
+                      <button
+                        type="button"
+                        onClick={togglePauseScanning}
+                        className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold cursor-pointer"
+                      >
+                        Tap to Resume
+                      </button>
+                    </div>
+                  )}
+
                   {isResolving && (
                     <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm flex flex-col items-center justify-center text-white space-y-2">
                       <div className="w-7 h-7 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
@@ -934,20 +1027,43 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 )}
 
                 {cameraError ? (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-2">
-                    <p>{cameraError}</p>
-                    <button
-                      type="button"
-                      onClick={() => void startCamera()}
-                      className="text-[11px] font-bold underline cursor-pointer"
-                    >
-                      Retry Camera
-                    </button>
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-xs text-amber-800 dark:text-amber-300 space-y-3">
+                    <p className="leading-relaxed">{cameraError}</p>
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      <button
+                        type="button"
+                        onClick={() => void startCamera()}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Retry Camera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('upload')}
+                        className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Upload QR Image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('code')}
+                        className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Enter Code Manually
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-slate-500 text-center">
-                    Point camera steadily at another user&apos;s My Money Manager QR code
-                  </p>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 max-w-[280px] mx-auto pt-1">
+                    <span>Point at QR code steadily</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('upload')}
+                      className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
+                    >
+                      Upload photo instead
+                    </button>
+                  </div>
                 )}
               </div>
             )}

@@ -4,25 +4,12 @@ import {
   Moon,
   Trash2,
   Download,
-  Upload,
   User,
-  Shield,
-  LogOut,
-  Sparkles,
-  Database,
-  CheckCircle2,
-  AlertCircle,
-  Copy,
-  Check,
-  RefreshCw,
   Sliders,
-  FileText,
-  KeyRound,
   Scale,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { UserProfileSection } from '../profile/UserProfileSection';
@@ -42,11 +29,8 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   const {
     transactions,
     clearAllTransactions,
-    refreshTransactions,
-    isSupabaseConnected,
   } = useExpense();
   const { theme, setTheme } = useTheme();
-  const { user, isAdmin, logout } = useAuth();
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'preferences' | 'deletion' | 'legal'>(initialTab);
@@ -54,9 +38,6 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   // Clear data confirmation modal
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-
-  // Logout confirmation modal
-  const [isConfirmLogoutOpen, setIsConfirmLogoutOpen] = useState(false);
 
   const handleExportBackup = () => {
     try {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 
 export interface WizardStep {
   id: string;

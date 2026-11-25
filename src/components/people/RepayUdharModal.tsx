@@ -2,10 +2,6 @@ import React, { useState } from 'react';
 import {
   X,
   CheckCircle2,
-  Calendar,
-  RotateCcw,
-  Sparkles,
-  ArrowRight,
   Receipt,
   AlertCircle,
   CreditCard,

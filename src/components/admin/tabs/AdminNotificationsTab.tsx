@@ -41,18 +41,117 @@ export const AdminNotificationsTab: React.FC = () => {
   // Form Fields
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [category, setCategory] = useState<'announcement' | 'offer' | 'system' | 'security'>('announcement');
-  const [type, setType] = useState<'info' | 'warning' | 'maintenance' | 'announcement' | 'offer'>('announcement');
+  const [category, setCategory] = useState<'announcement' | 'offer' | 'system' | 'security' | 'reminder'>('announcement');
+  const [type, setType] = useState<'info' | 'warning' | 'maintenance' | 'announcement' | 'offer' | 'reminder'>('announcement');
   const [channelInApp, setChannelInApp] = useState(true);
   const [channelPush, setChannelPush] = useState(true);
   const [channelEmail, setChannelEmail] = useState(false);
-  const [targetType, setTargetType] = useState<'all' | 'active' | 'selected'>('all');
+  const [targetType, setTargetType] = useState<'all' | 'installed' | 'push_subscribed' | 'active' | 'selected' | 'specific' | 'admins'>('all');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [specificUserId, setSpecificUserId] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('10:00');
   const [deepLink, setDeepLink] = useState('dashboard');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
+
+  // Example Notification Presets
+  const PRESETS = [
+    {
+      title: 'Welcome to My Money Manager',
+      message: 'Your app is ready. Start managing your money easily.',
+      category: 'announcement' as const,
+      type: 'announcement' as const,
+      deepLink: 'dashboard',
+    },
+    {
+      title: 'Important Update',
+      message: 'A new My Money Manager update is available.',
+      category: 'system' as const,
+      type: 'info' as const,
+      deepLink: 'dashboard',
+    },
+    {
+      title: 'Budget Reminder',
+      message: 'You are approaching your monthly budget limit.',
+      category: 'reminder' as const,
+      type: 'warning' as const,
+      deepLink: 'budget',
+    },
+    {
+      title: 'Security Alert',
+      message: 'A new login was detected on your account.',
+      category: 'security' as const,
+      type: 'warning' as const,
+      deepLink: 'settings',
+    },
+  ];
+
+  const applyPreset = (preset: typeof PRESETS[0]) => {
+    setTitle(preset.title);
+    setMessage(preset.message);
+    setCategory(preset.category);
+    setType(preset.type);
+    setDeepLink(preset.deepLink);
+    toast.info('Template Applied', `"${preset.title}" populated in composer.`);
+  };
+
+  const handleSaveDraft = () => {
+    try {
+      localStorage.setItem(
+        'my_money_campaign_draft',
+        JSON.stringify({ title, message, category, type, deepLink, targetType })
+      );
+      toast.success('Draft Saved', 'Campaign copy saved locally.');
+    } catch {
+      toast.error('Draft Error', 'Could not save draft to local storage.');
+    }
+  };
+
+  const handleLoadDraft = () => {
+    try {
+      const raw = localStorage.getItem('my_money_campaign_draft');
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.title) setTitle(d.title);
+        if (d.message) setMessage(d.message);
+        if (d.category) setCategory(d.category);
+        if (d.type) setType(d.type);
+        if (d.deepLink) setDeepLink(d.deepLink);
+        if (d.targetType) setTargetType(d.targetType);
+        toast.success('Draft Loaded', 'Previous campaign draft restored.');
+      } else {
+        toast.info('No Draft', 'No saved campaign draft was found.');
+      }
+    } catch {
+      toast.error('Draft Error', 'Failed to load draft.');
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    if (!title.trim() || !message.trim()) {
+      toast.error('Validation Error', 'Please enter a title and message before sending a test notification.');
+      return;
+    }
+    setIsSendingTest(true);
+    try {
+      const res = await adminClient.sendTestNotification({
+        title: title.trim(),
+        message: message.trim(),
+        deep_link: deepLink,
+      });
+      if (res.success) {
+        toast.success('Test Push Dispatched', res.message || 'Notification sent to your admin session.');
+      } else {
+        toast.warning('Test Push Notice', res.message || 'Push was dispatched in-app; verify push permission.');
+      }
+    } catch (err: any) {
+      toast.error('Test Push Failed', err.message);
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -470,6 +569,25 @@ export const AdminNotificationsTab: React.FC = () => {
             </div>
 
             <form onSubmit={handleSendCampaign} className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
+              {/* Quick Presets Bar */}
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/70 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Quick Presets & Templates:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESETS.map((p, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => applyPreset(p)}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-500 text-[11px] font-semibold border border-slate-200 dark:border-slate-700 transition-all shadow-2xs cursor-pointer"
+                    >
+                      {p.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Notification Title *
@@ -549,6 +667,7 @@ export const AdminNotificationsTab: React.FC = () => {
                     <option value="offer">Special Offer</option>
                     <option value="system">System / Feature</option>
                     <option value="security">Security Alert</option>
+                    <option value="reminder">Reminder</option>
                   </select>
                 </div>
 
@@ -562,6 +681,7 @@ export const AdminNotificationsTab: React.FC = () => {
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold"
                   >
                     <option value="dashboard">Dashboard</option>
+                    <option value="budget">Budget Section</option>
                     <option value="people">People (Udhar Khata)</option>
                     <option value="calculator">Calculator</option>
                     <option value="reports">Reports & Analytics</option>
@@ -574,28 +694,45 @@ export const AdminNotificationsTab: React.FC = () => {
               {/* Target Audience */}
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Target Audience
+                  Target Audience *
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
-                    { id: 'all', label: 'All Users' },
-                    { id: 'active', label: 'Active Users (30d)' },
-                    { id: 'selected', label: 'Specific Users' },
+                    { id: 'all', label: 'All Eligible Users' },
+                    { id: 'installed', label: 'Installed App Users' },
+                    { id: 'push_subscribed', label: 'Active Push Subs' },
+                    { id: 'admins', label: 'Administrators' },
+                    { id: 'active', label: 'Active (Last 30d)' },
+                    { id: 'specific', label: 'Specific User ID' },
+                    { id: 'selected', label: 'Multi-Select Users' },
                   ].map((t) => (
                     <button
                       key={t.id}
                       type="button"
                       onClick={() => setTargetType(t.id as any)}
-                      className={`py-2 px-3 rounded-xl font-bold border transition-all cursor-pointer ${
+                      className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
                         targetType === t.id
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
                       }`}
                     >
                       {t.label}
                     </button>
                   ))}
                 </div>
+
+                {targetType === 'specific' && (
+                  <div className="mt-2.5">
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">User ID (UUID)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+                      value={specificUserId}
+                      onChange={(e) => setSpecificUserId(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                )}
 
                 {targetType === 'selected' && (
                   <div className="mt-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 max-h-36 overflow-y-auto space-y-1">
@@ -691,23 +828,51 @@ export const AdminNotificationsTab: React.FC = () => {
                 )}
               </div>
 
-              {/* Submit Buttons */}
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{isScheduled ? 'Schedule Broadcast' : 'Dispatch Now'}</span>
-                </button>
+              {/* Action Buttons: Save Draft, Load Draft, Test Push, Cancel, Dispatch */}
+              <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    className="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Save Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadDraft}
+                    className="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Load Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendTestNotification}
+                    disabled={isSendingTest}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <Smartphone className="w-3 h-3" />
+                    <span>{isSendingTest ? 'Sending...' : 'Send Test Notification'}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{isScheduled ? 'Schedule Broadcast' : 'Dispatch Now'}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

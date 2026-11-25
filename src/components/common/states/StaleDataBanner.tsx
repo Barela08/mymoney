@@ -1,5 +1,5 @@
 import React from 'react';
-import { WifiOff, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
+import { WifiOff, RefreshCw, CloudOff } from 'lucide-react';
 
 export interface StaleDataBannerProps {
   isOffline: boolean;

@@ -1,12 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   BarChart3,
-  PieChart as PieIcon,
-  TrendingUp,
-  TrendingDown,
-  Calendar,
   Download,
-  Filter,
   DollarSign,
   ArrowUpRight,
   ArrowDownLeft,
@@ -24,15 +19,12 @@ import {
   Pie,
   Cell,
   CartesianGrid,
-  AreaChart,
-  Area,
 } from 'recharts';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { SkeletonCardsGrid, SkeletonChart } from '../common/states';
 import { formatINR, formatDisplayDate, getPresetDateRange } from '../../lib/dateUtils';
-import { Transaction } from '../../types';
 
 export const ReportsSection: React.FC = () => {
   const { transactions, isLoading } = useExpense();

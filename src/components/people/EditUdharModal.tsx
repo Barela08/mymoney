@@ -2,11 +2,6 @@ import React, { useState } from 'react';
 import {
   X,
   Edit3,
-  Calendar,
-  AlertCircle,
-  Clock,
-  FileText,
-  DollarSign,
   ShieldAlert,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';

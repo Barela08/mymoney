@@ -7,6 +7,7 @@ import {
   setStoredAuthUser,
 } from '../lib/authApi';
 import { getSupabaseClient } from '../lib/supabase';
+import { syncDeviceRegistration } from './PwaInstallContext';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -206,6 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(authUser);
             setStoredAuthUser(authUser);
             setStoredSessionToken(supaData.session?.access_token || `direct_${supaData.user.id}_${Date.now()}`);
+            syncDeviceRegistration();
             return { success: true, message: 'Logged in successfully.' };
           }
         }
@@ -215,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (apiSuccess) {
+      syncDeviceRegistration();
       return { success: true, message: apiMessage || 'Authenticated successfully.' };
     }
 

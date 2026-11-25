@@ -1,9 +1,7 @@
 import React from 'react';
 import {
   CheckCircle2,
-  Users,
   Sparkles,
-  ArrowRight,
   Plus,
   X,
   UserCheck,

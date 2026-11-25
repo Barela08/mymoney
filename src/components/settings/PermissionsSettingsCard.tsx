@@ -13,18 +13,12 @@ import {
   ChevronUp,
   Laptop,
   Smartphone,
-  ExternalLink,
-  Sparkles,
 } from 'lucide-react';
-import { usePermissionManager, HardwarePermissionStatus, NotificationPermissionStatus } from '../../context/PermissionContext';
+import { usePermissionManager } from '../../context/PermissionContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
 
 export const PermissionsSettingsCard: React.FC = () => {
   const {
-    micStatus,
-    cameraStatus,
-    notifStatus,
-    isChecking,
     checkAllPermissions,
     requestMicrophone,
     requestCamera,

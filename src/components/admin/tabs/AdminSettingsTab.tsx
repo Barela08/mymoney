@@ -10,9 +10,14 @@ import {
   Wrench,
   Globe,
   Sliders,
+  Bell,
+  Moon,
+  Smartphone,
+  Check,
 } from 'lucide-react';
 import { useExpense } from '../../../context/ExpenseContext';
 import { useToast } from '../../../context/ToastContext';
+import { adminClient } from '../../../lib/adminApi';
 import { MaintenanceSettings, AppBrandingSettings } from '../../../types';
 import { MaintenanceScreen } from '../../maintenance/MaintenanceScreen';
 import { SUPPORT_CONTACT } from '../../../config/contact';
@@ -44,6 +49,84 @@ export const AdminSettingsTab: React.FC = () => {
   const [companyName, setCompanyName] = useState(appBranding?.companyName || SUPPORT_CONTACT.companyName);
   const [footerText, setFooterText] = useState(appBranding?.footerText || '© 2026 My Money Manager by HackifyPro. All rights reserved.');
   const [isSavingBrand, setIsSavingBrand] = useState(false);
+
+  // Admin Notification Preferences Form (PART 5)
+  const [alertNewUser, setAlertNewUser] = useState(true);
+  const [alertAppInstall, setAlertAppInstall] = useState(true);
+  const [alertSupportTicket, setAlertSupportTicket] = useState(true);
+  const [alertCriticalSecurity, setAlertCriticalSecurity] = useState(true);
+  const [alertPushFailure, setAlertPushFailure] = useState(true);
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
+  const [quietHoursStart, setQuietHoursStart] = useState('22:00');
+  const [quietHoursEnd, setQuietHoursEnd] = useState('07:00');
+  const [deliveryChannel, setDeliveryChannel] = useState<'push_and_inapp' | 'push_only' | 'email_only' | 'inapp_only'>('push_and_inapp');
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+  const [isSendingTestPush, setIsSendingTestPush] = useState(false);
+
+  useEffect(() => {
+    adminClient
+      .getAdminNotificationPreferences()
+      .then((res: any) => {
+        if (res.success && res.preferences) {
+          const p = res.preferences;
+          if (p.alert_new_user_registration !== undefined) setAlertNewUser(p.alert_new_user_registration);
+          if (p.alert_app_installation !== undefined) setAlertAppInstall(p.alert_app_installation);
+          if (p.alert_support_ticket !== undefined) setAlertSupportTicket(p.alert_support_ticket);
+          if (p.alert_critical_security !== undefined) setAlertCriticalSecurity(p.alert_critical_security);
+          if (p.alert_push_failure !== undefined) setAlertPushFailure(p.alert_push_failure);
+          if (p.quiet_hours_enabled !== undefined) setQuietHoursEnabled(p.quiet_hours_enabled);
+          if (p.quiet_hours_start) setQuietHoursStart(p.quiet_hours_start);
+          if (p.quiet_hours_end) setQuietHoursEnd(p.quiet_hours_end);
+          if (p.delivery_channel) setDeliveryChannel(p.delivery_channel);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveNotificationPreferences = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingPrefs(true);
+    try {
+      const res = await adminClient.saveAdminNotificationPreferences({
+        alert_new_user_registration: alertNewUser,
+        alert_app_installation: alertAppInstall,
+        alert_support_ticket: alertSupportTicket,
+        alert_critical_security: alertCriticalSecurity,
+        alert_push_failure: alertPushFailure,
+        quiet_hours_enabled: quietHoursEnabled,
+        quiet_hours_start: quietHoursStart,
+        quiet_hours_end: quietHoursEnd,
+        delivery_channel: deliveryChannel,
+      });
+      if (res.success) {
+        toast.success('Admin Preferences Saved', 'Notification routing and alert rules updated.');
+      }
+    } catch (err: any) {
+      toast.error('Save Failed', err.message);
+    } finally {
+      setIsSavingPrefs(false);
+    }
+  };
+
+  const handleTestAdminAlert = async () => {
+    setIsSendingTestPush(true);
+    try {
+      const res = await adminClient.sendTestNotification({
+        title: 'Admin Verification Alert',
+        message: 'This confirms your administrative push notification channel is active and functional.',
+        deep_link: 'admin',
+      });
+      if (res.success) {
+        toast.success('Test Push Dispatched', res.message);
+      } else {
+        toast.warning('Push Warning', res.message);
+      }
+    } catch (err: any) {
+      toast.error('Test Push Error', err.message);
+    } finally {
+      setIsSendingTestPush(false);
+    }
+  };
 
   useEffect(() => {
     setMaintForm(maintenanceSettings);
@@ -280,6 +363,177 @@ export const AdminSettingsTab: React.FC = () => {
             className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 cursor-pointer"
           >
             {isSavingBrand ? 'Saving...' : 'Save Branding Configuration'}
+          </button>
+        </form>
+      </div>
+
+      {/* Admin Notification Preferences & Two-Way Routing (PART 5) */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+              <Bell className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                Admin Notification Preferences & Two-Way Alert Routing
+              </h3>
+              <p className="text-xs text-slate-400">
+                Configure real-time event triggers sent from users to the administration center
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleTestAdminAlert}
+            disabled={isSendingTestPush}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 text-xs font-bold transition-colors cursor-pointer self-start sm:self-auto disabled:opacity-50"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>{isSendingTestPush ? 'Testing...' : 'Test Admin Push Alert'}</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSaveNotificationPreferences} className="space-y-4 text-xs">
+          {/* User-to-Admin Event Toggles */}
+          <div>
+            <p className="font-bold text-slate-700 dark:text-slate-300 mb-2">
+              Event Trigger Subscriptions (User-to-Admin)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <label className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
+                <div>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">New User Registrations</p>
+                  <p className="text-[11px] text-slate-400">Alert admin when new accounts are registered</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={alertNewUser}
+                  onChange={(e) => setAlertNewUser(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
+                <div>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">PWA App Installations</p>
+                  <p className="text-[11px] text-slate-400">Alert admin upon confirmed device installations</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={alertAppInstall}
+                  onChange={(e) => setAlertAppInstall(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
+                <div>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Support & Feedback Tickets</p>
+                  <p className="text-[11px] text-slate-400">Notify admin when users submit support inquiries</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={alertSupportTicket}
+                  onChange={(e) => setAlertSupportTicket(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
+                <div>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Critical Security & Error Alerts</p>
+                  <p className="text-[11px] text-slate-400">Immediate notice on repeated failed logins or incidents</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={alertCriticalSecurity}
+                  onChange={(e) => setAlertCriticalSecurity(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-pointer sm:col-span-2">
+                <div>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Push Delivery Failure Threshold Alerts</p>
+                  <p className="text-[11px] text-slate-400">Alert admin when Web Push delivery failure rates spike</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={alertPushFailure}
+                  onChange={(e) => setAlertPushFailure(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Delivery Channel Preference */}
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Admin Delivery Channel
+            </label>
+            <select
+              value={deliveryChannel}
+              onChange={(e: any) => setDeliveryChannel(e.target.value)}
+              className="w-full sm:w-80 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium"
+            >
+              <option value="push_and_inapp">Web Push + Admin Notification Center</option>
+              <option value="push_only">Web Push Only</option>
+              <option value="email_only">Email Alerts Only</option>
+              <option value="inapp_only">Admin Notification Center Only</option>
+            </select>
+          </div>
+
+          {/* Quiet Hours Configuration */}
+          <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Moon className="w-4 h-4 text-indigo-500" />
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-slate-100">Quiet Hours</p>
+                  <p className="text-[11px] text-slate-400">Suppress non-critical audible push alerts during rest hours</p>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={quietHoursEnabled}
+                onChange={(e) => setQuietHoursEnabled(e.target.checked)}
+                className="w-4 h-4 text-indigo-600 rounded"
+              />
+            </div>
+
+            {quietHoursEnabled && (
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Start Time</label>
+                  <input
+                    type="time"
+                    value={quietHoursStart}
+                    onChange={(e) => setQuietHoursStart(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">End Time</label>
+                  <input
+                    type="time"
+                    value={quietHoursEnd}
+                    onChange={(e) => setQuietHoursEnd(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSavingPrefs}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+          >
+            {isSavingPrefs ? 'Saving Preferences...' : 'Save Notification Preferences'}
           </button>
         </form>
       </div>

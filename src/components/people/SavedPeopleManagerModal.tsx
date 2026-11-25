@@ -8,12 +8,8 @@ import {
   Link,
   Share2,
   CheckCircle2,
-  Phone,
-  Mail,
   Search,
   Sparkles,
-  ArrowRight,
-  UserCheck,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {

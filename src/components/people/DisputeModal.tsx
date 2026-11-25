@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import {
   X,
-  AlertTriangle,
   FileQuestion,
-  ShieldAlert,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { udharDeletionApi, UdharTransactionItem } from '../../lib/udharDeletionApi';
