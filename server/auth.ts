@@ -1,5 +1,5 @@
-import { query, isDatabaseAvailable } from './db';
-import { generateCryptoToken, hashToken } from './security';
+import { query, isDatabaseAvailable } from './db.js';
+import { generateCryptoToken, hashToken } from './security.js';
 import type { IncomingMessage } from 'http';
 
 export interface AuthenticatedUser {

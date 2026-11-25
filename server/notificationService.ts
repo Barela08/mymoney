@@ -2,11 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import * as webpushModule from 'web-push';
-import { query, isDatabaseConfigured } from './db';
-import { APP_CONFIG } from './config';
-import { sendEmail } from './email';
-import { generateCampaignEmail } from './notificationEmailTemplates';
-import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils';
+import { query, isDatabaseConfigured } from './db.js';
+import { APP_CONFIG } from './config.js';
+import { sendEmail } from './email.js';
+import { generateCampaignEmail } from './notificationEmailTemplates.js';
+import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils.js';
 
 const webpush = (webpushModule as any).default || webpushModule;
 

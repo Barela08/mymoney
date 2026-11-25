@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { query } from './db';
+import { query } from './db.js';
 
 // -------------------------------------------------------------
 // PASSWORD POLICY ENFORCEMENT (Mandatory Rules from Section 7)

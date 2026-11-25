@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/lib/financialIntelligenceEngine';
+import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/lib/financialIntelligenceEngine.js';
 
 const CANDIDATE_MODELS = [
   process.env.GEMINI_MODEL,

@@ -91,7 +91,24 @@ export interface ParsedQrPayload {
   userId?: string;
   name?: string;
   email?: string;
+  isUpiPaymentQr?: boolean;
+  errorCode?: 'EMPTY_QR' | 'UPI_QR_NOT_PAIRING' | 'MALFORMED_QR' | 'INVALID_QR';
   error?: string;
+}
+
+export type LiveSearchQueryMode =
+  | 'too_short'
+  | 'name'
+  | 'email_exact'
+  | 'email_incomplete'
+  | 'phone_exact'
+  | 'phone_incomplete';
+
+export interface ClassifiedSearchQuery {
+  mode: LiveSearchQueryMode;
+  normalized: string;
+  digitsOnly: string;
+  last10Digits: string;
 }
 
 export function roundMoney(value: number): number {
@@ -104,6 +121,50 @@ export function roundMoney(value: number): number {
 export function normalizeSearchQuery(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
   return raw.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Classify live search input for privacy-preserving lookup:
+ *  - Email lookup requires a complete valid email (prevents partial email enumeration).
+ *  - Mobile lookup normalizes country code/punctuation and requires at least 10 digits.
+ *  - Name lookup supports partial matching (min 2 chars) returning minimal identity only.
+ */
+export function classifyLiveSearchQuery(raw: string): ClassifiedSearchQuery {
+  const normalized = normalizeSearchQuery(raw);
+  const digitsOnly = normalized.replace(/\D/g, '');
+  const last10Digits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+
+  if (!normalized || normalized.length < 2) {
+    return { mode: 'too_short', normalized, digitsOnly, last10Digits };
+  }
+
+  // Email intent
+  if (normalized.includes('@')) {
+    const emailStrictRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (emailStrictRegex.test(normalized)) {
+      return { mode: 'email_exact', normalized, digitsOnly, last10Digits };
+    }
+    return { mode: 'email_incomplete', normalized, digitsOnly, last10Digits };
+  }
+
+  // Phone intent (digits, +, -, spaces, parens only and at least 4 digits)
+  const looksLikePhone = /^[+\d][\d\s\-().]*$/.test(normalized) && digitsOnly.length >= 4;
+  if (looksLikePhone) {
+    if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+      return { mode: 'phone_exact', normalized, digitsOnly, last10Digits };
+    }
+    return { mode: 'phone_incomplete', normalized, digitsOnly, last10Digits };
+  }
+
+  return { mode: 'name', normalized, digitsOnly, last10Digits };
+}
+
+/**
+ * Detect UPI payment QR strings so they are strictly separated from Udhar Pairing QRs.
+ */
+export function isUpiPaymentQr(raw: string): boolean {
+  const trimmed = (raw || '').trim().toLowerCase();
+  return trimmed.startsWith('upi://pay') || trimmed.startsWith('upi://collect') || trimmed.startsWith('upi://mandate');
 }
 
 /**
@@ -128,7 +189,8 @@ export function maskPhoneForPrivacy(phone?: string | null): string | null {
 }
 
 /**
- * Strict QR payload & pairing link parser.
+ * Strict Udhar Pairing QR payload & pairing link parser.
+ * Explicitly rejects UPI payment QRs so Udhar pairing and UPI payments are never mixed.
  * Accepts:
  *  1) Official JSON payload: { app: 'my-money', type: 'udhar-pair', token?, code? }
  *  2) App deep link URL containing #pair=MM-XXXXXX or ?pair=MM-XXXXXX
@@ -138,7 +200,16 @@ export function maskPhoneForPrivacy(phone?: string | null): string | null {
 export function parseQrPayload(raw: string): ParsedQrPayload {
   const trimmed = (raw || '').trim();
   if (!trimmed) {
-    return { valid: false, error: 'Empty QR code detected.' };
+    return { valid: false, errorCode: 'EMPTY_QR', error: 'Empty QR code detected.' };
+  }
+
+  if (isUpiPaymentQr(trimmed)) {
+    return {
+      valid: false,
+      isUpiPaymentQr: true,
+      errorCode: 'UPI_QR_NOT_PAIRING',
+      error: 'This is a UPI payment QR code, not a My Money Manager Udhar pairing QR. Please scan your friend\'s Udhar Pairing QR.',
+    };
   }
 
   // 1. JSON payload
@@ -148,27 +219,23 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
       if (parsed && (parsed.app === 'my-money' || parsed.type === 'udhar-pair')) {
         const token = typeof parsed.token === 'string' ? parsed.token.trim() : undefined;
         const code = typeof parsed.code === 'string' ? parsed.code.trim().toUpperCase() : undefined;
-        const userId = typeof parsed.userId === 'string' ? parsed.userId.trim() : undefined;
-        const name = typeof parsed.name === 'string' ? parsed.name.trim() : undefined;
-        const email = typeof parsed.email === 'string' ? parsed.email.trim() : undefined;
-        if (token || code || userId) {
+        if (token || code) {
           const result: ParsedQrPayload = { valid: true, kind: 'json' };
           if (token !== undefined) result.token = token;
           if (code !== undefined) result.code = code;
-          if (userId !== undefined) result.userId = userId;
-          if (name !== undefined) result.name = name;
-          if (email !== undefined) result.email = email;
           return result;
         }
       }
       return {
         valid: false,
-        error: 'Not a valid My Money Manager QR code. Please scan a genuine account QR code.',
+        errorCode: 'INVALID_QR',
+        error: 'Not a valid My Money Manager Udhar pairing QR code. Please scan a genuine account pairing QR.',
       };
     } catch {
       return {
         valid: false,
-        error: 'Malformed QR payload. Please scan a genuine My Money Manager QR code.',
+        errorCode: 'MALFORMED_QR',
+        error: 'Malformed QR payload. Please scan a genuine My Money Manager Udhar pairing QR.',
       };
     }
   }
@@ -186,9 +253,10 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
     return { valid: true, kind: 'pair_url', code: val.toUpperCase() };
   }
 
-  // 3. Direct pairing code (MM-XXXXXX)
-  if (/^MM-[A-Z0-9]{4,16}$/i.test(trimmed)) {
-    return { valid: true, kind: 'pair_code', code: trimmed.toUpperCase() };
+  // 3. Direct pairing code (MM-XXXXXX, also tolerate whitespace around hyphen)
+  const normalizedCode = trimmed.replace(/\s+/g, '').toUpperCase();
+  if (/^MM-[A-Z0-9]{4,16}$/.test(normalizedCode)) {
+    return { valid: true, kind: 'pair_code', code: normalizedCode };
   }
 
   // 4. 64-char hex opaque token
@@ -198,7 +266,8 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
 
   return {
     valid: false,
-    error: 'Not a valid My Money Manager QR code. Please scan a genuine QR code generated inside My Money Manager.',
+    errorCode: 'INVALID_QR',
+    error: 'Not a valid My Money Manager Udhar pairing QR code. Please scan a genuine pairing QR generated inside My Money Manager.',
   };
 }
 

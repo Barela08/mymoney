@@ -1,5 +1,5 @@
-import { APP_CONFIG } from './config';
-import { escapeHtml, formatPersonalizedGreeting } from './welcomeEmailTemplate';
+import { APP_CONFIG } from './config.js';
+import { escapeHtml, formatPersonalizedGreeting } from './welcomeEmailTemplate.js';
 export { escapeHtml, formatPersonalizedGreeting };
 
 export const STAR_LABELS: Record<number, string> = {
