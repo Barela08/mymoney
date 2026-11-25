@@ -18,6 +18,8 @@
  */
 
 import {
+  validateTransactionPayload,
+  securityAudit,
   assertResourceOwnership,
   assertAdminRole,
   SecurityAuthorizationError,

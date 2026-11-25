@@ -15,19 +15,12 @@ import {
   Receipt,
   Eye,
   ChevronRight,
-  Flame,
-  Apple,
-  Building,
-  Zap,
   Utensils,
-  Calculator,
   ScanLine,
   PieChart,
   Target,
-  Bell,
   TrendingUp,
   BarChart3,
-  Search,
   Sparkles,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
@@ -167,7 +160,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
           <div>
             <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 transition-colors group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-              {user?.displayName || 'Personal Account'}
+              {greeting}, {user?.displayName || 'Personal Account'}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
               Financial Ledger · {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
