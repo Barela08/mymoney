@@ -66,6 +66,15 @@ export const LEGAL_POLICIES: LegalPolicyItem[] = [
           'Right to Erasure (Account Deletion): You may schedule your account for permanent deletion with a 24-hour cancellation safeguard under Settings → Account → Delete Account & Data.',
         ],
       },
+      {
+        title: '6. Automatic UPI Payment Notification Detection & Retention',
+        content: [
+          'Optional Opt-In Permission (Android): On supported Android builds, you may voluntarily grant Notification Access so My Money Manager by HackifyPro can detect outgoing UPI payment confirmations from supported apps (such as Google Pay, PhonePe, Paytm, and BHIM) and prefill expense details for instant categorization.',
+          'Strict Data Minimization: The notification listener inspects only user-enabled payment application packages and immediately discards personal messages, OTPs, UPI PINs, CVVs, banking passwords, promotional alerts, failed payments, and incoming money transfers. We never request SMS access or bank login credentials.',
+          'Storage & Retention: Extracted payment metadata (amount in minor units, payment app, merchant name if present, transaction timestamp, and explicit UTR/RRN/UPI transaction reference if present) plus a non-reversible notification hash are stored under your account with PostgreSQL Row Level Security (RLS) isolation. Detection logs are retained for 90 days by default.',
+          'User Control & Deletion: You may pause, disable, select specific supported apps, revoke Android Notification Access in system settings, or clear your entire detection history and configuration anytime under Settings → Automatic Expense Detection.',
+        ],
+      },
     ],
   },
 

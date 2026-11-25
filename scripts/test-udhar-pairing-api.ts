@@ -46,8 +46,9 @@ async function call(method: string, url: string, body?: any) {
 
 async function main() {
   const cases: Array<[string, string, any]> = [
-    ['GET', '/api/udhar/connection-requests', undefined],
-    ['POST', '/api/udhar/connection-requests', { targetUserId: 'x', consentConfirmed: true }],
+    ['GET', '/api/udhar/connections/requests', undefined],
+    ['POST', '/api/udhar/connections/request', { targetUserId: 'x', consentConfirmed: true }],
+    ['POST', '/api/udhar/connections/00000000-0000-0000-0000-000000000000/accept', undefined],
     ['POST', '/api/udhar/qr/resolve', { pairingCode: 'MM-BOFE65' }],
     ['POST', '/api/udhar/qr/connect', { pairingCode: 'MM-BOFE65' }],
     ['POST', '/api/udhar/connections/disconnect', { targetUserId: 'x' }],

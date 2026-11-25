@@ -4,13 +4,13 @@
  */
 import http from 'http';
 import { parse as parseUrl } from 'url';
-import { query } from './db';
-import { authenticateRequest, revokeAllUserSessions } from './auth';
-import { logSecurityEvent, generateCryptoToken } from './security';
+import { query } from './db.js';
+import { authenticateRequest, revokeAllUserSessions } from './auth.js';
+import { logSecurityEvent, generateCryptoToken } from './security.js';
 import {
   sendEmail,
   sendAdminReplyToTicketEmail,
-} from './email';
+} from './email.js';
 import {
   notifyAdminTicketReply,
   dispatchCampaign,
@@ -21,7 +21,7 @@ import {
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
   createNotification,
-} from './notificationService';
+} from './notificationService.js';
 
 // Helper to send JSON responses
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {

@@ -30,6 +30,9 @@ import { DpdpConsentModal } from './components/common/DpdpConsentModal';
 import { PullToRefresh } from './components/common/PullToRefresh';
 import { NotificationProvider } from './context/NotificationContext';
 import { PermissionProvider } from './context/PermissionContext';
+import { UpiDetectionProvider } from './context/UpiDetectionContext';
+import { InstantExpensePopupModal } from './components/upi/InstantExpensePopupModal';
+import { UpiDetectionOnboardingModal } from './components/upi/UpiDetectionOnboardingModal';
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
@@ -96,7 +99,7 @@ const MainContent: React.FC = () => {
         return 'admin';
       }
       if (hash === '#privacy-policy') return 'privacy_policy';
-      if (hash === '#delete-account') return 'settings';
+      if (hash === '#delete-account' || hash === '#auto-detection') return 'settings';
       if (hash.includes('legal=')) return 'legal';
       return PATH_TO_TAB[p] || 'dashboard';
     }
@@ -181,7 +184,7 @@ const MainContent: React.FC = () => {
         }
       } else if (hash === '#privacy-policy') {
         setCurrentTab('privacy_policy');
-      } else if (hash === '#delete-account') {
+      } else if (hash === '#delete-account' || hash === '#auto-detection') {
         setCurrentTab('settings');
       }
     };
@@ -587,6 +590,10 @@ const MainContent: React.FC = () => {
             />
           )}
         </Suspense>
+
+        {/* Automatic UPI Expense Detection Instant Categorization Popup & Onboarding */}
+        <InstantExpensePopupModal />
+        <UpiDetectionOnboardingModal />
     </div>
   );
 };
@@ -598,15 +605,17 @@ export default function App() {
         <AuthProvider>
           <PermissionProvider>
             <ExpenseProvider>
-              <PwaInstallProvider>
-                <NotificationProvider>
-                  <AppErrorBoundary>
-                    <MainContent />
-                  </AppErrorBoundary>
-                  <PwaInstallBanner />
-                  <PwaInstallModal />
-                </NotificationProvider>
-              </PwaInstallProvider>
+              <UpiDetectionProvider>
+                <PwaInstallProvider>
+                  <NotificationProvider>
+                    <AppErrorBoundary>
+                      <MainContent />
+                    </AppErrorBoundary>
+                    <PwaInstallBanner />
+                    <PwaInstallModal />
+                  </NotificationProvider>
+                </PwaInstallProvider>
+              </UpiDetectionProvider>
             </ExpenseProvider>
           </PermissionProvider>
         </AuthProvider>

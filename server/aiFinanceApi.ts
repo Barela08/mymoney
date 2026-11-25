@@ -2,16 +2,16 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { authenticateRequest } from './auth';
-import { query, isDatabaseAvailable } from './db';
-import { logSecurityEvent } from './security';
+import { authenticateRequest } from './auth.js';
+import { query, isDatabaseAvailable } from './db.js';
+import { logSecurityEvent } from './security.js';
 import {
   getAiProviderStatus,
   askFinancialAssistant,
   classifyTransactionWithAi,
   extractReceiptWithOcr,
   AiProviderError,
-} from './aiProvider';
+} from './aiProvider.js';
 import {
   categorizeTransactionDeterministic,
   upsertUserCategorizationRule,
@@ -28,7 +28,7 @@ import {
   type SmartAlertPreferences,
   type SmartAlertEventState,
   type AiFinancialContextSnapshot,
-} from '../src/lib/financialIntelligenceEngine';
+} from '../src/lib/financialIntelligenceEngine.js';
 
 // ============================================================================
 // SERVER-SIDE RATE LIMITER & USER-SCOPED FALLBACK STORE

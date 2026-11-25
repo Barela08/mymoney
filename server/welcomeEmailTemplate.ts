@@ -1,4 +1,4 @@
-import { APP_CONFIG } from './config';
+import { APP_CONFIG } from './config.js';
 
 /**
  * Escapes HTML characters to prevent email HTML injection

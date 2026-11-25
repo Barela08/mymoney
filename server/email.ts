@@ -1,23 +1,23 @@
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
-import { APP_CONFIG } from './config';
-import { query } from './db';
-import { logSecurityEvent } from './security';
-import { generateWelcomeEmail } from './welcomeEmailTemplate';
+import { APP_CONFIG } from './config.js';
+import { query } from './db.js';
+import { logSecurityEvent } from './security.js';
+import { generateWelcomeEmail } from './welcomeEmailTemplate.js';
 import {
   generateFeedbackReceivedEmail,
   generateFeedbackAdminNotificationEmail,
   generateComplaintReceivedEmail,
   generateSupportTicketReceivedEmail,
   generateAdminReplyEmail,
-} from './supportEmailTemplates';
+} from './supportEmailTemplates.js';
 import {
   generateUdharCreatedEmailForInitiator,
   generateUdharCreatedEmailForRecipient,
   generateUdharSettledEmail,
   generateUdharUpdatedEmail,
-} from './udharEmailTemplates';
+} from './udharEmailTemplates.js';
 
 const transporter = nodemailer.createTransport({
   host: APP_CONFIG.smtp.host,

@@ -44,13 +44,14 @@ export interface SearchUserResult {
   fullName: string;
   username?: string | null;
   email?: string;
-  emailMasked: string | null;
+  emailMasked?: string | null;
   phoneMasked?: string | null;
   avatarUrl?: string | null;
   matchedBy?: 'name' | 'email' | 'phone';
   isSelf?: boolean;
   isVerified?: boolean;
-  connectionStatus?: 'self' | 'connected' | 'pending' | 'none';
+  connectionStatus?: 'self' | 'connected' | 'pending' | 'incoming_pending' | 'none';
+  requestId?: string | null;
   isAlreadyConnected?: boolean;
   isSavedContact?: boolean;
 }
@@ -381,7 +382,7 @@ export const udharDeletionApi = {
   },
 
   async listConnectionRequests(): Promise<ConnectionRequestListResponse> {
-    return apiRequest('/api/udhar/connection-requests', { method: 'GET' });
+    return apiRequest('/api/udhar/connections/requests', { method: 'GET' });
   },
 
   async sendConnectionRequest(payload: {
@@ -389,7 +390,7 @@ export const udharDeletionApi = {
     relationshipType?: string;
     source?: 'qr' | 'search' | 'manual';
   }): Promise<ConnectionRequestResult> {
-    return apiRequest('/api/udhar/connection-requests', {
+    return apiRequest('/api/udhar/connections/request', {
       method: 'POST',
       body: JSON.stringify({ ...payload, consentConfirmed: true }),
     });
@@ -399,7 +400,7 @@ export const udharDeletionApi = {
     requestId: string,
     action: 'accept' | 'reject'
   ): Promise<ConnectionRequestResult> {
-    return apiRequest(`/api/udhar/connection-requests/${encodeURIComponent(requestId)}/${action}`, {
+    return apiRequest(`/api/udhar/connections/${encodeURIComponent(requestId)}/${action}`, {
       method: 'POST',
     });
   },
