@@ -10,8 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-# generated serverless bundle (scripts/build-api.mjs)
-api/[...all].js
+# generated serverless bundle (scripts/build-api.mjs) - keep tracked for Vercel
+!api/[...all].js
 *.local
 
 # Environment variables

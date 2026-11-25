@@ -48253,20 +48253,6 @@ import path5 from "path";
 import fs5 from "fs";
 import path4 from "path";
 
-// node_modules/web-push/src/index.js
-var src_exports = {};
-__export(src_exports, {
-  WebPushError: () => WebPushError,
-  encrypt: () => encrypt,
-  generateRequestDetails: () => generateRequestDetails,
-  generateVAPIDKeys: () => generateVAPIDKeys,
-  getVapidHeaders: () => getVapidHeaders,
-  sendNotification: () => sendNotification,
-  setGCMAPIKey: () => setGCMAPIKey,
-  setVapidDetails: () => setVapidDetails,
-  supportedContentEncodings: () => supportedContentEncodings
-});
-
 // node_modules/web-push/src/web-push-lib.js
 import https2 from "node:https";
 
@@ -49256,7 +49242,6 @@ var generateRequestDetails = webPush.generateRequestDetails;
 var sendNotification = webPush.sendNotification.bind(webPush);
 
 // server/config.ts
-var webpush = void 0 || src_exports;
 function isValidVapidKeyPair(publicKey, privateKey) {
   if (!publicKey || !privateKey) return false;
   try {
@@ -49275,7 +49260,7 @@ function resolveVapidKeys() {
   }
   const g = globalThis;
   if (!g.__myMoneyVapidKeys) {
-    g.__myMoneyVapidKeys = webpush.generateVAPIDKeys();
+    g.__myMoneyVapidKeys = generateVAPIDKeys();
   }
   return { ...g.__myMoneyVapidKeys, isPersistent: false };
 }
@@ -49302,7 +49287,7 @@ try {
 } catch (e2) {
   console.warn("Notice loading .env in config.ts:", e2);
 }
-var APP_CONFIG = {
+var APP_CONFIG2 = {
   appName: process.env.APP_NAME || "My Money Manager",
   appTagline: process.env.APP_TAGLINE || "Personal Finance, Simplified.",
   companyName: process.env.COMPANY_NAME || "HackifyPro",
@@ -49313,7 +49298,7 @@ var APP_CONFIG = {
   supportWhatsAppUrl: "https://wa.me/917414935405?text=Hello%20HackifyPro%20Support%20Team%2C%0A%0AI%20need%20assistance%20regarding%20My%20Money%20Manager%20app.%20I%20have%20a%20query%20and%20would%20like%20some%20help.%0A%0APlease%20guide%20me%20regarding%20my%20issue.%0A%0AThank%20you.",
   appBaseUrl: process.env.APP_BASE_URL || "https://mymoney.nileshbarela.site",
   appLoginUrl: process.env.APP_LOGIN_URL || "https://mymoney.nileshbarela.site/#login",
-  appLogoUrl: process.env.APP_LOGO_URL || "",
+  appLogoUrl: process.env.APP_LOGO_URL || "https://mymoney.nileshbarela.site/logo.jpg",
   footerCopyright: `\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} My Money Manager \xB7 Powered by HackifyPro`,
   // SMTP Configuration
   smtp: {
@@ -49362,19 +49347,19 @@ function formatPersonalizedGreeting(rawName) {
 function generateWelcomeEmail(data) {
   const greeting = formatPersonalizedGreeting(data.userName);
   const plainGreeting = greeting;
-  const loginUrl = data.loginUrl || APP_CONFIG.appLoginUrl;
-  const logoSrc = data.logoSrc || (APP_CONFIG.appLogoUrl || "cid:app_logo");
-  const supportEmail = data.supportEmail || APP_CONFIG.supportEmail;
-  const supportPhone = data.supportPhone || APP_CONFIG.supportPhone;
+  const loginUrl = data.loginUrl || APP_CONFIG2.appLoginUrl;
+  const logoSrc = data.logoSrc || (APP_CONFIG2.appLogoUrl || "cid:app_logo");
+  const supportEmail = data.supportEmail || APP_CONFIG2.supportEmail;
+  const supportPhone = data.supportPhone || APP_CONFIG2.supportPhone;
   const supportPhoneClean = (supportPhone || "").replace(/[^\d+]/g, "");
-  const subject = `Welcome aboard! \u{1F44B} - ${APP_CONFIG.appName}`;
+  const subject = `Welcome aboard! \u{1F44B} - ${APP_CONFIG2.appName}`;
   const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="x-apple-disable-message-reformatting" />
-  <title>${escapeHtml(APP_CONFIG.appName)} - Welcome Aboard</title>
+  <title>${escapeHtml(APP_CONFIG2.appName)} - Welcome Aboard</title>
   <!--[if mso]>
   <style type="text/css">
     body, table, td, a, span { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
@@ -49447,24 +49432,24 @@ function generateWelcomeEmail(data) {
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
                 <tr>
                   <td align="center">
-                    <img src="${logoSrc}" alt="${escapeHtml(APP_CONFIG.appName)} Logo" width="64" height="64" style="display: block; width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 1px solid #e2e8f0;" />
+                    <img src="${logoSrc}" alt="${escapeHtml(APP_CONFIG2.appName)} Logo" width="64" height="64" style="display: block; width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 1px solid #e2e8f0;" />
                   </td>
                 </tr>
               </table>
 
               <!-- 2. Brand Name -->
               <h1 style="margin: 14px 0 0 0; font-size: 22px; font-weight: 800; color: #065f46; letter-spacing: -0.3px; line-height: 1.3;">
-                ${escapeHtml(APP_CONFIG.appName)}
+                ${escapeHtml(APP_CONFIG2.appName)}
               </h1>
 
               <!-- 3. Tagline -->
               <p style="margin: 4px 0 0 0; font-size: 13px; font-weight: 500; color: #475569; letter-spacing: 0.1px;">
-                ${escapeHtml(APP_CONFIG.appTagline)}
+                ${escapeHtml(APP_CONFIG2.appTagline)}
               </p>
 
               <!-- 4. Subtle A product of HackifyPro -->
               <p style="margin: 8px 0 0 0; font-size: 11px; font-weight: 600; color: #047857; text-transform: uppercase; letter-spacing: 0.8px;">
-                A product of ${escapeHtml(APP_CONFIG.companyName)}
+                A product of ${escapeHtml(APP_CONFIG2.companyName)}
               </p>
 
             </td>
@@ -49497,7 +49482,7 @@ function generateWelcomeEmail(data) {
 
               <!-- 8. Short Welcome Message -->
               <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-                Welcome to ${escapeHtml(APP_CONFIG.appName)}. We&#39;re happy to have you with us!
+                Welcome to ${escapeHtml(APP_CONFIG2.appName)}. We&#39;re happy to have you with us!
               </p>
               <p style="margin: 0 0 20px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
                 Your money management journey just got simpler. Track your income, manage expenses, plan budgets, and build better financial habits\u2014all in one place.
@@ -49574,7 +49559,7 @@ function generateWelcomeEmail(data) {
                 Warm regards,
               </p>
               <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46; line-height: 1.5;">
-                Team ${escapeHtml(APP_CONFIG.appName)}
+                Team ${escapeHtml(APP_CONFIG2.appName)}
               </p>
 
             </td>
@@ -49588,10 +49573,10 @@ function generateWelcomeEmail(data) {
                 A product proudly built by
               </p>
               <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #065f46; letter-spacing: 0.8px;">
-                ${escapeHtml(APP_CONFIG.companyName.toUpperCase())}
+                ${escapeHtml(APP_CONFIG2.companyName.toUpperCase())}
               </p>
               <p style="margin: 0 0 14px 0; font-size: 11px; font-style: italic; color: #64748b;">
-                ${escapeHtml(APP_CONFIG.companyTagline)}
+                ${escapeHtml(APP_CONFIG2.companyTagline)}
               </p>
 
               <!-- Divider line in footer -->
@@ -49603,7 +49588,7 @@ function generateWelcomeEmail(data) {
 
               <!-- Copyright -->
               <p style="margin: 0; font-size: 11px; font-weight: 400; color: #94a3b8; line-height: 1.4;">
-                ${escapeHtml(APP_CONFIG.footerCopyright)}
+                ${escapeHtml(APP_CONFIG2.footerCopyright)}
               </p>
 
             </td>
@@ -49623,16 +49608,16 @@ function generateWelcomeEmail(data) {
 
 </body>
 </html>`;
-  const text = `${APP_CONFIG.appName}
-${APP_CONFIG.appTagline}
-A product of ${APP_CONFIG.companyName}
+  const text = `${APP_CONFIG2.appName}
+${APP_CONFIG2.appTagline}
+A product of ${APP_CONFIG2.companyName}
 --------------------------------------------------
 
 Welcome aboard! \u{1F44B}
 
 ${plainGreeting}
 
-Welcome to ${APP_CONFIG.appName}. We're happy to have you with us!
+Welcome to ${APP_CONFIG2.appName}. We're happy to have you with us!
 
 Your money management journey just got simpler. Track your income, manage expenses, plan budgets, and build better financial habits\u2014all in one place.
 
@@ -49654,21 +49639,21 @@ Support Phone: ${supportPhone}
 Let's make every rupee count! \u{1F680}
 
 Warm regards,
-Team ${APP_CONFIG.appName}
+Team ${APP_CONFIG2.appName}
 
 --------------------------------------------------
 A product proudly built by
-${APP_CONFIG.companyName.toUpperCase()}
-${APP_CONFIG.companyTagline}
+${APP_CONFIG2.companyName.toUpperCase()}
+${APP_CONFIG2.companyTagline}
 
-${APP_CONFIG.footerCopyright}
+${APP_CONFIG2.footerCopyright}
 `;
   return { subject, html, text };
 }
 
 // server/supportEmailTemplates.ts
 function wrapEmailHtml(title, bodyContent) {
-  const logoSrc = APP_CONFIG.appLogoUrl || "cid:app_logo";
+  const logoSrc = APP_CONFIG2.appLogoUrl || "cid:app_logo";
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en">
 <head>
@@ -49699,18 +49684,18 @@ function wrapEmailHtml(title, bodyContent) {
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
                 <tr>
                   <td align="center">
-                    <img src="${logoSrc}" alt="${escapeHtml(APP_CONFIG.appName)} Logo" width="56" height="56" style="display: block; width: 56px; height: 56px; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0;" />
+                    <img src="${logoSrc}" alt="${escapeHtml(APP_CONFIG2.appName)} Logo" width="56" height="56" style="display: block; width: 56px; height: 56px; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0;" />
                   </td>
                 </tr>
               </table>
               <h1 style="margin: 12px 0 0 0; font-size: 20px; font-weight: 800; color: #065f46; letter-spacing: -0.3px;">
-                ${escapeHtml(APP_CONFIG.appName)}
+                ${escapeHtml(APP_CONFIG2.appName)}
               </h1>
               <p style="margin: 4px 0 0 0; font-size: 12px; font-weight: 500; color: #475569;">
-                ${escapeHtml(APP_CONFIG.appTagline)}
+                ${escapeHtml(APP_CONFIG2.appTagline)}
               </p>
               <p style="margin: 6px 0 0 0; font-size: 11px; font-weight: 600; color: #047857; text-transform: uppercase; letter-spacing: 0.8px;">
-                A product of ${escapeHtml(APP_CONFIG.companyName)}
+                A product of ${escapeHtml(APP_CONFIG2.companyName)}
               </p>
             </td>
           </tr>
@@ -49735,16 +49720,16 @@ function wrapEmailHtml(title, bodyContent) {
                 A product proudly built by
               </p>
               <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #065f46; letter-spacing: 0.8px;">
-                ${escapeHtml(APP_CONFIG.companyName.toUpperCase())}
+                ${escapeHtml(APP_CONFIG2.companyName.toUpperCase())}
               </p>
               <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #64748b;">
-                ${escapeHtml(APP_CONFIG.companyTagline)}
+                ${escapeHtml(APP_CONFIG2.companyTagline)}
               </p>
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 10px 0;">
                 <tr><td style="border-top: 1px solid #cbd5e1; font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
               </table>
               <p style="margin: 0; font-size: 11px; font-weight: 400; color: #94a3b8; line-height: 1.4;">
-                ${escapeHtml(APP_CONFIG.footerCopyright)}
+                ${escapeHtml(APP_CONFIG2.footerCopyright)}
               </p>
             </td>
           </tr>
@@ -49761,7 +49746,7 @@ function generateFeedbackReceivedEmail(data) {
   const starsRender = data.rating ? "\u2605".repeat(data.rating) + "\u2606".repeat(5 - data.rating) : "";
   const messageContent = data.message || data.feedbackMessage || "";
   const fbId = data.feedbackId || "N/A";
-  const subject = `Thank you for your feedback \u2013 ${APP_CONFIG.appName}`;
+  const subject = `Thank you for your feedback \u2013 ${APP_CONFIG2.appName}`;
   const bodyContent = `
     <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
       Thank You for Your Feedback!
@@ -49804,7 +49789,7 @@ function generateFeedbackReceivedEmail(data) {
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
       HackifyPro Support Team<br>
-      ${escapeHtml(APP_CONFIG.appName)}
+      ${escapeHtml(APP_CONFIG2.appName)}
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
@@ -49828,7 +49813,7 @@ My Money Manager
   return { subject, html, text };
 }
 function generateFeedbackAdminNotificationEmail(data) {
-  const subject = `New Feedback Received \u2013 ${APP_CONFIG.appName}`;
+  const subject = `New Feedback Received \u2013 ${APP_CONFIG2.appName}`;
   const starsRender = data.rating ? "\u2605".repeat(data.rating) + "\u2606".repeat(5 - data.rating) : "";
   const bodyContent = `
     <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
@@ -49972,7 +49957,7 @@ function generateComplaintReceivedEmail(data) {
       <tr>
         <td style="font-size: 12px; color: #334155; line-height: 1.6;">
           <strong>Need urgent assistance?</strong> Contact us directly:<br/>
-          Email: <a href="mailto:${escapeHtml(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: underline;">${escapeHtml(APP_CONFIG.supportEmail)}</a> &bull; Phone: <a href="tel:${escapeHtml(APP_CONFIG.supportPhoneRaw)}" style="color: #047857; text-decoration: underline;">${escapeHtml(APP_CONFIG.supportPhone)}</a>
+          Email: <a href="mailto:${escapeHtml(APP_CONFIG2.supportEmail)}" style="color: #047857; text-decoration: underline;">${escapeHtml(APP_CONFIG2.supportEmail)}</a> &bull; Phone: <a href="tel:${escapeHtml(APP_CONFIG2.supportPhoneRaw)}" style="color: #047857; text-decoration: underline;">${escapeHtml(APP_CONFIG2.supportPhone)}</a>
         </td>
       </tr>
     </table>
@@ -49981,13 +49966,13 @@ function generateComplaintReceivedEmail(data) {
       Warm regards,
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
-      Team ${escapeHtml(APP_CONFIG.appName)}
+      Team ${escapeHtml(APP_CONFIG2.appName)}
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName}
-${APP_CONFIG.appTagline}
-A product of ${APP_CONFIG.companyName}
+  const text = `${APP_CONFIG2.appName}
+${APP_CONFIG2.appTagline}
+A product of ${APP_CONFIG2.companyName}
 --------------------------------------------------
 
 Complaint Registered: #${ticketNum}
@@ -50005,7 +49990,7 @@ ${data.description}
 Our team is reviewing your complaint. You can track this in your Feedback & Support History section.
 
 Warm regards,
-Team ${APP_CONFIG.appName}
+Team ${APP_CONFIG2.appName}
 `;
   return { subject, html, text };
 }
@@ -50060,13 +50045,13 @@ function generateSupportTicketReceivedEmail(data) {
       Warm regards,
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
-      Team ${escapeHtml(APP_CONFIG.appName)}
+      Team ${escapeHtml(APP_CONFIG2.appName)}
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName}
-${APP_CONFIG.appTagline}
-A product of ${APP_CONFIG.companyName}
+  const text = `${APP_CONFIG2.appName}
+${APP_CONFIG2.appTagline}
+A product of ${APP_CONFIG2.companyName}
 --------------------------------------------------
 
 Support Ticket: #${ticketNum}
@@ -50083,7 +50068,7 @@ ${desc}
 You can track this ticket in your Feedback & Support History section.
 
 Warm regards,
-Team ${APP_CONFIG.appName}
+Team ${APP_CONFIG2.appName}
 `;
   return { subject, html, text };
 }
@@ -50127,7 +50112,7 @@ ${escapeHtml(data.adminReply)}
     </table>
 
     <p style="margin: 0 0 16px 0; font-size: 13px; color: #475569; line-height: 1.6;">
-      If you need any further assistance, you can reply directly inside the <strong>Feedback & Support History</strong> section in the app, or email us at <a href="mailto:${escapeHtml(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: underline; font-weight: 600;">${escapeHtml(APP_CONFIG.supportEmail)}</a>.
+      If you need any further assistance, you can reply directly inside the <strong>Feedback & Support History</strong> section in the app, or email us at <a href="mailto:${escapeHtml(APP_CONFIG2.supportEmail)}" style="color: #047857; text-decoration: underline; font-weight: 600;">${escapeHtml(APP_CONFIG2.supportEmail)}</a>.
     </p>
 
     <!-- Quick Link Button to App -->
@@ -50137,7 +50122,7 @@ ${escapeHtml(data.adminReply)}
           <table role="presentation" border="0" cellpadding="0" cellspacing="0">
             <tr>
               <td align="center" style="border-radius: 10px; background-color: #047857; text-align: center;">
-                <a href="${escapeHtml(APP_CONFIG.appLoginUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #047857; color: #ffffff !important; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 700; line-height: 1; text-decoration: none; padding: 13px 28px; border-radius: 10px; border: 1px solid #047857;">
+                <a href="${escapeHtml(APP_CONFIG2.appLoginUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #047857; color: #ffffff !important; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 700; line-height: 1; text-decoration: none; padding: 13px 28px; border-radius: 10px; border: 1px solid #047857;">
                   View Ticket in App &rarr;
                 </a>
               </td>
@@ -50152,12 +50137,12 @@ ${escapeHtml(data.adminReply)}
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
       My Money Manager Support<br/>
-      <span style="font-size: 12px; font-weight: 400; color: #64748b;">A product of ${escapeHtml(APP_CONFIG.companyName)}</span>
+      <span style="font-size: 12px; font-weight: 400; color: #64748b;">A product of ${escapeHtml(APP_CONFIG2.companyName)}</span>
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
-  const text = `${APP_CONFIG.appName} Support Update
-A product of ${APP_CONFIG.companyName}
+  const text = `${APP_CONFIG2.appName} Support Update
+A product of ${APP_CONFIG2.companyName}
 --------------------------------------------------
 
 Update regarding your ${ticketLabel} #${ticketNum}
@@ -50169,11 +50154,11 @@ Our support team has reviewed your ${ticketLabel} regarding "${data.originalSubj
 Message from ${data.adminName || "Support Team"}:
 ${data.adminReply}
 
-If you need any further assistance, you can reply in the app or contact our support team at ${APP_CONFIG.supportEmail}.
+If you need any further assistance, you can reply in the app or contact our support team at ${APP_CONFIG2.supportEmail}.
 
 Regards,
 My Money Manager Support
-A product of ${APP_CONFIG.companyName}
+A product of ${APP_CONFIG2.companyName}
 `;
   return { subject, html, text };
 }
@@ -50208,10 +50193,10 @@ function wrapEmailHtml2(subject, contentHtml) {
                 <tr>
                   <td>
                     <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
-                      ${escapeHtml2(APP_CONFIG.appName)}
+                      ${escapeHtml2(APP_CONFIG2.appName)}
                     </h1>
                     <p style="margin: 4px 0 0 0; font-size: 12px; font-weight: 500; color: #a7f3d0; text-transform: uppercase; letter-spacing: 0.5px;">
-                      Powered by ${escapeHtml2(APP_CONFIG.companyName)}
+                      Powered by ${escapeHtml2(APP_CONFIG2.companyName)}
                     </p>
                   </td>
                 </tr>
@@ -50230,10 +50215,10 @@ function wrapEmailHtml2(subject, contentHtml) {
           <tr>
             <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 32px; text-align: center;">
               <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; font-weight: 600;">
-                Support: <a href="mailto:${escapeHtml2(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: none;">${escapeHtml2(APP_CONFIG.supportEmail)}</a> | WhatsApp: <a href="https://wa.me/917414935405" style="color: #047857; text-decoration: none;">+91 74149 35405</a>
+                Support: <a href="mailto:${escapeHtml2(APP_CONFIG2.supportEmail)}" style="color: #047857; text-decoration: none;">${escapeHtml2(APP_CONFIG2.supportEmail)}</a> | WhatsApp: <a href="https://wa.me/917414935405" style="color: #047857; text-decoration: none;">+91 74149 35405</a>
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${escapeHtml2(APP_CONFIG.appName)}. All rights reserved.
+                &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${escapeHtml2(APP_CONFIG2.appName)}. All rights reserved.
               </p>
             </td>
           </tr>
@@ -50246,7 +50231,7 @@ function wrapEmailHtml2(subject, contentHtml) {
 }
 function generateUdharCreatedEmailForInitiator(data) {
   const greeting = formatGreeting(data.userName);
-  const subject = `Udhar Entry Added \u2013 ${APP_CONFIG.appName}`;
+  const subject = `Udhar Entry Added \u2013 ${APP_CONFIG2.appName}`;
   const formattedAmt = data.amount.toLocaleString("en-IN");
   const desc = data.description || "Personal loan / Udhar";
   const bodyContent = `
@@ -50306,7 +50291,7 @@ function generateUdharCreatedEmailForInitiator(data) {
     </p>
   `;
   const html = wrapEmailHtml2(subject, bodyContent);
-  const text = `${APP_CONFIG.appName} \u2014 Udhar Entry Added
+  const text = `${APP_CONFIG2.appName} \u2014 Udhar Entry Added
 --------------------------------------------------
 
 Hello ${data.userName || "User"},
@@ -50325,13 +50310,13 @@ Transaction Details:
 The transaction has been saved in My Money Manager.
 
 Regards,
-Team ${APP_CONFIG.appName}
+Team ${APP_CONFIG2.appName}
 `;
   return { subject, html, text };
 }
 function generateUdharCreatedEmailForRecipient(data) {
   const greeting = formatGreeting(data.recipientName);
-  const subject = `New Udhar Transaction Recorded \u2013 ${APP_CONFIG.appName}`;
+  const subject = `New Udhar Transaction Recorded \u2013 ${APP_CONFIG2.appName}`;
   const formattedAmt = data.amount.toLocaleString("en-IN");
   const desc = data.description || "Personal loan / Udhar";
   const bodyContent = `
@@ -50398,7 +50383,7 @@ function generateUdharCreatedEmailForRecipient(data) {
     </p>
   `;
   const html = wrapEmailHtml2(subject, bodyContent);
-  const text = `${APP_CONFIG.appName} \u2014 New Udhar Transaction Recorded
+  const text = `${APP_CONFIG2.appName} \u2014 New Udhar Transaction Recorded
 --------------------------------------------------
 
 Hello ${data.recipientName || "User"},
@@ -50424,7 +50409,7 @@ My Money Manager \u2014 HackifyPro
 }
 function generateUdharSettledEmail(data) {
   const greeting = formatGreeting(data.userName);
-  const subject = `Udhar Transaction Settled \u2013 ${APP_CONFIG.appName}`;
+  const subject = `Udhar Transaction Settled \u2013 ${APP_CONFIG2.appName}`;
   const formattedAmt = data.amountSettled.toLocaleString("en-IN");
   const balanceText = data.updatedBalance <= 0.01 ? "\u20B90.00 (Fully Settled)" : `\u20B9${data.updatedBalance.toLocaleString("en-IN")}`;
   const bodyContent = `
@@ -50480,7 +50465,7 @@ function generateUdharSettledEmail(data) {
     </p>
   `;
   const html = wrapEmailHtml2(subject, bodyContent);
-  const text = `${APP_CONFIG.appName} \u2014 Udhar Transaction Settled
+  const text = `${APP_CONFIG2.appName} \u2014 Udhar Transaction Settled
 --------------------------------------------------
 
 Hello ${data.userName || "User"},
@@ -50496,13 +50481,13 @@ Settlement Summary:
 - Status: Settled
 
 Regards,
-Team ${APP_CONFIG.appName}
+Team ${APP_CONFIG2.appName}
 `;
   return { subject, html, text };
 }
 function generateUdharUpdatedEmail(data) {
   const greeting = formatGreeting(data.userName);
-  const subject = data.isRecipientView ? `Udhar Transaction Updated \u2013 ${APP_CONFIG.appName}` : `Udhar Entry Updated \u2013 ${APP_CONFIG.appName}`;
+  const subject = data.isRecipientView ? `Udhar Transaction Updated \u2013 ${APP_CONFIG2.appName}` : `Udhar Entry Updated \u2013 ${APP_CONFIG2.appName}`;
   const formattedAmt = data.amount.toLocaleString("en-IN");
   const desc = data.description || "Personal loan / Udhar";
   const bodyContent = `
@@ -50562,7 +50547,7 @@ function generateUdharUpdatedEmail(data) {
     </p>
   `;
   const html = wrapEmailHtml2(subject, bodyContent);
-  const text = `${APP_CONFIG.appName} \u2014 Udhar Transaction Updated
+  const text = `${APP_CONFIG2.appName} \u2014 Udhar Transaction Updated
 --------------------------------------------------
 
 Hello ${data.userName || "User"},
@@ -50579,19 +50564,19 @@ Updated Details:
 - Current Status: ${data.status}
 
 Regards,
-Team ${APP_CONFIG.appName}
+Team ${APP_CONFIG2.appName}
 `;
   return { subject, html, text };
 }
 
 // server/email.ts
 var transporter = nodemailer_default.createTransport({
-  host: APP_CONFIG.smtp.host,
-  port: APP_CONFIG.smtp.port,
-  secure: APP_CONFIG.smtp.secure,
+  host: APP_CONFIG2.smtp.host,
+  port: APP_CONFIG2.smtp.port,
+  secure: APP_CONFIG2.smtp.secure,
   auth: {
-    user: APP_CONFIG.smtp.user,
-    pass: APP_CONFIG.smtp.pass
+    user: APP_CONFIG2.smtp.user,
+    pass: APP_CONFIG2.smtp.pass
   }
 });
 function sanitizeErrorMessage(err) {
@@ -50602,7 +50587,7 @@ function sanitizeErrorMessage(err) {
 async function sendEmail(opts) {
   try {
     const info = await transporter.sendMail({
-      from: APP_CONFIG.smtp.from,
+      from: APP_CONFIG2.smtp.from,
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
@@ -50639,8 +50624,8 @@ async function sendPasswordResetEmail(email, name2, resetLink) {
     <body>
       <div class="card">
         <div class="header">
-          <h1>${APP_CONFIG.appName}</h1>
-          <p>by ${APP_CONFIG.companyName} \xB7 Security Dispatch</p>
+          <h1>${APP_CONFIG2.appName}</h1>
+          <p>by ${APP_CONFIG2.companyName} \xB7 Security Dispatch</p>
         </div>
         <div class="content">
           <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hello ${name2 || "User"},</p>
@@ -50660,7 +50645,7 @@ async function sendPasswordResetEmail(email, name2, resetLink) {
           </div>
         </div>
         <div class="footer">
-          &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${APP_CONFIG.appName} \xB7 Powered by ${APP_CONFIG.companyName}.
+          &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${APP_CONFIG2.appName} \xB7 Powered by ${APP_CONFIG2.companyName}.
         </div>
       </div>
     </body>
@@ -50668,18 +50653,18 @@ async function sendPasswordResetEmail(email, name2, resetLink) {
   `;
   const text = `Hello ${name2 || "User"},
 
-We received a request to reset your password for ${APP_CONFIG.appName} (${email}).
+We received a request to reset your password for ${APP_CONFIG2.appName} (${email}).
 
 Reset your password using this link (expires in 15 minutes):
 ${resetLink}
 
 If you did not request this, please ignore this email.
 
-${APP_CONFIG.appName} Security Team`;
+${APP_CONFIG2.appName} Security Team`;
   return sendEmail({ to: email, subject, html, text });
 }
 async function sendPasswordChangedEmail(email, name2, ipAddress) {
-  const subject = `[Security Alert] Your Password Was Successfully Changed - ${APP_CONFIG.appName}`;
+  const subject = `[Security Alert] Your Password Was Successfully Changed - ${APP_CONFIG2.appName}`;
   const now = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   const html = `
     <!DOCTYPE html>
@@ -50699,7 +50684,7 @@ async function sendPasswordChangedEmail(email, name2, ipAddress) {
     <body>
       <div class="card">
         <div class="header">
-          <h1>${APP_CONFIG.appName}</h1>
+          <h1>${APP_CONFIG2.appName}</h1>
         </div>
         <div class="content">
           <p style="font-size: 15px; font-weight: 600;">Hello ${name2 || "User"},</p>
@@ -50711,11 +50696,11 @@ async function sendPasswordChangedEmail(email, name2, ipAddress) {
             All previous active sessions on other devices have been securely invalidated to protect your account.
           </p>
           <p style="font-size: 13px; line-height: 1.6; color: #b91c1c; font-weight: 600;">
-            If you did not make this change, please contact ${APP_CONFIG.companyName} Support immediately at ${APP_CONFIG.supportEmail}.
+            If you did not make this change, please contact ${APP_CONFIG2.companyName} Support immediately at ${APP_CONFIG2.supportEmail}.
           </p>
         </div>
         <div class="footer">
-          &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${APP_CONFIG.appName} \xB7 Powered by ${APP_CONFIG.companyName}.
+          &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${APP_CONFIG2.appName} \xB7 Powered by ${APP_CONFIG2.companyName}.
         </div>
       </div>
     </body>
@@ -50723,11 +50708,11 @@ async function sendPasswordChangedEmail(email, name2, ipAddress) {
   `;
   const text = `Hello ${name2 || "User"},
 
-Your account password for ${APP_CONFIG.appName} (${email}) was updated on ${now} IST.
+Your account password for ${APP_CONFIG2.appName} (${email}) was updated on ${now} IST.
 
 If you did not perform this action, please contact support immediately.
 
-${APP_CONFIG.appName} Security`;
+${APP_CONFIG2.appName} Security`;
   return sendEmail({ to: email, subject, html, text });
 }
 async function executeEmailDispatch(logId, email, subject, html, text, attachments, currentAttempt, maxAttempts = 3, userId) {
@@ -50866,8 +50851,8 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
     const attachments = [];
     const logoFilePath = path5.resolve(process.cwd(), "public", "logo.jpg");
     let logoSrc = "cid:app_logo";
-    if (APP_CONFIG.appLogoUrl && APP_CONFIG.appLogoUrl.startsWith("http") && !APP_CONFIG.appLogoUrl.includes("localhost")) {
-      logoSrc = APP_CONFIG.appLogoUrl;
+    if (APP_CONFIG2.appLogoUrl && APP_CONFIG2.appLogoUrl.startsWith("http") && !APP_CONFIG2.appLogoUrl.includes("localhost")) {
+      logoSrc = APP_CONFIG2.appLogoUrl;
     } else if (fs6.existsSync(logoFilePath)) {
       attachments.push({
         filename: "logo.jpg",
@@ -50881,9 +50866,9 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
       userName: trustedName,
       userEmail: normalizedEmail,
       logoSrc,
-      loginUrl: APP_CONFIG.appLoginUrl,
-      supportEmail: APP_CONFIG.supportEmail,
-      supportPhone: APP_CONFIG.supportPhone
+      loginUrl: APP_CONFIG2.appLoginUrl,
+      supportEmail: APP_CONFIG2.supportEmail,
+      supportPhone: APP_CONFIG2.supportPhone
     });
     let logId = "";
     try {
@@ -50945,7 +50930,7 @@ async function getWelcomeEmailDeliveryStatus(userIdOrEmail) {
   return res.rows[0] || null;
 }
 async function sendAccountStatusEmail(email, name2, newStatus) {
-  const subject = `[Account Update] Account Status Changed to ${newStatus.toUpperCase()} - ${APP_CONFIG.appName}`;
+  const subject = `[Account Update] Account Status Changed to ${newStatus.toUpperCase()} - ${APP_CONFIG2.appName}`;
   const html = `
     <!DOCTYPE html>
     <html>
@@ -50954,7 +50939,7 @@ async function sendAccountStatusEmail(email, name2, newStatus) {
       <div style="max-width: 500px; margin: auto; background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;">
         <h2>Account Status Notice</h2>
         <p>Hello ${name2 || "User"},</p>
-        <p>Your ${APP_CONFIG.appName} account (<strong>${email}</strong>) status has been updated to: <strong style="text-transform: uppercase;">${newStatus}</strong> by an administrator.</p>
+        <p>Your ${APP_CONFIG2.appName} account (<strong>${email}</strong>) status has been updated to: <strong style="text-transform: uppercase;">${newStatus}</strong> by an administrator.</p>
         ${newStatus === "suspended" ? '<p style="color: red;">Your active sessions have been revoked. If you believe this is an error, please reach out to administrator support.</p>' : '<p style="color: green;">Your account is in good standing and ready for use.</p>'}
       </div>
     </body>
@@ -50964,11 +50949,11 @@ async function sendAccountStatusEmail(email, name2, newStatus) {
 
 Your account status has been changed to: ${newStatus}.
 
-${APP_CONFIG.appName}`;
+${APP_CONFIG2.appName}`;
   return sendEmail({ to: email, subject, html, text });
 }
 async function sendAccountDeletionRequestedEmail(email, name2, scheduledForDateStr, cancelLink, submissionTimeStr) {
-  const subject = `[Action Required] Account Deletion Scheduled - ${APP_CONFIG.appName}`;
+  const subject = `[Action Required] Account Deletion Scheduled - ${APP_CONFIG2.appName}`;
   const html = `
     <!DOCTYPE html>
     <html>
@@ -51052,7 +51037,7 @@ My Money Manager Security Team`;
   return sendEmail({ to: email, subject, html, text });
 }
 async function sendAccountDeletionCancelledEmail(email, name2) {
-  const subject = `[Confirmed] Account Deletion Cancelled - ${APP_CONFIG.appName}`;
+  const subject = `[Confirmed] Account Deletion Cancelled - ${APP_CONFIG2.appName}`;
   const now = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   const html = `
     <!DOCTYPE html>
@@ -51102,7 +51087,7 @@ My Money Manager Security`;
   return sendEmail({ to: email, subject, html, text });
 }
 async function sendAccountDeletionCompletedEmail(email, name2) {
-  const subject = `[Completed] Account and Data Deletion Processed - ${APP_CONFIG.appName}`;
+  const subject = `[Completed] Account and Data Deletion Processed - ${APP_CONFIG2.appName}`;
   const now = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   const html = `
     <!DOCTYPE html>
@@ -51458,7 +51443,7 @@ async function sendUdharCreatedEmails(opts) {
           opts.counterpartEmail || null,
           `udhar_skip_cp:${txIdStr}`,
           opts.counterpartName,
-          `[Skipped] New Udhar Transaction Recorded \u2013 ${APP_CONFIG.appName}`,
+          `[Skipped] New Udhar Transaction Recorded \u2013 ${APP_CONFIG2.appName}`,
           skipStatus,
           reasonText,
           txIdStr,
@@ -51601,7 +51586,7 @@ async function sendUdharSettledEmails(opts) {
           opts.counterpartEmail || null,
           `udhar_skip_settle_cp:${txIdStr}_${Date.now()}`,
           opts.counterpartName,
-          `[Skipped] Udhar Transaction Settled \u2013 ${APP_CONFIG.appName}`,
+          `[Skipped] Udhar Transaction Settled \u2013 ${APP_CONFIG2.appName}`,
           skipStatus,
           reasonText,
           txIdStr,
@@ -51750,7 +51735,7 @@ async function sendUdharUpdatedEmails(opts) {
           opts.counterpartEmail || null,
           `udhar_skip_update_cp:${txIdStr}_${Date.now()}`,
           opts.counterpartName,
-          `[Skipped] Udhar Transaction Updated \u2013 ${APP_CONFIG.appName}`,
+          `[Skipped] Udhar Transaction Updated \u2013 ${APP_CONFIG2.appName}`,
           skipStatus,
           reasonText,
           txIdStr,
@@ -51766,7 +51751,7 @@ async function sendUdharUpdatedEmails(opts) {
   return { initiatorSent, counterpartStatus };
 }
 async function sendContactInvitationEmail(opts) {
-  const subject = `You've been invited to ${APP_CONFIG.appName} by ${opts.inviterName}`;
+  const subject = `You've been invited to ${APP_CONFIG2.appName} by ${opts.inviterName}`;
   const html = `
     <!DOCTYPE html>
     <html>
@@ -51788,16 +51773,16 @@ async function sendContactInvitationEmail(opts) {
     <body>
       <div class="card">
         <div class="header">
-          <h1>${APP_CONFIG.appName}</h1>
-          <p>by ${APP_CONFIG.companyName} \xB7 Smart Money & Udhar Tracker</p>
+          <h1>${APP_CONFIG2.appName}</h1>
+          <p>by ${APP_CONFIG2.companyName} \xB7 Smart Money & Udhar Tracker</p>
         </div>
         <div class="content">
           <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hi ${opts.recipientName || "Friend"},</p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
-            <strong>${opts.inviterName}</strong> has added you as a contact in ${APP_CONFIG.appName} to help manage money lending, borrowing, and repayment records digitally.
+            <strong>${opts.inviterName}</strong> has added you as a contact in ${APP_CONFIG2.appName} to help manage money lending, borrowing, and repayment records digitally.
           </p>
           <div class="feature-box">
-            <p style="font-weight: 700; font-size: 13px; color: #065f46; margin: 0 0 10px 0;">With ${APP_CONFIG.appName}, you can:</p>
+            <p style="font-weight: 700; font-size: 13px; color: #065f46; margin: 0 0 10px 0;">With ${APP_CONFIG2.appName}, you can:</p>
             <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #166534; line-height: 1.6;">
               <li>Track money given and received.</li>
               <li>Manage borrowing and repayment records.</li>
@@ -51815,7 +51800,7 @@ async function sendContactInvitationEmail(opts) {
           <div class="url-box">${opts.inviteLink}</div>
         </div>
         <div class="footer">
-          &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${APP_CONFIG.appName} \xB7 Developed under ${APP_CONFIG.companyName}.
+          &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${APP_CONFIG2.appName} \xB7 Developed under ${APP_CONFIG2.companyName}.
         </div>
       </div>
     </body>
@@ -51823,9 +51808,9 @@ async function sendContactInvitationEmail(opts) {
   `;
   const text = `Hi ${opts.recipientName || "Friend"},
 
-${opts.inviterName} has added you as a contact in ${APP_CONFIG.appName} to help manage money lending, borrowing, and repayment records digitally.
+${opts.inviterName} has added you as a contact in ${APP_CONFIG2.appName} to help manage money lending, borrowing, and repayment records digitally.
 
-With ${APP_CONFIG.appName}, you can:
+With ${APP_CONFIG2.appName}, you can:
 - Track money given and received.
 - Manage borrowing and repayment records.
 - Maintain transparent transaction history.
@@ -51834,7 +51819,7 @@ With ${APP_CONFIG.appName}, you can:
 Create your account to join and manage your financial records:
 ${opts.inviteLink}
 
-${APP_CONFIG.appName} by ${APP_CONFIG.companyName}`;
+${APP_CONFIG2.appName} by ${APP_CONFIG2.companyName}`;
   try {
     const logRes = await query(
       `INSERT INTO public.email_dispatch_logs (
@@ -79056,7 +79041,7 @@ import crypto12 from "crypto";
 
 // server/notificationEmailTemplates.ts
 function generateCampaignEmail(data) {
-  const loginUrl = APP_CONFIG.appLoginUrl;
+  const loginUrl = APP_CONFIG2.appLoginUrl;
   const actionUrl = data.deepLink ? `${loginUrl.split("#")[0]}#${data.deepLink.replace(/^\//, "")}` : loginUrl;
   const actionText = data.actionText || "Open My Money Manager";
   const html = `<!DOCTYPE html>
@@ -79171,8 +79156,8 @@ function generateCampaignEmail(data) {
     <div class="container">
       <div class="header">
         <div class="badge">${data.category || "Notification"}</div>
-        <h1>${APP_CONFIG.appName}</h1>
-        <p>${APP_CONFIG.appTagline} \xB7 A product of ${APP_CONFIG.companyName}</p>
+        <h1>${APP_CONFIG2.appName}</h1>
+        <p>${APP_CONFIG2.appTagline} \xB7 A product of ${APP_CONFIG2.companyName}</p>
       </div>
       <div class="content">
         <div class="greeting">Hi ${data.userName || "there"},</div>
@@ -79185,19 +79170,19 @@ function generateCampaignEmail(data) {
         </div>
       </div>
       <div class="footer">
-        <p><strong>${APP_CONFIG.appName}</strong> \u2014 ${APP_CONFIG.companyTagline}</p>
-        <p>Support: <a href="mailto:${APP_CONFIG.supportEmail}" style="color: #059669;">${APP_CONFIG.supportEmail}</a> | WhatsApp: ${APP_CONFIG.supportPhone}</p>
+        <p><strong>${APP_CONFIG2.appName}</strong> \u2014 ${APP_CONFIG2.companyTagline}</p>
+        <p>Support: <a href="mailto:${APP_CONFIG2.supportEmail}" style="color: #059669;">${APP_CONFIG2.supportEmail}</a> | WhatsApp: ${APP_CONFIG2.supportPhone}</p>
         <p style="margin-top: 8px; font-size: 11px; color: #94a3b8;">
-          You received this email because you are a registered user of ${APP_CONFIG.appName}. You can adjust your notification preferences anytime from the in-app Settings.
+          You received this email because you are a registered user of ${APP_CONFIG2.appName}. You can adjust your notification preferences anytime from the in-app Settings.
         </p>
-        <p style="margin-top: 4px; font-size: 11px; color: #94a3b8;">${APP_CONFIG.footerCopyright}</p>
+        <p style="margin-top: 4px; font-size: 11px; color: #94a3b8;">${APP_CONFIG2.footerCopyright}</p>
       </div>
     </div>
   </div>
 </body>
 </html>`;
   const text = `${data.title}
-${APP_CONFIG.appName} \xB7 A product of ${APP_CONFIG.companyName}
+${APP_CONFIG2.appName} \xB7 A product of ${APP_CONFIG2.companyName}
 
 Hi ${data.userName || "there"},
 
@@ -79206,9 +79191,9 @@ ${data.message}
 Access your account here: ${actionUrl}
 
 ---
-${APP_CONFIG.appName}
-Support: ${APP_CONFIG.supportEmail}
-${APP_CONFIG.footerCopyright}`;
+${APP_CONFIG2.appName}
+Support: ${APP_CONFIG2.supportEmail}
+${APP_CONFIG2.footerCopyright}`;
   return { html, text };
 }
 
@@ -79308,13 +79293,12 @@ function isValidPushEndpoint(endpoint) {
 }
 
 // server/notificationService.ts
-var webpush2 = void 0 || src_exports;
 try {
-  if (APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey) {
-    webpush2.setVapidDetails(
-      APP_CONFIG.vapid.subject,
-      APP_CONFIG.vapid.publicKey,
-      APP_CONFIG.vapid.privateKey
+  if (APP_CONFIG2.vapid.publicKey && APP_CONFIG2.vapid.privateKey) {
+    setVapidDetails(
+      APP_CONFIG2.vapid.subject,
+      APP_CONFIG2.vapid.publicKey,
+      APP_CONFIG2.vapid.privateKey
     );
   }
 } catch (e2) {
@@ -79797,8 +79781,8 @@ async function getPushDeliveryStatus(userId) {
     logs = readLocalStore(userId).deliveryLogs.filter((l) => l.channel === "push").slice(0, 10);
   }
   return {
-    vapidConfigured: Boolean(APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey),
-    vapidPersistent: APP_CONFIG.vapid.isPersistent,
+    vapidConfigured: Boolean(APP_CONFIG2.vapid.publicKey && APP_CONFIG2.vapid.privateKey),
+    vapidPersistent: APP_CONFIG2.vapid.isPersistent,
     activeDeviceCount: devices.length,
     recentDeliveryLogs: logs
   };
@@ -80004,7 +79988,7 @@ async function createNotification(params) {
       });
       for (const sub of subs) {
         try {
-          await webpush2.sendNotification(
+          await sendNotification(
             {
               endpoint: sub.endpoint,
               keys: {
@@ -83023,11 +83007,11 @@ async function handleAdminApiRequest(req, res, pathname, method) {
         (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "").trim().length > 10
       );
       const supabaseConfigured = Boolean(
-        (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim() && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim()
+        (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co").trim() && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim()
       );
       const databaseConfigured = isDatabaseAvailable();
       const smtpConfigured = Boolean(
-        (process.env.SMTP_HOST || "").trim() && (process.env.SMTP_USER || "").trim() && (process.env.SMTP_PASS || "").trim()
+        APP_CONFIG.smtp.host.trim() && APP_CONFIG.smtp.user.trim() && APP_CONFIG.smtp.pass.trim()
       );
       const webPushConfigured = Boolean(
         (process.env.VAPID_PUBLIC_KEY || "").trim() && (process.env.VAPID_PRIVATE_KEY || "").trim()
@@ -83046,9 +83030,9 @@ async function handleAdminApiRequest(req, res, pathname, method) {
           allowedAiModels: [...ALLOWED_GEMINI_MODELS],
           aiEnabled: runtimeAi.enabled,
           senderName: typeof storedConfig.senderName === "string" && storedConfig.senderName.trim() ? storedConfig.senderName.trim() : "My Money Manager by HackifyPro",
-          siteUrl: typeof storedConfig.siteUrl === "string" && storedConfig.siteUrl.trim() ? storedConfig.siteUrl.trim() : process.env.APP_URL || process.env.VITE_APP_URL || "https://mymoney.nileshbarela.site",
-          supportEmail: typeof storedConfig.supportEmail === "string" && storedConfig.supportEmail.trim() ? storedConfig.supportEmail.trim() : "hackifyproofficial@gmail.com",
-          supportPhone: typeof storedConfig.supportPhone === "string" && storedConfig.supportPhone.trim() ? storedConfig.supportPhone.trim() : "+91 9685989477"
+          siteUrl: typeof storedConfig.siteUrl === "string" && storedConfig.siteUrl.trim() ? storedConfig.siteUrl.trim() : process.env.APP_URL || process.env.VITE_APP_URL || APP_CONFIG.appBaseUrl,
+          supportEmail: typeof storedConfig.supportEmail === "string" && storedConfig.supportEmail.trim() ? storedConfig.supportEmail.trim() : APP_CONFIG.supportEmail,
+          supportPhone: typeof storedConfig.supportPhone === "string" && storedConfig.supportPhone.trim() ? storedConfig.supportPhone.trim() : APP_CONFIG.supportPhone
         }
       });
       return true;
@@ -89994,15 +89978,15 @@ async function handleApiRequest(req, res) {
       sendJson5(res, 200, {
         success: true,
         config: {
-          appName: APP_CONFIG.appName,
-          appTagline: APP_CONFIG.appTagline,
-          companyName: APP_CONFIG.companyName,
-          companyTagline: APP_CONFIG.companyTagline,
-          supportEmail: APP_CONFIG.supportEmail,
-          supportPhone: APP_CONFIG.supportPhone,
-          appLoginUrl: APP_CONFIG.appLoginUrl,
-          appLogoUrl: APP_CONFIG.appLogoUrl || "/logo.jpg",
-          footerCopyright: APP_CONFIG.footerCopyright
+          appName: APP_CONFIG2.appName,
+          appTagline: APP_CONFIG2.appTagline,
+          companyName: APP_CONFIG2.companyName,
+          companyTagline: APP_CONFIG2.companyTagline,
+          supportEmail: APP_CONFIG2.supportEmail,
+          supportPhone: APP_CONFIG2.supportPhone,
+          appLoginUrl: APP_CONFIG2.appLoginUrl,
+          appLogoUrl: APP_CONFIG2.appLogoUrl || "/logo.jpg",
+          footerCopyright: APP_CONFIG2.footerCopyright
         }
       });
       return true;
@@ -93717,9 +93701,9 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/notifications/push/vapid-public-key" && method === "GET") {
       sendJson5(res, 200, {
         success: true,
-        publicKey: APP_CONFIG.vapid.publicKey,
-        configured: Boolean(APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey),
-        persistent: APP_CONFIG.vapid.isPersistent
+        publicKey: APP_CONFIG2.vapid.publicKey,
+        configured: Boolean(APP_CONFIG2.vapid.publicKey && APP_CONFIG2.vapid.privateKey),
+        persistent: APP_CONFIG2.vapid.isPersistent
       });
       return true;
     }
@@ -93885,7 +93869,7 @@ async function handleApiRequest(req, res) {
       sendJson5(res, 200, {
         success: true,
         message: result.pushDelivered > 0 ? `Test push delivered to ${result.pushDelivered} of ${result.deviceCount} registered device(s).` : result.deviceCount === 0 ? "In-app test created, but no push devices are currently registered for your account." : "Push delivery failed for registered device(s). Expired subscriptions were cleaned up.",
-        vapidPersistent: APP_CONFIG.vapid.isPersistent,
+        vapidPersistent: APP_CONFIG2.vapid.isPersistent,
         result
       });
       return true;

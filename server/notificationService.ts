@@ -1,14 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import * as webpushModule from 'web-push';
+import * as webpush from 'web-push';
 import { query, isDatabaseConfigured } from './db.js';
 import { APP_CONFIG } from './config.js';
 import { sendEmail } from './email.js';
 import { generateCampaignEmail } from './notificationEmailTemplates.js';
 import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils.js';
-
-const webpush = (webpushModule as any).default || webpushModule;
 
 // Initialize web-push VAPID details (private key stays strictly server-side)
 try {

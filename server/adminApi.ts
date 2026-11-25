@@ -2708,14 +2708,20 @@ export async function handleAdminApiRequest(
         (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim().length > 10
       );
       const supabaseConfigured = Boolean(
-        (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim() &&
-        (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim()
+        (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co').trim() &&
+        (
+          process.env.SUPABASE_SECRET_KEY ||
+          process.env.SUPABASE_SERVICE_ROLE_KEY ||
+          process.env.SUPABASE_PUBLISHABLE_KEY ||
+          process.env.VITE_SUPABASE_ANON_KEY ||
+          ''
+        ).trim()
       );
       const databaseConfigured = isDatabaseAvailable();
       const smtpConfigured = Boolean(
-        (process.env.SMTP_HOST || '').trim() &&
-        (process.env.SMTP_USER || '').trim() &&
-        (process.env.SMTP_PASS || '').trim()
+        APP_CONFIG.smtp.host.trim() &&
+        APP_CONFIG.smtp.user.trim() &&
+        APP_CONFIG.smtp.pass.trim()
       );
       const webPushConfigured = Boolean(
         (process.env.VAPID_PUBLIC_KEY || '').trim() &&
@@ -2740,13 +2746,13 @@ export async function handleAdminApiRequest(
             : 'My Money Manager by HackifyPro',
           siteUrl: typeof storedConfig.siteUrl === 'string' && storedConfig.siteUrl.trim()
             ? storedConfig.siteUrl.trim()
-            : (process.env.APP_URL || process.env.VITE_APP_URL || 'https://mymoney.nileshbarela.site'),
+            : (process.env.APP_URL || process.env.VITE_APP_URL || APP_CONFIG.appBaseUrl),
           supportEmail: typeof storedConfig.supportEmail === 'string' && storedConfig.supportEmail.trim()
             ? storedConfig.supportEmail.trim()
-            : 'hackifyproofficial@gmail.com',
+            : APP_CONFIG.supportEmail,
           supportPhone: typeof storedConfig.supportPhone === 'string' && storedConfig.supportPhone.trim()
             ? storedConfig.supportPhone.trim()
-            : '+91 9685989477',
+            : APP_CONFIG.supportPhone,
         },
       });
       return true;

@@ -1,8 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import * as webpushModule from 'web-push';
-
-const webpush = (webpushModule as any).default || webpushModule;
+import * as webpush from 'web-push';
 
 function isValidVapidKeyPair(publicKey?: string, privateKey?: string): boolean {
   if (!publicKey || !privateKey) return false;
@@ -68,7 +66,7 @@ export const APP_CONFIG = {
     'https://wa.me/917414935405?text=Hello%20HackifyPro%20Support%20Team%2C%0A%0AI%20need%20assistance%20regarding%20My%20Money%20Manager%20app.%20I%20have%20a%20query%20and%20would%20like%20some%20help.%0A%0APlease%20guide%20me%20regarding%20my%20issue.%0A%0AThank%20you.',
   appBaseUrl: process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site',
   appLoginUrl: process.env.APP_LOGIN_URL || 'https://mymoney.nileshbarela.site/#login',
-  appLogoUrl: process.env.APP_LOGO_URL || '',
+  appLogoUrl: process.env.APP_LOGO_URL || 'https://mymoney.nileshbarela.site/logo.jpg',
   footerCopyright: `© ${new Date().getFullYear()} My Money Manager · Powered by HackifyPro`,
   
   // SMTP Configuration
