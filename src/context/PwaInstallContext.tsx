@@ -76,6 +76,56 @@ function readSessionDismissed(): boolean {
   }
 }
 
+/**
+ * Registers device metadata and reliable PWA installation status with backend
+ */
+export function syncDeviceRegistration(isInstalledApp?: boolean) {
+  if (typeof window === 'undefined') return;
+  const standalone = isInstalledApp !== undefined ? isInstalledApp : isRunningStandalone();
+  const compat = detectPlatformCompatibility(
+    window.navigator.userAgent || '',
+    window.navigator.maxTouchPoints || 0
+  );
+
+  const deviceType = /mobile|android|iphone/i.test(window.navigator.userAgent)
+    ? 'mobile'
+    : /ipad|tablet/i.test(window.navigator.userAgent)
+    ? 'tablet'
+    : 'desktop';
+
+  const pushPermission =
+    typeof Notification !== 'undefined'
+      ? Notification.permission
+      : 'unsupported';
+
+  let userId: string | null = null;
+  try {
+    const rawUser = localStorage.getItem('my_money_auth_user');
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      userId = u?.id || u?.uid || null;
+    }
+  } catch {}
+
+  if (!userId) return;
+
+  fetch('/api/pwa/register-device', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId,
+      deviceType,
+      browser: compat.browserLabel,
+      os: compat.osLabel,
+      userAgent: window.navigator.userAgent,
+      isInstalled: standalone,
+      installationStatus: standalone ? 'installed_pwa' : 'browser',
+      pushPermission,
+      pushSubscriptionStatus: pushPermission === 'granted' ? 'active' : 'none',
+    }),
+  }).catch(() => {});
+}
+
 export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(() => isRunningStandalone());
@@ -150,7 +200,11 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setIsInstalled(true);
       setDeferredPrompt(null);
       setIsModalOpen(false);
+      syncDeviceRegistration(true);
     };
+
+    // Register initial device and PWA installation state
+    syncDeviceRegistration(isRunningStandalone());
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);

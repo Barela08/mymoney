@@ -362,6 +362,52 @@ export const adminClient = {
     return adminRequest('/api/admin/notifications/analytics', { method: 'GET' });
   },
 
+  // 10b. Installed Devices & PWA Installation Management
+  async getInstalledDevices(params?: {
+    q?: string;
+    installed_only?: boolean;
+    device_type?: string;
+    push_permission?: string;
+  }) {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.append('q', params.q);
+    if (params?.installed_only) qs.append('installed_only', 'true');
+    if (params?.device_type) qs.append('device_type', params.device_type);
+    if (params?.push_permission) qs.append('push_permission', params.push_permission);
+    return adminRequest(`/api/admin/installed-devices?${qs.toString()}`, { method: 'GET' });
+  },
+
+  async sendTestNotification(data: { title: string; message: string; deep_link?: string }) {
+    return adminRequest('/api/admin/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // 10c. Two-Way Admin Notifications & Preferences
+  async getAdminNotificationPreferences() {
+    return adminRequest('/api/admin/settings/notification-preferences', { method: 'GET' });
+  },
+
+  async saveAdminNotificationPreferences(data: any) {
+    return adminRequest('/api/admin/settings/notification-preferences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAdminNotifications() {
+    return adminRequest('/api/admin/system/notifications', { method: 'GET' });
+  },
+
+  async markAdminNotificationRead(id: string) {
+    return adminRequest(`/api/admin/system/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+  },
+
+  async markAllAdminNotificationsRead() {
+    return adminRequest('/api/admin/system/notifications/mark-all-read', { method: 'POST' });
+  },
+
   // 11. Sensitive Financial Data Access Workflow (PART F)
   async getFinancialAccessRequests(status?: string, targetUserId?: string) {
     const params = new URLSearchParams();

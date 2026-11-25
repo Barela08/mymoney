@@ -7,11 +7,7 @@ import {
   Clock,
   Shield,
   User,
-  LogOut,
-  Bell,
   AlertTriangle,
-  X,
-  Info,
   HelpCircle,
   Calculator,
 } from 'lucide-react';
@@ -45,25 +41,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNotificationPreferences,
 }) => {
   const { theme, toggleTheme } = useTheme();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin } = useAuth();
   const {
     maintenanceSettings,
-    notifications,
     dynamicSections,
   } = useExpense();
   const [istTimeStr, setIstTimeStr] = useState('');
   const [istDateStr, setIstDateStr] = useState('');
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
-
-  // Active notifications for this user or all users
-  const activeNotifs = notifications.filter(
-    (n) =>
-      n.is_active &&
-      (!n.target_user_id ||
-        n.target_user_id === 'all' ||
-        n.target_user_id === user?.uid ||
-        n.target_user_id === user?.id)
-  );
 
   // Live IST Clock (Without seconds churn)
   useEffect(() => {

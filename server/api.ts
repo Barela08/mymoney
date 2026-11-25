@@ -62,6 +62,8 @@ import {
   notifyAdminNewFeedback,
   notifyComplaintSubmitted,
   processScheduledCampaigns,
+  recordDeviceInstallation,
+  recordAdminNotification,
 } from './notificationService';
 import {
   normalizeSearchQuery,

@@ -41,6 +41,7 @@ import { adminClient } from '../../lib/adminApi';
 export type AdminSectionKey =
   | 'dashboard'
   | 'users'
+  | 'installed_devices'
   | 'admins'
   | 'activity'
   | 'financial_access'
@@ -88,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'User Management',
     items: [
       { key: 'users', label: 'All Users', icon: Users, requiredPermission: 'users.read' },
+      { key: 'installed_devices', label: 'Installed Devices / PWA', icon: Smartphone, requiredPermission: 'users.read' },
       { key: 'admins', label: 'Admin Accounts', icon: UserCheck, requiredPermission: 'admins.view' },
       { key: 'roles', label: 'Roles & Permissions', icon: Shield, requiredPermission: 'roles.read' },
       { key: 'sessions', label: 'Sessions & Devices', icon: Laptop, requiredPermission: 'security.read' },

@@ -10,13 +10,11 @@ import {
   ListOrdered,
   Settings,
   X,
-  Wallet,
   Plus,
   Sun,
   Moon,
   LogOut,
   Shield,
-  User,
   Trash2,
   FolderKanban,
   GraduationCap,
@@ -39,7 +37,6 @@ import {
   CalendarClock,
   Bell,
   MoreHorizontal,
-  Grid,
   Calendar,
   Landmark,
   Receipt,
@@ -88,7 +85,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onOpenMyQr,
   onOpenScanQr,
 }) => {
-  const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
+  const { summary, recycleBinTransactions, dynamicSections } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
