@@ -12,6 +12,8 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -295,7 +297,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
           className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-medium transition-colors cursor-pointer flex items-center gap-2"
           aria-label={isFilterExpanded ? 'Collapse filter panel' : 'Expand filter panel'}
         >
-          <SlidersHorizontal className="w-4 h-4 stroke-[1.75]" />
+          <ChevronDown className={isFilterExpanded ? 'w-4 h-4 stroke-[1.75] rotate-180' : 'w-4 h-4 stroke-[1.75]'} />
           <span>
             {isFilterExpanded ? 'Collapse Filters' : 'Filter'}
             {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
@@ -304,7 +306,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       </div>
 
       {/* Collapsible Filter Panel */}
-      <div className={isFilterExpanded ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-4' : 'hidden'}>
+      <div className={isFilterExpanded ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-4' : 'hidden overflow-hidden transition-all duration-300 max-h-0'}>
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
             <SlidersHorizontal className="w-3.5 h-3.5 stroke-[1.75]" />
