@@ -35,6 +35,3 @@ api/[...all].js
 !public/logo.jpg
 unslop/
 .data/
-
-# generated serverless bundle (scripts/build-api.mjs)
-api/\[...all\].js

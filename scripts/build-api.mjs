@@ -1,26 +1,34 @@
 /**
- * Bundles the Node API entry (server/apiEntry.ts) into a single self-contained
- * serverless function at api/[...all].js.
+ * Builds the catch-all API serverless function: server/apiEntry.ts -> api/[...all].js
  *
- * Why: this project is "type": "module" and the server layer imports TypeScript
- * files with explicit `.js` specifiers. On Vercel those specifiers resolve at
- * build time but not inside the deployed function bundle, which crashed the
- * function at module load (FUNCTION_INVOCATION_FAILED on every /api/* call that
- * was routed through the catch-all). Shipping one prebundled file removes all
- * module-resolution work from the runtime.
+ * Why the compiled bundle is committed:
+ *   This project is "type": "module" and the server layer imports TypeScript
+ *   files with explicit `.js` specifiers. When Vercel ran the original
+ *   api/[...all].ts, those specifiers did not resolve inside the deployed
+ *   function bundle, so every /api/* request died at module load with
+ *   FUNCTION_INVOCATION_FAILED.
+ *
+ *   Vercel collects the functions in `api/` from the source snapshot it takes
+ *   before the build command runs, so a file emitted during `npm run build`
+ *   is never uploaded as a function. The self-contained bundle therefore has
+ *   to live in the repository.
+ *
+ * Usage:
+ *   node scripts/build-api.mjs          # rewrite the committed bundle
+ *   node scripts/build-api.mjs --check  # fail if the committed bundle is stale
  */
 import { build } from 'esbuild';
-import { mkdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const outfile = path.join(root, 'api', '[...all].js');
+const check = process.argv.includes('--check');
 
-await mkdir(path.join(root, 'api'), { recursive: true });
-
-await build({
+const result = await build({
   entryPoints: [path.join(root, 'server', 'apiEntry.ts')],
-  outfile: path.join(root, 'api', '[...all].js'),
+  outfile,
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -30,7 +38,21 @@ await build({
   banner: {
     js: "import { createRequire as __freebuffCreateRequire } from 'node:module';\nconst require = __freebuffCreateRequire(import.meta.url);",
   },
-  logLevel: 'info',
+  logLevel: 'warning',
+  write: !check,
 });
 
-console.log('[build-api] api/[...all].js written');
+if (check) {
+  const code = result.outputFiles?.[0]?.text;
+  const current = await readFile(outfile, 'utf8').catch(() => null);
+  if (current !== code) {
+    console.error(
+      '[build-api] api/[...all].js is out of date with server/ sources.\n' +
+        '           Run `npm run build:api` and commit the result.',
+    );
+    process.exit(1);
+  }
+  console.log('[build-api] api/[...all].js is up to date');
+} else {
+  console.log('[build-api] api/[...all].js written');
+}
