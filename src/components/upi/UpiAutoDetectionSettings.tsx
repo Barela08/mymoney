@@ -672,11 +672,11 @@ export const UpiAutoDetectionSettings: React.FC<UpiAutoDetectionSettingsProps> =
 
       <ConfirmModal
         isOpen={isResetModalOpen}
-        onClose={() => setIsResetModalOpen(false)}
+        onCancel={() => setIsResetModalOpen(false)}
         onConfirm={handleConfirmReset}
         title="Reset Automatic UPI Detection?"
         message="This resets all UPI detection toggles to defaults and clears pending notification logs. Your already saved expenses remain untouched."
-        confirmText="Reset Configuration"
+        confirmLabel="Reset Configuration"
         isDestructive
         isLoading={isResetting}
       />
