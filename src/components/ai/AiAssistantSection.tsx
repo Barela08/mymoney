@@ -35,6 +35,11 @@ import {
 import { formatINR } from '../../lib/dateUtils';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { AiCompanionMark } from './AiCompanionMark';
+import {
+  PRIVACY_CHANGED_EVENT,
+  hasOptionalConsent,
+  privacyConsentApi,
+} from '../../lib/privacyConsentApi';
 
 const SUGGESTED_QUESTIONS: string[] = [
   'How much did I spend this month?',
@@ -75,6 +80,45 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const [lastError, setLastError] = useState<{ message: string; code?: string; retryQuestion?: string } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [hasAiConsent, setHasAiConsent] = useState<boolean>(() => hasOptionalConsent('ai_processing'));
+  const [isGrantingAiConsent, setIsGrantingAiConsent] = useState<boolean>(false);
+
+  useEffect(() => {
+    const syncConsent = () => setHasAiConsent(hasOptionalConsent('ai_processing'));
+    window.addEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
+    // Sync authoritative server status once on mount
+    privacyConsentApi
+      .fetchConsents()
+      .then((res) => setHasAiConsent(Boolean(res.choices.ai_processing)))
+      .catch(() => {});
+    return () => window.removeEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
+  }, []);
+
+  const handleEnableAiConsent = async () => {
+    if (isGrantingAiConsent) return;
+    setIsGrantingAiConsent(true);
+    try {
+      await privacyConsentApi.saveSingleConsent({
+        purpose: 'ai_processing',
+        status: 'granted',
+        source: 'ai_assistant_prompt',
+        language: 'en',
+      });
+      setHasAiConsent(true);
+      setLastError(null);
+      toast.success(
+        'AI External Processing enabled',
+        'You can withdraw this optional consent anytime in Settings → Privacy → Manage Consent.'
+      );
+    } catch (err: any) {
+      toast.error(
+        'Could not save consent',
+        err?.message || 'Please check your connection and try again.'
+      );
+    } finally {
+      setIsGrantingAiConsent(false);
+    }
+  };
 
   // Rename state
   const [editingConvId, setEditingConvId] = useState<string | null>(null);
@@ -190,6 +234,16 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       const q = (questionOverride ?? inputText).trim();
       if (!q || isSending) return;
 
+      if (!hasAiConsent) {
+        setLastError({
+          code: 'AI_CONSENT_REQUIRED',
+          message:
+            'AI External Processing consent is currently off. No financial data was sent externally. Enable AI External Processing above or in Settings → Privacy → Manage Consent to ask the AI assistant.',
+          retryQuestion: q,
+        });
+        return;
+      }
+
       setLastError(null);
       if (!questionOverride) setInputText('');
       setIsSending(true);
@@ -265,7 +319,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
         setIsSending(false);
       }
     },
-    [inputText, isSending, activeConvId, financialContext]
+    [inputText, isSending, activeConvId, financialContext, hasAiConsent]
   );
 
   // Trigger initialPrompt if navigated from Dashboard Quick Ask
@@ -490,6 +544,39 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Explicit Optional Consent Gate for AI External Processing */}
+      {!hasAiConsent && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-100/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs">
+          <div className="flex items-start gap-2.5">
+            <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-slate-900 dark:text-slate-100">
+                AI External Processing is turned off
+              </p>
+              <p className="text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+                No financial summaries or prompts are sent to Google Gemini API without your explicit optional consent. Local dashboards, reports, budgets and ledger features keep working normally.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={isGrantingAiConsent}
+              onClick={() => void handleEnableAiConsent()}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isGrantingAiConsent ? 'Saving...' : 'Enable AI Processing'}
+            </button>
+            <a
+              href="#manage-consent"
+              className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 font-semibold text-xs"
+            >
+              Manage Consent
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Honest Provider Status Banner if GEMINI_API_KEY not configured */}
       {aiStatus && !aiStatus.configured && (

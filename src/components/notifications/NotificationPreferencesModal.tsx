@@ -44,12 +44,30 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
   const [udhar, setUdhar] = useState(preferences?.notify_udhar ?? true);
   const [support, setSupport] = useState(preferences?.notify_support ?? true);
   const [announcements, setAnnouncements] = useState(preferences?.notify_announcements ?? true);
-  const [offers, setOffers] = useState(preferences?.notify_offers ?? true);
+  // CRITICAL: Optional promotional/marketing offers MUST default to FALSE (unchecked).
+  const [offers, setOffers] = useState(preferences?.notify_offers ?? false);
 
   const [quietHours, setQuietHours] = useState(preferences?.quiet_hours_enabled ?? false);
   const [quietStart, setQuietStart] = useState(preferences?.quiet_hours_start ?? '22:00');
   const [quietEnd, setQuietEnd] = useState(preferences?.quiet_hours_end ?? '07:00');
   const [privacyAmounts, setPrivacyAmounts] = useState(preferences?.privacy_hide_amounts ?? false);
+
+  useEffect(() => {
+    if (!isOpen || !preferences) return;
+    setInApp(preferences.in_app_enabled ?? true);
+    setPush(preferences.push_enabled ?? true);
+    setEmail(preferences.email_enabled ?? true);
+    setIncome(preferences.notify_income ?? true);
+    setExpense(preferences.notify_expense ?? true);
+    setUdhar(preferences.notify_udhar ?? true);
+    setSupport(preferences.notify_support ?? true);
+    setAnnouncements(preferences.notify_announcements ?? true);
+    setOffers(Boolean(preferences.notify_offers));
+    setQuietHours(Boolean(preferences.quiet_hours_enabled));
+    setQuietStart(preferences.quiet_hours_start ?? '22:00');
+    setQuietEnd(preferences.quiet_hours_end ?? '07:00');
+    setPrivacyAmounts(Boolean(preferences.privacy_hide_amounts));
+  }, [isOpen, preferences]);
 
   // Nielsen Heuristic: User Control & Freedom — Escape key handling
   useEffect(() => {
@@ -262,8 +280,8 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
                 { label: 'Expense Recorded', state: expense, set: setExpense },
                 { label: 'Udhar & Khata Updates', state: udhar, set: setUdhar },
                 { label: 'Support & Tickets', state: support, set: setSupport },
-                { label: 'System Announcements', state: announcements, set: setAnnouncements },
-                { label: 'Exclusive Offers', state: offers, set: setOffers },
+                { label: 'System & Security Alerts', state: announcements, set: setAnnouncements },
+                { label: 'Exclusive Offers (Optional)', state: offers, set: setOffers },
               ].map((item, idx) => (
                 <label
                   key={idx}

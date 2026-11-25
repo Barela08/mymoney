@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sun,
   Moon,
@@ -8,6 +8,7 @@ import {
   Sliders,
   Scale,
   BellRing,
+  ShieldCheck,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -20,7 +21,7 @@ import { PermissionsSettingsCard } from './PermissionsSettingsCard';
 import { PrivacyConsentCard } from './PrivacyConsentCard';
 import { UpiAutoDetectionSettings } from '../upi/UpiAutoDetectionSettings';
 
-export type SettingsTabId = 'profile' | 'auto_detection' | 'preferences' | 'deletion' | 'legal';
+export type SettingsTabId = 'profile' | 'privacy' | 'auto_detection' | 'preferences' | 'deletion' | 'legal';
 
 interface SettingsSectionProps {
   initialTab?: SettingsTabId;
@@ -39,11 +40,26 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<SettingsTabId>(() => {
-    if (typeof window !== 'undefined' && window.location.hash === '#auto-detection') {
-      return 'auto_detection';
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (hash === '#auto-detection') return 'auto_detection';
+      if (hash === '#privacy' || hash === '#manage-consent') return 'privacy';
+      if (hash === '#delete-account') return 'deletion';
     }
     return initialTab;
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncHash = () => {
+      const hash = window.location.hash;
+      if (hash === '#auto-detection') setActiveTab('auto_detection');
+      else if (hash === '#privacy' || hash === '#manage-consent') setActiveTab('privacy');
+      else if (hash === '#delete-account') setActiveTab('deletion');
+    };
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
 
   // Clear data confirmation modal
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
@@ -96,6 +112,18 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
         >
           <User className="w-3.5 h-3.5" />
           <span>Profile & Security</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('privacy')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'privacy'
+              ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-sm'
+              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>Privacy & Consent</span>
         </button>
 
         <button
@@ -152,6 +180,19 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
         <UserProfileSection onNavigateToDeletion={() => setActiveTab('deletion')} />
       )}
 
+      {/* Privacy & Manage Consent Tab */}
+      {activeTab === 'privacy' && (
+        <div className="space-y-6">
+          <PrivacyConsentCard
+            onOpenPrivacyPolicy={() => setActiveTab('legal')}
+            onExportBackup={handleExportBackup}
+            onNavigateToProfile={() => setActiveTab('profile')}
+            onNavigateToDeletion={() => setActiveTab('deletion')}
+          />
+          <PermissionsSettingsCard />
+        </div>
+      )}
+
       {/* Automatic UPI Expense Detection Tab */}
       {activeTab === 'auto_detection' && (
         <UpiAutoDetectionSettings onOpenPrivacyPolicy={() => setActiveTab('legal')} />
@@ -160,10 +201,6 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
       {/* Preferences & Data Tab */}
       {activeTab === 'preferences' && (
         <div className="space-y-6">
-          {/* Device Hardware Permissions Card */}
-          <PrivacyConsentCard />
-          <PermissionsSettingsCard />
-
           {/* Theme Selector */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">

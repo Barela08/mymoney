@@ -13,10 +13,16 @@ import {
   X,
   AlertCircle,
   Plus,
+  Lock,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { aiFinanceApi, ApiClientError, ReceiptRecord } from '../../lib/aiFinanceApi';
+import {
+  PRIVACY_CHANGED_EVENT,
+  hasOptionalConsent,
+  privacyConsentApi,
+} from '../../lib/privacyConsentApi';
 import {
   categorizeTransactionDeterministic,
   detectDuplicateReceipt,
@@ -94,17 +100,48 @@ export const ReceiptScannerSection: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [suggestedCategoryLabel, setSuggestedCategoryLabel] = useState<string | null>(null);
 
+  const [hasAiConsent, setHasAiConsent] = useState<boolean>(() => hasOptionalConsent('ai_processing'));
+  const [isGrantingAiConsent, setIsGrantingAiConsent] = useState(false);
+
   useEffect(() => {
+    const syncConsent = () => setHasAiConsent(hasOptionalConsent('ai_processing'));
+    window.addEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
     Promise.all([
       aiFinanceApi.getAiStatus().catch(() => null),
       aiFinanceApi.getReceiptRecords().catch(() => []),
       aiFinanceApi.getCategorizationRules().catch(() => []),
-    ]).then(([status, receipts, rules]) => {
+      privacyConsentApi.fetchConsents().catch(() => null),
+    ]).then(([status, receipts, rules, consents]) => {
       if (status) setOcrSupported(status.ocrSupported);
       setKnownReceipts(receipts);
       setUserRules(rules);
+      if (consents) setHasAiConsent(Boolean(consents.choices.ai_processing));
     });
+    return () => window.removeEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
   }, []);
+
+  const handleEnableAiConsent = async () => {
+    if (isGrantingAiConsent) return;
+    setIsGrantingAiConsent(true);
+    try {
+      await privacyConsentApi.saveSingleConsent({
+        purpose: 'ai_processing',
+        status: 'granted',
+        source: 'receipt_scanner_prompt',
+        language: 'en',
+      });
+      setHasAiConsent(true);
+      setOcrError(null);
+      toast.success(
+        'AI External Processing enabled',
+        'You can now run AI receipt extraction or withdraw consent anytime in Settings → Privacy.'
+      );
+    } catch (err: any) {
+      toast.error('Could not save consent', err?.message || 'Please retry.');
+    } finally {
+      setIsGrantingAiConsent(false);
+    }
+  };
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -248,6 +285,16 @@ export const ReceiptScannerSection: React.FC = () => {
   };
 
   const runOcrScan = async (dataUrl: string) => {
+    if (!hasAiConsent) {
+      setOcrError({
+        code: 'AI_CONSENT_REQUIRED',
+        message:
+          'AI External Processing consent is off, so your receipt photo was not sent to Google Gemini. You can enter the receipt details manually below or enable AI External Processing above.',
+      });
+      setHasScanned(true);
+      return;
+    }
+
     setIsScanning(true);
     setOcrError(null);
     setHasScanned(false);
@@ -436,6 +483,39 @@ export const ReceiptScannerSection: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* Explicit AI External Processing Consent Notice */}
+      {!hasAiConsent && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-100/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs">
+          <div className="flex items-start gap-2.5">
+            <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-slate-900 dark:text-slate-100">
+                AI Receipt OCR is paused (AI External Processing is off)
+              </p>
+              <p className="text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+                Receipt images are never sent to Google Gemini API without your optional consent. You can attach a photo and fill the form manually locally, or enable AI External Processing.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={isGrantingAiConsent}
+              onClick={() => void handleEnableAiConsent()}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isGrantingAiConsent ? 'Saving...' : 'Enable AI OCR'}
+            </button>
+            <a
+              href="#manage-consent"
+              className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 font-semibold text-xs"
+            >
+              Manage Consent
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Provider Status Notice */}
       {ocrSupported === false && (

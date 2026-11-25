@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Wallet,
   Lock,
@@ -18,14 +18,12 @@ import {
   Sparkles,
   ShieldCheck,
   Clock,
-  GoogleCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authApi } from '../../lib/authApi';
-import { getSupabaseClient } from '../../lib/supabase';
-import { DpdpConsentModal } from '../common/DpdpConsentModal';
-import { getStoredDpdpConsent, saveConsentChoices } from '../common/DpdpConsentBanner';
+import { PrivacyNoticeModal } from '../privacy/PrivacyNoticeModal';
+import type { ConsentLanguage } from '../../lib/privacyConsent';
 
 export const AuthPage: React.FC = () => {
   const {
@@ -74,15 +72,6 @@ export const AuthPage: React.FC = () => {
   const [generatedResetLink, setGeneratedResetLink] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Google OAuth state
-  const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState(false);
-  const [googleError, setGoogleError] = useState<string | null>(null);
-  const [pendingGoogleProfile, setPendingGoogleProfile] = useState<any>(null);
-  const [showNameConfirmation, setShowNameConfirmation] = useState(false);
-  const [nameToConfirm, setNameToConfirm] = useState('');
-  const [editingName, setEditingName] = useState(false);
-  const [customName, setCustomName] = useState('');
-
   // Navigate between auth modes and synchronize URL
   const navigateToMode = (newMode: 'login' | 'register' | 'forgot_password' | 'reset_password') => {
     setMode(newMode);
@@ -105,22 +94,13 @@ export const AuthPage: React.FC = () => {
     }
   };
 
-  // Statutory DPDP Consent State
-  const [isDpdpModalOpen, setIsDpdpModalOpen] = useState(false);
-  // Never pre-tick a consent checkbox, even if the user agreed in the past.
+  // Privacy Notice preview modal (read-only informational notice before account creation).
+  // Optional consent choices are never pre-ticked or bundled with registration;
+  // authenticated users choose optional categories explicitly in the Privacy Choices screen.
+  const [isPrivacyNoticeOpen, setIsPrivacyNoticeOpen] = useState(false);
+  const [noticeLanguage, setNoticeLanguage] = useState<ConsentLanguage>('en');
+  // Never pre-tick the registration acknowledgement checkbox.
   const [isDpdpAgreed, setIsDpdpAgreed] = useState(false);
-
-  // Verify DPDP consent before login/signup at startup
-  useEffect(() => {
-    const consent = getStoredDpdpConsent();
-    if (!consent.hasAnswered || !consent.isConsented) {
-      setIsDpdpModalOpen(true);
-    }
-  }, []);
-
-  const handleSaveDpdpChoices = () => {
-    setIsDpdpModalOpen(false);
-  };
 
   // Token Verification for reset_password mode
   const [activeToken, setActiveToken] = useState<string>('');
@@ -242,49 +222,6 @@ export const AuthPage: React.FC = () => {
     }
   };
 
-  // Google OAuth login
-  const handleGoogleLogin = async () => {
-    setIsGoogleLoggingIn(true);
-    setGoogleError(null);
-    setPendingGoogleProfile(null);
-
-    try {
-      const supabase = getSupabaseClient();
-      if (!supabase) throw new Error('Supabase client not available');
-
-      // Sign in with Google OAuth
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          // Redirect to the same app URL after auth
-          redirectTo: typeof window !== 'undefined'
-            ? window.location.origin
-            : undefined,
-          // Prompt for email selection if needed
-          // prompt: 'select_account',
-        },
-      });
-
-      if (error) throw error;
-
-      // If we get here, OAuth redirect has been initiated
-      // The user will be redirected to Google and then back to the app
-      // We need to handle the redirect callback
-      if (data.url) {
-        // User needs to complete OAuth on the redirect URL
-        // The redirect will happen and supabase will handle the callback
-        setGoogleError(null);
-      } else if (data.session) {
-        // Session available immediately (rare with OAuth, usually redirects)
-        // handleGoogleCallback(data.session);
-      }
-    } catch (err: any) {
-      console.error('Google OAuth error:', err);
-      setGoogleError(err.message || 'Google login failed. Please try again.');
-      setIsGoogleLoggingIn(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -376,11 +313,12 @@ export const AuthPage: React.FC = () => {
     }
 
     // 4. Submit Login or Register
-    // Login never requires optional consent. Registration requires the user to
-    // tick the specific consent control themselves (it is never pre-checked).
+    // Login never requires optional consent. Registration asks the user to acknowledge
+    // the Privacy Notice for essential account creation; optional categories remain OFF
+    // until the user chooses them explicitly after signing in.
     if (mode === 'register' && !isDpdpAgreed) {
       setErrorMessage(
-        'Please tick the consent checkbox to confirm cloud sync and financial processing for your new account.'
+        'Please confirm that you have read the Privacy Notice for essential account creation.'
       );
       return;
     }
@@ -397,9 +335,9 @@ export const AuthPage: React.FC = () => {
       } else {
         const res = await register(name, email, password, confirmPassword, phone);
         if (res.success) {
-          // The ticked checkbox is the explicit consent action for a new account.
-          saveConsentChoices({ cloud_sync: true, financial_processing: true });
-          toast.success('Account Created!', 'Welcome to My Money Manager.');
+          // Do NOT bundle or auto-grant optional consents (cloud_sync, ai_processing, etc.).
+          // The Privacy Choices & Consent Center will prompt the authenticated user explicitly.
+          toast.success('Account Created!', 'Welcome to My Money Manager by HackifyPro.');
         } else {
           setErrorMessage(res.message || 'Registration failed.');
           if (res.errors) setValidationErrors(res.errors);
@@ -465,18 +403,6 @@ export const AuthPage: React.FC = () => {
                 Create Account
               </button>
             </div>
-          )}
-
-          {/* Google OAuth Button */}
-          {mode !== 'forgot_password' && mode !== 'reset_password' && (
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-slate-300 dark:border-slate-700 rounded-xl shadow-sm text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer mb-4"
-            >
-              <GoogleCircle className="w-4 h-4" />
-              <span>Continue with Google</span>
-            </button>
           )}
 
           {/* Reset Password Header */}
@@ -801,7 +727,7 @@ export const AuthPage: React.FC = () => {
                 </div>
               )}
 
-              {/* DPDP Consent Acceptance Checkbox for Registration */}
+              {/* Privacy Notice Acknowledgement Checkbox for Registration (Essential Service Only) */}
               {mode === 'register' && (
                 <div className="flex items-start gap-2.5 pt-1 text-left">
                   <input
@@ -817,16 +743,17 @@ export const AuthPage: React.FC = () => {
                     htmlFor="register-dpdp-consent"
                     className="text-xs text-slate-600 dark:text-slate-300 cursor-pointer leading-relaxed"
                   >
-                    I agree to the{' '}
+                    I have read the{' '}
                     <button
                       type="button"
-                      onClick={() => setIsDpdpModalOpen(true)}
+                      onClick={() => setIsPrivacyNoticeOpen(true)}
                       className="text-emerald-600 dark:text-emerald-400 font-bold underline cursor-pointer"
                     >
-                      privacy notice and consent terms
+                      Privacy Notice
                     </button>{' '}
-                    for cloud sync and financial processing of my new account. Optional AI,
-                    analytics and Udhar sharing stay off unless I enable them in Settings.
+                    for essential account and ledger services. All optional categories (Cloud Sync,
+                    AI External Processing, Udhar Sharing, Analytics, Personalization, Marketing)
+                    stay unchecked until I choose them in Privacy Choices.
                   </label>
                 </div>
               )}
@@ -928,8 +855,13 @@ export const AuthPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Purpose-specific consent choices. Nothing is pre-selected. */}
-      <DpdpConsentModal isOpen={isDpdpModalOpen} onSave={handleSaveDpdpChoices} />
+      {/* Standalone Trilingual Privacy Notice (read-only informational preview before login) */}
+      <PrivacyNoticeModal
+        isOpen={isPrivacyNoticeOpen}
+        language={noticeLanguage}
+        onChangeLanguage={setNoticeLanguage}
+        onClose={() => setIsPrivacyNoticeOpen(false)}
+      />
     </div>
   );
 };

@@ -43,6 +43,7 @@ import { APP_CONFIG } from './config.js';
 import { handleAdminApiRequest } from './adminApi.js';
 import { handleAiFinanceRequest } from './aiFinanceApi.js';
 import { handleUpiDetectionRequest } from './upiDetectionApi.js';
+import { handlePrivacyConsentApi } from './privacyConsentApi.js';
 import {
   getUserNotificationPreferences,
   updateUserNotificationPreferences,
@@ -85,8 +86,6 @@ import {
   acceptConnectionRequestRest,
   rejectConnectionRequestRest,
   disconnectUserRest,
-  getPrivacyConsentsRest,
-  recordPrivacyConsentRest,
   getContactsRest,
   getContactsWithBalancesRest,
   saveContactRest,
@@ -5620,109 +5619,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // 4. GRANULAR CATEGORY CONSENTS: GET /api/privacy/consents & POST /api/privacy/consents
-    if (pathname === '/api/privacy/consents' && method === 'GET') {
-      const authUser = await authenticateRequest(req);
-      if (!authUser) {
-        sendJson(res, 401, { success: false, code: 'UNAUTHORIZED', message: 'Authentication required.' });
-        return true;
-      }
-
-      if (!isDatabaseAvailable()) {
-        const restRes = await getPrivacyConsentsRest(authUser);
-        sendJson(res, restRes.status, restRes.body);
-        return true;
-      }
-
-      try {
-        const resRows = await query(
-          `SELECT id, purpose, status, action, policy_version, consent_wording, created_at
-           FROM public.user_consents
-           WHERE user_id = $1
-           ORDER BY created_at DESC
-           LIMIT 100`,
-          [authUser.id]
-        );
-        const latestByCategory: Record<string, any> = {};
-        for (const row of resRows.rows) {
-          if (!latestByCategory[row.purpose]) {
-            latestByCategory[row.purpose] = {
-              category: row.purpose,
-              status: row.status,
-              policyVersion: row.policy_version,
-              consentedAt: row.status === 'granted' ? row.created_at : null,
-              revokedAt: row.status === 'withdrawn' ? row.created_at : null,
-              updatedAt: row.created_at,
-            };
-          }
-        }
-        sendJson(res, 200, {
-          success: true,
-          consents: latestByCategory,
-          history: resRows.rows,
-          policyVersion: 'v2.0 - DPDP Act 2023',
-        });
-        return true;
-      } catch {
-        const restRes = await getPrivacyConsentsRest(authUser);
-        sendJson(res, restRes.status, restRes.body);
-        return true;
-      }
-    }
-
-    if (pathname === '/api/privacy/consents' && method === 'POST') {
-      const authUser = await authenticateRequest(req);
-      if (!authUser) {
-        sendJson(res, 401, { success: false, code: 'UNAUTHORIZED', message: 'Authentication required.' });
-        return true;
-      }
-
-      const body = await parseJsonBody(req);
-      const category = String(body.category || body.purpose || '').trim();
-      const status = body.status === 'withdrawn' ? 'withdrawn' : 'granted';
-      const policyVersion = String(body.policyVersion || 'v2.0 - DPDP Act 2023').trim();
-      const wording = String(
-        body.wording || `User explicitly ${status} consent for ${category} under My Money Manager Privacy Policy.`
-      ).trim();
-
-      if (!category) {
-        sendJson(res, 400, { success: false, message: 'Consent category is required.' });
-        return true;
-      }
-
-      if (!isDatabaseAvailable()) {
-        const restRes = await recordPrivacyConsentRest(authUser, { category, status, wording, policyVersion });
-        sendJson(res, restRes.status, restRes.body);
-        return true;
-      }
-
-      try {
-        const ins = await query(
-          `INSERT INTO public.user_consents (
-             user_id, user_email, purpose, status, action, policy_version, consent_wording, ip_address, user_agent, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, NOW(), NOW())
-           RETURNING *`,
-          [authUser.id, authUser.email, category, status, policyVersion, wording, clientIp, userAgent]
-        );
-
-        await logSecurityEvent(status === 'granted' ? 'USER_GRANTED_CONSENT' : 'USER_WITHDREW_CONSENT', {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: { category, status, policyVersion },
-        });
-
-        sendJson(res, 200, {
-          success: true,
-          category,
-          status,
-          consent: ins.rows[0],
-        });
-        return true;
-      } catch {
-        const restRes = await recordPrivacyConsentRest(authUser, { category, status, wording, policyVersion });
-        sendJson(res, restRes.status, restRes.body);
-        return true;
-      }
+    // 4. GRANULAR CATEGORY CONSENTS: GET/POST /api/privacy/consents, /batch, /withdraw-all
+    if (
+      pathname === '/api/privacy/consents' ||
+      pathname === '/api/privacy/consents/batch' ||
+      pathname === '/api/privacy/consents/withdraw-all'
+    ) {
+      const handled = await handlePrivacyConsentApi(req, res, pathname, method, {
+        clientIp,
+        userAgent,
+      });
+      if (handled) return true;
     }
 
     // =========================================================
