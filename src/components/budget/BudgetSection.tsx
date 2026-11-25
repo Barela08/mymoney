@@ -6,18 +6,12 @@ import {
   CheckCircle2,
   Trash2,
   Edit3,
-  TrendingUp,
-  DollarSign,
   Utensils,
   DoorOpen,
-  Home,
   ShoppingBag,
   Sparkles,
-  ChevronRight,
-  ArrowUpRight,
   ArrowDownLeft,
   X,
-  Wallet,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';

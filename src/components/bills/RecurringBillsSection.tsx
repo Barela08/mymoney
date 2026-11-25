@@ -3,7 +3,6 @@ import {
   CalendarClock,
   Plus,
   CheckCircle2,
-  AlertTriangle,
   Clock,
   Trash2,
   Edit3,
@@ -216,7 +215,13 @@ export const RecurringBillsSection: React.FC = () => {
           </div>
         </div>
 
-        {bills.length === 0 ? (
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-32 rounded-3xl bg-slate-100 dark:bg-slate-800 animate-pulse border border-slate-200 dark:border-slate-800" />
+            ))}
+          </div>
+        ) : bills.length === 0 ? (
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 text-center space-y-3">
             <div className="w-14 h-14 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center mx-auto">
               <CalendarClock className="w-7 h-7" />

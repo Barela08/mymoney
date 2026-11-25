@@ -14,11 +14,16 @@ import {
   Laptop,
   Smartphone,
 } from 'lucide-react';
-import { usePermissionManager } from '../../context/PermissionContext';
+import {
+  usePermissionManager,
+  type HardwarePermissionStatus,
+  type NotificationPermissionStatus,
+} from '../../context/PermissionContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
 
 export const PermissionsSettingsCard: React.FC = () => {
   const {
+    isChecking,
     checkAllPermissions,
     requestMicrophone,
     requestCamera,
