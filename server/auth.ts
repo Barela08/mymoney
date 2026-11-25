@@ -89,174 +89,23 @@ export function extractSessionToken(req: IncomingMessage): string | null {
   return null;
 }
 
-// Helper: fallback to Supabase REST for user resolution
-async function resolveUserViaSupabaseRest(userId: string): Promise<AuthenticatedUser | null> {
-  try {
-    const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
-    const supabaseKey =
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_PUBLISHABLE_KEY ||
-      'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
-    const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}&select=*`, {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        Accept: 'application/json',
-      },
-    });
-    if (res.ok) {
-      const rows = await res.json();
-      if (Array.isArray(rows) && rows.length > 0 && rows[0].status === 'active') {
-        const row = rows[0];
-        const isMasterAdmin = Boolean(
-          row.email &&
-          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-           row.email.toLowerCase().trim() === 'admin@mymoney.com')
-        );
-        return {
-          id: row.id,
-          full_name: row.full_name,
-          email: row.email,
-          phone: row.phone,
-          role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-          status: row.status,
-          email_verified: row.email_verified,
-          avatar_url: row.avatar_url,
-          force_password_reset: row.force_password_reset,
-          created_at: row.created_at,
-          last_login_at: row.last_login_at,
-          password_changed_at: row.password_changed_at,
-        };
-      }
-    }
-  } catch (err) {
-    console.warn('resolveUserViaSupabaseRest error:', err);
-  }
-  return null;
-}
-
 // Authenticate current request
 export async function authenticateRequest(req: IncomingMessage): Promise<AuthenticatedUser | null> {
   const token = extractSessionToken(req);
   if (!token) return null;
 
-  // Direct Supabase fallback token support (format: direct_<userId>_<timestamp>)
-  if (token.startsWith('direct_')) {
-    const parts = token.split('_');
-    const directUserId = parts[1];
-    if (directUserId) {
-      try {
-        const directRes = await query(
-          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
-           FROM public.app_users WHERE id = $1`,
-          [directUserId]
-        );
-        if (directRes.rows.length > 0 && directRes.rows[0].status === 'active') {
-          const row = directRes.rows[0];
-          const isMasterAdmin = Boolean(
-          row.email &&
-          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-           row.email.toLowerCase().trim() === 'admin@mymoney.com')
-        );
-          return {
-            id: row.id,
-            full_name: row.full_name,
-            email: row.email,
-            phone: row.phone,
-            role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-            status: row.status,
-            email_verified: row.email_verified,
-            avatar_url: row.avatar_url,
-            force_password_reset: row.force_password_reset,
-            created_at: row.created_at,
-            last_login_at: row.last_login_at,
-            password_changed_at: row.password_changed_at,
-          };
-        }
-      } catch (err) {
-        console.warn('Direct token DB query failed, attempting Supabase REST fallback:', err);
-      }
-      // If query failed or returned no row, try Supabase REST
-      const restUser = await resolveUserViaSupabaseRest(directUserId);
-      if (restUser) return restUser;
-    }
-  }
-
-  // Supabase JWT Access Token support (format: header.payload.signature)
-  if (token.includes('.') && token.split('.').length === 3) {
-    try {
-      const payloadBase64 = token.split('.')[1];
-      const normalizedBase64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
-      const decodedJson = Buffer.from(normalizedBase64, 'base64').toString('utf8');
-      const jwtPayload = JSON.parse(decodedJson);
-      const jwtUserId = jwtPayload.sub;
-      if (jwtUserId) {
-        const jwtRes = await query(
-          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
-           FROM public.app_users WHERE id = $1`,
-          [jwtUserId]
-        );
-        if (jwtRes.rows.length > 0 && jwtRes.rows[0].status === 'active') {
-          const row = jwtRes.rows[0];
-          const isMasterAdmin = Boolean(
-          row.email &&
-          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-           row.email.toLowerCase().trim() === 'admin@mymoney.com')
-        );
-          return {
-            id: row.id,
-            full_name: row.full_name,
-            email: row.email,
-            phone: row.phone,
-            role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-            status: row.status,
-            email_verified: row.email_verified,
-            avatar_url: row.avatar_url,
-            force_password_reset: row.force_password_reset,
-            created_at: row.created_at,
-            last_login_at: row.last_login_at,
-            password_changed_at: row.password_changed_at,
-          };
-        }
-        const restUser = await resolveUserViaSupabaseRest(jwtUserId);
-        if (restUser) return restUser;
-      }
-    } catch (jwtErr) {
-      console.warn('Supabase JWT token decode notice:', jwtErr);
-    }
+  // Only opaque, server-issued random session tokens are accepted.
+  // Legacy direct_* tokens and unverified JWT-shaped strings are rejected.
+  if (token.startsWith('direct_') || (token.includes('.') && token.split('.').length === 3)) {
+    return null;
   }
 
   const tokenHash = hashToken(token);
 
-  async function resolveSessionViaSupabaseRest(): Promise<AuthenticatedUser | null> {
-    try {
-      const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
-      const supabaseKey =
-        process.env.SUPABASE_SECRET_KEY ||
-        process.env.SUPABASE_PUBLISHABLE_KEY ||
-        'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
-      const sessRes = await fetch(
-        `${supabaseUrl}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}&is_revoked=eq.false&select=id,user_id,expires_at`,
-        {
-          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
-        }
-      );
-      if (sessRes.ok) {
-        const sessRows = await sessRes.json();
-        if (Array.isArray(sessRows) && sessRows.length > 0) {
-          const s = sessRows[0];
-          if (new Date(s.expires_at) >= new Date()) {
-            return await resolveUserViaSupabaseRest(s.user_id);
-          }
-        }
-      }
-    } catch {}
+  if (!isDatabaseAvailable()) {
     return null;
   }
 
-  if (!isDatabaseAvailable()) {
-    return await resolveSessionViaSupabaseRest();
-  }
 
   try {
     // Query active session and join with app_users
@@ -325,8 +174,8 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
       password_changed_at: row.password_changed_at,
     };
   } catch (err: any) {
-    console.warn('authenticateRequest query failed, attempting Supabase REST fallback:', err.message);
-    return await resolveSessionViaSupabaseRest();
+    console.warn('authenticateRequest database query failed:', err.message);
+    return null;
   }
 }
 
