@@ -150,6 +150,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const enablePush = async () => {
+    // Check if already subscribed
+    if (isPushSubscribed) {
+      return { success: true };
+    }
+
+    // Check current permission state before requesting
+    const currentPermission = pushNotifications.getPermission();
+    if (currentPermission === 'denied') {
+      // Permission already denied - don't show repeated errors, return a specific error
+      return {
+        success: false,
+        error:
+          'Notification permission was denied. Please allow notifications in browser site settings.',
+      };
+    }
+
     const res = await pushNotifications.subscribe();
     if (res.success) {
       setIsPushSubscribed(true);
@@ -160,6 +176,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
     return res;
   };
+
 
   const disablePush = async () => {
     const ok = await pushNotifications.unsubscribe();

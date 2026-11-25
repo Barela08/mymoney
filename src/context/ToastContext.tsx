@@ -16,10 +16,13 @@ interface ToastMessage {
   message?: string;
   action?: ToastAction;
   duration?: number;
+  // For deduplication: a key to identify identical toasts
+  dedupKey?: string;
 }
 
 interface ToastContextType {
-  showToast: (title: string, message?: string, type?: ToastType, action?: ToastAction, duration?: number) => void;
+  showToast: (title: string, message?: string, type?: ToastType, action?: ToastAction, duration?: number, dedupKey?: string) => void;
+  showToastOnce: (title: string, message?: string, type?: ToastType, dedupKey?: string, duration?: number) => void;
   success: (title: string, message?: string) => void;
   error: (title: string, message?: string) => void;
   info: (title: string, message?: string) => void;
@@ -140,19 +143,39 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       message?: string,
       type: ToastType = 'info',
       action?: ToastAction,
-      duration: number = 4000
+      duration: number = 4000,
+      dedupKey?: string
     ) => {
-      const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-      setToasts((prev) => [...prev, { id, type, title, message, action, duration }]);
+      // Deduplication: check inside setter to always read current state (avoids stale closure)
+      setToasts((prev) => {
+        if (dedupKey) {
+          const existing = prev.find((t) => t.dedupKey === dedupKey);
+          if (existing) {
+            return prev; // Toast already exists - don't add duplicate
+          }
+        }
 
-      // Only auto-dismiss if not an action toast with custom countdown
-      if (!action?.countdownSeconds) {
-        setTimeout(() => {
-          removeToast(id);
-        }, duration);
-      }
+        const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const newToast = { id, type, title, message, action, duration, dedupKey };
+
+        // Only auto-dismiss if not an action toast with custom countdown
+        if (!action?.countdownSeconds) {
+          setTimeout(() => {
+            removeToast(id);
+          }, duration);
+        }
+
+        return [...prev, newToast];
+      });
     },
     [removeToast]
+  );
+
+  const showToastOnce = useCallback(
+    (title: string, message?: string, type: ToastType = 'info', dedupKey?: string, duration: number = 4000) => {
+      showToast(title, message, type, undefined, duration, dedupKey);
+    },
+    [showToast]
   );
 
   const success = useCallback((title: string, message?: string) => showToast(title, message, 'success'), [showToast]);
@@ -168,7 +191,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 
   return (
-    <ToastContext.Provider value={{ showToast, success, error, info, warning, showUndoToast }}>
+          <ToastContext.Provider value={{ showToast, showToastOnce, success, error, info, warning, showUndoToast }}>
       {children}
       {/* Toast container floating bottom-right with high z-index */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col space-y-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">

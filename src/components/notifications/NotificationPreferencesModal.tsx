@@ -123,7 +123,7 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
         setPush(true);
         toast.success('Push Enabled', 'Browser push notifications successfully activated!');
       } else {
-        toast.error('Permission Required', res.error || 'Could not enable push.');
+        toast.showToastOnce('Permission Required', res.error || 'Could not enable push.', 'error', 'notification-permission-error');
       }
     }
   };
