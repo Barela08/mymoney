@@ -1948,6 +1948,19 @@ export async function recordAdminNotification(params: {
 }): Promise<boolean> {
   const { eventType, title, message, userId, userEmail, metadata = {} } = params;
 
+  const localRecord: AdminNotificationRecord = {
+    id: `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    event_type: eventType,
+    title,
+    message,
+    user_id: userId,
+    user_email: userEmail,
+    metadata,
+    is_read: false,
+    created_at: new Date().toISOString(),
+  };
+  localAdminNotifications.unshift(localRecord);
+
   try {
     await query(
       `INSERT INTO public.admin_notifications
@@ -1956,17 +1969,7 @@ export async function recordAdminNotification(params: {
       [eventType, title, message, userId || null, userEmail || null, JSON.stringify(metadata)]
     );
   } catch {
-    localAdminNotifications.unshift({
-      id: `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      event_type: eventType,
-      title,
-      message,
-      user_id: userId,
-      user_email: userEmail,
-      metadata,
-      is_read: false,
-      created_at: new Date().toISOString(),
-    });
+    // Already tracked in localAdminNotifications
   }
 
   // Check admin alert preference & quiet hours before dispatching live push to admins
