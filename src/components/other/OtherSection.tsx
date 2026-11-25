@@ -2,16 +2,11 @@ import React, { useState } from 'react';
 import {
   ShoppingBag,
   PlusCircle,
-  Search,
-  Filter,
   Calendar,
   Clock,
   Trash2,
   Edit3,
   MapPin,
-  Tag,
-  ArrowUpRight,
-  TrendingDown,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
