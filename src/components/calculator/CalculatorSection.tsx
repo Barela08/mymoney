@@ -62,6 +62,26 @@ export const CalculatorSection: React.FC<CalculatorSectionProps> = ({ onOpenAddM
   const [historyFilter, setHistoryFilter] = useState<'all' | CalculatorMode>('all');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
+  // Mode Specific States (declared upfront to ensure clean hooks initialization)
+  const [gstAmount, setGstAmount] = useState<string>('');
+  const [gstPercent, setGstPercent] = useState<string>('18');
+  const [gstType, setGstType] = useState<'add' | 'remove'>('add'); // Exclusive vs Inclusive
+  const [gstError, setGstError] = useState<string | null>(null);
+
+  const [offerAmount, setOfferAmount] = useState<string>('');
+  const [offerPercent, setOfferPercent] = useState<string>('15');
+  const [offerError, setOfferError] = useState<string | null>(null);
+
+  const [splitAmount, setSplitAmount] = useState<string>('');
+  const [splitPeople, setSplitPeople] = useState<string>('4');
+  const [splitError, setSplitError] = useState<string | null>(null);
+
+  const [basicDisplay, setBasicDisplay] = useState<string>('0');
+  const [basicPrev, setBasicPrev] = useState<number | null>(null);
+  const [basicOp, setBasicOp] = useState<string | null>(null);
+  const [waitingOperand, setWaitingOperand] = useState<boolean>(false);
+  const [basicTape, setBasicTape] = useState<string>('');
+
   // Load initial settings and history on mount
   useEffect(() => {
     let isMounted = true;
@@ -118,10 +138,6 @@ export const CalculatorSection: React.FC<CalculatorSectionProps> = ({ onOpenAddM
   // =========================================================================
   // 1. GST CALCULATOR STATE & LOGIC
   // =========================================================================
-  const [gstAmount, setGstAmount] = useState<string>('');
-  const [gstPercent, setGstPercent] = useState<string>('18');
-  const [gstType, setGstType] = useState<'add' | 'remove'>('add'); // Exclusive vs Inclusive
-  const [gstError, setGstError] = useState<string | null>(null);
 
   // Calculated GST results
   const gstResult = useMemo(() => {
@@ -193,9 +209,6 @@ export const CalculatorSection: React.FC<CalculatorSectionProps> = ({ onOpenAddM
   // =========================================================================
   // 2. OFFER / DISCOUNT CALCULATOR STATE & LOGIC
   // =========================================================================
-  const [offerAmount, setOfferAmount] = useState<string>('');
-  const [offerPercent, setOfferPercent] = useState<string>('15');
-  const [offerError, setOfferError] = useState<string | null>(null);
 
   // Calculated Offer/Discount results
   const offerResult = useMemo(() => {
@@ -254,9 +267,6 @@ export const CalculatorSection: React.FC<CalculatorSectionProps> = ({ onOpenAddM
   // =========================================================================
   // 3. SPLIT CALCULATOR STATE & LOGIC (SIMPLE, DYNAMIC PEOPLE)
   // =========================================================================
-  const [splitAmount, setSplitAmount] = useState<string>('');
-  const [splitPeople, setSplitPeople] = useState<string>('4');
-  const [splitError, setSplitError] = useState<string | null>(null);
 
   // Calculated Split results with remainder handling
   const splitResult = useMemo(() => {
@@ -328,11 +338,6 @@ export const CalculatorSection: React.FC<CalculatorSectionProps> = ({ onOpenAddM
   // =========================================================================
   // 4. BASIC CALCULATOR KEYPAD STATE & LOGIC (PRESERVED DESIGN)
   // =========================================================================
-  const [basicDisplay, setBasicDisplay] = useState<string>('0');
-  const [basicPrev, setBasicPrev] = useState<number | null>(null);
-  const [basicOp, setBasicOp] = useState<string | null>(null);
-  const [waitingOperand, setWaitingOperand] = useState<boolean>(false);
-  const [basicTape, setBasicTape] = useState<string>('');
 
   const handleBasicDigit = (digit: string) => {
     if (waitingOperand) {
