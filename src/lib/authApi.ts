@@ -288,104 +288,37 @@ export const authApi = {
 
   // Admin User Management
   async adminGetUsers(): Promise<{ success: boolean; users: AdminUserListItem[] }> {
-    try {
-      return await request('/api/admin/users', { method: 'GET' });
-    } catch (err) {
-      // Direct Supabase fallback for admin users list
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?select=*&order=created_at.desc`, {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Accept: 'application/json',
-        },
-      });
-      if (res.ok) {
-        const rows = await res.json();
-        const users = rows.map((u: any) => ({
-          ...mapRawUserToAuthUser(u),
-          displayPassword: u.phone ? `Phone: ${u.phone}` : 'Protected (Bcrypt)',
-        }));
-        return { success: true, users };
-      }
-      throw err;
-    }
+    return request('/api/admin/users', { method: 'GET' });
   },
 
   async adminUpdateUserStatus(
     userId: string,
     status: 'active' | 'suspended' | 'deactivated'
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
-        method: 'PUT',
-        body: JSON.stringify({ status }),
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status }),
-      });
-      if (res.ok) return { success: true, message: `User status changed to ${status}` };
-      throw err;
-    }
+    return request(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
   },
 
   async adminUpdateUserRole(
     userId: string,
     role: 'user' | 'admin'
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
-        method: 'PUT',
-        body: JSON.stringify({ role }),
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role }),
-      });
-      if (res.ok) return { success: true, message: `User role updated to ${role}` };
-      throw err;
-    }
+    return request(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    });
   },
 
   async adminSetUserPassword(
     userId: string,
     newPassword: string
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}/set-password`, {
-        method: 'POST',
-        body: JSON.stringify({ newPassword }),
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const passwordHash = await bcrypt.hash(newPassword, 12);
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ password_hash: passwordHash, password_changed_at: new Date().toISOString() }),
-      });
-      if (res.ok) return { success: true, message: 'Password updated successfully' };
-      throw err;
-    }
+    return request(`/api/admin/users/${encodeURIComponent(userId)}/set-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
   },
 
   async adminSendResetEmail(userId: string): Promise<{ success: boolean; message: string; resetLink?: string }> {
@@ -407,22 +340,9 @@ export const authApi = {
   },
 
   async adminDeleteUser(userId: string): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-      });
-      if (res.ok) return { success: true, message: 'User deleted successfully' };
-      throw err;
-    }
+    return request(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
   },
 
   async adminGetAuditLogs(): Promise<{ success: boolean; logs: any[] }> {
