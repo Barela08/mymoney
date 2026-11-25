@@ -1,4 +1,4 @@
-import { handleApiRequest } from '../server/api.js';
+import { handleApiRequest } from './api.js';
 
 function sendSafeJson(res: any, statusCode: number, payload: Record<string, any>) {
   if (res.writableEnded || res.headersSent) return;

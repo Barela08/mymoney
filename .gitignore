@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# generated serverless bundle (scripts/build-api.mjs)
+api/[...all].js
 *.local
 
 # Environment variables
@@ -33,3 +35,6 @@ dist-ssr
 !public/logo.jpg
 unslop/
 .data/
+
+# generated serverless bundle (scripts/build-api.mjs)
+api/\[...all\].js
