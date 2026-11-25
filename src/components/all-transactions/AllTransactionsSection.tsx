@@ -20,10 +20,7 @@ import { EmptyState } from '../common/EmptyState';
 import { SkeletonTable } from '../common/states/SkeletonLoaders';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
-import {
-  Transaction,
-  SortOrder,
-} from '../../types';
+import { Transaction, SortOrder } from '../../types';
 import {
   formatINR,
   formatDisplayDate,
@@ -50,6 +47,20 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sortBy, setSortBy] = useState<SortOrder>('newest');
+  const [isFilterExpanded, setFilterExpanded] = useState(false);
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (selectedCategory !== 'all') count++;
+    if (selectedSubcategory !== 'all') count++;
+    if (selectedType !== 'all') count++;
+    if (minAmount) count++;
+    if (maxAmount) count++;
+    if (datePreset !== 'all') count++;
+    return count;
+  }, [searchQuery, selectedCategory, selectedSubcategory, selectedType, minAmount, maxAmount, datePreset]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -128,7 +139,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
         case 'newest':
           return (b.transaction_date + ' ' + b.transaction_time).localeCompare(a.transaction_date + ' ' + a.transaction_time);
         case 'oldest':
-          return (a.transaction_date + ' ' + a.transaction_time).localeCompare(b.transaction_date + ' ' + b.transaction_time);
+          return (a.transaction_date + ' ' + a.transaction_time).localeCompare(b.transaction_date + ' ' + a.transaction_time);
         case 'highest_amount':
           return b.amount - a.amount;
         case 'lowest_amount':
@@ -172,6 +183,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
     setEndDate('');
     setSortBy('newest');
     setCurrentPage(1);
+    setFilterExpanded(false);
   };
 
   const handleDeleteConfirm = async () => {
@@ -232,7 +244,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       `"${(t.notes || '').replace(/"/g, '""')}"`,
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const csvContent = [headers.join(','), ...rows.map((e) => e.join(',')).join('\n')];
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -251,7 +263,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h3 className="font-semibold text-base sm:text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <ListOrdered className="w-5 h-5 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+            <ListOrdered className="w-5 h-5 text-emerald-600 dark:text-emerald-600 stroke-[1.75]" />
             <span>Master financial ledger</span>
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -276,8 +288,23 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
         </div>
       </div>
 
-      {/* Advanced Filter Panel */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+      {/* Filter Button - always visible */}
+      <div className="mt-3 sm:mt-0">
+        <button
+          onClick={() => setFilterExpanded((p) => !p)}
+          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-medium transition-colors cursor-pointer flex items-center gap-2"
+          aria-label={isFilterExpanded ? 'Collapse filter panel' : 'Expand filter panel'}
+        >
+          <SlidersHorizontal className="w-4 h-4 stroke-[1.75]" />
+          <span>
+            {isFilterExpanded ? 'Collapse Filters' : 'Filter'}
+            {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
+          </span>
+        </button>
+      </div>
+
+      {/* Collapsible Filter Panel */}
+      <div className={isFilterExpanded ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-4' : 'hidden'}>
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
             <SlidersHorizontal className="w-3.5 h-3.5 stroke-[1.75]" />
@@ -444,7 +471,14 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
           <SkeletonTable rows={8} />
         ) : paginatedList.length === 0 ? (
           <EmptyState
-            isFiltered={Boolean(searchQuery.trim()) || selectedCategory !== 'all' || selectedType !== 'all' || Boolean(minAmount) || Boolean(maxAmount) || datePreset !== 'all'}
+            isFiltered={
+              Boolean(searchQuery.trim()) ||
+              selectedCategory !== 'all' ||
+              selectedType !== 'all' ||
+              Boolean(minAmount) ||
+              Boolean(maxAmount) ||
+              datePreset !== 'all'
+            }
             searchQuery={searchQuery || (selectedCategory !== 'all' ? selectedCategory : undefined)}
             title="No Transactions Found"
             description={
@@ -476,11 +510,9 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
                 >
                   <div className="flex items-start gap-3 min-w-0">
                     <div
-                      className={`p-2 rounded-xl shrink-0 mt-0.5 ${
-                        isIncome
-                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                          : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                      }`}
+                      className={`p-2 rounded-xl shrink-0 mt-0.5 ${isIncome
+                        ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                        : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-500/20'}`}
                     >
                       {isIncome ? <ArrowDownLeft className="w-4 h-4 stroke-[1.75]" /> : <ArrowUpRight className="w-4 h-4 stroke-[1.75]" />}
                     </div>
@@ -523,12 +555,9 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
                   <div className="flex items-center justify-between sm:justify-end gap-3 pl-11 sm:pl-0">
                     <div className="text-right">
                       <div
-                        className={`text-base font-semibold font-sans tabular-nums ${
-                          isIncome
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-rose-600 dark:text-rose-400'
-                        }`}
-                      >
+                        className={`text-base font-semibold font-sans tabular-nums ${isIncome
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'}`}>
                         {isIncome ? '+' : '-'} {formatINR(tx.amount)}
                       </div>
                       <span className="text-[10px] capitalize font-medium text-slate-400">
@@ -540,7 +569,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
                     <div className="flex items-center gap-1 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => setTransactionToEdit(tx)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 dark:hover:bg-blue-950 transition-colors"
                         title="Edit Record"
                       >
                         <Edit3 className="w-4 h-4" />
@@ -559,61 +588,61 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
             })}
           </div>
         )}
-
-        {/* Pagination Navigation */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>Previous</span>
-            </button>
-
-            <span className="text-xs font-semibold text-slate-500">
-              Page {currentPage} of {totalPages}
-            </span>
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            >
-              <span>Next</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Edit Modal */}
-      <EditTransactionModal
-        isOpen={!!transactionToEdit}
-        transaction={transactionToEdit}
-        onClose={() => setTransactionToEdit(null)}
-      />
+      {/* Pagination Navigation */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Previous</span>
+          </button>
 
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={!!transactionToDelete}
-        title="Move to Recycle Bin"
-        message="Are you sure you want to move this transaction to the Recycle Bin? You can restore it anytime within 30 days."
-        confirmLabel={isDeleting ? 'Moving...' : 'Move to Recycle Bin'}
-        itemDetails={
-          transactionToDelete
-            ? {
-                title: transactionToDelete.title,
-                amount: `₹${transactionToDelete.amount.toLocaleString('en-IN')}`,
-                date: `${formatDisplayDate(transactionToDelete.transaction_date)} at ${formatDisplayTime(transactionToDelete.transaction_time)}`,
-              }
-            : undefined
-        }
-        isLoading={isDeleting}
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => setTransactionToDelete(null)}
-      />
+          <span className="text-xs font-semibold text-slate-500">
+            Page {currentPage} of {totalPages}
+          </span>
+
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+          >
+            <span>Next</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
+
+    {/* Edit Modal */}
+    <EditTransactionModal
+      isOpen={!!transactionToEdit}
+      transaction={transactionToEdit}
+      onClose={() => setTransactionToEdit(null)}
+    />
+
+    {/* Delete Confirmation Modal */}
+    <ConfirmModal
+      isOpen={!!transactionToDelete}
+      title="Move to Recycle Bin"
+      message="Are you sure you want to move this transaction to the Recycle Bin? You can restore it anytime within 30 days."
+      confirmLabel={isDeleting ? 'Moving...' : 'Move to Recycle Bin'}
+      itemDetails={
+        transactionToDelete
+          ? {
+              title: transactionToDelete.title,
+              amount: `₹${transactionToDelete.amount.toLocaleString('en-IN')}`,
+              date: `${formatDisplayDate(transactionToDelete.transaction_date)} at ${formatDisplayTime(transactionToDelete.transaction_time)}`,
+            }
+          : undefined
+      }
+      isLoading={isDeleting}
+      onConfirm={handleDeleteConfirm}
+      onCancel={() => setTransactionToDelete(null)}
+    />
   );
 };
