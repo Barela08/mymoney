@@ -20,12 +20,15 @@ import {
   Check,
   Smartphone,
   Copy,
+  Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { supportApi, FeedbackRecord, SupportTicketRecord, SupportTicketReplyRecord } from '../../lib/supportApi';
 import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT, buildWhatsAppSupportUrl, buildMailToUrl } from '../../config/contact';
+import { PrivacyConsentCard } from '../settings/PrivacyConsentCard';
 
 const STAR_LABELS: Record<number, string> = {
   1: 'Poor',
@@ -70,11 +73,21 @@ const SUPPORT_CATEGORIES = [
   'Other',
 ];
 
-export const HelpSupportSection: React.FC = () => {
+type HelpTab = 'help' | 'feedback' | 'complaint' | 'support' | 'history' | 'dpdp';
+
+interface HelpSupportSectionProps {
+  initialTab?: HelpTab;
+}
+
+/**
+ * Single Help & Feedback surface: about/help, feedback, complaint, support
+ * ticket, history and privacy consent all live here.
+ */
+export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({ initialTab }) => {
   const { user } = useAuth();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<'feedback' | 'complaint' | 'support' | 'history'>('feedback');
+  const [activeTab, setActiveTab] = useState<HelpTab>(initialTab ?? 'feedback');
 
   // FEEDBACK FORM STATE (Rating defaults to 0 - no star preselected; categories removed from user UI)
   const [rating, setRating] = useState<number>(0);
@@ -387,6 +400,18 @@ export const HelpSupportSection: React.FC = () => {
       {/* Main Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-b border-slate-200 dark:border-slate-800 text-xs font-bold">
         <button
+          onClick={() => setActiveTab('help')}
+          className={`flex items-center gap-2 px-4 py-3 rounded-2xl transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'help'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>Help</span>
+        </button>
+
+        <button
           onClick={() => {
             setActiveTab('feedback');
             setFeedbackSubmittedSuccess(false);
@@ -447,7 +472,76 @@ export const HelpSupportSection: React.FC = () => {
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => setActiveTab('dpdp')}
+          className={`flex items-center gap-2 px-4 py-3 rounded-2xl transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'dpdp'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Privacy &amp; Consent</span>
+        </button>
       </div>
+
+      {/* 0. HELP TAB                                                    */}
+      {activeTab === 'help' && (
+        <div className="space-y-4 text-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-500" />
+              <span>About My Money Manager</span>
+            </h3>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              A personal finance, room expense, dining and peer-to-peer ledger app maintained by{' '}
+              <b>{SUPPORT_CONTACT.companyName}</b>. Use the tabs above to send feedback, raise a
+              complaint, contact support or review your history.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800">
+                <p className="font-bold text-slate-800 dark:text-slate-200">Multi-device sync</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Sign in from any device and your financial data stays in sync.
+                </p>
+              </div>
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800">
+                <p className="font-bold text-slate-800 dark:text-slate-200">Udhar settle &amp; clear</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Track who owes you and whom you owe with clear settlement history.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DPDP / PRIVACY CONSENT TAB                                     */}
+      {activeTab === 'dpdp' && (
+        <div className="space-y-4">
+          <PrivacyConsentCard
+            onOpenPrivacyPolicy={() => {
+              window.location.hash = '#legal=privacy_policy';
+            }}
+          />
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm text-xs text-slate-600 dark:text-slate-300">
+            <p>
+              Each consent above is independent and can be withdrawn at any time. Read the full{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.hash = '#legal=privacy_policy';
+                }}
+                className="text-emerald-600 dark:text-emerald-400 font-bold underline cursor-pointer"
+              >
+                Privacy Policy
+              </button>{' '}
+              for how your data is processed under the DPDP Act, 2023.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* 1. FEEDBACK TAB                                                */}

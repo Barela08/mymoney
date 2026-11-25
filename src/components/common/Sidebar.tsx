@@ -32,8 +32,6 @@ import {
   Calculator,
   ShieldCheck,
   Scale,
-  QrCode,
-  ScanLine,
   PieChart,
   Target,
   CalendarClock,
@@ -71,7 +69,6 @@ export type NavTab =
   | 'recycle_bin'
   | 'help_support'
   | 'settings'
-  | 'privacy_policy'
   | 'legal'
   | 'admin'
   | string;
@@ -97,8 +94,6 @@ interface SidebarProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
   onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
-  onOpenMyQr?: () => void;
-  onOpenScanQr?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -106,8 +101,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectTab,
   onOpenAddModal,
   onOpenHelpModal,
-  onOpenMyQr,
-  onOpenScanQr,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
   const { theme, toggleTheme } = useTheme();
@@ -171,8 +164,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
         { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
         { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
-        ...(onOpenMyQr ? [{ id: 'my_qr' as NavTab, label: 'My QR Code', icon: QrCode, onClick: onOpenMyQr }] : []),
-        ...(onOpenScanQr ? [{ id: 'scan_qr' as NavTab, label: 'Scan QR Code', icon: ScanLine, onClick: onOpenScanQr }] : []),
         { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
         { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
       ],
@@ -196,7 +187,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: HelpCircle,
           onClick: onOpenHelpModal ? () => onOpenHelpModal('help') : undefined,
         },
-        { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
       ],
     },
     ...(isAdmin ? [{

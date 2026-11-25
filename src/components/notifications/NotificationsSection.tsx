@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Bell,
   CheckCheck,
@@ -9,58 +9,45 @@ import {
   Shield,
   PieChart,
   CalendarClock,
-  Clock,
   CheckCircle2,
-  AlertTriangle,
   RefreshCw,
   ExternalLink,
+  Settings2,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-import { notificationsApi, AppNotification } from '../../lib/financialFeaturesApi';
+import { useNotifications } from '../../context/NotificationContext';
 import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
 import { NavTab } from '../common/Sidebar';
 
 interface NotificationsSectionProps {
   onNavigate?: (tab: NavTab) => void;
+  onOpenPreferences?: () => void;
 }
 
-export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNavigate }) => {
+/**
+ * Single notification history surface for the whole app.
+ * Backed by NotificationContext so the bell, badge and this page share one feed.
+ */
+export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
+  onNavigate,
+  onOpenPreferences,
+}) => {
   const toast = useToast();
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    refreshNotifications,
+    markAsRead,
+    markAllAsRead,
+    clearAll,
+  } = useNotifications();
 
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeCategory, setActiveCategory] = useState<string>('all');
-
-  const loadNotifications = async () => {
-    try {
-      setIsLoading(true);
-      const res = await notificationsApi.getNotifications({
-        category: activeCategory !== 'all' ? activeCategory : undefined,
-        limit: 50,
-      });
-      if (res.success) {
-        setNotifications(res.notifications || []);
-        setUnreadCount(res.unreadCount || 0);
-      }
-    } catch (err: any) {
-      console.warn('Could not load notifications:', err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadNotifications();
-  }, [activeCategory]);
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      await notificationsApi.markAsRead(id);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n))
-      );
-      setUnreadCount((c) => Math.max(0, c - 1));
+      await markAsRead(id);
     } catch (err: any) {
       toast.error('Failed to update', err.message);
     }
@@ -68,9 +55,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
 
   const handleMarkAllRead = async () => {
     try {
-      await notificationsApi.markAllAsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      setUnreadCount(0);
+      await markAllAsRead();
       toast.success('Marked as Read', 'All notifications marked as read.');
     } catch (err: any) {
       toast.error('Failed to mark all read', err.message);
@@ -80,9 +65,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
   const handleClearAll = async () => {
     if (!confirm('Are you sure you want to clear all notifications?')) return;
     try {
-      await notificationsApi.clearAll();
-      setNotifications([]);
-      setUnreadCount(0);
+      await clearAll();
       toast.success('Cleared', 'All notifications cleared.');
     } catch (err: any) {
       toast.error('Failed to clear', err.message);
@@ -94,10 +77,13 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
     { id: 'udhar', label: 'Udhar' },
     { id: 'income', label: 'Income' },
     { id: 'expense', label: 'Expense' },
-    { id: 'budget', label: 'Budget' },
-    { id: 'bill', label: 'Bills' },
     { id: 'security', label: 'Security' },
   ];
+
+  const visibleNotifications =
+    activeCategory === 'all'
+      ? notifications
+      : notifications.filter((n) => n.category === activeCategory);
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -109,12 +95,10 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
       case 'repay':
       case 'settlement':
         return <CheckCircle2 className="w-4 h-4 text-amber-500" />;
-      case 'budget':
-        return <PieChart className="w-4 h-4 text-purple-500" />;
-      case 'bill':
-        return <CalendarClock className="w-4 h-4 text-blue-500" />;
       case 'security':
         return <Shield className="w-4 h-4 text-indigo-500" />;
+      case 'reminder':
+        return <CalendarClock className="w-4 h-4 text-blue-500" />;
       default:
         return <Bell className="w-4 h-4 text-slate-500" />;
     }
@@ -129,15 +113,34 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
             <Sparkles className="w-3.5 h-3.5" />
             <span>Notification Center</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold mt-1.5">
-            Notifications &amp; Activity
-          </h2>
+          <h2 className="text-xl sm:text-2xl font-extrabold mt-1.5">Notifications &amp; Activity</h2>
           <p className="text-xs text-emerald-100 mt-0.5">
-            You have <strong className="text-white underline">{unreadCount} unread</strong> alert{unreadCount !== 1 ? 's' : ''}.
+            You have <strong className="text-white underline">{unreadCount} unread</strong> alert
+            {unreadCount !== 1 ? 's' : ''}.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenPreferences && (
+            <button
+              onClick={onOpenPreferences}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer backdrop-blur-md"
+              title="Notification preferences"
+              aria-label="Notification preferences"
+            >
+              <Settings2 className="w-4 h-4" />
+            </button>
+          )}
+
+          <button
+            onClick={() => void refreshNotifications()}
+            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer backdrop-blur-md"
+            title="Refresh notifications"
+            aria-label="Refresh notifications"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
@@ -179,12 +182,12 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
 
       {/* Notifications List */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-6 shadow-sm space-y-3">
-        {isLoading ? (
+        {isLoading && notifications.length === 0 ? (
           <div className="text-center py-12 space-y-2 text-slate-400 text-xs">
             <RefreshCw className="w-6 h-6 mx-auto animate-spin text-emerald-500" />
             <p>Loading notification feed...</p>
           </div>
-        ) : notifications.length === 0 ? (
+        ) : visibleNotifications.length === 0 ? (
           <div className="text-center py-12 space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
               <Bell className="w-6 h-6" />
@@ -198,11 +201,11 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({ onNa
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-            {notifications.map((notif) => (
+            {visibleNotifications.map((notif) => (
               <div
                 key={notif.id}
                 onClick={() => {
-                  if (!notif.is_read) handleMarkAsRead(notif.id);
+                  if (!notif.is_read) void handleMarkAsRead(notif.id);
                   if (notif.deep_link && onNavigate) onNavigate(notif.deep_link as any);
                 }}
                 className={`py-3.5 px-3 rounded-2xl flex items-start gap-3 transition-colors cursor-pointer ${

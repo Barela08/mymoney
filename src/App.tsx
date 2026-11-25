@@ -15,7 +15,6 @@ import { PeopleSection } from './components/people/PeopleSection';
 import { AllTransactionsSection } from './components/all-transactions/AllTransactionsSection';
 import { MaintenanceScreen } from './components/maintenance/MaintenanceScreen';
 import { OfflineBanner } from './components/common/OfflineBanner';
-import { MyUdharQrModal } from './components/people/MyUdharQrModal';
 import { ScanQrModal } from './components/people/ScanQrModal';
 import { udharDeletionApi } from './lib/udharDeletionApi';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
@@ -54,8 +53,6 @@ const SmartAlertsSection = lazy(() => import('./components/alerts/SmartAlertsSec
 const ReceiptScannerSection = lazy(() => import('./components/receipts/ReceiptScannerSection').then(m => ({ default: m.ReceiptScannerSection })));
 const NetWorthSection = lazy(() => import('./components/net-worth/NetWorthSection').then(m => ({ default: m.NetWorthSection })));
 const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToSpendSection').then(m => ({ default: m.SafeToSpendSection })));
-const HelpSupportModal = lazy(() => import('./components/support/HelpSupportModal').then(m => ({ default: m.HelpSupportModal })));
-const NotificationCenterModal = lazy(() => import('./components/notifications/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
@@ -98,7 +95,7 @@ const MainContent: React.FC = () => {
       if (p === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
         return 'admin';
       }
-      if (hash === '#privacy-policy') return 'privacy_policy';
+      if (hash === '#privacy-policy') return 'legal';
       if (hash === '#delete-account' || hash === '#auto-detection') return 'settings';
       if (hash.includes('legal=')) return 'legal';
       return PATH_TO_TAB[p] || 'dashboard';
@@ -127,14 +124,12 @@ const MainContent: React.FC = () => {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  // Global QR Modals State
-  const [isMyQrOpen, setIsMyQrOpen] = useState(false);
+  // Global QR Modal State (QR pairing lives inside the People workflow)
   const [isScanQrOpen, setIsScanQrOpen] = useState(false);
   const [initialPairCode, setInitialPairCode] = useState<string | null>(null);
   const [initialLegalPolicy, setInitialLegalPolicy] = useState('privacy_policy');
 
-  // Notification Center & Preferences Modals State
-  const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
+  // Notification Preferences Modal State (history is the notifications page)
   const [isNotifPrefsOpen, setIsNotifPrefsOpen] = useState(false);
 
   // Hash & URL routing listener (for deletion email cancellation links, direct legal links, admin routes, etc.)
@@ -183,7 +178,8 @@ const MainContent: React.FC = () => {
           window.history.replaceState(null, '', window.location.pathname + window.location.search);
         }
       } else if (hash === '#privacy-policy') {
-        setCurrentTab('privacy_policy');
+        setInitialLegalPolicy('privacy_policy');
+        setCurrentTab('legal');
       } else if (hash === '#delete-account' || hash === '#auto-detection') {
         setCurrentTab('settings');
       }
@@ -203,19 +199,12 @@ const MainContent: React.FC = () => {
   const [modalInitialTitle, setModalInitialTitle] = useState<string | undefined>(undefined);
   const [modalInitialDate, setModalInitialDate] = useState<string | undefined>(undefined);
 
-  // Help & Feedback Modal State
-  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
-  const [helpModalInitialTab, setHelpModalInitialTab] = useState<'help' | 'feedback' | 'complaint' | 'dpdp'>('help');
+  // Help & Feedback state (single page at help_support)
+  const [helpInitialTab, setHelpInitialTab] = useState<'help' | 'feedback' | 'complaint' | 'dpdp'>('feedback');
 
   const { setScannerActive, setModalsSuppressed } = usePwaInstall();
 
-  const isAnyInteractiveModalOpen =
-    isAddModalOpen ||
-    isHelpModalOpen ||
-    isMyQrOpen ||
-    isScanQrOpen ||
-    isNotifCenterOpen ||
-    isNotifPrefsOpen;
+  const isAnyInteractiveModalOpen = isAddModalOpen || isScanQrOpen || isNotifPrefsOpen;
 
   useEffect(() => {
     setModalsSuppressed(isAnyInteractiveModalOpen);
@@ -226,8 +215,8 @@ const MainContent: React.FC = () => {
   }, [isScanQrOpen, setScannerActive]);
 
   const handleOpenHelpModal = (tab: 'help' | 'feedback' | 'complaint' | 'dpdp' = 'help') => {
-    setHelpModalInitialTab(tab);
-    setIsHelpModalOpen(true);
+    setHelpInitialTab(tab);
+    setCurrentTab('help_support');
   };
 
   const handleOpenAddModal = (
@@ -341,8 +330,6 @@ const MainContent: React.FC = () => {
               onSelectTab={setCurrentTab}
               onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
               onOpenHelpModal={handleOpenHelpModal}
-              onOpenMyQr={() => setIsMyQrOpen(true)}
-              onOpenScanQr={() => setIsScanQrOpen(true)}
             />
 
             {/* Main Content Area */}
@@ -354,7 +341,7 @@ const MainContent: React.FC = () => {
                 onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
                 onSelectTab={setCurrentTab}
                 onOpenHelpModal={handleOpenHelpModal}
-                onOpenNotificationCenter={() => setIsNotifCenterOpen(true)}
+                onOpenNotificationCenter={() => setCurrentTab('notifications')}
                 onOpenNotificationPreferences={() => setIsNotifPrefsOpen(true)}
               />
 
@@ -450,7 +437,10 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'notifications' && (
-                    <NotificationsSection onNavigate={setCurrentTab} />
+                    <NotificationsSection
+                      onNavigate={setCurrentTab}
+                      onOpenPreferences={() => setIsNotifPrefsOpen(true)}
+                    />
                   )}
 
                   {/* Custom Dynamic Sections */}
@@ -462,20 +452,16 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'help_support' && (
-                    <HelpSupportSection />
+                    <HelpSupportSection
+                      key={`help-${helpInitialTab}`}
+                      initialTab={helpInitialTab}
+                    />
                   )}
 
                   {currentTab === 'settings' && (
                     <SettingsSection
                       initialTab="profile"
                       initialLegalPolicy={initialLegalPolicy}
-                    />
-                  )}
-
-                  {currentTab === 'privacy_policy' && (
-                    <LegalCenterSection
-                      initialPolicyId="privacy_policy"
-                      onNavigateToAccountDeletion={() => setCurrentTab('settings')}
                     />
                   )}
 
@@ -497,8 +483,6 @@ const MainContent: React.FC = () => {
               onSelectTab={setCurrentTab}
               onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
               onOpenHelpModal={handleOpenHelpModal}
-              onOpenMyQr={() => setIsMyQrOpen(true)}
-              onOpenScanQr={() => setIsScanQrOpen(true)}
             />
           </div>
         </PullToRefresh>
@@ -518,26 +502,7 @@ const MainContent: React.FC = () => {
         />
 
         <Suspense fallback={null}>
-          {/* Help, Feedback & Complaint Support Modal */}
-          {isHelpModalOpen && (
-            <HelpSupportModal
-              isOpen={isHelpModalOpen}
-              onClose={() => setIsHelpModalOpen(false)}
-              initialTab={helpModalInitialTab}
-            />
-          )}
-
-          {/* My Udhar QR Code Modal */}
-          <MyUdharQrModal
-            isOpen={isMyQrOpen}
-            onClose={() => setIsMyQrOpen(false)}
-            onOpenScanner={() => {
-              setIsMyQrOpen(false);
-              setIsScanQrOpen(true);
-            }}
-          />
-
-          {/* Scan QR Modal */}
+          {/* Scan QR Modal (Udhar pairing) */}
           <ScanQrModal
             isOpen={isScanQrOpen}
             initialPairCode={initialPairCode}
@@ -567,20 +532,6 @@ const MainContent: React.FC = () => {
           {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}
           <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
           <DpdpConsentModal onOpenPrivacyPolicy={() => handleOpenHelpModal('dpdp')} />
-
-          {/* Full Notification Center Modal */}
-          {isNotifCenterOpen && (
-            <NotificationCenterModal
-              isOpen={isNotifCenterOpen}
-              onClose={() => setIsNotifCenterOpen(false)}
-              onSelectTab={setCurrentTab}
-              onOpenPreferences={() => {
-                setIsNotifCenterOpen(false);
-                setIsNotifPrefsOpen(true);
-              }}
-              onOpenHelpModal={handleOpenHelpModal}
-            />
-          )}
 
           {/* Notification Preferences Modal */}
           {isNotifPrefsOpen && (

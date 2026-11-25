@@ -22,7 +22,6 @@
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
-    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.109.0",
     "autoprefixer": "^10.6.2",
     "bcryptjs": "^3.0.3",

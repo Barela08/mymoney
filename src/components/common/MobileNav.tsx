@@ -31,8 +31,6 @@ import {
   Mic,
   Calculator,
   ShieldCheck,
-  QrCode,
-  ScanLine,
   PieChart,
   Target,
   CalendarClock,
@@ -72,8 +70,6 @@ interface MobileNavProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenAddModal: () => void;
   onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
-  onOpenMyQr?: () => void;
-  onOpenScanQr?: () => void;
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
@@ -83,8 +79,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onSelectTab,
   onOpenAddModal,
   onOpenHelpModal,
-  onOpenMyQr,
-  onOpenScanQr,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections } = useExpense();
   const { theme, toggleTheme } = useTheme();
@@ -144,7 +138,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     })),
     { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
-    { id: 'privacy_policy' as NavTab, label: 'Privacy Policy', icon: ShieldCheck },
     { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
     { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
     ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
@@ -248,38 +241,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             {formatINR(summary.availableBalance)}
           </div>
         </div>
-
-        {/* Quick Udhar QR Actions */}
-        {(onOpenMyQr || onOpenScanQr) && (
-          <div className="grid grid-cols-2 gap-2 mx-4 mb-2">
-            {onOpenMyQr && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenMyQr();
-                }}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-              >
-                <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>My QR</span>
-              </button>
-            )}
-            {onOpenScanQr && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenScanQr();
-                }}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-              >
-                <ScanLine className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span>Scan QR</span>
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Navigation list */}
         <div className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
@@ -511,7 +472,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         <button
           onClick={() => setIsMoreSheetOpen(!isMoreSheetOpen)}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            isMoreSheetOpen || ['ai_assistant', 'expense_calendar', 'smart_alerts', 'receipt_scanner', 'net_worth', 'safe_to_spend', 'budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'privacy_policy'].includes(currentTab)
+            isMoreSheetOpen || ['ai_assistant', 'expense_calendar', 'smart_alerts', 'receipt_scanner', 'net_worth', 'safe_to_spend', 'budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support'].includes(currentTab)
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
@@ -657,30 +618,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 <span className="text-xs font-medium">Bills</span>
               </button>
 
-              {/* QR Scanner */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  if (onOpenScanQr) onOpenScanQr();
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <ScanLine className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Scan QR</span>
-              </button>
-
-              {/* My QR */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  if (onOpenMyQr) onOpenMyQr();
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <QrCode className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">My QR</span>
-              </button>
-
               {/* Calculator */}
               <button
                 onClick={() => {
@@ -780,7 +717,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 <button
                   onClick={() => {
                     setIsMoreSheetOpen(false);
-                    onSelectTab('privacy_policy');
+                    onSelectTab('legal');
                   }}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
