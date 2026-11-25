@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Wallet,
   Lock,
@@ -18,10 +18,12 @@ import {
   Sparkles,
   ShieldCheck,
   Clock,
+  GoogleCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authApi } from '../../lib/authApi';
+import { getSupabaseClient } from '../../lib/supabase';
 import { DpdpConsentModal } from '../common/DpdpConsentModal';
 import { getStoredDpdpConsent, saveConsentChoices } from '../common/DpdpConsentBanner';
 
@@ -71,6 +73,15 @@ export const AuthPage: React.FC = () => {
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
   const [generatedResetLink, setGeneratedResetLink] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Google OAuth state
+  const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [pendingGoogleProfile, setPendingGoogleProfile] = useState<any>(null);
+  const [showNameConfirmation, setShowNameConfirmation] = useState(false);
+  const [nameToConfirm, setNameToConfirm] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [customName, setCustomName] = useState('');
 
   // Navigate between auth modes and synchronize URL
   const navigateToMode = (newMode: 'login' | 'register' | 'forgot_password' | 'reset_password') => {
@@ -228,6 +239,49 @@ export const AuthPage: React.FC = () => {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
       toast.info('Copied', 'Password reset link copied to clipboard.');
+    }
+  };
+
+  // Google OAuth login
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoggingIn(true);
+    setGoogleError(null);
+    setPendingGoogleProfile(null);
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) throw new Error('Supabase client not available');
+
+      // Sign in with Google OAuth
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          // Redirect to the same app URL after auth
+          redirectTo: typeof window !== 'undefined'
+            ? window.location.origin
+            : undefined,
+          // Prompt for email selection if needed
+          // prompt: 'select_account',
+        },
+      });
+
+      if (error) throw error;
+
+      // If we get here, OAuth redirect has been initiated
+      // The user will be redirected to Google and then back to the app
+      // We need to handle the redirect callback
+      if (data.url) {
+        // User needs to complete OAuth on the redirect URL
+        // The redirect will happen and supabase will handle the callback
+        setGoogleError(null);
+      } else if (data.session) {
+        // Session available immediately (rare with OAuth, usually redirects)
+        // handleGoogleCallback(data.session);
+      }
+    } catch (err: any) {
+      console.error('Google OAuth error:', err);
+      setGoogleError(err.message || 'Google login failed. Please try again.');
+      setIsGoogleLoggingIn(false);
     }
   };
 
@@ -411,6 +465,18 @@ export const AuthPage: React.FC = () => {
                 Create Account
               </button>
             </div>
+          )}
+
+          {/* Google OAuth Button */}
+          {mode !== 'forgot_password' && mode !== 'reset_password' && (
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-slate-300 dark:border-slate-700 rounded-xl shadow-sm text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer mb-4"
+            >
+              <GoogleCircle className="w-4 h-4" />
+              <span>Continue with Google</span>
+            </button>
           )}
 
           {/* Reset Password Header */}
