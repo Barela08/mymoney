@@ -55,6 +55,7 @@ import { PersonDetailsView } from './PersonDetailsView';
 import { AddPersonModal } from './AddPersonModal';
 import { QrSuccessModal } from './QrSuccessModal';
 import { UdharDetailModal } from './UdharDetailModal';
+import { ConnectionRequestsPanel } from './ConnectionRequestsPanel';
 
 interface PeopleSectionProps {
   onOpenAddModal: (category?: any, subcategory?: any, personName?: string) => void;
@@ -77,6 +78,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     overdueAmount: 0,
   });
   const [isLoadingUdhar, setIsLoadingUdhar] = useState<boolean>(true);
+  const [requestsRefreshKey, setRequestsRefreshKey] = useState<number>(0);
 
   // Tab filter: 'all' | 'lent' | 'borrowed' | 'pending_confirmation' | 'overdue' | 'settled'
   const [activeTab, setActiveTab] = useState<
@@ -318,6 +320,16 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         />
       </div>
 
+      {/* Consent-based pairing requests (accept / reject) */}
+      <ConnectionRequestsPanel
+        refreshKey={requestsRefreshKey}
+        onChanged={() => {
+          fetchUdharData();
+          refreshContacts();
+          refreshTransactions();
+        }}
+      />
+
       {/* Connected & Saved People Directory */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -384,7 +396,8 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          /* Compact person rows (name, avatar, connection status, balance) */
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
             {peopleSummaries.map((person) => {
               const isLinked = Boolean(person.linkedUserId || person.isRegisteredUser);
               const balance = person.outstandingBalance;
@@ -395,93 +408,85 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               return (
                 <div
                   key={person.name}
-                  className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all flex flex-col justify-between gap-3 group"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedPersonForDetails(person)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedPersonForDetails(person);
+                    }
+                  }}
+                  className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer text-left"
                 >
-                  <div
-                    onClick={() => setSelectedPersonForDetails(person)}
-                    className="flex items-start gap-3 cursor-pointer"
-                  >
-                    {/* Avatar with fallback */}
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <div className="relative shrink-0">
                       {person.avatarUrl ? (
                         <img
                           src={person.avatarUrl}
                           alt={person.name}
-                          className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500/40"
+                          className="w-9 h-9 rounded-full object-cover border border-emerald-500/40"
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-sm flex items-center justify-center shadow-sm">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold text-xs flex items-center justify-center">
                           {person.name.charAt(0).toUpperCase()}
                         </div>
                       )}
                       {isLinked && (
                         <span
-                          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[9px] shadow"
-                          title="Verified Registered Connection"
+                          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[8px] border border-white dark:border-slate-900"
+                          title="Verified registered connection"
                         >
                           ✓
                         </span>
                       )}
                     </div>
 
-                    {/* Name & Info */}
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-emerald-600 transition-colors">
+                        <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
                           {person.name}
-                        </h4>
+                        </p>
                         {isLinked && (
-                          <span className="px-1.5 py-0.2 rounded text-[8.5px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 shrink-0">
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 shrink-0">
                             2-WAY
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        {person.phone || person.email || (person.relationshipType ? `${person.relationshipType}` : `${person.transactionCount} entries`)}
+                      <p className="text-[10.5px] text-slate-400 truncate">
+                        {isLinked ? 'Connected account' : 'Local contact'}
+                        {person.relationshipType ? ` · ${person.relationshipType}` : ''}
                       </p>
                     </div>
                   </div>
 
-                  {/* Balance Badge */}
-                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between text-xs">
-                    <span className="text-[11px] text-slate-400 font-medium">Net Balance</span>
+                  <div className="flex items-center gap-2 shrink-0">
                     <span
-                      className={`font-black text-xs px-2 py-0.5 rounded-full ${
+                      className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
                         isSettled
-                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                           : owesYou
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
                       }`}
                     >
                       {isSettled
-                        ? 'Settled (₹0)'
+                        ? 'Settled'
                         : owesYou
-                        ? `Owes ₹${Math.abs(balance).toLocaleString('en-IN')}`
-                        : `You Owe ₹${Math.abs(balance).toLocaleString('en-IN')}`}
+                          ? `Owes ₹${Math.abs(balance).toLocaleString('en-IN')}`
+                          : `You owe ₹${Math.abs(balance).toLocaleString('en-IN')}`}
                     </span>
-                  </div>
-
-                  {/* Actions: Give, Take, Filter */}
-                  <div className="grid grid-cols-2 gap-1.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setInitialPersonForAdd(person.name);
                         setIsAddUdharOpen(true);
                       }}
-                      className="px-2 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                      title="Record Udhar with this person"
                     >
-                      <PlusCircle className="w-3 h-3" />
-                      <span>Record Udhar</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPersonForDetails(person)}
-                      className="px-2 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Receipt className="w-3 h-3" />
-                      <span>Ledger</span>
+                      + Udhar
                     </button>
                   </div>
                 </div>
@@ -490,6 +495,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           </div>
         )}
       </div>
+
 
       {/* Main Ledger Section */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6">
@@ -835,7 +841,11 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
 
       <ScanQrModal
         isOpen={isScanQrOpen}
-        onClose={() => setIsScanQrOpen(false)}
+        onClose={() => {
+          setIsScanQrOpen(false);
+          // A scan may have created a pending request.
+          setRequestsRefreshKey((k) => k + 1);
+        }}
         onConnected={(p) => {
           fetchUdharData();
           refreshContacts();

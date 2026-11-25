@@ -44,9 +44,10 @@ export interface SearchUserResult {
   fullName: string;
   username?: string | null;
   email?: string;
-  emailMasked: string;
+  emailMasked: string | null;
   phoneMasked?: string | null;
   avatarUrl?: string | null;
+  matchedBy?: 'name' | 'email' | 'phone';
   isSelf?: boolean;
   isVerified?: boolean;
   connectionStatus?: 'self' | 'connected' | 'pending' | 'none';
@@ -82,6 +83,38 @@ export interface ResolveQrResponse {
   pairingToken?: string;
   pairingCode?: string;
   isAlreadyConnected?: boolean;
+}
+
+export interface ConnectionRequestItem {
+  id: string;
+  direction: 'incoming' | 'outgoing';
+  status: 'pending' | string;
+  relationshipType?: string;
+  source?: 'qr' | 'search' | 'manual' | string;
+  createdAt?: string;
+  expiresAt?: string;
+  displayName: string;
+  emailMasked?: string;
+  phoneMasked?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface ConnectionRequestListResponse {
+  success: boolean;
+  incoming: ConnectionRequestItem[];
+  outgoing: ConnectionRequestItem[];
+}
+
+export interface ConnectionRequestResult {
+  success: boolean;
+  status: 'pending' | 'connected' | 'rejected' | string;
+  message: string;
+  requestId?: string;
+  deduplicated?: boolean;
+  alreadyConnected?: boolean;
+  connection?: ConnectedPersonPayload;
+  target?: { id: string; displayName: string; avatarUrl?: string | null };
+  code?: string;
 }
 
 export interface ConnectedPersonPayload {
@@ -209,7 +242,12 @@ async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}):
       data = { success: false, message: 'Invalid JSON response from server.' };
     }
   } else {
-    const err = new Error(`Server returned non-JSON response (${res.status}).`);
+    // HTML error pages / empty responses must never reach the user as raw output.
+    const err = new Error(
+      res.status >= 500
+        ? 'The server is temporarily unavailable. Your data has not been changed. Please retry in a moment.'
+        : `Unexpected server response (${res.status}). Please retry.`
+    );
     (err as any).status = res.status;
     (err as any).isNonJson = true;
     throw err;
@@ -328,18 +366,48 @@ export const udharDeletionApi = {
     });
   },
 
+  /**
+   * Sends a consent-based connection request. The connection is only activated
+   * after the target user accepts it.
+   */
   async connectUser(payload: {
     targetUserId: string;
     relationshipType?: string;
-  }): Promise<{
-    success: boolean;
-    alreadyConnected?: boolean;
-    message: string;
-    connectedUser: ConnectedPersonPayload;
-  }> {
+  }): Promise<ConnectionRequestResult> {
     return apiRequest('/api/udhar/connections/connect', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, source: 'search', consentConfirmed: true }),
+    });
+  },
+
+  async listConnectionRequests(): Promise<ConnectionRequestListResponse> {
+    return apiRequest('/api/udhar/connection-requests', { method: 'GET' });
+  },
+
+  async sendConnectionRequest(payload: {
+    targetUserId: string;
+    relationshipType?: string;
+    source?: 'qr' | 'search' | 'manual';
+  }): Promise<ConnectionRequestResult> {
+    return apiRequest('/api/udhar/connection-requests', {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, consentConfirmed: true }),
+    });
+  },
+
+  async respondToConnectionRequest(
+    requestId: string,
+    action: 'accept' | 'reject'
+  ): Promise<ConnectionRequestResult> {
+    return apiRequest(`/api/udhar/connection-requests/${encodeURIComponent(requestId)}/${action}`, {
+      method: 'POST',
+    });
+  },
+
+  async disconnectConnection(targetUserId: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest('/api/udhar/connections/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId }),
     });
   },
 
@@ -382,12 +450,7 @@ export const udharDeletionApi = {
     pairingToken?: string;
     pairingCode?: string;
     relationshipType?: string;
-  }): Promise<{
-    success: boolean;
-    alreadyConnected?: boolean;
-    message: string;
-    connectedUser: ConnectedPersonPayload;
-  }> {
+  }): Promise<ConnectionRequestResult> {
     return apiRequest('/api/udhar/qr/connect', {
       method: 'POST',
       body: JSON.stringify(payload),

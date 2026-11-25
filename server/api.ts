@@ -40,8 +40,9 @@ import {
   sendSupportTicketConfirmationEmail,
 } from './email';
 import { APP_CONFIG } from './config';
-import { handleAdminApiRequest } from './adminApi';
-import { handleAiFinanceRequest } from './aiFinanceApi';
+// Admin and AI handlers are imported lazily inside their route branches so a
+// failure inside those optional subsystems can never take down the whole
+// function (auth, Udhar pairing and notifications must always stay online).
 import {
   getUserNotificationPreferences,
   updateUserNotificationPreferences,
@@ -55,7 +56,6 @@ import {
   notifyFinancialAlert,
   notifyUdharCreated,
   notifyUdharRepayment,
-  notifyQrConnected,
   notifyFeedbackSubmitted,
   notifyAdminNewFeedback,
   notifyComplaintSubmitted,
@@ -101,6 +101,13 @@ import {
   cancelUdharRest,
   getUdharHistoryRest,
 } from './supabaseRestUdhar';
+import {
+  submitConnectionRequest,
+  listConnectionRequests,
+  respondToConnectionRequest,
+  disconnectConnection,
+  resolvePairingTarget,
+} from './connectionRequests';
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
@@ -368,6 +375,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 0. ADMIN CONTROL CENTER DISPATCH (RBAC Protected)
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/admin/')) {
+      const { handleAdminApiRequest } = await import('./adminApi');
       const handled = await handleAdminApiRequest(req, res, pathname, method);
       if (handled) return true;
     }
@@ -376,6 +384,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 0B. AI & FINANCIAL INTELLIGENCE DISPATCH (Auth Protected)
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/ai/') || pathname.startsWith('/api/finance/')) {
+      const { handleAiFinanceRequest } = await import('./aiFinanceApi');
       const handled = await handleAiFinanceRequest(req, res, pathname, method);
       if (handled) return true;
     }
@@ -2251,6 +2260,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // 10C. EXPLICIT USER CONNECTION: POST /api/udhar/connections/connect
+    // Creates a pending request; the target user must accept before the
+    // connection becomes active. Nothing private is shared before acceptance.
     if (pathname === '/api/udhar/connections/connect' && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -2259,119 +2270,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
-      if (!isDatabaseAvailable()) {
-        const restRes = await connectUserRest(authUser, body);
-        sendJson(res, restRes.status, restRes.body);
-        return true;
-      }
-
       const targetUserId = (body.targetUserId || body.target_user_id || '').trim();
       const relationshipType = (body.relationshipType || body.relationship_type || 'Friend').trim();
 
-      if (!targetUserId) {
-        sendJson(res, 400, { success: false, message: 'Target user ID is required.' });
-        return true;
-      }
-      if (targetUserId === authUser.id) {
-        sendJson(res, 400, { success: false, message: 'You cannot connect with your own account.' });
-        return true;
-      }
-
-      const targetRes = await query(
-        `SELECT id, full_name, email, phone, avatar_url, status, COALESCE(deletion_status, 'none') AS deletion_status
-         FROM public.app_users WHERE id = $1`,
-        [targetUserId]
-      );
-      if (targetRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'User account not found.' });
-        return true;
-      }
-      const target = targetRes.rows[0];
-      if (target.status !== 'active' || target.deletion_status !== 'none') {
-        sendJson(res, 403, { success: false, message: 'This user account is deactivated or unavailable.' });
-        return true;
-      }
-
-      const blockRes = await query(
-        `SELECT id FROM public.user_connections
-         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
-           AND status = 'blocked' LIMIT 1`,
-        [authUser.id, targetUserId]
-      );
-      if (blockRes.rows.length > 0) {
-        sendJson(res, 403, { success: false, message: 'Connection is blocked between these accounts.' });
-        return true;
-      }
-
-      const existingConn = await query(
-        `SELECT id FROM public.user_connections
-         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
-           AND status = 'connected' LIMIT 1`,
-        [authUser.id, targetUserId]
-      );
-      const alreadyConnected = existingConn.rows.length > 0;
-
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [authUser.id, targetUserId]
-      );
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [targetUserId, authUser.id]
-      ).catch(() => {});
-
-      const targetDisplayName = (target.full_name || target.email?.split('@')[0] || 'Friend').trim();
-      await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE
-         SET linked_user_id = EXCLUDED.linked_user_id,
-             email = COALESCE(EXCLUDED.email, public.udhar_contacts.email),
-             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone),
-             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-             relationship_type = EXCLUDED.relationship_type,
-             updated_at = NOW()`,
-        [authUser.id, targetDisplayName, target.email, target.phone, target.avatar_url, relationshipType, targetUserId]
-      );
-
-      await ensureReciprocalContact(targetUserId, authUser, relationshipType);
-
-      if (!alreadyConnected) {
-        await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-           VALUES ($1, $2, 'connection', $3, $4, $5, TRUE)`,
-          [
-            `Connected with ${authUser.full_name}`,
-            `${authUser.full_name} connected with you on My Money Manager for Shared Udhar.`,
-            targetUserId,
-            authUser.id,
-            authUser.id,
-          ]
-        ).catch(() => {});
-      }
-
-      sendJson(res, 200, {
-        success: true,
-        alreadyConnected,
-        message: alreadyConnected
-          ? `Already connected with ${targetDisplayName}.`
-          : `Connected with ${targetDisplayName}! Shared 2-way Udhar is now enabled.`,
-        connectedUser: {
-          id: target.id,
-          name: targetDisplayName,
-          displayName: targetDisplayName,
-          fullName: targetDisplayName,
-          emailMasked: maskEmailForPrivacy(target.email),
-          phoneMasked: maskPhoneForPrivacy(target.phone),
-          avatarUrl: target.avatar_url || null,
-        },
-      });
+      const result = await submitConnectionRequest(authUser, targetUserId, relationshipType, 'search');
+      sendJson(res, result.status, result.body);
       return true;
     }
+
 
     // 10B. INVITE CONTACT VIA EMAIL: POST /api/udhar/contacts/:id/invite
     const contactInviteMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)\/invite$/);
@@ -2500,7 +2406,26 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const digitsOnly = q.replace(/\D/g, '');
-      const phoneLike = digitsOnly.length >= 4 ? `%${digitsOnly}%` : `%${q}%`;
+      const isEmailQuery = q.includes('@');
+      const isPhoneQuery = !isEmailQuery && /^[+\d][\d\s()\-]*$/.test(q) && digitsOnly.length >= 3;
+
+      // Exact-match rules. A complete email or mobile number is required for
+      // account lookup; partial email/phone input never queries the directory.
+      if (isEmailQuery && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(q)) {
+        sendJson(res, 200, { success: true, users: [], reason: 'INCOMPLETE_EMAIL' });
+        return true;
+      }
+      if (isPhoneQuery && (digitsOnly.length < 10 || digitsOnly.length > 15)) {
+        sendJson(res, 200, { success: true, users: [], reason: 'INCOMPLETE_PHONE' });
+        return true;
+      }
+
+      const searchMode: 'email' | 'phone' | 'name' = isEmailQuery
+        ? 'email'
+        : isPhoneQuery
+          ? 'phone'
+          : 'name';
+      const nameLike = `%${q}%`;
 
       // Query registered active non-deleted users (including self so UI can show "You" with connect disabled; excluding blocked users)
       const usersRes = await query(
@@ -2526,15 +2451,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
                AND blk.status = 'blocked'
            )
            AND (
-             LOWER(u.email) = $2 OR 
-             LOWER(u.email) LIKE $3 OR 
-             LOWER(u.full_name) LIKE $3 OR
-             LOWER(COALESCE(u.username, '')) LIKE $3 OR
-             REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') LIKE $4
+             ($5 = 'email' AND LOWER(u.email) = $2)
+             OR ($5 = 'phone' AND REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $4)
+             OR ($5 = 'name' AND (
+               LOWER(u.full_name) LIKE $3 OR LOWER(COALESCE(u.username, '')) LIKE $3
+             ))
            )
          ORDER BY (u.id = $1) ASC, u.full_name ASC
          LIMIT 20`,
-        [authUser.id, q, `%${q}%`, phoneLike]
+        [authUser.id, q, nameLike, digitsOnly, searchMode]
       );
 
       // Privacy-preserving output: NEVER expose raw email or raw phone to unconnected searchers!
@@ -2548,14 +2473,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             : u.conn_status === 'pending'
               ? 'pending'
               : 'none';
+        // Partial name matches expose only a display name and a generic
+        // "registered account" indicator. Contact details are masked unless the
+        // search itself was an exact email/phone lookup or already connected.
+        const canShowContactMask = isConnected || searchMode !== 'name';
         return {
           id: u.id,
           displayName: u.full_name || u.username || 'My Money User',
           fullName: u.full_name || u.username || 'My Money User',
           username: u.username || null,
-          emailMasked: maskEmailForPrivacy(u.email),
-          phoneMasked: maskPhoneForPrivacy(u.phone),
+          emailMasked: canShowContactMask ? maskEmailForPrivacy(u.email) : null,
+          phoneMasked: canShowContactMask ? maskPhoneForPrivacy(u.phone) : null,
           avatarUrl: u.avatar_url || null,
+          matchedBy: searchMode,
           isSelf,
           isVerified: Boolean(u.is_verified),
           connectionStatus,
@@ -2569,6 +2499,79 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // =========================================================================
+    // SECTION C2: CONSENT-BASED CONNECTION REQUESTS (PENDING -> ACCEPTED)
+    // =========================================================================
+
+    // LIST PENDING REQUESTS: GET /api/udhar/connection-requests
+    if (pathname === '/api/udhar/connection-requests' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const result = await listConnectionRequests(authUser);
+      sendJson(res, result.status, result.body);
+      return true;
+    }
+
+    // CREATE PENDING REQUEST: POST /api/udhar/connection-requests
+    if (pathname === '/api/udhar/connection-requests' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const body = await parseJsonBody(req);
+      if (body.consentConfirmed !== true) {
+        sendJson(res, 422, {
+          success: false,
+          code: 'CONSENT_REQUIRED',
+          message: 'Please confirm that you want to send this connection request before continuing.',
+        });
+        return true;
+      }
+      const result = await submitConnectionRequest(
+        authUser,
+        body.targetUserId || body.target_user_id,
+        body.relationshipType || body.relationship_type,
+        body.source || 'search'
+      );
+      sendJson(res, result.status, result.body);
+      return true;
+    }
+
+    // ACCEPT / REJECT: POST /api/udhar/connection-requests/:id/(accept|reject)
+    const connRequestActionMatch = pathname.match(
+      /^\/api\/udhar\/connection-requests\/([0-9a-fA-F-]{16,64})\/(accept|reject)$/
+    );
+    if (connRequestActionMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const result = await respondToConnectionRequest(
+        authUser,
+        connRequestActionMatch[1],
+        connRequestActionMatch[2] as 'accept' | 'reject'
+      );
+      sendJson(res, result.status, result.body);
+      return true;
+    }
+
+    // DISCONNECT / UNPAIR: POST /api/udhar/connections/disconnect
+    if (pathname === '/api/udhar/connections/disconnect' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const body = await parseJsonBody(req);
+      const result = await disconnectConnection(authUser, body.targetUserId || body.target_user_id);
+      sendJson(res, result.status, result.body);
+      return true;
+    }
+
     // SECTION D: USER-SPECIFIC UDHAAR QR CODES & SECURE ONE-TIME PAIRING
     // =========================================================================
 
@@ -2648,129 +2651,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
-      if (!isDatabaseAvailable()) {
-        const restRes = await resolveQrRest(authUser, body);
-        sendJson(res, restRes.status, restRes.body);
-        return true;
-      }
-
-      let targetToken = (body.pairingToken || '').trim();
-      let targetCode = (body.pairingCode || '').trim().toUpperCase();
-      const rawData = (body.qrData || '').trim();
-
-      if (rawData) {
-        const parsedQr = parseQrPayload(rawData);
-        if (!parsedQr.valid) {
-          sendJson(res, 400, {
-            success: false,
-            code: 'INVALID_QR',
-            message: parsedQr.error || 'Invalid QR format. Please scan a genuine My Money Manager user QR code.',
-          });
-          return true;
-        }
-        if (parsedQr.token) targetToken = parsedQr.token;
-        if (parsedQr.code) targetCode = parsedQr.code;
-      }
-
-      if (!targetToken && !targetCode) {
-        sendJson(res, 400, {
-          success: false,
-          code: 'INVALID_QR',
-          message: 'No valid QR pairing token or code provided.',
-        });
-        return true;
-      }
-
-      const tokenRes = await query(
-        `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
-                u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status,
-                COALESCE(u.deletion_status, 'none') AS deletion_status
-         FROM public.qr_pairing_tokens t
-         JOIN public.app_users u ON t.user_id = u.id
-         WHERE (t.pairing_token = $1 OR t.pairing_code = $2)
-         ORDER BY t.created_at DESC LIMIT 1`,
-        [targetToken || '__none__', targetCode || '__none__']
-      );
-
-      if (tokenRes.rows.length === 0) {
-        sendJson(res, 404, {
-          success: false,
-          code: 'NOT_FOUND',
-          message: 'QR code not recognized. This is not a registered My Money Manager account QR.',
-        });
-        return true;
-      }
-
-      const qrRecord = tokenRes.rows[0];
-
-      if (qrRecord.used) {
-        sendJson(res, 410, {
-          success: false,
-          code: 'QR_REVOKED',
-          message: 'This QR code has been revoked. The user has generated a newer QR code.',
-        });
-        return true;
-      }
-
-      if (new Date(qrRecord.expires_at) <= new Date()) {
-        sendJson(res, 410, {
-          success: false,
-          code: 'QR_EXPIRED',
-          message: 'This QR code has expired. Please ask the person to tap "Regenerate QR" to get a fresh code.',
-        });
-        return true;
-      }
-
-      if (qrRecord.status !== 'active' || qrRecord.deletion_status !== 'none') {
-        sendJson(res, 403, {
-          success: false,
-          code: 'ACCOUNT_UNAVAILABLE',
-          message: 'This user account is currently deactivated or suspended.',
-        });
-        return true;
-      }
-
-      if (qrRecord.user_id === authUser.id) {
-        sendJson(res, 400, {
-          success: false,
-          code: 'SELF_CONNECTION',
-          message: 'This is your own QR code! You cannot link your account with yourself.',
-        });
-        return true;
-      }
-
-      const connRes = await query(
-        `SELECT id, status FROM public.user_connections 
-         WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
-        [authUser.id, qrRecord.user_id]
-      );
-      if (connRes.rows.some((r: any) => r.status === 'blocked')) {
-        sendJson(res, 403, {
-          success: false,
-          code: 'BLOCKED',
-          message: 'You cannot connect with this account.',
-        });
-        return true;
-      }
-      const isAlreadyConnected = connRes.rows.some((r: any) => r.status === 'connected');
-
-      sendJson(res, 200, {
-        success: true,
-        owner: {
-          id: qrRecord.user_id,
-          displayName: qrRecord.full_name || qrRecord.email?.split('@')[0] || 'User',
-          fullName: qrRecord.full_name || qrRecord.email?.split('@')[0] || 'User',
-          emailMasked: maskEmailForPrivacy(qrRecord.email),
-          phoneMasked: maskPhoneForPrivacy(qrRecord.phone),
-          avatarUrl: qrRecord.avatar_url || null,
-          isVerified: true,
-        },
-        pairingToken: qrRecord.pairing_token,
-        pairingCode: qrRecord.pairing_code,
-        isAlreadyConnected,
-      });
+      const result = await resolvePairingTarget(authUser, body);
+      sendJson(res, result.status, result.body);
       return true;
     }
+
 
     // 13B. REGENERATE QR CODE: POST /api/udhar/qr/regenerate
     if (pathname === '/api/udhar/qr/regenerate' && method === 'POST') {
@@ -2821,6 +2706,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // 14. CONNECT PERSON VIA QR: POST /api/udhar/qr/connect
+    // Scanning a valid QR creates a pending request only. The QR owner must
+    // accept it before any connection or profile detail becomes visible.
     if (pathname === '/api/udhar/qr/connect' && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -2829,138 +2716,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
-      if (!isDatabaseAvailable()) {
-        const restRes = await connectQrRest(authUser, body);
-        sendJson(res, restRes.status, restRes.body);
+      const resolved = await resolvePairingTarget(authUser, body);
+      if (resolved.status !== 200 || !resolved.body?.owner?.id) {
+        sendJson(res, resolved.status, resolved.body);
         return true;
       }
 
-      const pairingToken = (body.pairingToken || '').trim();
-      const pairingCode = (body.pairingCode || '').trim().toUpperCase();
       const relationshipType = (body.relationshipType || 'Friend').trim();
-
-      const tokenRes = await query(
-        `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status,
-                COALESCE(u.deletion_status, 'none') AS deletion_status
-         FROM public.qr_pairing_tokens t
-         JOIN public.app_users u ON t.user_id = u.id
-         WHERE (t.pairing_token = $1 OR t.pairing_code = $2) AND t.expires_at > NOW() AND t.used = FALSE`,
-        [pairingToken || '__none__', pairingCode || '__none__']
+      const result = await submitConnectionRequest(
+        authUser,
+        resolved.body.owner.id,
+        relationshipType,
+        'qr'
       );
-
-      if (tokenRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Pairing reference expired, revoked or invalid.' });
-        return true;
-      }
-
-      const tokenRecord = tokenRes.rows[0];
-      const targetUserId = tokenRecord.user_id;
-
-      if (tokenRecord.status !== 'active' || tokenRecord.deletion_status !== 'none') {
-        sendJson(res, 403, { success: false, message: 'This user account is currently deactivated or suspended.' });
-        return true;
-      }
-
-      if (targetUserId === authUser.id) {
-        sendJson(res, 400, { success: false, message: 'Cannot connect with your own QR code.' });
-        return true;
-      }
-
-      const existingConn = await query(
-        `SELECT id, status FROM public.user_connections 
-         WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
-        [authUser.id, targetUserId]
-      );
-      if (existingConn.rows.some((r: any) => r.status === 'blocked')) {
-        sendJson(res, 403, { success: false, message: 'Connection is blocked between these accounts.' });
-        return true;
-      }
-      const wasAlreadyConnected = existingConn.rows.some((r: any) => r.status === 'connected');
-
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [authUser.id, targetUserId]
-      );
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [targetUserId, authUser.id]
-      ).catch(() => {});
-
-      const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split('@')[0] || 'Friend').trim();
-      const existingLinked = await query(
-        `SELECT id, name FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
-        [authUser.id, targetUserId]
-      );
-
-      if (existingLinked.rows.length > 0) {
-        await query(
-          `UPDATE public.udhar_contacts 
-           SET name = $1, email = COALESCE($2, email), phone = COALESCE($3, phone), photo_url = COALESCE($4, photo_url), relationship_type = $5, updated_at = NOW() 
-           WHERE id = $6`,
-          [targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, existingLinked.rows[0].id]
-        );
-      } else {
-        await query(
-          `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (user_id, name) DO UPDATE 
-           SET linked_user_id = EXCLUDED.linked_user_id, 
-               email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
-               phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
-               photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url), 
-               updated_at = NOW()`,
-          [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
-        ).catch(err => console.warn('QR user contact insert notice:', err));
-      }
-
-      await ensureReciprocalContact(targetUserId, authUser, relationshipType);
-
-      if (tokenRecord.is_single_use) {
-        await query(
-          `UPDATE public.qr_pairing_tokens 
-           SET used = TRUE, used_by_user_id = $1, used_at = NOW() 
-           WHERE id = $2`,
-          [authUser.id, tokenRecord.id]
-        );
-      }
-
-      notifyQrConnected({
-        userAId: authUser.id,
-        userAName: authUser.full_name || 'My Money User',
-        userBId: targetUserId,
-        userBName: tokenRecord.full_name || 'Friend',
-      }).catch((e) => console.warn('[Notify QR Connected Error]:', e));
-
-      await logSecurityEvent('USER_LINKED_VIA_QR', {
-        userId: authUser.id,
-        userEmail: authUser.email,
-        details: { targetUserId, targetName: tokenRecord.full_name },
-      });
-
-      sendJson(res, 200, {
-        success: true,
-        alreadyConnected: wasAlreadyConnected,
-        message: wasAlreadyConnected
-          ? `Already connected with ${tokenRecord.full_name}.`
-          : `Successfully linked with ${tokenRecord.full_name}! Added to Saved People.`,
-        connectedUser: {
-          id: targetUserId,
-          name: tokenRecord.full_name,
-          displayName: tokenRecord.full_name,
-          fullName: tokenRecord.full_name,
-          emailMasked: maskEmailForPrivacy(tokenRecord.email),
-          phoneMasked: maskPhoneForPrivacy(tokenRecord.phone),
-          avatarUrl: tokenRecord.avatar_url || null,
-        },
-      });
+      sendJson(res, result.status, result.body);
       return true;
     }
 
-    // =========================================================================
     // SECTION E: TWO-SIDED UDHAAR TRANSACTIONS, ACCEPTANCE, DISPUTES & REPAYMENTS
     // =========================================================================
 

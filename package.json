@@ -15,7 +15,8 @@
     "test:qr": "tsx scripts/test-permissions-and-qr-system.ts",
     "test:recovery-push": "tsx scripts/test-password-recovery-push-suite.ts",
     "lint": "oxlint",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "test:pairing": "tsx scripts/test-udhar-pairing-api.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",

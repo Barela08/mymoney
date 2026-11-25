@@ -68,41 +68,14 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
     setQrDataUrl(dataUrl);
   };
 
-  const generateClientFallbackQr = async () => {
-    const rawId = user?.id || (user as any)?.uid || 'user';
-    const cleanId = String(rawId).replace(/[^a-zA-Z0-9]/g, '');
-    const cleanName = displayName || user?.displayName || 'User';
-    const fallbackCode = `MM-${(cleanId.slice(0, 6) || Math.random().toString(36).slice(2, 8)).toUpperCase()}`;
-    const fallbackToken = `${cleanId || 'usr'}-${Date.now().toString(36)}`;
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    const fallbackPayload = JSON.stringify({
-      app: 'my-money',
-      v: 2,
-      type: 'udhar-pair',
-      token: fallbackToken,
-      code: fallbackCode,
-      userId: rawId,
-      name: cleanName,
-      email: user?.email || '',
-      exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
-    });
-
-    const fallbackInfo: MyQrCodeResponse = {
-      success: true,
-      pairingToken: fallbackToken,
-      pairingCode: fallbackCode,
-      publicName: cleanName,
-      avatarUrl: avatarUrl,
-      qrData: fallbackPayload,
-      expiresAt,
-    };
-
-    const fallbackLink = `${window.location.origin}/#pair=${encodeURIComponent(fallbackCode)}`;
-    setQrInfo(fallbackInfo);
-    // Encode standard web pairing link so any phone camera or Google Lens can scan and open it
-    await renderHighResQr(fallbackLink);
-    setQrError(null);
+  /**
+   * There is deliberately no client-side QR generation: pairing codes and
+   * tokens are issued by the server so they can be validated, expired and revoked.
+   */
+  const showQrError = (message: string) => {
+    setQrInfo(null);
+    setQrDataUrl('');
+    setQrError(message);
   };
 
   const fetchQrCode = async () => {
@@ -111,19 +84,21 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
       setQrError(null);
       setAvatarError(false);
       const res = await udharDeletionApi.getMyQrCode();
-      if (res.success && res.qrData) {
+      if (res.success && res.pairingCode) {
         setQrInfo(res);
-        // Encode standard pairing link for universal phone camera and in-app compatibility
-        const standardLink = res.pairingCode
-          ? `${window.location.origin}/#pair=${encodeURIComponent(res.pairingCode)}`
-          : res.qrData;
+        // Encode a standard pairing link so any phone camera can open it;
+        // the code itself is validated server-side before anything happens.
+        const standardLink = `${window.location.origin}/#pair=${encodeURIComponent(res.pairingCode)}`;
         await renderHighResQr(standardLink);
       } else {
-        await generateClientFallbackQr();
+        showQrError(res.message || 'Could not load your pairing QR right now.');
       }
-    } catch {
-      // Fallback gracefully on deployment without blocking the user
-      await generateClientFallbackQr();
+    } catch (err: any) {
+      showQrError(
+        err?.status === 503 || err?.isNonJson
+          ? 'Your pairing QR is temporarily unavailable. No data was changed. Please retry in a moment.'
+          : err?.message || 'Could not load your pairing QR right now.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -135,20 +110,20 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
       setIsRegenerating(true);
       setQrError(null);
       const res = await udharDeletionApi.regenerateQrCode();
-      if (res.success && res.qrData) {
+      if (res.success && res.pairingCode) {
         setQrInfo(res);
-        const standardLink = res.pairingCode
-          ? `${window.location.origin}/#pair=${encodeURIComponent(res.pairingCode)}`
-          : res.qrData;
+        const standardLink = `${window.location.origin}/#pair=${encodeURIComponent(res.pairingCode)}`;
         await renderHighResQr(standardLink);
-        toast.success('QR Reset Complete', 'New unique QR generated. Previous QR codes are revoked.');
+        toast.success('QR Reset Complete', 'New QR generated. Previous pairing codes are now revoked.');
       } else {
-        await generateClientFallbackQr();
-        toast.success('QR Reset Complete', 'New unique QR generated.');
+        showQrError(res.message || 'Could not reset your QR code. Please retry.');
       }
-    } catch {
-      await generateClientFallbackQr();
-      toast.success('QR Reset Complete', 'New unique QR generated.');
+    } catch (err: any) {
+      showQrError(
+        err?.status === 503 || err?.isNonJson
+          ? 'QR reset is temporarily unavailable. Your existing code is still valid. Please retry.'
+          : err?.message || 'Could not reset your QR code. Please retry.'
+      );
     } finally {
       setIsRegenerating(false);
     }

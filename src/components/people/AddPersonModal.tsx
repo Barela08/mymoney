@@ -162,18 +162,23 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
         relationshipType: connectRelationship,
       });
 
-      if (res.success) {
+      if (res.status === 'connected') {
         toast.success(
           res.alreadyConnected ? 'Already Connected' : 'Connected!',
-          res.message ||
-            `"${selectedCandidate.fullName}" is now connected for 2-way shared Udhar.`
+          res.message || `"${selectedCandidate.fullName}" is now connected for 2-way shared Udhar.`
         );
         onPersonAdded(selectedCandidate.fullName, selectedCandidate.id);
-        setSelectedCandidate(null);
-        setSearchQuery('');
-        setSearchResults([]);
-        onClose();
+      } else {
+        toast.success(
+          'Request Sent',
+          res.message ||
+            'Your connection request was sent. They must accept it before any profile details are shared.'
+        );
       }
+      setSelectedCandidate(null);
+      setSearchQuery('');
+      setSearchResults([]);
+      onClose();
     } catch (err: any) {
       toast.error('Connection Failed', err.message || 'Could not connect with this user.');
     } finally {

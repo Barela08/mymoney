@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Users,
@@ -10,6 +10,10 @@ import {
   CheckCircle2,
   Search,
   Sparkles,
+  Loader2,
+  UserMinus,
+  ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -128,7 +132,148 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     return () => clearTimeout(t);
   }, [addModeUserSearch, isAddMode]);
 
+  // ----------------------------------------------------------------
+  // Live registered-user search (debounced, abortable, real data only)
+  // ----------------------------------------------------------------
+  const [liveQuery, setLiveQuery] = useState<string>('');
+  const [liveResults, setLiveResults] = useState<SearchUserResult[]>([]);
+  const [liveState, setLiveState] = useState<'initial' | 'loading' | 'results' | 'empty' | 'error'>('initial');
+  const [liveError, setLiveError] = useState<string>('');
+  const [liveHint, setLiveHint] = useState<string>('');
+  const [requestingId, setRequestingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const liveAbortRef = useRef<AbortController | null>(null);
+  const lastQueryRef = useRef<string>('');
+
+  const runLiveSearch = React.useCallback(async (rawQuery: string) => {
+    const query = rawQuery.normalize('NFKC').trim().replace(/\s+/g, ' ');
+    lastQueryRef.current = query;
+    setLiveHint('');
+
+    if (query.length < 2) {
+      liveAbortRef.current?.abort();
+      setLiveResults([]);
+      setLiveState('initial');
+      return;
+    }
+
+    const digits = query.replace(/\D/g, '');
+    const looksLikeEmail = query.includes('@');
+    const looksLikePhone = !looksLikeEmail && /^[+\d][\d\s()\-]*$/.test(query);
+
+    if (looksLikeEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(query)) {
+      liveAbortRef.current?.abort();
+      setLiveResults([]);
+      setLiveState('initial');
+      setLiveHint('Enter the complete email address to find an account.');
+      return;
+    }
+    if (looksLikePhone && (digits.length < 10 || digits.length > 15)) {
+      liveAbortRef.current?.abort();
+      setLiveResults([]);
+      setLiveState('initial');
+      setLiveHint('Enter the complete mobile number (with country code if needed).');
+      return;
+    }
+
+    liveAbortRef.current?.abort();
+    const controller = new AbortController();
+    liveAbortRef.current = controller;
+
+    try {
+      setLiveState('loading');
+      setLiveError('');
+      const res = await udharDeletionApi.searchUsers(query, controller.signal);
+      if (lastQueryRef.current !== query) return;
+      if (res.success) {
+        const users = res.users || [];
+        setLiveResults(users);
+        setLiveState(users.length > 0 ? 'results' : 'empty');
+      } else {
+        setLiveResults([]);
+        setLiveState('error');
+        setLiveError('Could not complete the search. Please try again.');
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      if (lastQueryRef.current !== query) return;
+      setLiveResults([]);
+      setLiveState('error');
+      setLiveError(
+        err?.status === 503 || err?.isNonJson
+          ? 'Search is temporarily unavailable. Your data was not changed.'
+          : err?.message || 'Could not reach the server. Check your connection and retry.'
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      void runLiveSearch(liveQuery);
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [liveQuery, isOpen, runLiveSearch]);
+
+  useEffect(() => {
+    return () => liveAbortRef.current?.abort();
+  }, []);
+
+  const handleSendRequest = async (user: SearchUserResult) => {
+    if (!user || user.isSelf || requestingId) return;
+    try {
+      setRequestingId(user.id);
+      const res = await udharDeletionApi.sendConnectionRequest({
+        targetUserId: user.id,
+        relationshipType: 'Friend',
+        source: liveQuery.includes('@') ? 'manual' : 'search',
+      });
+      if (res.status === 'connected') {
+        toast.success('Connected', res.message || 'You are already connected with this person.');
+        setLiveResults((prev) =>
+          prev.map((u) =>
+            u.id === user.id ? { ...u, connectionStatus: 'connected', isAlreadyConnected: true } : u
+          )
+        );
+        await fetchContacts();
+        if (onContactsUpdated) onContactsUpdated();
+      } else {
+        toast.success('Request Sent', res.message || 'They must approve the request before any details are shared.');
+        setPendingIds((prev) => ({ ...prev, [user.id]: true }));
+        setLiveResults((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, connectionStatus: 'pending' } : u))
+        );
+      }
+    } catch (err: any) {
+      toast.error('Request Failed', err?.message || 'Could not send the connection request.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
+
+  const handleDisconnect = async (contact: UdharContact) => {
+    if (!contact.linked_user_id || disconnectingId) return;
+    const confirmed = window.confirm(
+      `Disconnect from ${contact.name}? You will both stop seeing 2-way Udhar sync. Existing Udhar records are kept.`
+    );
+    if (!confirmed) return;
+    try {
+      setDisconnectingId(contact.id);
+      const res = await udharDeletionApi.disconnectConnection(contact.linked_user_id);
+      toast.success('Disconnected', res.message || 'The Udhar connection was removed.');
+      await fetchContacts();
+      if (onContactsUpdated) onContactsUpdated();
+    } catch (err: any) {
+      toast.error('Disconnect Failed', err?.message || 'Could not disconnect right now.');
+    } finally {
+      setDisconnectingId(null);
+    }
+  };
+
   if (!isOpen) return null;
+
+
 
   const handleOpenAdd = () => {
     setEditingContact(null);
@@ -536,145 +681,258 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
             </div>
           </form>
         ) : (
-          /* View 3: Contacts List */
+          /* View 3: Live search + compact saved people */
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Find people on My Money Manager
+              </label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
-                  type="text"
-                  placeholder="Filter saved contacts..."
-                  value={filterQuery}
-                  onChange={(e) => setFilterQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700"
+                  type="search"
+                  inputMode="text"
+                  autoComplete="off"
+                  placeholder="Search by name, email or mobile number"
+                  value={liveQuery}
+                  onChange={(e) => setLiveQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void runLiveSearch(liveQuery);
+                    }
+                  }}
+                  aria-label="Search registered users by name, email or mobile number"
+                  className="w-full pl-9 pr-10 py-2.5 rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500"
                 />
+                {liveState === 'loading' && (
+                  <Loader2 className="w-4 h-4 text-emerald-600 animate-spin absolute right-3 top-2.5" />
+                )}
               </div>
+              <p className="text-[10.5px] text-slate-400">
+                Name: 2+ characters · Email: complete address · Mobile: complete number
+              </p>
 
-              <button
-                type="button"
-                onClick={handleOpenAdd}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>+ Add Person</span>
-              </button>
+              {liveHint && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">{liveHint}</p>
+              )}
+
+              {liveState === 'initial' && !liveHint && (
+                <p className="text-[11px] text-slate-400 py-2">
+                  Search by name, email or mobile number.
+                </p>
+              )}
+
+              {liveState === 'loading' && (
+                <p className="text-[11px] text-slate-500 py-2 animate-pulse">Searching users...</p>
+              )}
+
+              {liveState === 'empty' && (
+                <p className="text-[11px] text-slate-500 py-2">No matching users found.</p>
+              )}
+
+              {liveState === 'error' && (
+                <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800">
+                  <p className="text-[11px] text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{liveError}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void runLiveSearch(liveQuery)}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer shrink-0"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {liveState === 'results' && (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {liveResults.map((u) => {
+                    const isConnected = u.connectionStatus === 'connected' || u.isAlreadyConnected;
+                    const isPending = u.connectionStatus === 'pending' || pendingIds[u.id];
+                    return (
+                      <div
+                        key={u.id}
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                            {(u.displayName || 'U').charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                              {u.displayName}
+                              {u.isSelf && <span className="ml-1 text-[9px] text-slate-400">(You)</span>}
+                            </p>
+                            <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                              <ShieldCheck className="w-2.5 h-2.5 text-emerald-500" />
+                              {u.emailMasked || u.phoneMasked
+                                ? `${u.emailMasked || u.phoneMasked}`
+                                : 'Registered My Money Manager account'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {u.isSelf ? (
+                          <span className="text-[10px] font-bold text-slate-400 px-2 py-1">You</span>
+                        ) : isConnected ? (
+                          <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-2 py-1 rounded-lg">
+                            Connected
+                          </span>
+                        ) : isPending ? (
+                          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-1 rounded-lg">
+                            Request Sent
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={requestingId === u.id}
+                            onClick={() => void handleSendRequest(u)}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer shrink-0 flex items-center gap-1"
+                          >
+                            {requestingId === u.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <UserPlus className="w-3 h-3" />
+                            )}
+                            <span>Connect</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {isLoading ? (
-              <p className="text-center py-8 text-xs text-slate-400 animate-pulse">Loading contacts...</p>
-            ) : filtered.length === 0 ? (
-              <div className="text-center py-10 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                <Users className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Saved Contacts Found</p>
-                <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                  Add contacts or scan QR codes to reuse people in Udhar entries effortlessly.
-                </p>
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filter saved people..."
+                    value={filterQuery}
+                    onChange={(e) => setFilterQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAdd}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ Add Person</span>
+                </button>
               </div>
-            ) : (
-              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                {filtered.map((c) => {
-                  const isLinked = Boolean(c.linked_user_id);
-                  return (
-                    <div
-                      key={c.id}
-                      className="p-3 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3 hover:border-emerald-300 transition-all shadow-sm"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                          {c.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
+
+              {isLoading ? (
+                <p className="text-center py-6 text-xs text-slate-400 animate-pulse">Loading contacts...</p>
+              ) : filtered.length === 0 ? (
+                <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <Users className="w-7 h-7 text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No saved people yet</p>
+                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                    Search a registered user above, scan their QR, or add a contact manually.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+                  {filtered.map((c) => {
+                    const isLinked = Boolean(c.linked_user_id);
+                    const remaining = Number(c.net_balance ?? 0);
+                    return (
+                      <div
+                        key={c.id}
+                        className="px-2.5 py-2 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-bold text-[11px] flex items-center justify-center shrink-0">
+                            {c.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
                               {c.name}
-                            </span>
-                            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                              {c.relationship_type || 'Contact'}
-                            </span>
-                            {isLinked && (
-                              <span
-                                className="text-[9.5px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 flex items-center gap-0.5"
-                                title="Connected in both users' Saved People for mutual Udhar tracking"
-                              >
-                                <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>2-Way Synced</span>
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 truncate">
-                            {c.email && <span>{c.email}</span>}
-                            {c.phone && <span>• {c.phone}</span>}
+                            </p>
+                            <p className="text-[10px] text-slate-400 truncate">
+                              {isLinked ? 'Connected · 2-way Udhar' : 'Local contact'}
+                              {Math.abs(remaining) > 0.009
+                                ? ` · ${remaining > 0 ? 'Owes' : 'You owe'} ₹${Math.abs(remaining).toLocaleString('en-IN')}`
+                                : ''}
+                            </p>
                           </div>
                         </div>
+
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          {onSelectPersonForUdhar && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectPersonForUdhar(c.name);
+                                onClose();
+                              }}
+                              className="px-2 py-1 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 rounded-lg text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                            >
+                              + Udhar
+                            </button>
+                          )}
+                          {!isLinked && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLinkingContact(c);
+                                setSearchRegisteredQuery(c.name);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer"
+                              title="Link with a registered My Money user (sends a request)"
+                            >
+                              <Link className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {isLinked && (
+                            <button
+                              type="button"
+                              disabled={disconnectingId === c.id}
+                              onClick={() => void handleDisconnect(c)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50"
+                              title="Disconnect this Udhar pairing"
+                            >
+                              {disconnectingId === c.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <UserMinus className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(c)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                            title="Edit contact details"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteContact(c.id, c.name)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 cursor-pointer"
+                            title="Delete contact"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-
-                      {/* Contact Action Buttons */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        {onSelectPersonForUdhar && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSelectPersonForUdhar(c.name);
-                              onClose();
-                            }}
-                            className="px-2 py-1 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 rounded-lg text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 cursor-pointer"
-                            title="Create Udhar with this person"
-                          >
-                            + Udhar
-                          </button>
-                        )}
-
-                        {!isLinked && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLinkingContact(c);
-                              setSearchRegisteredQuery(c.name);
-                            }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer"
-                            title="Link with registered My Money user"
-                          >
-                            <Link className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        {!isLinked && (
-                          <button
-                            type="button"
-                            onClick={() => handleShareAppInvitation(c)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 cursor-pointer"
-                            title="Send app invite link"
-                          >
-                            <Share2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(c)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
-                          title="Edit contact details"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteContact(c.id, c.name)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 cursor-pointer"
-                          title="Delete contact"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
+
       </div>
     </div>
   );

@@ -62,6 +62,10 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   } | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  // Explicit camera lifecycle. A live preview is never reported as an error.
+  const [cameraStatus, setCameraStatus] = useState<
+    'idle' | 'starting' | 'active' | 'denied' | 'unavailable' | 'error'
+  >('idle');
   const [upiDetails, setUpiDetails] = useState<{
     pa: string;
     pn: string;
@@ -91,6 +95,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const isResolvingRef = useRef<boolean>(false);
   const isTorchOnRef = useRef<boolean>(false);
   const autoResolvedCodeRef = useRef<string | null>(null);
+  const streamGenerationRef = useRef<number>(0);
+  const lastDecodeAtRef = useRef<number>(0);
 
   useEffect(() => {
     setScannerActive(isOpen);
@@ -99,6 +105,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
   // Strict media stream & torch cleanup
   const stopCamera = useCallback(() => {
+    streamGenerationRef.current += 1;
     isScanningActiveRef.current = false;
     setIsScanningPaused(false);
     if (animFrameRef.current) {
@@ -123,6 +130,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     }
     isTorchOnRef.current = false;
     setIsTorchOn(false);
+    setCameraStatus('idle');
   }, []);
 
   // Nielsen Heuristic: User Control & Freedom — Escape key handling & camera cleanup
@@ -166,9 +174,15 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     } else if (code === 'NOT_FOUND' || code === 'INVALID_QR') {
       title = 'Unrecognized QR Code';
       message = 'This QR code is not linked to an active My Money Manager account.';
-    } else if (code === 'ACCOUNT_UNAVAILABLE') {
+    } else if (code === 'ACCOUNT_UNAVAILABLE' || code === 'BLOCKED') {
       title = 'Account Unavailable';
-      message = 'This user account is currently deactivated, blocked, or scheduled for deletion.';
+      message = 'This user account is currently deactivated, blocked, or unavailable for connections.';
+    } else if (code === 'RATE_LIMITED') {
+      title = 'Please Wait';
+      message = 'Too many attempts. Wait a minute and try the code again.';
+    } else if (code === 'PAIRING_UNAVAILABLE' || err?.isNonJson || err?.status >= 500) {
+      title = 'Server Temporarily Unavailable';
+      message = 'We could not verify this code right now. Your data has not been changed. Please retry in a moment.';
     }
     return { title, message, code };
   };
@@ -226,32 +240,12 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         setIsResolving(true);
         setScanError(null);
 
-        let res: any = null;
-        try {
-          res = await udharDeletionApi.resolveQrCode({
-            qrData: parsed.kind === 'json' ? rawInput.trim() : undefined,
-            pairingToken: parsed.token,
-            pairingCode: parsed.code,
-          });
-        } catch (apiErr) {
-          // If server API fails (e.g. deployed on static host or database table missing), fallback gracefully
-          if (parsed.name || parsed.userId) {
-            const rawEmail = parsed.email || '';
-            res = {
-              success: true,
-              owner: {
-                id: parsed.userId || parsed.token || 'user',
-                displayName: parsed.name || 'Connected User',
-                fullName: parsed.name || 'Connected User',
-                emailMasked: rawEmail ? rawEmail.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '***@***',
-              },
-              pairingToken: parsed.token || '',
-              pairingCode: parsed.code || '',
-            };
-          } else {
-            throw apiErr;
-          }
-        }
+        // Server-side verification only. A QR payload is never trusted on its own.
+        const res = await udharDeletionApi.resolveQrCode({
+          qrData: parsed.kind === 'json' ? rawInput.trim() : undefined,
+          pairingToken: parsed.token,
+          pairingCode: parsed.code,
+        });
 
         if (res.success && res.owner && res.owner.displayName) {
           setResolvedOwner(res);
@@ -286,12 +280,19 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+      const now = performance.now();
+      if (now - lastDecodeAtRef.current < 140) {
+        animFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      lastDecodeAtRef.current = now;
+
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       // Try standard orientation first
       let code = jsQR(imageData.data, imageData.width, imageData.height, {
         inversionAttempts: 'dontInvert',
       });
-      // Fallback: try inversion for high contrast / dark mode QR codes
+      // Fallback for high-contrast / inverted QR codes
       if (!code || !code.data) {
         code = jsQR(imageData.data, imageData.width, imageData.height, {
           inversionAttempts: 'onlyInvert',
@@ -308,23 +309,30 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     animFrameRef.current = requestAnimationFrame(tick);
   }, [stopCamera, resolveRawInput]);
 
-  // Start camera with progressive fallback (ideal -> environment -> any)
+  // Start camera with progressive fallback and race protection.
+  // Only a real getUserMedia failure is reported as a camera problem.
   const startCamera = useCallback(
     async (deviceIdOverride?: string | null) => {
       stopCamera();
+      const generation = streamGenerationRef.current;
       setCameraError(null);
       setScanError(null);
+      setCameraStatus('starting');
 
-      if (typeof window !== 'undefined' && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      const isLocalHost =
+        window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (typeof window !== 'undefined' && window.location.protocol !== 'https:' && !isLocalHost) {
+        setCameraStatus('error');
         setCameraError(
-          'Live camera requires a secure HTTPS connection. Please open your site using HTTPS (https://...), or use "Upload Image" / "Enter Pair Code" below.'
+          'Live camera requires a secure HTTPS connection. Open the site over HTTPS, or use "Upload" / "Pair Code" below.'
         );
         return;
       }
 
       if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraStatus('unavailable');
         setCameraError(
-          'Live camera scanning is not supported in this browser. Use "Upload Image" or "Enter Pair Code" below.'
+          'Live camera scanning is not supported in this browser. Use "Upload" or "Pair Code" below.'
         );
         return;
       }
@@ -334,91 +342,88 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       try {
         let stream: MediaStream | null = null;
 
-        // Progressive constraint negotiation to avoid OverconstrainedError across mobile devices
         try {
-          const constraints: MediaStreamConstraints = {
+          stream = await navigator.mediaDevices.getUserMedia({
             audio: false,
             video: targetDeviceId
-              ? {
-                  deviceId: { exact: targetDeviceId },
-                  width: { ideal: 720 },
-                  height: { ideal: 720 },
-                }
-              : {
-                  facingMode: { ideal: 'environment' },
-                  width: { ideal: 720 },
-                  height: { ideal: 720 },
-                },
-          };
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
+              ? { deviceId: { exact: targetDeviceId }, width: { ideal: 720 }, height: { ideal: 720 } }
+              : { facingMode: { ideal: 'environment' }, width: { ideal: 720 }, height: { ideal: 720 } },
+          });
         } catch {
           try {
-            // Secondary fallback: facingMode without resolution constraint
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: false,
-              video: { facingMode: 'environment' },
-            });
+            stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment' } });
           } catch {
-            // Final fallback: any video input
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: false,
-              video: true,
-            });
+            stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
           }
         }
 
-        streamRef.current = stream;
+        // A newer start (or a close) happened while we waited for permission.
+        if (generation !== streamGenerationRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
 
+        streamRef.current = stream;
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack?.getSettings?.().deviceId && !targetDeviceId) {
           setCurrentDeviceId(videoTrack.getSettings().deviceId || null);
         }
+        setSupportsTorch(Boolean(videoTrack?.getCapabilities && "torch" in (videoTrack.getCapabilities() as any)));
 
-        if (videoTrack?.getCapabilities) {
-          const caps = videoTrack.getCapabilities() as any;
-          setSupportsTorch(Boolean(caps && 'torch' in caps));
-        } else {
-          setSupportsTorch(false);
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+          setCameraStatus('idle');
+          return;
         }
 
-        if (videoRef.current && stream) {
-          const video = videoRef.current;
-          video.srcObject = stream;
-          video.setAttribute('playsinline', 'true');
-          video.setAttribute('webkit-playsinline', 'true');
-          video.muted = true;
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        video.muted = true;
 
-          // Ensure video metadata is loaded before attempting playback
-          await new Promise<void>((resolve) => {
-            if (video.readyState >= 1) {
-              resolve();
-            } else {
-              video.onloadedmetadata = () => resolve();
-              setTimeout(resolve, 500);
-            }
-          });
+        // Wait for real frame dimensions before decoding anything.
+        await new Promise<void>((resolve) => {
+          if (video.readyState >= 1) return resolve();
+          const done = () => resolve();
+          video.addEventListener('loadedmetadata', done, { once: true });
+          setTimeout(done, 2500);
+        });
 
-          await video.play().catch((playErr) => {
-            console.warn('Video play warning:', playErr);
-          });
-          isScanningActiveRef.current = true;
-          setIsScanningPaused(false);
-          scanFrame();
+        await video.play().catch(() => {});
+
+        if (generation !== streamGenerationRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
+
+        // The stream is live: this is success even if no QR is visible yet.
+        setCameraStatus('active');
+        setCameraError(null);
+        isScanningActiveRef.current = true;
+        setIsScanningPaused(false);
+        scanFrame();
 
         await refreshDevices();
       } catch (err: any) {
-        let msg =
-          'Camera access unavailable. You can upload a QR image or enter the pairing code manually.';
-        if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
-          msg =
-            'Camera permission was denied. Allow camera access in browser settings, or use "Upload" / "Pair Code" below.';
-        } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
-          msg = 'No camera detected on this device. Use "Upload" or "Pair Code" instead.';
-        } else if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
-          msg = 'Camera is currently in use by another app or tab. Close it and tap Try Again.';
-        }
-        setCameraError(msg);
+        if (generation !== streamGenerationRef.current) return;
+        setCameraError(
+          err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
+            ? 'Camera permission is blocked. Allow camera access in your browser settings, or use "Upload" / "Pair Code" below.'
+            : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
+              ? 'No camera was detected on this device. Use "Upload" or "Pair Code" instead.'
+              : err?.name === 'NotReadableError' || err?.name === 'TrackStartError'
+                ? 'The camera is in use by another app or tab. Close it and tap Try Again.'
+                : 'Camera could not be started. Use "Upload" or "Pair Code" below.'
+        );
+        setCameraStatus(
+          err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
+            ? 'denied'
+            : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
+              ? 'unavailable'
+              : 'error'
+        );
       }
     },
     [currentDeviceId, stopCamera, refreshDevices, scanFrame]
@@ -544,45 +549,41 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
     try {
       setIsConnecting(true);
-      let res: any = null;
-      try {
-        res = await udharDeletionApi.connectViaQr({
-          pairingToken: resolvedOwner.pairingToken,
-          pairingCode: resolvedOwner.pairingCode,
-          relationshipType,
-        });
-      } catch {
-        // Fallback for static deployment or serverless without DB
-        res = {
-          success: true,
-          connectedUser: {
-            id: resolvedOwner.owner?.id || 'contact-' + Date.now(),
-            name: resolvedOwner.owner?.displayName || 'Connected Contact',
-            displayName: resolvedOwner.owner?.displayName || 'Connected Contact',
-          },
-        };
-      }
+      // Server-side only: creates a pending request that the QR owner must approve.
+      const res = await udharDeletionApi.connectViaQr({
+        pairingToken: resolvedOwner.pairingToken,
+        pairingCode: resolvedOwner.pairingCode,
+        relationshipType,
+      });
 
-      if (res.success) {
+      if (res.status === 'connected') {
         toast.success(
-          'Connected Successfully!',
-          `You and ${res.connectedUser.displayName} are now linked for two-way Shared Udhar.`
+          'Connected!',
+          res.message || `You are now connected with ${resolvedOwner.owner?.displayName || 'this user'}.`
         );
-        if (onConnected) {
+        if (onConnected && res.connection) {
           onConnected({
-            id: res.connectedUser.id,
-            name: res.connectedUser.displayName,
-            emailMasked: resolvedOwner.owner?.emailMasked,
-            avatarUrl: resolvedOwner.owner?.avatarUrl || null,
+            id: res.connection.id,
+            name: res.connection.displayName,
+            emailMasked: res.connection.emailMasked,
+            avatarUrl: res.connection.avatarUrl || null,
           });
         }
-        setResolvedOwner(null);
-        onClose();
       } else {
-        toast.error('Connection Failed', res.message || 'Could not create connection.');
+        toast.success(
+          'Request Sent',
+          res.message ||
+            'Your connection request was sent. It becomes active only after they accept it.'
+        );
       }
+
+      setResolvedOwner(null);
+      onClose();
     } catch (err: any) {
-      toast.error('Connection Error', err?.message || 'Could not create connection.');
+      const mapped = mapResolveError(err);
+      toast.error(mapped.title, mapped.message);
+      setScanError(mapped);
+      setResolvedOwner(null);
     } finally {
       setIsConnecting(false);
     }
@@ -792,7 +793,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               ) : (
                 <div className="p-2.5 rounded-xl bg-emerald-100/60 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center justify-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>Connect with this verified user for 2-way Udhar sync?</span>
+                  <span>Send a connection request? They must approve it before any profile details are shared.</span>
                 </div>
               )}
             </div>
@@ -851,7 +852,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {isConnecting ? (
-                  <span>Connecting...</span>
+                  <span>Sending...</span>
                 ) : resolvedOwner.isAlreadyConnected ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -860,7 +861,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 ) : (
                   <>
                     <Users className="w-3.5 h-3.5" />
-                    <span>Confirm &amp; Connect</span>
+                    <span>Send Request</span>
                   </>
                 )}
               </button>
@@ -1026,6 +1027,32 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                   </div>
                 )}
 
+                {!cameraError && cameraStatus === 'active' && (
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Camera ready. Scan your friend&apos;s Udhar QR code.</span>
+                  </div>
+                )}
+
+                {!cameraError && cameraStatus === 'starting' && (
+                  <p className="text-[11px] text-slate-500 text-center animate-pulse">
+                    Starting camera...
+                  </p>
+                )}
+
+                {!cameraError && cameraStatus === 'idle' && (
+                  <div className="text-center space-y-2">
+                    <p className="text-[11px] text-slate-500">Camera is off.</p>
+                    <button
+                      type="button"
+                      onClick={() => void startCamera()}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] cursor-pointer"
+                    >
+                      Start Camera
+                    </button>
+                  </div>
+                )}
+
                 {cameraError ? (
                   <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-xs text-amber-800 dark:text-amber-300 space-y-3">
                     <p className="leading-relaxed">{cameraError}</p>
@@ -1055,7 +1082,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                   </div>
                 ) : (
                   <div className="flex items-center justify-between text-[11px] text-slate-500 max-w-[280px] mx-auto pt-1">
-                    <span>Point at QR code steadily</span>
+                    <span>Camera ready. Place a QR code inside the scanning frame.</span>
                     <button
                       type="button"
                       onClick={() => setActiveTab('upload')}
