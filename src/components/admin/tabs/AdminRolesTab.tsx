@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
-  ShieldCheck,
-  Lock,
   RefreshCw,
   Edit3,
-  Check,
   X,
   AlertTriangle,
 } from 'lucide-react';

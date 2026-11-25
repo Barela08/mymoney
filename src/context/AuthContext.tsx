@@ -5,7 +5,6 @@ import {
   getStoredSessionToken,
   setStoredSessionToken,
   setStoredAuthUser,
-  UserProfileData,
 } from '../lib/authApi';
 import { getSupabaseClient } from '../lib/supabase';
 
@@ -521,12 +520,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Admin: Delete user
   const adminDeleteUser = async (targetUserId: string) => {
-    let apiSuccess = false;
     let apiMsg = '';
     try {
       const res = await authApi.adminDeleteUser(targetUserId);
-      apiSuccess = res.success;
-      apiMsg = res.message;
+      if (res.success) {
+        apiMsg = res.message;
+      }
     } catch {}
 
     try {

@@ -45,6 +45,8 @@ export function sanitizeInput(input: unknown): string {
   }
 
   // Remove null bytes and control characters
+  // oxlint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex
   let clean = input.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
 
   // Strip dangerous javascript: and data: URI schemes
@@ -259,6 +261,8 @@ export function validatePasswordStrength(password: string): PasswordStrengthResu
     score += 1;
   }
 
+  // oxlint-disable-next-line no-useless-escape
+  // eslint-disable-next-line no-useless-escape
   if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
     errors.push('Password must contain at least one special symbol (!@#$%^&*...).');
   } else {

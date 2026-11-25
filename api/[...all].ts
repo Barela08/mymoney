@@ -1,5 +1,3 @@
-import type { IncomingMessage, ServerResponse } from 'http';
-import { parse as parseUrl } from 'url';
 import { handleApiRequest } from '../server/api';
 
 export default async function handler(req: any, res: any) {
