@@ -70,13 +70,12 @@ export const ExpenseCalendarSection: React.FC<ExpenseCalendarSectionProps> = ({
   onOpenAddModalForDate,
 }) => {
   const { transactions } = useExpense();
-  const today = new Date();
-  const todayKey = formatLocalDateKey(today);
+  const todayKey = useMemo(() => formatLocalDateKey(new Date()), []);
 
   const [viewMode, setViewMode] = useState<'monthly' | 'weekly' | 'daily'>('monthly');
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1-12
-  const [selectedDateKey, setSelectedDateKey] = useState<string>(todayKey);
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth() + 1); // 1-12
+  const [selectedDateKey, setSelectedDateKey] = useState<string>(() => formatLocalDateKey(new Date()));
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 

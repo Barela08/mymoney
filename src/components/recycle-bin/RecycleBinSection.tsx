@@ -4,14 +4,9 @@ import {
   RotateCcw,
   AlertTriangle,
   Search,
-  Filter,
-  CheckCircle2,
   Calendar,
   Clock,
   User,
-  Tag,
-  ArrowDownLeft,
-  ArrowUpRight,
   ShieldAlert,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
@@ -19,12 +14,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { EmptyState } from '../common/EmptyState';
 import { SkeletonCardsGrid } from '../common/states';
-import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
-import { Transaction } from '../../types';
+import { formatINR, formatDisplayDate } from '../../lib/dateUtils';
 
 export const RecycleBinSection: React.FC = () => {
   const { recycleBinTransactions, restoreTransaction, permanentDeleteTransaction, isLoading } = useExpense();
-  const { user, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');

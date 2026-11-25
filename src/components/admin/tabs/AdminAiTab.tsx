@@ -2,19 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Bot,
-  BrainCircuit,
   Calendar,
   AlertTriangle,
   ScanText,
   PieChart,
-  ShieldCheck,
-  CheckCircle2,
   RefreshCw,
   Power,
-  Zap,
-  Cpu,
-  Clock,
-  Layers,
 } from 'lucide-react';
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';

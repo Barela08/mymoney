@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
   ListOrdered,
-  Search,
-  Filter,
   Calendar,
   Clock,
   ArrowDownLeft,
@@ -14,10 +12,6 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
-  Home,
-  DoorOpen,
-  ShoppingBag,
-  Users,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -28,9 +22,6 @@ import { EditTransactionModal } from '../modals/EditTransactionModal';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import {
   Transaction,
-  TransactionCategory,
-  TransactionSubcategory,
-  TransactionType,
   SortOrder,
 } from '../../types';
 import {

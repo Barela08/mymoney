@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import * as webpushModule from 'web-push';
-import { query } from './db';
+import { query, isDatabaseConfigured } from './db';
 import { APP_CONFIG } from './config';
 import { sendEmail } from './email';
 import { generateCampaignEmail } from './notificationEmailTemplates';
@@ -1687,101 +1687,106 @@ export async function recordDeviceInstallation(
   const now = new Date();
   const installedAt = isInstalled ? now.toISOString() : null;
 
-  try {
-    // Check if device already exists to detect first-time PWA install
-    const existing = await query(
-      `SELECT id, is_installed, installed_at FROM public.installed_devices
-       WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
-      [userId, browser, os, deviceType]
-    );
-
-    if (existing.rows.length > 0) {
-      const prev = existing.rows[0];
-      if (!prev.is_installed && isInstalled) {
-        isNewInstall = true;
-      }
-
-      const updateRes = await query(
-        `UPDATE public.installed_devices
-         SET 
-           installation_status = $1,
-           is_installed = $2,
-           installed_at = COALESCE(installed_at, $3),
-           last_active_at = NOW(),
-           push_permission = $4,
-           push_subscription_status = $5,
-           user_agent = $6,
-           ip_address = $7,
-           updated_at = NOW()
-         WHERE id = $8
-         RETURNING *`,
-        [
-          installationStatus,
-          isInstalled,
-          installedAt,
-          pushPermission,
-          pushSubscriptionStatus,
-          userAgent,
-          ipAddress,
-          prev.id,
-        ]
+  if (isDatabaseConfigured) {
+    try {
+      // Check if device already exists to detect first-time PWA install
+      const existing = await query(
+        `SELECT id, is_installed, installed_at FROM public.installed_devices
+         WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
+        [userId, browser, os, deviceType]
       );
 
-      const record = updateRes.rows[0];
+      if (existing.rows.length > 0) {
+        const prev = existing.rows[0];
+        if (!prev.is_installed && isInstalled) {
+          isNewInstall = true;
+        }
 
-      // If user newly installed PWA, notify administrators
-      if (isNewInstall) {
-        recordAdminNotification({
-          eventType: 'pwa_install',
-          title: 'PWA Installed by User',
-          message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
-          userId,
-          metadata: { deviceType, browser, os, installedAt },
-        }).catch(() => {});
+        const updateRes = await query(
+          `UPDATE public.installed_devices
+           SET 
+             installation_status = $1,
+             is_installed = $2,
+             installed_at = COALESCE(installed_at, $3),
+             last_active_at = NOW(),
+             push_permission = $4,
+             push_subscription_status = $5,
+             user_agent = $6,
+             ip_address = $7,
+             updated_at = NOW()
+           WHERE id = $8
+           RETURNING *`,
+          [
+            installationStatus,
+            isInstalled,
+            installedAt,
+            pushPermission,
+            pushSubscriptionStatus,
+            userAgent,
+            ipAddress,
+            prev.id,
+          ]
+        );
+
+        const record = updateRes.rows[0];
+
+        // If user newly installed PWA, notify administrators
+        if (isNewInstall) {
+          recordAdminNotification({
+            eventType: 'pwa_install',
+            title: 'PWA Installed by User',
+            message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+            userId,
+            metadata: { deviceType, browser, os, installedAt },
+          }).catch(() => {});
+        }
+
+        return { success: true, isNewInstall, record };
+      } else {
+        if (isInstalled) {
+          isNewInstall = true;
+        }
+
+        const insertRes = await query(
+          `INSERT INTO public.installed_devices
+           (user_id, device_type, browser, os, user_agent, installation_status, is_installed, installed_at, last_active_at, push_permission, push_subscription_status, ip_address)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)
+           RETURNING *`,
+          [
+            userId,
+            deviceType,
+            browser,
+            os,
+            userAgent,
+            installationStatus,
+            isInstalled,
+            installedAt,
+            pushPermission,
+            pushSubscriptionStatus,
+            ipAddress,
+          ]
+        );
+
+        const record = insertRes.rows[0];
+
+        if (isNewInstall) {
+          recordAdminNotification({
+            eventType: 'pwa_install',
+            title: 'PWA Installed by User',
+            message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+            userId,
+            metadata: { deviceType, browser, os, installedAt },
+          }).catch(() => {});
+        }
+
+        return { success: true, isNewInstall, record };
       }
-
-      return { success: true, isNewInstall, record };
-    } else {
-      if (isInstalled) {
-        isNewInstall = true;
-      }
-
-      const insertRes = await query(
-        `INSERT INTO public.installed_devices
-         (user_id, device_type, browser, os, user_agent, installation_status, is_installed, installed_at, last_active_at, push_permission, push_subscription_status, ip_address)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)
-         RETURNING *`,
-        [
-          userId,
-          deviceType,
-          browser,
-          os,
-          userAgent,
-          installationStatus,
-          isInstalled,
-          installedAt,
-          pushPermission,
-          pushSubscriptionStatus,
-          ipAddress,
-        ]
-      );
-
-      const record = insertRes.rows[0];
-
-      if (isNewInstall) {
-        recordAdminNotification({
-          eventType: 'pwa_install',
-          title: 'PWA Installed by User',
-          message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
-          userId,
-          metadata: { deviceType, browser, os, installedAt },
-        }).catch(() => {});
-      }
-
-      return { success: true, isNewInstall, record };
+    } catch {
+      // Fallback to in-memory below
     }
-  } catch (err: any) {
-    // In-memory fallback
+  }
+
+  // In-memory fallback
     const key = `${userId}:${browser}:${os}:${deviceType}`;
     const prev = localInstalledDevices.get(key);
     if (!prev?.is_installed && isInstalled) {

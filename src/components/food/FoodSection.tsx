@@ -2,18 +2,10 @@ import React, { useState } from 'react';
 import {
   Utensils,
   PlusCircle,
-  Search,
-  Filter,
   Calendar,
   Clock,
   Trash2,
   Edit3,
-  MapPin,
-  Tag,
-  Coffee,
-  Sparkles,
-  TrendingDown,
-  ShoppingBag,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -23,7 +15,7 @@ import { EmptyState } from '../common/EmptyState';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { SkeletonTable } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
-import { Transaction, SortOrder, TransactionSubcategory } from '../../types';
+import { Transaction, SortOrder } from '../../types';
 import {
   formatINR,
   formatDisplayDate,

@@ -5,16 +5,11 @@ import {
   Flame,
   Building,
   Zap,
-  PlusCircle,
-  Search,
-  Filter,
   Calendar,
   Clock,
   Trash2,
   Edit3,
   History,
-  Layers,
-  ArrowUpRight,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -24,7 +19,7 @@ import { EmptyState } from '../common/EmptyState';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { SkeletonTable, SkeletonCardsGrid } from '../common/states';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
-import { Transaction, TransactionSubcategory, SortOrder } from '../../types';
+import { Transaction, SortOrder } from '../../types';
 import {
   formatINR,
   formatDisplayDate,
