@@ -5,12 +5,10 @@
 import http from 'http';
 import { parse as parseUrl } from 'url';
 import { query } from './db';
-import { authenticateRequest, sanitizeUserOutput, revokeSession, revokeAllUserSessions } from './auth';
-import { logSecurityEvent, hashPassword, hashToken, generateCryptoToken } from './security';
+import { authenticateRequest, revokeAllUserSessions } from './auth';
+import { logSecurityEvent, generateCryptoToken } from './security';
 import {
   sendEmail,
-  sendPasswordResetEmail,
-  sendAccountStatusEmail,
   sendAdminReplyToTicketEmail,
 } from './email';
 import {

@@ -10,6 +10,9 @@ import {
   Smartphone,
   Mail,
   Calendar,
+  Layers,
+  ShieldAlert,
+  RotateCw,
 } from 'lucide-react';
 import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';

@@ -15,6 +15,7 @@ import { useToast } from '../../context/ToastContext';
 import { EmptyState } from '../common/EmptyState';
 import { SkeletonCardsGrid } from '../common/states';
 import { formatINR, formatDisplayDate } from '../../lib/dateUtils';
+import { Transaction } from '../../types';
 
 export const RecycleBinSection: React.FC = () => {
   const { recycleBinTransactions, restoreTransaction, permanentDeleteTransaction, isLoading } = useExpense();

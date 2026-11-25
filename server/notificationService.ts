@@ -1614,7 +1614,7 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     }
   }
 
-  if (campaign.channels.includes('in_app')) {
+  if (Array.isArray(campaign.channels) && campaign.channels.includes('in_app')) {
     await query(
       `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
        VALUES ($1, $2, $3, $4, TRUE, $5)`,
@@ -1746,20 +1746,20 @@ export async function recordDeviceInstallation(
           ]
         );
 
-        const record = updateRes.rows[0];
+        const record = updateRes.rows && updateRes.rows[0];
+        if (record) {
+          if (isNewInstall) {
+            recordAdminNotification({
+              eventType: 'pwa_install',
+              title: 'PWA Installed by User',
+              message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+              userId,
+              metadata: { deviceType, browser, os, installedAt },
+            }).catch(() => {});
+          }
 
-        // If user newly installed PWA, notify administrators
-        if (isNewInstall) {
-          recordAdminNotification({
-            eventType: 'pwa_install',
-            title: 'PWA Installed by User',
-            message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
-            userId,
-            metadata: { deviceType, browser, os, installedAt },
-          }).catch(() => {});
+          return { success: true, isNewInstall, record };
         }
-
-        return { success: true, isNewInstall, record };
       } else {
         if (isInstalled) {
           isNewInstall = true;
@@ -1785,19 +1785,20 @@ export async function recordDeviceInstallation(
           ]
         );
 
-        const record = insertRes.rows[0];
+        const record = insertRes.rows && insertRes.rows[0];
+        if (record) {
+          if (isNewInstall) {
+            recordAdminNotification({
+              eventType: 'pwa_install',
+              title: 'PWA Installed by User',
+              message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+              userId,
+              metadata: { deviceType, browser, os, installedAt },
+            }).catch(() => {});
+          }
 
-        if (isNewInstall) {
-          recordAdminNotification({
-            eventType: 'pwa_install',
-            title: 'PWA Installed by User',
-            message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
-            userId,
-            metadata: { deviceType, browser, os, installedAt },
-          }).catch(() => {});
+          return { success: true, isNewInstall, record };
         }
-
-        return { success: true, isNewInstall, record };
       }
     } catch {
       // Fallback to in-memory below
@@ -1805,29 +1806,28 @@ export async function recordDeviceInstallation(
   }
 
   // In-memory fallback
-    const key = `${userId}:${browser}:${os}:${deviceType}`;
-    const prev = localInstalledDevices.get(key);
-    if (!prev?.is_installed && isInstalled) {
-      isNewInstall = true;
-    }
-    const record = {
-      id: prev?.id || `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      user_id: userId,
-      device_type: deviceType,
-      browser,
-      os,
-      user_agent: userAgent,
-      installation_status: installationStatus,
-      is_installed: isInstalled,
-      installed_at: prev?.installed_at || (isInstalled ? now.toISOString() : null),
-      last_active_at: now.toISOString(),
-      push_permission: pushPermission,
-      push_subscription_status: pushSubscriptionStatus,
-      last_delivery_result: prev?.last_delivery_result || 'none',
-    };
-    localInstalledDevices.set(key, record);
-    return { success: true, isNewInstall, record };
+  const key = `${userId}:${browser}:${os}:${deviceType}`;
+  const prev = localInstalledDevices.get(key);
+  if (!prev?.is_installed && isInstalled) {
+    isNewInstall = true;
   }
+  const record = {
+    id: prev?.id || `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    user_id: userId,
+    device_type: deviceType,
+    browser,
+    os,
+    user_agent: userAgent,
+    installation_status: installationStatus,
+    is_installed: isInstalled,
+    installed_at: prev?.installed_at || (isInstalled ? now.toISOString() : null),
+    last_active_at: now.toISOString(),
+    push_permission: pushPermission,
+    push_subscription_status: pushSubscriptionStatus,
+    last_delivery_result: prev?.last_delivery_result || 'none',
+  };
+  localInstalledDevices.set(key, record);
+  return { success: true, isNewInstall, record };
 }
 
 export async function getAdminInstalledDevices(filters?: {
@@ -1884,7 +1884,27 @@ export async function getAdminInstalledDevices(filters?: {
   }
 
   // Fallback to in-memory devices
-  const list = Array.from(localInstalledDevices.values());
+  let list = Array.from(localInstalledDevices.values());
+  if (filters?.installedOnly) {
+    list = list.filter((r) => r.is_installed);
+  }
+  if (filters?.deviceType) {
+    list = list.filter((r) => r.device_type === filters.deviceType);
+  }
+  if (filters?.pushPermission) {
+    list = list.filter((r) => r.push_permission === filters.pushPermission);
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    list = list.filter(
+      (r) =>
+        r.user_name?.toLowerCase().includes(q) ||
+        r.user_email?.toLowerCase().includes(q) ||
+        r.user_id?.toLowerCase().includes(q) ||
+        r.browser?.toLowerCase().includes(q) ||
+        r.os?.toLowerCase().includes(q)
+    );
+  }
   return list;
 }
 

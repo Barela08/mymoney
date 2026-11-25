@@ -139,8 +139,9 @@ export const ExpenseCalendarSection: React.FC<ExpenseCalendarSectionProps> = ({
   };
 
   const handleJumpToday = () => {
-    setCurrentYear(today.getFullYear());
-    setCurrentMonth(today.getMonth() + 1);
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth() + 1);
     setSelectedDateKey(todayKey);
   };
 
