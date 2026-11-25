@@ -38,7 +38,7 @@ export default defineConfig({
   plugins: [react(), backendApiPlugin()],
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: 3000,
     allowedHosts: true,
     headers: {
       'Content-Security-Policy': [

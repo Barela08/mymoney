@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   notificationsApi,
   UserNotification,
   NotificationPreferences,
 } from '../lib/notificationsApi';
-import { pushNotifications } from '../lib/pushNotifications';
+import { pushNotifications, type PushSubscribeResult } from '../lib/pushNotifications';
 import { useAuth } from './AuthContext';
 
 interface NotificationContextType {
@@ -21,7 +21,7 @@ interface NotificationContextType {
   deleteNotification: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
   updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
-  enablePush: () => Promise<{ success: boolean; error?: string }>;
+  enablePush: () => Promise<PushSubscribeResult>;
   disablePush: () => Promise<boolean>;
   sendTestPush: () => Promise<boolean>;
 }
@@ -37,17 +37,40 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [isPushSupported, setIsPushSupported] = useState<boolean>(false);
   const [isPushSubscribed, setIsPushSubscribed] = useState<boolean>(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
+  const pushRequestInFlightRef = useRef<boolean>(false);
 
-  // Check push support on mount
+  // Check push support and passively listen for browser permission changes (never prompts)
   useEffect(() => {
     const supported = pushNotifications.isSupported();
     setIsPushSupported(supported);
-    if (supported) {
-      setPushPermission(pushNotifications.getPermission());
-      pushNotifications.getExistingSubscription().then((sub) => {
-        setIsPushSubscribed(!!sub);
-      });
+    if (!supported) return;
+
+    setPushPermission(pushNotifications.getPermission());
+    pushNotifications.getExistingSubscription().then((sub) => {
+      setIsPushSubscribed(!!sub);
+    });
+
+    let permStatusObj: PermissionStatus | null = null;
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'notifications' as PermissionName })
+        .then((status) => {
+          permStatusObj = status;
+          status.onchange = () => {
+            setPushPermission(pushNotifications.getPermission());
+            pushNotifications.getExistingSubscription().then((sub) => {
+              setIsPushSubscribed(!!sub);
+            });
+          };
+        })
+        .catch(() => {});
     }
+
+    return () => {
+      if (permStatusObj) {
+        permStatusObj.onchange = null;
+      }
+    };
   }, []);
 
   // Fetch notifications
@@ -149,33 +172,63 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const enablePush = async () => {
+  const enablePush = useCallback(async (): Promise<PushSubscribeResult> => {
+    if (!pushNotifications.isSupported()) {
+      return {
+        success: false,
+        permission: 'unsupported',
+        error: 'Push notifications are not supported on this browser.',
+      };
+    }
+
     // Check if already subscribed
     if (isPushSubscribed) {
-      return { success: true };
+      setPushPermission('granted');
+      return { success: true, permission: 'granted' };
+    }
+
+    // Prevent overlapping permission requests
+    if (pushRequestInFlightRef.current) {
+      return {
+        success: false,
+        permission: pushNotifications.getPermission(),
+        error: 'Notification permission request is already open.',
+      };
     }
 
     // Check current permission state before requesting
     const currentPermission = pushNotifications.getPermission();
+    setPushPermission(currentPermission);
+
     if (currentPermission === 'denied') {
-      // Permission already denied - don't show repeated errors, return a specific error
       return {
         success: false,
+        permission: 'denied',
         error:
-          'Notification permission was denied. Please allow notifications in browser site settings.',
+          'Notification permission is blocked in your browser. Allow notifications in site settings and click Enable Push to retry.',
       };
     }
 
-    const res = await pushNotifications.subscribe();
-    if (res.success) {
-      setIsPushSubscribed(true);
-      setPushPermission('granted');
-      if (preferences) {
-        await updatePreferences({ push_enabled: true });
+    pushRequestInFlightRef.current = true;
+    try {
+      const res = await pushNotifications.subscribe();
+      const updatedPerm = pushNotifications.getPermission();
+      setPushPermission(updatedPerm);
+
+      if (res.success) {
+        setIsPushSubscribed(true);
+        setPushPermission('granted');
+        if (preferences) {
+          await updatePreferences({ push_enabled: true }).catch(() => {});
+        }
+      } else {
+        setIsPushSubscribed(false);
       }
+      return { ...res, permission: res.permission || updatedPerm };
+    } finally {
+      pushRequestInFlightRef.current = false;
     }
-    return res;
-  };
+  }, [isPushSubscribed, preferences]);
 
 
   const disablePush = async () => {

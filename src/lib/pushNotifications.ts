@@ -14,6 +14,14 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+export type PushSubscribeResult = {
+  success: boolean;
+  permission?: NotificationPermission | 'unsupported';
+  error?: string;
+};
+
+let inFlightSubscribe: Promise<PushSubscribeResult> | null = null;
+
 export const pushNotifications = {
   /**
    * Checks whether Push and Service Worker are supported in this browser
@@ -51,56 +59,94 @@ export const pushNotifications = {
   },
 
   /**
-   * Requests permission, subscribes to PushManager with server VAPID key, and registers with backend
+   * Requests permission, subscribes to PushManager with server VAPID key, and registers with backend.
+   * Serializes concurrent calls so multiple browser prompts cannot stack.
    */
-  async subscribe(): Promise<{ success: boolean; error?: string }> {
+  async subscribe(): Promise<PushSubscribeResult> {
     if (!this.isSupported()) {
-      return { success: false, error: 'Push notifications are not supported on this browser.' };
+      return {
+        success: false,
+        permission: 'unsupported',
+        error: 'Push notifications are not supported on this browser.',
+      };
     }
 
-    try {
-      // 1. Request user permission
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
+    if (inFlightSubscribe) {
+      return inFlightSubscribe;
+    }
+
+    inFlightSubscribe = (async (): Promise<PushSubscribeResult> => {
+      try {
         const isEmbedded = window.self !== window.top;
+        const currentPermission = Notification.permission;
+
+        if (currentPermission === 'denied') {
+          return {
+            success: false,
+            permission: 'denied',
+            error: isEmbedded
+              ? 'Browser notifications are blocked in embedded preview or site settings. Open the app in a full tab and allow Notifications in site settings.'
+              : 'Notifications are blocked for this site. Click the lock icon in your browser address bar and set Notifications to Allow.',
+          };
+        }
+
+        // 1. Request user permission only when currently 'default' (or already 'granted')
+        const permission =
+          currentPermission === 'granted' ? 'granted' : await Notification.requestPermission();
+
+        if (permission !== 'granted') {
+          return {
+            success: false,
+            permission,
+            error:
+              permission === 'denied'
+                ? isEmbedded
+                  ? 'Browser notifications are blocked in embedded preview or site settings. Open the app in a full tab and allow Notifications in site settings.'
+                  : 'Notifications are blocked for this site. Click the lock icon in your browser address bar and set Notifications to Allow.'
+                : 'Notification permission was dismissed. Click Enable Push to try again when ready.',
+          };
+        }
+
+        // 2. Fetch server public VAPID key
+        const vapidPublicKey = await notificationsApi.getVapidPublicKey();
+        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+        // 3. Wait for service worker ready
+        const registration = await navigator.serviceWorker.ready;
+
+        // 4. Check for existing subscription or create new
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: convertedVapidKey as BufferSource,
+          });
+        }
+
+        // 5. Register with backend
+        const ok = await notificationsApi.subscribePush(subscription);
+        if (!ok) {
+          return {
+            success: false,
+            permission: 'granted',
+            error: 'Failed to register subscription with server.',
+          };
+        }
+
+        return { success: true, permission: 'granted' };
+      } catch (err: any) {
+        console.error('[Push Notifications Error]:', err);
         return {
           success: false,
-          error:
-            permission === 'denied'
-              ? isEmbedded
-                ? 'Browser notifications are blocked in embedded preview or site settings. Open the app in a full tab and allow Notifications in site settings.'
-                : 'Notifications are blocked for this site. Click the lock icon in your browser address bar and set Notifications to Allow.'
-              : 'Notification permission request was dismissed.',
+          permission: this.getPermission(),
+          error: err?.message || 'Unknown push subscription error.',
         };
+      } finally {
+        inFlightSubscribe = null;
       }
+    })();
 
-      // 2. Fetch server public VAPID key
-      const vapidPublicKey = await notificationsApi.getVapidPublicKey();
-      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-
-      // 3. Wait for service worker ready
-      const registration = await navigator.serviceWorker.ready;
-
-      // 4. Check for existing subscription or create new
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedVapidKey as BufferSource,
-        });
-      }
-
-      // 5. Register with backend
-      const ok = await notificationsApi.subscribePush(subscription);
-      if (!ok) {
-        return { success: false, error: 'Failed to register subscription with server.' };
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      console.error('[Push Notifications Error]:', err);
-      return { success: false, error: err.message || 'Unknown push subscription error.' };
-    }
+    return inFlightSubscribe;
   },
 
   /**

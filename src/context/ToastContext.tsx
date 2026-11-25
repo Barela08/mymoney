@@ -132,8 +132,28 @@ const ToastItem: React.FC<{ toast: ToastMessage; onDismiss: (id: string) => void
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastsRef = React.useRef<ToastMessage[]>([]);
+  const timersRef = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    toastsRef.current = toasts;
+  }, [toasts]);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   const removeToast = useCallback((id: string) => {
+    const existingTimer = timersRef.current.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      timersRef.current.delete(id);
+    }
+    toastsRef.current = toastsRef.current.filter((t) => t.id !== id);
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -146,34 +166,46 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       duration: number = 4000,
       dedupKey?: string
     ) => {
-      // Deduplication: check inside setter to always read current state (avoids stale closure)
+      const effectiveKey = dedupKey || `${type}::${title}::${message || ''}`;
+
+      // Check synchronously against latest ref so rapid calls or StrictMode double-invocations never stack duplicates
+      if (toastsRef.current.some((t) => t.dedupKey === effectiveKey)) {
+        return;
+      }
+
+      const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const newToast: ToastMessage = {
+        id,
+        type,
+        title,
+        message,
+        action,
+        duration,
+        dedupKey: effectiveKey,
+      };
+
+      toastsRef.current = [...toastsRef.current, newToast];
       setToasts((prev) => {
-        if (dedupKey) {
-          const existing = prev.find((t) => t.dedupKey === dedupKey);
-          if (existing) {
-            return prev; // Toast already exists - don't add duplicate
-          }
+        if (prev.some((t) => t.dedupKey === effectiveKey)) {
+          return prev;
         }
-
-        const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-        const newToast = { id, type, title, message, action, duration, dedupKey };
-
-        // Only auto-dismiss if not an action toast with custom countdown
-        if (!action?.countdownSeconds) {
-          setTimeout(() => {
-            removeToast(id);
-          }, duration);
-        }
-
         return [...prev, newToast];
       });
+
+      // Only auto-dismiss if not an action toast with custom countdown
+      if (!action?.countdownSeconds && duration > 0) {
+        const timer = setTimeout(() => {
+          removeToast(id);
+        }, duration);
+        timersRef.current.set(id, timer);
+      }
     },
     [removeToast]
   );
 
   const showToastOnce = useCallback(
-    (title: string, message?: string, type: ToastType = 'info', dedupKey?: string, duration: number = 4000) => {
-      showToast(title, message, type, undefined, duration, dedupKey);
+    (title: string, message?: string, type: ToastType = 'info', dedupKey?: string, duration: number = 4500) => {
+      showToast(title, message, type, undefined, duration, dedupKey || `${type}::${title}::${message || ''}`);
     },
     [showToast]
   );
@@ -185,13 +217,20 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const showUndoToast = useCallback(
     (title: string, message: string, onUndo: () => void, countdownSeconds: number = 6) => {
-      showToast(title, message, 'undo', { label: 'Undo', onClick: onUndo, countdownSeconds }, countdownSeconds * 1000);
+      showToast(
+        title,
+        message,
+        'undo',
+        { label: 'Undo', onClick: onUndo, countdownSeconds },
+        countdownSeconds * 1000,
+        `undo::${title}::${message}`
+      );
     },
     [showToast]
   );
 
   return (
-          <ToastContext.Provider value={{ showToast, showToastOnce, success, error, info, warning, showUndoToast }}>
+    <ToastContext.Provider value={{ showToast, showToastOnce, success, error, info, warning, showUndoToast }}>
       {children}
       {/* Toast container floating bottom-right with high z-index */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col space-y-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">

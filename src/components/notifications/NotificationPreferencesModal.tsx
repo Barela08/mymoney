@@ -25,6 +25,7 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
     updatePreferences,
     isPushSupported,
     isPushSubscribed,
+    pushPermission,
     enablePush,
     disablePush,
     sendTestPush,
@@ -33,6 +34,8 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
 
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isTogglingPush, setIsTogglingPush] = useState(false);
+  const [pushNotice, setPushNotice] = useState<{ type: 'warning' | 'error'; message: string } | null>(null);
 
   // Form state initialized from preferences
   const [inApp, setInApp] = useState(preferences?.in_app_enabled ?? true);
@@ -53,7 +56,11 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
   const [privacyAmounts, setPrivacyAmounts] = useState(preferences?.privacy_hide_amounts ?? false);
 
   useEffect(() => {
-    if (!isOpen || !preferences) return;
+    if (!isOpen) {
+      setPushNotice(null);
+      return;
+    }
+    if (!preferences) return;
     setInApp(preferences.in_app_enabled ?? true);
     setPush(preferences.push_enabled ?? true);
     setEmail(preferences.email_enabled ?? true);
@@ -111,20 +118,48 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
   };
 
   const handleTogglePush = async () => {
-    if (isPushSubscribed) {
-      const ok = await disablePush();
-      if (ok) {
-        setPush(false);
-        toast.info('Push Disabled', 'Push notifications disabled for this device.');
-      }
-    } else {
-      const res = await enablePush();
-      if (res.success) {
-        setPush(true);
-        toast.success('Push Enabled', 'Browser push notifications successfully activated!');
+    if (isTogglingPush) return;
+    setIsTogglingPush(true);
+    setPushNotice(null);
+
+    try {
+      if (isPushSubscribed) {
+        const ok = await disablePush();
+        if (ok) {
+          setPush(false);
+          toast.showToastOnce('Push Disabled', 'Push notifications disabled for this device.', 'info', 'notification-push-disabled', 3500);
+        }
       } else {
-        toast.showToastOnce('Permission Required', res.error || 'Could not enable push.', 'error', 'notification-permission-error');
+        const res = await enablePush();
+        if (res.success) {
+          setPush(true);
+          setPushNotice(null);
+          toast.showToastOnce('Push Enabled', 'Browser push notifications successfully activated!', 'success', 'notification-push-enabled', 4000);
+        } else {
+          // Keep In-App & Email channels completely independent when push permission is not granted
+          setPush(false);
+          const permState = res.permission || pushPermission;
+          const isBlocked = permState === 'denied';
+          const fallbackMsg = isBlocked
+            ? 'Browser notifications are blocked. Allow notifications in site settings, then click Enable Push. In-App and Email alerts continue to work normally.'
+            : 'Notification permission was dismissed. In-App and Email alerts continue to work normally. Click Enable Push when ready.';
+          const displayMsg = res.error || fallbackMsg;
+
+          setPushNotice({
+            type: isBlocked ? 'error' : 'warning',
+            message: displayMsg,
+          });
+          toast.showToastOnce(
+            'Permission Required',
+            displayMsg,
+            isBlocked ? 'error' : 'warning',
+            'notification-permission-error',
+            4500
+          );
+        }
       }
+    } finally {
+      setIsTogglingPush(false);
     }
   };
 
@@ -203,41 +238,66 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
               </div>
 
               {/* Push Notifications */}
-              <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                    <Smartphone className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                        Mobile & Web Push
-                      </p>
-                      {isPushSubscribed && (
-                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[9px] font-bold">
-                          Active
-                        </span>
-                      )}
+              <div className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                      <Smartphone className="w-4 h-4" />
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Instant device notifications even when app is closed
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                          Mobile & Web Push
+                        </p>
+                        {isPushSubscribed && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[9px] font-bold">
+                            Active
+                          </span>
+                        )}
+                        {!isPushSubscribed && isPushSupported && pushPermission === 'denied' && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 text-[9px] font-bold">
+                            Blocked
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Instant device notifications even when app is closed
+                      </p>
+                    </div>
                   </div>
+                  {isPushSupported ? (
+                    <button
+                      type="button"
+                      onClick={handleTogglePush}
+                      disabled={isTogglingPush}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-60 ${
+                        isPushSubscribed
+                          ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                      }`}
+                    >
+                      {isTogglingPush
+                        ? 'Checking...'
+                        : isPushSubscribed
+                        ? 'Disable'
+                        : 'Enable Push'}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 shrink-0">Unsupported</span>
+                  )}
                 </div>
-                {isPushSupported ? (
-                  <button
-                    type="button"
-                    onClick={handleTogglePush}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      isPushSubscribed
-                        ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+
+                {!isPushSubscribed && isPushSupported && (pushNotice || pushPermission === 'denied') && (
+                  <p
+                    className={`text-[11px] leading-relaxed rounded-xl px-3 py-2 border ${
+                      pushNotice?.type === 'error' || pushPermission === 'denied'
+                        ? 'bg-rose-50/80 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/60'
+                        : 'bg-amber-50/80 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900/60'
                     }`}
                   >
-                    {isPushSubscribed ? 'Disable' : 'Enable Push'}
-                  </button>
-                ) : (
-                  <span className="text-[11px] text-slate-400">Unsupported</span>
+                    {pushNotice?.message ||
+                      'Browser notifications are blocked in site settings. Allow notifications in your browser, then click Enable Push. In-App and Email notifications remain active.'}
+                  </p>
                 )}
               </div>
 

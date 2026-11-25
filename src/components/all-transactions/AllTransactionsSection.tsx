@@ -246,7 +246,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       `"${(t.notes || '').replace(/"/g, '""')}"`,
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((e) => e.join(',')).join('\n')];
+    const csvContent = [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -260,6 +260,7 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
   };
 
   return (
+    <>
     <div className="space-y-6 animate-fade-in pb-16 lg:pb-8">
       {/* Top Header Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -646,5 +647,6 @@ export const AllTransactionsSection: React.FC<AllTransactionsSectionProps> = ({ 
       onConfirm={handleDeleteConfirm}
       onCancel={() => setTransactionToDelete(null)}
     />
+    </>
   );
 };

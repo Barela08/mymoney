@@ -52,6 +52,7 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [cameraStatus, setCameraStatus] = useState<HardwarePermissionStatus>('prompt');
   const [notifStatus, setNotifStatus] = useState<NotificationPermissionStatus>('prompt');
   const [isChecking, setIsChecking] = useState<boolean>(true);
+  const notifInFlightRef = React.useRef<boolean>(false);
 
   // Check all permissions gracefully without provoking unwanted browser prompts
   const checkAllPermissions = useCallback(async () => {
@@ -61,6 +62,15 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (typeof window !== 'undefined' && 'Notification' in window) {
       const perm = Notification.permission;
       setNotifStatus(perm === 'default' ? 'prompt' : perm);
+      if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+        try {
+          const notifQuery = await navigator.permissions.query({ name: 'notifications' as PermissionName });
+          notifQuery.onchange = () => {
+            const updated = Notification.permission;
+            setNotifStatus(updated === 'default' ? 'prompt' : updated);
+          };
+        } catch {}
+      }
     } else {
       setNotifStatus('unsupported');
     }
@@ -185,37 +195,83 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const requestNotification = useCallback(async () => {
     if (!pushNotifications.isSupported()) {
       setNotifStatus('unsupported');
-      toast.error('Unsupported', 'Push notifications are not supported in this browser.');
+      toast.showToastOnce(
+        'Unsupported',
+        'Push notifications are not supported in this browser.',
+        'error',
+        'notification-permission-error',
+        4500
+      );
       return { success: false, status: 'unsupported' as const, error: 'Not supported' };
     }
 
+    if (notifInFlightRef.current) {
+      return { success: false, status: notifStatus, error: 'Permission request already in progress.' };
+    }
+
+    if (pushNotifications.getPermission() === 'denied') {
+      setNotifStatus('denied');
+      const blockedMsg = 'Notifications are blocked. Please enable notifications in your browser site settings.';
+      toast.showToastOnce('Permission Required', blockedMsg, 'error', 'notification-permission-error', 5000);
+      return { success: false, status: 'denied' as const, error: blockedMsg };
+    }
+
+    notifInFlightRef.current = true;
     setNotifStatus('requesting');
     try {
       const result = await pushNotifications.subscribe();
-      const currentPerm = Notification.permission;
+      const currentPerm = pushNotifications.getPermission();
       const finalStatus: NotificationPermissionStatus =
         currentPerm === 'granted' ? 'granted' : currentPerm === 'denied' ? 'denied' : 'prompt';
 
       setNotifStatus(finalStatus);
 
       if (result.success && finalStatus === 'granted') {
-        toast.success('Alerts Activated', 'You will receive reminders for recurring bills and budget alerts.');
+        toast.showToastOnce(
+          'Alerts Activated',
+          'You will receive reminders for recurring bills and budget alerts.',
+          'success',
+          'notification-permission-granted',
+          4000
+        );
         return { success: true, status: 'granted' as const };
       } else {
-        const errorMsg = result.error || 'Failed to complete push notification registration.';
+        const errorMsg = result.error || 'Notification permission was not granted.';
         if (finalStatus === 'denied') {
-          toast.error('Notifications Blocked', 'Please enable notifications in your browser site settings.');
+          toast.showToastOnce(
+            'Permission Required',
+            'Notifications are blocked. Please enable notifications in your browser site settings.',
+            'error',
+            'notification-permission-error',
+            5000
+          );
         } else {
-          toast.error('Notification Setup', errorMsg);
+          toast.showToastOnce(
+            'Permission Required',
+            errorMsg,
+            'warning',
+            'notification-permission-error',
+            4500
+          );
         }
         return { success: false, status: finalStatus, error: errorMsg };
       }
     } catch (err: any) {
-      setNotifStatus('denied');
-      toast.error('Notification Error', err?.message || 'Failed to enable notifications.');
-      return { success: false, status: 'denied' as const, error: err?.message };
+      const currentPerm = pushNotifications.getPermission();
+      const fallbackStatus: NotificationPermissionStatus = currentPerm === 'denied' ? 'denied' : 'prompt';
+      setNotifStatus(fallbackStatus);
+      toast.showToastOnce(
+        'Permission Required',
+        err?.message || 'Could not enable notifications.',
+        'error',
+        'notification-permission-error',
+        4500
+      );
+      return { success: false, status: fallbackStatus, error: err?.message };
+    } finally {
+      notifInFlightRef.current = false;
     }
-  }, [toast]);
+  }, [toast, notifStatus]);
 
   const permissionsList = useMemo<PermissionDetails[]>(
     () => [
