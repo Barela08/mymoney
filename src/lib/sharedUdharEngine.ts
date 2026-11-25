@@ -229,7 +229,7 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
       return {
         valid: false,
         errorCode: 'INVALID_QR',
-        error: 'Not a valid My Money Manager Udhar pairing QR code. Please scan a genuine account pairing QR.',
+        error: 'Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine account pairing QR.',
       };
     } catch {
       return {
@@ -267,7 +267,7 @@ export function parseQrPayload(raw: string): ParsedQrPayload {
   return {
     valid: false,
     errorCode: 'INVALID_QR',
-    error: 'Not a valid My Money Manager Udhar pairing QR code. Please scan a genuine pairing QR generated inside My Money Manager.',
+    error: 'Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine pairing QR generated inside My Money Manager.',
   };
 }
 

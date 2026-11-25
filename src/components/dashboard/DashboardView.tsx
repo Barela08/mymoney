@@ -37,6 +37,7 @@ import { formatINR, formatDisplayDate, formatDisplayTime } from '../../lib/dateU
 import { NavTab } from '../common/Sidebar';
 import { AiIntelligenceWidgets } from './AiIntelligenceWidgets';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
+import { PendingDetectedExpensesBanner } from '../upi/PendingDetectedExpensesBanner';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -168,6 +169,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
+
+      {/* 1B. Pending Automatic UPI Expense Detections Banner */}
+      <PendingDetectedExpensesBanner
+        onOpenDetectionSettings={() => {
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#auto-detection';
+          }
+          onNavigate('settings');
+        }}
+      />
 
       {/* 2. Master Balance Ledger Card */}
       <div className="bg-slate-950 dark:bg-slate-950 text-white rounded-2xl p-6 sm:p-7 border border-emerald-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] relative space-y-5">

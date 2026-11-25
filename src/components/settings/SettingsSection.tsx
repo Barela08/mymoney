@@ -7,6 +7,7 @@ import {
   User,
   Sliders,
   Scale,
+  BellRing,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -16,9 +17,12 @@ import { UserProfileSection } from '../profile/UserProfileSection';
 import { AccountDeletionSection } from '../profile/AccountDeletionSection';
 import { LegalCenterSection } from '../legal/LegalCenterSection';
 import { PermissionsSettingsCard } from './PermissionsSettingsCard';
+import { UpiAutoDetectionSettings } from '../upi/UpiAutoDetectionSettings';
+
+export type SettingsTabId = 'profile' | 'auto_detection' | 'preferences' | 'deletion' | 'legal';
 
 interface SettingsSectionProps {
-  initialTab?: 'profile' | 'preferences' | 'deletion' | 'legal';
+  initialTab?: SettingsTabId;
   initialLegalPolicy?: string;
 }
 
@@ -33,7 +37,12 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   const { theme, setTheme } = useTheme();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'preferences' | 'deletion' | 'legal'>(initialTab);
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#auto-detection') {
+      return 'auto_detection';
+    }
+    return initialTab;
+  });
 
   // Clear data confirmation modal
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
@@ -89,6 +98,18 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('auto_detection')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'auto_detection'
+              ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-sm'
+              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <BellRing className="w-3.5 h-3.5" />
+          <span>Automatic Expense Detection</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('preferences')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'preferences'
@@ -128,6 +149,11 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
       {/* Profile & Security Tab */}
       {activeTab === 'profile' && (
         <UserProfileSection onNavigateToDeletion={() => setActiveTab('deletion')} />
+      )}
+
+      {/* Automatic UPI Expense Detection Tab */}
+      {activeTab === 'auto_detection' && (
+        <UpiAutoDetectionSettings onOpenPrivacyPolicy={() => setActiveTab('legal')} />
       )}
 
       {/* Preferences & Data Tab */}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.hackifypro.mymoney">
+
+    <!-- Required for Android 13+ categorization prompt notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Allows rebinding listener cleanly after device reboot if user enabled detection -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+        <!-- Automatic UPI Payment Notification Listener Service (My Money Manager by HackifyPro) -->
+        <service
+            android:name=".upi.UpiNotificationListenerService"
+            android:label="My Money Manager UPI Expense Detector"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting" />
+        </service>
+    </application>
+</manifest>

@@ -42,6 +42,7 @@ import {
 import { APP_CONFIG } from './config.js';
 import { handleAdminApiRequest } from './adminApi.js';
 import { handleAiFinanceRequest } from './aiFinanceApi.js';
+import { handleUpiDetectionRequest } from './upiDetectionApi.js';
 import {
   getUserNotificationPreferences,
   updateUserNotificationPreferences,
@@ -384,6 +385,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/ai/') || pathname.startsWith('/api/finance/')) {
       const handled = await handleAiFinanceRequest(req, res, pathname, method);
+      if (handled) return true;
+    }
+
+    // ---------------------------------------------------------
+    // 0C. AUTOMATIC UPI PAYMENT DETECTION DISPATCH (Auth Protected)
+    // ---------------------------------------------------------
+    if (pathname.startsWith('/api/upi-detection')) {
+      const handled = await handleUpiDetectionRequest(req, res, pathname, method);
       if (handled) return true;
     }
 
