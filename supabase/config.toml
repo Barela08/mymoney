@@ -1,0 +1,6 @@
+# Supabase third-party Firebase Authentication integration.
+# Apply to the linked Supabase project only after the Firebase project has been
+# configured in Supabase Authentication > Third-party Auth and validated in staging.
+[auth.third_party.firebase]
+enabled = true
+project_id = "mymoney-c8037"
