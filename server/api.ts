@@ -73,6 +73,8 @@ import {
   markAllUserNotificationsReadFallback,
   deleteUserNotificationFallback,
   clearAllUserNotificationsFallback,
+  sbRestRequest,
+  listAllAppUsersFallback,
 } from './supabaseRestFallback.js';
 import {
   normalizeSearchQuery,
@@ -313,13 +315,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     return false;
   }
 
-  // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile/admin-users routes
+  // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile routes
   // so the client's built-in Supabase HTTPS fallback activates immediately instead of returning false 401s.
   if (
     !isDatabaseAvailable() &&
     (pathname.startsWith('/api/auth/') ||
-      pathname.startsWith('/api/profile') ||
-      pathname.startsWith('/api/admin/users'))
+      pathname.startsWith('/api/profile'))
   ) {
     sendJson(res, 503, {
       success: false,
@@ -1106,90 +1107,118 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Fetch users robustly: Direct SQL (profiles + app_users) with HTTPS Supabase REST API fallback
       let users: any[] = [];
-      try {
-        const usersRes = await query(
-          `SELECT 
-              COALESCE(u.id, p.id) AS id,
-              COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
-              COALESCE(u.email, p.email) AS email,
-              u.phone,
-              COALESCE(u.role, p.role, 'user') AS role,
-              COALESCE(u.status, p.status, 'active') AS status,
-              COALESCE(u.email_verified, FALSE) AS email_verified,
-              u.avatar_url,
-              COALESCE(u.force_password_reset, FALSE) AS force_password_reset,
-              COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
-              COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
-              u.last_login_at,
-              COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
-              COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
-           FROM public.profiles p
-           FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
-           LEFT JOIN public.user_sessions s ON u.id = s.user_id
-           GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
-           ORDER BY created_at DESC`
-        );
+      if (isDatabaseAvailable()) {
+        try {
+          const usersRes = await query(
+            `SELECT 
+                COALESCE(u.id, p.id) AS id,
+                COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
+                COALESCE(u.email, p.email) AS email,
+                u.phone,
+                COALESCE(u.role, p.role, 'user') AS role,
+                COALESCE(u.status, p.status, 'active') AS status,
+                COALESCE(u.email_verified, FALSE) AS email_verified,
+                u.avatar_url,
+                COALESCE(u.force_password_reset, FALSE) AS force_password_reset,
+                COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
+                COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
+                u.last_login_at,
+                COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
+                COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
+             FROM public.profiles p
+             FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
+             LEFT JOIN public.user_sessions s ON u.id = s.user_id
+             GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
+             ORDER BY created_at DESC`
+          );
 
-        if (usersRes.rows && usersRes.rows.length > 0) {
-          users = usersRes.rows.map((r: any) => ({
-            id: r.id,
-            uid: r.id,
-            fullName: r.full_name,
-            displayName: r.full_name,
-            email: r.email,
-            phone: r.phone || null,
-            role: r.role,
-            status: r.status,
-            emailVerified: r.email_verified,
-            forcePasswordReset: r.force_password_reset,
-            failedLoginAttempts: r.failed_login_attempts,
-            createdAt: r.created_at,
-            lastLoginAt: r.last_login_at || null,
-            passwordChangedAt: r.password_changed_at,
-            passwordStatus: 'Set (Encrypted Bcrypt Hash)',
-            activeSessionsCount: parseInt(r.active_sessions_count || '0'),
-          }));
+          if (usersRes.rows && usersRes.rows.length > 0) {
+            users = usersRes.rows.map((r: any) => ({
+              id: r.id,
+              uid: r.id,
+              fullName: r.full_name,
+              displayName: r.full_name,
+              email: r.email,
+              phone: r.phone || null,
+              role: r.role,
+              status: r.status,
+              emailVerified: r.email_verified,
+              forcePasswordReset: r.force_password_reset,
+              failedLoginAttempts: r.failed_login_attempts,
+              createdAt: r.created_at,
+              lastLoginAt: r.last_login_at || null,
+              passwordChangedAt: r.password_changed_at,
+              passwordStatus: 'Set (Encrypted Bcrypt Hash)',
+              activeSessionsCount: parseInt(r.active_sessions_count || '0'),
+            }));
+          }
+        } catch (dbErr) {
+          console.warn('PostgreSQL direct query notice in admin/users, using Supabase REST fallback:', dbErr);
         }
-      } catch (dbErr) {
-        console.warn('PostgreSQL direct query notice in admin/users, using Supabase REST fallback:', dbErr);
       }
 
-      // If SQL query returned empty or failed, fetch from Supabase REST API with Secret Key
+      // If SQL unavailable, empty, or failed, merge app_users + profiles via Supabase REST API
       if (users.length === 0) {
         try {
-          const supaUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
-          const supaKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-          if (supaKey) {
-            const r = await fetch(`${supaUrl}/rest/v1/profiles?select=*&order=created_at.desc`, {
-              headers: {
-                apikey: supaKey,
-                Authorization: `Bearer ${supaKey}`,
-              },
-            });
-            if (r.ok) {
-              const data = await r.json();
-              if (Array.isArray(data) && data.length > 0) {
-                users = data.map((p: any) => ({
-                  id: p.id,
-                  uid: p.id,
-                  fullName: p.email ? p.email.split('@')[0] : 'User',
-                  displayName: p.email ? p.email.split('@')[0] : 'User',
-                  email: p.email,
-                  phone: null,
-                  role: p.role || 'user',
-                  status: p.status || 'active',
-                  emailVerified: true,
-                  forcePasswordReset: false,
-                  failedLoginAttempts: 0,
-                  createdAt: p.created_at,
-                  lastLoginAt: null,
-                  passwordChangedAt: p.created_at,
-                  passwordStatus: 'Protected (Bcrypt Encrypted)',
-                  activeSessionsCount: 1,
-                }));
-              }
+          const [appUsersRes, profilesRes] = await Promise.all([
+            sbRestRequest<any[]>('app_users?select=*&order=created_at.desc&limit=500'),
+            sbRestRequest<any[]>('profiles?select=*&order=created_at.desc&limit=500'),
+          ]);
+
+          const merged = new Map<string, any>();
+          if (profilesRes.ok && Array.isArray(profilesRes.data)) {
+            for (const p of profilesRes.data) {
+              const key = String(p.email || p.id || '').toLowerCase();
+              if (!key) continue;
+              merged.set(key, {
+                id: p.id,
+                uid: p.id,
+                fullName: p.full_name || (p.email ? p.email.split('@')[0] : 'User'),
+                displayName: p.full_name || (p.email ? p.email.split('@')[0] : 'User'),
+                email: p.email,
+                phone: p.phone || null,
+                role: p.role || 'user',
+                status: p.status || 'active',
+                emailVerified: true,
+                forcePasswordReset: false,
+                failedLoginAttempts: 0,
+                createdAt: p.created_at,
+                lastLoginAt: null,
+                passwordChangedAt: p.created_at,
+                passwordStatus: 'Protected (Bcrypt Encrypted)',
+                activeSessionsCount: 1,
+              });
             }
           }
+          if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
+            for (const u of appUsersRes.data) {
+              const key = String(u.email || u.id || '').toLowerCase();
+              if (!key) continue;
+              const prev = merged.get(key) || {};
+              merged.set(key, {
+                ...prev,
+                id: u.id || prev.id,
+                uid: u.id || prev.uid,
+                fullName: u.full_name || prev.fullName || (u.email ? u.email.split('@')[0] : 'User'),
+                displayName: u.full_name || prev.displayName || (u.email ? u.email.split('@')[0] : 'User'),
+                email: u.email || prev.email,
+                phone: u.phone || prev.phone || null,
+                role: u.role || prev.role || 'user',
+                status: u.status || prev.status || 'active',
+                emailVerified: u.email_verified ?? prev.emailVerified ?? true,
+                forcePasswordReset: Boolean(u.force_password_reset),
+                failedLoginAttempts: Number(u.failed_login_attempts || 0),
+                createdAt: u.created_at || prev.createdAt,
+                lastLoginAt: u.last_login_at || null,
+                passwordChangedAt: u.password_changed_at || u.created_at || prev.createdAt,
+                passwordStatus: 'Set (Encrypted Bcrypt Hash)',
+                activeSessionsCount: prev.activeSessionsCount ?? 1,
+              });
+            }
+          }
+          users = Array.from(merged.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
         } catch (apiErr) {
           console.error('Supabase REST fallback error:', apiErr);
         }
@@ -1224,30 +1253,54 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const userRes = await query('SELECT * FROM public.app_users WHERE id = $1', [targetUserId]);
-      if (userRes.rows.length === 0) {
+      let targetUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT * FROM public.app_users WHERE id = $1', [targetUserId]);
+          targetUser = userRes.rows[0] || null;
+          if (targetUser) {
+            await query('UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2', [newStatus, targetUserId]);
+            if (newStatus !== 'active') {
+              await revokeAllUserSessions(targetUserId);
+            }
+          }
+        } catch {}
+      }
+
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+        if (targetUser) {
+          await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+            method: 'PATCH',
+            body: { status: newStatus, updated_at: new Date().toISOString() },
+          });
+          await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+            method: 'PATCH',
+            body: { status: newStatus },
+          });
+        }
+      }
+
+      if (!targetUser) {
         sendJson(res, 404, { success: false, message: 'User not found.' });
         return true;
       }
-      const targetUser = userRes.rows[0];
-
-      await query('UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2', [newStatus, targetUserId]);
-
-      // If suspended or deactivated, immediately revoke all active sessions
-      if (newStatus !== 'active') {
-        await revokeAllUserSessions(targetUserId);
-      }
 
       // Async send email alert
-      sendAccountStatusEmail(targetUser.email, targetUser.full_name, newStatus).catch(() => {});
+      if (targetUser.email) {
+        sendAccountStatusEmail(targetUser.email, targetUser.full_name || '', newStatus).catch(() => {});
+      }
 
-      await logSecurityEvent('ADMIN_USER_STATUS_CHANGE', {
-        userId: authUser.id,
-        userEmail: authUser.email,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, newStatus, targetEmail: targetUser.email },
-      });
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_USER_STATUS_CHANGE', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, newStatus, targetEmail: targetUser.email },
+        }).catch(() => {});
+      }
 
       sendJson(res, 200, { success: true, message: `User status changed to ${newStatus}.` });
       return true;
@@ -1278,14 +1331,26 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      await query('UPDATE public.app_users SET role = $1, updated_at = NOW() WHERE id = $2', [newRole, targetUserId]);
-
-      await logSecurityEvent('ADMIN_USER_ROLE_CHANGE', {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, newRole },
+      if (isDatabaseAvailable()) {
+        await query('UPDATE public.app_users SET role = $1, updated_at = NOW() WHERE id = $2', [newRole, targetUserId]).catch(() => {});
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: 'PATCH',
+        body: { role: newRole, updated_at: new Date().toISOString() },
       });
+      await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: 'PATCH',
+        body: { role: newRole },
+      });
+
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_USER_ROLE_CHANGE', {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, newRole },
+        }).catch(() => {});
+      }
 
       sendJson(res, 200, { success: true, message: `User role updated to ${newRole}.` });
       return true;
@@ -1303,41 +1368,54 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const targetUserId = resetEmailMatch[1];
-      const userRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [targetUserId]);
-      if (userRes.rows.length === 0) {
+      let targetUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [targetUserId]);
+          targetUser = userRes.rows[0] || null;
+        } catch {}
+      }
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+      }
+      if (!targetUser || !targetUser.email) {
         sendJson(res, 404, { success: false, message: 'User not found.' });
         return true;
       }
-      const targetUser = userRes.rows[0];
 
-      // Generate cryptographically secure reset token
       const rawToken = generateCryptoToken(32);
       const tokenHash = hashToken(rawToken);
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-      await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [targetUserId]);
-      await query(
-        `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [targetUserId, tokenHash, expiresAt, clientIp, 'Admin-Initiated-Dispatch']
-      );
+      if (isDatabaseAvailable()) {
+        await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [targetUserId]).catch(() => {});
+        await query(
+          `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [targetUserId, tokenHash, expiresAt, clientIp, 'Admin-Initiated-Dispatch']
+        ).catch(() => {});
+      }
 
       const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(targetUser.email)}`;
 
-      // Dispatch email
-      const sent = await sendPasswordResetEmail(targetUser.email, targetUser.full_name, resetLink);
+      const sent = await sendPasswordResetEmail(targetUser.email, targetUser.full_name || '', resetLink);
 
-      await logSecurityEvent('ADMIN_SENT_PASSWORD_RESET_EMAIL', {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, targetEmail: targetUser.email, emailDispatched: sent },
-      });
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_SENT_PASSWORD_RESET_EMAIL', {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, targetEmail: targetUser.email, emailDispatched: sent },
+        }).catch(() => {});
+      }
 
       sendJson(res, 200, {
-        success: true,
-        message: `Password reset email dispatched to ${targetUser.email}.`,
+        success: sent,
+        message: sent
+          ? `Password reset email dispatched to ${targetUser.email}.`
+          : `Could not send password reset email to ${targetUser.email}. Check SMTP_USER / SMTP_PASS server configuration.`,
         resetLink: process.env.NODE_ENV !== 'production' ? resetLink : undefined,
       });
       return true;
@@ -1355,14 +1433,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const targetUserId = forceResetMatch[1];
-      await query('UPDATE public.app_users SET force_password_reset = TRUE WHERE id = $1', [targetUserId]);
-      await revokeAllUserSessions(targetUserId);
-
-      await logSecurityEvent('ADMIN_FORCED_PASSWORD_RESET', {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId },
+      if (isDatabaseAvailable()) {
+        await query('UPDATE public.app_users SET force_password_reset = TRUE WHERE id = $1', [targetUserId]).catch(() => {});
+        await revokeAllUserSessions(targetUserId).catch(() => {});
+        await logSecurityEvent('ADMIN_FORCED_PASSWORD_RESET', {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId },
+        }).catch(() => {});
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: 'PATCH',
+        body: { force_password_reset: true, updated_at: new Date().toISOString() },
       });
 
       sendJson(res, 200, {
@@ -1384,14 +1467,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const targetUserId = revokeMatch[1];
-      const count = await revokeAllUserSessions(targetUserId);
-
-      await logSecurityEvent('ADMIN_REVOKED_USER_SESSIONS', {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, revokedCount: count },
-      });
+      let count = 0;
+      if (isDatabaseAvailable()) {
+        count = await revokeAllUserSessions(targetUserId).catch(() => 0);
+        await logSecurityEvent('ADMIN_REVOKED_USER_SESSIONS', {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, revokedCount: count },
+        }).catch(() => {});
+      } else {
+        await sbRestRequest(`user_sessions?user_id=eq.${encodeURIComponent(targetUserId)}`, {
+          method: 'PATCH',
+          body: { is_revoked: true },
+        });
+      }
 
       sendJson(res, 200, { success: true, message: `Revoked ${count} active session(s) for user.` });
       return true;
@@ -1414,20 +1504,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const userRes = await query('SELECT email FROM public.app_users WHERE id = $1', [targetUserId]);
-      const targetEmail = userRes.rows[0]?.email;
-
-      await query('DELETE FROM public.transactions WHERE user_id = $1', [targetUserId]).catch(() => {});
-      await query('DELETE FROM public.user_sessions WHERE user_id = $1', [targetUserId]);
-      await query('DELETE FROM public.password_resets WHERE user_id = $1', [targetUserId]);
-      await query('DELETE FROM public.app_users WHERE id = $1', [targetUserId]);
-
-      await logSecurityEvent('ADMIN_DELETED_USER', {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, targetEmail },
-      });
+      let targetEmail: string | undefined;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT email FROM public.app_users WHERE id = $1', [targetUserId]);
+          targetEmail = userRes.rows[0]?.email;
+          await query('DELETE FROM public.transactions WHERE user_id = $1', [targetUserId]).catch(() => {});
+          await query('DELETE FROM public.user_sessions WHERE user_id = $1', [targetUserId]).catch(() => {});
+          await query('DELETE FROM public.password_resets WHERE user_id = $1', [targetUserId]).catch(() => {});
+          await query('DELETE FROM public.app_users WHERE id = $1', [targetUserId]).catch(() => {});
+          await logSecurityEvent('ADMIN_DELETED_USER', {
+            userId: authUser.id,
+            actorRole: authUser.role,
+            ipAddress: clientIp,
+            details: { targetUserId, targetEmail },
+          }).catch(() => {});
+        } catch {}
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, { method: 'DELETE' });
+      await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, { method: 'DELETE' });
 
       sendJson(res, 200, { success: true, message: 'User and all associated data permanently deleted.' });
       return true;

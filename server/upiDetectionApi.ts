@@ -74,6 +74,17 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
 }
 
 async function parseJsonBody(req: IncomingMessage): Promise<Record<string, any>> {
+  const preParsed = (req as any).body;
+  if (preParsed !== undefined && preParsed !== null) {
+    if (typeof preParsed === 'object') return preParsed;
+    if (typeof preParsed === 'string') {
+      try {
+        return JSON.parse(preParsed);
+      } catch {
+        return {};
+      }
+    }
+  }
   return new Promise((resolve) => {
     let raw = '';
     let size = 0;

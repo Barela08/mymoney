@@ -170,6 +170,17 @@ function sendJson(res: ServerResponse, status: number, payload: any) {
 }
 
 async function parseJsonBody(req: IncomingMessage, maxBytes: number = 8 * 1024 * 1024): Promise<any> {
+  const preParsed = (req as any).body;
+  if (preParsed !== undefined && preParsed !== null) {
+    if (typeof preParsed === 'object') return preParsed;
+    if (typeof preParsed === 'string') {
+      try {
+        return JSON.parse(preParsed);
+      } catch {
+        return {};
+      }
+    }
+  }
   return new Promise((resolve, reject) => {
     let total = 0;
     const chunks: Buffer[] = [];

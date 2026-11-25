@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import * as webpush from 'web-push';
@@ -170,32 +171,66 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   privacy_hide_amounts: true,
 };
 
-// Path-confined per-user fallback store when DATABASE_URL is absent (dev / sandbox)
-const PUSH_FALLBACK_DIR = path.resolve(process.cwd(), '.data', 'push-notifications');
+// Path-confined per-user fallback store when DATABASE_URL is absent (dev / sandbox / Vercel tmpdir)
+const PRIMARY_PUSH_FALLBACK_DIR = path.resolve(process.cwd(), '.data', 'push-notifications');
+const TMP_PUSH_FALLBACK_DIR = path.resolve(os.tmpdir(), 'mymoney-push-notifications');
+const memoryPushStore = new Map<string, LocalUserPushStore>();
 
-function safeUserPushFile(userId: string): string {
+function resolveWritablePushDir(): string {
+  try {
+    if (!fs.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
+      fs.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
+    }
+    fs.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs.constants.W_OK);
+    return PRIMARY_PUSH_FALLBACK_DIR;
+  } catch {
+    try {
+      if (!fs.existsSync(TMP_PUSH_FALLBACK_DIR)) {
+        fs.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
+      }
+      return TMP_PUSH_FALLBACK_DIR;
+    } catch {
+      return PRIMARY_PUSH_FALLBACK_DIR;
+    }
+  }
+}
+
+function safeUserPushFile(baseDir: string, userId: string): string {
   const safeId = crypto.createHash('sha256').update(String(userId || 'unknown')).digest('hex');
-  const resolved = path.resolve(PUSH_FALLBACK_DIR, `${safeId}.json`);
-  if (!resolved.startsWith(PUSH_FALLBACK_DIR + path.sep)) {
+  const resolved = path.resolve(baseDir, `${safeId}.json`);
+  if (!resolved.startsWith(baseDir + path.sep)) {
     throw new Error('Invalid storage path');
   }
   return resolved;
 }
 
 function readLocalStore(userId: string): LocalUserPushStore {
-  try {
-    const file = safeUserPushFile(userId);
-    if (fs.existsSync(file)) {
-      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-      return {
-        preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences || {}) },
-        subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
-        dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === 'object' ? parsed.dedupeKeys : {},
-        deliveryLogs: Array.isArray(parsed.deliveryLogs) ? parsed.deliveryLogs : [],
-      };
+  for (const dir of [PRIMARY_PUSH_FALLBACK_DIR, TMP_PUSH_FALLBACK_DIR]) {
+    try {
+      const file = safeUserPushFile(dir, userId);
+      if (fs.existsSync(file)) {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const store: LocalUserPushStore = {
+          preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences || {}) },
+          subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
+          dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === 'object' ? parsed.dedupeKeys : {},
+          deliveryLogs: Array.isArray(parsed.deliveryLogs) ? parsed.deliveryLogs : [],
+        };
+        memoryPushStore.set(userId, store);
+        return store;
+      }
+    } catch {
+      // Try next dir or memory fallback
     }
-  } catch {
-    // Fallback to clean defaults
+  }
+  const cached = memoryPushStore.get(userId);
+  if (cached) {
+    return {
+      preferences: { ...DEFAULT_PREFERENCES, ...cached.preferences },
+      subscriptions: [...cached.subscriptions],
+      dedupeKeys: { ...cached.dedupeKeys },
+      deliveryLogs: [...cached.deliveryLogs],
+    };
   }
   return {
     preferences: { ...DEFAULT_PREFERENCES },
@@ -206,22 +241,23 @@ function readLocalStore(userId: string): LocalUserPushStore {
 }
 
 function writeLocalStore(userId: string, store: LocalUserPushStore): void {
-  try {
-    fs.mkdirSync(PUSH_FALLBACK_DIR, { recursive: true });
-    // Prune stale dedupe keys older than 35 days and cap delivery logs to 50
-    const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
-    const prunedDedupe: Record<string, number> = {};
-    for (const [k, ts] of Object.entries(store.dedupeKeys)) {
-      if (typeof ts === 'number' && ts >= cutoff) {
-        prunedDedupe[k] = ts;
-      }
+  // Prune stale dedupe keys older than 35 days and cap delivery logs to 50
+  const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
+  const prunedDedupe: Record<string, number> = {};
+  for (const [k, ts] of Object.entries(store.dedupeKeys)) {
+    if (typeof ts === 'number' && ts >= cutoff) {
+      prunedDedupe[k] = ts;
     }
-    store.dedupeKeys = prunedDedupe;
-    store.deliveryLogs = store.deliveryLogs.slice(0, 50);
-    const file = safeUserPushFile(userId);
+  }
+  store.dedupeKeys = prunedDedupe;
+  store.deliveryLogs = store.deliveryLogs.slice(0, 50);
+  memoryPushStore.set(userId, store);
+  try {
+    const baseDir = resolveWritablePushDir();
+    const file = safeUserPushFile(baseDir, userId);
     fs.writeFileSync(file, JSON.stringify(store, null, 2), 'utf8');
   } catch (err) {
-    console.warn('[Push] Local fallback write notice:', err);
+    console.warn('[Push] Local fallback write notice:', (err as Error)?.message || err);
   }
 }
 
@@ -1501,17 +1537,31 @@ export async function notifyAdminNewFeedback(opts: {
   message: string;
 }): Promise<void> {
   try {
-    // Fetch all active admin and superadmin user IDs
-    const adminsRes = await query(
-      `SELECT id FROM public.app_users WHERE role IN ('admin', 'superadmin') AND status = 'active'`
-    );
+    let adminRows: Array<{ id: string }> = [];
+    if (isDatabaseAvailable()) {
+      try {
+        const adminsRes = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
+        );
+        adminRows = adminsRes.rows || [];
+      } catch {
+        adminRows = [];
+      }
+    }
 
-    if (adminsRes.rows.length === 0) return;
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers
+        .filter((u) => ['admin', 'superadmin'].includes(String(u.role || '').toLowerCase()))
+        .map((u) => ({ id: u.id }));
+    }
+
+    if (adminRows.length === 0) return;
 
     const stars = '⭐'.repeat(Math.max(1, Math.min(5, opts.rating)));
     const shortMsg = opts.message.length > 80 ? opts.message.slice(0, 80) + '…' : opts.message;
 
-    for (const admin of adminsRes.rows) {
+    for (const admin of adminRows) {
       await createNotification({
         userId: admin.id,
         title: `New Feedback Received ${stars}`,
@@ -1522,7 +1572,7 @@ export async function notifyAdminNewFeedback(opts: {
         relatedEntityId: opts.feedbackDbId,
         deepLink: 'admin:feedback',
         channels: ['in_app', 'push'],
-        skipPreferenceCheck: true, // Admin alerts are always delivered
+        skipPreferenceCheck: true,
       }).catch((e) =>
         console.warn(`[notifyAdminNewFeedback] Failed for admin ${admin.id}:`, e?.message)
       );
@@ -1626,31 +1676,68 @@ export async function dispatchCampaign(campaignId: string): Promise<{
 
   if (campaign.target_type === 'all') {
     if (isDatabaseAvailable()) {
-      const allUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
-      userIds = allUsers.rows.map((r) => r.id);
+      try {
+        const allUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
+        userIds = allUsers.rows.map((r) => r.id);
+      } catch {}
     }
     if (userIds.length === 0) {
       const fbUsers = await listAllAppUsersFallback();
       userIds = fbUsers.map((u) => u.id);
     }
   } else if (campaign.target_type === 'installed') {
-    const installedUsers = await query(
-      `SELECT DISTINCT user_id as id FROM public.installed_devices WHERE is_installed = TRUE
-       UNION
-       SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
-    );
-    userIds = installedUsers.rows.map((r) => r.id);
+    if (isDatabaseAvailable()) {
+      try {
+        const installedUsers = await query(
+          `SELECT DISTINCT user_id as id FROM public.installed_devices WHERE is_installed = TRUE
+           UNION
+           SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
+        );
+        userIds = installedUsers.rows.map((r) => r.id);
+      } catch {}
+    }
+    if (userIds.length === 0) {
+      for (const dev of localInstalledDevices.values()) {
+        if (dev?.is_installed && dev?.user_id) userIds.push(dev.user_id);
+      }
+      for (const [uid, store] of memoryPushStore.entries()) {
+        if (store.subscriptions.some((s) => s.is_active !== false)) {
+          userIds.push(uid);
+        }
+      }
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers.map((u) => u.id);
+    }
   } else if (campaign.target_type === 'push_subscribed') {
-    const pushUsers = await query(
-      `SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
-    );
-    userIds = pushUsers.rows.map((r) => r.id);
+    if (isDatabaseAvailable()) {
+      try {
+        const pushUsers = await query(
+          `SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
+        );
+        userIds = pushUsers.rows.map((r) => r.id);
+      } catch {}
+    }
+    if (userIds.length === 0) {
+      for (const [uid, store] of memoryPushStore.entries()) {
+        if (store.subscriptions.some((s) => s.is_active !== false)) {
+          userIds.push(uid);
+        }
+      }
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers.map((u) => u.id);
+    }
   } else if (campaign.target_type === 'admins') {
     if (isDatabaseAvailable()) {
-      const adminUsers = await query(
-        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
-      );
-      userIds = adminUsers.rows.map((r) => r.id);
+      try {
+        const adminUsers = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+        );
+        userIds = adminUsers.rows.map((r) => r.id);
+      } catch {}
     }
     if (userIds.length === 0) {
       const fbUsers = await listAllAppUsersFallback();
@@ -1662,11 +1749,13 @@ export async function dispatchCampaign(campaignId: string): Promise<{
     userIds = [campaign.target_user_id || campaign.target_user_ids[0]];
   } else if (campaign.target_type === 'active') {
     if (isDatabaseAvailable()) {
-      const activeUsers = await query(
-        `SELECT DISTINCT user_id as id FROM public.transactions
-         WHERE created_at > NOW() - INTERVAL '30 days'`
-      );
-      userIds = activeUsers.rows.map((r) => r.id);
+      try {
+        const activeUsers = await query(
+          `SELECT DISTINCT user_id as id FROM public.transactions
+           WHERE created_at > NOW() - INTERVAL '30 days'`
+        );
+        userIds = activeUsers.rows.map((r) => r.id);
+      } catch {}
     }
     if (userIds.length === 0) {
       const fbUsers = await listAllAppUsersFallback();
@@ -1769,21 +1858,26 @@ export async function dispatchCampaign(campaignId: string): Promise<{
 }
 
 export async function processScheduledCampaigns(): Promise<number> {
-  const pending = await query(
-    `SELECT id FROM public.notification_campaigns
-     WHERE status = 'scheduled' AND scheduled_for <= NOW()`
-  );
+  if (!isDatabaseAvailable()) return 0;
+  try {
+    const pending = await query(
+      `SELECT id FROM public.notification_campaigns
+       WHERE status = 'scheduled' AND scheduled_for <= NOW()`
+    );
 
-  let processed = 0;
-  for (const c of pending.rows) {
-    try {
-      await dispatchCampaign(c.id);
-      processed++;
-    } catch (e) {
-      console.error('[NotificationService] Error executing scheduled campaign:', e);
+    let processed = 0;
+    for (const c of pending.rows) {
+      try {
+        await dispatchCampaign(c.id);
+        processed++;
+      } catch (e) {
+        console.error('[NotificationService] Error executing scheduled campaign:', e);
+      }
     }
+    return processed;
+  } catch {
+    return 0;
   }
-  return processed;
 }
 
 // ==============================================================================
@@ -2112,10 +2206,20 @@ export async function recordAdminNotification(params: {
 
   // Find all administrators
   try {
-    const admins = await query(
-      `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
-    );
-    for (const a of admins.rows) {
+    let adminRows: Array<{ id: string }> = [];
+    if (isDatabaseAvailable()) {
+      const admins = await query(
+        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+      );
+      adminRows = admins.rows || [];
+    }
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers
+        .filter((u) => ['superadmin', 'admin'].includes(String(u.role || '').toLowerCase()))
+        .map((u) => ({ id: u.id }));
+    }
+    for (const a of adminRows) {
       createNotification({
         userId: a.id,
         title: `[Admin Alert] ${title}`,

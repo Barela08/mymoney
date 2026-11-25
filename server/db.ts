@@ -35,8 +35,29 @@ try {
 
 function normalizeDatabaseUrl(raw?: string): string {
   if (!raw || typeof raw !== 'string') return '';
-  const trimmed = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  let trimmed = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
   if (!trimmed || !/^postgres(ql)?:\/\//i.test(trimmed)) return '';
+
+  // Safely percent-encode unencoded '@' / '#' in password (e.g. postgresql://user:Pass@123@host:5432/postgres)
+  const schemeMatch = trimmed.match(/^(postgres(?:ql)?:\/\/)/i);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1];
+    const rest = trimmed.slice(scheme.length);
+    const lastAtIdx = rest.lastIndexOf('@');
+    if (lastAtIdx !== -1) {
+      const userInfo = rest.slice(0, lastAtIdx);
+      const hostAndPath = rest.slice(lastAtIdx + 1);
+      const colonIdx = userInfo.indexOf(':');
+      if (colonIdx !== -1) {
+        const user = userInfo.slice(0, colonIdx);
+        const pass = userInfo.slice(colonIdx + 1);
+        if (/[@#?]/.test(pass)) {
+          trimmed = `${scheme}${user}:${encodeURIComponent(pass)}@${hostAndPath}`;
+        }
+      }
+    }
+  }
+
   try {
     const parsed = new URL(trimmed);
     // Auto-correct common typo "/postgre" -> "/postgres"
@@ -176,6 +197,8 @@ export async function query<T extends pg.QueryResultRow = any>(
       msg.includes('ECONNRESET') ||
       msg.includes('ETIMEDOUT') ||
       msg.includes('ENOTFOUND') ||
+      msg.includes('ENETUNREACH') ||
+      msg.includes('EHOSTUNREACH') ||
       msg.includes('EAI_AGAIN') ||
       msg.includes('ECONNREFUSED') ||
       msg.includes('connection timeout') ||
@@ -185,8 +208,16 @@ export async function query<T extends pg.QueryResultRow = any>(
 
     if (isConnErr && retries > 0) {
       console.warn(`[DB Reconnect] Query failed (${msg}), retrying (${retries} attempts left)...`);
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 400));
       return query<T>(text, params, retries - 1);
+    }
+
+    if (isConnErr) {
+      if (!databaseFatalError) {
+        databaseFatalError = msg;
+        console.warn(`[AI Studio] PostgreSQL connection unreachable (${msg}) — falling back to Supabase REST.`);
+      }
+      return emptyResult<T>();
     }
     throw err;
   }

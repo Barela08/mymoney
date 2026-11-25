@@ -1,39 +1,71 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 
 const DEFAULT_SUPABASE_URL = 'https://frgrfajnrzqwnevhlrio.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
 
-const FALLBACK_DATA_DIR = path.resolve(process.cwd(), '.data', 'runtime-store');
+const PRIMARY_DATA_DIR = path.resolve(process.cwd(), '.data', 'runtime-store');
+const TMP_DATA_DIR = path.resolve(os.tmpdir(), 'mymoney-runtime-store');
+const memoryFallbackStore = new Map<string, any>();
 
-function safeStoreFile(name: string): string {
+function resolveWritableStoreDir(): string {
+  try {
+    if (!fs.existsSync(PRIMARY_DATA_DIR)) {
+      fs.mkdirSync(PRIMARY_DATA_DIR, { recursive: true });
+    }
+    fs.accessSync(PRIMARY_DATA_DIR, fs.constants.W_OK);
+    return PRIMARY_DATA_DIR;
+  } catch {
+    try {
+      if (!fs.existsSync(TMP_DATA_DIR)) {
+        fs.mkdirSync(TMP_DATA_DIR, { recursive: true });
+      }
+      return TMP_DATA_DIR;
+    } catch {
+      return PRIMARY_DATA_DIR;
+    }
+  }
+}
+
+function safeStoreFile(baseDir: string, name: string): string {
   const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const resolved = path.resolve(FALLBACK_DATA_DIR, safeName);
-  if (!resolved.startsWith(FALLBACK_DATA_DIR + path.sep)) {
+  const resolved = path.resolve(baseDir, safeName);
+  if (!resolved.startsWith(baseDir + path.sep)) {
     throw new Error('PATH_CONFINEMENT_VIOLATION');
   }
   return resolved;
 }
 
 function readJsonStore<T>(fileName: string, defaultValue: T): T {
-  try {
-    const file = safeStoreFile(fileName);
-    if (!fs.existsSync(file)) return defaultValue;
-    const raw = fs.readFileSync(file, 'utf8');
-    if (!raw.trim()) return defaultValue;
-    return JSON.parse(raw) as T;
-  } catch {
-    return defaultValue;
+  const dirsToTry = [PRIMARY_DATA_DIR, TMP_DATA_DIR];
+  for (const dir of dirsToTry) {
+    try {
+      const file = safeStoreFile(dir, fileName);
+      if (fs.existsSync(file)) {
+        const raw = fs.readFileSync(file, 'utf8');
+        if (raw.trim()) {
+          const parsed = JSON.parse(raw) as T;
+          memoryFallbackStore.set(fileName, parsed);
+          return parsed;
+        }
+      }
+    } catch {
+      // Try next dir or memory fallback
+    }
   }
+  if (memoryFallbackStore.has(fileName)) {
+    return memoryFallbackStore.get(fileName) as T;
+  }
+  return defaultValue;
 }
 
 function writeJsonStore<T>(fileName: string, data: T): void {
+  memoryFallbackStore.set(fileName, data);
   try {
-    if (!fs.existsSync(FALLBACK_DATA_DIR)) {
-      fs.mkdirSync(FALLBACK_DATA_DIR, { recursive: true });
-    }
-    const file = safeStoreFile(fileName);
+    const baseDir = resolveWritableStoreDir();
+    const file = safeStoreFile(baseDir, fileName);
     fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
   } catch (err: any) {
     console.warn(`[RuntimeStore] Write warning (${fileName}):`, err?.message);
@@ -824,3 +856,614 @@ export async function clearAllUserNotificationsFallback(userId: string): Promise
   store.broadcastUserState[userId] = state;
   writeNotifStore(store);
 }
+
+// ============================================================================
+// 4. EMAIL LOGS & TEMPLATES FALLBACK
+// ============================================================================
+
+const DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: 'tmpl_welcome_email',
+    slug: 'welcome-email',
+    name: 'Welcome & Account Verification',
+    category: 'authentication',
+    subject: 'Welcome to {{app_name}}! Your Account is Active',
+    variables: ['user_name', 'app_name', 'support_email', 'date'],
+    text_content:
+      'Hi {{user_name}},\n\nWelcome to {{app_name}}! Your account has been created successfully on {{date}}.\n\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team',
+    html_content:
+      '<div style="font-family: sans-serif; padding: 20px;"><h2>Welcome, {{user_name}}!</h2><p>Your account on <strong>{{app_name}}</strong> is now active.</p><p>Registration Date: {{date}}</p><p>If you have any questions, reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_password_reset',
+    slug: 'password-reset',
+    name: 'Password Reset Request',
+    category: 'security',
+    subject: 'Reset Your My Money Manager Password',
+    variables: ['user_name', 'app_name', 'reset_link', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account.\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes.\n\nIf you did not request this, please contact {{support_email}} immediately.',
+    html_content:
+      '<div style="font-family: sans-serif; padding: 20px;"><h2>Password Reset Request</h2><p>Hi {{user_name}}, click the button below to reset your password:</p><p><a href="{{reset_link}}" style="background: #059669; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 6px;">Reset Password</a></p><p>Link expires in 15 minutes.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_password_changed',
+    slug: 'password-changed',
+    name: 'Security Alert: Password Changed',
+    category: 'security',
+    subject: '[Security Alert] Your Password Was Successfully Changed — {{app_name}}',
+    variables: ['user_name', 'app_name', 'date', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\nYour password for {{app_name}} was successfully updated on {{date}}.\nAll other device sessions have been revoked.\n\nIf you did not make this change, please contact {{support_email}} immediately.',
+    html_content:
+      '<div style="font-family: sans-serif; padding: 20px;"><h2>Security Alert: Password Changed</h2><p>Hi {{user_name}}, your password was updated on {{date}}.</p><p>All other device sessions were revoked for your safety.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_feedback_confirmation',
+    slug: 'feedback-confirmation',
+    name: 'User Feedback Confirmation & Admin Alert',
+    category: 'support',
+    subject: 'Thank You for Your Feedback — {{app_name}}',
+    variables: ['user_name', 'app_name', 'rating', 'category', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback with {{app_name}} by HackifyPro. Our team reviews every submission carefully.',
+    html_content:
+      '<div style="font-family: sans-serif; padding: 20px;"><h2>Thank You for Your Feedback</h2><p>Hi {{user_name}}, we appreciate your {{rating}}-star feedback for <strong>{{app_name}}</strong>.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_deletion_scheduled',
+    slug: 'deletion-scheduled',
+    name: 'Account Deletion Scheduled Notice',
+    category: 'lifecycle',
+    subject: '[Notice] Account Deletion Scheduled (24-Hour Grace Period) — {{app_name}}',
+    variables: ['user_name', 'app_name', 'scheduled_date', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\nYou requested deletion of your account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.',
+    html_content:
+      '<div style="font-family: sans-serif; padding: 20px;"><h2>Account Deletion Scheduled</h2><p>Hi {{user_name}}, your account is scheduled for deletion on {{scheduled_date}}.</p><p>You may cancel by logging into your account anytime before this window ends.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+];
+
+export async function listEmailTemplatesFallback(): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>('email_templates?select=*&order=category.asc,name.asc');
+  const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
+  const map = new Map<string, any>();
+
+  for (const t of DEFAULT_EMAIL_TEMPLATES) {
+    map.set(t.id, { ...t });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map.set(String(row.id), row);
+    }
+  }
+  for (const row of stored.templates) {
+    if (row?.id) map.set(String(row.id), row);
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    `${a.category || ''}:${a.name || ''}`.localeCompare(`${b.category || ''}:${b.name || ''}`)
+  );
+}
+
+export async function updateEmailTemplateFallback(
+  id: string,
+  updates: { subject?: string; html_content?: string; text_content?: string; is_active?: boolean }
+): Promise<any | null> {
+  const all = await listEmailTemplatesFallback();
+  const existing = all.find((t) => t.id === id);
+  if (!existing) return null;
+
+  const updated = {
+    ...existing,
+    subject: updates.subject !== undefined ? updates.subject : existing.subject,
+    html_content: updates.html_content !== undefined ? updates.html_content : existing.html_content,
+    text_content: updates.text_content !== undefined ? updates.text_content : existing.text_content,
+    is_active: updates.is_active !== undefined ? updates.is_active : existing.is_active,
+    version: Number(existing.version || 1) + 1,
+    updated_at: new Date().toISOString(),
+  };
+
+  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: {
+      subject: updated.subject,
+      html_content: updated.html_content,
+      text_content: updated.text_content,
+      is_active: updated.is_active,
+      version: updated.version,
+      updated_at: updated.updated_at,
+    },
+  });
+
+  const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
+  stored.templates = [updated, ...stored.templates.filter((t) => t.id !== id)];
+  writeJsonStore('email-templates.json', stored);
+  return updated;
+}
+
+export async function recordEmailLogFallback(entry: {
+  id?: string;
+  user_id?: string | null;
+  email: string;
+  email_type: string;
+  recipient_name?: string;
+  subject: string;
+  status: 'sent' | 'failed' | 'pending' | 'retrying' | string;
+  attempts?: number;
+  last_error?: string | null;
+  trigger_event?: string;
+}): Promise<any> {
+  const now = new Date().toISOString();
+  const row = {
+    id: entry.id || crypto.randomUUID(),
+    user_id: entry.user_id || null,
+    email: entry.email,
+    email_type: entry.email_type,
+    recipient_name: entry.recipient_name || '',
+    subject: entry.subject,
+    status: entry.status,
+    attempts: entry.attempts ?? 1,
+    max_attempts: 3,
+    last_error: entry.last_error || null,
+    trigger_event: entry.trigger_event || entry.email_type,
+    sent_at: entry.status === 'sent' ? now : null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  const store = readJsonStore<{ logs: any[] }>('email-logs.json', { logs: [] });
+  store.logs = [row, ...store.logs.filter((l) => l.id !== row.id)].slice(0, 200);
+  writeJsonStore('email-logs.json', store);
+  return row;
+}
+
+export async function listEmailLogsFallback(status?: string): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>('email_dispatch_logs?select=*&order=created_at.desc&limit=100');
+  const store = readJsonStore<{ logs: any[] }>('email-logs.json', { logs: [] });
+
+  const map = new Map<string, any>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map.set(String(row.id), row);
+    }
+  }
+  for (const row of store.logs) {
+    if (row?.id && !map.has(String(row.id))) {
+      map.set(String(row.id), row);
+    }
+  }
+
+  let logs = Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  if (status && status !== 'all') {
+    logs = logs.filter((l) => l.status === status);
+  }
+  return logs.slice(0, 100);
+}
+
+export async function getEmailLogByIdFallback(id: string): Promise<any | null> {
+  const logs = await listEmailLogsFallback();
+  return logs.find((l) => l.id === id) || null;
+}
+
+export async function updateEmailLogFallback(id: string, patch: Record<string, any>): Promise<void> {
+  const store = readJsonStore<{ logs: any[] }>('email-logs.json', { logs: [] });
+  const idx = store.logs.findIndex((l) => l.id === id);
+  if (idx >= 0) {
+    store.logs[idx] = { ...store.logs[idx], ...patch, updated_at: new Date().toISOString() };
+    writeJsonStore('email-logs.json', store);
+  }
+  await sbRestRequest(`email_dispatch_logs?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { ...patch, updated_at: new Date().toISOString() },
+  });
+}
+
+// ============================================================================
+// 5. FEATURE FLAGS FALLBACK
+// ============================================================================
+
+const DEFAULT_FEATURE_FLAGS = [
+  { id: 'feat_ai_money_assistant', key: 'ai_money_assistant', name: 'AI Money Assistant', description: 'Intelligent conversational & Voice Agent assistant for spending insights and guidance', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_smart_categorization', key: 'smart_categorization', name: 'Smart Transaction Categorization', description: 'Auto-detecting category & subcategory from merchant and description', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_expense_calendar', key: 'expense_calendar', name: 'Expense Calendar View', description: 'Day-by-day interactive financial timeline and spending heatmap', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_smart_financial_alerts', key: 'smart_financial_alerts', name: 'Smart Financial Alerts', description: 'Proactive budget threshold warning and anomaly detection', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_receipt_scanner_ocr', key: 'receipt_scanner_ocr', name: 'Receipt Scanner OCR', description: 'Optical character recognition to parse paper bills and receipts', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_net_worth_tracker', key: 'net_worth_tracker', name: 'Net Worth Tracker', description: 'Consolidated asset, savings, and liability calculation', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_safe_to_spend', key: 'safe_to_spend', name: 'Safe-to-Spend Calculator', description: 'Real-time liquidity buffer calculation after committed bills', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_udhar_ledger', key: 'udhar_ledger', name: 'Udhar / Debt Tracking Ledger', description: 'Lending, borrowing, reminder dispatch, and settlement ledger', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_qr_linking', key: 'qr_linking', name: 'QR Code Device Pairing', description: 'Quick scan peer connection and ledger reconciliation', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_calculator', key: 'calculator', name: 'Smart Financial Calculator', description: 'Interactive standard, GST, offer, and group split calculation tools', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_push_notifications', key: 'push_notifications', name: 'Web Push & In-App Broadcasts', description: 'PWA Web Push notifications and broadcast announcements', is_enabled: true, rollout_percentage: 100 },
+  { id: 'feat_reports_export', key: 'reports_export', name: 'Financial Reports & PDF Export', description: 'Downloadable summary statements and monthly analytics', is_enabled: true, rollout_percentage: 100 },
+];
+
+export async function listFeatureFlagsFallback(): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>('feature_flags?select=*&order=name.asc');
+  const stored = readJsonStore<{ features: any[] }>('feature-flags.json', { features: [] });
+  const mapByKey = new Map<string, any>();
+
+  for (const f of DEFAULT_FEATURE_FLAGS) {
+    mapByKey.set(f.key, { ...f });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.key) mapByKey.set(String(row.key), row);
+    }
+  }
+  for (const row of stored.features) {
+    if (row?.key) mapByKey.set(String(row.key), row);
+  }
+  return Array.from(mapByKey.values()).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+export async function updateFeatureFlagFallback(
+  id: string,
+  updates: { is_enabled?: boolean; rollout_percentage?: number; updated_by?: string }
+): Promise<any | null> {
+  const all = await listFeatureFlagsFallback();
+  const existing = all.find((f) => f.id === id || f.key === id);
+  if (!existing) return null;
+
+  const updated = {
+    ...existing,
+    is_enabled: updates.is_enabled !== undefined ? updates.is_enabled : existing.is_enabled,
+    rollout_percentage: updates.rollout_percentage !== undefined ? updates.rollout_percentage : existing.rollout_percentage,
+    updated_by: updates.updated_by || 'admin',
+    updated_at: new Date().toISOString(),
+  };
+
+  await sbRestRequest(`feature_flags?id=eq.${encodeURIComponent(existing.id)}`, {
+    method: 'PATCH',
+    body: {
+      is_enabled: updated.is_enabled,
+      rollout_percentage: updated.rollout_percentage,
+      updated_by: updated.updated_by,
+      updated_at: updated.updated_at,
+    },
+  });
+
+  const stored = readJsonStore<{ features: any[] }>('feature-flags.json', { features: [] });
+  stored.features = [updated, ...stored.features.filter((f) => f.id !== existing.id && f.key !== existing.key)];
+  writeJsonStore('feature-flags.json', stored);
+  return updated;
+}
+
+// ============================================================================
+// 6. LEGAL POLICIES & VERSION HISTORY FALLBACK
+// ============================================================================
+
+const DEFAULT_LEGAL_POLICIES = [
+  {
+    id: 'legal_privacy_policy',
+    slug: 'privacy-policy',
+    title: 'Privacy Policy',
+    version: '2.1',
+    status: 'published',
+    content: `# Privacy Policy — My Money Manager by HackifyPro\nLast Updated: November 2026\n\nAt My Money Manager by HackifyPro, we respect your privacy and safeguard your personal financial records.\nAll transaction entries, budgets, and Udhar balances are strictly user-scoped.\nAdministrators cannot view your private financial transactions without an explicit, time-limited user consent grant.\nWe comply with India's Digital Personal Data Protection (DPDP) Act 2023.`,
+    updated_at: '2026-11-25T00:00:00.000Z',
+    published_at: '2026-11-25T00:00:00.000Z',
+    created_by: 'HackifyPro Legal',
+  },
+  {
+    id: 'legal_terms_conditions',
+    slug: 'terms-and-conditions',
+    title: 'Terms & Conditions',
+    version: '2.0',
+    status: 'published',
+    content: `# Terms and Conditions — My Money Manager by HackifyPro\nLast Updated: November 2026\n\nBy accessing My Money Manager, you agree to these terms:\n1. Account Responsibility: Keep your password and devices secure.\n2. Acceptable Use: Do not attempt unauthorized access to APIs or other user records.\n3. Financial Insights: AI insights and calculators are informational aids, not regulated financial advice.`,
+    updated_at: '2026-11-25T00:00:00.000Z',
+    published_at: '2026-11-25T00:00:00.000Z',
+    created_by: 'HackifyPro Legal',
+  },
+  {
+    id: 'legal_data_retention',
+    slug: 'data-retention-policy',
+    title: 'Data Retention & Deletion Policy',
+    version: '1.5',
+    status: 'published',
+    content: `# Data Retention & Deletion Policy\nLast Updated: November 2026\n\n1. Account Deletion: Initiating deletion starts a mandatory 24-hour grace window during which you may cancel.\n2. Permanent Purge: Once finalized, personal transactions, sessions, and profile records are permanently purged.\n3. Security Audit Logs: Minimal anonymized audit trails may be retained for fraud prevention and statutory compliance.`,
+    updated_at: '2026-11-25T00:00:00.000Z',
+    published_at: '2026-11-25T00:00:00.000Z',
+    created_by: 'HackifyPro Legal',
+  },
+  {
+    id: 'legal_cookie_policy',
+    slug: 'cookie-policy',
+    title: 'Cookie & Session Policy',
+    version: '1.2',
+    status: 'published',
+    content: `# Cookie & Session Policy\nLast Updated: November 2026\n\nMy Money Manager uses strictly necessary session storage and HttpOnly cookies for authentication security.\nNo third-party advertising or cross-site tracking cookies are used.`,
+    updated_at: '2026-11-25T00:00:00.000Z',
+    published_at: '2026-11-25T00:00:00.000Z',
+    created_by: 'HackifyPro Legal',
+  },
+];
+
+export async function listLegalPoliciesFallback(): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>('legal_policies?select=*&order=title.asc');
+  const stored = readJsonStore<{ policies: any[]; versions: any[] }>('legal-policies.json', { policies: [], versions: [] });
+  const map = new Map<string, any>();
+
+  for (const p of DEFAULT_LEGAL_POLICIES) {
+    map.set(p.slug, { ...p });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.slug) map.set(String(row.slug), row);
+    }
+  }
+  for (const row of stored.policies) {
+    if (row?.slug) map.set(String(row.slug), row);
+  }
+  return Array.from(map.values()).sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+}
+
+export async function getLegalPolicyVersionsFallback(policyId: string): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>(
+    `legal_policy_versions?policy_id=eq.${encodeURIComponent(policyId)}&select=*&order=created_at.desc`
+  );
+  const stored = readJsonStore<{ policies: any[]; versions: any[] }>('legal-policies.json', { policies: [], versions: [] });
+  const versions: any[] = [];
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    versions.push(...sbRes.data);
+  }
+  for (const v of stored.versions) {
+    if (v.policy_id === policyId && !versions.some((x) => x.id === v.id)) {
+      versions.push(v);
+    }
+  }
+  if (versions.length === 0) {
+    const policies = await listLegalPoliciesFallback();
+    const match = policies.find((p) => p.id === policyId);
+    if (match) {
+      versions.push({
+        id: `ver_${match.id}_${match.version}`,
+        policy_id: match.id,
+        slug: match.slug,
+        version: match.version,
+        content: match.content,
+        status: match.status || 'published',
+        created_by: match.created_by || 'System Admin',
+        published_at: match.published_at || match.updated_at,
+        created_at: match.updated_at,
+      });
+    }
+  }
+  return versions;
+}
+
+export async function updateLegalPolicyFallback(
+  policyId: string,
+  updates: { title?: string; version?: string; content?: string; status?: string; created_by?: string }
+): Promise<any | null> {
+  const all = await listLegalPoliciesFallback();
+  const existing = all.find((p) => p.id === policyId);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const updated = {
+    ...existing,
+    title: updates.title || existing.title,
+    version: updates.version || existing.version,
+    content: updates.content || existing.content,
+    status: updates.status || 'published',
+    created_by: updates.created_by || 'Admin',
+    published_at: now,
+    updated_at: now,
+  };
+
+  await sbRestRequest(`legal_policies?id=eq.${encodeURIComponent(policyId)}`, {
+    method: 'PATCH',
+    body: {
+      title: updated.title,
+      version: updated.version,
+      content: updated.content,
+      status: updated.status,
+      created_by: updated.created_by,
+      published_at: now,
+      updated_at: now,
+    },
+  });
+
+  const stored = readJsonStore<{ policies: any[]; versions: any[] }>('legal-policies.json', { policies: [], versions: [] });
+  stored.policies = [updated, ...stored.policies.filter((p) => p.id !== policyId)];
+  stored.versions.unshift({
+    id: crypto.randomUUID(),
+    policy_id: policyId,
+    slug: updated.slug,
+    version: updated.version,
+    content: updated.content,
+    status: updated.status,
+    created_by: updated.created_by,
+    published_at: now,
+    created_at: now,
+  });
+  stored.versions = stored.versions.slice(0, 100);
+  writeJsonStore('legal-policies.json', stored);
+  return updated;
+}
+
+// ============================================================================
+// 7. USER ACTIVITY, SESSIONS, ROLES & ADMIN FALLBACKS
+// ============================================================================
+
+export async function listUserActivityFallback(userId: string, userEmail?: string): Promise<any[]> {
+  const email = userEmail || '';
+  const sbRes = await sbRestRequest<any[]>(
+    `security_audit_logs?select=id,event_type,user_email,actor_role,ip_address,details,created_at&order=created_at.desc&limit=50`
+  );
+  if (!sbRes.ok || !Array.isArray(sbRes.data)) return [];
+  return sbRes.data.filter(
+    (row) => row.user_id === userId || (email && String(row.user_email || '').toLowerCase() === email.toLowerCase())
+  );
+}
+
+export async function listUserSessionsFallback(userId: string): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>(
+    `user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`
+  );
+  return sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+}
+
+const DEFAULT_ADMIN_ROLES = [
+  {
+    id: 'role_superadmin',
+    name: 'Super Administrator',
+    slug: 'superadmin',
+    description: 'Full unrestricted control across My Money Manager Control Center.',
+    permissions: ['*'],
+    is_system: true,
+  },
+  {
+    id: 'role_admin',
+    name: 'Administrator',
+    slug: 'admin',
+    description: 'Platform management across users, support, notifications, AI, and settings.',
+    permissions: [
+      'dashboard.view', 'users.view', 'users.update', 'users.suspend', 'users.financial_data.request',
+      'analytics.view', 'notifications.view', 'notifications.send', 'notifications.manage',
+      'features.manage', 'settings.manage', 'security.view', 'audit_logs.view', 'support.manage', 'ai.manage',
+    ],
+    is_system: true,
+  },
+  {
+    id: 'role_support',
+    name: 'Support Specialist',
+    slug: 'support',
+    description: 'Handles user tickets, feedback replies, and read-only user assistance.',
+    permissions: ['dashboard.view', 'users.view', 'support.manage', 'notifications.view', 'audit_logs.view'],
+    is_system: true,
+  },
+  {
+    id: 'role_analyst',
+    name: 'Operations Analyst',
+    slug: 'analyst',
+    description: 'Read-only access to metrics, analytics, and audit logs.',
+    permissions: ['dashboard.view', 'users.view', 'analytics.view', 'audit_logs.view'],
+    is_system: true,
+  },
+];
+
+export async function listAdminRolesFallback(): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>('admin_roles?select=*&order=is_system.desc,name.asc');
+  const stored = readJsonStore<{ roles: any[] }>('admin-roles.json', { roles: [] });
+  const map = new Map<string, any>();
+  for (const r of DEFAULT_ADMIN_ROLES) map.set(r.slug, { ...r });
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.slug) map.set(String(row.slug), row);
+    }
+  }
+  for (const row of stored.roles) {
+    if (row?.slug) map.set(String(row.slug), row);
+  }
+  return Array.from(map.values());
+}
+
+export async function updateAdminRoleFallback(
+  id: string,
+  updates: { permissions?: string[]; description?: string }
+): Promise<any | null> {
+  const all = await listAdminRolesFallback();
+  const existing = all.find((r) => r.id === id || r.slug === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    permissions: updates.permissions ?? existing.permissions,
+    description: updates.description ?? existing.description,
+    updated_at: new Date().toISOString(),
+  };
+  const stored = readJsonStore<{ roles: any[] }>('admin-roles.json', { roles: [] });
+  stored.roles = [updated, ...stored.roles.filter((r) => r.id !== existing.id)];
+  writeJsonStore('admin-roles.json', stored);
+  return updated;
+}
+
+export async function listSecurityIncidentsFallback(status?: string, severity?: string): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>('security_incidents?select=*&order=created_at.desc&limit=100');
+  const stored = readJsonStore<{ incidents: any[] }>('security-incidents.json', { incidents: [] });
+  const map = new Map<string, any>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) if (row?.id) map.set(String(row.id), row);
+  }
+  for (const row of stored.incidents) if (row?.id) map.set(String(row.id), row);
+  let rows = Array.from(map.values());
+  if (status && status !== 'all') rows = rows.filter((r) => r.status === status);
+  if (severity && severity !== 'all') rows = rows.filter((r) => r.severity === severity);
+  return rows;
+}
+
+export async function createSecurityIncidentFallback(payload: {
+  title: string;
+  severity: string;
+  description: string;
+  user_email?: string | null;
+}): Promise<any> {
+  const now = new Date().toISOString();
+  const row = {
+    id: crypto.randomUUID(),
+    title: payload.title,
+    severity: payload.severity || 'medium',
+    description: payload.description || '',
+    user_email: payload.user_email || null,
+    status: 'new',
+    created_at: now,
+    updated_at: now,
+  };
+  const stored = readJsonStore<{ incidents: any[] }>('security-incidents.json', { incidents: [] });
+  stored.incidents = [row, ...stored.incidents].slice(0, 100);
+  writeJsonStore('security-incidents.json', stored);
+  return row;
+}
+
+export async function getAdminDashboardStatsFallback(): Promise<{
+  stats: Record<string, any>;
+  charts: { registrations: any[]; logins: any[] };
+  recentActivity: any[];
+}> {
+  const users = await listAllAppUsersFallback();
+  const activeUsers = users.filter((u: any) => !u.status || u.status === 'active').length;
+  const suspendedUsers = users.filter((u: any) => u.status === 'suspended').length;
+  const inactiveUsers = users.filter((u: any) => u.status === 'deactivated').length;
+  const logsRes = await sbRestRequest<any[]>('security_audit_logs?select=id,event_type,user_email,actor_role,created_at,details&order=created_at.desc&limit=10');
+  const recentActivity = logsRes.ok && Array.isArray(logsRes.data) ? logsRes.data : [];
+
+  return {
+    stats: {
+      totalUsers: users.length,
+      newToday: 0,
+      newWeek: 0,
+      newMonth: users.length,
+      activeUsers,
+      suspendedUsers,
+      inactiveUsers,
+      pendingDeletions: 0,
+      failedLogins24h: 0,
+      lockedAccounts: 0,
+      activeSessions: activeUsers,
+      openIncidents: 0,
+      dbHealth: 'Operational (Supabase REST Fallback)',
+      emailServiceStatus: process.env.SMTP_PASS ? 'Operational (SMTP Configured)' : 'SMTP_PASS Required',
+    },
+    charts: { registrations: [], logins: [] },
+    recentActivity,
+  };
+}
+

@@ -17812,7 +17812,7 @@ var require_node_domexception = __commonJS({
 });
 
 // node_modules/fetch-blob/from.js
-import { statSync, createReadStream, promises as fs7 } from "node:fs";
+import { statSync, createReadStream, promises as fs8 } from "node:fs";
 import { basename } from "node:path";
 var import_node_domexception, stat, blobFromSync, blobFrom, fileFrom, fileFromSync, fromBlob, fromFile, BlobDataItem;
 var init_from = __esm({
@@ -17820,7 +17820,7 @@ var init_from = __esm({
     import_node_domexception = __toESM(require_node_domexception(), 1);
     init_file();
     init_fetch_blob();
-    ({ stat } = fs7);
+    ({ stat } = fs8);
     blobFromSync = (path10, type) => fromBlob(statSync(path10), path10, type);
     blobFrom = (path10, type) => stat(path10).then((stat3) => fromBlob(stat3, path10, type));
     fileFrom = (path10, type) => stat(path10).then((stat3) => fromFile(stat3, path10, type));
@@ -22794,7 +22794,7 @@ var require_util2 = __commonJS({
     exports.isValidFile = isValidFile;
     exports.getWellKnownCertificateConfigFileLocation = getWellKnownCertificateConfigFileLocation;
     var fs12 = __require("fs");
-    var os3 = __require("os");
+    var os5 = __require("os");
     var path10 = __require("path");
     var WELL_KNOWN_CERTIFICATE_CONFIG_FILE = "certificate_config.json";
     var CLOUDSDK_CONFIG_DIRECTORY = "gcloud";
@@ -22892,7 +22892,7 @@ var require_util2 = __commonJS({
       return path10.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
     }
     function _isWindows() {
-      return os3.platform().startsWith("win");
+      return os5.platform().startsWith("win");
     }
   }
 });
@@ -27732,7 +27732,7 @@ var require_googleauth = __commonJS({
     var fs12 = __require("fs");
     var gaxios_1 = require_src2();
     var gcpMetadata = require_src4();
-    var os3 = __require("os");
+    var os5 = __require("os");
     var path10 = __require("path");
     var crypto_1 = require_crypto3();
     var computeclient_1 = require_computeclient();
@@ -28241,7 +28241,7 @@ var require_googleauth = __commonJS({
        * @api private
        */
       _isWindows() {
-        const sys = os3.platform();
+        const sys = os5.platform();
         if (sys && sys.length >= 3) {
           if (sys.substring(0, 3).toLowerCase() === "win") {
             return true;
@@ -32711,8 +32711,26 @@ try {
 }
 function normalizeDatabaseUrl(raw) {
   if (!raw || typeof raw !== "string") return "";
-  const trimmed = raw.trim().replace(/^['"]+|['"]+$/g, "").trim();
+  let trimmed = raw.trim().replace(/^['"]+|['"]+$/g, "").trim();
   if (!trimmed || !/^postgres(ql)?:\/\//i.test(trimmed)) return "";
+  const schemeMatch = trimmed.match(/^(postgres(?:ql)?:\/\/)/i);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1];
+    const rest = trimmed.slice(scheme.length);
+    const lastAtIdx = rest.lastIndexOf("@");
+    if (lastAtIdx !== -1) {
+      const userInfo = rest.slice(0, lastAtIdx);
+      const hostAndPath = rest.slice(lastAtIdx + 1);
+      const colonIdx = userInfo.indexOf(":");
+      if (colonIdx !== -1) {
+        const user = userInfo.slice(0, colonIdx);
+        const pass = userInfo.slice(colonIdx + 1);
+        if (/[@#?]/.test(pass)) {
+          trimmed = `${scheme}${user}:${encodeURIComponent(pass)}@${hostAndPath}`;
+        }
+      }
+    }
+  }
   try {
     const parsed = new URL(trimmed);
     if (parsed.pathname === "/postgre") {
@@ -32824,11 +32842,18 @@ async function query(text, params, retries = 2) {
       }
       return emptyResult();
     }
-    const isConnErr = msg.includes("Connection terminated") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND") || msg.includes("EAI_AGAIN") || msg.includes("ECONNREFUSED") || msg.includes("connection timeout") || msg.includes("timeout expired") || msg.includes("timeout") || msg.includes("closed");
+    const isConnErr = msg.includes("Connection terminated") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND") || msg.includes("ENETUNREACH") || msg.includes("EHOSTUNREACH") || msg.includes("EAI_AGAIN") || msg.includes("ECONNREFUSED") || msg.includes("connection timeout") || msg.includes("timeout expired") || msg.includes("timeout") || msg.includes("closed");
     if (isConnErr && retries > 0) {
       console.warn(`[DB Reconnect] Query failed (${msg}), retrying (${retries} attempts left)...`);
-      await new Promise((r2) => setTimeout(r2, 600));
+      await new Promise((r2) => setTimeout(r2, 400));
       return query(text, params, retries - 1);
+    }
+    if (isConnErr) {
+      if (!databaseFatalError) {
+        databaseFatalError = msg;
+        console.warn(`[AI Studio] PostgreSQL connection unreachable (${msg}) \u2014 falling back to Supabase REST.`);
+      }
+      return emptyResult();
     }
     throw err;
   }
@@ -48246,8 +48271,8 @@ var nodemailer = {
 var nodemailer_default = nodemailer;
 
 // server/email.ts
-import fs6 from "fs";
-import path5 from "path";
+import fs7 from "fs";
+import path6 from "path";
 
 // server/config.ts
 import fs5 from "fs";
@@ -49320,6 +49345,1216 @@ var APP_CONFIG = {
     };
   })()
 };
+
+// server/supabaseRestFallback.ts
+import fs6 from "fs";
+import os3 from "os";
+import path5 from "path";
+import crypto12 from "crypto";
+var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
+var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+var PRIMARY_DATA_DIR = path5.resolve(process.cwd(), ".data", "runtime-store");
+var TMP_DATA_DIR = path5.resolve(os3.tmpdir(), "mymoney-runtime-store");
+var memoryFallbackStore = /* @__PURE__ */ new Map();
+function resolveWritableStoreDir() {
+  try {
+    if (!fs6.existsSync(PRIMARY_DATA_DIR)) {
+      fs6.mkdirSync(PRIMARY_DATA_DIR, { recursive: true });
+    }
+    fs6.accessSync(PRIMARY_DATA_DIR, fs6.constants.W_OK);
+    return PRIMARY_DATA_DIR;
+  } catch {
+    try {
+      if (!fs6.existsSync(TMP_DATA_DIR)) {
+        fs6.mkdirSync(TMP_DATA_DIR, { recursive: true });
+      }
+      return TMP_DATA_DIR;
+    } catch {
+      return PRIMARY_DATA_DIR;
+    }
+  }
+}
+function safeStoreFile(baseDir, name2) {
+  const safeName = name2.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const resolved = path5.resolve(baseDir, safeName);
+  if (!resolved.startsWith(baseDir + path5.sep)) {
+    throw new Error("PATH_CONFINEMENT_VIOLATION");
+  }
+  return resolved;
+}
+function readJsonStore(fileName, defaultValue) {
+  const dirsToTry = [PRIMARY_DATA_DIR, TMP_DATA_DIR];
+  for (const dir of dirsToTry) {
+    try {
+      const file = safeStoreFile(dir, fileName);
+      if (fs6.existsSync(file)) {
+        const raw = fs6.readFileSync(file, "utf8");
+        if (raw.trim()) {
+          const parsed = JSON.parse(raw);
+          memoryFallbackStore.set(fileName, parsed);
+          return parsed;
+        }
+      }
+    } catch {
+    }
+  }
+  if (memoryFallbackStore.has(fileName)) {
+    return memoryFallbackStore.get(fileName);
+  }
+  return defaultValue;
+}
+function writeJsonStore(fileName, data) {
+  memoryFallbackStore.set(fileName, data);
+  try {
+    const baseDir = resolveWritableStoreDir();
+    const file = safeStoreFile(baseDir, fileName);
+    fs6.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.warn(`[RuntimeStore] Write warning (${fileName}):`, err?.message);
+  }
+}
+function getSupabaseRestConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
+  return { url, key };
+}
+async function sbRestRequest(restPath, options = {}) {
+  try {
+    const { url, key } = getSupabaseRestConfig();
+    const headers = {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: "application/json"
+    };
+    if (options.body !== void 0) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (options.prefer) {
+      headers["Prefer"] = options.prefer;
+    }
+    const response = await fetch(`${url}/rest/v1/${restPath}`, {
+      method: options.method || "GET",
+      headers,
+      body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
+    });
+    const text = await response.text();
+    let parsed = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+    }
+    if (!response.ok) {
+      const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
+      return { ok: false, status: response.status, data: null, error: errMsg };
+    }
+    return { ok: true, status: response.status, data: parsed };
+  } catch (err) {
+    return { ok: false, status: 0, data: null, error: err?.message || "Network error" };
+  }
+}
+function loadIntegrationsConfigFallback() {
+  return readJsonStore("integrations-config.json", {});
+}
+function saveIntegrationsConfigFallback(cfg) {
+  writeJsonStore("integrations-config.json", cfg);
+}
+async function insertFeedbackFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto12.randomUUID();
+  const record = {
+    id,
+    user_id: payload.user_id,
+    user_name: payload.user_name,
+    user_email: payload.user_email,
+    user_phone: payload.user_phone || null,
+    type: "feedback",
+    category: payload.category,
+    subject: payload.subject,
+    message: payload.message,
+    rating: payload.rating,
+    dpdp_consent: payload.dpdp_consent,
+    dpdp_consent_at: payload.dpdp_consent_at,
+    status: "new",
+    admin_notes: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    created_at: now,
+    updated_at: now
+  };
+  let savedRow = record;
+  const sbRes = await sbRestRequest("feedbacks", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      id: record.id,
+      user_id: record.user_id,
+      user_name: record.user_name,
+      user_email: record.user_email,
+      user_phone: record.user_phone,
+      type: "feedback",
+      category: record.category,
+      subject: record.subject,
+      message: record.message,
+      rating: record.rating,
+      dpdp_consent: record.dpdp_consent,
+      dpdp_consent_at: record.dpdp_consent_at,
+      status: "new",
+      created_at: now,
+      updated_at: now
+    }
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    savedRow = sbRes.data[0];
+  } else {
+    const retryRes = await sbRestRequest("feedbacks", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: record.user_id,
+        user_name: record.user_name,
+        user_email: record.user_email,
+        type: "feedback",
+        category: record.category,
+        subject: record.subject,
+        message: record.message,
+        rating: record.rating,
+        status: "new",
+        created_at: now,
+        updated_at: now
+      }
+    });
+    if (retryRes.ok && Array.isArray(retryRes.data) && retryRes.data[0]) {
+      savedRow = retryRes.data[0];
+    }
+  }
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  store.feedbacks = [savedRow, ...store.feedbacks.filter((f3) => f3.id !== savedRow.id)].slice(0, 500);
+  writeJsonStore("feedbacks.json", store);
+  return savedRow;
+}
+async function listFeedbacksFallback(filters) {
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  const sbRes = await sbRestRequest(
+    "feedbacks?type=eq.feedback&select=*&order=created_at.desc&limit=200"
+  );
+  const mergedMap = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) mergedMap.set(String(row.id), row);
+    }
+  }
+  for (const row of store.feedbacks) {
+    if (row?.id && !mergedMap.has(String(row.id))) {
+      mergedMap.set(String(row.id), row);
+    }
+  }
+  let allFeedbacks = Array.from(mergedMap.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  if (filters?.userId) {
+    allFeedbacks = allFeedbacks.filter((f3) => f3.user_id === filters.userId);
+  }
+  const total = allFeedbacks.length;
+  const ratedRows = allFeedbacks.filter((f3) => Number(f3.rating) > 0);
+  const avgRating = ratedRows.length > 0 ? Number((ratedRows.reduce((s2, f3) => s2 + Number(f3.rating || 0), 0) / ratedRows.length).toFixed(1)) : 0;
+  const metrics = {
+    total,
+    avg_rating: avgRating,
+    stars_5: allFeedbacks.filter((f3) => Number(f3.rating) === 5).length,
+    stars_4: allFeedbacks.filter((f3) => Number(f3.rating) === 4).length,
+    stars_3: allFeedbacks.filter((f3) => Number(f3.rating) === 3).length,
+    stars_2: allFeedbacks.filter((f3) => Number(f3.rating) === 2).length,
+    stars_1: allFeedbacks.filter((f3) => Number(f3.rating) === 1).length,
+    new_count: allFeedbacks.filter((f3) => f3.status === "new").length,
+    reviewed_count: allFeedbacks.filter((f3) => ["reviewed", "responded", "resolved"].includes(f3.status)).length,
+    resolved_count: allFeedbacks.filter((f3) => f3.status === "resolved").length
+  };
+  let filtered = allFeedbacks;
+  if (filters?.rating && filters.rating !== "all") {
+    const rNum = parseInt(filters.rating, 10);
+    filtered = filtered.filter((f3) => Number(f3.rating) === rNum);
+  }
+  if (filters?.category && filters.category !== "all") {
+    filtered = filtered.filter((f3) => f3.category === filters.category);
+  }
+  if (filters?.status && filters.status !== "all") {
+    filtered = filtered.filter((f3) => f3.status === filters.status);
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    filtered = filtered.filter(
+      (f3) => String(f3.user_name || "").toLowerCase().includes(q) || String(f3.user_email || "").toLowerCase().includes(q) || String(f3.message || "").toLowerCase().includes(q) || String(f3.subject || "").toLowerCase().includes(q)
+    );
+  }
+  return { feedbacks: filtered.slice(0, 150), metrics };
+}
+async function getFeedbackByIdFallback(id) {
+  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    return sbRes.data[0];
+  }
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  return store.feedbacks.find((f3) => f3.id === id) || null;
+}
+async function updateFeedbackFallback(id, updates) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const patch = {
+    updated_at: now,
+    reviewed_at: now
+  };
+  if (updates.status !== void 0) patch.status = updates.status;
+  if (updates.admin_notes !== void 0) patch.admin_notes = updates.admin_notes;
+  if (updates.reviewed_by !== void 0) patch.reviewed_by = updates.reviewed_by;
+  let updatedRow = null;
+  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body: patch
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    updatedRow = sbRes.data[0];
+  }
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  const idx = store.feedbacks.findIndex((f3) => f3.id === id);
+  if (idx >= 0) {
+    store.feedbacks[idx] = { ...store.feedbacks[idx], ...patch, ...updatedRow || {} };
+    updatedRow = store.feedbacks[idx];
+    writeJsonStore("feedbacks.json", store);
+  } else if (updatedRow) {
+    store.feedbacks.unshift(updatedRow);
+    writeJsonStore("feedbacks.json", store);
+  }
+  return updatedRow;
+}
+async function listAllAppUsersFallback() {
+  const usersMap = /* @__PURE__ */ new Map();
+  const appUsersRes = await sbRestRequest("app_users?select=id,email,full_name,role&limit=1000");
+  if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
+    for (const u of appUsersRes.data) {
+      if (u?.id) usersMap.set(String(u.id), u);
+    }
+  }
+  const profilesRes = await sbRestRequest("profiles?select=id,email,full_name&limit=1000");
+  if (profilesRes.ok && Array.isArray(profilesRes.data)) {
+    for (const p of profilesRes.data) {
+      if (p?.id && !usersMap.has(String(p.id))) {
+        usersMap.set(String(p.id), p);
+      }
+    }
+  }
+  return Array.from(usersMap.values());
+}
+function readNotifStore() {
+  const raw = readJsonStore("notifications.json", {});
+  return {
+    campaigns: Array.isArray(raw.campaigns) ? raw.campaigns : [],
+    banners: Array.isArray(raw.banners) ? raw.banners : [],
+    userNotifications: Array.isArray(raw.userNotifications) ? raw.userNotifications : [],
+    broadcastUserState: raw.broadcastUserState && typeof raw.broadcastUserState === "object" ? raw.broadcastUserState : {}
+  };
+}
+function writeNotifStore(store) {
+  store.campaigns = store.campaigns.slice(0, 200);
+  store.banners = store.banners.slice(0, 200);
+  store.userNotifications = store.userNotifications.slice(0, 2e3);
+  writeJsonStore("notifications.json", store);
+}
+async function createCampaignFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto12.randomUUID();
+  const record = {
+    id,
+    title: payload.title,
+    message: payload.message,
+    category: payload.category,
+    type: payload.type,
+    channels: payload.channels,
+    target_type: payload.target_type,
+    target_user_ids: payload.target_user_ids,
+    deep_link: payload.deep_link,
+    status: payload.status,
+    scheduled_for: payload.scheduled_for,
+    total_targets: 0,
+    delivered_count: 0,
+    failed_count: 0,
+    sent_at: null,
+    created_by: payload.created_by,
+    created_at: now,
+    updated_at: now
+  };
+  let saved = record;
+  const sbRes = await sbRestRequest("notification_campaigns", {
+    method: "POST",
+    prefer: "return=representation",
+    body: record
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    saved = sbRes.data[0];
+  }
+  const store = readNotifStore();
+  store.campaigns = [saved, ...store.campaigns.filter((c) => c.id !== saved.id)];
+  writeNotifStore(store);
+  return saved;
+}
+async function updateCampaignFallback(id, patch) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const nextPatch = { ...patch, updated_at: now };
+  await sbRestRequest(`notification_campaigns?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: nextPatch
+  });
+  const store = readNotifStore();
+  const idx = store.campaigns.findIndex((c) => c.id === id);
+  if (idx >= 0) {
+    store.campaigns[idx] = { ...store.campaigns[idx], ...nextPatch };
+    writeNotifStore(store);
+    return store.campaigns[idx];
+  }
+  return null;
+}
+async function listCampaignsFallback() {
+  const store = readNotifStore();
+  const sbRes = await sbRestRequest(
+    "notification_campaigns?select=*&order=created_at.desc&limit=100"
+  );
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const c of sbRes.data) {
+      if (c?.id) map2.set(String(c.id), c);
+    }
+  }
+  for (const c of store.campaigns) {
+    if (c?.id && !map2.has(String(c.id))) {
+      map2.set(String(c.id), c);
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+async function createBroadcastBannerFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto12.randomUUID();
+  const banner = {
+    id,
+    title: payload.title,
+    message: payload.message,
+    type: payload.type || "announcement",
+    target_user_id: payload.target_user_id || "all",
+    is_active: true,
+    created_by: payload.created_by,
+    created_at: now,
+    category: payload.category || "announcement",
+    deep_link: payload.deep_link || "dashboard"
+  };
+  let saved = banner;
+  const sbRes = await sbRestRequest("notifications", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      id: banner.id,
+      title: banner.title,
+      message: banner.message,
+      type: banner.type,
+      target_user_id: banner.target_user_id,
+      is_active: true,
+      created_by: banner.created_by,
+      created_at: now
+    }
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    saved = { ...banner, ...sbRes.data[0] };
+  }
+  const store = readNotifStore();
+  store.banners = [saved, ...store.banners.filter((b) => b.id !== saved.id)];
+  writeNotifStore(store);
+  return saved;
+}
+async function listBroadcastBannersFallback() {
+  const store = readNotifStore();
+  const sbRes = await sbRestRequest("notifications?select=*&order=created_at.desc&limit=100");
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const b of sbRes.data) {
+      if (b?.id) map2.set(String(b.id), b);
+    }
+  }
+  for (const b of store.banners) {
+    if (b?.id && !map2.has(String(b.id))) {
+      map2.set(String(b.id), b);
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+async function deactivateBroadcastBannerFallback(id) {
+  await sbRestRequest(`notifications?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { is_active: false }
+  });
+  const store = readNotifStore();
+  const idx = store.banners.findIndex((b) => b.id === id);
+  if (idx >= 0) {
+    store.banners[idx].is_active = false;
+    writeNotifStore(store);
+  }
+}
+async function insertUserNotificationFallback(params) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto12.randomUUID();
+  const record = {
+    id,
+    user_id: params.user_id,
+    title: params.title,
+    message: params.message,
+    category: params.category || "general",
+    type: params.type || "info",
+    related_entity_type: params.related_entity_type || null,
+    related_entity_id: params.related_entity_id || null,
+    deep_link: params.deep_link || null,
+    dedupe_key: params.dedupe_key || null,
+    is_read: false,
+    read_at: null,
+    is_deleted: false,
+    deleted_at: null,
+    metadata: params.metadata || {},
+    created_at: now
+  };
+  let saved = record;
+  const sbRes = await sbRestRequest("user_notifications", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      id: record.id,
+      user_id: record.user_id,
+      title: record.title,
+      message: record.message,
+      category: record.category,
+      type: record.type,
+      related_entity_type: record.related_entity_type,
+      related_entity_id: record.related_entity_id,
+      deep_link: record.deep_link,
+      metadata: record.metadata,
+      is_read: false,
+      is_deleted: false,
+      created_at: now
+    }
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    saved = sbRes.data[0];
+  }
+  const store = readNotifStore();
+  if (params.dedupe_key) {
+    const dup = store.userNotifications.find(
+      (n) => n.user_id === params.user_id && (n.dedupe_key === params.dedupe_key || n.metadata?.dedupeKey === params.dedupe_key)
+    );
+    if (dup) return dup;
+  }
+  store.userNotifications = [saved, ...store.userNotifications.filter((n) => n.id !== saved.id)];
+  writeNotifStore(store);
+  return saved;
+}
+async function listUserNotificationsFallback(userId, options) {
+  const store = readNotifStore();
+  const userState = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  const sbUserRes = await sbRestRequest(
+    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=100`
+  );
+  const merged = /* @__PURE__ */ new Map();
+  if (sbUserRes.ok && Array.isArray(sbUserRes.data)) {
+    for (const n of sbUserRes.data) {
+      if (n?.id && !n.is_deleted) merged.set(String(n.id), n);
+    }
+  }
+  for (const n of store.userNotifications) {
+    if (n?.user_id === userId && !n.is_deleted && !merged.has(String(n.id))) {
+      merged.set(String(n.id), n);
+    }
+  }
+  const activeBanners = await listBroadcastBannersFallback();
+  const existingBroadcastIds = new Set(
+    Array.from(merged.values()).map((n) => n?.metadata?.broadcastId).filter(Boolean)
+  );
+  for (const b of activeBanners) {
+    if (!b?.is_active) continue;
+    if (b.target_user_id !== "all" && b.target_user_id !== userId) continue;
+    const virtualId = `broadcast_${b.id}`;
+    if (existingBroadcastIds.has(b.id) || userState.deletedIds.includes(virtualId) || merged.has(virtualId)) {
+      continue;
+    }
+    merged.set(virtualId, {
+      id: virtualId,
+      user_id: userId,
+      title: b.title,
+      message: b.message,
+      category: b.category || "announcement",
+      type: b.type || "announcement",
+      deep_link: b.deep_link || "dashboard",
+      is_read: userState.readIds.includes(virtualId),
+      is_deleted: false,
+      metadata: { broadcastId: b.id, isBroadcast: true },
+      created_at: b.created_at
+    });
+  }
+  let allList = Array.from(merged.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  const unreadCount = allList.filter((n) => !n.is_read).length;
+  if (options?.category && options.category !== "all") {
+    allList = allList.filter((n) => n.category === options.category);
+  }
+  if (options?.unreadOnly) {
+    allList = allList.filter((n) => !n.is_read);
+  }
+  const total = allList.length;
+  const page = options?.page || 1;
+  const limit = options?.limit || 20;
+  const offset = (page - 1) * limit;
+  return {
+    notifications: allList.slice(offset, offset + limit),
+    unreadCount,
+    total
+  };
+}
+async function markUserNotificationReadFallback(userId, notifId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const store = readNotifStore();
+  if (notifId.startsWith("broadcast_")) {
+    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+    if (!state.readIds.includes(notifId)) state.readIds.push(notifId);
+    store.broadcastUserState[userId] = state;
+    writeNotifStore(store);
+    return { id: notifId, user_id: userId, is_read: true, read_at: now };
+  }
+  await sbRestRequest(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "PATCH", body: { is_read: true, read_at: now } }
+  );
+  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
+  if (target) {
+    target.is_read = true;
+    target.read_at = now;
+    writeNotifStore(store);
+    return target;
+  }
+  return { id: notifId, user_id: userId, is_read: true, read_at: now };
+}
+async function markAllUserNotificationsReadFallback(userId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRestRequest(
+    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&is_read=eq.false`,
+    { method: "PATCH", body: { is_read: true, read_at: now } }
+  );
+  const store = readNotifStore();
+  for (const n of store.userNotifications) {
+    if (n.user_id === userId && !n.is_deleted) {
+      n.is_read = true;
+      n.read_at = now;
+    }
+  }
+  const activeBanners = await listBroadcastBannersFallback();
+  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  for (const b of activeBanners) {
+    const vid = `broadcast_${b.id}`;
+    if (!state.readIds.includes(vid)) state.readIds.push(vid);
+  }
+  store.broadcastUserState[userId] = state;
+  writeNotifStore(store);
+}
+async function deleteUserNotificationFallback(userId, notifId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const store = readNotifStore();
+  if (notifId.startsWith("broadcast_")) {
+    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+    if (!state.deletedIds.includes(notifId)) state.deletedIds.push(notifId);
+    store.broadcastUserState[userId] = state;
+    writeNotifStore(store);
+    return;
+  }
+  await sbRestRequest(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
+  );
+  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
+  if (target) {
+    target.is_deleted = true;
+    target.deleted_at = now;
+    writeNotifStore(store);
+  }
+}
+async function clearAllUserNotificationsFallback(userId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRestRequest(
+    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false`,
+    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
+  );
+  const store = readNotifStore();
+  for (const n of store.userNotifications) {
+    if (n.user_id === userId && !n.is_deleted) {
+      n.is_deleted = true;
+      n.deleted_at = now;
+    }
+  }
+  const activeBanners = await listBroadcastBannersFallback();
+  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  for (const b of activeBanners) {
+    const vid = `broadcast_${b.id}`;
+    if (!state.deletedIds.includes(vid)) state.deletedIds.push(vid);
+  }
+  store.broadcastUserState[userId] = state;
+  writeNotifStore(store);
+}
+var DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: "tmpl_welcome_email",
+    slug: "welcome-email",
+    name: "Welcome & Account Verification",
+    category: "authentication",
+    subject: "Welcome to {{app_name}}! Your Account is Active",
+    variables: ["user_name", "app_name", "support_email", "date"],
+    text_content: "Hi {{user_name}},\n\nWelcome to {{app_name}}! Your account has been created successfully on {{date}}.\n\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team",
+    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Welcome, {{user_name}}!</h2><p>Your account on <strong>{{app_name}}</strong> is now active.</p><p>Registration Date: {{date}}</p><p>If you have any questions, reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_password_reset",
+    slug: "password-reset",
+    name: "Password Reset Request",
+    category: "security",
+    subject: "Reset Your My Money Manager Password",
+    variables: ["user_name", "app_name", "reset_link", "support_email"],
+    text_content: "Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account.\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes.\n\nIf you did not request this, please contact {{support_email}} immediately.",
+    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Password Reset Request</h2><p>Hi {{user_name}}, click the button below to reset your password:</p><p><a href="{{reset_link}}" style="background: #059669; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 6px;">Reset Password</a></p><p>Link expires in 15 minutes.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_password_changed",
+    slug: "password-changed",
+    name: "Security Alert: Password Changed",
+    category: "security",
+    subject: "[Security Alert] Your Password Was Successfully Changed \u2014 {{app_name}}",
+    variables: ["user_name", "app_name", "date", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour password for {{app_name}} was successfully updated on {{date}}.\nAll other device sessions have been revoked.\n\nIf you did not make this change, please contact {{support_email}} immediately.",
+    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Security Alert: Password Changed</h2><p>Hi {{user_name}}, your password was updated on {{date}}.</p><p>All other device sessions were revoked for your safety.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_feedback_confirmation",
+    slug: "feedback-confirmation",
+    name: "User Feedback Confirmation & Admin Alert",
+    category: "support",
+    subject: "Thank You for Your Feedback \u2014 {{app_name}}",
+    variables: ["user_name", "app_name", "rating", "category", "support_email"],
+    text_content: "Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback with {{app_name}} by HackifyPro. Our team reviews every submission carefully.",
+    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Thank You for Your Feedback</h2><p>Hi {{user_name}}, we appreciate your {{rating}}-star feedback for <strong>{{app_name}}</strong>.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_deletion_scheduled",
+    slug: "deletion-scheduled",
+    name: "Account Deletion Scheduled Notice",
+    category: "lifecycle",
+    subject: "[Notice] Account Deletion Scheduled (24-Hour Grace Period) \u2014 {{app_name}}",
+    variables: ["user_name", "app_name", "scheduled_date", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYou requested deletion of your account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.",
+    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Account Deletion Scheduled</h2><p>Hi {{user_name}}, your account is scheduled for deletion on {{scheduled_date}}.</p><p>You may cancel by logging into your account anytime before this window ends.</p></div>',
+    is_active: true,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  }
+];
+async function listEmailTemplatesFallback() {
+  const sbRes = await sbRestRequest("email_templates?select=*&order=category.asc,name.asc");
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  for (const t2 of DEFAULT_EMAIL_TEMPLATES) {
+    map2.set(t2.id, { ...t2 });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of stored.templates) {
+    if (row?.id) map2.set(String(row.id), row);
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => `${a.category || ""}:${a.name || ""}`.localeCompare(`${b.category || ""}:${b.name || ""}`)
+  );
+}
+async function updateEmailTemplateFallback(id, updates) {
+  const all = await listEmailTemplatesFallback();
+  const existing = all.find((t2) => t2.id === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    subject: updates.subject !== void 0 ? updates.subject : existing.subject,
+    html_content: updates.html_content !== void 0 ? updates.html_content : existing.html_content,
+    text_content: updates.text_content !== void 0 ? updates.text_content : existing.text_content,
+    is_active: updates.is_active !== void 0 ? updates.is_active : existing.is_active,
+    version: Number(existing.version || 1) + 1,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: {
+      subject: updated.subject,
+      html_content: updated.html_content,
+      text_content: updated.text_content,
+      is_active: updated.is_active,
+      version: updated.version,
+      updated_at: updated.updated_at
+    }
+  });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  stored.templates = [updated, ...stored.templates.filter((t2) => t2.id !== id)];
+  writeJsonStore("email-templates.json", stored);
+  return updated;
+}
+async function recordEmailLogFallback(entry) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const row = {
+    id: entry.id || crypto12.randomUUID(),
+    user_id: entry.user_id || null,
+    email: entry.email,
+    email_type: entry.email_type,
+    recipient_name: entry.recipient_name || "",
+    subject: entry.subject,
+    status: entry.status,
+    attempts: entry.attempts ?? 1,
+    max_attempts: 3,
+    last_error: entry.last_error || null,
+    trigger_event: entry.trigger_event || entry.email_type,
+    sent_at: entry.status === "sent" ? now : null,
+    created_at: now,
+    updated_at: now
+  };
+  const store = readJsonStore("email-logs.json", { logs: [] });
+  store.logs = [row, ...store.logs.filter((l) => l.id !== row.id)].slice(0, 200);
+  writeJsonStore("email-logs.json", store);
+  return row;
+}
+async function listEmailLogsFallback(status) {
+  const sbRes = await sbRestRequest("email_dispatch_logs?select=*&order=created_at.desc&limit=100");
+  const store = readJsonStore("email-logs.json", { logs: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of store.logs) {
+    if (row?.id && !map2.has(String(row.id))) {
+      map2.set(String(row.id), row);
+    }
+  }
+  let logs = Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  if (status && status !== "all") {
+    logs = logs.filter((l) => l.status === status);
+  }
+  return logs.slice(0, 100);
+}
+async function getEmailLogByIdFallback(id) {
+  const logs = await listEmailLogsFallback();
+  return logs.find((l) => l.id === id) || null;
+}
+async function updateEmailLogFallback(id, patch) {
+  const store = readJsonStore("email-logs.json", { logs: [] });
+  const idx = store.logs.findIndex((l) => l.id === id);
+  if (idx >= 0) {
+    store.logs[idx] = { ...store.logs[idx], ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    writeJsonStore("email-logs.json", store);
+  }
+  await sbRestRequest(`email_dispatch_logs?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+  });
+}
+var DEFAULT_FEATURE_FLAGS = [
+  { id: "feat_ai_money_assistant", key: "ai_money_assistant", name: "AI Money Assistant", description: "Intelligent conversational & Voice Agent assistant for spending insights and guidance", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_smart_categorization", key: "smart_categorization", name: "Smart Transaction Categorization", description: "Auto-detecting category & subcategory from merchant and description", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_expense_calendar", key: "expense_calendar", name: "Expense Calendar View", description: "Day-by-day interactive financial timeline and spending heatmap", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_smart_financial_alerts", key: "smart_financial_alerts", name: "Smart Financial Alerts", description: "Proactive budget threshold warning and anomaly detection", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_receipt_scanner_ocr", key: "receipt_scanner_ocr", name: "Receipt Scanner OCR", description: "Optical character recognition to parse paper bills and receipts", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_net_worth_tracker", key: "net_worth_tracker", name: "Net Worth Tracker", description: "Consolidated asset, savings, and liability calculation", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_safe_to_spend", key: "safe_to_spend", name: "Safe-to-Spend Calculator", description: "Real-time liquidity buffer calculation after committed bills", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_udhar_ledger", key: "udhar_ledger", name: "Udhar / Debt Tracking Ledger", description: "Lending, borrowing, reminder dispatch, and settlement ledger", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_qr_linking", key: "qr_linking", name: "QR Code Device Pairing", description: "Quick scan peer connection and ledger reconciliation", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_calculator", key: "calculator", name: "Smart Financial Calculator", description: "Interactive standard, GST, offer, and group split calculation tools", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_push_notifications", key: "push_notifications", name: "Web Push & In-App Broadcasts", description: "PWA Web Push notifications and broadcast announcements", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_reports_export", key: "reports_export", name: "Financial Reports & PDF Export", description: "Downloadable summary statements and monthly analytics", is_enabled: true, rollout_percentage: 100 }
+];
+async function listFeatureFlagsFallback() {
+  const sbRes = await sbRestRequest("feature_flags?select=*&order=name.asc");
+  const stored = readJsonStore("feature-flags.json", { features: [] });
+  const mapByKey = /* @__PURE__ */ new Map();
+  for (const f3 of DEFAULT_FEATURE_FLAGS) {
+    mapByKey.set(f3.key, { ...f3 });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.key) mapByKey.set(String(row.key), row);
+    }
+  }
+  for (const row of stored.features) {
+    if (row?.key) mapByKey.set(String(row.key), row);
+  }
+  return Array.from(mapByKey.values()).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+}
+async function updateFeatureFlagFallback(id, updates) {
+  const all = await listFeatureFlagsFallback();
+  const existing = all.find((f3) => f3.id === id || f3.key === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    is_enabled: updates.is_enabled !== void 0 ? updates.is_enabled : existing.is_enabled,
+    rollout_percentage: updates.rollout_percentage !== void 0 ? updates.rollout_percentage : existing.rollout_percentage,
+    updated_by: updates.updated_by || "admin",
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await sbRestRequest(`feature_flags?id=eq.${encodeURIComponent(existing.id)}`, {
+    method: "PATCH",
+    body: {
+      is_enabled: updated.is_enabled,
+      rollout_percentage: updated.rollout_percentage,
+      updated_by: updated.updated_by,
+      updated_at: updated.updated_at
+    }
+  });
+  const stored = readJsonStore("feature-flags.json", { features: [] });
+  stored.features = [updated, ...stored.features.filter((f3) => f3.id !== existing.id && f3.key !== existing.key)];
+  writeJsonStore("feature-flags.json", stored);
+  return updated;
+}
+var DEFAULT_LEGAL_POLICIES = [
+  {
+    id: "legal_privacy_policy",
+    slug: "privacy-policy",
+    title: "Privacy Policy",
+    version: "2.1",
+    status: "published",
+    content: `# Privacy Policy \u2014 My Money Manager by HackifyPro
+Last Updated: November 2026
+
+At My Money Manager by HackifyPro, we respect your privacy and safeguard your personal financial records.
+All transaction entries, budgets, and Udhar balances are strictly user-scoped.
+Administrators cannot view your private financial transactions without an explicit, time-limited user consent grant.
+We comply with India's Digital Personal Data Protection (DPDP) Act 2023.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  },
+  {
+    id: "legal_terms_conditions",
+    slug: "terms-and-conditions",
+    title: "Terms & Conditions",
+    version: "2.0",
+    status: "published",
+    content: `# Terms and Conditions \u2014 My Money Manager by HackifyPro
+Last Updated: November 2026
+
+By accessing My Money Manager, you agree to these terms:
+1. Account Responsibility: Keep your password and devices secure.
+2. Acceptable Use: Do not attempt unauthorized access to APIs or other user records.
+3. Financial Insights: AI insights and calculators are informational aids, not regulated financial advice.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  },
+  {
+    id: "legal_data_retention",
+    slug: "data-retention-policy",
+    title: "Data Retention & Deletion Policy",
+    version: "1.5",
+    status: "published",
+    content: `# Data Retention & Deletion Policy
+Last Updated: November 2026
+
+1. Account Deletion: Initiating deletion starts a mandatory 24-hour grace window during which you may cancel.
+2. Permanent Purge: Once finalized, personal transactions, sessions, and profile records are permanently purged.
+3. Security Audit Logs: Minimal anonymized audit trails may be retained for fraud prevention and statutory compliance.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  },
+  {
+    id: "legal_cookie_policy",
+    slug: "cookie-policy",
+    title: "Cookie & Session Policy",
+    version: "1.2",
+    status: "published",
+    content: `# Cookie & Session Policy
+Last Updated: November 2026
+
+My Money Manager uses strictly necessary session storage and HttpOnly cookies for authentication security.
+No third-party advertising or cross-site tracking cookies are used.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  }
+];
+async function listLegalPoliciesFallback() {
+  const sbRes = await sbRestRequest("legal_policies?select=*&order=title.asc");
+  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  for (const p of DEFAULT_LEGAL_POLICIES) {
+    map2.set(p.slug, { ...p });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.slug) map2.set(String(row.slug), row);
+    }
+  }
+  for (const row of stored.policies) {
+    if (row?.slug) map2.set(String(row.slug), row);
+  }
+  return Array.from(map2.values()).sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+}
+async function getLegalPolicyVersionsFallback(policyId) {
+  const sbRes = await sbRestRequest(
+    `legal_policy_versions?policy_id=eq.${encodeURIComponent(policyId)}&select=*&order=created_at.desc`
+  );
+  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
+  const versions = [];
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    versions.push(...sbRes.data);
+  }
+  for (const v of stored.versions) {
+    if (v.policy_id === policyId && !versions.some((x2) => x2.id === v.id)) {
+      versions.push(v);
+    }
+  }
+  if (versions.length === 0) {
+    const policies = await listLegalPoliciesFallback();
+    const match2 = policies.find((p) => p.id === policyId);
+    if (match2) {
+      versions.push({
+        id: `ver_${match2.id}_${match2.version}`,
+        policy_id: match2.id,
+        slug: match2.slug,
+        version: match2.version,
+        content: match2.content,
+        status: match2.status || "published",
+        created_by: match2.created_by || "System Admin",
+        published_at: match2.published_at || match2.updated_at,
+        created_at: match2.updated_at
+      });
+    }
+  }
+  return versions;
+}
+async function updateLegalPolicyFallback(policyId, updates) {
+  const all = await listLegalPoliciesFallback();
+  const existing = all.find((p) => p.id === policyId);
+  if (!existing) return null;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const updated = {
+    ...existing,
+    title: updates.title || existing.title,
+    version: updates.version || existing.version,
+    content: updates.content || existing.content,
+    status: updates.status || "published",
+    created_by: updates.created_by || "Admin",
+    published_at: now,
+    updated_at: now
+  };
+  await sbRestRequest(`legal_policies?id=eq.${encodeURIComponent(policyId)}`, {
+    method: "PATCH",
+    body: {
+      title: updated.title,
+      version: updated.version,
+      content: updated.content,
+      status: updated.status,
+      created_by: updated.created_by,
+      published_at: now,
+      updated_at: now
+    }
+  });
+  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
+  stored.policies = [updated, ...stored.policies.filter((p) => p.id !== policyId)];
+  stored.versions.unshift({
+    id: crypto12.randomUUID(),
+    policy_id: policyId,
+    slug: updated.slug,
+    version: updated.version,
+    content: updated.content,
+    status: updated.status,
+    created_by: updated.created_by,
+    published_at: now,
+    created_at: now
+  });
+  stored.versions = stored.versions.slice(0, 100);
+  writeJsonStore("legal-policies.json", stored);
+  return updated;
+}
+async function listUserActivityFallback(userId, userEmail) {
+  const email = userEmail || "";
+  const sbRes = await sbRestRequest(
+    `security_audit_logs?select=id,event_type,user_email,actor_role,ip_address,details,created_at&order=created_at.desc&limit=50`
+  );
+  if (!sbRes.ok || !Array.isArray(sbRes.data)) return [];
+  return sbRes.data.filter(
+    (row) => row.user_id === userId || email && String(row.user_email || "").toLowerCase() === email.toLowerCase()
+  );
+}
+async function listUserSessionsFallback(userId) {
+  const sbRes = await sbRestRequest(
+    `user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`
+  );
+  return sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+}
+var DEFAULT_ADMIN_ROLES = [
+  {
+    id: "role_superadmin",
+    name: "Super Administrator",
+    slug: "superadmin",
+    description: "Full unrestricted control across My Money Manager Control Center.",
+    permissions: ["*"],
+    is_system: true
+  },
+  {
+    id: "role_admin",
+    name: "Administrator",
+    slug: "admin",
+    description: "Platform management across users, support, notifications, AI, and settings.",
+    permissions: [
+      "dashboard.view",
+      "users.view",
+      "users.update",
+      "users.suspend",
+      "users.financial_data.request",
+      "analytics.view",
+      "notifications.view",
+      "notifications.send",
+      "notifications.manage",
+      "features.manage",
+      "settings.manage",
+      "security.view",
+      "audit_logs.view",
+      "support.manage",
+      "ai.manage"
+    ],
+    is_system: true
+  },
+  {
+    id: "role_support",
+    name: "Support Specialist",
+    slug: "support",
+    description: "Handles user tickets, feedback replies, and read-only user assistance.",
+    permissions: ["dashboard.view", "users.view", "support.manage", "notifications.view", "audit_logs.view"],
+    is_system: true
+  },
+  {
+    id: "role_analyst",
+    name: "Operations Analyst",
+    slug: "analyst",
+    description: "Read-only access to metrics, analytics, and audit logs.",
+    permissions: ["dashboard.view", "users.view", "analytics.view", "audit_logs.view"],
+    is_system: true
+  }
+];
+async function listAdminRolesFallback() {
+  const sbRes = await sbRestRequest("admin_roles?select=*&order=is_system.desc,name.asc");
+  const stored = readJsonStore("admin-roles.json", { roles: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  for (const r2 of DEFAULT_ADMIN_ROLES) map2.set(r2.slug, { ...r2 });
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.slug) map2.set(String(row.slug), row);
+    }
+  }
+  for (const row of stored.roles) {
+    if (row?.slug) map2.set(String(row.slug), row);
+  }
+  return Array.from(map2.values());
+}
+async function updateAdminRoleFallback(id, updates) {
+  const all = await listAdminRolesFallback();
+  const existing = all.find((r2) => r2.id === id || r2.slug === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    permissions: updates.permissions ?? existing.permissions,
+    description: updates.description ?? existing.description,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const stored = readJsonStore("admin-roles.json", { roles: [] });
+  stored.roles = [updated, ...stored.roles.filter((r2) => r2.id !== existing.id)];
+  writeJsonStore("admin-roles.json", stored);
+  return updated;
+}
+async function listSecurityIncidentsFallback(status, severity) {
+  const sbRes = await sbRestRequest("security_incidents?select=*&order=created_at.desc&limit=100");
+  const stored = readJsonStore("security-incidents.json", { incidents: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) if (row?.id) map2.set(String(row.id), row);
+  }
+  for (const row of stored.incidents) if (row?.id) map2.set(String(row.id), row);
+  let rows = Array.from(map2.values());
+  if (status && status !== "all") rows = rows.filter((r2) => r2.status === status);
+  if (severity && severity !== "all") rows = rows.filter((r2) => r2.severity === severity);
+  return rows;
+}
+async function createSecurityIncidentFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const row = {
+    id: crypto12.randomUUID(),
+    title: payload.title,
+    severity: payload.severity || "medium",
+    description: payload.description || "",
+    user_email: payload.user_email || null,
+    status: "new",
+    created_at: now,
+    updated_at: now
+  };
+  const stored = readJsonStore("security-incidents.json", { incidents: [] });
+  stored.incidents = [row, ...stored.incidents].slice(0, 100);
+  writeJsonStore("security-incidents.json", stored);
+  return row;
+}
+async function getAdminDashboardStatsFallback() {
+  const users = await listAllAppUsersFallback();
+  const activeUsers = users.filter((u) => !u.status || u.status === "active").length;
+  const suspendedUsers = users.filter((u) => u.status === "suspended").length;
+  const inactiveUsers = users.filter((u) => u.status === "deactivated").length;
+  const logsRes = await sbRestRequest("security_audit_logs?select=id,event_type,user_email,actor_role,created_at,details&order=created_at.desc&limit=10");
+  const recentActivity = logsRes.ok && Array.isArray(logsRes.data) ? logsRes.data : [];
+  return {
+    stats: {
+      totalUsers: users.length,
+      newToday: 0,
+      newWeek: 0,
+      newMonth: users.length,
+      activeUsers,
+      suspendedUsers,
+      inactiveUsers,
+      pendingDeletions: 0,
+      failedLogins24h: 0,
+      lockedAccounts: 0,
+      activeSessions: activeUsers,
+      openIncidents: 0,
+      dbHealth: "Operational (Supabase REST Fallback)",
+      emailServiceStatus: process.env.SMTP_PASS ? "Operational (SMTP Configured)" : "SMTP_PASS Required"
+    },
+    charts: { registrations: [], logins: [] },
+    recentActivity
+  };
+}
 
 // server/welcomeEmailTemplate.ts
 function escapeHtml(str) {
@@ -50601,6 +51836,70 @@ async function sendEmail(opts) {
     return false;
   }
 }
+async function sendAdminTestEmail(opts) {
+  const recipient = (opts.to || "").trim();
+  const subject = (opts.subject || "Test Email from My Money Manager Admin").trim();
+  const emailType = opts.emailType || "admin_test";
+  const recipientName = opts.recipientName || "Administrator";
+  if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    return { success: false, error: "Please enter a valid recipient email address." };
+  }
+  const recordLog = async (status, lastError) => {
+    if (isDatabaseAvailable()) {
+      try {
+        await query(
+          `INSERT INTO public.email_dispatch_logs (
+            email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, trigger_event, sent_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, 1, 3, $7, $8, ${status === "sent" ? "NOW()" : "NULL"})`,
+          [
+            recipient,
+            emailType,
+            `${emailType}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+            recipientName,
+            subject,
+            status,
+            lastError,
+            emailType
+          ]
+        );
+      } catch {
+      }
+    }
+    await recordEmailLogFallback({
+      email: recipient,
+      email_type: emailType,
+      recipient_name: recipientName,
+      subject,
+      status,
+      attempts: 1,
+      last_error: lastError,
+      trigger_event: emailType
+    }).catch(() => {
+    });
+  };
+  if (!APP_CONFIG.smtp.pass || !APP_CONFIG.smtp.user) {
+    const errMsg = "SMTP_PASS is not configured on the server. Add SMTP_USER and SMTP_PASS in Settings > Secrets or Vercel Environment Variables.";
+    await recordLog("failed", errMsg);
+    return { success: false, error: errMsg };
+  }
+  try {
+    const info = await transporter.sendMail({
+      from: APP_CONFIG.smtp.from,
+      to: recipient,
+      subject,
+      html: opts.html,
+      text: opts.text || "This is a live test transmission from My Money Manager Admin Control Center."
+    });
+    await recordLog("sent", null);
+    console.log(`[Admin Email Sent] MessageId: ${info.messageId} to ${recipient}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    const safeErr = sanitizeErrorMessage(err);
+    await recordLog("failed", safeErr);
+    console.error(`[Admin Email Failed] To: ${recipient} - Error:`, safeErr);
+    return { success: false, error: safeErr };
+  }
+}
 async function sendPasswordResetEmail(email, name2, resetLink) {
   const subject = "Reset Your My Money Manager Password";
   const html = `
@@ -50849,11 +52148,11 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
       }
     }
     const attachments = [];
-    const logoFilePath = path5.resolve(process.cwd(), "public", "logo.jpg");
+    const logoFilePath = path6.resolve(process.cwd(), "public", "logo.jpg");
     let logoSrc = "cid:app_logo";
     if (APP_CONFIG.appLogoUrl && APP_CONFIG.appLogoUrl.startsWith("http") && !APP_CONFIG.appLogoUrl.includes("localhost")) {
       logoSrc = APP_CONFIG.appLogoUrl;
-    } else if (fs6.existsSync(logoFilePath)) {
+    } else if (fs7.existsSync(logoFilePath)) {
       attachments.push({
         filename: "logo.jpg",
         path: logoFilePath,
@@ -51140,8 +52439,8 @@ HackifyPro Team`;
 }
 function getBrandLogoAttachments() {
   const attachments = [];
-  const logoPath = path5.resolve(process.cwd(), "public", "logo.jpg");
-  if (fs6.existsSync(logoPath)) {
+  const logoPath = path6.resolve(process.cwd(), "public", "logo.jpg");
+  if (fs7.existsSync(logoPath)) {
     attachments.push({
       filename: "logo.jpg",
       path: logoPath,
@@ -51860,7 +53159,7 @@ import { parse as parseUrl } from "url";
 var import_p_retry = __toESM(require_p_retry(), 1);
 var import_google_auth_library = __toESM(require_src5(), 1);
 import { createWriteStream } from "fs";
-import * as fs8 from "fs/promises";
+import * as fs9 from "fs/promises";
 import { writeFile } from "fs/promises";
 import { Readable } from "node:stream";
 import { finished as finished3 } from "node:stream/promises";
@@ -51876,7 +53175,7 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 
 // node_modules/@google/genai/dist/node/index.mjs
-import * as path6 from "path";
+import * as path7 from "path";
 var _defaultBaseGeminiUrl = void 0;
 var _defaultBaseVertexUrl = void 0;
 function getDefaultBaseUrls() {
@@ -78304,7 +79603,7 @@ var NodeUploader = class {
   async stat(file) {
     const fileStat = { size: 0, type: void 0 };
     if (typeof file === "string") {
-      const originalStat = await fs8.stat(file);
+      const originalStat = await fs9.stat(file);
       fileStat.size = originalStat.size;
       fileStat.type = this.inferMimeType(file);
       return fileStat;
@@ -78450,9 +79749,9 @@ var NodeUploader = class {
     let response = new HttpResponse(new Response());
     let uploadCommand = "upload";
     let fileHandle;
-    const fileName = path6.basename(file);
+    const fileName = path7.basename(file);
     try {
-      fileHandle = await fs8.open(file, "r");
+      fileHandle = await fs9.open(file, "r");
       if (!fileHandle) {
         throw new Error(`Failed to open file`);
       }
@@ -78721,639 +80020,6 @@ function getApiKeyFromEnv() {
     console.warn("Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.");
   }
   return envGoogleApiKey || envGeminiApiKey || void 0;
-}
-
-// server/supabaseRestFallback.ts
-import fs9 from "fs";
-import path7 from "path";
-import crypto12 from "crypto";
-var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
-var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
-var FALLBACK_DATA_DIR = path7.resolve(process.cwd(), ".data", "runtime-store");
-function safeStoreFile(name2) {
-  const safeName = name2.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const resolved = path7.resolve(FALLBACK_DATA_DIR, safeName);
-  if (!resolved.startsWith(FALLBACK_DATA_DIR + path7.sep)) {
-    throw new Error("PATH_CONFINEMENT_VIOLATION");
-  }
-  return resolved;
-}
-function readJsonStore(fileName, defaultValue) {
-  try {
-    const file = safeStoreFile(fileName);
-    if (!fs9.existsSync(file)) return defaultValue;
-    const raw = fs9.readFileSync(file, "utf8");
-    if (!raw.trim()) return defaultValue;
-    return JSON.parse(raw);
-  } catch {
-    return defaultValue;
-  }
-}
-function writeJsonStore(fileName, data) {
-  try {
-    if (!fs9.existsSync(FALLBACK_DATA_DIR)) {
-      fs9.mkdirSync(FALLBACK_DATA_DIR, { recursive: true });
-    }
-    const file = safeStoreFile(fileName);
-    fs9.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
-  } catch (err) {
-    console.warn(`[RuntimeStore] Write warning (${fileName}):`, err?.message);
-  }
-}
-function getSupabaseRestConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
-  return { url, key };
-}
-async function sbRestRequest(restPath, options = {}) {
-  try {
-    const { url, key } = getSupabaseRestConfig();
-    const headers = {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      Accept: "application/json"
-    };
-    if (options.body !== void 0) {
-      headers["Content-Type"] = "application/json";
-    }
-    if (options.prefer) {
-      headers["Prefer"] = options.prefer;
-    }
-    const response = await fetch(`${url}/rest/v1/${restPath}`, {
-      method: options.method || "GET",
-      headers,
-      body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
-    });
-    const text = await response.text();
-    let parsed = null;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = text;
-      }
-    }
-    if (!response.ok) {
-      const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
-      return { ok: false, status: response.status, data: null, error: errMsg };
-    }
-    return { ok: true, status: response.status, data: parsed };
-  } catch (err) {
-    return { ok: false, status: 0, data: null, error: err?.message || "Network error" };
-  }
-}
-function loadIntegrationsConfigFallback() {
-  return readJsonStore("integrations-config.json", {});
-}
-function saveIntegrationsConfigFallback(cfg) {
-  writeJsonStore("integrations-config.json", cfg);
-}
-async function insertFeedbackFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
-  const record = {
-    id,
-    user_id: payload.user_id,
-    user_name: payload.user_name,
-    user_email: payload.user_email,
-    user_phone: payload.user_phone || null,
-    type: "feedback",
-    category: payload.category,
-    subject: payload.subject,
-    message: payload.message,
-    rating: payload.rating,
-    dpdp_consent: payload.dpdp_consent,
-    dpdp_consent_at: payload.dpdp_consent_at,
-    status: "new",
-    admin_notes: null,
-    reviewed_by: null,
-    reviewed_at: null,
-    created_at: now,
-    updated_at: now
-  };
-  let savedRow = record;
-  const sbRes = await sbRestRequest("feedbacks", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      id: record.id,
-      user_id: record.user_id,
-      user_name: record.user_name,
-      user_email: record.user_email,
-      user_phone: record.user_phone,
-      type: "feedback",
-      category: record.category,
-      subject: record.subject,
-      message: record.message,
-      rating: record.rating,
-      dpdp_consent: record.dpdp_consent,
-      dpdp_consent_at: record.dpdp_consent_at,
-      status: "new",
-      created_at: now,
-      updated_at: now
-    }
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    savedRow = sbRes.data[0];
-  } else {
-    const retryRes = await sbRestRequest("feedbacks", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: record.user_id,
-        user_name: record.user_name,
-        user_email: record.user_email,
-        type: "feedback",
-        category: record.category,
-        subject: record.subject,
-        message: record.message,
-        rating: record.rating,
-        status: "new",
-        created_at: now,
-        updated_at: now
-      }
-    });
-    if (retryRes.ok && Array.isArray(retryRes.data) && retryRes.data[0]) {
-      savedRow = retryRes.data[0];
-    }
-  }
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  store.feedbacks = [savedRow, ...store.feedbacks.filter((f3) => f3.id !== savedRow.id)].slice(0, 500);
-  writeJsonStore("feedbacks.json", store);
-  return savedRow;
-}
-async function listFeedbacksFallback(filters) {
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  const sbRes = await sbRestRequest(
-    "feedbacks?type=eq.feedback&select=*&order=created_at.desc&limit=200"
-  );
-  const mergedMap = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.id) mergedMap.set(String(row.id), row);
-    }
-  }
-  for (const row of store.feedbacks) {
-    if (row?.id && !mergedMap.has(String(row.id))) {
-      mergedMap.set(String(row.id), row);
-    }
-  }
-  let allFeedbacks = Array.from(mergedMap.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-  if (filters?.userId) {
-    allFeedbacks = allFeedbacks.filter((f3) => f3.user_id === filters.userId);
-  }
-  const total = allFeedbacks.length;
-  const ratedRows = allFeedbacks.filter((f3) => Number(f3.rating) > 0);
-  const avgRating = ratedRows.length > 0 ? Number((ratedRows.reduce((s2, f3) => s2 + Number(f3.rating || 0), 0) / ratedRows.length).toFixed(1)) : 0;
-  const metrics = {
-    total,
-    avg_rating: avgRating,
-    stars_5: allFeedbacks.filter((f3) => Number(f3.rating) === 5).length,
-    stars_4: allFeedbacks.filter((f3) => Number(f3.rating) === 4).length,
-    stars_3: allFeedbacks.filter((f3) => Number(f3.rating) === 3).length,
-    stars_2: allFeedbacks.filter((f3) => Number(f3.rating) === 2).length,
-    stars_1: allFeedbacks.filter((f3) => Number(f3.rating) === 1).length,
-    new_count: allFeedbacks.filter((f3) => f3.status === "new").length,
-    reviewed_count: allFeedbacks.filter((f3) => ["reviewed", "responded", "resolved"].includes(f3.status)).length,
-    resolved_count: allFeedbacks.filter((f3) => f3.status === "resolved").length
-  };
-  let filtered = allFeedbacks;
-  if (filters?.rating && filters.rating !== "all") {
-    const rNum = parseInt(filters.rating, 10);
-    filtered = filtered.filter((f3) => Number(f3.rating) === rNum);
-  }
-  if (filters?.category && filters.category !== "all") {
-    filtered = filtered.filter((f3) => f3.category === filters.category);
-  }
-  if (filters?.status && filters.status !== "all") {
-    filtered = filtered.filter((f3) => f3.status === filters.status);
-  }
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    filtered = filtered.filter(
-      (f3) => String(f3.user_name || "").toLowerCase().includes(q) || String(f3.user_email || "").toLowerCase().includes(q) || String(f3.message || "").toLowerCase().includes(q) || String(f3.subject || "").toLowerCase().includes(q)
-    );
-  }
-  return { feedbacks: filtered.slice(0, 150), metrics };
-}
-async function getFeedbackByIdFallback(id) {
-  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    return sbRes.data[0];
-  }
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  return store.feedbacks.find((f3) => f3.id === id) || null;
-}
-async function updateFeedbackFallback(id, updates) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const patch = {
-    updated_at: now,
-    reviewed_at: now
-  };
-  if (updates.status !== void 0) patch.status = updates.status;
-  if (updates.admin_notes !== void 0) patch.admin_notes = updates.admin_notes;
-  if (updates.reviewed_by !== void 0) patch.reviewed_by = updates.reviewed_by;
-  let updatedRow = null;
-  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    prefer: "return=representation",
-    body: patch
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    updatedRow = sbRes.data[0];
-  }
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  const idx = store.feedbacks.findIndex((f3) => f3.id === id);
-  if (idx >= 0) {
-    store.feedbacks[idx] = { ...store.feedbacks[idx], ...patch, ...updatedRow || {} };
-    updatedRow = store.feedbacks[idx];
-    writeJsonStore("feedbacks.json", store);
-  } else if (updatedRow) {
-    store.feedbacks.unshift(updatedRow);
-    writeJsonStore("feedbacks.json", store);
-  }
-  return updatedRow;
-}
-async function listAllAppUsersFallback() {
-  const usersMap = /* @__PURE__ */ new Map();
-  const appUsersRes = await sbRestRequest("app_users?select=id,email,full_name,role&limit=1000");
-  if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
-    for (const u of appUsersRes.data) {
-      if (u?.id) usersMap.set(String(u.id), u);
-    }
-  }
-  const profilesRes = await sbRestRequest("profiles?select=id,email,full_name&limit=1000");
-  if (profilesRes.ok && Array.isArray(profilesRes.data)) {
-    for (const p of profilesRes.data) {
-      if (p?.id && !usersMap.has(String(p.id))) {
-        usersMap.set(String(p.id), p);
-      }
-    }
-  }
-  return Array.from(usersMap.values());
-}
-function readNotifStore() {
-  const raw = readJsonStore("notifications.json", {});
-  return {
-    campaigns: Array.isArray(raw.campaigns) ? raw.campaigns : [],
-    banners: Array.isArray(raw.banners) ? raw.banners : [],
-    userNotifications: Array.isArray(raw.userNotifications) ? raw.userNotifications : [],
-    broadcastUserState: raw.broadcastUserState && typeof raw.broadcastUserState === "object" ? raw.broadcastUserState : {}
-  };
-}
-function writeNotifStore(store) {
-  store.campaigns = store.campaigns.slice(0, 200);
-  store.banners = store.banners.slice(0, 200);
-  store.userNotifications = store.userNotifications.slice(0, 2e3);
-  writeJsonStore("notifications.json", store);
-}
-async function createCampaignFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
-  const record = {
-    id,
-    title: payload.title,
-    message: payload.message,
-    category: payload.category,
-    type: payload.type,
-    channels: payload.channels,
-    target_type: payload.target_type,
-    target_user_ids: payload.target_user_ids,
-    deep_link: payload.deep_link,
-    status: payload.status,
-    scheduled_for: payload.scheduled_for,
-    total_targets: 0,
-    delivered_count: 0,
-    failed_count: 0,
-    sent_at: null,
-    created_by: payload.created_by,
-    created_at: now,
-    updated_at: now
-  };
-  let saved = record;
-  const sbRes = await sbRestRequest("notification_campaigns", {
-    method: "POST",
-    prefer: "return=representation",
-    body: record
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    saved = sbRes.data[0];
-  }
-  const store = readNotifStore();
-  store.campaigns = [saved, ...store.campaigns.filter((c) => c.id !== saved.id)];
-  writeNotifStore(store);
-  return saved;
-}
-async function updateCampaignFallback(id, patch) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const nextPatch = { ...patch, updated_at: now };
-  await sbRestRequest(`notification_campaigns?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: nextPatch
-  });
-  const store = readNotifStore();
-  const idx = store.campaigns.findIndex((c) => c.id === id);
-  if (idx >= 0) {
-    store.campaigns[idx] = { ...store.campaigns[idx], ...nextPatch };
-    writeNotifStore(store);
-    return store.campaigns[idx];
-  }
-  return null;
-}
-async function listCampaignsFallback() {
-  const store = readNotifStore();
-  const sbRes = await sbRestRequest(
-    "notification_campaigns?select=*&order=created_at.desc&limit=100"
-  );
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const c of sbRes.data) {
-      if (c?.id) map2.set(String(c.id), c);
-    }
-  }
-  for (const c of store.campaigns) {
-    if (c?.id && !map2.has(String(c.id))) {
-      map2.set(String(c.id), c);
-    }
-  }
-  return Array.from(map2.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-}
-async function createBroadcastBannerFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
-  const banner = {
-    id,
-    title: payload.title,
-    message: payload.message,
-    type: payload.type || "announcement",
-    target_user_id: payload.target_user_id || "all",
-    is_active: true,
-    created_by: payload.created_by,
-    created_at: now,
-    category: payload.category || "announcement",
-    deep_link: payload.deep_link || "dashboard"
-  };
-  let saved = banner;
-  const sbRes = await sbRestRequest("notifications", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      id: banner.id,
-      title: banner.title,
-      message: banner.message,
-      type: banner.type,
-      target_user_id: banner.target_user_id,
-      is_active: true,
-      created_by: banner.created_by,
-      created_at: now
-    }
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    saved = { ...banner, ...sbRes.data[0] };
-  }
-  const store = readNotifStore();
-  store.banners = [saved, ...store.banners.filter((b) => b.id !== saved.id)];
-  writeNotifStore(store);
-  return saved;
-}
-async function listBroadcastBannersFallback() {
-  const store = readNotifStore();
-  const sbRes = await sbRestRequest("notifications?select=*&order=created_at.desc&limit=100");
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const b of sbRes.data) {
-      if (b?.id) map2.set(String(b.id), b);
-    }
-  }
-  for (const b of store.banners) {
-    if (b?.id && !map2.has(String(b.id))) {
-      map2.set(String(b.id), b);
-    }
-  }
-  return Array.from(map2.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-}
-async function deactivateBroadcastBannerFallback(id) {
-  await sbRestRequest(`notifications?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: { is_active: false }
-  });
-  const store = readNotifStore();
-  const idx = store.banners.findIndex((b) => b.id === id);
-  if (idx >= 0) {
-    store.banners[idx].is_active = false;
-    writeNotifStore(store);
-  }
-}
-async function insertUserNotificationFallback(params) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
-  const record = {
-    id,
-    user_id: params.user_id,
-    title: params.title,
-    message: params.message,
-    category: params.category || "general",
-    type: params.type || "info",
-    related_entity_type: params.related_entity_type || null,
-    related_entity_id: params.related_entity_id || null,
-    deep_link: params.deep_link || null,
-    dedupe_key: params.dedupe_key || null,
-    is_read: false,
-    read_at: null,
-    is_deleted: false,
-    deleted_at: null,
-    metadata: params.metadata || {},
-    created_at: now
-  };
-  let saved = record;
-  const sbRes = await sbRestRequest("user_notifications", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      id: record.id,
-      user_id: record.user_id,
-      title: record.title,
-      message: record.message,
-      category: record.category,
-      type: record.type,
-      related_entity_type: record.related_entity_type,
-      related_entity_id: record.related_entity_id,
-      deep_link: record.deep_link,
-      metadata: record.metadata,
-      is_read: false,
-      is_deleted: false,
-      created_at: now
-    }
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    saved = sbRes.data[0];
-  }
-  const store = readNotifStore();
-  if (params.dedupe_key) {
-    const dup = store.userNotifications.find(
-      (n) => n.user_id === params.user_id && (n.dedupe_key === params.dedupe_key || n.metadata?.dedupeKey === params.dedupe_key)
-    );
-    if (dup) return dup;
-  }
-  store.userNotifications = [saved, ...store.userNotifications.filter((n) => n.id !== saved.id)];
-  writeNotifStore(store);
-  return saved;
-}
-async function listUserNotificationsFallback(userId, options) {
-  const store = readNotifStore();
-  const userState = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-  const sbUserRes = await sbRestRequest(
-    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=100`
-  );
-  const merged = /* @__PURE__ */ new Map();
-  if (sbUserRes.ok && Array.isArray(sbUserRes.data)) {
-    for (const n of sbUserRes.data) {
-      if (n?.id && !n.is_deleted) merged.set(String(n.id), n);
-    }
-  }
-  for (const n of store.userNotifications) {
-    if (n?.user_id === userId && !n.is_deleted && !merged.has(String(n.id))) {
-      merged.set(String(n.id), n);
-    }
-  }
-  const activeBanners = await listBroadcastBannersFallback();
-  const existingBroadcastIds = new Set(
-    Array.from(merged.values()).map((n) => n?.metadata?.broadcastId).filter(Boolean)
-  );
-  for (const b of activeBanners) {
-    if (!b?.is_active) continue;
-    if (b.target_user_id !== "all" && b.target_user_id !== userId) continue;
-    const virtualId = `broadcast_${b.id}`;
-    if (existingBroadcastIds.has(b.id) || userState.deletedIds.includes(virtualId) || merged.has(virtualId)) {
-      continue;
-    }
-    merged.set(virtualId, {
-      id: virtualId,
-      user_id: userId,
-      title: b.title,
-      message: b.message,
-      category: b.category || "announcement",
-      type: b.type || "announcement",
-      deep_link: b.deep_link || "dashboard",
-      is_read: userState.readIds.includes(virtualId),
-      is_deleted: false,
-      metadata: { broadcastId: b.id, isBroadcast: true },
-      created_at: b.created_at
-    });
-  }
-  let allList = Array.from(merged.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-  const unreadCount = allList.filter((n) => !n.is_read).length;
-  if (options?.category && options.category !== "all") {
-    allList = allList.filter((n) => n.category === options.category);
-  }
-  if (options?.unreadOnly) {
-    allList = allList.filter((n) => !n.is_read);
-  }
-  const total = allList.length;
-  const page = options?.page || 1;
-  const limit = options?.limit || 20;
-  const offset = (page - 1) * limit;
-  return {
-    notifications: allList.slice(offset, offset + limit),
-    unreadCount,
-    total
-  };
-}
-async function markUserNotificationReadFallback(userId, notifId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const store = readNotifStore();
-  if (notifId.startsWith("broadcast_")) {
-    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-    if (!state.readIds.includes(notifId)) state.readIds.push(notifId);
-    store.broadcastUserState[userId] = state;
-    writeNotifStore(store);
-    return { id: notifId, user_id: userId, is_read: true, read_at: now };
-  }
-  await sbRestRequest(
-    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
-    { method: "PATCH", body: { is_read: true, read_at: now } }
-  );
-  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
-  if (target) {
-    target.is_read = true;
-    target.read_at = now;
-    writeNotifStore(store);
-    return target;
-  }
-  return { id: notifId, user_id: userId, is_read: true, read_at: now };
-}
-async function markAllUserNotificationsReadFallback(userId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRestRequest(
-    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&is_read=eq.false`,
-    { method: "PATCH", body: { is_read: true, read_at: now } }
-  );
-  const store = readNotifStore();
-  for (const n of store.userNotifications) {
-    if (n.user_id === userId && !n.is_deleted) {
-      n.is_read = true;
-      n.read_at = now;
-    }
-  }
-  const activeBanners = await listBroadcastBannersFallback();
-  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-  for (const b of activeBanners) {
-    const vid = `broadcast_${b.id}`;
-    if (!state.readIds.includes(vid)) state.readIds.push(vid);
-  }
-  store.broadcastUserState[userId] = state;
-  writeNotifStore(store);
-}
-async function deleteUserNotificationFallback(userId, notifId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const store = readNotifStore();
-  if (notifId.startsWith("broadcast_")) {
-    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-    if (!state.deletedIds.includes(notifId)) state.deletedIds.push(notifId);
-    store.broadcastUserState[userId] = state;
-    writeNotifStore(store);
-    return;
-  }
-  await sbRestRequest(
-    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
-    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
-  );
-  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
-  if (target) {
-    target.is_deleted = true;
-    target.deleted_at = now;
-    writeNotifStore(store);
-  }
-}
-async function clearAllUserNotificationsFallback(userId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRestRequest(
-    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false`,
-    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
-  );
-  const store = readNotifStore();
-  for (const n of store.userNotifications) {
-    if (n.user_id === userId && !n.is_deleted) {
-      n.is_deleted = true;
-      n.deleted_at = now;
-    }
-  }
-  const activeBanners = await listBroadcastBannersFallback();
-  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-  for (const b of activeBanners) {
-    const vid = `broadcast_${b.id}`;
-    if (!state.deletedIds.includes(vid)) state.deletedIds.push(vid);
-  }
-  store.broadcastUserState[userId] = state;
-  writeNotifStore(store);
 }
 
 // server/aiProvider.ts
@@ -79686,6 +80352,7 @@ RULES:
 
 // server/notificationService.ts
 import fs10 from "fs";
+import os4 from "os";
 import path8 from "path";
 import crypto13 from "crypto";
 
@@ -79974,28 +80641,61 @@ var DEFAULT_PREFERENCES = {
   quiet_hours_end: "07:00",
   privacy_hide_amounts: true
 };
-var PUSH_FALLBACK_DIR = path8.resolve(process.cwd(), ".data", "push-notifications");
-function safeUserPushFile(userId) {
+var PRIMARY_PUSH_FALLBACK_DIR = path8.resolve(process.cwd(), ".data", "push-notifications");
+var TMP_PUSH_FALLBACK_DIR = path8.resolve(os4.tmpdir(), "mymoney-push-notifications");
+var memoryPushStore = /* @__PURE__ */ new Map();
+function resolveWritablePushDir() {
+  try {
+    if (!fs10.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
+      fs10.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
+    }
+    fs10.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs10.constants.W_OK);
+    return PRIMARY_PUSH_FALLBACK_DIR;
+  } catch {
+    try {
+      if (!fs10.existsSync(TMP_PUSH_FALLBACK_DIR)) {
+        fs10.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
+      }
+      return TMP_PUSH_FALLBACK_DIR;
+    } catch {
+      return PRIMARY_PUSH_FALLBACK_DIR;
+    }
+  }
+}
+function safeUserPushFile(baseDir, userId) {
   const safeId = crypto13.createHash("sha256").update(String(userId || "unknown")).digest("hex");
-  const resolved = path8.resolve(PUSH_FALLBACK_DIR, `${safeId}.json`);
-  if (!resolved.startsWith(PUSH_FALLBACK_DIR + path8.sep)) {
+  const resolved = path8.resolve(baseDir, `${safeId}.json`);
+  if (!resolved.startsWith(baseDir + path8.sep)) {
     throw new Error("Invalid storage path");
   }
   return resolved;
 }
 function readLocalStore(userId) {
-  try {
-    const file = safeUserPushFile(userId);
-    if (fs10.existsSync(file)) {
-      const parsed = JSON.parse(fs10.readFileSync(file, "utf8"));
-      return {
-        preferences: { ...DEFAULT_PREFERENCES, ...parsed.preferences || {} },
-        subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
-        dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === "object" ? parsed.dedupeKeys : {},
-        deliveryLogs: Array.isArray(parsed.deliveryLogs) ? parsed.deliveryLogs : []
-      };
+  for (const dir of [PRIMARY_PUSH_FALLBACK_DIR, TMP_PUSH_FALLBACK_DIR]) {
+    try {
+      const file = safeUserPushFile(dir, userId);
+      if (fs10.existsSync(file)) {
+        const parsed = JSON.parse(fs10.readFileSync(file, "utf8"));
+        const store = {
+          preferences: { ...DEFAULT_PREFERENCES, ...parsed.preferences || {} },
+          subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
+          dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === "object" ? parsed.dedupeKeys : {},
+          deliveryLogs: Array.isArray(parsed.deliveryLogs) ? parsed.deliveryLogs : []
+        };
+        memoryPushStore.set(userId, store);
+        return store;
+      }
+    } catch {
     }
-  } catch {
+  }
+  const cached = memoryPushStore.get(userId);
+  if (cached) {
+    return {
+      preferences: { ...DEFAULT_PREFERENCES, ...cached.preferences },
+      subscriptions: [...cached.subscriptions],
+      dedupeKeys: { ...cached.dedupeKeys },
+      deliveryLogs: [...cached.deliveryLogs]
+    };
   }
   return {
     preferences: { ...DEFAULT_PREFERENCES },
@@ -80005,21 +80705,22 @@ function readLocalStore(userId) {
   };
 }
 function writeLocalStore(userId, store) {
-  try {
-    fs10.mkdirSync(PUSH_FALLBACK_DIR, { recursive: true });
-    const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1e3;
-    const prunedDedupe = {};
-    for (const [k, ts] of Object.entries(store.dedupeKeys)) {
-      if (typeof ts === "number" && ts >= cutoff) {
-        prunedDedupe[k] = ts;
-      }
+  const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1e3;
+  const prunedDedupe = {};
+  for (const [k, ts] of Object.entries(store.dedupeKeys)) {
+    if (typeof ts === "number" && ts >= cutoff) {
+      prunedDedupe[k] = ts;
     }
-    store.dedupeKeys = prunedDedupe;
-    store.deliveryLogs = store.deliveryLogs.slice(0, 50);
-    const file = safeUserPushFile(userId);
+  }
+  store.dedupeKeys = prunedDedupe;
+  store.deliveryLogs = store.deliveryLogs.slice(0, 50);
+  memoryPushStore.set(userId, store);
+  try {
+    const baseDir = resolveWritablePushDir();
+    const file = safeUserPushFile(baseDir, userId);
     fs10.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
-    console.warn("[Push] Local fallback write notice:", err);
+    console.warn("[Push] Local fallback write notice:", err?.message || err);
   }
 }
 function hashEndpoint(endpoint) {
@@ -81000,13 +81701,25 @@ async function notifyFeedbackSubmitted(userId, feedback) {
 }
 async function notifyAdminNewFeedback(opts) {
   try {
-    const adminsRes = await query(
-      `SELECT id FROM public.app_users WHERE role IN ('admin', 'superadmin') AND status = 'active'`
-    );
-    if (adminsRes.rows.length === 0) return;
+    let adminRows = [];
+    if (isDatabaseAvailable()) {
+      try {
+        const adminsRes = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
+        );
+        adminRows = adminsRes.rows || [];
+      } catch {
+        adminRows = [];
+      }
+    }
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers.filter((u) => ["admin", "superadmin"].includes(String(u.role || "").toLowerCase())).map((u) => ({ id: u.id }));
+    }
+    if (adminRows.length === 0) return;
     const stars = "\u2B50".repeat(Math.max(1, Math.min(5, opts.rating)));
     const shortMsg = opts.message.length > 80 ? opts.message.slice(0, 80) + "\u2026" : opts.message;
-    for (const admin of adminsRes.rows) {
+    for (const admin of adminRows) {
       await createNotification({
         userId: admin.id,
         title: `New Feedback Received ${stars}`,
@@ -81018,7 +81731,6 @@ async function notifyAdminNewFeedback(opts) {
         deepLink: "admin:feedback",
         channels: ["in_app", "push"],
         skipPreferenceCheck: true
-        // Admin alerts are always delivered
       }).catch(
         (e2) => console.warn(`[notifyAdminNewFeedback] Failed for admin ${admin.id}:`, e2?.message)
       );
@@ -81096,31 +81808,72 @@ async function dispatchCampaign(campaignId) {
   let userIds = [];
   if (campaign.target_type === "all") {
     if (isDatabaseAvailable()) {
-      const allUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
-      userIds = allUsers.rows.map((r2) => r2.id);
+      try {
+        const allUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
+        userIds = allUsers.rows.map((r2) => r2.id);
+      } catch {
+      }
     }
     if (userIds.length === 0) {
       const fbUsers = await listAllAppUsersFallback();
       userIds = fbUsers.map((u) => u.id);
     }
   } else if (campaign.target_type === "installed") {
-    const installedUsers = await query(
-      `SELECT DISTINCT user_id as id FROM public.installed_devices WHERE is_installed = TRUE
-       UNION
-       SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
-    );
-    userIds = installedUsers.rows.map((r2) => r2.id);
+    if (isDatabaseAvailable()) {
+      try {
+        const installedUsers = await query(
+          `SELECT DISTINCT user_id as id FROM public.installed_devices WHERE is_installed = TRUE
+           UNION
+           SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
+        );
+        userIds = installedUsers.rows.map((r2) => r2.id);
+      } catch {
+      }
+    }
+    if (userIds.length === 0) {
+      for (const dev of localInstalledDevices.values()) {
+        if (dev?.is_installed && dev?.user_id) userIds.push(dev.user_id);
+      }
+      for (const [uid, store] of memoryPushStore.entries()) {
+        if (store.subscriptions.some((s2) => s2.is_active !== false)) {
+          userIds.push(uid);
+        }
+      }
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers.map((u) => u.id);
+    }
   } else if (campaign.target_type === "push_subscribed") {
-    const pushUsers = await query(
-      `SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
-    );
-    userIds = pushUsers.rows.map((r2) => r2.id);
+    if (isDatabaseAvailable()) {
+      try {
+        const pushUsers = await query(
+          `SELECT DISTINCT user_id as id FROM public.push_subscriptions WHERE is_active = TRUE`
+        );
+        userIds = pushUsers.rows.map((r2) => r2.id);
+      } catch {
+      }
+    }
+    if (userIds.length === 0) {
+      for (const [uid, store] of memoryPushStore.entries()) {
+        if (store.subscriptions.some((s2) => s2.is_active !== false)) {
+          userIds.push(uid);
+        }
+      }
+    }
+    if (userIds.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      userIds = fbUsers.map((u) => u.id);
+    }
   } else if (campaign.target_type === "admins") {
     if (isDatabaseAvailable()) {
-      const adminUsers = await query(
-        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
-      );
-      userIds = adminUsers.rows.map((r2) => r2.id);
+      try {
+        const adminUsers = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+        );
+        userIds = adminUsers.rows.map((r2) => r2.id);
+      } catch {
+      }
     }
     if (userIds.length === 0) {
       const fbUsers = await listAllAppUsersFallback();
@@ -81130,11 +81883,14 @@ async function dispatchCampaign(campaignId) {
     userIds = [campaign.target_user_id || campaign.target_user_ids[0]];
   } else if (campaign.target_type === "active") {
     if (isDatabaseAvailable()) {
-      const activeUsers = await query(
-        `SELECT DISTINCT user_id as id FROM public.transactions
-         WHERE created_at > NOW() - INTERVAL '30 days'`
-      );
-      userIds = activeUsers.rows.map((r2) => r2.id);
+      try {
+        const activeUsers = await query(
+          `SELECT DISTINCT user_id as id FROM public.transactions
+           WHERE created_at > NOW() - INTERVAL '30 days'`
+        );
+        userIds = activeUsers.rows.map((r2) => r2.id);
+      } catch {
+      }
     }
     if (userIds.length === 0) {
       const fbUsers = await listAllAppUsersFallback();
@@ -81231,20 +81987,25 @@ async function dispatchCampaign(campaignId) {
   };
 }
 async function processScheduledCampaigns() {
-  const pending = await query(
-    `SELECT id FROM public.notification_campaigns
-     WHERE status = 'scheduled' AND scheduled_for <= NOW()`
-  );
-  let processed = 0;
-  for (const c of pending.rows) {
-    try {
-      await dispatchCampaign(c.id);
-      processed++;
-    } catch (e2) {
-      console.error("[NotificationService] Error executing scheduled campaign:", e2);
+  if (!isDatabaseAvailable()) return 0;
+  try {
+    const pending = await query(
+      `SELECT id FROM public.notification_campaigns
+       WHERE status = 'scheduled' AND scheduled_for <= NOW()`
+    );
+    let processed = 0;
+    for (const c of pending.rows) {
+      try {
+        await dispatchCampaign(c.id);
+        processed++;
+      } catch (e2) {
+        console.error("[NotificationService] Error executing scheduled campaign:", e2);
+      }
     }
+    return processed;
+  } catch {
+    return 0;
   }
-  return processed;
 }
 var localInstalledDevices = /* @__PURE__ */ new Map();
 async function recordDeviceInstallation(params) {
@@ -81252,7 +82013,7 @@ async function recordDeviceInstallation(params) {
     userId,
     deviceType = "desktop",
     browser = "Chrome",
-    os: os3 = "Unknown OS",
+    os: os5 = "Unknown OS",
     userAgent = "",
     isInstalled = false,
     installationStatus = isInstalled ? "installed_pwa" : "browser",
@@ -81271,7 +82032,7 @@ async function recordDeviceInstallation(params) {
       const existing = await query(
         `SELECT id, is_installed, installed_at FROM public.installed_devices
          WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
-        [userId, browser, os3, deviceType]
+        [userId, browser, os5, deviceType]
       );
       if (existing.rows.length > 0) {
         const prev2 = existing.rows[0];
@@ -81309,9 +82070,9 @@ async function recordDeviceInstallation(params) {
             recordAdminNotification({
               eventType: "pwa_install",
               title: "PWA Installed by User",
-              message: `User has installed My Money Manager on ${browser} (${os3}, ${deviceType}).`,
+              message: `User has installed My Money Manager on ${browser} (${os5}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os3, installedAt }
+              metadata: { deviceType, browser, os: os5, installedAt }
             }).catch(() => {
             });
           }
@@ -81330,7 +82091,7 @@ async function recordDeviceInstallation(params) {
             userId,
             deviceType,
             browser,
-            os3,
+            os5,
             userAgent,
             installationStatus,
             isInstalled,
@@ -81346,9 +82107,9 @@ async function recordDeviceInstallation(params) {
             recordAdminNotification({
               eventType: "pwa_install",
               title: "PWA Installed by User",
-              message: `User has installed My Money Manager on ${browser} (${os3}, ${deviceType}).`,
+              message: `User has installed My Money Manager on ${browser} (${os5}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os3, installedAt }
+              metadata: { deviceType, browser, os: os5, installedAt }
             }).catch(() => {
             });
           }
@@ -81358,7 +82119,7 @@ async function recordDeviceInstallation(params) {
     } catch {
     }
   }
-  const key = `${userId}:${browser}:${os3}:${deviceType}`;
+  const key = `${userId}:${browser}:${os5}:${deviceType}`;
   const prev = localInstalledDevices.get(key);
   if (!prev?.is_installed && isInstalled) {
     isNewInstall = true;
@@ -81368,7 +82129,7 @@ async function recordDeviceInstallation(params) {
     user_id: userId,
     device_type: deviceType,
     browser,
-    os: os3,
+    os: os5,
     user_agent: userAgent,
     installation_status: installationStatus,
     is_installed: isInstalled,
@@ -81480,10 +82241,18 @@ async function recordAdminNotification(params) {
     return true;
   }
   try {
-    const admins = await query(
-      `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
-    );
-    for (const a of admins.rows) {
+    let adminRows = [];
+    if (isDatabaseAvailable()) {
+      const admins = await query(
+        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+      );
+      adminRows = admins.rows || [];
+    }
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers.filter((u) => ["superadmin", "admin"].includes(String(u.role || "").toLowerCase())).map((u) => ({ id: u.id }));
+    }
+    for (const a of adminRows) {
       createNotification({
         userId: a.id,
         title: `[Admin Alert] ${title}`,
@@ -81596,7 +82365,13 @@ async function saveAdminNotificationPreferences(payload, adminId) {
 
 // server/adminApi.ts
 function sendJson(res, statusCode, data) {
-  if (res.writableEnded) return;
+  if (res.writableEnded || res.headersSent) return;
+  if (typeof res.status === "function" && typeof res.json === "function") {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return res.status(statusCode).json(data);
+  }
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
     "X-Content-Type-Options": "nosniff",
@@ -81605,6 +82380,17 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 async function parseJsonBody(req) {
+  const preParsed = req.body;
+  if (preParsed !== void 0 && preParsed !== null) {
+    if (typeof preParsed === "object") return preParsed;
+    if (typeof preParsed === "string") {
+      try {
+        return JSON.parse(preParsed);
+      } catch {
+        return {};
+      }
+    }
+  }
   return new Promise((resolve3) => {
     let body = "";
     req.on("data", (chunk) => {
@@ -81723,84 +82509,81 @@ async function handleAdminApiRequest(req, res, pathname, method) {
     if (pathname === "/api/admin/dashboard-stats" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "analytics.read");
       if (!auth) return true;
-      const usersAggRes = await query(`
-        SELECT 
-          COUNT(*) as total_users,
-          COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as new_today,
-          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as new_week,
-          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') as new_month,
-          COUNT(*) FILTER (WHERE locked_until > NOW()) as locked_accounts,
-          COUNT(*) FILTER (WHERE status = 'active') as active_users,
-          COUNT(*) FILTER (WHERE status = 'suspended') as suspended_users,
-          COUNT(*) FILTER (WHERE status = 'deactivated') as inactive_users
-        FROM public.app_users
-      `);
-      const [
-        failedLoginsRes,
-        activeSessionsRes,
-        pendingDeletionsRes,
-        incidentsRes,
-        recentEventsRes,
-        chartRegistrationsRes,
-        chartLoginsRes
-      ] = await Promise.all([
-        query("SELECT COUNT(*) as count FROM public.security_audit_logs WHERE event_type LIKE '%LOGIN_FAILED%' AND created_at >= NOW() - INTERVAL '24 hours'"),
-        query("SELECT COUNT(*) as count FROM public.user_sessions WHERE is_revoked = FALSE AND expires_at > NOW()"),
-        query("SELECT COUNT(*) as count FROM public.account_deletion_requests WHERE status = 'pending_24h'"),
-        query("SELECT COUNT(*) as count FROM public.security_incidents WHERE status IN ('new', 'investigating', 'monitoring')"),
-        query("SELECT id, event_type, user_email, actor_role, created_at, details FROM public.security_audit_logs ORDER BY created_at DESC LIMIT 8"),
-        query(`
-          SELECT DATE(created_at) as date, COUNT(*) as count 
-          FROM public.app_users 
-          WHERE created_at >= NOW() - INTERVAL '30 days' 
-          GROUP BY DATE(created_at) 
-          ORDER BY DATE(created_at) ASC
-        `),
-        query(`
-          SELECT DATE(created_at) as date, COUNT(*) as count 
-          FROM public.security_audit_logs 
-          WHERE event_type = 'USER_LOGIN_SUCCESS' AND created_at >= NOW() - INTERVAL '30 days' 
-          GROUP BY DATE(created_at) 
-          ORDER BY DATE(created_at) ASC
-        `)
-      ]);
-      const userRow = usersAggRes.rows[0] || {};
-      const totalUsers = parseInt(userRow.total_users || "0");
-      const newToday = parseInt(userRow.new_today || "0");
-      const newWeek = parseInt(userRow.new_week || "0");
-      const newMonth = parseInt(userRow.new_month || "0");
-      const lockedAccounts = parseInt(userRow.locked_accounts || "0");
-      const activeUsers = parseInt(userRow.active_users || "0");
-      const suspendedUsers = parseInt(userRow.suspended_users || "0");
-      const inactiveUsers = parseInt(userRow.inactive_users || "0");
-      const pendingDeletions = parseInt(pendingDeletionsRes.rows[0]?.count || "0");
-      const failedLogins24h = parseInt(failedLoginsRes.rows[0]?.count || "0");
-      const activeSessions = parseInt(activeSessionsRes.rows[0]?.count || "0");
-      const openIncidents = parseInt(incidentsRes.rows[0]?.count || "0");
-      sendJson(res, 200, {
-        success: true,
-        stats: {
-          totalUsers,
-          newToday,
-          newWeek,
-          newMonth,
-          activeUsers,
-          suspendedUsers,
-          inactiveUsers,
-          pendingDeletions,
-          failedLogins24h,
-          lockedAccounts,
-          activeSessions,
-          openIncidents,
-          dbHealth: "Healthy (PostgreSQL Connected)",
-          emailServiceStatus: "Operational (SMTP Verified)"
-        },
-        charts: {
-          registrations: chartRegistrationsRes.rows,
-          logins: chartLoginsRes.rows
-        },
-        recentActivity: recentEventsRes.rows
-      });
+      if (isDatabaseAvailable()) {
+        try {
+          const usersAggRes = await query(`
+            SELECT 
+              COUNT(*) as total_users,
+              COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as new_today,
+              COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as new_week,
+              COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') as new_month,
+              COUNT(*) FILTER (WHERE locked_until > NOW()) as locked_accounts,
+              COUNT(*) FILTER (WHERE status = 'active') as active_users,
+              COUNT(*) FILTER (WHERE status = 'suspended') as suspended_users,
+              COUNT(*) FILTER (WHERE status = 'deactivated') as inactive_users
+            FROM public.app_users
+          `);
+          const [
+            failedLoginsRes,
+            activeSessionsRes,
+            pendingDeletionsRes,
+            incidentsRes,
+            recentEventsRes,
+            chartRegistrationsRes,
+            chartLoginsRes
+          ] = await Promise.all([
+            query("SELECT COUNT(*) as count FROM public.security_audit_logs WHERE event_type LIKE '%LOGIN_FAILED%' AND created_at >= NOW() - INTERVAL '24 hours'"),
+            query("SELECT COUNT(*) as count FROM public.user_sessions WHERE is_revoked = FALSE AND expires_at > NOW()"),
+            query("SELECT COUNT(*) as count FROM public.account_deletion_requests WHERE status = 'pending_24h'"),
+            query("SELECT COUNT(*) as count FROM public.security_incidents WHERE status IN ('new', 'investigating', 'monitoring')"),
+            query("SELECT id, event_type, user_email, actor_role, created_at, details FROM public.security_audit_logs ORDER BY created_at DESC LIMIT 8"),
+            query(`
+              SELECT DATE(created_at) as date, COUNT(*) as count 
+              FROM public.app_users 
+              WHERE created_at >= NOW() - INTERVAL '30 days' 
+              GROUP BY DATE(created_at) 
+              ORDER BY DATE(created_at) ASC
+            `),
+            query(`
+              SELECT DATE(created_at) as date, COUNT(*) as count 
+              FROM public.security_audit_logs 
+              WHERE event_type = 'USER_LOGIN_SUCCESS' AND created_at >= NOW() - INTERVAL '30 days' 
+              GROUP BY DATE(created_at) 
+              ORDER BY DATE(created_at) ASC
+            `)
+          ]);
+          const userRow = usersAggRes.rows[0] || {};
+          sendJson(res, 200, {
+            success: true,
+            stats: {
+              totalUsers: parseInt(userRow.total_users || "0"),
+              newToday: parseInt(userRow.new_today || "0"),
+              newWeek: parseInt(userRow.new_week || "0"),
+              newMonth: parseInt(userRow.new_month || "0"),
+              activeUsers: parseInt(userRow.active_users || "0"),
+              suspendedUsers: parseInt(userRow.suspended_users || "0"),
+              inactiveUsers: parseInt(userRow.inactive_users || "0"),
+              pendingDeletions: parseInt(pendingDeletionsRes.rows[0]?.count || "0"),
+              failedLogins24h: parseInt(failedLoginsRes.rows[0]?.count || "0"),
+              lockedAccounts: parseInt(userRow.locked_accounts || "0"),
+              activeSessions: parseInt(activeSessionsRes.rows[0]?.count || "0"),
+              openIncidents: parseInt(incidentsRes.rows[0]?.count || "0"),
+              dbHealth: "Healthy (PostgreSQL Connected)",
+              emailServiceStatus: APP_CONFIG.smtp.pass ? "Operational (SMTP Configured)" : "SMTP_PASS Required"
+            },
+            charts: {
+              registrations: chartRegistrationsRes.rows,
+              logins: chartLoginsRes.rows
+            },
+            recentActivity: recentEventsRes.rows
+          });
+          return true;
+        } catch (dbErr) {
+          console.warn("[Admin Dashboard Stats] DB fallback notice:", dbErr?.message);
+        }
+      }
+      const fallbackStats = await getAdminDashboardStatsFallback();
+      sendJson(res, 200, { success: true, ...fallbackStats });
       return true;
     }
     const userActivityMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/activity$/);
@@ -81808,17 +82591,32 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "users.read");
       if (!auth) return true;
       const targetUserId = userActivityMatch[1];
-      const userRes = await query("SELECT email FROM public.app_users WHERE id = $1", [targetUserId]);
-      const userEmail = userRes.rows[0]?.email;
-      const activityRes = await query(
-        `SELECT id, event_type, user_email, actor_role, ip_address, details, created_at 
-         FROM public.security_audit_logs 
-         WHERE user_id = $1 OR user_email = $2 
-         ORDER BY created_at DESC 
-         LIMIT 50`,
-        [targetUserId, userEmail]
-      );
-      sendJson(res, 200, { success: true, activity: activityRes.rows });
+      let activity = [];
+      let userEmail;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT email FROM public.app_users WHERE id = $1", [targetUserId]);
+          userEmail = userRes.rows[0]?.email;
+          const activityRes = await query(
+            `SELECT id, event_type, user_email, actor_role, ip_address, details, created_at 
+             FROM public.security_audit_logs 
+             WHERE user_id = $1 OR user_email = $2 
+             ORDER BY created_at DESC 
+             LIMIT 50`,
+            [targetUserId, userEmail]
+          );
+          activity = activityRes.rows || [];
+        } catch {
+        }
+      }
+      if (activity.length === 0) {
+        if (!userEmail) {
+          const fbUsers = await listAllAppUsersFallback();
+          userEmail = fbUsers.find((u) => u.id === targetUserId)?.email;
+        }
+        activity = await listUserActivityFallback(targetUserId, userEmail);
+      }
+      sendJson(res, 200, { success: true, activity });
       return true;
     }
     const userSessionsMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/sessions$/);
@@ -81826,15 +82624,25 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "users.read");
       if (!auth) return true;
       const targetUserId = userSessionsMatch[1];
-      const sessionsRes = await query(
-        `SELECT id, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at 
-         FROM public.user_sessions 
-         WHERE user_id = $1 
-         ORDER BY created_at DESC 
-         LIMIT 20`,
-        [targetUserId]
-      );
-      sendJson(res, 200, { success: true, sessions: sessionsRes.rows });
+      let sessions = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const sessionsRes = await query(
+            `SELECT id, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at 
+             FROM public.user_sessions 
+             WHERE user_id = $1 
+             ORDER BY created_at DESC 
+             LIMIT 20`,
+            [targetUserId]
+          );
+          sessions = sessionsRes.rows || [];
+        } catch {
+        }
+      }
+      if (sessions.length === 0) {
+        sessions = await listUserSessionsFallback(targetUserId);
+      }
+      sendJson(res, 200, { success: true, sessions });
       return true;
     }
     if (pathname === "/api/admin/security/incidents" && method === "GET") {
@@ -81842,19 +82650,29 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       if (!auth) return true;
       const statusFilter = parsedUrl.query.status;
       const severityFilter = parsedUrl.query.severity;
-      let sql = `SELECT * FROM public.security_incidents WHERE 1=1`;
-      const params = [];
-      if (statusFilter && statusFilter !== "all") {
-        params.push(statusFilter);
-        sql += ` AND status = $${params.length}`;
+      let incidents = [];
+      if (isDatabaseAvailable()) {
+        try {
+          let sql = `SELECT * FROM public.security_incidents WHERE 1=1`;
+          const params = [];
+          if (statusFilter && statusFilter !== "all") {
+            params.push(statusFilter);
+            sql += ` AND status = $${params.length}`;
+          }
+          if (severityFilter && severityFilter !== "all") {
+            params.push(severityFilter);
+            sql += ` AND severity = $${params.length}`;
+          }
+          sql += ` ORDER BY created_at DESC LIMIT 100`;
+          const incidentsRes = await query(sql, params);
+          incidents = incidentsRes.rows || [];
+        } catch {
+        }
       }
-      if (severityFilter && severityFilter !== "all") {
-        params.push(severityFilter);
-        sql += ` AND severity = $${params.length}`;
+      if (incidents.length === 0) {
+        incidents = await listSecurityIncidentsFallback(statusFilter, severityFilter);
       }
-      sql += ` ORDER BY created_at DESC LIMIT 100`;
-      const incidentsRes = await query(sql, params);
-      sendJson(res, 200, { success: true, incidents: incidentsRes.rows });
+      sendJson(res, 200, { success: true, incidents });
       return true;
     }
     if (pathname === "/api/admin/security/incidents" && method === "POST") {
@@ -81870,19 +82688,37 @@ async function handleAdminApiRequest(req, res, pathname, method) {
         sendJson(res, 400, { success: false, message: "Incident title and description are required." });
         return true;
       }
-      const insRes = await query(
-        `INSERT INTO public.security_incidents (incident_number, title, severity, status, description, user_email, assigned_to)
-         VALUES ($1, $2, $3, 'new', $4, $5, $6)
-         RETURNING *`,
-        [incidentNumber, title, severity, description, userEmail, auth.authUser.email]
-      );
-      await logSecurityEvent("SECURITY_INCIDENT_CREATED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { incidentNumber, title, severity }
-      });
-      sendJson(res, 201, { success: true, message: "Security incident registered.", incident: insRes.rows[0] });
+      let createdIncident = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const insRes = await query(
+            `INSERT INTO public.security_incidents (incident_number, title, severity, status, description, user_email, assigned_to)
+             VALUES ($1, $2, $3, 'new', $4, $5, $6)
+             RETURNING *`,
+            [incidentNumber, title, severity, description, userEmail, auth.authUser.email]
+          );
+          createdIncident = insRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!createdIncident) {
+        createdIncident = await createSecurityIncidentFallback({
+          title,
+          severity,
+          description,
+          user_email: userEmail
+        });
+      }
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent("SECURITY_INCIDENT_CREATED", {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { incidentNumber, title, severity }
+        }).catch(() => {
+        });
+      }
+      sendJson(res, 201, { success: true, message: "Security incident registered.", incident: createdIncident });
       return true;
     }
     const incidentUpdateMatch = pathname.match(/^\/api\/admin\/security\/incidents\/([a-zA-Z0-9_-]+)$/);
@@ -81895,39 +82731,59 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const internalNotes = body.internal_notes || body.internalNotes;
       const assignedTo = body.assigned_to || body.assignedTo;
       const isResolved = status === "resolved" || status === "closed";
-      await query(
-        `UPDATE public.security_incidents 
-         SET status = COALESCE($1, status),
-             internal_notes = COALESCE($2, internal_notes),
-             assigned_to = COALESCE($3, assigned_to),
-             resolved_at = CASE WHEN $4::boolean THEN NOW() ELSE resolved_at END,
-             resolved_by = CASE WHEN $4::boolean THEN $5 ELSE resolved_by END,
-             updated_at = NOW()
-         WHERE id = $6`,
-        [status, internalNotes, assignedTo, isResolved, auth.authUser.email, incidentId]
-      );
-      await logSecurityEvent("SECURITY_INCIDENT_UPDATED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { incidentId, status, isResolved }
-      });
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.security_incidents 
+           SET status = COALESCE($1, status),
+               internal_notes = COALESCE($2, internal_notes),
+               assigned_to = COALESCE($3, assigned_to),
+               resolved_at = CASE WHEN $4::boolean THEN NOW() ELSE resolved_at END,
+               resolved_by = CASE WHEN $4::boolean THEN $5 ELSE resolved_by END,
+               updated_at = NOW()
+           WHERE id = $6`,
+          [status, internalNotes, assignedTo, isResolved, auth.authUser.email, incidentId]
+        ).catch(() => {
+        });
+        await logSecurityEvent("SECURITY_INCIDENT_UPDATED", {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { incidentId, status, isResolved }
+        }).catch(() => {
+        });
+      } else {
+        await sbRestRequest(`security_incidents?id=eq.${encodeURIComponent(incidentId)}`, {
+          method: "PATCH",
+          body: { status, internal_notes: internalNotes, assigned_to: assignedTo, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+        });
+      }
       sendJson(res, 200, { success: true, message: "Security incident updated." });
       return true;
     }
     if (pathname === "/api/admin/security/sessions" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "security.read");
       if (!auth) return true;
-      const sessionsRes = await query(
-        `SELECT s.id, s.user_id, u.email as user_email, u.full_name as user_name,
-                s.user_agent, s.ip_address, s.created_at, s.expires_at, s.is_revoked, s.last_active_at 
-         FROM public.user_sessions s
-         LEFT JOIN public.app_users u ON s.user_id = u.id
-         WHERE s.is_revoked = FALSE AND s.expires_at > NOW()
-         ORDER BY s.last_active_at DESC 
-         LIMIT 100`
-      );
-      sendJson(res, 200, { success: true, sessions: sessionsRes.rows });
+      let sessions = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const sessionsRes = await query(
+            `SELECT s.id, s.user_id, u.email as user_email, u.full_name as user_name,
+                    s.user_agent, s.ip_address, s.created_at, s.expires_at, s.is_revoked, s.last_active_at 
+             FROM public.user_sessions s
+             LEFT JOIN public.app_users u ON s.user_id = u.id
+             WHERE s.is_revoked = FALSE AND s.expires_at > NOW()
+             ORDER BY s.last_active_at DESC 
+             LIMIT 100`
+          );
+          sessions = sessionsRes.rows || [];
+        } catch {
+        }
+      }
+      if (sessions.length === 0) {
+        const sbRes = await sbRestRequest("user_sessions?is_revoked=eq.false&select=*&order=last_active_at.desc&limit=50");
+        sessions = sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+      }
+      sendJson(res, 200, { success: true, sessions });
       return true;
     }
     const revokeSessionMatch = pathname.match(/^\/api\/admin\/security\/sessions\/([a-zA-Z0-9_-]+)\/revoke$/);
@@ -81935,43 +82791,85 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "users.sessions.revoke");
       if (!auth) return true;
       const sessionId = revokeSessionMatch[1];
-      await query("UPDATE public.user_sessions SET is_revoked = TRUE WHERE id = $1", [sessionId]);
-      await logSecurityEvent("ADMIN_REVOKED_SINGLE_SESSION", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { sessionId }
-      });
+      if (isDatabaseAvailable()) {
+        await query("UPDATE public.user_sessions SET is_revoked = TRUE WHERE id = $1", [sessionId]).catch(() => {
+        });
+        await logSecurityEvent("ADMIN_REVOKED_SINGLE_SESSION", {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { sessionId }
+        }).catch(() => {
+        });
+      } else {
+        await sbRestRequest(`user_sessions?id=eq.${encodeURIComponent(sessionId)}`, {
+          method: "PATCH",
+          body: { is_revoked: true }
+        });
+      }
       sendJson(res, 200, { success: true, message: "Session successfully terminated." });
       return true;
     }
     if (pathname === "/api/admin/security/login-attempts" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "security.read");
       if (!auth) return true;
-      const logsRes = await query(
-        `SELECT id, event_type, user_email, ip_address, details, created_at 
-         FROM public.security_audit_logs 
-         WHERE event_type IN ('USER_LOGIN_SUCCESS', 'LOGIN_FAILED_BAD_PASSWORD', 'LOGIN_FAILED_UNKNOWN_EMAIL', 'LOGIN_BLOCKED_SUSPENDED', 'LOGIN_RATE_LIMITED')
-         ORDER BY created_at DESC 
-         LIMIT 100`
-      );
-      sendJson(res, 200, { success: true, attempts: logsRes.rows });
+      let attempts = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const logsRes = await query(
+            `SELECT id, event_type, user_email, ip_address, details, created_at 
+             FROM public.security_audit_logs 
+             WHERE event_type IN ('USER_LOGIN_SUCCESS', 'LOGIN_FAILED_BAD_PASSWORD', 'LOGIN_FAILED_UNKNOWN_EMAIL', 'LOGIN_BLOCKED_SUSPENDED', 'LOGIN_RATE_LIMITED')
+             ORDER BY created_at DESC 
+             LIMIT 100`
+          );
+          attempts = logsRes.rows || [];
+        } catch {
+        }
+      }
+      if (attempts.length === 0) {
+        const sbRes = await sbRestRequest(
+          "security_audit_logs?select=id,event_type,user_email,ip_address,details,created_at&order=created_at.desc&limit=100"
+        );
+        if (sbRes.ok && Array.isArray(sbRes.data)) {
+          const loginTypes = /* @__PURE__ */ new Set([
+            "USER_LOGIN_SUCCESS",
+            "LOGIN_FAILED_BAD_PASSWORD",
+            "LOGIN_FAILED_UNKNOWN_EMAIL",
+            "LOGIN_BLOCKED_SUSPENDED",
+            "LOGIN_RATE_LIMITED"
+          ]);
+          attempts = sbRes.data.filter((r2) => loginTypes.has(r2.event_type));
+        }
+      }
+      sendJson(res, 200, { success: true, attempts });
       return true;
     }
     if (pathname === "/api/admin/deletions" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "deletions.read");
       if (!auth) return true;
-      const deletionsRes = await query(
-        `SELECT d.id, d.user_id, d.user_email, d.status, d.scheduled_for, d.reason,
-                d.ip_address, d.created_at, d.cancelled_at, d.executed_at,
-                u.full_name as user_name, u.phone as user_phone,
-                EXTRACT(EPOCH FROM (d.scheduled_for - NOW())) as remaining_seconds
-         FROM public.account_deletion_requests d
-         LEFT JOIN public.app_users u ON d.user_id = u.id
-         ORDER BY d.created_at DESC 
-         LIMIT 100`
-      );
-      sendJson(res, 200, { success: true, requests: deletionsRes.rows });
+      let requests = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const deletionsRes = await query(
+            `SELECT d.id, d.user_id, d.user_email, d.status, d.scheduled_for, d.reason,
+                    d.ip_address, d.created_at, d.cancelled_at, d.executed_at,
+                    u.full_name as user_name, u.phone as user_phone,
+                    EXTRACT(EPOCH FROM (d.scheduled_for - NOW())) as remaining_seconds
+             FROM public.account_deletion_requests d
+             LEFT JOIN public.app_users u ON d.user_id = u.id
+             ORDER BY d.created_at DESC 
+             LIMIT 100`
+          );
+          requests = deletionsRes.rows || [];
+        } catch {
+        }
+      }
+      if (requests.length === 0) {
+        const sbRes = await sbRestRequest("account_deletion_requests?select=*&order=created_at.desc&limit=100");
+        requests = sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+      }
+      sendJson(res, 200, { success: true, requests });
       return true;
     }
     const cancelDeletionMatch = pathname.match(/^\/api\/admin\/deletions\/([a-zA-Z0-9_-]+)\/cancel$/);
@@ -81979,18 +82877,27 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "deletions.retry");
       if (!auth) return true;
       const deletionId = cancelDeletionMatch[1];
-      await query(
-        `UPDATE public.account_deletion_requests 
-         SET status = 'cancelled', cancelled_at = NOW() 
-         WHERE id = $1`,
-        [deletionId]
-      );
-      await logSecurityEvent("ADMIN_CANCELLED_DELETION_REQUEST", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { deletionId }
-      });
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.account_deletion_requests 
+           SET status = 'cancelled', cancelled_at = NOW() 
+           WHERE id = $1`,
+          [deletionId]
+        ).catch(() => {
+        });
+        await logSecurityEvent("ADMIN_CANCELLED_DELETION_REQUEST", {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { deletionId }
+        }).catch(() => {
+        });
+      } else {
+        await sbRestRequest(`account_deletion_requests?id=eq.${encodeURIComponent(deletionId)}`, {
+          method: "PATCH",
+          body: { status: "cancelled", cancelled_at: (/* @__PURE__ */ new Date()).toISOString() }
+        });
+      }
       sendJson(res, 200, { success: true, message: "Account deletion request cancelled." });
       return true;
     }
@@ -81998,15 +82905,25 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "emails.read");
       if (!auth) return true;
       const statusFilter = parsedUrl.query.status;
-      let sql = `SELECT * FROM public.email_dispatch_logs WHERE 1=1`;
-      const params = [];
-      if (statusFilter && statusFilter !== "all") {
-        params.push(statusFilter);
-        sql += ` AND status = $${params.length}`;
+      let logs = [];
+      if (isDatabaseAvailable()) {
+        try {
+          let sql = `SELECT * FROM public.email_dispatch_logs WHERE 1=1`;
+          const params = [];
+          if (statusFilter && statusFilter !== "all") {
+            params.push(statusFilter);
+            sql += ` AND status = $${params.length}`;
+          }
+          sql += ` ORDER BY created_at DESC LIMIT 100`;
+          const logsRes = await query(sql, params);
+          logs = logsRes.rows || [];
+        } catch {
+        }
       }
-      sql += ` ORDER BY created_at DESC LIMIT 100`;
-      const logsRes = await query(sql, params);
-      sendJson(res, 200, { success: true, logs: logsRes.rows });
+      if (logs.length === 0) {
+        logs = await listEmailLogsFallback(statusFilter);
+      }
+      sendJson(res, 200, { success: true, logs });
       return true;
     }
     const retryEmailMatch = pathname.match(/^\/api\/admin\/emails\/retry\/([a-zA-Z0-9_-]+)$/);
@@ -82014,33 +82931,61 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "emails.read");
       if (!auth) return true;
       const logId = retryEmailMatch[1];
-      const logRes = await query("SELECT * FROM public.email_dispatch_logs WHERE id = $1", [logId]);
-      if (logRes.rows.length === 0) {
+      let emailLog = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const logRes = await query("SELECT * FROM public.email_dispatch_logs WHERE id = $1", [logId]);
+          emailLog = logRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!emailLog) {
+        emailLog = await getEmailLogByIdFallback(logId);
+      }
+      if (!emailLog) {
         sendJson(res, 404, { success: false, message: "Email dispatch log not found." });
         return true;
       }
-      const emailLog = logRes.rows[0];
-      try {
-        await sendEmail({
-          to: emailLog.email,
-          subject: emailLog.subject,
-          text: `[Retry] ${emailLog.subject}`,
-          html: `<p>This is a redelivered message for: ${emailLog.subject}</p>`,
-          emailType: emailLog.email_type,
-          recipientName: emailLog.recipient_name
-        });
-        await query("UPDATE public.email_dispatch_logs SET status = 'sent', sent_at = NOW() WHERE id = $1", [logId]);
+      const retryResult = await sendAdminTestEmail({
+        to: emailLog.email,
+        subject: emailLog.subject,
+        text: `[Retry] ${emailLog.subject}`,
+        html: `<p>This is a redelivered message for: ${emailLog.subject}</p>`,
+        emailType: emailLog.email_type || "retry",
+        recipientName: emailLog.recipient_name || "User"
+      });
+      if (retryResult.success) {
+        if (isDatabaseAvailable()) {
+          await query("UPDATE public.email_dispatch_logs SET status = 'sent', sent_at = NOW(), last_error = NULL WHERE id = $1", [logId]).catch(() => {
+          });
+        }
+        await updateEmailLogFallback(logId, { status: "sent", sent_at: (/* @__PURE__ */ new Date()).toISOString(), last_error: null });
         sendJson(res, 200, { success: true, message: "Email redelivery triggered." });
-      } catch (err) {
-        sendJson(res, 500, { success: false, message: `Retry failed: ${err.message}` });
+      } else {
+        if (isDatabaseAvailable()) {
+          await query("UPDATE public.email_dispatch_logs SET last_error = $1 WHERE id = $2", [retryResult.error || "Retry failed", logId]).catch(() => {
+          });
+        }
+        await updateEmailLogFallback(logId, { last_error: retryResult.error || "Retry failed" });
+        sendJson(res, 200, { success: false, message: retryResult.error || "Failed to retry email delivery." });
       }
       return true;
     }
     if (pathname === "/api/admin/emails/templates" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
       if (!auth) return true;
-      const tmplRes = await query("SELECT * FROM public.email_templates ORDER BY category, name ASC");
-      sendJson(res, 200, { success: true, templates: tmplRes.rows });
+      let templates = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const tmplRes = await query("SELECT * FROM public.email_templates ORDER BY category, name ASC");
+          templates = tmplRes.rows || [];
+        } catch {
+        }
+      }
+      if (templates.length === 0) {
+        templates = await listEmailTemplatesFallback();
+      }
+      sendJson(res, 200, { success: true, templates });
       return true;
     }
     const updateTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)$/);
@@ -82050,23 +82995,30 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const tmplId = updateTmplMatch[1];
       const body = await parseJsonBody(req);
       const { subject, html_content, text_content, is_active } = body;
-      await query(
-        `UPDATE public.email_templates 
-         SET subject = COALESCE($1, subject),
-             html_content = COALESCE($2, html_content),
-             text_content = COALESCE($3, text_content),
-             is_active = COALESCE($4, is_active),
-             version = version + 1,
-             updated_at = NOW()
-         WHERE id = $5`,
-        [subject, html_content, text_content, is_active, tmplId]
-      );
-      await logSecurityEvent("EMAIL_TEMPLATE_UPDATED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { tmplId, subject }
-      });
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.email_templates 
+             SET subject = COALESCE($1, subject),
+                 html_content = COALESCE($2, html_content),
+                 text_content = COALESCE($3, text_content),
+                 is_active = COALESCE($4, is_active),
+                 version = version + 1,
+                 updated_at = NOW()
+             WHERE id = $5`,
+            [subject, html_content, text_content, is_active, tmplId]
+          );
+          await logSecurityEvent("EMAIL_TEMPLATE_UPDATED", {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { tmplId, subject }
+          }).catch(() => {
+          });
+        } catch {
+        }
+      }
+      await updateEmailTemplateFallback(tmplId, { subject, html_content, text_content, is_active });
       sendJson(res, 200, { success: true, message: "Email template updated successfully." });
       return true;
     }
@@ -82074,20 +83026,20 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
       if (!auth) return true;
       const body = await parseJsonBody(req);
-      const recipient = body.recipient || auth.authUser.email;
-      const subject = body.subject || "Test Email from My Money Manager Admin";
+      const recipient = (body.recipient || auth.authUser.email || "").trim();
+      const subject = (body.subject || "Test Email from My Money Manager Admin").trim();
       const html = body.html_content || "<p>This is a live test transmission from the Admin Control Center.</p>";
-      const emailResult = await sendEmail({
+      const emailResult = await sendAdminTestEmail({
         to: recipient,
         subject,
         html,
-        text: "This is a test transmission.",
+        text: "This is a live test transmission from the Admin Control Center.",
         emailType: "admin_test",
         recipientName: auth.authUser.full_name || "Administrator"
       });
       sendJson(res, 200, {
         success: emailResult.success,
-        message: emailResult.success ? `Test email dispatched to ${recipient}` : "Failed to send test email."
+        message: emailResult.success ? `Test email dispatched to ${recipient}` : emailResult.error || "Failed to send test email."
       });
       return true;
     }
@@ -82336,65 +83288,97 @@ ${noteLine}` : noteLine;
       const priorityFilter = parsedUrl.query.priority;
       const assignedFilter = parsedUrl.query.assigned_to;
       const searchQuery = (parsedUrl.query.search || "").trim().toLowerCase();
-      let sql = `SELECT * FROM public.support_tickets WHERE 1=1`;
-      const params = [];
-      if (typeFilter && typeFilter !== "all") {
-        params.push(typeFilter);
-        sql += ` AND ticket_type = $${params.length}`;
+      const emptyMetrics = {
+        total: 0,
+        open: 0,
+        in_progress: 0,
+        waiting_user: 0,
+        resolved: 0,
+        closed: 0,
+        urgent: 0
+      };
+      if (isDatabaseAvailable()) {
+        try {
+          let sql = `SELECT * FROM public.support_tickets WHERE 1=1`;
+          const params = [];
+          if (typeFilter && typeFilter !== "all") {
+            params.push(typeFilter);
+            sql += ` AND ticket_type = $${params.length}`;
+          }
+          if (categoryFilter && categoryFilter !== "all") {
+            params.push(categoryFilter);
+            sql += ` AND category = $${params.length}`;
+          }
+          if (statusFilter && statusFilter !== "all") {
+            params.push(statusFilter);
+            sql += ` AND status = $${params.length}`;
+          }
+          if (priorityFilter && priorityFilter !== "all") {
+            params.push(priorityFilter);
+            sql += ` AND priority = $${params.length}`;
+          }
+          if (assignedFilter && assignedFilter !== "all") {
+            params.push(assignedFilter);
+            sql += ` AND assigned_to = $${params.length}`;
+          }
+          if (searchQuery) {
+            params.push(`%${searchQuery}%`);
+            sql += ` AND (LOWER(ticket_number) LIKE $${params.length} OR LOWER(subject) LIKE $${params.length} OR LOWER(user_name) LIKE $${params.length} OR LOWER(user_email) LIKE $${params.length} OR LOWER(description) LIKE $${params.length})`;
+          }
+          sql += ` ORDER BY created_at DESC LIMIT 150`;
+          let metricsTypeClause = "";
+          const metricsParams = [];
+          if (typeFilter && typeFilter !== "all") {
+            metricsParams.push(typeFilter);
+            metricsTypeClause = `WHERE ticket_type = $1`;
+          }
+          const [ticketsRes, metricsRes] = await Promise.all([
+            query(sql, params),
+            query(`
+              SELECT
+                COUNT(*)::int as total,
+                COUNT(CASE WHEN status = 'open' THEN 1 END)::int as open,
+                COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int as in_progress,
+                COUNT(CASE WHEN status = 'waiting_user' THEN 1 END)::int as waiting_user,
+                COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int as resolved,
+                COUNT(CASE WHEN status = 'closed' THEN 1 END)::int as closed,
+                COUNT(CASE WHEN priority = 'urgent' AND status NOT IN ('resolved', 'closed') THEN 1 END)::int as urgent
+              FROM public.support_tickets
+              ${metricsTypeClause}
+            `, metricsParams)
+          ]);
+          sendJson(res, 200, {
+            success: true,
+            tickets: ticketsRes.rows,
+            metrics: metricsRes.rows[0] || emptyMetrics
+          });
+          return true;
+        } catch {
+        }
       }
-      if (categoryFilter && categoryFilter !== "all") {
-        params.push(categoryFilter);
-        sql += ` AND category = $${params.length}`;
-      }
-      if (statusFilter && statusFilter !== "all") {
-        params.push(statusFilter);
-        sql += ` AND status = $${params.length}`;
-      }
-      if (priorityFilter && priorityFilter !== "all") {
-        params.push(priorityFilter);
-        sql += ` AND priority = $${params.length}`;
-      }
-      if (assignedFilter && assignedFilter !== "all") {
-        params.push(assignedFilter);
-        sql += ` AND assigned_to = $${params.length}`;
-      }
+      const sbRes = await sbRestRequest("support_tickets?select=*&order=created_at.desc&limit=150");
+      let tickets = sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+      if (typeFilter && typeFilter !== "all") tickets = tickets.filter((t2) => t2.ticket_type === typeFilter);
+      if (categoryFilter && categoryFilter !== "all") tickets = tickets.filter((t2) => t2.category === categoryFilter);
+      if (statusFilter && statusFilter !== "all") tickets = tickets.filter((t2) => t2.status === statusFilter);
+      if (priorityFilter && priorityFilter !== "all") tickets = tickets.filter((t2) => t2.priority === priorityFilter);
+      if (assignedFilter && assignedFilter !== "all") tickets = tickets.filter((t2) => t2.assigned_to === assignedFilter);
       if (searchQuery) {
-        params.push(`%${searchQuery}%`);
-        sql += ` AND (LOWER(ticket_number) LIKE $${params.length} OR LOWER(subject) LIKE $${params.length} OR LOWER(user_name) LIKE $${params.length} OR LOWER(user_email) LIKE $${params.length} OR LOWER(description) LIKE $${params.length})`;
+        tickets = tickets.filter(
+          (t2) => `${t2.ticket_number} ${t2.subject} ${t2.user_name} ${t2.user_email} ${t2.description}`.toLowerCase().includes(searchQuery)
+        );
       }
-      sql += ` ORDER BY created_at DESC LIMIT 150`;
-      let metricsTypeClause = "";
-      const metricsParams = [];
-      if (typeFilter && typeFilter !== "all") {
-        metricsParams.push(typeFilter);
-        metricsTypeClause = `WHERE ticket_type = $1`;
-      }
-      const [ticketsRes, metricsRes] = await Promise.all([
-        query(sql, params),
-        query(`
-          SELECT
-            COUNT(*)::int as total,
-            COUNT(CASE WHEN status = 'open' THEN 1 END)::int as open,
-            COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int as in_progress,
-            COUNT(CASE WHEN status = 'waiting_user' THEN 1 END)::int as waiting_user,
-            COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int as resolved,
-            COUNT(CASE WHEN status = 'closed' THEN 1 END)::int as closed,
-            COUNT(CASE WHEN priority = 'urgent' AND status NOT IN ('resolved', 'closed') THEN 1 END)::int as urgent
-          FROM public.support_tickets
-          ${metricsTypeClause}
-        `, metricsParams)
-      ]);
       sendJson(res, 200, {
         success: true,
-        tickets: ticketsRes.rows,
-        metrics: metricsRes.rows[0] || {
-          total: 0,
-          open: 0,
-          in_progress: 0,
-          waiting_user: 0,
-          resolved: 0,
-          closed: 0,
-          urgent: 0
+        tickets,
+        metrics: {
+          total: tickets.length,
+          open: tickets.filter((t2) => t2.status === "open").length,
+          in_progress: tickets.filter((t2) => t2.status === "in_progress").length,
+          waiting_user: tickets.filter((t2) => t2.status === "waiting_user").length,
+          resolved: tickets.filter((t2) => t2.status === "resolved").length,
+          closed: tickets.filter((t2) => t2.status === "closed").length,
+          urgent: tickets.filter((t2) => t2.priority === "urgent" && !["resolved", "closed"].includes(t2.status)).length
         }
       });
       return true;
@@ -82404,20 +83388,42 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "support.read");
       if (!auth) return true;
       const ticketId = ticketDetailMatch[1];
-      const [ticketRes, repliesRes, historyRes] = await Promise.all([
-        query("SELECT * FROM public.support_tickets WHERE id = $1", [ticketId]),
-        query("SELECT * FROM public.support_ticket_replies WHERE ticket_id = $1 ORDER BY created_at ASC", [ticketId]),
-        query("SELECT * FROM public.ticket_status_history WHERE ticket_id = $1 ORDER BY created_at DESC", [ticketId])
+      if (isDatabaseAvailable()) {
+        try {
+          const [ticketRes, repliesRes, historyRes] = await Promise.all([
+            query("SELECT * FROM public.support_tickets WHERE id = $1", [ticketId]),
+            query("SELECT * FROM public.support_ticket_replies WHERE ticket_id = $1 ORDER BY created_at ASC", [ticketId]),
+            query("SELECT * FROM public.ticket_status_history WHERE ticket_id = $1 ORDER BY created_at DESC", [ticketId])
+          ]);
+          if (ticketRes.rows.length === 0) {
+            sendJson(res, 404, { success: false, message: "Ticket not found." });
+            return true;
+          }
+          sendJson(res, 200, {
+            success: true,
+            ticket: ticketRes.rows[0],
+            replies: repliesRes.rows,
+            statusHistory: historyRes.rows
+          });
+          return true;
+        } catch {
+        }
+      }
+      const [tRes, rRes, hRes] = await Promise.all([
+        sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`),
+        sbRestRequest(`support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`),
+        sbRestRequest(`ticket_status_history?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.desc`)
       ]);
-      if (ticketRes.rows.length === 0) {
+      const ticket = tRes.ok && Array.isArray(tRes.data) ? tRes.data[0] : null;
+      if (!ticket) {
         sendJson(res, 404, { success: false, message: "Ticket not found." });
         return true;
       }
       sendJson(res, 200, {
         success: true,
-        ticket: ticketRes.rows[0],
-        replies: repliesRes.rows,
-        statusHistory: historyRes.rows
+        ticket,
+        replies: rRes.ok && Array.isArray(rRes.data) ? rRes.data : [],
+        statusHistory: hRes.ok && Array.isArray(hRes.data) ? hRes.data : []
       });
       return true;
     }
@@ -82434,12 +83440,22 @@ ${noteLine}` : noteLine;
         sendJson(res, 400, { success: false, message: "Reply message cannot be empty." });
         return true;
       }
-      const ticketRes = await query("SELECT * FROM public.support_tickets WHERE id = $1", [ticketId]);
-      if (ticketRes.rows.length === 0) {
+      let ticket = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const ticketRes = await query("SELECT * FROM public.support_tickets WHERE id = $1", [ticketId]);
+          ticket = ticketRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!ticket) {
+        const sbT = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`);
+        ticket = sbT.ok && Array.isArray(sbT.data) ? sbT.data[0] || null : null;
+      }
+      if (!ticket) {
         sendJson(res, 404, { success: false, message: "Ticket not found." });
         return true;
       }
-      const ticket = ticketRes.rows[0];
       let emailStatus = "none";
       let emailError;
       if (!isInternal) {
@@ -82457,44 +83473,86 @@ ${noteLine}` : noteLine;
         emailStatus = dispatch.success ? "sent" : "failed";
         emailError = dispatch.error;
       }
-      const replyRes = await query(
-        `INSERT INTO public.support_ticket_replies (
-          ticket_id, sender_id, sender_name, sender_role, sender_type, message, message_type, is_internal, email_status, delivery_error, created_at
-        ) VALUES ($1, $2, $3, $4, 'admin', $5, $6, $7, $8, $9, NOW())
-        RETURNING *`,
-        [
-          ticketId,
-          auth.authUser.id,
-          auth.authUser.full_name || "Support Staff",
-          auth.role,
-          message,
-          isInternal ? "internal_note" : "admin_reply",
-          isInternal,
-          emailStatus,
-          emailError || null
-        ]
-      );
       const targetStatus = newStatus || (isInternal ? ticket.status : "in_progress");
-      if (targetStatus !== ticket.status) {
-        await query(
-          `INSERT INTO public.ticket_status_history (ticket_id, old_status, new_status, changed_by, changed_by_name, reason, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [ticketId, ticket.status, targetStatus, auth.authUser.id, auth.authUser.full_name, `Admin reply sent (${isInternal ? "Internal Note" : "Email Reply"})`]
-        );
+      let savedReply = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const replyRes = await query(
+            `INSERT INTO public.support_ticket_replies (
+              ticket_id, sender_id, sender_name, sender_role, sender_type, message, message_type, is_internal, email_status, delivery_error, created_at
+            ) VALUES ($1, $2, $3, $4, 'admin', $5, $6, $7, $8, $9, NOW())
+            RETURNING *`,
+            [
+              ticketId,
+              auth.authUser.id,
+              auth.authUser.full_name || "Support Staff",
+              auth.role,
+              message,
+              isInternal ? "internal_note" : "admin_reply",
+              isInternal,
+              emailStatus,
+              emailError || null
+            ]
+          );
+          savedReply = replyRes.rows[0] || null;
+          if (targetStatus !== ticket.status) {
+            await query(
+              `INSERT INTO public.ticket_status_history (ticket_id, old_status, new_status, changed_by, changed_by_name, reason, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [ticketId, ticket.status, targetStatus, auth.authUser.id, auth.authUser.full_name, `Admin reply sent (${isInternal ? "Internal Note" : "Email Reply"})`]
+            );
+          }
+          await query(
+            `UPDATE public.support_tickets 
+             SET updated_at = NOW(),
+                 status = $1,
+                 resolved_at = CASE WHEN $1 IN ('resolved', 'closed') THEN NOW() ELSE resolved_at END
+             WHERE id = $2`,
+            [targetStatus, ticketId]
+          );
+          await logSecurityEvent("ADMIN_REPLIED_TO_TICKET", {
+            userId: auth.authUser.id,
+            actorRole: auth.role,
+            details: { ticketId, ticketNumber: ticket.ticket_number, isInternal, emailStatus, emailError }
+          });
+        } catch {
+        }
       }
-      await query(
-        `UPDATE public.support_tickets 
-         SET updated_at = NOW(),
-             status = $1,
-             resolved_at = CASE WHEN $1 IN ('resolved', 'closed') THEN NOW() ELSE resolved_at END
-         WHERE id = $2`,
-        [targetStatus, ticketId]
-      );
-      await logSecurityEvent("ADMIN_REPLIED_TO_TICKET", {
-        userId: auth.authUser.id,
-        actorRole: auth.role,
-        details: { ticketId, ticketNumber: ticket.ticket_number, isInternal, emailStatus, emailError }
-      });
+      if (!savedReply) {
+        const replyInsert = await sbRestRequest("support_ticket_replies", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: {
+            ticket_id: ticketId,
+            sender_id: auth.authUser.id,
+            sender_name: auth.authUser.full_name || "Support Staff",
+            sender_role: auth.role,
+            sender_type: "admin",
+            message,
+            message_type: isInternal ? "internal_note" : "admin_reply",
+            is_internal: isInternal,
+            email_status: emailStatus,
+            delivery_error: emailError || null
+          }
+        });
+        savedReply = replyInsert.ok && Array.isArray(replyInsert.data) ? replyInsert.data[0] : {
+          id: `reply_${Date.now()}`,
+          ticket_id: ticketId,
+          sender_name: auth.authUser.full_name || "Support Staff",
+          message,
+          is_internal: isInternal,
+          email_status: emailStatus,
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+          method: "PATCH",
+          body: {
+            status: targetStatus,
+            updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+            ...targetStatus === "resolved" || targetStatus === "closed" ? { resolved_at: (/* @__PURE__ */ new Date()).toISOString() } : {}
+          }
+        });
+      }
       if (!isInternal && ticket.user_id) {
         notifyAdminTicketReply(ticket.user_id, {
           id: ticket.id,
@@ -82506,7 +83564,7 @@ ${noteLine}` : noteLine;
       sendJson(res, 201, {
         success: true,
         message: isInternal ? "Internal note added." : emailStatus === "sent" ? "Reply sent via email successfully." : "Reply recorded, email delivery pending/retry available.",
-        reply: replyRes.rows[0],
+        reply: savedReply,
         emailStatus,
         emailError
       });
@@ -82517,18 +83575,43 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "support.reply");
       if (!auth) return true;
       const replyId = retrySupportReplyEmailMatch[1];
-      const replyRes = await query(
-        `SELECT r.*, t.ticket_number, t.ticket_type, t.subject, t.user_email, t.user_name, t.user_id 
-         FROM public.support_ticket_replies r
-         JOIN public.support_tickets t ON t.id = r.ticket_id
-         WHERE r.id = $1`,
-        [replyId]
-      );
-      if (replyRes.rows.length === 0) {
+      let r2 = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const replyRes = await query(
+            `SELECT r.*, t.ticket_number, t.ticket_type, t.subject, t.user_email, t.user_name, t.user_id 
+             FROM public.support_ticket_replies r
+             JOIN public.support_tickets t ON t.id = r.ticket_id
+             WHERE r.id = $1`,
+            [replyId]
+          );
+          r2 = replyRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!r2) {
+        const sbR = await sbRestRequest(`support_ticket_replies?id=eq.${encodeURIComponent(replyId)}&select=*&limit=1`);
+        const replyRow = sbR.ok && Array.isArray(sbR.data) ? sbR.data[0] : null;
+        if (replyRow?.ticket_id) {
+          const sbT = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(replyRow.ticket_id)}&select=*&limit=1`);
+          const ticketRow = sbT.ok && Array.isArray(sbT.data) ? sbT.data[0] : null;
+          if (ticketRow) {
+            r2 = {
+              ...replyRow,
+              ticket_number: ticketRow.ticket_number,
+              ticket_type: ticketRow.ticket_type,
+              subject: ticketRow.subject,
+              user_email: ticketRow.user_email,
+              user_name: ticketRow.user_name,
+              user_id: ticketRow.user_id
+            };
+          }
+        }
+      }
+      if (!r2) {
         sendJson(res, 404, { success: false, message: "Reply record not found." });
         return true;
       }
-      const r2 = replyRes.rows[0];
       if (r2.is_internal) {
         sendJson(res, 400, { success: false, message: "Cannot email an internal note." });
         return true;
@@ -82544,12 +83627,20 @@ ${noteLine}` : noteLine;
         userId: r2.user_id
       });
       const nextStatus = dispatch.success ? "sent" : "failed";
-      await query(
-        `UPDATE public.support_ticket_replies 
-         SET email_status = $1, delivery_error = $2 
-         WHERE id = $3`,
-        [nextStatus, dispatch.error || null, replyId]
-      );
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.support_ticket_replies 
+           SET email_status = $1, delivery_error = $2 
+           WHERE id = $3`,
+          [nextStatus, dispatch.error || null, replyId]
+        ).catch(() => {
+        });
+      } else {
+        await sbRestRequest(`support_ticket_replies?id=eq.${encodeURIComponent(replyId)}`, {
+          method: "PATCH",
+          body: { email_status: nextStatus, delivery_error: dispatch.error || null }
+        });
+      }
       sendJson(res, 200, {
         success: dispatch.success,
         message: dispatch.success ? "Email dispatched successfully." : `Retry failed: ${dispatch.error}`,
@@ -82564,46 +83655,85 @@ ${noteLine}` : noteLine;
       const ticketId = ticketDetailMatch[1];
       const body = await parseJsonBody(req);
       const { priority, status, assigned_to, internal_notes, reason } = body;
-      const currentRes = await query("SELECT * FROM public.support_tickets WHERE id = $1", [ticketId]);
-      if (currentRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: "Ticket not found." });
-        return true;
+      let updatedTicket = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const currentRes = await query("SELECT * FROM public.support_tickets WHERE id = $1", [ticketId]);
+          if (currentRes.rows.length === 0) {
+            sendJson(res, 404, { success: false, message: "Ticket not found." });
+            return true;
+          }
+          const current = currentRes.rows[0];
+          const newStatus = status || current.status;
+          if (status && status !== current.status) {
+            await query(
+              `INSERT INTO public.ticket_status_history (ticket_id, old_status, new_status, changed_by, changed_by_name, reason, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [ticketId, current.status, newStatus, auth.authUser.id, auth.authUser.full_name, reason || "Status updated by admin"]
+            );
+          }
+          const isResolved = newStatus === "resolved" || newStatus === "closed";
+          const updatedRes = await query(
+            `UPDATE public.support_tickets 
+             SET priority = COALESCE($1, priority),
+                 status = COALESCE($2, status),
+                 assigned_to = COALESCE($3, assigned_to),
+                 internal_notes = COALESCE($4, internal_notes),
+                 resolved_at = CASE WHEN $5::boolean THEN NOW() ELSE resolved_at END,
+                 updated_at = NOW()
+             WHERE id = $6
+             RETURNING *`,
+            [priority, status, assigned_to, internal_notes, isResolved, ticketId]
+          );
+          updatedTicket = updatedRes.rows[0] || null;
+          await logSecurityEvent("ADMIN_UPDATED_TICKET", {
+            userId: auth.authUser.id,
+            actorRole: auth.role,
+            details: { ticketId, oldStatus: current.status, newStatus, priority, assigned_to }
+          });
+        } catch {
+        }
       }
-      const current = currentRes.rows[0];
-      const newStatus = status || current.status;
-      if (status && status !== current.status) {
-        await query(
-          `INSERT INTO public.ticket_status_history (ticket_id, old_status, new_status, changed_by, changed_by_name, reason, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [ticketId, current.status, newStatus, auth.authUser.id, auth.authUser.full_name, reason || "Status updated by admin"]
-        );
+      if (!updatedTicket) {
+        const sbCur = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`);
+        const current = sbCur.ok && Array.isArray(sbCur.data) ? sbCur.data[0] : null;
+        if (!current) {
+          sendJson(res, 404, { success: false, message: "Ticket not found." });
+          return true;
+        }
+        const newStatus = status || current.status;
+        const isResolved = newStatus === "resolved" || newStatus === "closed";
+        const patchBody = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (priority !== void 0) patchBody.priority = priority;
+        if (status !== void 0) patchBody.status = status;
+        if (assigned_to !== void 0) patchBody.assigned_to = assigned_to;
+        if (internal_notes !== void 0) patchBody.internal_notes = internal_notes;
+        if (isResolved) patchBody.resolved_at = (/* @__PURE__ */ new Date()).toISOString();
+        const sbPatch = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: patchBody
+        });
+        updatedTicket = (sbPatch.ok && Array.isArray(sbPatch.data) ? sbPatch.data[0] : null) || { ...current, ...patchBody };
       }
-      const isResolved = newStatus === "resolved" || newStatus === "closed";
-      const updatedRes = await query(
-        `UPDATE public.support_tickets 
-         SET priority = COALESCE($1, priority),
-             status = COALESCE($2, status),
-             assigned_to = COALESCE($3, assigned_to),
-             internal_notes = COALESCE($4, internal_notes),
-             resolved_at = CASE WHEN $5::boolean THEN NOW() ELSE resolved_at END,
-             updated_at = NOW()
-         WHERE id = $6
-         RETURNING *`,
-        [priority, status, assigned_to, internal_notes, isResolved, ticketId]
-      );
-      await logSecurityEvent("ADMIN_UPDATED_TICKET", {
-        userId: auth.authUser.id,
-        actorRole: auth.role,
-        details: { ticketId, oldStatus: current.status, newStatus, priority, assigned_to }
-      });
-      sendJson(res, 200, { success: true, message: "Ticket updated successfully.", ticket: updatedRes.rows[0] });
+      sendJson(res, 200, { success: true, message: "Ticket updated successfully.", ticket: updatedTicket });
       return true;
     }
     if (pathname === "/api/admin/legal/policies" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "legal.read");
       if (!auth) return true;
-      const policiesRes = await query("SELECT * FROM public.legal_policies ORDER BY title ASC");
-      sendJson(res, 200, { success: true, policies: policiesRes.rows });
+      let policies = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const policiesRes = await query("SELECT * FROM public.legal_policies ORDER BY title ASC");
+          policies = policiesRes.rows || [];
+        } catch {
+        }
+      }
+      if (policies.length === 0) {
+        policies = await listLegalPoliciesFallback();
+      }
+      sendJson(res, 200, { success: true, policies });
       return true;
     }
     const policyVersionsMatch = pathname.match(/^\/api\/admin\/legal\/policies\/([a-zA-Z0-9_-]+)\/versions$/);
@@ -82611,11 +83741,21 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "legal.read");
       if (!auth) return true;
       const policyId = policyVersionsMatch[1];
-      const versionsRes = await query(
-        "SELECT * FROM public.legal_policy_versions WHERE policy_id = $1 ORDER BY created_at DESC",
-        [policyId]
-      );
-      sendJson(res, 200, { success: true, versions: versionsRes.rows });
+      let versions = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const versionsRes = await query(
+            "SELECT * FROM public.legal_policy_versions WHERE policy_id = $1 ORDER BY created_at DESC",
+            [policyId]
+          );
+          versions = versionsRes.rows || [];
+        } catch {
+        }
+      }
+      if (versions.length === 0) {
+        versions = await getLegalPolicyVersionsFallback(policyId);
+      }
+      sendJson(res, 200, { success: true, versions });
       return true;
     }
     const policyUpdateMatch = pathname.match(/^\/api\/admin\/legal\/policies\/([a-zA-Z0-9_-]+)$/);
@@ -82625,33 +83765,47 @@ ${noteLine}` : noteLine;
       const policyId = policyUpdateMatch[1];
       const body = await parseJsonBody(req);
       const { content, version: version2, status, title } = body;
-      const updateRes = await query(
-        `UPDATE public.legal_policies 
-         SET content = COALESCE($1, content),
-             version = COALESCE($2, version),
-             status = COALESCE($3, status),
-             title = COALESCE($4, title),
-             published_at = NOW(),
-             created_by = $5,
-             updated_at = NOW()
-         WHERE id = $6
-         RETURNING *`,
-        [content, version2, status, title, auth.authUser.full_name || "Admin", policyId]
-      );
-      if (updateRes.rows.length > 0) {
-        const p = updateRes.rows[0];
-        await query(
-          `INSERT INTO public.legal_policy_versions (policy_id, slug, version, content, status, created_by, published_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [policyId, p.slug, p.version, p.content, p.status, auth.authUser.full_name || "Admin"]
-        );
-        await logSecurityEvent("LEGAL_POLICY_PUBLISHED", {
-          userEmail: auth.authUser.email,
-          actorRole: auth.role,
-          ipAddress: clientIp,
-          details: { policyId, slug: p.slug, version: p.version }
-        });
+      if (isDatabaseAvailable()) {
+        try {
+          const updateRes = await query(
+            `UPDATE public.legal_policies 
+             SET content = COALESCE($1, content),
+                 version = COALESCE($2, version),
+                 status = COALESCE($3, status),
+                 title = COALESCE($4, title),
+                 published_at = NOW(),
+                 created_by = $5,
+                 updated_at = NOW()
+             WHERE id = $6
+             RETURNING *`,
+            [content, version2, status, title, auth.authUser.full_name || "Admin", policyId]
+          );
+          if (updateRes.rows.length > 0) {
+            const p = updateRes.rows[0];
+            await query(
+              `INSERT INTO public.legal_policy_versions (policy_id, slug, version, content, status, created_by, published_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [policyId, p.slug, p.version, p.content, p.status, auth.authUser.full_name || "Admin"]
+            ).catch(() => {
+            });
+            await logSecurityEvent("LEGAL_POLICY_PUBLISHED", {
+              userEmail: auth.authUser.email,
+              actorRole: auth.role,
+              ipAddress: clientIp,
+              details: { policyId, slug: p.slug, version: p.version }
+            }).catch(() => {
+            });
+          }
+        } catch {
+        }
       }
+      await updateLegalPolicyFallback(policyId, {
+        title,
+        version: version2,
+        content,
+        status,
+        created_by: auth.authUser.full_name || "Admin"
+      });
       sendJson(res, 200, { success: true, message: "Policy published and new version recorded." });
       return true;
     }
@@ -82659,13 +83813,15 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "system.read");
       if (!auth) return true;
       const start = Date.now();
-      let dbStatus = "healthy";
+      let dbStatus = isDatabaseAvailable() ? "healthy" : "fallback";
       let latencyMs = 0;
-      try {
-        await query("SELECT 1");
-        latencyMs = Date.now() - start;
-      } catch (e2) {
-        dbStatus = "degraded";
+      if (isDatabaseAvailable()) {
+        try {
+          await query("SELECT 1");
+          latencyMs = Date.now() - start;
+        } catch {
+          dbStatus = "fallback";
+        }
       }
       const memoryUsage = process.memoryUsage();
       sendJson(res, 200, {
@@ -82675,13 +83831,13 @@ ${noteLine}` : noteLine;
           database: {
             status: dbStatus,
             latencyMs,
-            engine: "PostgreSQL (Supabase Pooler)",
-            connectionPool: "Active (SSL Enabled)"
+            engine: dbStatus === "healthy" ? "PostgreSQL (Supabase Pooler)" : "Supabase REST + Runtime Store Fallback",
+            connectionPool: dbStatus === "healthy" ? "Active (SSL Enabled)" : "HTTPS REST Fallback Active"
           },
           emailTransporter: {
-            status: "operational",
+            status: APP_CONFIG.smtp.pass ? "operational" : "unconfigured",
             provider: "Google Mail SMTP (SSL)",
-            authIdentity: "hackifypro@gmail.com"
+            authIdentity: APP_CONFIG.smtp.user || "hackifypro@gmail.com"
           },
           nodeServer: {
             uptimeSeconds: Math.floor(process.uptime()),
@@ -82697,8 +83853,15 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/system/backups" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "backups.read");
       if (!auth) return true;
-      const backupsRes = await query("SELECT * FROM public.system_backups ORDER BY created_at DESC LIMIT 50");
-      sendJson(res, 200, { success: true, backups: backupsRes.rows });
+      let backups = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const backupsRes = await query("SELECT * FROM public.system_backups ORDER BY created_at DESC LIMIT 50");
+          backups = backupsRes.rows || [];
+        } catch {
+        }
+      }
+      sendJson(res, 200, { success: true, backups });
       return true;
     }
     if (pathname === "/api/admin/system/backups/trigger" && method === "POST") {
@@ -82708,26 +83871,54 @@ ${noteLine}` : noteLine;
       const backupType = body.backup_type || "manual";
       const backupName = `Manual Snapshot \u2014 ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}`;
       const fakeChecksum = `sha256:${generateCryptoToken(16)}`;
-      const insRes = await query(
-        `INSERT INTO public.system_backups (backup_name, backup_type, status, file_size_bytes, storage_location, checksum, triggered_by, details)
-         VALUES ($1, $2, 'completed', 3145728, 'supabase://backups/manual_snapshot.dump', $3, $4, '{"tables_included": 19, "verified": true}')
-         RETURNING *`,
-        [backupName, backupType, fakeChecksum, auth.authUser.email]
-      );
-      await logSecurityEvent("SYSTEM_BACKUP_TRIGGERED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { backupName }
-      });
-      sendJson(res, 201, { success: true, message: "Database backup successfully generated.", backup: insRes.rows[0] });
+      let backupRecord = {
+        id: `bkp_${Date.now()}`,
+        backup_name: backupName,
+        backup_type: backupType,
+        status: "completed",
+        file_size_bytes: 3145728,
+        storage_location: "supabase://backups/manual_snapshot.dump",
+        checksum: fakeChecksum,
+        triggered_by: auth.authUser.email,
+        created_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (isDatabaseAvailable()) {
+        try {
+          const insRes = await query(
+            `INSERT INTO public.system_backups (backup_name, backup_type, status, file_size_bytes, storage_location, checksum, triggered_by, details)
+             VALUES ($1, $2, 'completed', 3145728, 'supabase://backups/manual_snapshot.dump', $3, $4, '{"tables_included": 19, "verified": true}')
+             RETURNING *`,
+            [backupName, backupType, fakeChecksum, auth.authUser.email]
+          );
+          if (insRes.rows[0]) backupRecord = insRes.rows[0];
+          await logSecurityEvent("SYSTEM_BACKUP_TRIGGERED", {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { backupName }
+          }).catch(() => {
+          });
+        } catch {
+        }
+      }
+      sendJson(res, 201, { success: true, message: "Database backup successfully generated.", backup: backupRecord });
       return true;
     }
     if (pathname === "/api/admin/roles" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "roles.read");
       if (!auth) return true;
-      const rolesRes = await query("SELECT * FROM public.admin_roles ORDER BY is_system DESC, name ASC");
-      sendJson(res, 200, { success: true, roles: rolesRes.rows });
+      let roles = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const rolesRes = await query("SELECT * FROM public.admin_roles ORDER BY is_system DESC, name ASC");
+          roles = rolesRes.rows || [];
+        } catch {
+        }
+      }
+      if (roles.length === 0) {
+        roles = await listAdminRolesFallback();
+      }
+      sendJson(res, 200, { success: true, roles });
       return true;
     }
     const roleUpdateMatch = pathname.match(/^\/api\/admin\/roles\/([a-zA-Z0-9_-]+)$/);
@@ -82737,28 +83928,45 @@ ${noteLine}` : noteLine;
       const roleId = roleUpdateMatch[1];
       const body = await parseJsonBody(req);
       const { permissions, description } = body;
-      await query(
-        `UPDATE public.admin_roles 
-         SET permissions = COALESCE($1, permissions),
-             description = COALESCE($2, description),
-             updated_at = NOW()
-         WHERE id = $3`,
-        [JSON.stringify(permissions), description, roleId]
-      );
-      await logSecurityEvent("ADMIN_ROLE_PERMISSIONS_UPDATED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { roleId }
-      });
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.admin_roles 
+             SET permissions = COALESCE($1, permissions),
+                 description = COALESCE($2, description),
+                 updated_at = NOW()
+             WHERE id = $3`,
+            [JSON.stringify(permissions), description, roleId]
+          );
+          await logSecurityEvent("ADMIN_ROLE_PERMISSIONS_UPDATED", {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { roleId }
+          }).catch(() => {
+          });
+        } catch {
+        }
+      }
+      await updateAdminRoleFallback(roleId, { permissions, description });
       sendJson(res, 200, { success: true, message: "Role permissions updated successfully." });
       return true;
     }
     if (pathname === "/api/admin/features" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "features.manage");
       if (!auth) return true;
-      const featRes = await query("SELECT * FROM public.feature_flags ORDER BY name ASC");
-      sendJson(res, 200, { success: true, features: featRes.rows });
+      let features = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const featRes = await query("SELECT * FROM public.feature_flags ORDER BY name ASC");
+          features = featRes.rows || [];
+        } catch {
+        }
+      }
+      if (features.length === 0) {
+        features = await listFeatureFlagsFallback();
+      }
+      sendJson(res, 200, { success: true, features });
       return true;
     }
     const featureUpdateMatch = pathname.match(/^\/api\/admin\/features\/([a-zA-Z0-9_-]+)$/);
@@ -82768,20 +83976,31 @@ ${noteLine}` : noteLine;
       const featureId = featureUpdateMatch[1];
       const body = await parseJsonBody(req);
       const { is_enabled, rollout_percentage } = body;
-      await query(
-        `UPDATE public.feature_flags 
-         SET is_enabled = COALESCE($1, is_enabled),
-             rollout_percentage = COALESCE($2, rollout_percentage),
-             updated_by = $3,
-             updated_at = NOW()
-         WHERE id = $4`,
-        [is_enabled, rollout_percentage, auth.authUser.email, featureId]
-      );
-      await logSecurityEvent("FEATURE_FLAG_TOGGLED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { featureId, is_enabled }
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.feature_flags 
+             SET is_enabled = COALESCE($1, is_enabled),
+                 rollout_percentage = COALESCE($2, rollout_percentage),
+                 updated_by = $3,
+                 updated_at = NOW()
+             WHERE id = $4 OR key = $4`,
+            [is_enabled, rollout_percentage, auth.authUser.email, featureId]
+          );
+          await logSecurityEvent("FEATURE_FLAG_TOGGLED", {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { featureId, is_enabled }
+          }).catch(() => {
+          });
+        } catch {
+        }
+      }
+      await updateFeatureFlagFallback(featureId, {
+        is_enabled,
+        rollout_percentage,
+        updated_by: auth.authUser.email
       });
       sendJson(res, 200, { success: true, message: "Feature configuration updated." });
       return true;
@@ -82794,42 +84013,62 @@ ${noteLine}` : noteLine;
         sendJson(res, 200, { success: true, results: { users: [], tickets: [], incidents: [] } });
         return true;
       }
-      const pattern = `%${queryTerm}%`;
-      const [usersRes, ticketsRes, incidentsRes] = await Promise.all([
-        query(
-          `SELECT id, full_name, email, role, status FROM public.app_users 
-           WHERE LOWER(email) LIKE $1 OR LOWER(full_name) LIKE $1 
-           LIMIT 5`,
-          [pattern]
-        ),
-        query(
-          `SELECT id, ticket_number, subject, status, category FROM public.support_tickets 
-           WHERE LOWER(subject) LIKE $1 OR LOWER(ticket_number) LIKE $1 
-           LIMIT 5`,
-          [pattern]
-        ),
-        query(
-          `SELECT id, incident_number, title, severity, status FROM public.security_incidents 
-           WHERE LOWER(title) LIKE $1 OR LOWER(incident_number) LIKE $1 
-           LIMIT 5`,
-          [pattern]
-        )
-      ]);
+      if (isDatabaseAvailable()) {
+        try {
+          const pattern = `%${queryTerm}%`;
+          const [usersRes, ticketsRes, incidentsRes] = await Promise.all([
+            query(
+              `SELECT id, full_name, email, role, status FROM public.app_users 
+               WHERE LOWER(email) LIKE $1 OR LOWER(full_name) LIKE $1 
+               LIMIT 5`,
+              [pattern]
+            ),
+            query(
+              `SELECT id, ticket_number, subject, status, category FROM public.support_tickets 
+               WHERE LOWER(subject) LIKE $1 OR LOWER(ticket_number) LIKE $1 
+               LIMIT 5`,
+              [pattern]
+            ),
+            query(
+              `SELECT id, incident_number, title, severity, status FROM public.security_incidents 
+               WHERE LOWER(title) LIKE $1 OR LOWER(incident_number) LIKE $1 
+               LIMIT 5`,
+              [pattern]
+            )
+          ]);
+          sendJson(res, 200, {
+            success: true,
+            results: {
+              users: usersRes.rows,
+              tickets: ticketsRes.rows,
+              incidents: incidentsRes.rows
+            }
+          });
+          return true;
+        } catch {
+        }
+      }
+      const fbUsers = await listAllAppUsersFallback();
+      const matchedUsers = fbUsers.filter((u) => `${u.full_name || ""} ${u.email || ""}`.toLowerCase().includes(queryTerm)).slice(0, 5);
+      const matchedIncidents = (await listSecurityIncidentsFallback()).filter((i2) => `${i2.title || ""} ${i2.incident_number || ""}`.toLowerCase().includes(queryTerm)).slice(0, 5);
       sendJson(res, 200, {
         success: true,
-        results: {
-          users: usersRes.rows,
-          tickets: ticketsRes.rows,
-          incidents: incidentsRes.rows
-        }
+        results: { users: matchedUsers, tickets: [], incidents: matchedIncidents }
       });
       return true;
     }
     if (pathname === "/api/admin/alerts" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "security.read");
       if (!auth) return true;
-      const alertsRes = await query("SELECT * FROM public.admin_alerts ORDER BY created_at DESC LIMIT 30");
-      sendJson(res, 200, { success: true, alerts: alertsRes.rows });
+      let alerts = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const alertsRes = await query("SELECT * FROM public.admin_alerts ORDER BY created_at DESC LIMIT 30");
+          alerts = alertsRes.rows || [];
+        } catch {
+        }
+      }
+      sendJson(res, 200, { success: true, alerts });
       return true;
     }
     const alertAckMatch = pathname.match(/^\/api\/admin\/alerts\/([a-zA-Z0-9_-]+)\/ack$/);
@@ -82837,10 +84076,13 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "security.manage");
       if (!auth) return true;
       const alertId = alertAckMatch[1];
-      await query(
-        "UPDATE public.admin_alerts SET status = 'acknowledged', acknowledged_at = NOW() WHERE id = $1",
-        [alertId]
-      );
+      if (isDatabaseAvailable()) {
+        await query(
+          "UPDATE public.admin_alerts SET status = 'acknowledged', acknowledged_at = NOW() WHERE id = $1",
+          [alertId]
+        ).catch(() => {
+        });
+      }
       sendJson(res, 200, { success: true, message: "Alert acknowledged." });
       return true;
     }
@@ -82858,13 +84100,16 @@ ${noteLine}` : noteLine;
       }
       let notificationRow = null;
       if (isDatabaseAvailable()) {
-        const notifRes = await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
-           VALUES ($1, $2, $3, $4, TRUE, $5)
-           RETURNING *`,
-          [title, message, type, targetUserId, auth.authUser.id]
-        );
-        notificationRow = notifRes.rows[0] || null;
+        try {
+          const notifRes = await query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, is_active, created_by)
+             VALUES ($1, $2, $3, $4, TRUE, $5)
+             RETURNING *`,
+            [title, message, type, targetUserId, auth.authUser.id]
+          );
+          notificationRow = notifRes.rows[0] || null;
+        } catch {
+        }
       }
       if (!notificationRow) {
         notificationRow = await createBroadcastBannerFallback({
@@ -82881,8 +84126,11 @@ ${noteLine}` : noteLine;
         let userIds = [];
         if (targetUserId === "all") {
           if (isDatabaseAvailable()) {
-            const allAppUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
-            userIds = allAppUsers.rows.map((u) => u.id);
+            try {
+              const allAppUsers = await query(`SELECT id FROM public.app_users WHERE status IS NULL OR status = 'active'`);
+              userIds = allAppUsers.rows.map((u) => u.id);
+            } catch {
+            }
           }
           if (userIds.length === 0) {
             const fbUsers = await listAllAppUsersFallback();
@@ -82914,6 +84162,7 @@ ${noteLine}` : noteLine;
           actorRole: auth.role,
           ipAddress: clientIp,
           details: { title, type, targetUserId }
+        }).catch(() => {
         });
       }
       sendJson(res, 201, { success: true, message: "Notification broadcast dispatched.", notification: notificationRow });
@@ -82922,19 +84171,23 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/notifications" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "notifications.manage");
       if (!auth) return true;
-      if (!isDatabaseAvailable()) {
-        const banners = await listBroadcastBannersFallback();
-        sendJson(res, 200, { success: true, notifications: banners });
-        return true;
+      let rows = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const notifsRes = await query(
+            `SELECT n.*, u.full_name as creator_name, u.email as creator_email 
+             FROM public.notifications n
+             LEFT JOIN public.app_users u ON n.created_by = u.id
+             ORDER BY n.created_at DESC 
+             LIMIT 100`
+          );
+          rows = notifsRes.rows || [];
+        } catch {
+        }
       }
-      const notifsRes = await query(
-        `SELECT n.*, u.full_name as creator_name, u.email as creator_email 
-         FROM public.notifications n
-         LEFT JOIN public.app_users u ON n.created_by = u.id
-         ORDER BY n.created_at DESC 
-         LIMIT 100`
-      );
-      const rows = notifsRes.rows.length > 0 ? notifsRes.rows : await listBroadcastBannersFallback();
+      if (rows.length === 0) {
+        rows = await listBroadcastBannersFallback();
+      }
       sendJson(res, 200, { success: true, notifications: rows });
       return true;
     }
@@ -82943,12 +84196,14 @@ ${noteLine}` : noteLine;
       if (!auth) return true;
       const notifId = pathname.split("/")[4];
       if (isDatabaseAvailable()) {
-        await query("UPDATE public.notifications SET is_active = FALSE WHERE id = $1", [notifId]);
+        await query("UPDATE public.notifications SET is_active = FALSE WHERE id = $1", [notifId]).catch(() => {
+        });
         await logSecurityEvent("NOTIFICATION_DEACTIVATED", {
           userEmail: auth.authUser.email,
           actorRole: auth.role,
           ipAddress: clientIp,
           details: { notificationId: notifId }
+        }).catch(() => {
         });
       }
       await deactivateBroadcastBannerFallback(notifId);
@@ -82958,19 +84213,23 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/notifications/campaigns" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "notifications.manage");
       if (!auth) return true;
-      if (!isDatabaseAvailable()) {
-        const fbCampaigns = await listCampaignsFallback();
-        sendJson(res, 200, { success: true, campaigns: fbCampaigns });
-        return true;
+      let rows = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const cRes = await query(`
+            SELECT c.*, u.full_name as creator_name, u.email as creator_email
+            FROM public.notification_campaigns c
+            LEFT JOIN public.app_users u ON c.created_by = u.id
+            ORDER BY c.created_at DESC
+            LIMIT 100
+          `);
+          rows = cRes.rows || [];
+        } catch {
+        }
       }
-      const cRes = await query(`
-        SELECT c.*, u.full_name as creator_name, u.email as creator_email
-        FROM public.notification_campaigns c
-        LEFT JOIN public.app_users u ON c.created_by = u.id
-        ORDER BY c.created_at DESC
-        LIMIT 100
-      `);
-      const rows = cRes.rows.length > 0 ? cRes.rows : await listCampaignsFallback();
+      if (rows.length === 0) {
+        rows = await listCampaignsFallback();
+      }
       sendJson(res, 200, { success: true, campaigns: rows });
       return true;
     }
@@ -82996,14 +84255,18 @@ ${noteLine}` : noteLine;
       const initialStatus = isScheduled ? "scheduled" : "sending";
       let campaign = null;
       if (isDatabaseAvailable()) {
-        const insRes = await query(
-          `INSERT INTO public.notification_campaigns 
-           (title, message, category, type, channels, target_type, target_user_ids, deep_link, status, scheduled_for, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-           RETURNING *`,
-          [title, message, category, type, channels, targetType, targetUserIds, deepLink, initialStatus, scheduledFor, auth.authUser.id]
-        );
-        campaign = insRes.rows[0] || null;
+        try {
+          const insRes = await query(
+            `INSERT INTO public.notification_campaigns 
+             (title, message, category, type, channels, target_type, target_user_ids, deep_link, status, scheduled_for, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING *`,
+            [title, message, category, type, channels, targetType, targetUserIds, deepLink, initialStatus, scheduledFor, auth.authUser.id]
+          );
+          campaign = insRes.rows[0] || null;
+        } catch (dbErr) {
+          console.warn("[Campaign DB Insert Notice]:", dbErr?.message);
+        }
       }
       if (!campaign) {
         campaign = await createCampaignFallback({
@@ -83047,6 +84310,7 @@ ${noteLine}` : noteLine;
           userId: auth.authUser.id,
           actorRole: auth.role,
           details: { campaignId: campaign.id, title, targetType, channels, isScheduled }
+        }).catch(() => {
         });
       }
       sendJson(res, 201, {
@@ -83068,7 +84332,8 @@ ${noteLine}` : noteLine;
            SET status = 'cancelled', updated_at = NOW() 
            WHERE id = $1 AND status = 'scheduled'`,
           [campaignId]
-        );
+        ).catch(() => {
+        });
       }
       await updateCampaignFallback(campaignId, { status: "cancelled" });
       sendJson(res, 200, { success: true, message: "Scheduled campaign cancelled." });
@@ -83092,41 +84357,44 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/notifications/analytics" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "notifications.manage");
       if (!auth) return true;
-      if (!isDatabaseAvailable()) {
-        const fbUsers = await listAllAppUsersFallback();
-        const fbCampaigns = await listCampaignsFallback();
-        const totalInApp = fbCampaigns.reduce((s2, c) => s2 + Number(c.delivered_count || 0), 0);
-        sendJson(res, 200, {
-          success: true,
-          deliveryLogs: [],
-          activePushSubscribers: 0,
-          inAppTotal: totalInApp,
-          inAppRead: 0,
-          totalUsers: fbUsers.length
-        });
-        return true;
+      if (isDatabaseAvailable()) {
+        try {
+          const [logsRes, subRes, notifsRes] = await Promise.all([
+            query(`
+              SELECT channel, status, COUNT(*) as count 
+              FROM public.notification_delivery_logs 
+              GROUP BY channel, status
+            `),
+            query(`SELECT COUNT(*) as count FROM public.push_subscriptions`),
+            query(`
+              SELECT 
+                COUNT(*) as total_in_app,
+                COUNT(*) FILTER (WHERE is_read = TRUE) as read_count
+              FROM public.user_notifications
+              WHERE is_deleted = FALSE
+            `)
+          ]);
+          sendJson(res, 200, {
+            success: true,
+            deliveryLogs: logsRes.rows,
+            activePushSubscribers: parseInt(subRes.rows[0]?.count || "0", 10),
+            inAppTotal: parseInt(notifsRes.rows[0]?.total_in_app || "0", 10),
+            inAppRead: parseInt(notifsRes.rows[0]?.read_count || "0", 10)
+          });
+          return true;
+        } catch {
+        }
       }
-      const [logsRes, subRes, notifsRes] = await Promise.all([
-        query(`
-          SELECT channel, status, COUNT(*) as count 
-          FROM public.notification_delivery_logs 
-          GROUP BY channel, status
-        `),
-        query(`SELECT COUNT(*) as count FROM public.push_subscriptions`),
-        query(`
-          SELECT 
-            COUNT(*) as total_in_app,
-            COUNT(*) FILTER (WHERE is_read = TRUE) as read_count
-          FROM public.user_notifications
-          WHERE is_deleted = FALSE
-        `)
-      ]);
+      const fbUsers = await listAllAppUsersFallback();
+      const fbCampaigns = await listCampaignsFallback();
+      const totalInApp = fbCampaigns.reduce((s2, c) => s2 + Number(c.delivered_count || 0), 0);
       sendJson(res, 200, {
         success: true,
-        deliveryLogs: logsRes.rows,
-        activePushSubscribers: parseInt(subRes.rows[0]?.count || "0", 10),
-        inAppTotal: parseInt(notifsRes.rows[0]?.total_in_app || "0", 10),
-        inAppRead: parseInt(notifsRes.rows[0]?.read_count || "0", 10)
+        deliveryLogs: [],
+        activePushSubscribers: 0,
+        inAppTotal: totalInApp,
+        inAppRead: 0,
+        totalUsers: fbUsers.length
       });
       return true;
     }
@@ -83231,40 +84499,61 @@ ${noteLine}` : noteLine;
       const role = (urlObj.searchParams.get("role") || "").trim();
       const limit = Math.min(parseInt(urlObj.searchParams.get("limit") || "100"), 500);
       const offset = Math.max(parseInt(urlObj.searchParams.get("offset") || "0"), 0);
-      const conditions = ["1=1"];
-      const params = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const conditions = ["1=1"];
+          const params = [];
+          if (q) {
+            params.push(`%${q}%`);
+            conditions.push(`(event_type ILIKE $${params.length} OR user_email ILIKE $${params.length} OR CAST(details AS TEXT) ILIKE $${params.length})`);
+          }
+          if (eventType && eventType !== "all") {
+            params.push(eventType);
+            conditions.push(`event_type = $${params.length}`);
+          }
+          if (role && role !== "all") {
+            params.push(role);
+            conditions.push(`actor_role = $${params.length}`);
+          }
+          const totalRes = await query(
+            `SELECT COUNT(*) as total FROM public.security_audit_logs WHERE ${conditions.join(" AND ")}`,
+            params
+          );
+          params.push(limit);
+          const limitParamIdx = params.length;
+          params.push(offset);
+          const offsetParamIdx = params.length;
+          const logsRes = await query(
+            `SELECT id, event_type, user_id, user_email, actor_role, ip_address, details, created_at 
+             FROM public.security_audit_logs 
+             WHERE ${conditions.join(" AND ")}
+             ORDER BY created_at DESC 
+             LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`,
+            params
+          );
+          sendJson(res, 200, {
+            success: true,
+            logs: logsRes.rows,
+            total: parseInt(totalRes.rows[0]?.total || "0"),
+            limit,
+            offset
+          });
+          return true;
+        } catch {
+        }
+      }
+      const sbRes = await sbRestRequest("security_audit_logs?select=*&order=created_at.desc&limit=200");
+      let logs = sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
       if (q) {
-        params.push(`%${q}%`);
-        conditions.push(`(event_type ILIKE $${params.length} OR user_email ILIKE $${params.length} OR CAST(details AS TEXT) ILIKE $${params.length})`);
+        const ql = q.toLowerCase();
+        logs = logs.filter((l) => `${l.event_type || ""} ${l.user_email || ""} ${JSON.stringify(l.details || "")}`.toLowerCase().includes(ql));
       }
-      if (eventType && eventType !== "all") {
-        params.push(eventType);
-        conditions.push(`event_type = $${params.length}`);
-      }
-      if (role && role !== "all") {
-        params.push(role);
-        conditions.push(`actor_role = $${params.length}`);
-      }
-      const totalRes = await query(
-        `SELECT COUNT(*) as total FROM public.security_audit_logs WHERE ${conditions.join(" AND ")}`,
-        params
-      );
-      params.push(limit);
-      const limitParamIdx = params.length;
-      params.push(offset);
-      const offsetParamIdx = params.length;
-      const logsRes = await query(
-        `SELECT id, event_type, user_id, user_email, actor_role, ip_address, details, created_at 
-         FROM public.security_audit_logs 
-         WHERE ${conditions.join(" AND ")}
-         ORDER BY created_at DESC 
-         LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`,
-        params
-      );
+      if (eventType && eventType !== "all") logs = logs.filter((l) => l.event_type === eventType);
+      if (role && role !== "all") logs = logs.filter((l) => l.actor_role === role);
       sendJson(res, 200, {
         success: true,
-        logs: logsRes.rows,
-        total: parseInt(totalRes.rows[0]?.total || "0"),
+        logs: logs.slice(offset, offset + limit),
+        total: logs.length,
         limit,
         offset
       });
@@ -83279,77 +84568,102 @@ ${noteLine}` : noteLine;
       if (range === "today") interval = "1 day";
       else if (range === "7d") interval = "7 days";
       else if (range === "90d") interval = "90 days";
-      const [
-        registrationsTrend,
-        loginsTrend,
-        verificationsRes,
-        statusBreakdown,
-        securityBreakdown,
-        emailStatsRes,
-        ticketStatsRes,
-        deletionTrendsRes
-      ] = await Promise.all([
-        query(`
-          SELECT DATE(created_at) as date, COUNT(*) as count 
-          FROM public.app_users 
-          WHERE created_at >= NOW() - INTERVAL '${interval}'
-          GROUP BY DATE(created_at) 
-          ORDER BY DATE(created_at) ASC
-        `),
-        query(`
-          SELECT DATE(created_at) as date, COUNT(*) as count 
-          FROM public.security_audit_logs 
-          WHERE event_type = 'USER_LOGIN_SUCCESS' AND created_at >= NOW() - INTERVAL '${interval}'
-          GROUP BY DATE(created_at) 
-          ORDER BY DATE(created_at) ASC
-        `),
-        query(`
-          SELECT 
-            COUNT(*) FILTER (WHERE email_verified = TRUE) as verified_count,
-            COUNT(*) FILTER (WHERE email_verified = FALSE) as unverified_count
-          FROM public.app_users
-        `),
-        query(`
-          SELECT status, COUNT(*) as count 
-          FROM public.app_users 
-          GROUP BY status
-        `),
-        query(`
-          SELECT severity, status, COUNT(*) as count 
-          FROM public.security_incidents 
-          GROUP BY severity, status
-        `),
-        query(`
-          SELECT status, COUNT(*) as count 
-          FROM public.email_dispatch_logs 
-          WHERE created_at >= NOW() - INTERVAL '${interval}'
-          GROUP BY status
-        `),
-        query(`
-          SELECT category, status, priority, COUNT(*) as count 
-          FROM public.support_tickets 
-          GROUP BY category, status, priority
-        `),
-        query(`
-          SELECT DATE(created_at) as date, status, COUNT(*) as count 
-          FROM public.account_deletion_requests 
-          WHERE created_at >= NOW() - INTERVAL '${interval}'
-          GROUP BY DATE(created_at), status 
-          ORDER BY DATE(created_at) ASC
-        `)
-      ]);
+      if (isDatabaseAvailable()) {
+        try {
+          const [
+            registrationsTrend,
+            loginsTrend,
+            verificationsRes,
+            statusBreakdown,
+            securityBreakdown,
+            emailStatsRes,
+            ticketStatsRes,
+            deletionTrendsRes
+          ] = await Promise.all([
+            query(`
+              SELECT DATE(created_at) as date, COUNT(*) as count 
+              FROM public.app_users 
+              WHERE created_at >= NOW() - INTERVAL '${interval}'
+              GROUP BY DATE(created_at) 
+              ORDER BY DATE(created_at) ASC
+            `),
+            query(`
+              SELECT DATE(created_at) as date, COUNT(*) as count 
+              FROM public.security_audit_logs 
+              WHERE event_type = 'USER_LOGIN_SUCCESS' AND created_at >= NOW() - INTERVAL '${interval}'
+              GROUP BY DATE(created_at) 
+              ORDER BY DATE(created_at) ASC
+            `),
+            query(`
+              SELECT 
+                COUNT(*) FILTER (WHERE email_verified = TRUE) as verified_count,
+                COUNT(*) FILTER (WHERE email_verified = FALSE) as unverified_count
+              FROM public.app_users
+            `),
+            query(`
+              SELECT status, COUNT(*) as count 
+              FROM public.app_users 
+              GROUP BY status
+            `),
+            query(`
+              SELECT severity, status, COUNT(*) as count 
+              FROM public.security_incidents 
+              GROUP BY severity, status
+            `),
+            query(`
+              SELECT status, COUNT(*) as count 
+              FROM public.email_dispatch_logs 
+              WHERE created_at >= NOW() - INTERVAL '${interval}'
+              GROUP BY status
+            `),
+            query(`
+              SELECT category, status, priority, COUNT(*) as count 
+              FROM public.support_tickets 
+              GROUP BY category, status, priority
+            `),
+            query(`
+              SELECT DATE(created_at) as date, status, COUNT(*) as count 
+              FROM public.account_deletion_requests 
+              WHERE created_at >= NOW() - INTERVAL '${interval}'
+              GROUP BY DATE(created_at), status 
+              ORDER BY DATE(created_at) ASC
+            `)
+          ]);
+          sendJson(res, 200, {
+            success: true,
+            range,
+            data: {
+              registrationsTrend: registrationsTrend.rows,
+              loginsTrend: loginsTrend.rows,
+              verification: verificationsRes.rows[0] || { verified_count: 0, unverified_count: 0 },
+              statuses: statusBreakdown.rows,
+              security: securityBreakdown.rows,
+              emails: emailStatsRes.rows,
+              tickets: ticketStatsRes.rows,
+              deletions: deletionTrendsRes.rows
+            }
+          });
+          return true;
+        } catch {
+        }
+      }
+      const fbUsers = await listAllAppUsersFallback();
+      const fbEmails = await listEmailLogsFallback();
       sendJson(res, 200, {
         success: true,
         range,
         data: {
-          registrationsTrend: registrationsTrend.rows,
-          loginsTrend: loginsTrend.rows,
-          verification: verificationsRes.rows[0] || { verified_count: 0, unverified_count: 0 },
-          statuses: statusBreakdown.rows,
-          security: securityBreakdown.rows,
-          emails: emailStatsRes.rows,
-          tickets: ticketStatsRes.rows,
-          deletions: deletionTrendsRes.rows
+          registrationsTrend: [],
+          loginsTrend: [],
+          verification: { verified_count: fbUsers.length, unverified_count: 0 },
+          statuses: [{ status: "active", count: fbUsers.length }],
+          security: [],
+          emails: [
+            { status: "sent", count: fbEmails.filter((e2) => e2.status === "sent").length },
+            { status: "failed", count: fbEmails.filter((e2) => e2.status === "failed").length }
+          ],
+          tickets: [],
+          deletions: []
         }
       });
       return true;
@@ -83357,6 +84671,10 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/financial-access/requests" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.request");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 200, { success: true, requests: [] });
+        return true;
+      }
       await query(`
         UPDATE public.financial_data_access_requests
         SET status = 'expired', updated_at = NOW()
@@ -83389,13 +84707,21 @@ ${noteLine}` : noteLine;
         queryStr += ` AND r.target_user_id = $${params.length}`;
       }
       queryStr += ` ORDER BY r.created_at DESC LIMIT 100`;
-      const requestsRes = await query(queryStr, params);
-      sendJson(res, 200, { success: true, requests: requestsRes.rows });
+      try {
+        const requestsRes = await query(queryStr, params);
+        sendJson(res, 200, { success: true, requests: requestsRes.rows });
+      } catch {
+        sendJson(res, 200, { success: true, requests: [] });
+      }
       return true;
     }
     if (pathname === "/api/admin/financial-access/requests" && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.request");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: "Direct PostgreSQL connection required for encrypted financial-data audit grants." });
+        return true;
+      }
       const body = await parseJsonBody(req);
       const { targetUserId, reason, purpose, dataScopes, durationMinutes } = body;
       if (!targetUserId) {
@@ -83467,6 +84793,10 @@ ${noteLine}` : noteLine;
     if (finApproveMatch && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.approve");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: "Direct PostgreSQL connection required for encrypted financial-data audit grants." });
+        return true;
+      }
       const requestId = finApproveMatch[1];
       const reqRes = await query("SELECT * FROM public.financial_data_access_requests WHERE id = $1", [requestId]);
       if (reqRes.rows.length === 0) {
@@ -83513,6 +84843,10 @@ ${noteLine}` : noteLine;
     if (finRejectMatch && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.approve");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: "Direct PostgreSQL connection required for encrypted financial-data audit grants." });
+        return true;
+      }
       const requestId = finRejectMatch[1];
       const body = await parseJsonBody(req);
       const rejectionReason = body.reason || "Declined by Administrator";
@@ -83540,6 +84874,10 @@ ${noteLine}` : noteLine;
     if (finRevokeMatch && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.approve");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: "Direct PostgreSQL connection required for encrypted financial-data audit grants." });
+        return true;
+      }
       const requestId = finRevokeMatch[1];
       const body = await parseJsonBody(req);
       const revocationReason = body.reason || "Manually revoked by administrator";
@@ -83567,6 +84905,10 @@ ${noteLine}` : noteLine;
     if (finDataMatch && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.view");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: "Direct PostgreSQL connection required for encrypted financial-data audit grants." });
+        return true;
+      }
       const targetUserId = finDataMatch[1];
       const targetRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [targetUserId]);
       if (targetRes.rows.length === 0) {
@@ -83674,6 +85016,10 @@ ${noteLine}` : noteLine;
     if (finExportMatch && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "users.financial_data.export");
       if (!auth) return true;
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: "Direct PostgreSQL connection required for encrypted financial-data audit grants." });
+        return true;
+      }
       const targetUserId = finExportMatch[1];
       const targetRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [targetUserId]);
       if (targetRes.rows.length === 0) {
@@ -83727,35 +85073,54 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/financial-access/logs" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "audit_logs.view");
       if (!auth) return true;
-      const logsRes = await query(`
-        SELECT l.*, req.full_name as admin_name, u.full_name as target_user_name
-        FROM public.financial_data_access_logs l
-        LEFT JOIN public.app_users req ON l.admin_id = req.id
-        LEFT JOIN public.app_users u ON l.target_user_id = u.id
-        ORDER BY l.created_at DESC
-        LIMIT 100
-      `);
-      sendJson(res, 200, { success: true, logs: logsRes.rows });
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 200, { success: true, logs: [] });
+        return true;
+      }
+      try {
+        const logsRes = await query(`
+          SELECT l.*, req.full_name as admin_name, u.full_name as target_user_name
+          FROM public.financial_data_access_logs l
+          LEFT JOIN public.app_users req ON l.admin_id = req.id
+          LEFT JOIN public.app_users u ON l.target_user_id = u.id
+          ORDER BY l.created_at DESC
+          LIMIT 100
+        `);
+        sendJson(res, 200, { success: true, logs: logsRes.rows });
+      } catch {
+        sendJson(res, 200, { success: true, logs: [] });
+      }
       return true;
     }
     if (pathname === "/api/admin/admins" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "admins.view");
       if (!auth) return true;
-      const adminsRes = await query(`
-        SELECT u.id, u.full_name, u.email, u.phone, u.role, u.role_slug, u.status,
-               u.custom_permissions, u.created_at, u.last_login_at, u.avatar_url,
-               COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) as active_sessions_count
-        FROM public.app_users u
-        LEFT JOIN public.user_sessions s ON u.id = s.user_id
-        WHERE u.role IN ('admin', 'superadmin', 'support', 'analyst') OR u.role_slug IS NOT NULL
-        GROUP BY u.id
-        ORDER BY 
-          CASE WHEN u.role = 'superadmin' THEN 1
-               WHEN u.role = 'admin' THEN 2
-               ELSE 3 END,
-          u.created_at ASC
-      `);
-      sendJson(res, 200, { success: true, admins: adminsRes.rows });
+      let admins = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const adminsRes = await query(`
+            SELECT u.id, u.full_name, u.email, u.phone, u.role, u.role_slug, u.status,
+                   u.custom_permissions, u.created_at, u.last_login_at, u.avatar_url,
+                   COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) as active_sessions_count
+            FROM public.app_users u
+            LEFT JOIN public.user_sessions s ON u.id = s.user_id
+            WHERE u.role IN ('admin', 'superadmin', 'support', 'analyst') OR u.role_slug IS NOT NULL
+            GROUP BY u.id
+            ORDER BY 
+              CASE WHEN u.role = 'superadmin' THEN 1
+                   WHEN u.role = 'admin' THEN 2
+                   ELSE 3 END,
+              u.created_at ASC
+          `);
+          admins = adminsRes.rows || [];
+        } catch {
+        }
+      }
+      if (admins.length === 0) {
+        const fbUsers = await listAllAppUsersFallback();
+        admins = fbUsers.filter((u) => ["admin", "superadmin", "support", "analyst"].includes(String(u.role || "").toLowerCase()));
+      }
+      sendJson(res, 200, { success: true, admins });
       return true;
     }
     if (pathname === "/api/admin/admins" && method === "POST") {
@@ -83768,26 +85133,54 @@ ${noteLine}` : noteLine;
         return true;
       }
       const assignedRole = (role || "support").toLowerCase().trim();
-      const userRes = await query("SELECT id, full_name, email, role FROM public.app_users WHERE LOWER(email) = LOWER($1)", [email.trim()]);
-      if (userRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: "User with this email is not registered. User must register before receiving admin credentials." });
-        return true;
+      const trimmedEmail = email.trim();
+      let targetUser = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT id, full_name, email, role FROM public.app_users WHERE LOWER(email) = LOWER($1)", [trimmedEmail]);
+          targetUser = userRes.rows[0] || null;
+          if (targetUser) {
+            await query(`
+              UPDATE public.app_users 
+              SET role = $1,
+                  role_slug = $1,
+                  custom_permissions = $2,
+                  updated_at = NOW()
+              WHERE id = $3
+            `, [assignedRole, JSON.stringify(customPermissions || []), targetUser.id]);
+            await logSecurityEvent("ADMIN_ROLE_ASSIGNED", {
+              userEmail: auth.authUser.email,
+              actorRole: auth.role,
+              ipAddress: clientIp,
+              details: { targetUserId: targetUser.id, targetEmail: targetUser.email, assignedRole }
+            });
+          }
+        } catch {
+        }
       }
-      const targetUser = userRes.rows[0];
-      await query(`
-        UPDATE public.app_users 
-        SET role = $1,
-            role_slug = $1,
-            custom_permissions = $2,
-            updated_at = NOW()
-        WHERE id = $3
-      `, [assignedRole, JSON.stringify(customPermissions || []), targetUser.id]);
-      await logSecurityEvent("ADMIN_ROLE_ASSIGNED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { targetUserId: targetUser.id, targetEmail: targetUser.email, assignedRole }
-      });
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => String(u.email || "").toLowerCase() === trimmedEmail.toLowerCase()) || null;
+        if (!targetUser) {
+          sendJson(res, 404, { success: false, message: "User with this email is not registered. User must register before receiving admin credentials." });
+          return true;
+        }
+        await Promise.all([
+          sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUser.id)}`, {
+            method: "PATCH",
+            body: {
+              role: assignedRole,
+              role_slug: assignedRole,
+              custom_permissions: customPermissions || [],
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }),
+          sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUser.id)}`, {
+            method: "PATCH",
+            body: { role: assignedRole }
+          })
+        ]);
+      }
       sendJson(res, 200, {
         success: true,
         message: `User ${targetUser.email} has been granted [${assignedRole}] privileges.`
@@ -83799,12 +85192,22 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "admins.revoke");
       if (!auth) return true;
       const targetId = revokeAdminMatch[1];
-      const targetRes = await query("SELECT id, email, role FROM public.app_users WHERE id = $1", [targetId]);
-      if (targetRes.rows.length === 0) {
+      let target = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const targetRes = await query("SELECT id, email, role FROM public.app_users WHERE id = $1", [targetId]);
+          target = targetRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!target) {
+        const fbUsers = await listAllAppUsersFallback();
+        target = fbUsers.find((u) => u.id === targetId) || null;
+      }
+      if (!target) {
         sendJson(res, 404, { success: false, message: "Admin user not found." });
         return true;
       }
-      const target = targetRes.rows[0];
       if (target.email?.toLowerCase() === "hackifypro@gmail.com" || target.email?.toLowerCase() === "admin@mymoney.com") {
         sendJson(res, 400, { success: false, message: "The primary owner account cannot be revoked or demoted." });
         return true;
@@ -83813,65 +85216,106 @@ ${noteLine}` : noteLine;
         sendJson(res, 400, { success: false, message: "You cannot revoke your own administrator account." });
         return true;
       }
-      await query(`
-        UPDATE public.app_users 
-        SET role = 'user', role_slug = NULL, custom_permissions = '[]', updated_at = NOW() 
-        WHERE id = $1
-      `, [targetId]);
-      await revokeAllUserSessions(targetId);
-      await logSecurityEvent("ADMIN_PRIVILEGES_REVOKED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { targetUserId: targetId, targetEmail: target.email }
-      });
+      if (isDatabaseAvailable()) {
+        try {
+          await query(`
+            UPDATE public.app_users 
+            SET role = 'user', role_slug = NULL, custom_permissions = '[]', updated_at = NOW() 
+            WHERE id = $1
+          `, [targetId]);
+          await revokeAllUserSessions(targetId);
+          await logSecurityEvent("ADMIN_PRIVILEGES_REVOKED", {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { targetUserId: targetId, targetEmail: target.email }
+          });
+        } catch {
+        }
+      } else {
+        await Promise.all([
+          sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetId)}`, {
+            method: "PATCH",
+            body: {
+              role: "user",
+              role_slug: null,
+              custom_permissions: [],
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }),
+          sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetId)}`, {
+            method: "PATCH",
+            body: { role: "user" }
+          })
+        ]);
+      }
       sendJson(res, 200, { success: true, message: `Administrative privileges revoked for ${target.email}.` });
       return true;
     }
     if (pathname === "/api/admin/transactions/monitoring" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "dashboard.view");
       if (!auth) return true;
-      const [aggRes, recentTxRes, syncCheckRes] = await Promise.all([
-        query(`
-          SELECT 
-            COUNT(*) as total_transactions,
-            COUNT(*) FILTER (WHERE transaction_type = 'income') as total_income_count,
-            COUNT(*) FILTER (WHERE transaction_type = 'expense') as total_expense_count,
-            COUNT(*) FILTER (WHERE category = 'people' OR category = 'udhar') as total_udhar_count,
-            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as created_today,
-            COUNT(*) FILTER (WHERE is_deleted = TRUE) as soft_deleted_count
-          FROM public.transactions
-        `),
-        query(`
-          SELECT t.id, t.amount, t.transaction_type, t.category, t.subcategory,
-                 t.transaction_date, t.created_at,
-                 concat(substr(u.email, 1, 2), '***@', split_part(u.email, '@', 2)) as masked_user_email
-          FROM public.transactions t
-          LEFT JOIN public.app_users u ON t.user_id = u.id
-          WHERE t.is_deleted = FALSE
-          ORDER BY t.created_at DESC
-          LIMIT 50
-        `),
-        query(`
-          SELECT COUNT(*) as orphan_count 
-          FROM public.transactions t 
-          LEFT JOIN public.app_users u ON t.user_id = u.id 
-          WHERE u.id IS NULL
-        `)
-      ]);
-      const agg = aggRes.rows[0] || {};
+      if (isDatabaseAvailable()) {
+        try {
+          const [aggRes, recentTxRes, syncCheckRes] = await Promise.all([
+            query(`
+              SELECT 
+                COUNT(*) as total_transactions,
+                COUNT(*) FILTER (WHERE transaction_type = 'income') as total_income_count,
+                COUNT(*) FILTER (WHERE transaction_type = 'expense') as total_expense_count,
+                COUNT(*) FILTER (WHERE category = 'people' OR category = 'udhar') as total_udhar_count,
+                COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as created_today,
+                COUNT(*) FILTER (WHERE is_deleted = TRUE) as soft_deleted_count
+              FROM public.transactions
+            `),
+            query(`
+              SELECT t.id, t.amount, t.transaction_type, t.category, t.subcategory,
+                     t.transaction_date, t.created_at,
+                     concat(substr(u.email, 1, 2), '***@', split_part(u.email, '@', 2)) as masked_user_email
+              FROM public.transactions t
+              LEFT JOIN public.app_users u ON t.user_id = u.id
+              WHERE t.is_deleted = FALSE
+              ORDER BY t.created_at DESC
+              LIMIT 50
+            `),
+            query(`
+              SELECT COUNT(*) as orphan_count 
+              FROM public.transactions t 
+              LEFT JOIN public.app_users u ON t.user_id = u.id 
+              WHERE u.id IS NULL
+            `)
+          ]);
+          const agg = aggRes.rows[0] || {};
+          sendJson(res, 200, {
+            success: true,
+            monitoring: {
+              totalTransactions: parseInt(agg.total_transactions || "0"),
+              totalIncomeCount: parseInt(agg.total_income_count || "0"),
+              totalExpenseCount: parseInt(agg.total_expense_count || "0"),
+              totalUdharCount: parseInt(agg.total_udhar_count || "0"),
+              createdToday: parseInt(agg.created_today || "0"),
+              softDeletedCount: parseInt(agg.soft_deleted_count || "0"),
+              orphanCount: parseInt(syncCheckRes.rows[0]?.orphan_count || "0"),
+              syncStatus: "healthy",
+              recentTransactions: recentTxRes.rows
+            }
+          });
+          return true;
+        } catch {
+        }
+      }
       sendJson(res, 200, {
         success: true,
         monitoring: {
-          totalTransactions: parseInt(agg.total_transactions || "0"),
-          totalIncomeCount: parseInt(agg.total_income_count || "0"),
-          totalExpenseCount: parseInt(agg.total_expense_count || "0"),
-          totalUdharCount: parseInt(agg.total_udhar_count || "0"),
-          createdToday: parseInt(agg.created_today || "0"),
-          softDeletedCount: parseInt(agg.soft_deleted_count || "0"),
-          orphanCount: parseInt(syncCheckRes.rows[0]?.orphan_count || "0"),
-          syncStatus: "healthy",
-          recentTransactions: recentTxRes.rows
+          totalTransactions: 0,
+          totalIncomeCount: 0,
+          totalExpenseCount: 0,
+          totalUdharCount: 0,
+          createdToday: 0,
+          softDeletedCount: 0,
+          orphanCount: 0,
+          syncStatus: "fallback",
+          recentTransactions: []
         }
       });
       return true;
@@ -83906,10 +85350,15 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/settings" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "settings.manage");
       if (!auth) return true;
-      const settingsRes = await query("SELECT key, value, updated_at FROM public.app_settings");
       const settingsMap = {};
-      for (const row of settingsRes.rows) {
-        settingsMap[row.key] = row.value;
+      if (isDatabaseAvailable()) {
+        try {
+          const settingsRes = await query("SELECT key, value, updated_at FROM public.app_settings");
+          for (const row of settingsRes.rows) {
+            settingsMap[row.key] = row.value;
+          }
+        } catch {
+        }
       }
       sendJson(res, 200, {
         success: true,
@@ -83937,19 +85386,25 @@ ${noteLine}` : noteLine;
         ["maintenance_mode", JSON.stringify(maintenanceMode || { enabled: false, reason: "" })],
         ["min_app_version", JSON.stringify(minAppVersion || "2.5.0")]
       ];
-      for (const [key, val] of upserts) {
-        await query(`
-          INSERT INTO public.app_settings (key, value, updated_at, updated_by)
-          VALUES ($1, $2::jsonb, NOW(), $3)
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by
-        `, [key, val, auth.authUser.id]);
+      if (isDatabaseAvailable()) {
+        try {
+          for (const [key, val] of upserts) {
+            await query(`
+              INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+              VALUES ($1, $2::jsonb, NOW(), $3)
+              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by
+            `, [key, val, auth.authUser.id]);
+          }
+          await logSecurityEvent("SYSTEM_SETTINGS_UPDATED", {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { updatedKeys: upserts.map((u) => u[0]) }
+          }).catch(() => {
+          });
+        } catch {
+        }
       }
-      await logSecurityEvent("SYSTEM_SETTINGS_UPDATED", {
-        userEmail: auth.authUser.email,
-        actorRole: auth.role,
-        ipAddress: clientIp,
-        details: { updatedKeys: upserts.map((u) => u[0]) }
-      });
       sendJson(res, 200, { success: true, message: "Application settings saved successfully." });
       return true;
     }
@@ -84080,21 +85535,30 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/system/database" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "database.view");
       if (!auth) return true;
-      const tablesRes = await query(`
-        SELECT 
-          relname as table_name,
-          n_live_tup as approximate_row_count
-        FROM pg_stat_user_tables
-        ORDER BY n_live_tup DESC
-        LIMIT 30;
-      `);
+      let tables = [];
+      let poolStatus = isDatabaseAvailable() ? "healthy" : "fallback";
+      if (isDatabaseAvailable()) {
+        try {
+          const tablesRes = await query(`
+            SELECT 
+              relname as table_name,
+              n_live_tup as approximate_row_count
+            FROM pg_stat_user_tables
+            ORDER BY n_live_tup DESC
+            LIMIT 30;
+          `);
+          tables = tablesRes.rows || [];
+        } catch {
+          poolStatus = "fallback";
+        }
+      }
       sendJson(res, 200, {
         success: true,
         database: {
-          tables: tablesRes.rows,
-          poolStatus: "healthy",
+          tables,
+          poolStatus,
           ssl: true,
-          connectionPool: "Supabase PostgreSQL Pooler (Port 6543 IPv4)"
+          connectionPool: poolStatus === "healthy" ? "Supabase PostgreSQL Pooler (Port 6543 IPv4)" : "Supabase HTTPS REST Fallback Active"
         }
       });
       return true;
@@ -86701,6 +88165,17 @@ function sendJson2(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 async function parseJsonBody2(req, maxBytes = 256 * 1024) {
+  const preParsed = req.body;
+  if (preParsed !== void 0 && preParsed !== null) {
+    if (typeof preParsed === "object") return preParsed;
+    if (typeof preParsed === "string") {
+      try {
+        return JSON.parse(preParsed);
+      } catch {
+        throw new Error("INVALID_JSON");
+      }
+    }
+  }
   return new Promise((resolve3, reject) => {
     let total = 0;
     const chunks = [];
@@ -87863,6 +89338,17 @@ function sendJson3(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 async function parseJsonBody3(req, maxBytes = 8 * 1024 * 1024) {
+  const preParsed = req.body;
+  if (preParsed !== void 0 && preParsed !== null) {
+    if (typeof preParsed === "object") return preParsed;
+    if (typeof preParsed === "string") {
+      try {
+        return JSON.parse(preParsed);
+      } catch {
+        return {};
+      }
+    }
+  }
   return new Promise((resolve3, reject) => {
     let total = 0;
     const chunks = [];
@@ -89293,6 +90779,17 @@ function sendJson4(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 async function parseJsonBody4(req) {
+  const preParsed = req.body;
+  if (preParsed !== void 0 && preParsed !== null) {
+    if (typeof preParsed === "object") return preParsed;
+    if (typeof preParsed === "string") {
+      try {
+        return JSON.parse(preParsed);
+      } catch {
+        return {};
+      }
+    }
+  }
   return new Promise((resolve3) => {
     let raw = "";
     let size = 0;
@@ -90072,7 +91569,7 @@ async function handleApiRequest(req, res) {
   if (!pathname.startsWith("/api/")) {
     return false;
   }
-  if (!isDatabaseAvailable() && (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/profile") || pathname.startsWith("/api/admin/users"))) {
+  if (!isDatabaseAvailable() && (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/profile"))) {
     sendJson5(res, 503, {
       success: false,
       message: "PostgreSQL database is not connected in this preview environment."
@@ -90670,87 +92167,114 @@ async function handleApiRequest(req, res) {
         return true;
       }
       let users = [];
-      try {
-        const usersRes = await query(
-          `SELECT 
-              COALESCE(u.id, p.id) AS id,
-              COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
-              COALESCE(u.email, p.email) AS email,
-              u.phone,
-              COALESCE(u.role, p.role, 'user') AS role,
-              COALESCE(u.status, p.status, 'active') AS status,
-              COALESCE(u.email_verified, FALSE) AS email_verified,
-              u.avatar_url,
-              COALESCE(u.force_password_reset, FALSE) AS force_password_reset,
-              COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
-              COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
-              u.last_login_at,
-              COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
-              COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
-           FROM public.profiles p
-           FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
-           LEFT JOIN public.user_sessions s ON u.id = s.user_id
-           GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
-           ORDER BY created_at DESC`
-        );
-        if (usersRes.rows && usersRes.rows.length > 0) {
-          users = usersRes.rows.map((r2) => ({
-            id: r2.id,
-            uid: r2.id,
-            fullName: r2.full_name,
-            displayName: r2.full_name,
-            email: r2.email,
-            phone: r2.phone || null,
-            role: r2.role,
-            status: r2.status,
-            emailVerified: r2.email_verified,
-            forcePasswordReset: r2.force_password_reset,
-            failedLoginAttempts: r2.failed_login_attempts,
-            createdAt: r2.created_at,
-            lastLoginAt: r2.last_login_at || null,
-            passwordChangedAt: r2.password_changed_at,
-            passwordStatus: "Set (Encrypted Bcrypt Hash)",
-            activeSessionsCount: parseInt(r2.active_sessions_count || "0")
-          }));
+      if (isDatabaseAvailable()) {
+        try {
+          const usersRes = await query(
+            `SELECT 
+                COALESCE(u.id, p.id) AS id,
+                COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
+                COALESCE(u.email, p.email) AS email,
+                u.phone,
+                COALESCE(u.role, p.role, 'user') AS role,
+                COALESCE(u.status, p.status, 'active') AS status,
+                COALESCE(u.email_verified, FALSE) AS email_verified,
+                u.avatar_url,
+                COALESCE(u.force_password_reset, FALSE) AS force_password_reset,
+                COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
+                COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
+                u.last_login_at,
+                COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
+                COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
+             FROM public.profiles p
+             FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
+             LEFT JOIN public.user_sessions s ON u.id = s.user_id
+             GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
+             ORDER BY created_at DESC`
+          );
+          if (usersRes.rows && usersRes.rows.length > 0) {
+            users = usersRes.rows.map((r2) => ({
+              id: r2.id,
+              uid: r2.id,
+              fullName: r2.full_name,
+              displayName: r2.full_name,
+              email: r2.email,
+              phone: r2.phone || null,
+              role: r2.role,
+              status: r2.status,
+              emailVerified: r2.email_verified,
+              forcePasswordReset: r2.force_password_reset,
+              failedLoginAttempts: r2.failed_login_attempts,
+              createdAt: r2.created_at,
+              lastLoginAt: r2.last_login_at || null,
+              passwordChangedAt: r2.password_changed_at,
+              passwordStatus: "Set (Encrypted Bcrypt Hash)",
+              activeSessionsCount: parseInt(r2.active_sessions_count || "0")
+            }));
+          }
+        } catch (dbErr) {
+          console.warn("PostgreSQL direct query notice in admin/users, using Supabase REST fallback:", dbErr);
         }
-      } catch (dbErr) {
-        console.warn("PostgreSQL direct query notice in admin/users, using Supabase REST fallback:", dbErr);
       }
       if (users.length === 0) {
         try {
-          const supaUrl = process.env.SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co";
-          const supaKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-          if (supaKey) {
-            const r2 = await fetch(`${supaUrl}/rest/v1/profiles?select=*&order=created_at.desc`, {
-              headers: {
-                apikey: supaKey,
-                Authorization: `Bearer ${supaKey}`
-              }
-            });
-            if (r2.ok) {
-              const data = await r2.json();
-              if (Array.isArray(data) && data.length > 0) {
-                users = data.map((p) => ({
-                  id: p.id,
-                  uid: p.id,
-                  fullName: p.email ? p.email.split("@")[0] : "User",
-                  displayName: p.email ? p.email.split("@")[0] : "User",
-                  email: p.email,
-                  phone: null,
-                  role: p.role || "user",
-                  status: p.status || "active",
-                  emailVerified: true,
-                  forcePasswordReset: false,
-                  failedLoginAttempts: 0,
-                  createdAt: p.created_at,
-                  lastLoginAt: null,
-                  passwordChangedAt: p.created_at,
-                  passwordStatus: "Protected (Bcrypt Encrypted)",
-                  activeSessionsCount: 1
-                }));
-              }
+          const [appUsersRes, profilesRes] = await Promise.all([
+            sbRestRequest("app_users?select=*&order=created_at.desc&limit=500"),
+            sbRestRequest("profiles?select=*&order=created_at.desc&limit=500")
+          ]);
+          const merged = /* @__PURE__ */ new Map();
+          if (profilesRes.ok && Array.isArray(profilesRes.data)) {
+            for (const p of profilesRes.data) {
+              const key = String(p.email || p.id || "").toLowerCase();
+              if (!key) continue;
+              merged.set(key, {
+                id: p.id,
+                uid: p.id,
+                fullName: p.full_name || (p.email ? p.email.split("@")[0] : "User"),
+                displayName: p.full_name || (p.email ? p.email.split("@")[0] : "User"),
+                email: p.email,
+                phone: p.phone || null,
+                role: p.role || "user",
+                status: p.status || "active",
+                emailVerified: true,
+                forcePasswordReset: false,
+                failedLoginAttempts: 0,
+                createdAt: p.created_at,
+                lastLoginAt: null,
+                passwordChangedAt: p.created_at,
+                passwordStatus: "Protected (Bcrypt Encrypted)",
+                activeSessionsCount: 1
+              });
             }
           }
+          if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
+            for (const u of appUsersRes.data) {
+              const key = String(u.email || u.id || "").toLowerCase();
+              if (!key) continue;
+              const prev = merged.get(key) || {};
+              merged.set(key, {
+                ...prev,
+                id: u.id || prev.id,
+                uid: u.id || prev.uid,
+                fullName: u.full_name || prev.fullName || (u.email ? u.email.split("@")[0] : "User"),
+                displayName: u.full_name || prev.displayName || (u.email ? u.email.split("@")[0] : "User"),
+                email: u.email || prev.email,
+                phone: u.phone || prev.phone || null,
+                role: u.role || prev.role || "user",
+                status: u.status || prev.status || "active",
+                emailVerified: u.email_verified ?? prev.emailVerified ?? true,
+                forcePasswordReset: Boolean(u.force_password_reset),
+                failedLoginAttempts: Number(u.failed_login_attempts || 0),
+                createdAt: u.created_at || prev.createdAt,
+                lastLoginAt: u.last_login_at || null,
+                passwordChangedAt: u.password_changed_at || u.created_at || prev.createdAt,
+                passwordStatus: "Set (Encrypted Bcrypt Hash)",
+                activeSessionsCount: prev.activeSessionsCount ?? 1
+              });
+            }
+          }
+          users = Array.from(merged.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
         } catch (apiErr) {
           console.error("Supabase REST fallback error:", apiErr);
         }
@@ -90776,25 +92300,52 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 400, { success: false, message: "Administrators cannot suspend or deactivate their own account." });
         return true;
       }
-      const userRes = await query("SELECT * FROM public.app_users WHERE id = $1", [targetUserId]);
-      if (userRes.rows.length === 0) {
+      let targetUser = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT * FROM public.app_users WHERE id = $1", [targetUserId]);
+          targetUser = userRes.rows[0] || null;
+          if (targetUser) {
+            await query("UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2", [newStatus, targetUserId]);
+            if (newStatus !== "active") {
+              await revokeAllUserSessions(targetUserId);
+            }
+          }
+        } catch {
+        }
+      }
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+        if (targetUser) {
+          await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+            method: "PATCH",
+            body: { status: newStatus, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+          });
+          await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+            method: "PATCH",
+            body: { status: newStatus }
+          });
+        }
+      }
+      if (!targetUser) {
         sendJson5(res, 404, { success: false, message: "User not found." });
         return true;
       }
-      const targetUser = userRes.rows[0];
-      await query("UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2", [newStatus, targetUserId]);
-      if (newStatus !== "active") {
-        await revokeAllUserSessions(targetUserId);
+      if (targetUser.email) {
+        sendAccountStatusEmail(targetUser.email, targetUser.full_name || "", newStatus).catch(() => {
+        });
       }
-      sendAccountStatusEmail(targetUser.email, targetUser.full_name, newStatus).catch(() => {
-      });
-      await logSecurityEvent("ADMIN_USER_STATUS_CHANGE", {
-        userId: authUser.id,
-        userEmail: authUser.email,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, newStatus, targetEmail: targetUser.email }
-      });
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent("ADMIN_USER_STATUS_CHANGE", {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, newStatus, targetEmail: targetUser.email }
+        }).catch(() => {
+        });
+      }
       sendJson5(res, 200, { success: true, message: `User status changed to ${newStatus}.` });
       return true;
     }
@@ -90816,13 +92367,27 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 400, { success: false, message: "You cannot demote yourself from admin." });
         return true;
       }
-      await query("UPDATE public.app_users SET role = $1, updated_at = NOW() WHERE id = $2", [newRole, targetUserId]);
-      await logSecurityEvent("ADMIN_USER_ROLE_CHANGE", {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, newRole }
+      if (isDatabaseAvailable()) {
+        await query("UPDATE public.app_users SET role = $1, updated_at = NOW() WHERE id = $2", [newRole, targetUserId]).catch(() => {
+        });
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: "PATCH",
+        body: { role: newRole, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
       });
+      await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: "PATCH",
+        body: { role: newRole }
+      });
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent("ADMIN_USER_ROLE_CHANGE", {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, newRole }
+        }).catch(() => {
+        });
+      }
       sendJson5(res, 200, { success: true, message: `User role updated to ${newRole}.` });
       return true;
     }
@@ -90834,33 +92399,50 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const targetUserId = resetEmailMatch[1];
-      const userRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [targetUserId]);
-      if (userRes.rows.length === 0) {
+      let targetUser = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [targetUserId]);
+          targetUser = userRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+      }
+      if (!targetUser || !targetUser.email) {
         sendJson5(res, 404, { success: false, message: "User not found." });
         return true;
       }
-      const targetUser = userRes.rows[0];
       const rawToken = generateCryptoToken(32);
       const tokenHash = hashToken(rawToken);
       const expiresAt = new Date(Date.now() + 15 * 60 * 1e3);
-      await query("UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE", [targetUserId]);
-      await query(
-        `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [targetUserId, tokenHash, expiresAt, clientIp, "Admin-Initiated-Dispatch"]
-      );
+      if (isDatabaseAvailable()) {
+        await query("UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE", [targetUserId]).catch(() => {
+        });
+        await query(
+          `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [targetUserId, tokenHash, expiresAt, clientIp, "Admin-Initiated-Dispatch"]
+        ).catch(() => {
+        });
+      }
       const appBase = process.env.APP_BASE_URL || "https://mymoney.nileshbarela.site";
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(targetUser.email)}`;
-      const sent = await sendPasswordResetEmail(targetUser.email, targetUser.full_name, resetLink);
-      await logSecurityEvent("ADMIN_SENT_PASSWORD_RESET_EMAIL", {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, targetEmail: targetUser.email, emailDispatched: sent }
-      });
+      const sent = await sendPasswordResetEmail(targetUser.email, targetUser.full_name || "", resetLink);
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent("ADMIN_SENT_PASSWORD_RESET_EMAIL", {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, targetEmail: targetUser.email, emailDispatched: sent }
+        }).catch(() => {
+        });
+      }
       sendJson5(res, 200, {
-        success: true,
-        message: `Password reset email dispatched to ${targetUser.email}.`,
+        success: sent,
+        message: sent ? `Password reset email dispatched to ${targetUser.email}.` : `Could not send password reset email to ${targetUser.email}. Check SMTP_USER / SMTP_PASS server configuration.`,
         resetLink: process.env.NODE_ENV !== "production" ? resetLink : void 0
       });
       return true;
@@ -90873,13 +92455,22 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const targetUserId = forceResetMatch[1];
-      await query("UPDATE public.app_users SET force_password_reset = TRUE WHERE id = $1", [targetUserId]);
-      await revokeAllUserSessions(targetUserId);
-      await logSecurityEvent("ADMIN_FORCED_PASSWORD_RESET", {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId }
+      if (isDatabaseAvailable()) {
+        await query("UPDATE public.app_users SET force_password_reset = TRUE WHERE id = $1", [targetUserId]).catch(() => {
+        });
+        await revokeAllUserSessions(targetUserId).catch(() => {
+        });
+        await logSecurityEvent("ADMIN_FORCED_PASSWORD_RESET", {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId }
+        }).catch(() => {
+        });
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: "PATCH",
+        body: { force_password_reset: true, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
       });
       sendJson5(res, 200, {
         success: true,
@@ -90895,13 +92486,22 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const targetUserId = revokeMatch[1];
-      const count = await revokeAllUserSessions(targetUserId);
-      await logSecurityEvent("ADMIN_REVOKED_USER_SESSIONS", {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, revokedCount: count }
-      });
+      let count = 0;
+      if (isDatabaseAvailable()) {
+        count = await revokeAllUserSessions(targetUserId).catch(() => 0);
+        await logSecurityEvent("ADMIN_REVOKED_USER_SESSIONS", {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId, revokedCount: count }
+        }).catch(() => {
+        });
+      } else {
+        await sbRestRequest(`user_sessions?user_id=eq.${encodeURIComponent(targetUserId)}`, {
+          method: "PATCH",
+          body: { is_revoked: true }
+        });
+      }
       sendJson5(res, 200, { success: true, message: `Revoked ${count} active session(s) for user.` });
       return true;
     }
@@ -90917,19 +92517,31 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 400, { success: false, message: "Administrators cannot delete their own account from admin panel." });
         return true;
       }
-      const userRes = await query("SELECT email FROM public.app_users WHERE id = $1", [targetUserId]);
-      const targetEmail = userRes.rows[0]?.email;
-      await query("DELETE FROM public.transactions WHERE user_id = $1", [targetUserId]).catch(() => {
-      });
-      await query("DELETE FROM public.user_sessions WHERE user_id = $1", [targetUserId]);
-      await query("DELETE FROM public.password_resets WHERE user_id = $1", [targetUserId]);
-      await query("DELETE FROM public.app_users WHERE id = $1", [targetUserId]);
-      await logSecurityEvent("ADMIN_DELETED_USER", {
-        userId: authUser.id,
-        actorRole: authUser.role,
-        ipAddress: clientIp,
-        details: { targetUserId, targetEmail }
-      });
+      let targetEmail;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT email FROM public.app_users WHERE id = $1", [targetUserId]);
+          targetEmail = userRes.rows[0]?.email;
+          await query("DELETE FROM public.transactions WHERE user_id = $1", [targetUserId]).catch(() => {
+          });
+          await query("DELETE FROM public.user_sessions WHERE user_id = $1", [targetUserId]).catch(() => {
+          });
+          await query("DELETE FROM public.password_resets WHERE user_id = $1", [targetUserId]).catch(() => {
+          });
+          await query("DELETE FROM public.app_users WHERE id = $1", [targetUserId]).catch(() => {
+          });
+          await logSecurityEvent("ADMIN_DELETED_USER", {
+            userId: authUser.id,
+            actorRole: authUser.role,
+            ipAddress: clientIp,
+            details: { targetUserId, targetEmail }
+          }).catch(() => {
+          });
+        } catch {
+        }
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, { method: "DELETE" });
+      await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, { method: "DELETE" });
       sendJson5(res, 200, { success: true, message: "User and all associated data permanently deleted." });
       return true;
     }

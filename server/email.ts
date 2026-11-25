@@ -2,8 +2,9 @@ import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
 import { APP_CONFIG } from './config.js';
-import { query } from './db.js';
+import { query, isDatabaseAvailable } from './db.js';
 import { logSecurityEvent } from './security.js';
+import { recordEmailLogFallback } from './supabaseRestFallback.js';
 import { generateWelcomeEmail } from './welcomeEmailTemplate.js';
 import {
   generateFeedbackReceivedEmail,
@@ -35,6 +36,8 @@ interface EmailOptions {
   html: string;
   text: string;
   attachments?: any[];
+  emailType?: string;
+  recipientName?: string;
 }
 
 /**
@@ -67,6 +70,86 @@ export async function sendEmail(opts: EmailOptions): Promise<boolean> {
   } catch (err: any) {
     console.error(`[Email Failed] To: ${opts.to} - Error:`, sanitizeErrorMessage(err));
     return false;
+  }
+}
+
+/**
+ * Sends an admin test or retry email with real SMTP diagnostics & dispatch log recording.
+ */
+export async function sendAdminTestEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  recipientName?: string;
+  emailType?: string;
+}): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  const recipient = (opts.to || '').trim();
+  const subject = (opts.subject || 'Test Email from My Money Manager Admin').trim();
+  const emailType = opts.emailType || 'admin_test';
+  const recipientName = opts.recipientName || 'Administrator';
+
+  if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    return { success: false, error: 'Please enter a valid recipient email address.' };
+  }
+
+  const recordLog = async (status: 'sent' | 'failed', lastError: string | null) => {
+    if (isDatabaseAvailable()) {
+      try {
+        await query(
+          `INSERT INTO public.email_dispatch_logs (
+            email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, trigger_event, sent_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, 1, 3, $7, $8, ${status === 'sent' ? 'NOW()' : 'NULL'})`,
+          [
+            recipient,
+            emailType,
+            `${emailType}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+            recipientName,
+            subject,
+            status,
+            lastError,
+            emailType,
+          ]
+        );
+      } catch {
+        // Record in fallback store below
+      }
+    }
+    await recordEmailLogFallback({
+      email: recipient,
+      email_type: emailType,
+      recipient_name: recipientName,
+      subject,
+      status,
+      attempts: 1,
+      last_error: lastError,
+      trigger_event: emailType,
+    }).catch(() => {});
+  };
+
+  if (!APP_CONFIG.smtp.pass || !APP_CONFIG.smtp.user) {
+    const errMsg =
+      'SMTP_PASS is not configured on the server. Add SMTP_USER and SMTP_PASS in Settings > Secrets or Vercel Environment Variables.';
+    await recordLog('failed', errMsg);
+    return { success: false, error: errMsg };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: APP_CONFIG.smtp.from,
+      to: recipient,
+      subject,
+      html: opts.html,
+      text: opts.text || 'This is a live test transmission from My Money Manager Admin Control Center.',
+    });
+    await recordLog('sent', null);
+    console.log(`[Admin Email Sent] MessageId: ${info.messageId} to ${recipient}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err: any) {
+    const safeErr = sanitizeErrorMessage(err);
+    await recordLog('failed', safeErr);
+    console.error(`[Admin Email Failed] To: ${recipient} - Error:`, safeErr);
+    return { success: false, error: safeErr };
   }
 }
 
