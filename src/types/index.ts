@@ -177,6 +177,8 @@ export interface AppBrandingSettings {
   brandTitle?: string;
   companyName?: string;
   footerText?: string;
+  supportEmail?: string;
+  supportPhone?: string;
   showBrandingBadge?: boolean;
 }
 

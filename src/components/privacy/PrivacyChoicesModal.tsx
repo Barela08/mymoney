@@ -363,83 +363,6 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
               </div>
             )}
 
-            {/* PART 2: SELECT ALL OPTIONAL */}
-            <div
-              className={`rounded-2xl border p-3.5 sm:p-4 transition-colors ${
-                selectAllState === 'checked'
-                  ? 'border-emerald-500/60 bg-emerald-50/50 dark:bg-emerald-950/25'
-                  : selectAllState === 'indeterminate'
-                  ? 'border-emerald-400/50 bg-slate-50 dark:bg-slate-800/50'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <label className="flex items-start gap-3 cursor-pointer select-none flex-1 min-w-0">
-                  <span className="relative flex items-center justify-center mt-0.5 shrink-0">
-                    <input
-                      ref={selectAllCheckboxRef}
-                      type="checkbox"
-                      checked={selectAllState === 'checked'}
-                      aria-checked={
-                        selectAllState === 'indeterminate'
-                          ? 'mixed'
-                          : selectAllState === 'checked'
-                      }
-                      onChange={handleToggleSelectAll}
-                      data-testid="select-all-optional-checkbox"
-                      className="peer sr-only"
-                    />
-                    <span
-                      aria-hidden="true"
-                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-600 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 ${
-                        selectAllState === 'checked' || selectAllState === 'indeterminate'
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600'
-                      }`}
-                    >
-                      {selectAllState === 'checked' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      {selectAllState === 'indeterminate' && (
-                        <Minus className="w-3.5 h-3.5 stroke-[3]" />
-                      )}
-                    </span>
-                  </span>
-
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                        {copy.selectAllTitle}
-                      </span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                        · {copy.selectedCountLabel(selectedCount, OPTIONAL_CONSENT_CATEGORIES.length)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                      {selectAllState === 'indeterminate'
-                        ? copy.selectAllPartial
-                        : selectAllState === 'checked'
-                        ? copy.selectAllSelected
-                        : copy.selectAllDescription}
-                    </p>
-                  </div>
-                </label>
-
-                {selectedCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleDeselectAll}
-                    data-testid="deselect-all-optional-btn"
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-700 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                  >
-                    {copy.deselectAll}
-                  </button>
-                )}
-              </div>
-
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 pl-8">
-                {copy.selectAllHint}
-              </p>
-            </div>
-
             {/* PART 3: INDIVIDUAL OPTIONAL CONSENT CATEGORIES */}
             <div className="space-y-2.5" role="group" aria-label="Optional privacy categories">
               {OPTIONAL_CONSENT_DEFINITIONS.map((def) => {
@@ -672,19 +595,77 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
               </div>
             )}
 
+            {/* PART 2 + PART 7: SELECT ALL OPTIONAL BESIDE SAVE MY CHOICES */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex flex-col items-start gap-1 order-2 sm:order-1">
-                <button
-                  type="button"
-                  onClick={() => setIsNoticeOpen(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 rounded"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>{copy.privacyNoticeLink}</span>
-                </button>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {copy.footerMeta} · {PRIVACY_POLICY_VERSION}
-                </span>
+              {/* Select All Optional control directly beside Save My Choices */}
+              <div
+                className={`flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl border transition-colors flex-1 min-w-0 ${
+                  selectAllState === 'checked'
+                    ? 'border-emerald-500/60 bg-emerald-50/60 dark:bg-emerald-950/25'
+                    : selectAllState === 'indeterminate'
+                    ? 'border-emerald-400/50 bg-slate-50 dark:bg-slate-800/60'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40'
+                }`}
+              >
+                <label className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1">
+                  <span className="relative flex items-center justify-center shrink-0">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      checked={selectAllState === 'checked'}
+                      aria-checked={
+                        selectAllState === 'indeterminate'
+                          ? 'mixed'
+                          : selectAllState === 'checked'
+                      }
+                      onChange={handleToggleSelectAll}
+                      data-testid="select-all-optional-checkbox"
+                      className="peer sr-only"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-600 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 ${
+                        selectAllState === 'checked' || selectAllState === 'indeterminate'
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600'
+                      }`}
+                    >
+                      {selectAllState === 'checked' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      {selectAllState === 'indeterminate' && (
+                        <Minus className="w-3.5 h-3.5 stroke-[3]" />
+                      )}
+                    </span>
+                  </span>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                        {copy.selectAllTitle}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                        ({selectedCount}/{OPTIONAL_CONSENT_CATEGORIES.length})
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {selectAllState === 'indeterminate'
+                        ? copy.selectAllPartial
+                        : selectAllState === 'checked'
+                        ? copy.selectAllSelected
+                        : copy.selectAllHint}
+                    </p>
+                  </div>
+                </label>
+
+                {selectedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeselectAll}
+                    data-testid="deselect-all-optional-btn"
+                    className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-700 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  >
+                    {copy.deselectAll}
+                  </button>
+                )}
               </div>
 
               <button
@@ -692,7 +673,7 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
                 onClick={handleSave}
                 disabled={isSaving}
                 data-testid="save-privacy-choices-btn"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white text-sm font-semibold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed order-1 sm:order-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white text-sm font-semibold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
               >
                 {isSaving ? (
                   <>
@@ -706,6 +687,20 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
                   </>
                 )}
               </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setIsNoticeOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 rounded"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>{copy.privacyNoticeLink}</span>
+              </button>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                {copy.footerMeta} · {PRIVACY_POLICY_VERSION}
+              </span>
             </div>
           </div>
         </div>

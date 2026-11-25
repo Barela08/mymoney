@@ -1,20 +1,46 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/lib/financialIntelligenceEngine.js';
 
-const CANDIDATE_MODELS = [
-  process.env.GEMINI_MODEL,
+export const ALLOWED_GEMINI_MODELS = [
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-3-flash-preview',
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
-  'gemini-3.6-flash',
-  'gemini-3.8-flash',
-  'gemini-4-hydrogen',
+] as const;
+
+const DEFAULT_CANDIDATE_MODELS = [
+  process.env.GEMINI_MODEL,
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
 ].filter(Boolean) as string[];
 
-const AI_MODEL = CANDIDATE_MODELS[0] || 'gemini-3.5-flash-lite';
+let runtimePreferredModel: string = DEFAULT_CANDIDATE_MODELS[0] || 'gemini-2.5-flash-lite';
+let runtimeAiEnabled: boolean = true;
 const REQUEST_TIMEOUT_MS = 28000;
+
+export function setRuntimeAiConfig(opts: { model?: string; enabled?: boolean }): void {
+  if (opts.model && (ALLOWED_GEMINI_MODELS as readonly string[]).includes(opts.model)) {
+    runtimePreferredModel = opts.model;
+  }
+  if (typeof opts.enabled === 'boolean') {
+    runtimeAiEnabled = opts.enabled;
+  }
+}
+
+export function getRuntimeAiConfig(): { model: string; enabled: boolean } {
+  return { model: runtimePreferredModel, enabled: runtimeAiEnabled };
+}
+
+function getCandidateModels(): string[] {
+  return Array.from(new Set([runtimePreferredModel, ...DEFAULT_CANDIDATE_MODELS]));
+}
 
 export interface AiProviderStatus {
   configured: boolean;
+  enabled: boolean;
   provider: 'gemini';
   model: string;
   ocrSupported: boolean;
@@ -44,13 +70,21 @@ export function getAiProviderStatus(): AiProviderStatus {
   const configured = getApiKey().length > 10;
   return {
     configured,
+    enabled: runtimeAiEnabled,
     provider: 'gemini',
-    model: AI_MODEL,
-    ocrSupported: configured,
+    model: runtimePreferredModel,
+    ocrSupported: configured && runtimeAiEnabled,
   };
 }
 
 function createClient(): GoogleGenAI {
+  if (!runtimeAiEnabled) {
+    throw new AiProviderError(
+      'AI_PROVIDER_NOT_CONFIGURED',
+      'External AI processing is currently paused by the administrator.',
+      503
+    );
+  }
   const apiKey = getApiKey();
   if (!apiKey || apiKey.length <= 10) {
     throw new AiProviderError(
@@ -129,10 +163,10 @@ ${JSON.stringify(params.context)}`;
   }));
 
   let answer = '';
-  let usedModel = AI_MODEL;
+  let usedModel = runtimePreferredModel;
   let lastError: any = null;
 
-  for (const model of CANDIDATE_MODELS) {
+  for (const model of getCandidateModels()) {
     try {
       const response = await withTimeout(
         ai.models.generateContent({
@@ -207,7 +241,7 @@ Valid category/subcategory pairs:
   try {
     const response = await withTimeout(
       ai.models.generateContent({
-        model: AI_MODEL,
+        model: runtimePreferredModel,
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -270,7 +304,7 @@ RULES:
   try {
     const response = await withTimeout(
       ai.models.generateContent({
-        model: AI_MODEL,
+        model: runtimePreferredModel,
         contents: [
           {
             inlineData: {

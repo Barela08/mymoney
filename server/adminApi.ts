@@ -4,9 +4,14 @@
  */
 import http from 'http';
 import { parse as parseUrl } from 'url';
-import { query } from './db.js';
+import { query, isDatabaseAvailable } from './db.js';
 import { authenticateRequest, revokeAllUserSessions } from './auth.js';
 import { logSecurityEvent, generateCryptoToken } from './security.js';
+import {
+  ALLOWED_GEMINI_MODELS,
+  getRuntimeAiConfig,
+  setRuntimeAiConfig,
+} from './aiProvider.js';
 import {
   sendEmail,
   sendAdminReplyToTicketEmail,
@@ -2668,6 +2673,159 @@ export async function handleAdminApiRequest(
       });
 
       sendJson(res, 200, { success: true, message: 'Application settings saved successfully.' });
+      return true;
+    }
+
+    // =========================================================
+    // 18b. SERVER-SIDE API & INTEGRATIONS CONFIG (NON-SECRET)
+    // Secret API keys (GEMINI_API_KEY, SMTP_PASS, VAPID_PRIVATE_KEY) stay strictly in server env vars.
+    // =========================================================
+    if (pathname === '/api/admin/integrations-config' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      let storedConfig: Record<string, any> = {};
+      if (isDatabaseAvailable()) {
+        try {
+          const cfgRes = await query(
+            `SELECT value FROM public.app_settings WHERE key = $1 LIMIT 1`,
+            ['integrations_config']
+          );
+          if (cfgRes.rows[0]?.value && typeof cfgRes.rows[0].value === 'object') {
+            storedConfig = cfgRes.rows[0].value;
+            setRuntimeAiConfig({
+              model: typeof storedConfig.aiModel === 'string' ? storedConfig.aiModel : undefined,
+              enabled: typeof storedConfig.aiEnabled === 'boolean' ? storedConfig.aiEnabled : undefined,
+            });
+          }
+        } catch {
+          // Non-fatal: continue with live runtime/env status
+        }
+      }
+
+      const runtimeAi = getRuntimeAiConfig();
+      const geminiConfigured = Boolean(
+        (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim().length > 10
+      );
+      const supabaseConfigured = Boolean(
+        (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim() &&
+        (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim()
+      );
+      const databaseConfigured = isDatabaseAvailable();
+      const smtpConfigured = Boolean(
+        (process.env.SMTP_HOST || '').trim() &&
+        (process.env.SMTP_USER || '').trim() &&
+        (process.env.SMTP_PASS || '').trim()
+      );
+      const webPushConfigured = Boolean(
+        (process.env.VAPID_PUBLIC_KEY || '').trim() &&
+        (process.env.VAPID_PRIVATE_KEY || '').trim()
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        status: {
+          geminiConfigured,
+          supabaseConfigured,
+          databaseConfigured,
+          smtpConfigured,
+          webPushConfigured,
+        },
+        config: {
+          aiModel: runtimeAi.model,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS],
+          aiEnabled: runtimeAi.enabled,
+          senderName: typeof storedConfig.senderName === 'string' && storedConfig.senderName.trim()
+            ? storedConfig.senderName.trim()
+            : 'My Money Manager by HackifyPro',
+          siteUrl: typeof storedConfig.siteUrl === 'string' && storedConfig.siteUrl.trim()
+            ? storedConfig.siteUrl.trim()
+            : (process.env.APP_URL || process.env.VITE_APP_URL || 'https://mymoney.nileshbarela.site'),
+          supportEmail: typeof storedConfig.supportEmail === 'string' && storedConfig.supportEmail.trim()
+            ? storedConfig.supportEmail.trim()
+            : 'hackifyproofficial@gmail.com',
+          supportPhone: typeof storedConfig.supportPhone === 'string' && storedConfig.supportPhone.trim()
+            ? storedConfig.supportPhone.trim()
+            : '+91 9685989477',
+        },
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/integrations-config' && method === 'PUT') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const runtimeAi = getRuntimeAiConfig();
+
+      const requestedModel = typeof body.aiModel === 'string' ? body.aiModel.trim() : runtimeAi.model;
+      if (!(ALLOWED_GEMINI_MODELS as readonly string[]).includes(requestedModel)) {
+        sendJson(res, 400, {
+          success: false,
+          message: `Unsupported AI model. Allowed models: ${ALLOWED_GEMINI_MODELS.join(', ')}`,
+        });
+        return true;
+      }
+
+      const aiEnabled = typeof body.aiEnabled === 'boolean' ? body.aiEnabled : runtimeAi.enabled;
+      const senderName = String(body.senderName || 'My Money Manager by HackifyPro').trim().slice(0, 80);
+      const rawSiteUrl = String(body.siteUrl || '').trim().slice(0, 200);
+      if (rawSiteUrl && !/^https:\/\/[a-z0-9.-]+/i.test(rawSiteUrl) && !/^http:\/\/localhost(?::\d+)?/i.test(rawSiteUrl)) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Public Site URL must start with https:// (or http://localhost for local dev).',
+        });
+        return true;
+      }
+      const supportEmail = String(body.supportEmail || 'hackifyproofficial@gmail.com').trim().slice(0, 120);
+      if (supportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportEmail)) {
+        sendJson(res, 400, { success: false, message: 'Please provide a valid support email address.' });
+        return true;
+      }
+      const supportPhone = String(body.supportPhone || '+91 9685989477').trim().slice(0, 30);
+
+      const savedConfig = {
+        aiModel: requestedModel,
+        aiEnabled,
+        senderName,
+        siteUrl: rawSiteUrl || 'https://mymoney.nileshbarela.site',
+        supportEmail,
+        supportPhone,
+        updatedAt: new Date().toISOString(),
+        updatedBy: auth.authUser.email,
+      };
+
+      setRuntimeAiConfig({ model: requestedModel, enabled: aiEnabled });
+
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+             VALUES ($1, $2::jsonb, NOW(), $3)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+            ['integrations_config', JSON.stringify(savedConfig), auth.authUser.id]
+          );
+        } catch (dbErr: any) {
+          console.warn('[Admin Integrations Config] DB persist warning:', dbErr?.message);
+        }
+      }
+
+      await logSecurityEvent('INTEGRATIONS_CONFIG_UPDATED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { aiModel: requestedModel, aiEnabled, senderName },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Server integration settings updated successfully.',
+        config: {
+          ...savedConfig,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS],
+        },
+      });
       return true;
     }
 

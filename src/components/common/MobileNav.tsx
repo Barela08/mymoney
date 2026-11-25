@@ -80,7 +80,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onOpenAddModal,
   onOpenHelpModal,
 }) => {
-  const { summary, recycleBinTransactions, dynamicSections } = useExpense();
+  const { summary, recycleBinTransactions, dynamicSections, appBranding } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
@@ -171,15 +171,20 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       >
         {/* Drawer Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <img
-              src="/logo.jpg"
-              alt="My Money Manager by HackifyPro"
-              className="w-10 h-10 rounded-xl object-cover shadow-sm border border-emerald-500/30"
+              src={appBranding?.logoUrl || '/logo.jpg'}
+              alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
+              className="w-10 h-10 rounded-xl object-cover shadow-sm border border-emerald-500/30 shrink-0"
             />
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">My Money Manager</h2>
-              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">by HackifyPro</p>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                {appBranding?.appName || 'My Money Manager'}
+              </h2>
+              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 truncate">
+                {appBranding?.subTitle || 'by HackifyPro'}
+              </p>
             </div>
           </div>
           <button
@@ -578,8 +583,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 }}
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
-                <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Smart</span>
+                <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">Smart Insights</span>
               </button>
 
               {/* Budget */}
@@ -639,7 +644,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Alerts</span>
+                <span className="text-xs font-medium">Notifications</span>
               </button>
 
               {/* Settings */}

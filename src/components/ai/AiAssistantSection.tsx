@@ -365,9 +365,9 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       } catch (err: any) {
         console.warn('Microphone permission check failed:', err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          toast.error(
+          toast.warning(
             'Microphone Blocked',
-            'Browser me mic blocked hai. Address bar me 🔒 icon par click karke Microphone ko "Allow" kar dein.'
+            'Microphone access is blocked. Click the lock icon in your browser address bar, set Microphone to Allow, and try again.'
           );
           return;
         }
@@ -404,9 +404,9 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
         console.warn('Speech recognition error:', event?.error);
         setIsListening(false);
         if (event?.error === 'not-allowed') {
-          toast.error(
+          toast.warning(
             'Microphone Blocked',
-            'Browser me mic blocked hai. Address bar me 🔒 icon par click karke Microphone ko "Allow" kar dein.'
+            'Microphone access is blocked. Click the lock icon in your browser address bar, set Microphone to Allow, and try again.'
           );
         } else if (event?.error !== 'no-speech') {
           toast.error('Mic Error', `Speech error: ${event?.error || 'Unknown error'}`);

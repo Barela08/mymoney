@@ -102,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAddModal,
   onOpenHelpModal,
 }) => {
-  const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings } = useExpense();
+  const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings, appBranding } = useExpense();
   const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
 
@@ -203,16 +203,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-5 border-b border-slate-100 dark:border-slate-800/80">
         <div className="flex items-center gap-3">
           <img
-            src="/logo.jpg"
-            alt="My Money Manager by HackifyPro"
+            src={appBranding?.logoUrl || '/logo.jpg'}
+            alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
             className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
           />
           <div className="min-w-0">
             <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight truncate">
-              My Money Manager
+              {appBranding?.appName || 'My Money Manager'}
             </h1>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              by HackifyPro
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+              {appBranding?.subTitle || 'by HackifyPro'}
             </p>
           </div>
         </div>

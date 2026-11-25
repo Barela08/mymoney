@@ -100,7 +100,7 @@ const ToastItem: React.FC<{ toast: ToastMessage; onDismiss: (id: string) => void
       <div className="flex-1 text-xs sm:text-sm min-w-0">
         <p className="font-bold leading-snug">{toast.title}</p>
         {toast.message && (
-          <p className="text-xs mt-0.5 opacity-90 line-clamp-2">{toast.message}</p>
+          <p className="text-xs mt-0.5 opacity-90 leading-relaxed break-words">{toast.message}</p>
         )}
 
         {/* Action Button (e.g. Undo State with countdown) */}

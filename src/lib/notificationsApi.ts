@@ -3,6 +3,8 @@
  * Secure communication with backend notification & push services
  */
 
+import { getStoredSessionToken } from './authApi';
+
 export interface UserNotification {
   id: string;
   user_id: string;
@@ -57,6 +59,20 @@ export interface NotificationsListResponse {
   totalPages: number;
 }
 
+function getNotificationHeaders(json: boolean = false): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (json) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const token = getStoredSessionToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export const notificationsApi = {
   /**
    * Fetch paginated user notifications
@@ -75,8 +91,8 @@ export const notificationsApi = {
 
     const res = await fetch(`/api/notifications?${searchParams.toString()}`, {
       method: 'GET',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
 
     if (!res.ok) {
@@ -89,10 +105,10 @@ export const notificationsApi = {
    * Mark a single notification as read
    */
   async markAsRead(id: string): Promise<UserNotification> {
-    const res = await fetch(`/api/notifications/${id}/read`, {
+    const res = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
       method: 'PATCH',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     if (!res.ok) throw new Error('Failed to mark notification as read');
     const data = await res.json();
@@ -105,8 +121,8 @@ export const notificationsApi = {
   async markAllAsRead(): Promise<boolean> {
     const res = await fetch('/api/notifications/mark-all-read', {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     return res.ok;
   },
@@ -115,10 +131,10 @@ export const notificationsApi = {
    * Delete a notification (soft delete)
    */
   async deleteNotification(id: string): Promise<boolean> {
-    const res = await fetch(`/api/notifications/${id}`, {
+    const res = await fetch(`/api/notifications/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     return res.ok;
   },
@@ -129,8 +145,8 @@ export const notificationsApi = {
   async clearAll(): Promise<boolean> {
     const res = await fetch('/api/notifications/clear-all', {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     return res.ok;
   },
@@ -141,8 +157,8 @@ export const notificationsApi = {
   async getPreferences(): Promise<NotificationPreferences> {
     const res = await fetch('/api/notifications/preferences', {
       method: 'GET',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     if (!res.ok) throw new Error('Failed to fetch preferences');
     const data = await res.json();
@@ -155,15 +171,14 @@ export const notificationsApi = {
   async updatePreferences(prefs: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
     const res = await fetch('/api/notifications/preferences', {
       method: 'PUT',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      credentials: 'include',
+      headers: getNotificationHeaders(true),
       body: JSON.stringify(prefs),
     });
-    if (!res.ok) throw new Error('Failed to update preferences');
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.message || `Failed to update preferences (HTTP ${res.status})`);
+    }
     return data.preferences;
   },
 
@@ -173,8 +188,8 @@ export const notificationsApi = {
   async getVapidPublicKey(): Promise<string> {
     const res = await fetch('/api/notifications/push/vapid-public-key', {
       method: 'GET',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     if (!res.ok) throw new Error('Failed to fetch VAPID key');
     const data = await res.json();
@@ -188,11 +203,8 @@ export const notificationsApi = {
     const subJson = subscription.toJSON();
     const res = await fetch('/api/notifications/push/subscribe', {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      credentials: 'include',
+      headers: getNotificationHeaders(true),
       body: JSON.stringify({
         endpoint: subJson.endpoint,
         keys: subJson.keys,
@@ -207,11 +219,8 @@ export const notificationsApi = {
   async unsubscribePush(endpoint: string): Promise<boolean> {
     const res = await fetch('/api/notifications/push/unsubscribe', {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      credentials: 'include',
+      headers: getNotificationHeaders(true),
       body: JSON.stringify({ endpoint }),
     });
     return res.ok;
@@ -223,8 +232,8 @@ export const notificationsApi = {
   async sendTestPush(): Promise<boolean> {
     const res = await fetch('/api/notifications/push/test', {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      headers: getNotificationHeaders(false),
     });
     return res.ok;
   },
@@ -243,11 +252,8 @@ export const notificationsApi = {
     try {
       await fetch('/api/notifications/events/transaction-created', {
         method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
+        credentials: 'include',
+        headers: getNotificationHeaders(true),
         body: JSON.stringify(tx),
       });
     } catch {

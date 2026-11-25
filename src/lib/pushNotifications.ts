@@ -62,12 +62,15 @@ export const pushNotifications = {
       // 1. Request user permission
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
+        const isEmbedded = window.self !== window.top;
         return {
           success: false,
           error:
             permission === 'denied'
-              ? 'Notification permission was denied. Please allow notifications in browser site settings.'
-              : 'Notification permission dismissed.',
+              ? isEmbedded
+                ? 'Browser notifications are blocked in embedded preview or site settings. Open the app in a full tab and allow Notifications in site settings.'
+                : 'Notifications are blocked for this site. Click the lock icon in your browser address bar and set Notifications to Allow.'
+              : 'Notification permission request was dismissed.',
         };
       }
 

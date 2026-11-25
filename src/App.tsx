@@ -85,7 +85,7 @@ const SectionFallback: React.FC = () => (
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
-  const { maintenanceSettings, dynamicSections, refreshTransactions } = useExpense();
+  const { maintenanceSettings, dynamicSections, refreshTransactions, appBranding } = useExpense();
   const toast = useToast();
 
   const [currentTab, setCurrentTabState] = useState<NavTab>(() => {
@@ -259,12 +259,13 @@ const MainContent: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
         <img
-          src="/logo.jpg"
-          alt="My Money Manager by HackifyPro"
+          src={appBranding?.logoUrl || '/logo.jpg'}
+          alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
           className="w-16 h-16 rounded-2xl object-cover shadow-2xl shadow-emerald-500/20 border-2 border-emerald-500/40 animate-pulse"
         />
         <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-4 tracking-wider uppercase">
-          Loading My Money Manager...
+          Loading {appBranding?.appName || 'My Money Manager'}...
         </p>
       </div>
     );

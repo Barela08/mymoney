@@ -37,6 +37,7 @@ import {
   Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { adminClient } from '../../lib/adminApi';
 
 export type AdminSectionKey =
@@ -147,6 +148,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   children,
 }) => {
   const { user, logout } = useAuth();
+  const { appBranding } = useExpense();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -221,20 +223,29 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           </button>
 
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-black shadow-md shadow-emerald-500/20">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
+            {appBranding?.logoUrl ? (
+              <img
+                src={appBranding.logoUrl}
+                alt={appBranding.appName || 'My Money Manager'}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
+                className="w-9 h-9 rounded-xl object-cover shadow-md border border-emerald-500/30"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-black shadow-md shadow-emerald-500/20">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-sm tracking-tight text-slate-900 dark:text-slate-100">
-                  My Money Control Center
+                  {appBranding?.appName || 'My Money'} Control Center
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                   {roleName}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                Enterprise FinTech Administrative Platform
+                {appBranding?.subTitle || 'by HackifyPro'} · Administrative Platform
               </p>
             </div>
           </div>

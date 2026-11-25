@@ -1,6 +1,7 @@
 import React from 'react';
 import { Wrench, Shield, LogOut, Clock, RefreshCw, Phone, Mail } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { MaintenanceSettings } from '../../types';
 import { SUPPORT_CONTACT } from '../../config/contact';
 
@@ -11,6 +12,7 @@ interface MaintenanceScreenProps {
 
 export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, onRefresh }) => {
   const { logout } = useAuth();
+  const { appBranding } = useExpense();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-slate-100 flex flex-col justify-between p-6 sm:p-12 relative overflow-hidden select-none">
@@ -22,13 +24,18 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, 
       <header className="flex items-center justify-between z-10 max-w-4xl w-full mx-auto">
         <div className="flex items-center gap-3">
           <img
-            src="/logo.jpg"
-            alt="My Money Manager by HackifyPro"
+            src={appBranding?.logoUrl || '/logo.jpg'}
+            alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
             className="w-12 h-12 rounded-2xl object-cover shadow-xl border border-emerald-500/40"
           />
           <div>
-            <h1 className="text-lg font-black tracking-tight text-white">My Money Manager</h1>
-            <p className="text-xs font-semibold text-emerald-400">by HackifyPro</p>
+            <h1 className="text-lg font-black tracking-tight text-white">
+              {appBranding?.appName || 'My Money Manager'}
+            </h1>
+            <p className="text-xs font-semibold text-emerald-400">
+              {appBranding?.subTitle || 'by HackifyPro'}
+            </p>
           </div>
         </div>
 

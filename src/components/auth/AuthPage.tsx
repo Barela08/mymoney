@@ -20,6 +20,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { authApi } from '../../lib/authApi';
 import { PrivacyNoticeModal } from '../privacy/PrivacyNoticeModal';
@@ -37,6 +38,7 @@ export const AuthPage: React.FC = () => {
     setIsRecoveryMode,
     setRecoveryToken,
   } = useAuth();
+  const { appBranding } = useExpense();
   const toast = useToast();
 
   const getInitialMode = (): 'login' | 'register' | 'forgot_password' | 'reset_password' => {
@@ -356,16 +358,17 @@ export const AuthPage: React.FC = () => {
         {/* Brand Header */}
         <div className="flex flex-col items-center justify-center gap-2 mb-3">
           <img
-            src="/logo.jpg"
-            alt="My Money Manager by HackifyPro"
+            src={appBranding?.logoUrl || '/logo.jpg'}
+            alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
             className="w-16 h-16 rounded-2xl object-cover shadow-xl shadow-emerald-600/30 border-2 border-emerald-500/40"
           />
           <div className="text-center">
             <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-              My Money Manager
+              {appBranding?.appName || 'My Money Manager'}
             </h1>
             <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-              by HackifyPro · Production Security
+              {appBranding?.subTitle || 'by HackifyPro'} · Production Security
             </p>
           </div>
         </div>

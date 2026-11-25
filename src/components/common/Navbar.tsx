@@ -45,6 +45,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const {
     maintenanceSettings,
     dynamicSections,
+    appBranding,
   } = useExpense();
   const [istTimeStr, setIstTimeStr] = useState('');
   const [istDateStr, setIstDateStr] = useState('');
@@ -114,8 +115,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <img
-            src="/logo.jpg"
-            alt="My Money"
+            src={appBranding?.logoUrl || '/logo.jpg'}
+            alt={appBranding?.appName || 'My Money Manager'}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
             className="w-7 h-7 rounded-lg object-cover hidden sm:block lg:hidden border border-emerald-500/30 shrink-0"
           />
 

@@ -519,6 +519,25 @@ export const adminClient = {
     });
   },
 
+  // 16b. Server-Side API & Service Integrations Configuration (Non-Secret)
+  async getIntegrationsConfig() {
+    return adminRequest('/api/admin/integrations-config', { method: 'GET' });
+  },
+
+  async updateIntegrationsConfig(data: {
+    aiModel?: string;
+    aiEnabled?: boolean;
+    senderName?: string;
+    siteUrl?: string;
+    supportEmail?: string;
+    supportPhone?: string;
+  }) {
+    return adminRequest('/api/admin/integrations-config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // 17. Database Diagnostics (PART N)
   async getDatabaseDiagnostics() {
     return adminRequest('/api/admin/system/database', { method: 'GET' });

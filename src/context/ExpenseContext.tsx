@@ -136,6 +136,17 @@ const DEFAULT_BRANDING: AppBrandingSettings = {
   allowLogin: true,
 };
 
+export function sanitizeLogoUrl(raw?: string | null): string {
+  const val = (raw || '').trim();
+  if (!val) return '/logo.jpg';
+  if (val.startsWith('/') && !val.startsWith('//')) return val;
+  if (/^https:\/\//i.test(val)) return val;
+  if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(val) && val.length <= 750000) {
+    return val;
+  }
+  return '/logo.jpg';
+}
+
 // RFC 4122 compliant UUID v4 generator
 function generateSecureUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -182,11 +193,32 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [appBranding, setAppBranding] = useState<AppBrandingSettings>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_BRANDING_KEY);
-      return saved ? JSON.parse(saved) : DEFAULT_BRANDING;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_BRANDING,
+          ...parsed,
+          logoUrl: sanitizeLogoUrl(parsed?.logoUrl),
+        };
+      }
+      return DEFAULT_BRANDING;
     } catch {
       return DEFAULT_BRANDING;
     }
   });
+
+  // Live-sync browser tab title and favicon whenever Admin updates App Branding or Logo
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const title = appBranding.appName?.trim() || 'My Money Manager';
+    const sub = appBranding.subTitle?.trim() || 'by HackifyPro';
+    document.title = sub ? `${title} — ${sub}` : title;
+    const safeLogo = sanitizeLogoUrl(appBranding.logoUrl);
+    const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (favicon) {
+      favicon.href = safeLogo;
+    }
+  }, [appBranding.appName, appBranding.subTitle, appBranding.logoUrl]);
 
   const [notifications, setNotifications] = useState<BroadcastNotification[]>([]);
 
@@ -335,8 +367,13 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         if (brand) {
-          setAppBranding(brand);
-          localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(brand));
+          const normalizedBrand: AppBrandingSettings = {
+            ...DEFAULT_BRANDING,
+            ...brand,
+            logoUrl: sanitizeLogoUrl(brand.logoUrl),
+          };
+          setAppBranding(normalizedBrand);
+          localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(normalizedBrand));
         }
 
         if (notifs) {
@@ -927,11 +964,21 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const updateAppBranding = async (settings: Partial<AppBrandingSettings>): Promise<boolean> => {
-    const updated = { ...appBranding, ...settings };
-    setAppBranding(updated);
-    localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(updated));
+    const merged: AppBrandingSettings = {
+      ...appBranding,
+      ...settings,
+    };
+    merged.logoUrl = sanitizeLogoUrl(merged.logoUrl);
+    if (settings.brandTitle && !settings.appName) {
+      merged.appName = settings.brandTitle;
+    }
+    if (settings.appName && !settings.brandTitle) {
+      merged.brandTitle = settings.appName;
+    }
+    setAppBranding(merged);
+    localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(merged));
     try {
-      await saveAppSettingToSupabase('app_branding', updated, user?.uid);
+      await saveAppSettingToSupabase('app_branding', merged, user?.uid);
       return true;
     } catch {
       return false;
