@@ -26,7 +26,7 @@ const DEFAULT_BUDGET_CATEGORIES = [
 ];
 
 export const BudgetSection: React.FC = () => {
-  const { transactions, summary } = useExpense();
+  const { transactions } = useExpense();
   const toast = useToast();
 
   const [budgets, setBudgets] = useState<UserBudget[]>([]);
