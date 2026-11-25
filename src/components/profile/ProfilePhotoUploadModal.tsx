@@ -1,13 +1,9 @@
 import React, { useState, useRef } from 'react';
 import {
   Camera,
-  Upload,
   Trash2,
   X,
   Check,
-  User,
-  Sparkles,
-  RefreshCw,
   Image as ImageIcon,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';

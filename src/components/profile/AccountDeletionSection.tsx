@@ -18,7 +18,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { udharDeletionApi, DeletionStatusResponse } from '../../lib/udharDeletionApi';
-import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
+import { formatDisplayDate } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 
 interface AccountDeletionSectionProps {
@@ -28,7 +28,7 @@ interface AccountDeletionSectionProps {
 export const AccountDeletionSection: React.FC<AccountDeletionSectionProps> = ({
   onDeletionCancelled,
 }) => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
 
   const [deletionStatus, setDeletionStatus] = useState<DeletionStatusResponse | null>(null);
