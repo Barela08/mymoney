@@ -34,6 +34,7 @@ import {
 } from '../../lib/financialIntelligenceEngine';
 import { formatINR } from '../../lib/dateUtils';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { AiCompanionMark } from './AiCompanionMark';
 
 const SUGGESTED_QUESTIONS: string[] = [
   'How much did I spend this month?',
@@ -445,7 +446,7 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-            <Sparkles className="w-5 h-5" />
+            <AiCompanionMark size={22} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">

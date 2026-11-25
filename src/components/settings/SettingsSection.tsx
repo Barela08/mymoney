@@ -16,6 +16,7 @@ import { UserProfileSection } from '../profile/UserProfileSection';
 import { AccountDeletionSection } from '../profile/AccountDeletionSection';
 import { LegalCenterSection } from '../legal/LegalCenterSection';
 import { PermissionsSettingsCard } from './PermissionsSettingsCard';
+import { PrivacyConsentCard } from './PrivacyConsentCard';
 
 interface SettingsSectionProps {
   initialTab?: 'profile' | 'preferences' | 'deletion' | 'legal';
@@ -134,6 +135,7 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
       {activeTab === 'preferences' && (
         <div className="space-y-6">
           {/* Device Hardware Permissions Card */}
+          <PrivacyConsentCard />
           <PermissionsSettingsCard />
 
           {/* Theme Selector */}

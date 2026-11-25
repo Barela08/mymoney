@@ -23,7 +23,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authApi } from '../../lib/authApi';
 import { DpdpConsentModal } from '../common/DpdpConsentModal';
-import { getStoredDpdpConsent, saveDpdpConsent } from '../common/DpdpConsentBanner';
+import { getStoredDpdpConsent, saveConsentChoices } from '../common/DpdpConsentBanner';
 
 export const AuthPage: React.FC = () => {
   const {
@@ -96,10 +96,8 @@ export const AuthPage: React.FC = () => {
 
   // Statutory DPDP Consent State
   const [isDpdpModalOpen, setIsDpdpModalOpen] = useState(false);
-  const [isDpdpAgreed, setIsDpdpAgreed] = useState(() => {
-    const c = getStoredDpdpConsent();
-    return c.hasAnswered && c.isConsented;
-  });
+  // Never pre-tick a consent checkbox, even if the user agreed in the past.
+  const [isDpdpAgreed, setIsDpdpAgreed] = useState(false);
 
   // Verify DPDP consent before login/signup at startup
   useEffect(() => {
@@ -109,8 +107,7 @@ export const AuthPage: React.FC = () => {
     }
   }, []);
 
-  const handleAcceptDpdp = () => {
-    setIsDpdpAgreed(true);
+  const handleSaveDpdpChoices = () => {
     setIsDpdpModalOpen(false);
   };
 
@@ -325,11 +322,12 @@ export const AuthPage: React.FC = () => {
     }
 
     // 4. Submit Login or Register
-    // Enforce DPDP Act 2023 Consent Acceptance Before Login / Register
-    const currentConsent = getStoredDpdpConsent();
-    if (!currentConsent.hasAnswered || !currentConsent.isConsented || !isDpdpAgreed) {
-      setIsDpdpModalOpen(true);
-      setErrorMessage('कृपया लॉगिन या रजिस्टर करने से पहले DPDP Act 2023 डेटा सुरक्षा सहमति स्वीकार करें (Please accept DPDP Consent).');
+    // Login never requires optional consent. Registration requires the user to
+    // tick the specific consent control themselves (it is never pre-checked).
+    if (mode === 'register' && !isDpdpAgreed) {
+      setErrorMessage(
+        'Please tick the consent checkbox to confirm cloud sync and financial processing for your new account.'
+      );
       return;
     }
 
@@ -345,6 +343,8 @@ export const AuthPage: React.FC = () => {
       } else {
         const res = await register(name, email, password, confirmPassword, phone);
         if (res.success) {
+          // The ticked checkbox is the explicit consent action for a new account.
+          saveConsentChoices({ cloud_sync: true, financial_processing: true });
           toast.success('Account Created!', 'Welcome to My Money Manager.');
         } else {
           setErrorMessage(res.message || 'Registration failed.');
@@ -743,12 +743,7 @@ export const AuthPage: React.FC = () => {
                     id="register-dpdp-consent"
                     checked={isDpdpAgreed}
                     onChange={(e) => {
-                      const checked = e.target.checked;
-                      setIsDpdpAgreed(checked);
-                      saveDpdpConsent(checked);
-                      if (!checked) {
-                        setIsDpdpModalOpen(true);
-                      }
+                      setIsDpdpAgreed(e.target.checked);
                     }}
                     className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
                   />
@@ -762,9 +757,10 @@ export const AuthPage: React.FC = () => {
                       onClick={() => setIsDpdpModalOpen(true)}
                       className="text-emerald-600 dark:text-emerald-400 font-bold underline cursor-pointer"
                     >
-                      DPDP Act 2023 Consent & Privacy Terms
+                      privacy notice and consent terms
                     </button>{' '}
-                    for cloud sync and financial ledger security.
+                    for cloud sync and financial processing of my new account. Optional AI,
+                    analytics and Udhar sharing stay off unless I enable them in Settings.
                   </label>
                 </div>
               )}
@@ -866,11 +862,8 @@ export const AuthPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Statutory DPDP Act 2023 Consent Gate Modal (Must be accepted before login) */}
-      <DpdpConsentModal
-        isOpen={isDpdpModalOpen}
-        onAccept={handleAcceptDpdp}
-      />
+      {/* Purpose-specific consent choices. Nothing is pre-selected. */}
+      <DpdpConsentModal isOpen={isDpdpModalOpen} onSave={handleSaveDpdpChoices} />
     </div>
   );
 };

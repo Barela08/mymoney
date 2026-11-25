@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AiCompanionMark } from '../ai/AiCompanionMark';
 import {
   LayoutDashboard,
   ArrowDownLeft,
@@ -414,15 +415,19 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           onClick={() => setIsAiMenuOpen((prev) => !prev)}
           className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg border transition-all duration-200 cursor-pointer ${
             isAiMenuOpen
-              ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 rotate-90 scale-105 z-50'
+              ? 'bg-emerald-600 text-emerald-50 border-emerald-400/70 ring-4 ring-emerald-500/25 scale-105 z-50'
               : currentTab === 'ai_assistant'
               ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 scale-105'
-              : 'bg-slate-900 dark:bg-slate-800 text-emerald-400 hover:text-emerald-300 border-slate-700/80 hover:scale-105 active:scale-95 shadow-slate-900/30'
+              : 'bg-emerald-700 text-emerald-50 hover:bg-emerald-600 border-emerald-500/40 hover:scale-105 active:scale-95 shadow-emerald-950/30'
           }`}
           aria-label="Ask AI Assistant"
           title="Ask AI Assistant (Voice or Chat)"
         >
-          {isAiMenuOpen ? <X className="w-5 h-5 stroke-[2.5]" /> : <Sparkles className="w-5 h-5 stroke-[2.2]" />}
+          {isAiMenuOpen ? (
+            <X className="w-5 h-5 stroke-[2.5]" />
+          ) : (
+            <AiCompanionMark size={22} />
+          )}
         </button>
 
         {/* Floating Add Transaction (+) Button */}
