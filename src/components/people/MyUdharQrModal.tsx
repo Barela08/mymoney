@@ -98,8 +98,10 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
       expiresAt,
     };
 
+    const fallbackLink = `${window.location.origin}/#pair=${encodeURIComponent(fallbackCode)}`;
     setQrInfo(fallbackInfo);
-    await renderHighResQr(fallbackPayload);
+    // Encode standard web pairing link so any phone camera or Google Lens can scan and open it
+    await renderHighResQr(fallbackLink);
     setQrError(null);
   };
 
@@ -111,7 +113,11 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
       const res = await udharDeletionApi.getMyQrCode();
       if (res.success && res.qrData) {
         setQrInfo(res);
-        await renderHighResQr(res.qrData);
+        // Encode standard pairing link for universal phone camera and in-app compatibility
+        const standardLink = res.pairingCode
+          ? `${window.location.origin}/#pair=${encodeURIComponent(res.pairingCode)}`
+          : res.qrData;
+        await renderHighResQr(standardLink);
       } else {
         await generateClientFallbackQr();
       }
@@ -131,7 +137,10 @@ export const MyUdharQrModal: React.FC<MyUdharQrModalProps> = ({
       const res = await udharDeletionApi.regenerateQrCode();
       if (res.success && res.qrData) {
         setQrInfo(res);
-        await renderHighResQr(res.qrData);
+        const standardLink = res.pairingCode
+          ? `${window.location.origin}/#pair=${encodeURIComponent(res.pairingCode)}`
+          : res.qrData;
+        await renderHighResQr(standardLink);
         toast.success('QR Reset Complete', 'New unique QR generated. Previous QR codes are revoked.');
       } else {
         await generateClientFallbackQr();

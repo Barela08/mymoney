@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, ArrowRight, Download, Share2 } from 'lucide-react';
+import { CheckCircle2, ArrowRight } from 'lucide-react';
 
 export interface SuccessStateProps {
   title: string;

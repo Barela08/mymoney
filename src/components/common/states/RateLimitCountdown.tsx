@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Hourglass, AlertCircle } from 'lucide-react';
+import { Hourglass } from 'lucide-react';
 
 export interface RateLimitCountdownProps {
   initialSeconds?: number;

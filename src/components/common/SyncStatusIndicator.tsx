@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Cloud, CloudOff, RefreshCw, CheckCircle2, AlertCircle, WifiOff } from 'lucide-react';
+import { Cloud, RefreshCw, CheckCircle2, AlertCircle, WifiOff } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 
 interface SyncStatusIndicatorProps {

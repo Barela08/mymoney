@@ -16,6 +16,8 @@ import {
   Zap,
   ZapOff,
   SwitchCamera,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
@@ -74,6 +76,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
   const [supportsTorch, setSupportsTorch] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const [isScanningPaused, setIsScanningPaused] = useState<boolean>(false);
 
   // Manual code / link form
   const [manualCode, setManualCode] = useState<string>('');
@@ -97,6 +100,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   // Strict media stream & torch cleanup
   const stopCamera = useCallback(() => {
     isScanningActiveRef.current = false;
+    setIsScanningPaused(false);
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;

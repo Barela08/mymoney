@@ -34,6 +34,7 @@ import {
   KeyRound,
   Bot,
   UserCheck,
+  Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { adminClient } from '../../lib/adminApi';

@@ -23,6 +23,7 @@ import { AdminAccountsTab } from './tabs/AdminAccountsTab';
 import { AdminTransactionMonitoringTab } from './tabs/AdminTransactionMonitoringTab';
 import { AdminAiTab } from './tabs/AdminAiTab';
 import { AdminDatabaseTab } from './tabs/AdminDatabaseTab';
+import { AdminInstalledDevicesTab } from './tabs/AdminInstalledDevicesTab';
 
 interface AdminDashboardProps {
   onExit?: () => void;
@@ -121,6 +122,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return <AdminOverviewTab />;
       case 'users':
         return <AdminUsersTab initialStatusFilter="all" />;
+      case 'installed_devices':
+        return <AdminInstalledDevicesTab />;
       case 'admins':
         return <AdminAccountsTab />;
       case 'activity':

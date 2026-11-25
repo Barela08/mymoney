@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download,
   X,
@@ -35,10 +35,10 @@ export const PwaInstallModal: React.FC = () => {
     }
   };
 
-  const handleDismiss = () => {
+  const handleDismiss = useCallback(() => {
     // Dismisses the install suggestion immediately without installing
     dismissBanner();
-  };
+  }, [dismissBanner]);
 
   // Nielsen Heuristic: User Control & Freedom — Escape key handling
   useEffect(() => {
@@ -49,7 +49,7 @@ export const PwaInstallModal: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, handleDismiss]);
 
   if (!isModalOpen) return null;
 

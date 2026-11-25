@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Clock, RefreshCw } from 'lucide-react';
 
 export interface TimeoutCardProps {
   operationName?: string;
