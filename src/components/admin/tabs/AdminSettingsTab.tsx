@@ -18,11 +18,17 @@ import {
   Database,
   Mail,
   AlertCircle,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Trash2,
+  ShieldCheck,
+  Download,
 } from 'lucide-react';
 import { useExpense, sanitizeLogoUrl } from '../../../context/ExpenseContext';
 import { useToast } from '../../../context/ToastContext';
-import { adminClient } from '../../../lib/adminApi';
-import { MaintenanceSettings } from '../../../types';
+import { adminClient, AdminApiSettings } from '../../../lib/adminApi';
+import { MaintenanceSettings, AppDownloadPopupSettings } from '../../../types';
 import { MaintenanceScreen } from '../../maintenance/MaintenanceScreen';
 import { SUPPORT_CONTACT } from '../../../config/contact';
 
@@ -89,6 +95,8 @@ export const AdminSettingsTab: React.FC = () => {
   const {
     maintenanceSettings,
     updateMaintenanceSettings,
+    appPopupSettings,
+    updateAppPopupSettings,
     appBranding,
     updateAppBranding,
   } = useExpense();
@@ -99,6 +107,10 @@ export const AdminSettingsTab: React.FC = () => {
   const [maintForm, setMaintForm] = useState<MaintenanceSettings>(maintenanceSettings);
   const [showMaintPreview, setShowMaintPreview] = useState(false);
   const [isSavingMaint, setIsSavingMaint] = useState(false);
+
+  // App Download Popup form
+  const [popupForm, setPopupForm] = useState<AppDownloadPopupSettings>(appPopupSettings);
+  const [isSavingPopup, setIsSavingPopup] = useState(false);
 
   // Branding & App Logo Form
   const [appName, setAppName] = useState(appBranding?.appName || appBranding?.brandTitle || 'My Money Manager');
@@ -115,8 +127,15 @@ export const AdminSettingsTab: React.FC = () => {
   const [isSavingBrand, setIsSavingBrand] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
-  // Server-Side API & Service Integrations Form (Non-Secret Config + Env Readiness)
+  // Server-Side API Key & Service Integrations Form
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
+  const [apiSettings, setApiSettings] = useState<AdminApiSettings | null>(null);
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [verifyKeyBeforeSave, setVerifyKeyBeforeSave] = useState(true);
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [isTestingApiKey, setIsTestingApiKey] = useState(false);
+  const [isRemovingApiKey, setIsRemovingApiKey] = useState(false);
   const [allowedAiModels, setAllowedAiModels] = useState<string[]>(DEFAULT_ALLOWED_MODELS);
   const [aiModel, setAiModel] = useState('gemini-2.5-flash-lite');
   const [aiEnabled, setAiEnabled] = useState(true);
@@ -143,7 +162,10 @@ export const AdminSettingsTab: React.FC = () => {
   const loadIntegrationsConfig = async () => {
     setIsLoadingIntegrations(true);
     try {
-      const res: any = await adminClient.getIntegrationsConfig();
+      const [res, apiRes]: [any, any] = await Promise.all([
+        adminClient.getIntegrationsConfig().catch(() => null),
+        adminClient.getApiSettings().catch(() => null),
+      ]);
       if (res?.success) {
         if (res.status) setIntegrationStatus(res.status);
         if (res.config) {
@@ -155,6 +177,11 @@ export const AdminSettingsTab: React.FC = () => {
           if (res.config.senderName) setSenderName(res.config.senderName);
           if (res.config.siteUrl) setSiteUrl(res.config.siteUrl);
         }
+      }
+      if (apiRes?.success && apiRes.apiSettings) {
+        setApiSettings(apiRes.apiSettings);
+        if (apiRes.apiSettings.aiModel) setAiModel(apiRes.apiSettings.aiModel);
+        if (typeof apiRes.apiSettings.aiEnabled === 'boolean') setAiEnabled(apiRes.apiSettings.aiEnabled);
       }
     } catch {
       // Keep graceful defaults when backend is unavailable
@@ -187,6 +214,10 @@ export const AdminSettingsTab: React.FC = () => {
   useEffect(() => {
     setMaintForm(maintenanceSettings);
   }, [maintenanceSettings]);
+
+  useEffect(() => {
+    setPopupForm(appPopupSettings);
+  }, [appPopupSettings]);
 
   useEffect(() => {
     if (!appBranding) return;
@@ -283,6 +314,80 @@ export const AdminSettingsTab: React.FC = () => {
     }
   };
 
+  const handleSaveApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedKey = geminiApiKeyInput.trim();
+    if (!trimmedKey) {
+      toast.error('API Key Required', 'Please enter a valid Gemini API key before saving.');
+      return;
+    }
+    if (trimmedKey.length < 20 || /\s/.test(trimmedKey)) {
+      toast.error('Invalid API Key Format', 'Gemini API key appears too short or contains spaces.');
+      return;
+    }
+
+    setIsSavingApiKey(true);
+    try {
+      const res = await adminClient.saveApiSettings({
+        apiKey: trimmedKey,
+        aiModel,
+        aiEnabled,
+        verifyKey: verifyKeyBeforeSave,
+      });
+      if (res?.apiSettings) {
+        setApiSettings(res.apiSettings);
+      }
+      setGeminiApiKeyInput('');
+      setShowGeminiKey(false);
+      toast.success(
+        'API Key Saved Securely',
+        res?.message || 'Gemini API key encrypted and stored server-side.'
+      );
+      await loadIntegrationsConfig();
+    } catch (err: any) {
+      toast.error('Failed to Save API Key', err?.message || 'Could not validate or store API key.');
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  };
+
+  const handleTestApiKey = async () => {
+    const trimmedKey = geminiApiKeyInput.trim();
+    setIsTestingApiKey(true);
+    try {
+      const res = await adminClient.testApiKey(trimmedKey || undefined);
+      if (res?.apiSettings) {
+        setApiSettings(res.apiSettings);
+      }
+      if (res?.validation?.valid) {
+        toast.success('API Key Verified', res.validation.message || 'Gemini API key responded successfully.');
+      } else {
+        toast.error('API Key Invalid', res?.validation?.message || 'Gemini API key verification failed.');
+      }
+    } catch (err: any) {
+      toast.error('API Key Test Failed', err?.message || 'Gemini API key could not be verified.');
+    } finally {
+      setIsTestingApiKey(false);
+    }
+  };
+
+  const handleRemoveSavedApiKey = async () => {
+    setIsRemovingApiKey(true);
+    try {
+      const res = await adminClient.deleteApiKey();
+      if (res?.apiSettings) {
+        setApiSettings(res.apiSettings);
+      }
+      setGeminiApiKeyInput('');
+      toast.info('Saved API Key Removed', res?.message || 'Custom Gemini API key deleted.');
+      await loadIntegrationsConfig();
+    } catch (err: any) {
+      toast.error('Remove Failed', err?.message || 'Could not delete saved API key.');
+    } finally {
+      setIsRemovingApiKey(false);
+    }
+  };
+
   const handleSaveMaintenance = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingMaint(true);
@@ -295,9 +400,44 @@ export const AdminSettingsTab: React.FC = () => {
           : 'Normal user access is restored.'
       );
     } catch (err: any) {
-      toast.error('Save Error', err.message);
+      toast.error('Save Error', err?.message || 'Failed to update maintenance mode settings.');
     } finally {
       setIsSavingMaint(false);
+    }
+  };
+
+  const handleSaveAppPopup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rawUrl = (popupForm.downloadUrl || '').trim() || '/#install';
+    const isValidUrl =
+      (rawUrl.startsWith('/') && !rawUrl.startsWith('//')) ||
+      /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(rawUrl);
+
+    if (!isValidUrl) {
+      toast.error(
+        'Invalid Download URL',
+        'Please enter a valid https://, http://, or relative (/...) download URL.'
+      );
+      return;
+    }
+
+    setIsSavingPopup(true);
+    try {
+      await updateAppPopupSettings({
+        ...popupForm,
+        downloadUrl: rawUrl,
+        title: popupForm.title.trim() || 'Get the My Money Manager App',
+        description: popupForm.description.trim(),
+        buttonLabel: popupForm.buttonLabel.trim() || 'Download App',
+      });
+      toast.success(
+        popupForm.enabled ? 'App Popup Enabled' : 'App Popup Disabled',
+        'App download popup settings and download URL updated.'
+      );
+    } catch (err: any) {
+      toast.error('Save Error', err?.message || 'Failed to update app download popup settings.');
+    } finally {
+      setIsSavingPopup(false);
     }
   };
 
@@ -587,16 +727,163 @@ export const AdminSettingsTab: React.FC = () => {
           </button>
         </div>
 
-        {/* Security Notice — Why Secret Keys Live on the Server */}
+        {/* Security Notice — Encrypted Server-Only Secret Storage */}
         <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
           <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           <p className="leading-relaxed">
-            For account security, raw secret API keys (<code className="font-mono text-[11px]">GEMINI_API_KEY</code>,{' '}
-            <code className="font-mono text-[11px]">SMTP_PASS</code>,{' '}
+            Gemini API keys entered below are encrypted with AES-256-GCM on the server before database storage and are never sent back to browsers or normal users. Other infrastructure secrets (<code className="font-mono text-[11px]">SMTP_PASS</code>,{' '}
             <code className="font-mono text-[11px]">SUPABASE_SERVICE_ROLE_KEY</code>,{' '}
-            <code className="font-mono text-[11px]">VAPID_PRIVATE_KEY</code>) are stored exclusively in your server / Vercel environment variables and never entered or exposed in the browser. Rotate secret keys in your hosting dashboard, then click <strong>Refresh Status</strong>.
+            <code className="font-mono text-[11px]">VAPID_PRIVATE_KEY</code>) remain exclusively in server environment variables.
           </p>
         </div>
+
+        {/* Dedicated API Key Management Panel */}
+        <form
+          onSubmit={handleSaveApiKey}
+          className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                <KeyRound className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                  Gemini API Key Management
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Powers AI Financial Assistant, Smart Categorization &amp; Receipt Scanner OCR
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                  apiSettings?.configured
+                    ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300'
+                }`}
+              >
+                {apiSettings?.configured ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>
+                      Active ({apiSettings.source === 'admin_settings' ? 'Admin Saved' : 'Server Env'})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>Not Configured</span>
+                  </>
+                )}
+              </span>
+
+              {apiSettings?.lastValidation && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                    apiSettings.lastValidation.valid
+                      ? 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{apiSettings.lastValidation.valid ? 'Key Verified' : 'Key Invalid'}</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {apiSettings?.maskedApiKey && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+              <div className="text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-semibold mr-2">Current Stored Key:</span>
+                <code className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                  {apiSettings.maskedApiKey}
+                </code>
+              </div>
+              {apiSettings.updatedAt && (
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Updated {new Date(apiSettings.updatedAt).toLocaleString()}
+                  {apiSettings.updatedBy ? ` by ${apiSettings.updatedBy}` : ''}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="admin-gemini-api-key"
+              className="block text-[11px] font-bold text-slate-600 dark:text-slate-300"
+            >
+              {apiSettings?.hasSavedKey ? 'Update Gemini API Key' : 'Enter Gemini API Key'}
+            </label>
+            <div className="relative">
+              <input
+                id="admin-gemini-api-key"
+                type={showGeminiKey ? 'text' : 'password'}
+                autoComplete="off"
+                spellCheck={false}
+                value={geminiApiKeyInput}
+                onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                placeholder="Paste new Gemini API key (e.g. AIzaSy...)"
+                className="w-full pl-3.5 pr-11 py-2.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono focus:border-emerald-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGeminiKey((prev) => !prev)}
+                aria-label={showGeminiKey ? 'Hide API key' : 'Show API key'}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+              >
+                {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={verifyKeyBeforeSave}
+              onChange={(e) => setVerifyKeyBeforeSave(e.target.checked)}
+              className="w-4 h-4 rounded text-emerald-600"
+            />
+            <span className="font-semibold">Verify key with Google Gemini API before saving</span>
+          </label>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="submit"
+              disabled={isSavingApiKey}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSavingApiKey ? 'Verifying & Saving...' : 'Save API Key'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTestApiKey}
+              disabled={isTestingApiKey}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{isTestingApiKey ? 'Testing Key...' : 'Test API Key'}</span>
+            </button>
+
+            {apiSettings?.hasSavedKey && (
+              <button
+                type="button"
+                onClick={handleRemoveSavedApiKey}
+                disabled={isRemovingApiKey}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 text-xs font-bold cursor-pointer disabled:opacity-50 ml-auto"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isRemovingApiKey ? 'Removing...' : 'Remove Saved Key'}</span>
+              </button>
+            )}
+          </div>
+        </form>
 
         {/* Live Server Env Readiness Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -718,15 +1005,26 @@ export const AdminSettingsTab: React.FC = () => {
 
       {/* 3. Maintenance Mode Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
               <Wrench className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Maintenance Mode Configuration
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                  Maintenance Mode Configuration
+                </h3>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
+                    maintForm.isEnabled
+                      ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                      : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  {maintForm.isEnabled ? 'ON' : 'OFF'}
+                </span>
+              </div>
               <p className="text-xs text-slate-400">
                 When active, non-admin visitors are intercepted with a customized status splash
               </p>
@@ -803,7 +1101,113 @@ export const AdminSettingsTab: React.FC = () => {
         </form>
       </div>
 
-      {/* 4. Admin Notification Preferences & Two-Way Routing */}
+      {/* 4. App Download Popup & Download URL Settings */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+              <Download className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                  App Download Popup &amp; Download Link
+                </h3>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
+                    popupForm.enabled
+                      ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {popupForm.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Configure the bottom-right App Download prompt shown on the user website &amp; login page
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveAppPopup} className="space-y-4">
+          <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl cursor-pointer">
+            <input
+              type="checkbox"
+              checked={popupForm.enabled}
+              onChange={(e) => setPopupForm({ ...popupForm, enabled: e.target.checked })}
+              className="rounded text-emerald-600 w-4 h-4"
+            />
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+              Show App Download Popup on Website &amp; Normal Login Page (Hidden on /admin)
+            </span>
+          </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                App Download URL (https://..., http://..., or /#install)
+              </label>
+              <input
+                type="text"
+                value={popupForm.downloadUrl}
+                onChange={(e) => setPopupForm({ ...popupForm, downloadUrl: e.target.value })}
+                placeholder="https://play.google.com/... or /#install"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1">Download Button Label</label>
+              <input
+                type="text"
+                value={popupForm.buttonLabel}
+                onChange={(e) => setPopupForm({ ...popupForm, buttonLabel: e.target.value })}
+                placeholder="Download App"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1">Popup Heading</label>
+              <input
+                type="text"
+                value={popupForm.title}
+                onChange={(e) => setPopupForm({ ...popupForm, title: e.target.value })}
+                placeholder="Get the My Money Manager App"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1">Popup Short Description</label>
+              <input
+                type="text"
+                value={popupForm.description}
+                onChange={(e) => setPopupForm({ ...popupForm, description: e.target.value })}
+                placeholder="Install our fast, offline-ready app for instant expense tracking & UPI alerts."
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSavingPopup}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{isSavingPopup ? 'Saving...' : 'Save App Popup & URL Settings'}</span>
+          </button>
+        </form>
+      </div>
+
+      {/* 5. Admin Notification Preferences & Two-Way Routing */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
           <div className="flex items-center gap-2.5">

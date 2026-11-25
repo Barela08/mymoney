@@ -40,6 +40,11 @@ import {
   sendSupportTicketConfirmationEmail,
 } from './email.js';
 import { APP_CONFIG } from './config.js';
+import {
+  getMaintenanceSettings,
+  getAppPopupSettings,
+  isMaintenanceModeEnabled,
+} from './adminSettingsStore.js';
 import { handleAdminApiRequest } from './adminApi.js';
 import { handleAiFinanceRequest } from './aiFinanceApi.js';
 import { handleUpiDetectionRequest } from './upiDetectionApi.js';
@@ -315,20 +320,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     return false;
   }
 
-  // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile routes
-  // so the client's built-in Supabase HTTPS fallback activates immediately instead of returning false 401s.
-  if (
-    !isDatabaseAvailable() &&
-    (pathname.startsWith('/api/auth/') ||
-      pathname.startsWith('/api/profile'))
-  ) {
-    sendJson(res, 503, {
-      success: false,
-      message: 'PostgreSQL database is not connected in this preview environment.',
-    });
-    return true;
-  }
-
   const clientIp = getClientIp(req);
   const userAgent = (req.headers['user-agent'] as string) || '';
   const requestOrigin = (req.headers['origin'] as string) || '';
@@ -380,13 +371,238 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
 
+  // Public non-secret site configuration (maintenance mode & app download popup)
+  if (pathname === '/api/public/site-config' && method === 'GET') {
+    try {
+      const [maintenance, appPopup] = await Promise.all([
+        getMaintenanceSettings(),
+        getAppPopupSettings(),
+      ]);
+      sendJson(res, 200, {
+        success: true,
+        maintenance,
+        appPopup,
+      });
+    } catch {
+      sendJson(res, 200, {
+        success: true,
+        maintenance: { isEnabled: false },
+        appPopup: { enabled: true, downloadUrl: '/#install' },
+      });
+    }
+    return true;
+  }
+
   try {
     // ---------------------------------------------------------
-    // 0. ADMIN CONTROL CENTER DISPATCH (RBAC Protected)
+    // 0A. DEDICATED ADMIN LOGIN: POST /api/admin/auth/login
+    // Always accessible (even during Maintenance Mode); strictly verifies admin role.
+    // ---------------------------------------------------------
+    if (pathname === '/api/admin/auth/login' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const email = normalizeEmail(body.email || '');
+      const password = String(body.password || '');
+      const rememberMe = Boolean(body.rememberMe);
+
+      const rate = checkRateLimit(`admin_login_ip:${clientIp}`, 15, 5 * 60 * 1000);
+      if (!rate.allowed) {
+        sendJson(res, 429, {
+          success: false,
+          message: `Too many admin login attempts. Try again in ${rate.retryAfterSec} seconds.`,
+        });
+        return true;
+      }
+
+      if (!email || !password) {
+        sendJson(res, 400, { success: false, message: 'Admin email and password are required.' });
+        return true;
+      }
+
+      const ADMIN_ROLES = new Set(['superadmin', 'admin', 'support', 'analyst']);
+      const isMasterAdminEmail = (addr: string) =>
+        addr === 'hackifypro@gmail.com' || addr === 'admin@mymoney.com';
+
+      let userRecord: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT * FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1', [email]);
+          if (userRes.rows.length > 0) userRecord = userRes.rows[0];
+        } catch {
+          // Fall back to Supabase REST if direct DB fails
+        }
+      }
+
+      if (!userRecord) {
+        const sbRes = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+          userRecord = sbRes.data[0];
+        }
+      }
+
+      if (!userRecord) {
+        await logSecurityEvent('ADMIN_LOGIN_FAILED_UNKNOWN', { userEmail: email, ipAddress: clientIp }).catch(() => {});
+        sendJson(res, 401, { success: false, message: 'Invalid administrator credentials.' });
+        return true;
+      }
+
+      if (userRecord.locked_until && new Date(userRecord.locked_until) > new Date()) {
+        const remainingMin = Math.ceil((new Date(userRecord.locked_until).getTime() - Date.now()) / 60000);
+        sendJson(res, 429, {
+          success: false,
+          message: `Administrator account is temporarily locked. Try again in ${remainingMin} minute(s).`,
+        });
+        return true;
+      }
+
+      if (userRecord.status === 'suspended' || userRecord.status === 'deactivated') {
+        sendJson(res, 403, {
+          success: false,
+          message: `This account is ${userRecord.status}. Administrative sign-in blocked.`,
+        });
+        return true;
+      }
+
+      const isValid = await verifyPassword(password, userRecord.password_hash);
+      if (!isValid) {
+        if (isDatabaseAvailable()) {
+          const attempts = (userRecord.failed_login_attempts || 0) + 1;
+          const lockSql =
+            attempts >= 5
+              ? "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2"
+              : 'UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2';
+          await query(lockSql, [attempts, userRecord.id]).catch(() => {});
+        }
+        await logSecurityEvent('ADMIN_LOGIN_FAILED_PASSWORD', {
+          userId: userRecord.id,
+          userEmail: email,
+          ipAddress: clientIp,
+        }).catch(() => {});
+        sendJson(res, 401, { success: false, message: 'Invalid administrator credentials.' });
+        return true;
+      }
+
+      const effectiveRole = isMasterAdminEmail(email)
+        ? 'superadmin'
+        : String(userRecord.role || 'user').toLowerCase().trim();
+
+      if (!ADMIN_ROLES.has(effectiveRole)) {
+        await logSecurityEvent('ADMIN_LOGIN_DENIED_NON_ADMIN', {
+          userId: userRecord.id,
+          userEmail: email,
+          actorRole: effectiveRole,
+          ipAddress: clientIp,
+        }).catch(() => {});
+        sendJson(res, 403, {
+          success: false,
+          code: 'ADMIN_ROLE_REQUIRED',
+          message: 'Access Denied: This login portal is restricted to authorized administrators only.',
+        });
+        return true;
+      }
+
+      let sessionToken = `direct_${userRecord.id}_${Date.now()}`;
+      let expiresAt = new Date(Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000);
+
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.app_users
+             SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1
+             WHERE id = $2`,
+            [clientIp, userRecord.id]
+          );
+          const session = await createSession(userRecord.id, { rememberMe, userAgent, ipAddress: clientIp });
+          sessionToken = session.sessionToken;
+          expiresAt = session.expiresAt;
+        } catch {
+          // Keep fallback token
+        }
+      }
+
+      setSessionCookie(res, sessionToken, expiresAt);
+      resetRateLimit(`admin_login_ip:${clientIp}`);
+
+      const sanitizedUser = sanitizeUserOutput({
+        ...userRecord,
+        role: effectiveRole as any,
+      });
+
+      await logSecurityEvent('ADMIN_LOGIN_SUCCESS', {
+        userId: userRecord.id,
+        userEmail: email,
+        actorRole: effectiveRole,
+        ipAddress: clientIp,
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Administrator authenticated successfully.',
+        user: sanitizedUser,
+        sessionToken,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
+    // 0. ADMIN CONTROL CENTER DISPATCH (RBAC Protected — Always accessible during Maintenance Mode)
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/admin/')) {
       const handled = await handleAdminApiRequest(req, res, pathname, method);
       if (handled) return true;
+    }
+
+    // ---------------------------------------------------------
+    // MAINTENANCE MODE API GUARD
+    // Blocks non-admin access to all user/public operational APIs when Maintenance Mode is ON.
+    // Exempt: /api/health, /api/public/site-config, /api/admin/*, /api/auth/me, /api/auth/logout*
+    // ---------------------------------------------------------
+    const isMaintenanceExemptPath =
+      pathname === '/api/health' ||
+      pathname === '/api/public/site-config' ||
+      pathname.startsWith('/api/admin/') ||
+      pathname === '/api/auth/me' ||
+      pathname === '/api/auth/logout' ||
+      pathname === '/api/auth/logout-all-devices';
+
+    if (!isMaintenanceExemptPath && (await isMaintenanceModeEnabled())) {
+      const reqUser = await authenticateRequest(req);
+      const reqEmail = (reqUser?.email || '').toLowerCase().trim();
+      const reqRole = (reqUser?.role || '').toLowerCase().trim();
+      const isReqAdmin = Boolean(
+        reqUser &&
+          (reqEmail === 'hackifypro@gmail.com' ||
+            reqEmail === 'admin@mymoney.com' ||
+            ['superadmin', 'admin', 'support', 'analyst'].includes(reqRole))
+      );
+      if (!isReqAdmin) {
+        const maint = await getMaintenanceSettings();
+        sendJson(res, 503, {
+          success: false,
+          code: 'MAINTENANCE_MODE',
+          maintenance: true,
+          message:
+            maint.message ||
+            'Platform is currently undergoing scheduled maintenance. Please check back shortly.',
+          expectedRestoration: maint.expectedRestoration,
+        });
+        return true;
+      }
+    }
+
+    // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile routes
+    // so the client's built-in Supabase HTTPS fallback activates immediately instead of returning false 401s.
+    if (
+      !isDatabaseAvailable() &&
+      (pathname.startsWith('/api/auth/') ||
+        pathname.startsWith('/api/profile'))
+    ) {
+      sendJson(res, 503, {
+        success: false,
+        message: 'PostgreSQL database is not connected in this preview environment.',
+      });
+      return true;
     }
 
     // ---------------------------------------------------------

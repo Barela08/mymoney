@@ -19,6 +19,11 @@ interface AuthContextType {
   setIsRecoveryMode: React.Dispatch<React.SetStateAction<boolean>>;
   setRecoveryToken: React.Dispatch<React.SetStateAction<string | null>>;
   login: (email: string, pass: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>;
+  adminLogin: (
+    email: string,
+    pass: string,
+    rememberMe?: boolean
+  ) => Promise<{ success: boolean; message?: string; requiresAdmin?: boolean }>;
   register: (
     name: string,
     email: string,
@@ -178,6 +183,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         apiMessage = res.message;
       }
     } catch (err: any) {
+      if (err?.data?.code === 'MAINTENANCE_MODE' || (err?.status === 503 && err?.data?.maintenance)) {
+        return {
+          success: false,
+          message: err.message || 'Platform is currently under scheduled maintenance. Please try again later.',
+        };
+      }
       console.warn('API login notice:', err.message);
       apiMessage = err.message || '';
     }
@@ -225,6 +236,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       success: false,
       message: apiMessage || 'Invalid email or password. Please verify your credentials.',
     };
+  };
+
+  // Dedicated Admin Portal Login handler (/admin) — strictly requires admin role
+  const adminLogin = async (email: string, pass: string, rememberMe: boolean = false) => {
+    const supabase = getSupabaseClient();
+    try {
+      const res = await authApi.adminLogin({ email, password: pass, rememberMe });
+      if (res.success && res.user) {
+        setUser(res.user);
+        if (supabase) {
+          supabase.auth
+            .signInWithPassword({
+              email: email.trim().toLowerCase(),
+              password: pass,
+            })
+            .catch(() => {});
+        }
+        syncDeviceRegistration();
+        return {
+          success: true,
+          message: res.message || 'Admin portal access granted.',
+        };
+      }
+      return {
+        success: false,
+        message: res.message || 'Invalid administrator credentials.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Administrator authentication failed.',
+        requiresAdmin: Boolean(err?.data?.code === 'ADMIN_ROLE_REQUIRED' || err?.status === 403),
+      };
+    }
   };
 
   // Register handler with Dual-Layer multi-device sync
@@ -577,6 +622,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsRecoveryMode,
         setRecoveryToken,
         login,
+        adminLogin,
         register,
         logout,
         logoutAllDevices,

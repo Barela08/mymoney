@@ -139,6 +139,48 @@ function mapRawUserToAuthUser(u: any): AuthUser {
   };
 }
 
+async function checkMaintenanceActiveClient(): Promise<{ isEnabled: boolean; message?: string }> {
+  try {
+    const res = await fetch('/api/public/site-config', { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.maintenance?.isEnabled) {
+        return { isEnabled: true, message: data.maintenance.message };
+      }
+    }
+  } catch {}
+  try {
+    const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/app_settings?key=eq.maintenance_mode&select=value&limit=1`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows[0]?.value?.isEnabled) {
+        return { isEnabled: true, message: rows[0].value.message };
+      }
+    }
+  } catch {}
+  return { isEnabled: false };
+}
+
+function isAdminAccountRecord(userRow: any): boolean {
+  const email = String(userRow?.email || '').toLowerCase().trim();
+  const role = String(userRow?.role || '').toLowerCase().trim();
+  return (
+    email === 'hackifypro@gmail.com' ||
+    email === 'admin@mymoney.com' ||
+    ['superadmin', 'admin', 'support', 'analyst'].includes(role)
+  );
+}
+
 async function directSupabaseLogin(payload: { email: string; password: string; rememberMe?: boolean }) {
   const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
   const normEmail = payload.email.toLowerCase().trim();
@@ -178,6 +220,16 @@ async function directSupabaseLogin(payload: { email: string; password: string; r
   const sessionToken = `direct_${user.id}_${Date.now()}`;
   const authUser = mapRawUserToAuthUser(user);
 
+  const maint = await checkMaintenanceActiveClient();
+  if (maint.isEnabled && !isAdminAccountRecord(authUser)) {
+    const err = new Error(
+      maint.message || 'Platform is currently under scheduled maintenance. Please check back shortly.'
+    );
+    (err as any).status = 503;
+    (err as any).data = { code: 'MAINTENANCE_MODE', maintenance: true };
+    throw err;
+  }
+
   setStoredSessionToken(sessionToken);
   setStoredAuthUser(authUser);
 
@@ -196,6 +248,16 @@ async function directSupabaseRegister(payload: {
   password: string;
   confirmPassword: string;
 }) {
+  const maint = await checkMaintenanceActiveClient();
+  if (maint.isEnabled) {
+    const err = new Error(
+      maint.message || 'Registration is paused during scheduled maintenance.'
+    );
+    (err as any).status = 503;
+    (err as any).data = { code: 'MAINTENANCE_MODE', maintenance: true };
+    throw err;
+  }
+
   const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
   const normEmail = payload.email.toLowerCase().trim();
 
@@ -715,7 +777,7 @@ export const authApi = {
       }
       return data;
     } catch (err: any) {
-      if (err.status === 400 || err.status === 409) {
+      if (err.status === 400 || err.status === 409 || err?.data?.code === 'MAINTENANCE_MODE') {
         throw err;
       }
       console.warn('Backend register API unreachable, attempting direct registration:', err.message);
@@ -739,12 +801,47 @@ export const authApi = {
       }
       return data;
     } catch (err: any) {
-      // If server explicitly returned 401 (Invalid password) or 403 (suspended), respect that
-      if (err.status === 401 || err.status === 403 || err.status === 429) {
+      // If server explicitly returned 401/403/429 or 503 Maintenance Mode, respect that
+      if (
+        err.status === 401 ||
+        err.status === 403 ||
+        err.status === 429 ||
+        err?.data?.code === 'MAINTENANCE_MODE'
+      ) {
         throw err;
       }
       console.warn('Backend login API unreachable, falling back to direct Supabase authentication:', err.message);
       return await directSupabaseLogin(payload);
+    }
+  },
+
+  async adminLogin(payload: {
+    email: string;
+    password: string;
+    rememberMe?: boolean;
+  }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
+    try {
+      const data = await request('/api/admin/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (data.sessionToken) {
+        setStoredSessionToken(data.sessionToken);
+        if (data.user) setStoredAuthUser(data.user);
+      }
+      return data;
+    } catch (err: any) {
+      if (err.status === 400 || err.status === 401 || err.status === 403 || err.status === 429) {
+        throw err;
+      }
+      // Fallback only if backend route itself is unreachable (e.g. non-JSON/network), still enforcing admin role
+      const fallbackRes = await directSupabaseLogin(payload);
+      if (!isAdminAccountRecord(fallbackRes.user)) {
+        setStoredSessionToken(null);
+        setStoredAuthUser(null);
+        throw new Error('Access Denied: This login portal is restricted to authorized administrators only.');
+      }
+      return fallbackRes;
     }
   },
 

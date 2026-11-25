@@ -19,6 +19,8 @@ import { ScanQrModal } from './components/people/ScanQrModal';
 import { udharDeletionApi } from './lib/udharDeletionApi';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
+import { AdminLoginPage } from './components/auth/AdminLoginPage';
+import { AppDownloadPopup } from './components/common/AppDownloadPopup';
 import { TransactionCategory, TransactionSubcategory } from './types';
 import { AlertTriangle } from 'lucide-react';
 import { PwaInstallProvider, usePwaInstall } from './context/PwaInstallContext';
@@ -88,6 +90,22 @@ const MainContent: React.FC = () => {
   const { maintenanceSettings, dynamicSections, refreshTransactions, appBranding } = useExpense();
   const toast = useToast();
 
+  const [routeLocation, setRouteLocation] = useState<{ pathname: string; hash: string }>(() => {
+    if (typeof window === 'undefined') return { pathname: '/', hash: '' };
+    return {
+      pathname: window.location.pathname.replace(/\/+$/, '') || '/',
+      hash: window.location.hash || '',
+    };
+  });
+
+  const syncRouteLocation = () => {
+    if (typeof window === 'undefined') return;
+    setRouteLocation({
+      pathname: window.location.pathname.replace(/\/+$/, '') || '/',
+      hash: window.location.hash || '',
+    });
+  };
+
   const [currentTab, setCurrentTabState] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -117,15 +135,23 @@ const MainContent: React.FC = () => {
     const targetPath = TAB_TO_PATH[tab];
     if (targetPath && window.location.pathname !== targetPath) {
       window.history.pushState(null, '', targetPath);
+      syncRouteLocation();
     } else if (!targetPath && PATH_TO_TAB[window.location.pathname]) {
       window.history.pushState(null, '', '/');
+      syncRouteLocation();
     }
   };
 
   useEffect(() => {
     const onPopState = () => {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
-      setCurrentTabState(PATH_TO_TAB[p] || 'dashboard');
+      const h = window.location.hash || '';
+      setRouteLocation({ pathname: p, hash: h });
+      if (p === '/admin' || h === '#admin' || h.startsWith('#admin=')) {
+        setCurrentTabState('admin');
+      } else {
+        setCurrentTabState(PATH_TO_TAB[p] || 'dashboard');
+      }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -143,10 +169,11 @@ const MainContent: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      const path = window.location.pathname;
+      const path = window.location.pathname.replace(/\/+$/, '') || '/';
+      setRouteLocation({ pathname: path, hash });
 
       if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
-        setCurrentTab('admin');
+        setCurrentTabState('admin');
         return;
       }
 
@@ -271,27 +298,82 @@ const MainContent: React.FC = () => {
     );
   }
 
-  // If user is in password recovery mode, visiting auth routes, or not logged in, render AuthPage
-  const isAuthRoute =
-    typeof window !== 'undefined' &&
-    (window.location.pathname === '/forgot-password' ||
-      window.location.pathname === '/reset-password' ||
-      window.location.pathname === '/login' ||
-      window.location.hash.includes('reset-password') ||
-      window.location.hash === '#forgot-password');
+  const isAdminRoute =
+    routeLocation.pathname === '/admin' ||
+    routeLocation.hash === '#admin' ||
+    routeLocation.hash.startsWith('#admin=');
 
-  if (isRecoveryMode || isAuthRoute || !user) {
-    return <AuthPage />;
+  // Separate Admin Portal Route (/admin) — Always accessible even during Maintenance Mode
+  if (isAdminRoute) {
+    if (!user) {
+      return (
+        <AdminLoginPage
+          onReturnHome={() => {
+            if (typeof window !== 'undefined') {
+              window.history.pushState(null, '', '/');
+              if (window.location.hash.startsWith('#admin')) {
+                window.location.hash = '';
+              }
+            }
+            setRouteLocation({ pathname: '/', hash: '' });
+            setCurrentTabState('dashboard');
+          }}
+        />
+      );
+    }
+
+    return (
+      <Suspense fallback={<SectionFallback />}>
+        <AdminDashboard
+          onExit={() => {
+            if (typeof window !== 'undefined') {
+              if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
+                window.history.pushState(null, '', '/');
+              }
+              if (window.location.hash.startsWith('#admin')) {
+                window.location.hash = '';
+              }
+            }
+            setRouteLocation({ pathname: '/', hash: '' });
+            setCurrentTab('dashboard');
+          }}
+        />
+      </Suspense>
+    );
   }
 
-  // MAINTENANCE MODE ENFORCEMENT:
-  // If maintenance mode is enabled and user is NOT an admin, block access with MaintenanceScreen
-  if (maintenanceSettings.isEnabled && !isAdmin) {
+  // MAINTENANCE MODE ENFORCEMENT (Homepage, Normal Login/Register, and User Dashboard):
+  // If maintenance mode is enabled and current visitor is NOT an authenticated admin, block access.
+  const isMaintenanceBlocked = Boolean(maintenanceSettings.isEnabled && !isAdmin);
+  if (isMaintenanceBlocked) {
     return (
       <MaintenanceScreen
         settings={maintenanceSettings}
         onRefresh={refreshTransactions}
       />
+    );
+  }
+
+  // If user is in password recovery mode, visiting auth routes, or not logged in, render AuthPage + AppDownloadPopup
+  const isAuthRoute =
+    routeLocation.pathname === '/forgot-password' ||
+    routeLocation.pathname === '/reset-password' ||
+    routeLocation.pathname === '/login' ||
+    routeLocation.pathname === '/register' ||
+    routeLocation.hash.includes('reset-password') ||
+    routeLocation.hash === '#forgot-password' ||
+    routeLocation.hash === '#register';
+
+  if (isRecoveryMode || isAuthRoute || !user) {
+    return (
+      <>
+        <AuthPage />
+        <AppDownloadPopup
+          isAdminRoute={false}
+          isMaintenanceBlocked={false}
+          hasBottomMobileNav={false}
+        />
+      </>
     );
   }
 
@@ -563,6 +645,13 @@ const MainContent: React.FC = () => {
         {/* Automatic UPI Expense Detection Instant Categorization Popup & Onboarding */}
         <InstantExpensePopupModal />
         <UpiDetectionOnboardingModal />
+
+        {/* Bottom-Right App Download Popup (never shown on Admin or Maintenance views) */}
+        <AppDownloadPopup
+          isAdminRoute={isAdminRoute || currentTab === 'admin'}
+          isMaintenanceBlocked={isMaintenanceBlocked}
+          hasBottomMobileNav={Boolean(user && currentTab !== 'admin')}
+        />
     </div>
   );
 };

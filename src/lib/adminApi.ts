@@ -538,8 +538,99 @@ export const adminClient = {
     });
   },
 
+  // 16c. Dedicated Maintenance, App Download Popup & Encrypted API Key Settings
+  async getMaintenanceSettings() {
+    return adminRequest('/api/admin/maintenance', { method: 'GET' });
+  },
+
+  async saveMaintenanceSettings(data: {
+    isEnabled: boolean;
+    title: string;
+    message: string;
+    expectedRestoration?: string;
+  }) {
+    return adminRequest('/api/admin/maintenance', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAppPopupSettings() {
+    return adminRequest('/api/admin/app-popup', { method: 'GET' });
+  },
+
+  async saveAppPopupSettings(data: {
+    enabled: boolean;
+    downloadUrl: string;
+    title: string;
+    description: string;
+    buttonLabel?: string;
+  }) {
+    return adminRequest('/api/admin/app-popup', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getApiSettings(): Promise<{ success: boolean; apiSettings: AdminApiSettings }> {
+    return adminRequest('/api/admin/api-settings', { method: 'GET' });
+  },
+
+  async saveApiSettings(data: {
+    apiKey?: string;
+    verifyKey?: boolean;
+    aiModel?: string;
+    aiEnabled?: boolean;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    validation?: { valid: boolean; message: string; checkedAt: string } | null;
+    apiSettings?: AdminApiSettings;
+  }> {
+    return adminRequest('/api/admin/api-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async testApiKey(apiKey?: string): Promise<{
+    success: boolean;
+    validation?: { valid: boolean; message: string; checkedAt: string };
+    apiSettings?: AdminApiSettings;
+  }> {
+    return adminRequest('/api/admin/api-settings/test', {
+      method: 'POST',
+      body: JSON.stringify(apiKey ? { apiKey } : {}),
+    });
+  },
+
+  async deleteApiKey(): Promise<{
+    success: boolean;
+    message?: string;
+    apiSettings?: AdminApiSettings;
+  }> {
+    return adminRequest('/api/admin/api-settings/key', { method: 'DELETE' });
+  },
+
   // 17. Database Diagnostics (PART N)
   async getDatabaseDiagnostics() {
     return adminRequest('/api/admin/system/database', { method: 'GET' });
   },
 };
+
+export interface AdminApiSettings {
+  configured: boolean;
+  hasSavedKey: boolean;
+  maskedApiKey: string;
+  source: 'admin_settings' | 'env' | 'none';
+  updatedAt: string | null;
+  updatedBy: string | null;
+  lastValidation: {
+    valid: boolean;
+    message: string;
+    checkedAt: string;
+  } | null;
+  aiModel?: string;
+  aiEnabled?: boolean;
+  allowedAiModels?: string[];
+}

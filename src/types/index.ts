@@ -163,6 +163,18 @@ export interface MaintenanceSettings {
   expectedRestoration?: string;
   startDate?: string;
   endDate?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface AppDownloadPopupSettings {
+  enabled: boolean;
+  downloadUrl: string;
+  title: string;
+  description: string;
+  buttonLabel: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface AppBrandingSettings {

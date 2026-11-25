@@ -221,7 +221,7 @@ export async function handleAiFinanceRequest(
 
   // Public provider status (no secrets exposed)
   if (pathname === '/api/ai/status' && method === 'GET') {
-    sendJson(res, 200, { success: true, status: getAiProviderStatus() });
+    sendJson(res, 200, { success: true, status: await getAiProviderStatus() });
     return true;
   }
 
@@ -261,7 +261,7 @@ export async function handleAiFinanceRequest(
             ...c,
             messages: byConv.get(c.id) || [],
           }));
-          sendJson(res, 200, { success: true, conversations, status: getAiProviderStatus() });
+          sendJson(res, 200, { success: true, conversations, status: await getAiProviderStatus() });
           return true;
         } catch {
           // Table may not be migrated yet; fall back cleanly to server user store
@@ -271,7 +271,7 @@ export async function handleAiFinanceRequest(
       sendJson(res, 200, {
         success: true,
         conversations: store.conversations.sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
-        status: getAiProviderStatus(),
+        status: await getAiProviderStatus(),
       });
       return true;
     }
@@ -618,7 +618,7 @@ export async function handleAiFinanceRequest(
         return true;
       }
 
-      if (!getAiProviderStatus().configured) {
+      if (!(await getAiProviderStatus()).configured) {
         sendJson(res, 200, { success: true, suggestion: det, aiFallbackSkipped: true });
         return true;
       }

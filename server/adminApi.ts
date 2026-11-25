@@ -10,9 +10,21 @@ import { authenticateRequest, revokeAllUserSessions } from './auth.js';
 import { logSecurityEvent, generateCryptoToken } from './security.js';
 import {
   ALLOWED_GEMINI_MODELS,
+  getAiProviderStatus,
   getRuntimeAiConfig,
   setRuntimeAiConfig,
+  validateGeminiApiKey,
 } from './aiProvider.js';
+import {
+  getAppPopupSettings,
+  getMaintenanceSettings,
+  getMaskedGeminiApiKeyInfo,
+  removeGeminiApiKey,
+  saveAppPopupSettings,
+  saveGeminiApiKey,
+  saveMaintenanceSettings,
+  validateAppDownloadUrl,
+} from './adminSettingsStore.js';
 import {
   sendAdminReplyToTicketEmail,
   sendAdminTestEmail,
@@ -3483,9 +3495,8 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const runtimeAi = getRuntimeAiConfig();
-      const geminiConfigured = Boolean(
-        (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim().length > 10
-      );
+      const aiProviderStatus = await getAiProviderStatus();
+      const geminiConfigured = aiProviderStatus.configured;
 
       // Real status of the 7 AI modules
       const aiModules = [
@@ -3527,6 +3538,11 @@ export async function handleAdminApiRequest(
         } catch {}
       }
 
+      const [maintenance, appPopup] = await Promise.all([
+        getMaintenanceSettings(),
+        getAppPopupSettings(),
+      ]);
+
       sendJson(res, 200, {
         success: true,
         settings: {
@@ -3535,7 +3551,8 @@ export async function handleAdminApiRequest(
           privacyPolicyUrl: settingsMap.privacy_url || '/#privacy-policy',
           termsUrl: settingsMap.terms_url || '/#legal=terms_of_service',
           announcementBanner: settingsMap.announcement_banner || { enabled: false, message: '' },
-          maintenanceMode: settingsMap.maintenance_mode || { enabled: false, reason: '' },
+          maintenanceMode: maintenance,
+          appDownloadPopup: appPopup,
           minAppVersion: settingsMap.min_app_version || '2.5.0',
         },
       });
@@ -3547,13 +3564,31 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const body = await parseJsonBody(req);
-      const { appName, brandOwner, announcementBanner, maintenanceMode, minAppVersion } = body;
+      const { appName, brandOwner, announcementBanner, maintenanceMode, appDownloadPopup, minAppVersion } = body;
+
+      if (maintenanceMode && typeof maintenanceMode === 'object') {
+        await saveMaintenanceSettings(
+          {
+            isEnabled: Boolean(maintenanceMode.isEnabled ?? maintenanceMode.enabled),
+            title: maintenanceMode.title,
+            message: maintenanceMode.message ?? maintenanceMode.reason,
+            expectedRestoration: maintenanceMode.expectedRestoration,
+          },
+          { id: auth.authUser.id, email: auth.authUser.email }
+        );
+      }
+
+      if (appDownloadPopup && typeof appDownloadPopup === 'object') {
+        await saveAppPopupSettings(appDownloadPopup, {
+          id: auth.authUser.id,
+          email: auth.authUser.email,
+        });
+      }
 
       const upserts = [
         ['app_name', JSON.stringify(appName || 'My Money Manager')],
         ['brand_owner', JSON.stringify(brandOwner || 'HackifyPro')],
         ['announcement_banner', JSON.stringify(announcementBanner || { enabled: false, message: '' })],
-        ['maintenance_mode', JSON.stringify(maintenanceMode || { enabled: false, reason: '' })],
         ['min_app_version', JSON.stringify(minAppVersion || '2.5.0')],
       ];
 
@@ -3580,8 +3615,284 @@ export async function handleAdminApiRequest(
     }
 
     // =========================================================
-    // 18b. SERVER-SIDE API & INTEGRATIONS CONFIG (NON-SECRET)
-    // Secret API keys (GEMINI_API_KEY, SMTP_PASS, VAPID_PRIVATE_KEY) stay strictly in server env vars.
+    // 18a. MAINTENANCE MODE MANAGEMENT: GET/PUT /api/admin/maintenance
+    // =========================================================
+    if (pathname === '/api/admin/maintenance' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const maintenance = await getMaintenanceSettings();
+      sendJson(res, 200, { success: true, maintenance });
+      return true;
+    }
+
+    if (pathname === '/api/admin/maintenance' && (method === 'PUT' || method === 'POST')) {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const isEnabled = Boolean(body.isEnabled);
+      const title = String(body.title || '').trim();
+      const message = String(body.message || '').trim();
+      const expectedRestoration = String(body.expectedRestoration || '').trim();
+
+      if (!title || title.length < 3) {
+        sendJson(res, 400, { success: false, message: 'Maintenance splash title must be at least 3 characters.' });
+        return true;
+      }
+      if (!message || message.length < 10) {
+        sendJson(res, 400, { success: false, message: 'Maintenance user notice message must be at least 10 characters.' });
+        return true;
+      }
+
+      const maintenance = await saveMaintenanceSettings(
+        {
+          isEnabled,
+          title,
+          message,
+          expectedRestoration: expectedRestoration || 'Within 2 hours',
+        },
+        { id: auth.authUser.id, email: auth.authUser.email }
+      );
+
+      await logSecurityEvent('MAINTENANCE_MODE_UPDATED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { isEnabled: maintenance.isEnabled, title: maintenance.title },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: maintenance.isEnabled
+          ? 'Maintenance mode is now ON. Normal user access is locked.'
+          : 'Maintenance mode is now OFF. Website access is restored.',
+        maintenance,
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 18b. APP DOWNLOAD POPUP & URL MANAGEMENT: GET/PUT /api/admin/app-popup
+    // =========================================================
+    if (pathname === '/api/admin/app-popup' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const appPopup = await getAppPopupSettings();
+      sendJson(res, 200, { success: true, appPopup });
+      return true;
+    }
+
+    if (pathname === '/api/admin/app-popup' && (method === 'PUT' || method === 'POST')) {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const enabled = typeof body.enabled === 'boolean' ? body.enabled : true;
+      const urlCheck = validateAppDownloadUrl(String(body.downloadUrl || ''));
+      if (!urlCheck.valid) {
+        sendJson(res, 400, { success: false, message: urlCheck.error || 'Invalid App Download URL.' });
+        return true;
+      }
+
+      const title = String(body.title || 'Get My Money Manager App').trim();
+      const description = String(body.description || 'Track expenses, Udhar & smart insights faster with our mobile app.').trim();
+      const buttonLabel = String(body.buttonLabel || 'Download App').trim();
+
+      if (title.length < 3) {
+        sendJson(res, 400, { success: false, message: 'Popup title must be at least 3 characters.' });
+        return true;
+      }
+
+      const appPopup = await saveAppPopupSettings(
+        {
+          enabled,
+          downloadUrl: urlCheck.normalized,
+          title,
+          description,
+          buttonLabel: buttonLabel || 'Download App',
+        },
+        { id: auth.authUser.id, email: auth.authUser.email }
+      );
+
+      await logSecurityEvent('APP_POPUP_SETTINGS_UPDATED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { enabled: appPopup.enabled, downloadUrl: appPopup.downloadUrl },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'App Download Popup settings saved successfully.',
+        appPopup,
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 18c. ENCRYPTED API KEY MANAGEMENT (SERVER-SIDE ONLY — NEVER EXPOSED RAW)
+    // =========================================================
+    if (pathname === '/api/admin/api-settings' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const [keyInfo, aiStatus] = await Promise.all([
+        getMaskedGeminiApiKeyInfo(),
+        getAiProviderStatus(),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        apiSettings: {
+          ...keyInfo,
+          aiModel: aiStatus.model,
+          aiEnabled: aiStatus.enabled,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS],
+        },
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/api-settings' && (method === 'PUT' || method === 'POST')) {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const rawApiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+      const verifyBeforeSave = Boolean(body.verifyKey);
+      const requestedModel = typeof body.aiModel === 'string' ? body.aiModel.trim() : undefined;
+      const requestedAiEnabled = typeof body.aiEnabled === 'boolean' ? body.aiEnabled : undefined;
+
+      if (requestedModel && !(ALLOWED_GEMINI_MODELS as readonly string[]).includes(requestedModel)) {
+        sendJson(res, 400, {
+          success: false,
+          message: `Unsupported AI model. Allowed models: ${ALLOWED_GEMINI_MODELS.join(', ')}`,
+        });
+        return true;
+      }
+
+      if (requestedModel !== undefined || requestedAiEnabled !== undefined) {
+        setRuntimeAiConfig({ model: requestedModel, enabled: requestedAiEnabled });
+        const existingCfg = loadIntegrationsConfigFallback();
+        saveIntegrationsConfigFallback({
+          ...existingCfg,
+          aiModel: requestedModel ?? existingCfg.aiModel,
+          aiEnabled: requestedAiEnabled ?? existingCfg.aiEnabled,
+          updatedAt: new Date().toISOString(),
+          updatedBy: auth.authUser.email,
+        });
+      }
+
+      let validationResult: { valid: boolean; message: string; checkedAt: string } | null = null;
+
+      if (rawApiKey) {
+        if (rawApiKey.length < 20 || rawApiKey.length > 256 || /\s/.test(rawApiKey)) {
+          sendJson(res, 400, {
+            success: false,
+            message: 'Invalid API key format. Key must be 20–256 non-whitespace characters.',
+          });
+          return true;
+        }
+
+        if (verifyBeforeSave) {
+          validationResult = await validateGeminiApiKey(rawApiKey);
+          if (!validationResult.valid) {
+            sendJson(res, 400, {
+              success: false,
+              message: validationResult.message || 'API key verification failed.',
+              validation: validationResult,
+            });
+            return true;
+          }
+        }
+
+        await saveGeminiApiKey(rawApiKey, auth.authUser.email, validationResult);
+
+        await logSecurityEvent('ADMIN_API_KEY_UPDATED', {
+          userId: auth.authUser.id,
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { verified: Boolean(validationResult?.valid) },
+        }).catch(() => {});
+      }
+
+      const [keyInfo, aiStatus] = await Promise.all([
+        getMaskedGeminiApiKeyInfo(),
+        getAiProviderStatus(),
+      ]);
+
+      sendJson(res, 200, {
+        success: true,
+        message: rawApiKey
+          ? validationResult?.valid
+            ? 'API key verified and saved securely on the server.'
+            : 'API key encrypted and saved securely on the server.'
+          : 'AI API configuration updated successfully.',
+        validation: validationResult,
+        apiSettings: {
+          ...keyInfo,
+          aiModel: aiStatus.model,
+          aiEnabled: aiStatus.enabled,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS],
+        },
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/api-settings/test' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const candidateKey = typeof body.apiKey === 'string' && body.apiKey.trim() ? body.apiKey.trim() : undefined;
+
+      const validation = await validateGeminiApiKey(candidateKey);
+      const keyInfo = await getMaskedGeminiApiKeyInfo();
+
+      sendJson(res, 200, {
+        success: true,
+        validation,
+        apiSettings: keyInfo,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/api-settings/key' && method === 'DELETE') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const keyInfo = await removeGeminiApiKey();
+      const aiStatus = await getAiProviderStatus();
+
+      await logSecurityEvent('ADMIN_API_KEY_REMOVED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: keyInfo.source === 'env'
+          ? 'Saved admin key removed. Server will fall back to environment GEMINI_API_KEY.'
+          : 'Saved admin API key removed.',
+        apiSettings: {
+          ...keyInfo,
+          aiModel: aiStatus.model,
+          aiEnabled: aiStatus.enabled,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS],
+        },
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 18d. SERVER-SIDE API & INTEGRATIONS CONFIG (NON-SECRET)
     // =========================================================
     if (pathname === '/api/admin/integrations-config' && method === 'GET') {
       const auth = await verifyAdminAuth(req, res, 'settings.manage');
@@ -3608,9 +3919,8 @@ export async function handleAdminApiRequest(
       });
 
       const runtimeAi = getRuntimeAiConfig();
-      const geminiConfigured = Boolean(
-        (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim().length > 10
-      );
+      const aiProviderStatus = await getAiProviderStatus();
+      const geminiConfigured = aiProviderStatus.configured;
       const supabaseConfigured = Boolean(
         (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co').trim() &&
         (

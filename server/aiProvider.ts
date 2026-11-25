@@ -1,6 +1,10 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { AiFinancialContextSnapshot, ReceiptOcrExtraction } from '../src/lib/financialIntelligenceEngine.js';
 import { loadIntegrationsConfigFallback } from './supabaseRestFallback.js';
+import {
+  getEffectiveGeminiApiKey,
+  updateGeminiKeyValidationStatus,
+} from './adminSettingsStore.js';
 
 export const ALLOWED_GEMINI_MODELS = [
   'gemini-2.5-flash-lite',
@@ -79,12 +83,13 @@ export class AiProviderError extends Error {
   }
 }
 
-function getApiKey(): string {
-  return (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
+async function getApiKey(): Promise<string> {
+  const effective = await getEffectiveGeminiApiKey();
+  return effective.apiKey;
 }
 
-export function getAiProviderStatus(): AiProviderStatus {
-  const configured = getApiKey().length > 10;
+export async function getAiProviderStatus(): Promise<AiProviderStatus> {
+  const configured = (await getApiKey()).length > 10;
   return {
     configured,
     enabled: runtimeAiEnabled,
@@ -94,19 +99,33 @@ export function getAiProviderStatus(): AiProviderStatus {
   };
 }
 
-function createClient(): GoogleGenAI {
-  if (!runtimeAiEnabled) {
+function isInvalidApiKeyError(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  const status = Number(err?.status || err?.statusCode || 0);
+  return (
+    msg.includes('api_key_invalid') ||
+    msg.includes('api key not valid') ||
+    msg.includes('invalid api key') ||
+    msg.includes('api key is invalid') ||
+    msg.includes('permission_denied') ||
+    status === 401 ||
+    status === 403
+  );
+}
+
+async function createClient(overrideKey?: string): Promise<GoogleGenAI> {
+  if (!overrideKey && !runtimeAiEnabled) {
     throw new AiProviderError(
       'AI_PROVIDER_NOT_CONFIGURED',
       'External AI processing is currently paused by the administrator.',
       503
     );
   }
-  const apiKey = getApiKey();
+  const apiKey = (overrideKey ?? (await getApiKey())).trim();
   if (!apiKey || apiKey.length <= 10) {
     throw new AiProviderError(
       'AI_PROVIDER_NOT_CONFIGURED',
-      'AI service is not configured on this server yet. Please contact the administrator to configure GEMINI_API_KEY.',
+      'AI API key is not configured yet. Please configure it in Admin Panel → Settings → API Settings.',
       503
     );
   }
@@ -118,6 +137,64 @@ function createClient(): GoogleGenAI {
       },
     },
   });
+}
+
+export async function validateGeminiApiKey(candidateKey?: string): Promise<{
+  valid: boolean;
+  message: string;
+  checkedAt: string;
+}> {
+  const checkedAt = new Date().toISOString();
+  const isTestingSaved = !candidateKey;
+  const keyToTest = (candidateKey ?? (await getApiKey())).trim();
+
+  if (!keyToTest || keyToTest.length < 20) {
+    const res = {
+      valid: false,
+      message: 'API key is missing or too short (minimum 20 characters).',
+      checkedAt,
+    };
+    if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+    return res;
+  }
+
+  try {
+    const ai = await createClient(keyToTest);
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: runtimePreferredModel,
+        contents: 'Reply with OK',
+      }),
+      12000
+    );
+    if (response && (response.text || response.candidates?.length)) {
+      const res = {
+        valid: true,
+        message: `Verified successfully with ${runtimePreferredModel}.`,
+        checkedAt,
+      };
+      if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+      return res;
+    }
+    const res = {
+      valid: false,
+      message: 'API key returned an empty response during verification.',
+      checkedAt,
+    };
+    if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+    return res;
+  } catch (err: any) {
+    const invalidKey = isInvalidApiKeyError(err);
+    const res = {
+      valid: false,
+      message: invalidKey
+        ? 'API key is invalid, revoked, or unauthorized for Gemini API.'
+        : String(err?.message || 'Unable to verify API key right now.').slice(0, 220),
+      checkedAt,
+    };
+    if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+    return res;
+  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<T> {
@@ -158,7 +235,7 @@ export async function askFinancialAssistant(params: {
   userName?: string;
   mode?: 'chat' | 'voice';
 }): Promise<{ answer: string; model: string }> {
-  const ai = createClient();
+  const ai = await createClient();
   const isVoiceMode = params.mode === 'voice';
 
   const systemInstruction = `You are the AI Money Assistant inside My Money Manager by HackifyPro.
@@ -224,6 +301,13 @@ ${JSON.stringify(params.context)}`;
 
   console.error('[AI Assistant Final Error]:', lastError);
   if (lastError instanceof AiProviderError) throw lastError;
+  if (isInvalidApiKeyError(lastError)) {
+    throw new AiProviderError(
+      'AI_PROVIDER_ERROR',
+      'The configured Gemini API key is invalid or unauthorized. Please ask an administrator to update it in Admin Settings.',
+      502
+    );
+  }
   throw new AiProviderError(
     'AI_PROVIDER_ERROR',
     lastError?.message || 'Unable to reach the AI assistant right now. Please retry in a moment.',
@@ -248,7 +332,7 @@ export async function classifyTransactionWithAi(input: {
   suggestedDescription: string;
   confidence: number;
 }> {
-  const ai = createClient();
+  const ai = await createClient();
 
   const prompt = `Classify this personal finance transaction for an Indian user into one of the exact app categories and subcategories.
 Input:
@@ -303,6 +387,13 @@ Valid category/subcategory pairs:
     };
   } catch (err: any) {
     if (err instanceof AiProviderError) throw err;
+    if (isInvalidApiKeyError(err)) {
+      throw new AiProviderError(
+        'AI_PROVIDER_ERROR',
+        'The configured Gemini API key is invalid or unauthorized. Please ask an administrator to update it in Admin Settings.',
+        502
+      );
+    }
     throw new AiProviderError('AI_PROVIDER_ERROR', 'Smart AI categorization temporarily unavailable.', 502);
   }
 }
@@ -315,7 +406,7 @@ export async function extractReceiptWithOcr(params: {
   base64Image: string;
   mimeType: string;
 }): Promise<ReceiptOcrExtraction> {
-  const ai = createClient();
+  const ai = await createClient();
 
   const prompt = `Extract structured receipt / invoice data from this image.
 RULES:
@@ -412,6 +503,13 @@ RULES:
     };
   } catch (err: any) {
     if (err instanceof AiProviderError) throw err;
+    if (isInvalidApiKeyError(err)) {
+      throw new AiProviderError(
+        'AI_PROVIDER_ERROR',
+        'Receipt OCR could not authenticate because the Gemini API key is invalid or unauthorized. Please ask an administrator to update it in Admin Settings.',
+        502
+      );
+    }
     throw new AiProviderError(
       'AI_PROVIDER_ERROR',
       'Receipt OCR extraction failed. Please try a clearer image or enter the details manually.',

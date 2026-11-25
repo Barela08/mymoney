@@ -7,6 +7,7 @@ import {
   FilterOptions,
   DynamicSection,
   MaintenanceSettings,
+  AppDownloadPopupSettings,
   AppBrandingSettings,
   BroadcastNotification,
 } from '../types';
@@ -40,6 +41,7 @@ import {
   SecurityAuthorizationError,
 } from '../lib/security';
 import { udharDeletionApi, UdharContact } from '../lib/udharDeletionApi';
+import { adminClient } from '../lib/adminApi';
 
 interface ExpenseContextType {
   transactions: Transaction[];
@@ -87,9 +89,11 @@ interface ExpenseContextType {
   updateSection: (id: string, updates: Partial<DynamicSection>) => Promise<boolean>;
   deleteSection: (id: string) => Promise<boolean>;
 
-  // App Settings & Maintenance Mode
+  // App Settings, Maintenance Mode & App Download Popup
   maintenanceSettings: MaintenanceSettings;
   updateMaintenanceSettings: (settings: Partial<MaintenanceSettings>) => Promise<boolean>;
+  appPopupSettings: AppDownloadPopupSettings;
+  updateAppPopupSettings: (settings: Partial<AppDownloadPopupSettings>) => Promise<boolean>;
   appBranding: AppBrandingSettings;
   updateAppBranding: (settings: Partial<AppBrandingSettings>) => Promise<boolean>;
 
@@ -108,6 +112,7 @@ const ExpenseContext = createContext<ExpenseContextType | undefined>(undefined);
 const LOCAL_STORAGE_KEY = 'my_money_transactions_real';
 const LOCAL_SECTIONS_KEY = 'my_money_sections_cache';
 const LOCAL_MAINTENANCE_KEY = 'my_money_maintenance_cache';
+const LOCAL_APP_POPUP_KEY = 'my_money_app_popup_cache';
 const LOCAL_BRANDING_KEY = 'my_money_branding_cache';
 
 const DEFAULT_SECTIONS: DynamicSection[] = [
@@ -123,6 +128,14 @@ const DEFAULT_MAINTENANCE: MaintenanceSettings = {
   title: 'My Money Manager is Under Scheduled Maintenance',
   message: 'We are upgrading our secure financial infrastructure to deliver better performance and security. Normal services will resume shortly.',
   expectedRestoration: 'Within 2 hours',
+};
+
+const DEFAULT_APP_POPUP: AppDownloadPopupSettings = {
+  enabled: true,
+  downloadUrl: '/#install',
+  title: 'Get the My Money Manager App',
+  description: 'Install our fast, offline-ready app for instant expense tracking & UPI alerts.',
+  buttonLabel: 'Download App',
 };
 
 const DEFAULT_BRANDING: AppBrandingSettings = {
@@ -187,6 +200,15 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return saved ? JSON.parse(saved) : DEFAULT_MAINTENANCE;
     } catch {
       return DEFAULT_MAINTENANCE;
+    }
+  });
+
+  const [appPopupSettings, setAppPopupSettings] = useState<AppDownloadPopupSettings>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_APP_POPUP_KEY);
+      return saved ? { ...DEFAULT_APP_POPUP, ...JSON.parse(saved) } : DEFAULT_APP_POPUP;
+    } catch {
+      return DEFAULT_APP_POPUP;
     }
   });
 
@@ -342,10 +364,14 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const targetUserId = isAdmin ? undefined : user?.uid;
 
-        // Run all public metadata and transactions fetches in PARALLEL for maximum speed
-        const [sectionsData, maint, brand, notifs, supaData] = await Promise.all([
+        // Run all public metadata, server site-config, and transactions fetches in PARALLEL
+        const [siteConfigRes, sectionsData, maint, popupCfg, brand, notifs, supaData] = await Promise.all([
+          fetch('/api/public/site-config', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
           fetchSectionsFromSupabase().catch(() => null),
           fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
+          fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
           fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
           fetchNotificationsFromSupabase().catch(() => []),
           user
@@ -361,9 +387,35 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           localStorage.setItem(LOCAL_SECTIONS_KEY, JSON.stringify(sectionsData));
         }
 
-        if (maint) {
-          setMaintenanceSettings(maint);
-          localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(maint));
+        const serverMaint = siteConfigRes?.maintenance as MaintenanceSettings | undefined;
+        const resolvedMaint = (() => {
+          if (serverMaint && maint) {
+            const sTs = serverMaint.updatedAt ? Date.parse(serverMaint.updatedAt) : 0;
+            const dTs = maint.updatedAt ? Date.parse(maint.updatedAt) : 0;
+            return sTs >= dTs ? serverMaint : maint;
+          }
+          return serverMaint || maint;
+        })();
+
+        if (resolvedMaint) {
+          setMaintenanceSettings(resolvedMaint);
+          localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(resolvedMaint));
+        }
+
+        const serverPopup = siteConfigRes?.appPopup as AppDownloadPopupSettings | undefined;
+        const resolvedPopup = (() => {
+          if (serverPopup && popupCfg) {
+            const sTs = serverPopup.updatedAt ? Date.parse(serverPopup.updatedAt) : 0;
+            const dTs = popupCfg.updatedAt ? Date.parse(popupCfg.updatedAt) : 0;
+            return sTs >= dTs ? serverPopup : popupCfg;
+          }
+          return serverPopup || popupCfg;
+        })();
+
+        if (resolvedPopup) {
+          const normalizedPopup = { ...DEFAULT_APP_POPUP, ...resolvedPopup };
+          setAppPopupSettings(normalizedPopup);
+          localStorage.setItem(LOCAL_APP_POPUP_KEY, JSON.stringify(normalizedPopup));
         }
 
         if (brand) {
@@ -457,6 +509,82 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsLoading(false);
     setIsSyncing(false);
   }, [user, isAdmin, getPendingQueue, savePendingQueue, persistLocally, getUserTxStorageKey]);
+
+  // Load public site config (Maintenance Mode + App Download Popup + Branding) even for unauthenticated visitors
+  const fetchPublicSiteConfig = useCallback(async () => {
+    try {
+      const [siteRes, maintSupa, popupSupa, brandSupa] = await Promise.all([
+        fetch('/api/public/site-config', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
+        fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
+        fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
+      ]);
+
+      const serverMaint = siteRes?.maintenance as MaintenanceSettings | undefined;
+      const resolvedMaint = (() => {
+        if (serverMaint && maintSupa) {
+          const sTs = serverMaint.updatedAt ? Date.parse(serverMaint.updatedAt) : 0;
+          const dTs = maintSupa.updatedAt ? Date.parse(maintSupa.updatedAt) : 0;
+          return sTs >= dTs ? serverMaint : maintSupa;
+        }
+        return serverMaint || maintSupa;
+      })();
+      if (resolvedMaint) {
+        setMaintenanceSettings(resolvedMaint);
+        localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(resolvedMaint));
+      }
+
+      const serverPopup = siteRes?.appPopup as AppDownloadPopupSettings | undefined;
+      const resolvedPopup = (() => {
+        if (serverPopup && popupSupa) {
+          const sTs = serverPopup.updatedAt ? Date.parse(serverPopup.updatedAt) : 0;
+          const dTs = popupSupa.updatedAt ? Date.parse(popupSupa.updatedAt) : 0;
+          return sTs >= dTs ? serverPopup : popupSupa;
+        }
+        return serverPopup || popupSupa;
+      })();
+      if (resolvedPopup) {
+        const normalizedPopup = { ...DEFAULT_APP_POPUP, ...resolvedPopup };
+        setAppPopupSettings(normalizedPopup);
+        localStorage.setItem(LOCAL_APP_POPUP_KEY, JSON.stringify(normalizedPopup));
+      }
+
+      if (brandSupa) {
+        const normalizedBrand: AppBrandingSettings = {
+          ...DEFAULT_BRANDING,
+          ...brandSupa,
+          logoUrl: sanitizeLogoUrl(brandSupa.logoUrl),
+        };
+        setAppBranding(normalizedBrand);
+        localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(normalizedBrand));
+      }
+    } catch {
+      // Keep cached values if offline
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPublicSiteConfig();
+    const handleFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchPublicSiteConfig();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchPublicSiteConfig();
+      }
+    }, 30000);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+      clearInterval(interval);
+    };
+  }, [fetchPublicSiteConfig]);
 
   // Initial load, multi-device Realtime subscription, and mobile tab wake/focus listener
   useEffect(() => {
@@ -950,16 +1078,58 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // App Settings & Maintenance Mode
+  // App Settings, Maintenance Mode & App Download Popup
   const updateMaintenanceSettings = async (settings: Partial<MaintenanceSettings>): Promise<boolean> => {
-    const updated = { ...maintenanceSettings, ...settings };
-    setMaintenanceSettings(updated);
-    localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(updated));
+    const updated: MaintenanceSettings = {
+      ...maintenanceSettings,
+      ...settings,
+      updatedAt: new Date().toISOString(),
+      updatedBy: user?.email || undefined,
+    };
+
     try {
-      await saveAppSettingToSupabase('maintenance_mode', updated, user?.uid);
+      const res = await adminClient.saveMaintenanceSettings(updated);
+      const saved = res?.settings ? { ...updated, ...res.settings } : updated;
+      setMaintenanceSettings(saved);
+      localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(saved));
+      saveAppSettingToSupabase('maintenance_mode', saved, user?.uid).catch(() => {});
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      try {
+        await saveAppSettingToSupabase('maintenance_mode', updated, user?.uid);
+        setMaintenanceSettings(updated);
+        localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(updated));
+        return true;
+      } catch {
+        throw err;
+      }
+    }
+  };
+
+  const updateAppPopupSettings = async (settings: Partial<AppDownloadPopupSettings>): Promise<boolean> => {
+    const merged: AppDownloadPopupSettings = {
+      ...appPopupSettings,
+      ...settings,
+      updatedAt: new Date().toISOString(),
+      updatedBy: user?.email || undefined,
+    };
+
+    try {
+      const res = await adminClient.saveAppPopupSettings(merged);
+      const saved = res?.settings ? { ...merged, ...res.settings } : merged;
+      setAppPopupSettings(saved);
+      localStorage.setItem(LOCAL_APP_POPUP_KEY, JSON.stringify(saved));
+      saveAppSettingToSupabase('app_download_popup', saved, user?.uid).catch(() => {});
+      return true;
+    } catch (err) {
+      try {
+        await saveAppSettingToSupabase('app_download_popup', merged, user?.uid);
+        setAppPopupSettings(merged);
+        localStorage.setItem(LOCAL_APP_POPUP_KEY, JSON.stringify(merged));
+        return true;
+      } catch {
+        throw err;
+      }
     }
   };
 
@@ -1329,6 +1499,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteSection,
         maintenanceSettings,
         updateMaintenanceSettings,
+        appPopupSettings,
+        updateAppPopupSettings,
         appBranding,
         updateAppBranding,
         notifications,

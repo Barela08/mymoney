@@ -11,7 +11,7 @@ interface MaintenanceScreenProps {
 }
 
 export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, onRefresh }) => {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const { appBranding } = useExpense();
 
   return (
@@ -39,13 +39,15 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, 
           </div>
         </div>
 
-        <button
-          onClick={logout}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all border border-slate-700 cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Sign Out</span>
-        </button>
+        {user && (
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all border border-slate-700 cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
+          </button>
+        )}
       </header>
 
       {/* Main Content Card */}

