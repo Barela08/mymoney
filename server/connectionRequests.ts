@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { query, isDatabaseAvailable } from './db';
 import { checkRateLimit, logSecurityEvent } from './security';
 import { createNotification } from './notificationService';
@@ -823,8 +822,4 @@ export function buildConnectionSummary(target: any) {
     phoneMasked: maskPhoneForPrivacy(target.phone),
     avatarUrl: target.avatar_url || null,
   };
-}
-
-export function randomRequestId(): string {
-  return crypto.randomUUID();
 }
