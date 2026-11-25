@@ -5,6 +5,7 @@ import path from 'path';
 import { authenticateRequest } from './auth.js';
 import { query, isDatabaseAvailable } from './db.js';
 import { logSecurityEvent } from './security.js';
+import { hasServerUserConsent } from './privacyConsentApi.js';
 import {
   getAiProviderStatus,
   askFinancialAssistant,
@@ -369,6 +370,17 @@ export async function handleAiFinanceRequest(
     }
 
     if (pathname === '/api/ai/assistant/chat' && method === 'POST') {
+      const hasAiConsent = await hasServerUserConsent(authUser, 'ai_processing');
+      if (!hasAiConsent) {
+        sendJson(res, 403, {
+          success: false,
+          code: 'AI_CONSENT_REQUIRED',
+          message:
+            'AI External Processing consent is currently off. Enable it under Settings → Privacy → Manage Consent to send questions to the external AI provider.',
+        });
+        return true;
+      }
+
       if (!checkAiRateLimit(`chat:${userId}`, 25, 60 * 1000)) {
         if (useDb) {
           logSecurityEvent('AI_RATE_LIMITED', {
@@ -597,6 +609,19 @@ export async function handleAiFinanceRequest(
         return true;
       }
 
+      // Never send financial records externally without explicit ai_processing consent;
+      // fall back cleanly to local deterministic categorization.
+      const hasAiConsent = await hasServerUserConsent(authUser, 'ai_processing');
+      if (!hasAiConsent) {
+        sendJson(res, 200, {
+          success: true,
+          suggestion: det,
+          aiFallbackSkipped: true,
+          aiConsentRequired: true,
+        });
+        return true;
+      }
+
       if (!checkAiRateLimit(`cat:${userId}`, 40, 60 * 1000)) {
         sendJson(res, 200, { success: true, suggestion: det, rateLimited: true });
         return true;
@@ -630,6 +655,17 @@ export async function handleAiFinanceRequest(
     // ------------------------------------------------------------------------
 
     if (pathname === '/api/ai/receipt-ocr' && method === 'POST') {
+      const hasAiConsent = await hasServerUserConsent(authUser, 'ai_processing');
+      if (!hasAiConsent) {
+        sendJson(res, 403, {
+          success: false,
+          code: 'AI_CONSENT_REQUIRED',
+          message:
+            'AI External Processing consent is currently off. Enable it under Settings → Privacy → Manage Consent to scan receipts with external AI OCR, or enter receipt details manually.',
+        });
+        return true;
+      }
+
       if (!checkAiRateLimit(`ocr:${userId}`, 12, 60 * 1000)) {
         sendJson(res, 429, {
           success: false,

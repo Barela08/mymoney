@@ -809,22 +809,40 @@ export async function disconnectUserRest(authUser: AuthenticatedUser, targetUser
 }
 
 export async function getPrivacyConsentsRest(authUser: AuthenticatedUser) {
-  const res = await sbRest<any[]>(
-    `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,purpose,status,action,policy_version,consent_wording,created_at&order=created_at.desc&limit=100`
+  let res = await sbRest<any[]>(
+    `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,consent_status,action,policy_version,consent_wording,granted_at,withdrawn_at,source,audit_metadata,created_at,updated_at&order=created_at.desc&limit=200`
   );
+  if (!res.ok && res.status === 400) {
+    // Graceful fallback if optional audit columns are not yet migrated on remote Supabase
+    res = await sbRest<any[]>(
+      `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,action,policy_version,consent_wording,created_at,updated_at&order=created_at.desc&limit=200`
+    );
+  }
   if (!res.ok) {
-    return { status: 200, body: { success: true, consents: {}, history: [], policyVersion: 'v2.0 - DPDP Act 2023' } };
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: res.error || 'Could not load saved privacy choices from Supabase.',
+      },
+    };
   }
   const history = res.data || [];
   const latestByCategory: Record<string, any> = {};
   for (const row of history) {
     if (!latestByCategory[row.purpose]) {
+      const effectiveStatus = row.consent_status || row.status;
       latestByCategory[row.purpose] = {
         category: row.purpose,
-        status: row.status,
+        purpose: row.purpose,
+        status: effectiveStatus,
+        consent_status: effectiveStatus,
         policyVersion: row.policy_version,
-        consentedAt: row.status === 'granted' ? row.created_at : null,
-        revokedAt: row.status === 'withdrawn' ? row.created_at : null,
+        consentedAt: row.granted_at || (effectiveStatus === 'granted' ? row.created_at : null),
+        grantedAt: row.granted_at || (effectiveStatus === 'granted' ? row.created_at : null),
+        revokedAt: row.withdrawn_at || (effectiveStatus === 'withdrawn' ? row.created_at : null),
+        withdrawnAt: row.withdrawn_at || (effectiveStatus === 'withdrawn' ? row.created_at : null),
+        source: row.source || null,
         updatedAt: row.created_at,
       };
     }
@@ -835,42 +853,98 @@ export async function getPrivacyConsentsRest(authUser: AuthenticatedUser) {
       success: true,
       consents: latestByCategory,
       history,
-      policyVersion: 'v2.0 - DPDP Act 2023',
+      policyVersion: 'v2.1 — DPDP Act 2023 & Rules 2025',
     },
   };
 }
 
 export async function recordPrivacyConsentRest(
   authUser: AuthenticatedUser,
-  body: { category?: string; purpose?: string; status?: 'granted' | 'withdrawn'; wording?: string; policyVersion?: string }
+  body: {
+    category?: string;
+    purpose?: string;
+    status?: 'granted' | 'withdrawn';
+    wording?: string;
+    policyVersion?: string;
+    source?: string;
+    auditMetadata?: Record<string, unknown>;
+    idempotencyKey?: string;
+  }
 ) {
   const purpose = (body.category || body.purpose || '').trim();
   const status = body.status === 'withdrawn' ? 'withdrawn' : 'granted';
   if (!purpose) {
     return { status: 400, body: { success: false, message: 'Consent category is required.' } };
   }
-  const policyVersion = (body.policyVersion || 'v2.0 - DPDP Act 2023').trim();
+  const policyVersion = (body.policyVersion || 'v2.1 — DPDP Act 2023 & Rules 2025').trim();
   const wording = (body.wording || `User explicitly ${status} consent for ${purpose}.`).trim();
   const nowIso = new Date().toISOString();
 
-  const ins = await sbRest<any[]>('user_consents', {
+  const extendedRow: Record<string, any> = {
+    user_id: authUser.id,
+    user_email: authUser.email,
+    purpose,
+    status,
+    consent_status: status,
+    action: status,
+    policy_version: policyVersion,
+    consent_wording: wording,
+    granted_at: status === 'granted' ? nowIso : null,
+    withdrawn_at: status === 'withdrawn' ? nowIso : null,
+    source: body.source || 'privacy_choices_modal',
+    audit_metadata: body.auditMetadata || {},
+    idempotency_key: body.idempotencyKey || null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  let ins = await sbRest<any[]>('user_consents', {
     method: 'POST',
     prefer: 'return=representation',
-    body: {
-      user_id: authUser.id,
-      user_email: authUser.email,
-      purpose,
-      status,
-      action: status,
-      policy_version: policyVersion,
-      consent_wording: wording,
-      created_at: nowIso,
-      updated_at: nowIso,
-    },
+    body: extendedRow,
   });
 
+  // Fallback to legacy columns if remote Supabase table hasn't added the new audit columns yet
+  if (!ins.ok && ins.status === 400) {
+    ins = await sbRest<any[]>('user_consents', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: {
+        user_id: authUser.id,
+        user_email: authUser.email,
+        purpose,
+        status,
+        action: status,
+        policy_version: policyVersion,
+        consent_wording: wording,
+        created_at: nowIso,
+        updated_at: nowIso,
+      },
+    });
+  }
+
+  // Handle idempotent duplicate conflict (409) cleanly
+  if (!ins.ok && ins.status === 409 && body.idempotencyKey) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        category: purpose,
+        status,
+        deduplicated: true,
+        consent: { purpose, status, policy_version: policyVersion, created_at: nowIso },
+      },
+    };
+  }
+
   if (!ins.ok) {
-    return { status: 503, body: { success: false, message: 'Could not save consent preference right now.' } };
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: ins.error || 'Could not save consent preference to Supabase right now.',
+      },
+    };
   }
 
   return {
@@ -880,6 +954,92 @@ export async function recordPrivacyConsentRest(
       category: purpose,
       status,
       consent: ins.data?.[0] || { purpose, status, policy_version: policyVersion, created_at: nowIso },
+    },
+  };
+}
+
+export async function recordPrivacyConsentBatchRest(
+  authUser: AuthenticatedUser,
+  entries: Array<{
+    purpose: string;
+    status: 'granted' | 'withdrawn';
+    policyVersion: string;
+    source: string;
+    auditMetadata: Record<string, unknown>;
+    idempotencyKey: string;
+    wording: string;
+  }>
+) {
+  const nowIso = new Date().toISOString();
+  const extendedRows = entries.map((e) => ({
+    user_id: authUser.id,
+    user_email: authUser.email,
+    purpose: e.purpose,
+    status: e.status,
+    consent_status: e.status,
+    action: e.status,
+    policy_version: e.policyVersion,
+    consent_wording: e.wording,
+    granted_at: e.status === 'granted' ? nowIso : null,
+    withdrawn_at: e.status === 'withdrawn' ? nowIso : null,
+    source: e.source,
+    audit_metadata: e.auditMetadata || {},
+    idempotency_key: e.idempotencyKey,
+    created_at: nowIso,
+    updated_at: nowIso,
+  }));
+
+  let ins = await sbRest<any[]>('user_consents', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: extendedRows,
+  });
+
+  if (!ins.ok && ins.status === 400) {
+    const legacyRows = entries.map((e) => ({
+      user_id: authUser.id,
+      user_email: authUser.email,
+      purpose: e.purpose,
+      status: e.status,
+      action: e.status,
+      policy_version: e.policyVersion,
+      consent_wording: e.wording,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }));
+    ins = await sbRest<any[]>('user_consents', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: legacyRows,
+    });
+  }
+
+  if (!ins.ok && ins.status === 409) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        deduplicated: true,
+        records: extendedRows,
+      },
+    };
+  }
+
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: ins.error || 'Could not save your privacy choices to Supabase right now.',
+      },
+    };
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      records: ins.data || extendedRows,
     },
   };
 }

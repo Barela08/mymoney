@@ -158,7 +158,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   notify_security: true,
   notify_support: true,
   notify_announcements: true,
-  notify_offers: true,
+  notify_offers: false,
   quiet_hours_enabled: false,
   quiet_hours_start: '22:00',
   quiet_hours_end: '07:00',

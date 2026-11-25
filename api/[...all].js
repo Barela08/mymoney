@@ -1381,7 +1381,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto17 = require_utils2();
+    var crypto18 = require_utils2();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -1399,7 +1399,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto17.randomBytes(18).toString("base64");
+      const clientNonce = crypto18.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -1441,20 +1441,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto17.hashByName(hashName, peerCert);
+        const certHash = await crypto18.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto17.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto17.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto17.sha256(clientKey);
-      const clientSignature = await crypto17.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto18.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto18.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto18.sha256(clientKey);
+      const clientSignature = await crypto18.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto17.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto17.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto18.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto18.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -3693,7 +3693,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto17 = require_utils2();
+    var crypto18 = require_utils2();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -3948,7 +3948,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto17.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto18.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -10760,14 +10760,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports, module) {
     var Buffer4 = require_safe_buffer().Buffer;
-    var crypto17 = __require("crypto");
+    var crypto18 = __require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = __require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto17.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto18.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -10857,17 +10857,17 @@ var require_jwa = __commonJS({
       return function sign2(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto17.createHmac("sha" + bits, secret);
+        var hmac = crypto18.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual = "timingSafeEqual" in crypto17 ? function timingSafeEqual2(a, b) {
+    var timingSafeEqual = "timingSafeEqual" in crypto18 ? function timingSafeEqual2(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto17.timingSafeEqual(a, b);
+      return crypto18.timingSafeEqual(a, b);
     } : function timingSafeEqual2(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -10884,7 +10884,7 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto17.createSign("RSA-SHA" + bits);
+        var signer = crypto18.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -10894,7 +10894,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto17.createVerify("RSA-SHA" + bits);
+        var verifier = crypto18.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -10903,11 +10903,11 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto17.createSign("RSA-SHA" + bits);
+        var signer = crypto18.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto17.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto17.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto18.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto18.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -10917,12 +10917,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto17.createVerify("RSA-SHA" + bits);
+        var verifier = crypto18.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto17.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto17.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto18.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto18.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -11221,7 +11221,7 @@ var require_jws = __commonJS({
 var require_ece = __commonJS({
   "node_modules/http_ece/ece.js"(exports, module) {
     "use strict";
-    var crypto17 = __require("crypto");
+    var crypto18 = __require("crypto");
     var AES_GCM = "aes-128-gcm";
     var PAD_SIZE = { "aes128gcm": 1, "aesgcm": 2 };
     var TAG_LENGTH = 16;
@@ -11248,7 +11248,7 @@ var require_ece = __commonJS({
       return b;
     }
     function HMAC_hash(key, input) {
-      var hmac = crypto17.createHmac("sha256", key);
+      var hmac = crypto18.createHmac("sha256", key);
       hmac.update(input);
       return hmac.digest();
     }
@@ -11516,7 +11516,7 @@ var require_ece = __commonJS({
     function decryptRecord(key, counter, buffer, header, last) {
       keylog("decrypt", buffer);
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto17.createDecipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto18.createDecipheriv(AES_GCM, key.key, nonce);
       gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
       var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
       data = Buffer.concat([data, gcm.final()]);
@@ -11564,7 +11564,7 @@ var require_ece = __commonJS({
       keylog("encrypt", buffer);
       pad = pad || 0;
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto17.createCipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto18.createCipheriv(AES_GCM, key.key, nonce);
       var ciphertext = [];
       var padSize = PAD_SIZE[header.version];
       var padding = Buffer.alloc(pad + padSize);
@@ -11607,7 +11607,7 @@ var require_ece = __commonJS({
       }
       var header = parseParams(params);
       if (!header.salt) {
-        header.salt = crypto17.randomBytes(KEY_LENGTH);
+        header.salt = crypto18.randomBytes(KEY_LENGTH);
       }
       var result;
       if (header.version === "aes128gcm") {
@@ -12545,9 +12545,9 @@ var require_interceptor = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/agent-base/dist/helpers.js
+// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/gaxios/node_modules/agent-base/dist/helpers.js"(exports) {
+  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -12615,9 +12615,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/agent-base/dist/index.js
+// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js
 var require_dist2 = __commonJS({
-  "node_modules/gaxios/node_modules/agent-base/dist/index.js"(exports) {
+  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -22681,22 +22681,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
-    var crypto17 = __require("crypto");
+    var crypto18 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto17.createHash("sha256").update(str).digest("base64");
+        return crypto18.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto17.randomBytes(count).toString("base64");
+        return crypto18.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto17.createVerify("RSA-SHA256");
+        const verifier = crypto18.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto17.createSign("RSA-SHA256");
+        const signer = crypto18.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -22714,7 +22714,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto17.createHash("sha256").update(str).digest("hex");
+        return crypto18.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -22726,7 +22726,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto17.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto18.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports.NodeCrypto = NodeCrypto;
@@ -23417,10 +23417,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto17 = (0, crypto_1.createCrypto)();
-        const randomString = crypto17.randomBytesBase64(96);
+        const crypto18 = (0, crypto_1.createCrypto)();
+        const randomString = crypto18.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto17.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto18.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -23861,7 +23861,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto17 = (0, crypto_1.createCrypto)();
+        const crypto18 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -23874,7 +23874,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto17.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto18.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -23885,7 +23885,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto17.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto18.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -23902,7 +23902,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto17.verify(cert, signed, signature);
+        const verified = await crypto18.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -26472,14 +26472,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports.AwsRequestSigner = AwsRequestSigner;
-    async function sign2(crypto17, key, msg) {
-      return await crypto17.signWithHmacSha256(key, msg);
+    async function sign2(crypto18, key, msg) {
+      return await crypto18.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto17, key, dateStamp, region, serviceName) {
-      const kDate = await sign2(crypto17, `AWS4${key}`, dateStamp);
-      const kRegion = await sign2(crypto17, kDate, region);
-      const kService = await sign2(crypto17, kRegion, serviceName);
-      const kSigning = await sign2(crypto17, kService, "aws4_request");
+    async function getSigningKey(crypto18, key, dateStamp, region, serviceName) {
+      const kDate = await sign2(crypto18, `AWS4${key}`, dateStamp);
+      const kRegion = await sign2(crypto18, kDate, region);
+      const kService = await sign2(crypto18, kRegion, serviceName);
+      const kSigning = await sign2(crypto18, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -27445,7 +27445,7 @@ var require_gdchclient = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GdchClient = exports.GDCH_SERVICE_ACCOUNT_TYPE = void 0;
-    var crypto17 = __require("crypto");
+    var crypto18 = __require("crypto");
     var fs11 = __require("fs");
     var https4 = __require("https");
     var oauth2client_1 = require_oauth2client();
@@ -27636,7 +27636,7 @@ var require_gdchclient = __commonJS({
         const encodedHeader = this.base64UrlEncode(JSON.stringify(header));
         const encodedPayload = this.base64UrlEncode(JSON.stringify(payload));
         const signingInput = `${encodedHeader}.${encodedPayload}`;
-        const signature = crypto17.sign("sha256", Buffer.from(signingInput), {
+        const signature = crypto18.sign("sha256", Buffer.from(signingInput), {
           key: this.privateKey,
           dsaEncoding: "ieee-p1363"
         });
@@ -28499,24 +28499,24 @@ var require_googleauth = __commonJS({
           const signed = await client.sign(data);
           return signed.signedBlob;
         }
-        const crypto17 = (0, crypto_1.createCrypto)();
+        const crypto18 = (0, crypto_1.createCrypto)();
         if (client instanceof jwtclient_1.JWT && client.key) {
-          const sign2 = await crypto17.sign(client.key, data);
+          const sign2 = await crypto18.sign(client.key, data);
           return sign2;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto17, creds.client_email, data, endpoint);
+        return this.signBlob(crypto18, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto17, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto18, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto17.encodeBase64StringUtf8(data)
+            payload: crypto18.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -32661,7 +32661,7 @@ var require_websocket_server = __commonJS({
 
 // server/api.ts
 import { parse as parseUrl2 } from "url";
-import crypto16 from "crypto";
+import crypto17 from "crypto";
 
 // node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -52156,7 +52156,7 @@ var DEFAULT_PREFERENCES = {
   notify_security: true,
   notify_support: true,
   notify_announcements: true,
-  notify_offers: true,
+  notify_offers: false,
   quiet_hours_enabled: false,
   quiet_hours_start: "22:00",
   quiet_hours_end: "07:00",
@@ -55854,9 +55854,3258 @@ async function handleAdminApiRequest(req, res, pathname, method) {
 }
 
 // server/aiFinanceApi.ts
-import crypto13 from "crypto";
+import crypto15 from "crypto";
 import fs10 from "fs";
 import path8 from "path";
+
+// server/privacyConsentApi.ts
+import crypto14 from "crypto";
+
+// server/supabaseRestUdhar.ts
+import crypto13 from "crypto";
+
+// src/lib/sharedUdharEngine.ts
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+function normalizeSearchQuery(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  return raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+function classifyLiveSearchQuery(raw) {
+  const normalized2 = normalizeSearchQuery(raw);
+  const digitsOnly = normalized2.replace(/\D/g, "");
+  const last10Digits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+  if (!normalized2 || normalized2.length < 2) {
+    return { mode: "too_short", normalized: normalized2, digitsOnly, last10Digits };
+  }
+  if (normalized2.includes("@")) {
+    const emailStrictRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (emailStrictRegex.test(normalized2)) {
+      return { mode: "email_exact", normalized: normalized2, digitsOnly, last10Digits };
+    }
+    return { mode: "email_incomplete", normalized: normalized2, digitsOnly, last10Digits };
+  }
+  const looksLikePhone = /^[+\d][\d\s\-().]*$/.test(normalized2) && digitsOnly.length >= 4;
+  if (looksLikePhone) {
+    if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+      return { mode: "phone_exact", normalized: normalized2, digitsOnly, last10Digits };
+    }
+    return { mode: "phone_incomplete", normalized: normalized2, digitsOnly, last10Digits };
+  }
+  return { mode: "name", normalized: normalized2, digitsOnly, last10Digits };
+}
+function isUpiPaymentQr(raw) {
+  const trimmed = (raw || "").trim().toLowerCase();
+  return trimmed.startsWith("upi://pay") || trimmed.startsWith("upi://collect") || trimmed.startsWith("upi://mandate");
+}
+function maskEmailForPrivacy(email) {
+  if (!email || !email.includes("@")) return "***@***";
+  const [local, domain] = email.trim().split("@");
+  if (!local || !domain) return "***@***";
+  if (local.length <= 2) return `${local.charAt(0)}***@${domain}`;
+  return `${local.charAt(0)}***${local.charAt(local.length - 1)}@${domain}`;
+}
+function maskPhoneForPrivacy(phone) {
+  if (!phone) return null;
+  const clean = phone.replace(/[\s\-()]/g, "");
+  if (clean.length < 6) return "****";
+  return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
+}
+function parseQrPayload(raw) {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) {
+    return { valid: false, errorCode: "EMPTY_QR", error: "Empty QR code detected." };
+  }
+  if (isUpiPaymentQr(trimmed)) {
+    return {
+      valid: false,
+      isUpiPaymentQr: true,
+      errorCode: "UPI_QR_NOT_PAIRING",
+      error: "This is a UPI payment QR code, not a My Money Manager Udhar pairing QR. Please scan your friend's Udhar Pairing QR."
+    };
+  }
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && (parsed.app === "my-money" || parsed.type === "udhar-pair")) {
+        const token = typeof parsed.token === "string" ? parsed.token.trim() : void 0;
+        const code = typeof parsed.code === "string" ? parsed.code.trim().toUpperCase() : void 0;
+        if (token || code) {
+          const result = { valid: true, kind: "json" };
+          if (token !== void 0) result.token = token;
+          if (code !== void 0) result.code = code;
+          return result;
+        }
+      }
+      return {
+        valid: false,
+        errorCode: "INVALID_QR",
+        error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine account pairing QR."
+      };
+    } catch {
+      return {
+        valid: false,
+        errorCode: "MALFORMED_QR",
+        error: "Malformed QR payload. Please scan a genuine My Money Manager Udhar pairing QR."
+      };
+    }
+  }
+  const pairLinkMatch = trimmed.match(/(?:[#?&]pair=)([A-Za-z0-9_-]{6,64})/i);
+  if (pairLinkMatch && pairLinkMatch[1]) {
+    const val = pairLinkMatch[1].trim();
+    if (/^MM-[A-Z0-9]{4,}$/i.test(val)) {
+      return { valid: true, kind: "pair_url", code: val.toUpperCase() };
+    }
+    if (/^[0-9a-fA-F]{64}$/.test(val)) {
+      return { valid: true, kind: "pair_url", token: val };
+    }
+    return { valid: true, kind: "pair_url", code: val.toUpperCase() };
+  }
+  const normalizedCode = trimmed.replace(/\s+/g, "").toUpperCase();
+  if (/^MM-[A-Z0-9]{4,16}$/.test(normalizedCode)) {
+    return { valid: true, kind: "pair_code", code: normalizedCode };
+  }
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return { valid: true, kind: "hex_token", token: trimmed };
+  }
+  return {
+    valid: false,
+    errorCode: "INVALID_QR",
+    error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine pairing QR generated inside My Money Manager."
+  };
+}
+function calculateRepaymentApplication(input) {
+  if (input.udharStatus === "cancelled") {
+    return { valid: false, error: "Cannot record repayment on a cancelled Udhar." };
+  }
+  if (input.udharStatus === "settled") {
+    return { valid: false, error: "This Udhar is already fully settled." };
+  }
+  const repayAmt = roundMoney(input.repayAmount);
+  if (!Number.isFinite(repayAmt) || repayAmt <= 0) {
+    return { valid: false, error: "Repayment amount must be greater than \u20B90." };
+  }
+  const remaining = roundMoney(Math.max(0, input.originalAmount - input.confirmedPaidAmount));
+  if (remaining <= 0.01) {
+    return { valid: false, error: "This Udhar has no remaining balance to repay." };
+  }
+  const effectiveRemaining = input.isShared && input.actorRole === "borrower" ? roundMoney(Math.max(0, remaining - Math.max(0, input.pendingRepaymentsAmount))) : remaining;
+  if (repayAmt > effectiveRemaining + 0.01) {
+    if (input.isShared && input.actorRole === "borrower" && input.pendingRepaymentsAmount > 0) {
+      return {
+        valid: false,
+        error: `Amount (\u20B9${repayAmt}) exceeds available remaining balance (\u20B9${effectiveRemaining}) after accounting for \u20B9${roundMoney(input.pendingRepaymentsAmount)} already pending lender confirmation.`
+      };
+    }
+    return {
+      valid: false,
+      error: `Repayment amount (\u20B9${repayAmt}) cannot exceed remaining balance (\u20B9${remaining}).`
+    };
+  }
+  const repaymentStatus = input.isShared && input.actorRole === "borrower" ? "pending_confirmation" : "confirmed";
+  if (repaymentStatus === "pending_confirmation") {
+    return {
+      valid: true,
+      repaymentStatus,
+      nextPaidAmount: roundMoney(input.confirmedPaidAmount),
+      nextRemainingAmount: remaining,
+      nextUdharStatus: "confirmed",
+      isSettled: false
+    };
+  }
+  const nextPaidAmount = roundMoney(input.confirmedPaidAmount + repayAmt);
+  const nextRemainingAmount = roundMoney(Math.max(0, input.originalAmount - nextPaidAmount));
+  const isSettled = nextRemainingAmount <= 0.01;
+  return {
+    valid: true,
+    repaymentStatus: "confirmed",
+    nextPaidAmount: isSettled ? roundMoney(input.originalAmount) : nextPaidAmount,
+    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
+    nextUdharStatus: isSettled ? "settled" : "confirmed",
+    isSettled
+  };
+}
+function validateUdharEdit(current, updates) {
+  if (current.status === "cancelled") {
+    return { valid: false, error: "Cancelled Udhar records cannot be edited." };
+  }
+  const reason = (updates.reason_for_edit || "").trim();
+  if (reason.length < 3) {
+    return { valid: false, error: "Please provide a clear reason (at least 3 characters) for editing this record." };
+  }
+  const nextOriginalAmount = updates.amount !== void 0 ? roundMoney(updates.amount) : roundMoney(current.original_amount);
+  if (!Number.isFinite(nextOriginalAmount) || nextOriginalAmount <= 0) {
+    return { valid: false, error: "Total amount must be greater than \u20B90." };
+  }
+  const paid = roundMoney(Math.max(0, current.paid_amount));
+  if (nextOriginalAmount + 0.01 < paid) {
+    return {
+      valid: false,
+      error: `New amount (\u20B9${nextOriginalAmount}) cannot be less than already confirmed repayments (\u20B9${paid}).`
+    };
+  }
+  const nextRemainingAmount = roundMoney(Math.max(0, nextOriginalAmount - paid));
+  const isSettled = nextRemainingAmount <= 0.01;
+  const changes = [];
+  if (roundMoney(current.original_amount) !== nextOriginalAmount) {
+    changes.push({
+      changed_field: "amount",
+      previous_value: String(roundMoney(current.original_amount)),
+      new_value: String(nextOriginalAmount)
+    });
+  }
+  if (updates.transaction_date && updates.transaction_date !== current.transaction_date) {
+    changes.push({
+      changed_field: "transaction_date",
+      previous_value: current.transaction_date,
+      new_value: updates.transaction_date
+    });
+  }
+  if (updates.due_date !== void 0 && (updates.due_date || null) !== (current.due_date || null)) {
+    changes.push({
+      changed_field: "due_date",
+      previous_value: current.due_date || null,
+      new_value: updates.due_date || null
+    });
+  }
+  if (updates.category !== void 0 && (updates.category || null) !== (current.category || null)) {
+    changes.push({
+      changed_field: "category",
+      previous_value: current.category || null,
+      new_value: updates.category || null
+    });
+  }
+  if (updates.payment_method !== void 0 && (updates.payment_method || null) !== (current.payment_method || null)) {
+    changes.push({
+      changed_field: "payment_method",
+      previous_value: current.payment_method || null,
+      new_value: updates.payment_method || null
+    });
+  }
+  if (updates.description !== void 0 && (updates.description || null) !== (current.description || null)) {
+    changes.push({
+      changed_field: "description",
+      previous_value: current.description || null,
+      new_value: updates.description || null
+    });
+  }
+  if (updates.notes !== void 0 && (updates.notes || null) !== (current.notes || null)) {
+    changes.push({
+      changed_field: "notes",
+      previous_value: current.notes || null,
+      new_value: updates.notes || null
+    });
+  }
+  return {
+    valid: true,
+    nextOriginalAmount,
+    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
+    nextStatus: isSettled ? "settled" : "confirmed",
+    isSettled,
+    changes
+  };
+}
+function canCancelUdhar(udhar) {
+  if (udhar.status === "cancelled") {
+    return { allowed: false, reason: "This Udhar is already cancelled." };
+  }
+  if (udhar.status === "settled") {
+    return {
+      allowed: false,
+      reason: "Settled Udhar records cannot be deleted or cancelled. Keep settled history for audit integrity."
+    };
+  }
+  const paidAmt = parseFloat(String(udhar.paid_amount ?? 0)) || 0;
+  const activeRepayments = (udhar.repayments || []).filter(
+    (r2) => r2.status === "confirmed" || r2.status === "pending_confirmation"
+  );
+  if (paidAmt > 0.01 || activeRepayments.length > 0) {
+    return {
+      allowed: false,
+      reason: "Cannot cancel an Udhar that already has repayments recorded. Use Edit or record a balancing adjustment instead to preserve audit history."
+    };
+  }
+  return { allowed: true };
+}
+function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
+  let totalGiven = 0;
+  let totalTaken = 0;
+  let youWillReceive = 0;
+  let youWillPay = 0;
+  let settledAmount = 0;
+  let overdueAmount = 0;
+  let activeCount = 0;
+  let settledCount = 0;
+  let pendingRepaymentCount = 0;
+  for (const tx of items) {
+    if (tx.status === "cancelled") continue;
+    const orig = parseFloat(String(tx.original_amount)) || 0;
+    const cur = parseFloat(String(tx.current_balance)) || 0;
+    const isSettled = tx.status === "settled" || cur <= 0.01;
+    if (tx.direction === "gave") {
+      totalGiven += orig;
+      if (!isSettled) {
+        youWillReceive += cur;
+        activeCount += 1;
+      } else {
+        settledCount += 1;
+      }
+    } else {
+      totalTaken += orig;
+      if (!isSettled) {
+        youWillPay += cur;
+        activeCount += 1;
+      } else {
+        settledCount += 1;
+      }
+    }
+    settledAmount += Math.max(0, orig - cur);
+    if (tx.due_date && tx.due_date < todayStr && !isSettled && cur > 0) {
+      overdueAmount += cur;
+    }
+    if (Array.isArray(tx.repayments)) {
+      pendingRepaymentCount += tx.repayments.filter((r2) => r2.status === "pending_confirmation").length;
+    }
+  }
+  const netBalance = roundMoney(youWillReceive - youWillPay);
+  return {
+    totalGiven: roundMoney(totalGiven),
+    totalTaken: roundMoney(totalTaken),
+    youWillReceive: roundMoney(youWillReceive),
+    youWillPay: roundMoney(youWillPay),
+    netBalance,
+    settledAmount: roundMoney(settledAmount),
+    overdueAmount: roundMoney(overdueAmount),
+    activeCount,
+    settledCount,
+    pendingRepaymentCount
+  };
+}
+function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
+  const base2 = calculatePersonLedgerSummary(items, todayStr);
+  const connectedKeys = /* @__PURE__ */ new Set();
+  const manualKeys = /* @__PURE__ */ new Set();
+  for (const c of contacts) {
+    if (c.linked_user_id) {
+      connectedKeys.add(c.linked_user_id);
+    } else if (c.name) {
+      manualKeys.add(c.name.trim().toLowerCase());
+    }
+  }
+  const activePeopleSet = /* @__PURE__ */ new Set();
+  let pendingConfirmationsCount = 0;
+  for (const tx of items) {
+    if (tx.status === "cancelled") continue;
+    const cur = parseFloat(String(tx.current_balance)) || 0;
+    const isSettled = tx.status === "settled" || cur <= 0.01;
+    if (tx.counterpart_user_id) {
+      connectedKeys.add(tx.counterpart_user_id);
+    }
+    if (!isSettled && cur > 0.01) {
+      const personKey = tx.counterpart_user_id || (tx.counterpart_name || "").trim().toLowerCase();
+      if (personKey) activePeopleSet.add(personKey);
+    }
+    if (tx.status === "pending_confirmation") {
+      pendingConfirmationsCount += 1;
+    }
+    if (Array.isArray(tx.repayments)) {
+      pendingConfirmationsCount += tx.repayments.filter((r2) => r2.status === "pending_confirmation").length;
+    }
+  }
+  return {
+    totalLent: base2.totalGiven,
+    totalBorrowed: base2.totalTaken,
+    outstandingReceivable: base2.youWillReceive,
+    outstandingPayable: base2.youWillPay,
+    netBalance: base2.netBalance,
+    settledAmount: base2.settledAmount,
+    overdueAmount: base2.overdueAmount,
+    totalConnectedPeople: connectedKeys.size,
+    totalManualPeople: manualKeys.size,
+    peopleWithActiveUdhar: activePeopleSet.size,
+    pendingConfirmationsCount
+  };
+}
+var META_MARKER = "\n<!--MM_META:";
+var META_END = "-->";
+function packStructuredNote(plainNote, meta) {
+  const cleanNote = (plainNote || "").trim();
+  const filteredMeta = {};
+  if (meta.category && meta.category.trim()) filteredMeta.category = meta.category.trim();
+  if (meta.payment_method && meta.payment_method.trim()) filteredMeta.payment_method = meta.payment_method.trim();
+  if (meta.description && meta.description.trim()) filteredMeta.description = meta.description.trim();
+  if (meta.transaction_ref && meta.transaction_ref.trim()) filteredMeta.transaction_ref = meta.transaction_ref.trim();
+  if (meta.repayment_time && meta.repayment_time.trim()) filteredMeta.repayment_time = meta.repayment_time.trim();
+  if (meta.attachment_url && meta.attachment_url.trim()) filteredMeta.attachment_url = meta.attachment_url.trim();
+  if (Object.keys(filteredMeta).length === 0) {
+    return cleanNote || null;
+  }
+  return `${cleanNote}${META_MARKER}${JSON.stringify(filteredMeta)}${META_END}`.trim();
+}
+function unpackStructuredNote(rawNote) {
+  if (!rawNote || typeof rawNote !== "string") {
+    return { note: "", meta: {} };
+  }
+  const idx = rawNote.indexOf(META_MARKER);
+  if (idx === -1) {
+    return { note: rawNote.trim(), meta: {} };
+  }
+  const endIdx = rawNote.indexOf(META_END, idx + META_MARKER.length);
+  if (endIdx === -1) {
+    return { note: rawNote.trim(), meta: {} };
+  }
+  const notePart = rawNote.slice(0, idx).trim();
+  const jsonPart = rawNote.slice(idx + META_MARKER.length, endIdx);
+  try {
+    const parsed = JSON.parse(jsonPart);
+    if (parsed && typeof parsed === "object") {
+      return { note: notePart, meta: parsed };
+    }
+  } catch {
+  }
+  return { note: rawNote.trim(), meta: {} };
+}
+
+// server/supabaseRestUdhar.ts
+var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
+var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+function getRestConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
+  return { url, key };
+}
+async function sbRest(path9, options = {}) {
+  const { url, key } = getRestConfig();
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    Accept: "application/json"
+  };
+  if (options.body !== void 0) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (options.prefer) {
+    headers["Prefer"] = options.prefer;
+  }
+  const response = await fetch(`${url}/rest/v1/${path9}`, {
+    method: options.method || "GET",
+    headers,
+    body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
+  });
+  const text = await response.text();
+  let parsed = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
+  if (!response.ok) {
+    const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
+    return { ok: false, status: response.status, data: null, error: errMsg };
+  }
+  return { ok: true, status: response.status, data: parsed };
+}
+function enrichTransactionRow(row, userMap, repayments, editHistory) {
+  const orig = parseFloat(row.original_amount) || 0;
+  const cur = parseFloat(row.current_balance) || 0;
+  const computedPaid = Math.max(0, roundMoney(orig - cur));
+  const { note, meta } = unpackStructuredNote(row.notes);
+  const counterpart = row.counterpart_user_id ? userMap.get(row.counterpart_user_id) : null;
+  return {
+    ...row,
+    counterpart_registered_name: counterpart?.full_name || row.counterpart_registered_name || null,
+    counterpart_email: counterpart?.email || row.counterpart_email || null,
+    counterpart_avatar: counterpart?.avatar_url || row.counterpart_avatar || null,
+    paid_amount: row.paid_amount !== null && row.paid_amount !== void 0 ? parseFloat(row.paid_amount) : computedPaid,
+    category: row.category || meta.category || "Personal Loan",
+    payment_method: row.payment_method || meta.payment_method || "UPI",
+    description: row.description || meta.description || null,
+    clean_notes: note || null,
+    notes: note || null,
+    attachment_url: row.attachment_url || meta.attachment_url || null,
+    repayments: repayments.map((rep) => {
+      const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
+      const recorder = rep.recorded_by_user_id ? userMap.get(rep.recorded_by_user_id) : null;
+      return {
+        ...rep,
+        recorded_by_name: recorder?.full_name || rep.recorded_by_name || null,
+        notes: repNote || null,
+        transaction_ref: rep.transaction_ref || repMeta.transaction_ref || null,
+        repayment_time: rep.repayment_time || repMeta.repayment_time || null,
+        attachment_url: rep.attachment_url || repMeta.attachment_url || null
+      };
+    }),
+    edit_history: editHistory.map((h2) => {
+      const editor = h2.edited_by_user_id ? userMap.get(h2.edited_by_user_id) : null;
+      return {
+        ...h2,
+        edited_by_name: editor?.full_name || h2.edited_by_name || null
+      };
+    })
+  };
+}
+async function fetchUsersByIds(ids) {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  const map2 = /* @__PURE__ */ new Map();
+  if (uniqueIds.length === 0) return map2;
+  const inList = uniqueIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+  const res = await sbRest(
+    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username`
+  );
+  if (res.ok && Array.isArray(res.data)) {
+    for (const u of res.data) {
+      map2.set(u.id, u);
+    }
+  }
+  return map2;
+}
+async function isBlockedBetween(userAId, userBId) {
+  const res = await sbRest(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(userAId)},user_b_id.eq.${encodeURIComponent(userBId)}),and(user_a_id.eq.${encodeURIComponent(userBId)},user_b_id.eq.${encodeURIComponent(userAId)}))&select=status`
+  );
+  if (!res.ok || !Array.isArray(res.data)) return false;
+  return res.data.some((c) => c.status === "blocked");
+}
+async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend") {
+  await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=minimal",
+    body: { user_a_id: authUser.id, user_b_id: targetUser.id, status: "connected" }
+  }).catch(() => {
+  });
+  await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=minimal",
+    body: { user_a_id: targetUser.id, user_b_id: authUser.id, status: "connected" }
+  }).catch(() => {
+  });
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const targetName = (targetUser.full_name || targetUser.email?.split("@")[0] || "User").trim();
+  const myName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  const existingMine = await sbRest(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetUser.id)}&limit=1`
+  );
+  if (existingMine.ok && existingMine.data && existingMine.data.length > 0) {
+    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
+      method: "PATCH",
+      body: {
+        name: targetName,
+        email: targetUser.email || existingMine.data[0].email || null,
+        phone: targetUser.phone || existingMine.data[0].phone || null,
+        photo_url: targetUser.avatar_url || existingMine.data[0].photo_url || null,
+        relationship_type: relationshipType || existingMine.data[0].relationship_type || "Friend",
+        updated_at: nowIso
+      }
+    });
+  } else {
+    await sbRest("udhar_contacts?on_conflict=user_id,name", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        user_id: authUser.id,
+        name: targetName,
+        email: targetUser.email || null,
+        phone: targetUser.phone || null,
+        photo_url: targetUser.avatar_url || null,
+        relationship_type: relationshipType || "Friend",
+        linked_user_id: targetUser.id,
+        updated_at: nowIso
+      }
+    });
+  }
+  const existingTheirs = await sbRest(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(targetUser.id)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (existingTheirs.ok && existingTheirs.data && existingTheirs.data.length > 0) {
+    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingTheirs.data[0].id)}`, {
+      method: "PATCH",
+      body: {
+        name: myName,
+        email: authUser.email || existingTheirs.data[0].email || null,
+        phone: authUser.phone || existingTheirs.data[0].phone || null,
+        photo_url: authUser.avatar_url || existingTheirs.data[0].photo_url || null,
+        updated_at: nowIso
+      }
+    });
+  } else {
+    await sbRest("udhar_contacts?on_conflict=user_id,name", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        user_id: targetUser.id,
+        name: myName,
+        email: authUser.email || null,
+        phone: authUser.phone || null,
+        photo_url: authUser.avatar_url || null,
+        relationship_type: relationshipType || "Friend",
+        linked_user_id: authUser.id,
+        updated_at: nowIso
+      }
+    });
+  }
+}
+async function createTargetedNotificationRest(params) {
+  if (!params.targetUserId || params.targetUserId === "all") return;
+  await Promise.all([
+    sbRest("notifications", {
+      method: "POST",
+      prefer: "return=minimal",
+      body: {
+        title: params.title,
+        message: params.message,
+        type: params.type,
+        target_user_id: params.targetUserId,
+        actor_user_id: params.actorUserId,
+        related_entity_id: params.relatedEntityId || null,
+        is_active: true
+      }
+    }).catch(() => {
+    }),
+    sbRest("user_notifications", {
+      method: "POST",
+      prefer: "return=minimal",
+      body: {
+        user_id: params.targetUserId,
+        title: params.title,
+        message: params.message,
+        category: params.category || "udhar",
+        type: params.type === "udhar_connection_request" ? "info" : "success",
+        deep_link: params.deepLink || "people",
+        is_read: false,
+        is_deleted: false,
+        metadata: params.metadata || {
+          actionType: params.type,
+          relatedEntityId: params.relatedEntityId || null,
+          actorUserId: params.actorUserId
+        }
+      }
+    }).catch(() => {
+    })
+  ]);
+}
+async function searchUsersRest(authUser, rawQuery) {
+  const classified = classifyLiveSearchQuery(rawQuery);
+  if (classified.mode === "too_short") {
+    return { status: 200, body: { success: true, users: [], searchMode: "too_short" } };
+  }
+  if (classified.mode === "email_incomplete") {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        users: [],
+        searchMode: "email_incomplete",
+        hint: "Enter the complete email address to find a user."
+      }
+    };
+  }
+  if (classified.mode === "phone_incomplete") {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        users: [],
+        searchMode: "phone_incomplete",
+        hint: "Enter a complete 10-digit mobile number to search."
+      }
+    };
+  }
+  const escaped = classified.normalized.replace(/[%*,()]/g, "");
+  let queryPath = "";
+  if (classified.mode === "email_exact") {
+    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=5`;
+  } else if (classified.mode === "phone_exact") {
+    const tail = classified.last10Digits;
+    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=15`;
+  } else {
+    const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
+    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&order=full_name.asc&limit=20`;
+  }
+  const usersRes = await sbRest(queryPath);
+  if (!usersRes.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        code: "DIRECTORY_UNAVAILABLE",
+        message: "Unable to reach user directory right now. Please retry."
+      }
+    };
+  }
+  let activeUsers = (usersRes.data || []).filter(
+    (u) => !u.deletion_status || u.deletion_status === "none"
+  );
+  if (classified.mode === "email_exact") {
+    activeUsers = activeUsers.filter(
+      (u) => (u.email || "").trim().toLowerCase() === classified.normalized
+    );
+  } else if (classified.mode === "phone_exact") {
+    activeUsers = activeUsers.filter((u) => {
+      const userDigits = String(u.phone || "").replace(/\D/g, "");
+      if (userDigits.length < 10) return false;
+      return userDigits === classified.digitsOnly || userDigits.slice(-10) === classified.last10Digits;
+    });
+  }
+  const [connRes, contactsRes] = await Promise.all([
+    sbRest(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status`
+    ),
+    sbRest(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=linked_user_id`
+    )
+  ]);
+  const statusByUserId = /* @__PURE__ */ new Map();
+  if (connRes.ok && Array.isArray(connRes.data)) {
+    for (const c of connRes.data) {
+      const isOutgoing = c.user_a_id === authUser.id;
+      const otherId = isOutgoing ? c.user_b_id : c.user_a_id;
+      if (!otherId) continue;
+      const prev = statusByUserId.get(otherId)?.status;
+      if (c.status === "blocked" || prev === "blocked") {
+        statusByUserId.set(otherId, { status: "blocked", requestId: c.id });
+      } else if (c.status === "connected" || prev === "connected") {
+        statusByUserId.set(otherId, { status: "connected", requestId: c.id });
+      } else if (c.status === "pending") {
+        statusByUserId.set(otherId, {
+          status: isOutgoing ? "pending" : "incoming_pending",
+          requestId: c.id
+        });
+      }
+    }
+  }
+  const linkedContactSet = /* @__PURE__ */ new Set();
+  if (contactsRes.ok && Array.isArray(contactsRes.data)) {
+    for (const ct of contactsRes.data) {
+      if (ct.linked_user_id) linkedContactSet.add(ct.linked_user_id);
+    }
+  }
+  const sanitized = activeUsers.filter((u) => statusByUserId.get(u.id)?.status !== "blocked").slice(0, 15).map((u) => {
+    const isSelf = u.id === authUser.id;
+    const connEntry = statusByUserId.get(u.id);
+    const isConnected = !isSelf && (connEntry?.status === "connected" || linkedContactSet.has(u.id));
+    const connectionStatus = isSelf ? "self" : isConnected ? "connected" : connEntry?.status === "pending" ? "pending" : connEntry?.status === "incoming_pending" ? "incoming_pending" : "none";
+    const showContactHint = isConnected || isSelf;
+    return {
+      id: u.id,
+      displayName: u.full_name || u.username || "My Money User",
+      fullName: u.full_name || u.username || "My Money User",
+      username: u.username || null,
+      accountIndicator: "My Money Manager Account",
+      emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : void 0,
+      phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
+      avatarUrl: u.avatar_url || null,
+      isSelf,
+      isVerified: Boolean(u.is_verified ?? true),
+      connectionStatus,
+      requestId: connEntry?.requestId || null,
+      isAlreadyConnected: isConnected,
+      isSavedContact: linkedContactSet.has(u.id)
+    };
+  });
+  return { status: 200, body: { success: true, users: sanitized, searchMode: classified.mode } };
+}
+async function connectUserRest(authUser, body) {
+  const targetUserId = (body.targetUserId || "").trim();
+  const relationshipType = (body.relationshipType || "Friend").trim();
+  const requestedVia = (body.requestedVia || "search").trim();
+  if (!targetUserId) {
+    return { status: 400, body: { success: false, code: "MISSING_TARGET", message: "Target user ID is required." } };
+  }
+  if (targetUserId === authUser.id) {
+    return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
+  }
+  const targetRes = await sbRest(
+    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified`
+  );
+  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+    return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
+  }
+  const target = targetRes.data[0];
+  if (target.status !== "active" || target.deletion_status && target.deletion_status !== "none") {
+    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is no longer active." } };
+  }
+  if (await isBlockedBetween(authUser.id, targetUserId)) {
+    return { status: 403, body: { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." } };
+  }
+  const pairRes = await sbRest(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
+  );
+  const pairRows = pairRes.ok && Array.isArray(pairRes.data) ? pairRes.data : [];
+  const targetName = (target.full_name || target.email?.split("@")[0] || "User").trim();
+  const requesterName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
+  if (pairRows.some((r2) => r2.status === "connected")) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "connected",
+        alreadyConnected: true,
+        message: `You are already connected with ${targetName}.`,
+        connectedUser: {
+          id: target.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: target.avatar_url || null,
+          isVerified: Boolean(target.is_verified ?? true)
+        }
+      }
+    };
+  }
+  const incomingPending = pairRows.find(
+    (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
+  );
+  if (incomingPending) {
+    return acceptConnectionRequestRest(authUser, incomingPending.id);
+  }
+  const outgoingPending = pairRows.find(
+    (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
+  );
+  if (outgoingPending) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "pending",
+        alreadyPending: true,
+        requestId: outgoingPending.id,
+        message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
+        connectedUser: {
+          id: target.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: target.avatar_url || null,
+          isVerified: Boolean(target.is_verified ?? true)
+        }
+      }
+    };
+  }
+  const insRes = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: {
+      user_a_id: authUser.id,
+      user_b_id: targetUserId,
+      status: "pending"
+    }
+  });
+  if (!insRes.ok) {
+    return {
+      status: 503,
+      body: { success: false, code: "REQUEST_FAILED", message: "Unable to send connection request right now. Please try again." }
+    };
+  }
+  const requestId = insRes.data?.[0]?.id || `${authUser.id}:${targetUserId}`;
+  await createTargetedNotificationRest({
+    targetUserId: target.id,
+    actorUserId: authUser.id,
+    title: "Udhar Connection Request",
+    message: `${requesterName} wants to connect with you on My Money Manager Udhar.`,
+    type: "udhar_connection_request",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: String(requestId),
+    metadata: {
+      actionType: "udhar_connection_request",
+      requestId: String(requestId),
+      requesterUserId: authUser.id,
+      requesterName,
+      requestedVia,
+      relationshipType
+    }
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "pending",
+      alreadyConnected: false,
+      alreadyPending: false,
+      requestId: String(requestId),
+      message: `Connection request sent to ${targetName}. You'll be connected once they accept.`,
+      connectedUser: {
+        id: target.id,
+        name: targetName,
+        displayName: targetName,
+        fullName: targetName,
+        avatarUrl: target.avatar_url || null,
+        isVerified: Boolean(target.is_verified ?? true)
+      }
+    }
+  };
+}
+async function getConnectionRequestsRest(authUser) {
+  const connRes = await sbRest(
+    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
+  );
+  if (!connRes.ok) {
+    return { status: 503, body: { success: false, message: "Unable to load connection requests right now." } };
+  }
+  const rows = connRes.data || [];
+  const otherIds = rows.map((r2) => r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id).filter(Boolean);
+  const userMap = await fetchUsersByIds(otherIds);
+  const incoming = [];
+  const outgoing = [];
+  const connectedMap = /* @__PURE__ */ new Map();
+  for (const r2 of rows) {
+    if (r2.status === "pending") {
+      if (r2.user_b_id === authUser.id) {
+        const u = userMap.get(r2.user_a_id);
+        incoming.push({
+          id: r2.id,
+          requesterUserId: r2.user_a_id,
+          displayName: u?.full_name || "My Money User",
+          avatarUrl: u?.avatar_url || null,
+          isVerified: Boolean(u?.is_verified ?? true),
+          status: "pending",
+          createdAt: r2.created_at
+        });
+      } else if (r2.user_a_id === authUser.id) {
+        const u = userMap.get(r2.user_b_id);
+        outgoing.push({
+          id: r2.id,
+          targetUserId: r2.user_b_id,
+          displayName: u?.full_name || "My Money User",
+          avatarUrl: u?.avatar_url || null,
+          isVerified: Boolean(u?.is_verified ?? true),
+          status: "pending",
+          createdAt: r2.created_at
+        });
+      }
+    } else if (r2.status === "connected") {
+      const otherId = r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id;
+      if (otherId && !connectedMap.has(otherId)) {
+        const u = userMap.get(otherId);
+        connectedMap.set(otherId, {
+          id: r2.id,
+          userId: otherId,
+          displayName: u?.full_name || "My Money User",
+          avatarUrl: u?.avatar_url || null,
+          isVerified: Boolean(u?.is_verified ?? true),
+          status: "connected",
+          createdAt: r2.created_at
+        });
+      }
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      incoming,
+      outgoing,
+      connected: Array.from(connectedMap.values())
+    }
+  };
+}
+async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
+  const key = (requestIdOrUserId || "").trim();
+  if (!key) {
+    return { status: 400, body: { success: false, message: "Connection request ID is required." } };
+  }
+  const reqRes = await sbRest(
+    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
+  );
+  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
+    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
+  }
+  const pendingRow = reqRes.data[0];
+  const requesterId = pendingRow.user_a_id;
+  const userMap = await fetchUsersByIds([requesterId]);
+  const requester = userMap.get(requesterId);
+  if (!requester || requester.status !== "active") {
+    return { status: 404, body: { success: false, message: "Requester account is no longer active." } };
+  }
+  await ensureConnectionAndReciprocalContactsRest(authUser, requester, "Friend");
+  const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  const requesterName = (requester.full_name || requester.email?.split("@")[0] || "Friend").trim();
+  await createTargetedNotificationRest({
+    targetUserId: requester.id,
+    actorUserId: authUser.id,
+    title: "Udhar Connection Accepted",
+    message: `${acceptorName} accepted your Udhar connection request. You can now track shared Udhar together.`,
+    type: "connection_accepted",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: authUser.id
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "connected",
+      message: `Connected with ${requesterName}! Added to your Saved People.`,
+      connectedUser: {
+        id: requester.id,
+        name: requesterName,
+        displayName: requesterName,
+        fullName: requesterName,
+        avatarUrl: requester.avatar_url || null,
+        isVerified: Boolean(requester.is_verified ?? true)
+      }
+    }
+  };
+}
+async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
+  const key = (requestIdOrUserId || "").trim();
+  if (!key) {
+    return { status: 400, body: { success: false, message: "Connection request ID is required." } };
+  }
+  const reqRes = await sbRest(
+    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
+  );
+  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
+    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
+  }
+  const pendingRow = reqRes.data[0];
+  await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+    method: "PATCH",
+    body: { status: "rejected" }
+  });
+  const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  await createTargetedNotificationRest({
+    targetUserId: pendingRow.user_a_id,
+    actorUserId: authUser.id,
+    title: "Connection Request Declined",
+    message: `${rejectorName} declined your My Money Manager Udhar connection request.`,
+    type: "connection_rejected",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: String(pendingRow.id)
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "rejected",
+      message: "Connection request declined. No active connection was created."
+    }
+  };
+}
+async function disconnectUserRest(authUser, targetUserId) {
+  const targetId = (targetUserId || "").trim();
+  if (!targetId) {
+    return { status: 400, body: { success: false, message: "Target user ID is required." } };
+  }
+  await sbRest(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetId)}),and(user_a_id.eq.${encodeURIComponent(targetId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`,
+    { method: "DELETE" }
+  );
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await Promise.all([
+    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetId)}`, {
+      method: "PATCH",
+      body: { linked_user_id: null, updated_at: nowIso }
+    }).catch(() => {
+    }),
+    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(targetId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`, {
+      method: "PATCH",
+      body: { linked_user_id: null, updated_at: nowIso }
+    }).catch(() => {
+    })
+  ]);
+  const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  await createTargetedNotificationRest({
+    targetUserId: targetId,
+    actorUserId: authUser.id,
+    title: "Udhar Connection Disconnected",
+    message: `${actorName} disconnected their Udhar pairing with you. Your existing Udhar history remains preserved.`,
+    type: "connection_disconnected",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: authUser.id
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "disconnected",
+      message: "Disconnected successfully. Existing Udhar transaction history has been preserved."
+    }
+  };
+}
+async function getPrivacyConsentsRest(authUser) {
+  let res = await sbRest(
+    `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,consent_status,action,policy_version,consent_wording,granted_at,withdrawn_at,source,audit_metadata,created_at,updated_at&order=created_at.desc&limit=200`
+  );
+  if (!res.ok && res.status === 400) {
+    res = await sbRest(
+      `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,action,policy_version,consent_wording,created_at,updated_at&order=created_at.desc&limit=200`
+    );
+  }
+  if (!res.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: res.error || "Could not load saved privacy choices from Supabase."
+      }
+    };
+  }
+  const history = res.data || [];
+  const latestByCategory = {};
+  for (const row of history) {
+    if (!latestByCategory[row.purpose]) {
+      const effectiveStatus = row.consent_status || row.status;
+      latestByCategory[row.purpose] = {
+        category: row.purpose,
+        purpose: row.purpose,
+        status: effectiveStatus,
+        consent_status: effectiveStatus,
+        policyVersion: row.policy_version,
+        consentedAt: row.granted_at || (effectiveStatus === "granted" ? row.created_at : null),
+        grantedAt: row.granted_at || (effectiveStatus === "granted" ? row.created_at : null),
+        revokedAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? row.created_at : null),
+        withdrawnAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? row.created_at : null),
+        source: row.source || null,
+        updatedAt: row.created_at
+      };
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      consents: latestByCategory,
+      history,
+      policyVersion: "v2.1 \u2014 DPDP Act 2023 & Rules 2025"
+    }
+  };
+}
+async function recordPrivacyConsentRest(authUser, body) {
+  const purpose = (body.category || body.purpose || "").trim();
+  const status = body.status === "withdrawn" ? "withdrawn" : "granted";
+  if (!purpose) {
+    return { status: 400, body: { success: false, message: "Consent category is required." } };
+  }
+  const policyVersion = (body.policyVersion || "v2.1 \u2014 DPDP Act 2023 & Rules 2025").trim();
+  const wording = (body.wording || `User explicitly ${status} consent for ${purpose}.`).trim();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const extendedRow = {
+    user_id: authUser.id,
+    user_email: authUser.email,
+    purpose,
+    status,
+    consent_status: status,
+    action: status,
+    policy_version: policyVersion,
+    consent_wording: wording,
+    granted_at: status === "granted" ? nowIso : null,
+    withdrawn_at: status === "withdrawn" ? nowIso : null,
+    source: body.source || "privacy_choices_modal",
+    audit_metadata: body.auditMetadata || {},
+    idempotency_key: body.idempotencyKey || null,
+    created_at: nowIso,
+    updated_at: nowIso
+  };
+  let ins = await sbRest("user_consents", {
+    method: "POST",
+    prefer: "return=representation",
+    body: extendedRow
+  });
+  if (!ins.ok && ins.status === 400) {
+    ins = await sbRest("user_consents", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: authUser.id,
+        user_email: authUser.email,
+        purpose,
+        status,
+        action: status,
+        policy_version: policyVersion,
+        consent_wording: wording,
+        created_at: nowIso,
+        updated_at: nowIso
+      }
+    });
+  }
+  if (!ins.ok && ins.status === 409 && body.idempotencyKey) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        category: purpose,
+        status,
+        deduplicated: true,
+        consent: { purpose, status, policy_version: policyVersion, created_at: nowIso }
+      }
+    };
+  }
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: ins.error || "Could not save consent preference to Supabase right now."
+      }
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      category: purpose,
+      status,
+      consent: ins.data?.[0] || { purpose, status, policy_version: policyVersion, created_at: nowIso }
+    }
+  };
+}
+async function recordPrivacyConsentBatchRest(authUser, entries) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const extendedRows = entries.map((e2) => ({
+    user_id: authUser.id,
+    user_email: authUser.email,
+    purpose: e2.purpose,
+    status: e2.status,
+    consent_status: e2.status,
+    action: e2.status,
+    policy_version: e2.policyVersion,
+    consent_wording: e2.wording,
+    granted_at: e2.status === "granted" ? nowIso : null,
+    withdrawn_at: e2.status === "withdrawn" ? nowIso : null,
+    source: e2.source,
+    audit_metadata: e2.auditMetadata || {},
+    idempotency_key: e2.idempotencyKey,
+    created_at: nowIso,
+    updated_at: nowIso
+  }));
+  let ins = await sbRest("user_consents", {
+    method: "POST",
+    prefer: "return=representation",
+    body: extendedRows
+  });
+  if (!ins.ok && ins.status === 400) {
+    const legacyRows = entries.map((e2) => ({
+      user_id: authUser.id,
+      user_email: authUser.email,
+      purpose: e2.purpose,
+      status: e2.status,
+      action: e2.status,
+      policy_version: e2.policyVersion,
+      consent_wording: e2.wording,
+      created_at: nowIso,
+      updated_at: nowIso
+    }));
+    ins = await sbRest("user_consents", {
+      method: "POST",
+      prefer: "return=representation",
+      body: legacyRows
+    });
+  }
+  if (!ins.ok && ins.status === 409) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        deduplicated: true,
+        records: extendedRows
+      }
+    };
+  }
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: ins.error || "Could not save your privacy choices to Supabase right now."
+      }
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      records: ins.data || extendedRows
+    }
+  };
+}
+async function getContactsRest(authUser) {
+  const res = await sbRest(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`
+  );
+  if (!res.ok) {
+    return { status: 503, body: { success: false, message: "Failed to load contacts." } };
+  }
+  const rows = res.data || [];
+  const linkedIds = rows.map((r2) => r2.linked_user_id).filter(Boolean);
+  const userMap = await fetchUsersByIds(linkedIds);
+  const contacts = rows.map((c) => {
+    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
+    return {
+      ...c,
+      linked_user_name: u?.full_name || null,
+      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
+      linked_user_avatar: u?.avatar_url || null
+    };
+  });
+  return { status: 200, body: { success: true, contacts } };
+}
+async function getContactsWithBalancesRest(authUser) {
+  const [contactsRes, txRes] = await Promise.all([
+    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
+    sbRest(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`)
+  ]);
+  if (!contactsRes.ok) {
+    return { status: 503, body: { success: false, message: "Failed to load people contacts." } };
+  }
+  const contacts = contactsRes.data || [];
+  const txs = txRes.ok && Array.isArray(txRes.data) ? txRes.data : [];
+  const linkedIds = contacts.map((c) => c.linked_user_id).filter(Boolean);
+  const userMap = await fetchUsersByIds(linkedIds);
+  const parsedContacts = contacts.map((c) => {
+    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
+    const matchingTxs = txs.filter((t2) => {
+      if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
+      if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+    let totalGiven = 0;
+    let totalTaken = 0;
+    let receivable = 0;
+    let payable = 0;
+    let lastDate = null;
+    let pendingCount = 0;
+    for (const t2 of matchingTxs) {
+      if (t2.status === "cancelled") continue;
+      const orig = parseFloat(t2.original_amount) || 0;
+      const cur = parseFloat(t2.current_balance) || 0;
+      const isSettled = t2.status === "settled" || cur <= 0.01;
+      if (t2.direction === "gave") {
+        totalGiven += orig;
+        if (!isSettled) receivable += cur;
+      } else {
+        totalTaken += orig;
+        if (!isSettled) payable += cur;
+      }
+      if (!isSettled && cur > 0.01) pendingCount += 1;
+      if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
+        lastDate = t2.transaction_date;
+      }
+    }
+    return {
+      ...c,
+      linked_user_name: u?.full_name || null,
+      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
+      linked_user_avatar: u?.avatar_url || null,
+      total_given: roundMoney(totalGiven),
+      total_taken: roundMoney(totalTaken),
+      outstanding_receivable: roundMoney(receivable),
+      outstanding_payable: roundMoney(payable),
+      net_balance: roundMoney(receivable - payable),
+      last_transaction_date: lastDate,
+      total_transactions_count: matchingTxs.filter((t2) => t2.status !== "cancelled").length,
+      pending_transactions_count: pendingCount,
+      is_registered: Boolean(c.linked_user_id)
+    };
+  });
+  return { status: 200, body: { success: true, contacts: parsedContacts } };
+}
+async function saveContactRest(authUser, body) {
+  const name2 = (body.name || "").trim();
+  const email = (body.email || "").trim().toLowerCase();
+  const phone = (body.phone || "").trim();
+  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
+  const notes = (body.notes || "").trim();
+  const photoUrl = (body.photo_url || body.photoUrl || "").trim() || null;
+  const requestedLinkedUserId = (body.linked_user_id || body.linkedUserId || "").trim() || null;
+  if (!name2) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
+  let verifiedTarget = null;
+  if (requestedLinkedUserId) {
+    if (requestedLinkedUserId === authUser.id) {
+      return { status: 400, body: { success: false, message: "You cannot add yourself as a contact." } };
+    }
+    const targetRes = await sbRest(
+      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status`
+    );
+    if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+      return { status: 404, body: { success: false, message: "Selected user account was not found." } };
+    }
+    const target = targetRes.data[0];
+    if (target.deletion_status && target.deletion_status !== "none") {
+      return { status: 403, body: { success: false, message: "Selected user account is unavailable." } };
+    }
+    if (await isBlockedBetween(authUser.id, target.id)) {
+      return { status: 403, body: { success: false, message: "Cannot connect with a blocked account." } };
+    }
+    verifiedTarget = target;
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const payload = {
+    user_id: authUser.id,
+    name: verifiedTarget ? verifiedTarget.full_name : name2,
+    email: verifiedTarget ? verifiedTarget.email : email || null,
+    phone: verifiedTarget ? verifiedTarget.phone : phone || null,
+    photo_url: verifiedTarget ? verifiedTarget.avatar_url || photoUrl : photoUrl,
+    relationship_type: relationshipType,
+    notes: notes || null,
+    linked_user_id: verifiedTarget ? verifiedTarget.id : null,
+    updated_at: nowIso
+  };
+  const upsertRes = await sbRest("udhar_contacts?on_conflict=user_id,name", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: payload
+  });
+  if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
+    return { status: 500, body: { success: false, message: upsertRes.error || "Failed to save contact." } };
+  }
+  if (verifiedTarget) {
+    await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      contact: upsertRes.data[0],
+      reciprocallyLinked: Boolean(verifiedTarget)
+    }
+  };
+}
+async function updateContactRest(authUser, contactId, body) {
+  const name2 = (body.name || "").trim();
+  const email = (body.email || "").trim().toLowerCase();
+  const phone = (body.phone || "").trim();
+  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
+  const notes = (body.notes || "").trim();
+  const photoUrl = body.photo_url !== void 0 ? body.photo_url || null : void 0;
+  if (!name2) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
+  const existingRes = await sbRest(
+    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!existingRes.ok || !existingRes.data || existingRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Contact not found." } };
+  }
+  const existing = existingRes.data[0];
+  const patchBody = {
+    name: name2,
+    email: email || null,
+    phone: phone || null,
+    relationship_type: relationshipType,
+    notes: notes || null,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (photoUrl !== void 0) patchBody.photo_url = photoUrl;
+  const updRes = await sbRest(
+    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: patchBody
+    }
+  );
+  if (!updRes.ok || !updRes.data || updRes.data.length === 0) {
+    return { status: 500, body: { success: false, message: updRes.error || "Failed to update contact." } };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      contact: updRes.data[0],
+      reciprocallyLinked: Boolean(existing.linked_user_id)
+    }
+  };
+}
+async function deleteContactRest(authUser, contactId) {
+  const res = await sbRest(
+    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    return { status: 500, body: { success: false, message: res.error || "Failed to remove contact." } };
+  }
+  return { status: 200, body: { success: true, message: "Saved contact removed." } };
+}
+async function linkContactRest(authUser, contactId, registeredUserId) {
+  if (!registeredUserId) {
+    return { status: 400, body: { success: false, message: "Target registered user ID is required." } };
+  }
+  if (registeredUserId === authUser.id) {
+    return { status: 400, body: { success: false, message: "You cannot link a contact to your own account." } };
+  }
+  const [contactRes, targetRes] = await Promise.all([
+    sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
+    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`)
+  ]);
+  if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Contact not found." } };
+  }
+  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Registered user not found." } };
+  }
+  const contact = contactRes.data[0];
+  const target = targetRes.data[0];
+  if (target.deletion_status && target.deletion_status !== "none") {
+    return { status: 403, body: { success: false, message: "Target user account is unavailable." } };
+  }
+  if (await isBlockedBetween(authUser.id, target.id)) {
+    return { status: 403, body: { success: false, message: "Cannot link with a blocked account." } };
+  }
+  await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`, {
+    method: "PATCH",
+    body: {
+      linked_user_id: target.id,
+      email: target.email || contact.email || null,
+      phone: target.phone || contact.phone || null,
+      photo_url: target.avatar_url || contact.photo_url || null,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    }
+  });
+  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || "Friend");
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Successfully linked ${contact.name} with verified account ${target.full_name}.`
+    }
+  };
+}
+async function getMyQrRest(authUser) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = await sbRest(
+    `qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false&expires_at=gt.${encodeURIComponent(nowIso)}&order=created_at.desc&limit=1`
+  );
+  let pairingToken = "";
+  let pairingCode = "";
+  let expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
+  if (existing.ok && existing.data && existing.data.length > 0) {
+    pairingToken = existing.data[0].pairing_token;
+    pairingCode = existing.data[0].pairing_code;
+    expiresAt = existing.data[0].expires_at || expiresAt;
+  } else {
+    pairingToken = crypto13.randomBytes(32).toString("hex");
+    pairingCode = `MM-${crypto13.randomBytes(3).toString("hex").toUpperCase()}`;
+    const ins = await sbRest("qr_pairing_tokens", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: authUser.id,
+        pairing_token: pairingToken,
+        pairing_code: pairingCode,
+        is_single_use: false,
+        used: false,
+        expires_at: expiresAt
+      }
+    });
+    if (!ins.ok) {
+      return {
+        status: 503,
+        body: { success: false, message: "Unable to persist your unique QR identity right now. Please retry." }
+      };
+    }
+  }
+  const qrPayload = JSON.stringify({
+    app: "my-money",
+    v: 2,
+    type: "udhar-pair",
+    token: pairingToken,
+    code: pairingCode,
+    exp: new Date(expiresAt).getTime()
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      pairingToken,
+      pairingCode,
+      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
+      avatarUrl: authUser.avatar_url || null,
+      qrData: qrPayload,
+      expiresAt
+    }
+  };
+}
+async function regenerateQrRest(authUser) {
+  await sbRest(`qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false`, {
+    method: "PATCH",
+    body: { used: true }
+  });
+  const pairingToken = crypto13.randomBytes(32).toString("hex");
+  const pairingCode = `MM-${crypto13.randomBytes(3).toString("hex").toUpperCase()}`;
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
+  const ins = await sbRest("qr_pairing_tokens", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      user_id: authUser.id,
+      pairing_token: pairingToken,
+      pairing_code: pairingCode,
+      is_single_use: false,
+      used: false,
+      expires_at: expiresAt
+    }
+  });
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: { success: false, message: "Could not regenerate QR code right now. Please try again." }
+    };
+  }
+  const qrPayload = JSON.stringify({
+    app: "my-money",
+    v: 2,
+    type: "udhar-pair",
+    token: pairingToken,
+    code: pairingCode,
+    exp: new Date(expiresAt).getTime()
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: "Fresh QR code generated successfully. Previous codes have been revoked.",
+      pairingToken,
+      pairingCode,
+      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
+      avatarUrl: authUser.avatar_url || null,
+      qrData: qrPayload,
+      expiresAt
+    }
+  };
+}
+async function resolveQrRest(authUser, body) {
+  let targetToken = (body.pairingToken || "").trim();
+  let targetCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+  const rawData = (body.qrData || "").trim();
+  if (rawData) {
+    const parsed = parseQrPayload(rawData);
+    if (!parsed.valid) {
+      return {
+        status: 400,
+        body: {
+          success: false,
+          code: parsed.errorCode || "INVALID_QR",
+          message: parsed.error || "Invalid QR format."
+        }
+      };
+    }
+    if (parsed.token) targetToken = parsed.token;
+    if (parsed.code) targetCode = parsed.code;
+  }
+  if (!targetToken && !targetCode) {
+    return {
+      status: 400,
+      body: { success: false, code: "INVALID_QR", message: "No valid QR pairing token or code provided." }
+    };
+  }
+  const filter = targetToken && targetCode ? `or=(pairing_token.eq.${encodeURIComponent(targetToken)},pairing_code.eq.${encodeURIComponent(targetCode)})` : targetToken ? `pairing_token=eq.${encodeURIComponent(targetToken)}` : `pairing_code=eq.${encodeURIComponent(targetCode)}`;
+  const tokRes = await sbRest(`qr_pairing_tokens?${filter}&order=created_at.desc&limit=1`);
+  if (!tokRes.ok) {
+    return { status: 503, body: { success: false, code: "SERVICE_UNAVAILABLE", message: "Unable to verify QR code right now. Please retry." } };
+  }
+  if (!tokRes.data || tokRes.data.length === 0) {
+    return {
+      status: 404,
+      body: {
+        success: false,
+        code: "NOT_FOUND",
+        message: "Pairing code or QR not recognized. Ask your friend to share their latest My Money Manager Udhar Pairing QR."
+      }
+    };
+  }
+  const qrRecord = tokRes.data[0];
+  if (qrRecord.used) {
+    return {
+      status: 410,
+      body: {
+        success: false,
+        code: "QR_REVOKED",
+        message: "This pairing QR has been revoked. Ask your friend to share their new Udhar Pairing QR."
+      }
+    };
+  }
+  if (qrRecord.expires_at && new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
+    return {
+      status: 410,
+      body: {
+        success: false,
+        code: "QR_EXPIRED",
+        message: "This pairing QR has expired. Ask your friend to tap Reset QR to generate a fresh code."
+      }
+    };
+  }
+  if (qrRecord.user_id === authUser.id) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        code: "SELF_CONNECTION",
+        message: "This is your own Udhar pairing QR. You cannot pair with yourself."
+      }
+    };
+  }
+  const userRes = await sbRest(
+    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified&limit=1`
+  );
+  if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
+    return {
+      status: 404,
+      body: { success: false, code: "NOT_FOUND", message: "Account not found." }
+    };
+  }
+  const owner = userRes.data[0];
+  if (owner.status !== "active" || owner.deletion_status && owner.deletion_status !== "none") {
+    return {
+      status: 403,
+      body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is deactivated or unavailable." }
+    };
+  }
+  if (await isBlockedBetween(authUser.id, owner.id)) {
+    return {
+      status: 403,
+      body: { success: false, code: "BLOCKED", message: "You cannot connect with this account." }
+    };
+  }
+  const connRes = await sbRest(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(owner.id)}),and(user_a_id.eq.${encodeURIComponent(owner.id)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
+  );
+  const connRows = connRes.ok && Array.isArray(connRes.data) ? connRes.data : [];
+  const isAlreadyConnected = connRows.some((c) => c.status === "connected");
+  const outgoingPending = connRows.find((c) => c.user_a_id === authUser.id && c.status === "pending");
+  const incomingPending = connRows.find((c) => c.user_b_id === authUser.id && c.status === "pending");
+  const connectionStatus = isAlreadyConnected ? "connected" : outgoingPending ? "pending" : incomingPending ? "incoming_pending" : "none";
+  return {
+    status: 200,
+    body: {
+      success: true,
+      owner: {
+        id: owner.id,
+        displayName: owner.full_name || "My Money User",
+        fullName: owner.full_name || "My Money User",
+        accountIndicator: "My Money Manager Account",
+        emailMasked: isAlreadyConnected ? maskEmailForPrivacy(owner.email) : void 0,
+        phoneMasked: isAlreadyConnected ? maskPhoneForPrivacy(owner.phone) : null,
+        avatarUrl: owner.avatar_url || null,
+        isVerified: Boolean(owner.is_verified ?? true)
+      },
+      pairingToken: qrRecord.pairing_token,
+      pairingCode: qrRecord.pairing_code,
+      isAlreadyConnected,
+      connectionStatus,
+      requestId: outgoingPending?.id || incomingPending?.id || null
+    }
+  };
+}
+async function connectQrRest(authUser, body) {
+  const resolved = await resolveQrRest(authUser, body);
+  if (resolved.status !== 200 || !resolved.body.success) {
+    return resolved;
+  }
+  const targetId = resolved.body.owner.id;
+  const relationshipType = (body.relationshipType || "Friend").trim();
+  const connResult = await connectUserRest(authUser, {
+    targetUserId: targetId,
+    relationshipType,
+    requestedVia: "qr"
+  });
+  return connResult;
+}
+async function getUdharTransactionsRest(authUser) {
+  const [txRes, contactsRes] = await Promise.all([
+    sbRest(
+      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&order=transaction_date.desc,created_at.desc`
+    ),
+    sbRest(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=name,linked_user_id`
+    )
+  ]);
+  if (!txRes.ok) {
+    return { status: 503, body: { success: false, message: "Unable to load Udhar ledger right now." } };
+  }
+  const rawTxs = txRes.data || [];
+  const linkIds = Array.from(new Set(rawTxs.map((t2) => t2.link_id).filter(Boolean)));
+  const txIds = rawTxs.map((t2) => t2.id).filter(Boolean);
+  let repaymentsRows = [];
+  let historyRows = [];
+  if (linkIds.length > 0) {
+    const inLinks = linkIds.map((id) => `"${String(id).replace(/"/g, "")}"`).join(",");
+    const [repRes, histRes] = await Promise.all([
+      sbRest(
+        `udhar_repayments?link_id=in.(${encodeURIComponent(inLinks)})&order=repayment_date.desc,created_at.desc`
+      ),
+      sbRest(
+        `udhar_edit_history?link_id=in.(${encodeURIComponent(inLinks)})&order=created_at.desc`
+      )
+    ]);
+    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data;
+    if (histRes.ok && Array.isArray(histRes.data)) historyRows = histRes.data;
+  }
+  const allUserIds = [
+    ...rawTxs.map((t2) => t2.counterpart_user_id),
+    ...repaymentsRows.map((r2) => r2.recorded_by_user_id),
+    ...historyRows.map((h2) => h2.edited_by_user_id)
+  ].filter(Boolean);
+  const userMap = await fetchUsersByIds(allUserIds);
+  const repByLink = /* @__PURE__ */ new Map();
+  const repByTx = /* @__PURE__ */ new Map();
+  for (const r2 of repaymentsRows) {
+    if (r2.link_id) {
+      if (!repByLink.has(r2.link_id)) repByLink.set(r2.link_id, []);
+      repByLink.get(r2.link_id).push(r2);
+    }
+    if (r2.udhar_id) {
+      if (!repByTx.has(r2.udhar_id)) repByTx.set(r2.udhar_id, []);
+      repByTx.get(r2.udhar_id).push(r2);
+    }
+  }
+  const histByLink = /* @__PURE__ */ new Map();
+  for (const h2 of historyRows) {
+    if (!histByLink.has(h2.link_id)) histByLink.set(h2.link_id, []);
+    histByLink.get(h2.link_id).push(h2);
+  }
+  const transactions = rawTxs.map((row) => {
+    const reps = row.link_id && repByLink.get(row.link_id) || repByTx.get(row.id) || [];
+    const hist = row.link_id && histByLink.get(row.link_id) || [];
+    return enrichTransactionRow(row, userMap, reps, hist);
+  });
+  const contacts = contactsRes.ok && Array.isArray(contactsRes.data) ? contactsRes.data : [];
+  const summary = calculatePeopleDashboardSummary(transactions, contacts);
+  return {
+    status: 200,
+    body: {
+      success: true,
+      transactions,
+      summary,
+      count: txIds.length
+    }
+  };
+}
+async function createUdharTransactionRest(authUser, body) {
+  const counterpartName = (body.counterpart_name || body.person_name || "").trim();
+  const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || "").trim() || null;
+  const direction = body.direction;
+  const amount = roundMoney(parseFloat(body.amount));
+  const txDate = body.transaction_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const dueDate = body.due_date || body.dueDate || null;
+  const plainNotes = (body.notes || "").trim();
+  const category = (body.category || "Personal Loan").trim();
+  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
+  const description = (body.description || "").trim();
+  const attachmentUrl = body.attachment_url || null;
+  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
+  if (!counterpartName) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
+  if (!["gave", "took"].includes(direction)) {
+    return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { status: 400, body: { success: false, message: "Amount must be greater than \u20B90." } };
+  }
+  if (idempotencyKey) {
+    const dupCheck = await sbRest(
+      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
+    );
+    if (dupCheck.ok && dupCheck.data && dupCheck.data.length > 0) {
+      const existing = dupCheck.data[0];
+      return {
+        status: 200,
+        body: {
+          success: true,
+          deduplicated: true,
+          message: "Udhar already recorded.",
+          transaction: enrichTransactionRow(existing, /* @__PURE__ */ new Map(), [], []),
+          isLinked: Boolean(existing.counterpart_user_id)
+        }
+      };
+    }
+  }
+  let registeredUser = null;
+  if (counterpartUserId && counterpartUserId !== authUser.id) {
+    const uRes = await sbRest(
+      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`
+    );
+    if (uRes.ok && uRes.data && uRes.data.length > 0) {
+      const u = uRes.data[0];
+      if (!u.deletion_status || u.deletion_status === "none") {
+        if (await isBlockedBetween(authUser.id, u.id)) {
+          return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
+        }
+        registeredUser = u;
+      }
+    }
+  }
+  const packedNotes = packStructuredNote(plainNotes, {
+    category,
+    payment_method: paymentMethod,
+    description: description || void 0,
+    attachment_url: attachmentUrl || void 0
+  });
+  const linkId = crypto13.randomUUID();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (registeredUser) {
+    const counterpartDirection = direction === "gave" ? "took" : "gave";
+    const userARow = {
+      link_id: linkId,
+      user_id: authUser.id,
+      counterpart_user_id: registeredUser.id,
+      counterpart_name: registeredUser.full_name,
+      direction,
+      original_amount: amount,
+      current_balance: amount,
+      paid_amount: 0,
+      transaction_date: txDate,
+      due_date: dueDate || null,
+      notes: packedNotes,
+      attachment_url: attachmentUrl,
+      status: "confirmed",
+      confirmation_status: "confirmed",
+      is_initiator: true,
+      idempotency_key: idempotencyKey,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const userBRow = {
+      link_id: linkId,
+      user_id: registeredUser.id,
+      counterpart_user_id: authUser.id,
+      counterpart_name: authUser.full_name,
+      direction: counterpartDirection,
+      original_amount: amount,
+      current_balance: amount,
+      paid_amount: 0,
+      transaction_date: txDate,
+      due_date: dueDate || null,
+      notes: packedNotes,
+      attachment_url: attachmentUrl,
+      status: "confirmed",
+      confirmation_status: "confirmed",
+      is_initiator: false,
+      idempotency_key: idempotencyKey ? `${idempotencyKey}:counterpart` : null,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const insertRes = await sbRest("udhar_transactions", {
+      method: "POST",
+      prefer: "return=representation",
+      body: [userARow, userBRow]
+    });
+    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: insertRes.error || "Failed to create shared Udhar." } };
+    }
+    const createdUserA = insertRes.data.find((r2) => r2.user_id === authUser.id) || insertRes.data[0];
+    await ensureConnectionAndReciprocalContactsRest(authUser, registeredUser, "Friend");
+    await createTargetedNotificationRest({
+      targetUserId: registeredUser.id,
+      actorUserId: authUser.id,
+      title: `New Shared Udhar from ${authUser.full_name}`,
+      message: `${authUser.full_name} recorded an Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}).`,
+      type: "udhar_created",
+      relatedEntityId: linkId
+    });
+    const userMap = /* @__PURE__ */ new Map([[registeredUser.id, registeredUser]]);
+    return {
+      status: 201,
+      body: {
+        success: true,
+        message: `Shared Udhar recorded with ${registeredUser.full_name}. Synced to both accounts.`,
+        transaction: enrichTransactionRow(createdUserA, userMap, [], []),
+        isLinked: true
+      }
+    };
+  } else {
+    const singleRow = {
+      link_id: linkId,
+      user_id: authUser.id,
+      counterpart_user_id: null,
+      counterpart_name: counterpartName,
+      direction,
+      original_amount: amount,
+      current_balance: amount,
+      paid_amount: 0,
+      transaction_date: txDate,
+      due_date: dueDate || null,
+      notes: packedNotes,
+      attachment_url: attachmentUrl,
+      status: "confirmed",
+      confirmation_status: "confirmed",
+      is_initiator: true,
+      idempotency_key: idempotencyKey,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const insertRes = await sbRest("udhar_transactions", {
+      method: "POST",
+      prefer: "return=representation",
+      body: singleRow
+    });
+    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: insertRes.error || "Failed to record local Udhar." } };
+    }
+    await sbRest("udhar_contacts?on_conflict=user_id,name", {
+      method: "POST",
+      prefer: "resolution=ignore-duplicates,return=minimal",
+      body: {
+        user_id: authUser.id,
+        name: counterpartName,
+        relationship_type: "Friend",
+        linked_user_id: null,
+        updated_at: nowIso
+      }
+    }).catch(() => {
+    });
+    return {
+      status: 201,
+      body: {
+        success: true,
+        message: `Local Udhar recorded for ${counterpartName}.`,
+        transaction: enrichTransactionRow(insertRes.data[0], /* @__PURE__ */ new Map(), [], []),
+        isLinked: false
+      }
+    };
+  }
+}
+async function confirmUdharTransactionRest(authUser, txId) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: { status: "confirmed", confirmation_status: "confirmed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+  });
+  return { status: 200, body: { success: true, message: "Transaction confirmed on both accounts." } };
+}
+async function disputeUdharTransactionRest(authUser, txId, reason) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      status: "disputed",
+      confirmation_status: "disputed",
+      dispute_reason: reason,
+      disputed_at: nowIso,
+      disputed_by: authUser.id,
+      updated_at: nowIso
+    }
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Disputed by ${authUser.full_name}`,
+      message: `${authUser.full_name} flagged an Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}: "${reason}"`,
+      type: "udhar_disputed",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return { status: 200, body: { success: true, message: "Transaction marked as disputed." } };
+}
+async function repayUdharRest(authUser, txId, body) {
+  const repayAmount = roundMoney(parseFloat(body.amount));
+  const repayDate = body.repayment_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const repayTime = (body.repayment_time || body.repaymentTime || "").trim();
+  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
+  const transactionRef = (body.transaction_ref || body.transactionRef || "").trim();
+  const attachmentUrl = (body.attachment_url || body.attachmentUrl || "").trim();
+  const plainNotes = (body.notes || "").trim();
+  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (idempotencyKey) {
+    const dupRep = await sbRest(
+      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
+    );
+    if (dupRep.ok && dupRep.data && dupRep.data.length > 0) {
+      return {
+        status: 200,
+        body: {
+          success: true,
+          deduplicated: true,
+          repayment: dupRep.data[0],
+          isPendingConfirmation: dupRep.data[0].status === "pending_confirmation",
+          remainingBalance: parseFloat(tx.current_balance) || 0,
+          isSettled: tx.status === "settled",
+          message: "Repayment already recorded."
+        }
+      };
+    }
+  }
+  const existingRepsRes = await sbRest(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
+  );
+  const existingReps = existingRepsRes.ok && Array.isArray(existingRepsRes.data) ? existingRepsRes.data : [];
+  const confirmedPaid = roundMoney(
+    existingReps.filter((r2) => r2.status === "confirmed").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const pendingRepayments = roundMoney(
+    existingReps.filter((r2) => r2.status === "pending_confirmation").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const calc = calculateRepaymentApplication({
+    originalAmount: parseFloat(tx.original_amount) || 0,
+    confirmedPaidAmount: confirmedPaid,
+    pendingRepaymentsAmount: pendingRepayments,
+    repayAmount,
+    isShared: Boolean(tx.counterpart_user_id),
+    actorRole: tx.direction === "gave" ? "lender" : "borrower",
+    udharStatus: tx.status
+  });
+  if (!calc.valid) {
+    return { status: 400, body: { success: false, message: calc.error || "Invalid repayment." } };
+  }
+  const packedNote = packStructuredNote(plainNotes, {
+    transaction_ref: transactionRef || void 0,
+    repayment_time: repayTime || void 0,
+    attachment_url: attachmentUrl || void 0
+  });
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const insertRep = await sbRest("udhar_repayments", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      link_id: tx.link_id,
+      udhar_id: tx.id,
+      recorded_by_user_id: authUser.id,
+      amount: repayAmount,
+      repayment_date: repayDate,
+      payment_method: paymentMethod,
+      notes: packedNote,
+      status: calc.repaymentStatus,
+      idempotency_key: idempotencyKey,
+      confirmed_at: calc.repaymentStatus === "confirmed" ? nowIso : null,
+      confirmed_by: calc.repaymentStatus === "confirmed" ? authUser.id : null
+    }
+  });
+  if (!insertRep.ok || !insertRep.data || insertRep.data.length === 0) {
+    return { status: 500, body: { success: false, message: insertRep.error || "Failed to record repayment." } };
+  }
+  if (calc.repaymentStatus === "confirmed") {
+    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+      method: "PATCH",
+      body: {
+        current_balance: calc.nextRemainingAmount,
+        paid_amount: calc.nextPaidAmount,
+        status: calc.nextUdharStatus,
+        settled_at: calc.isSettled ? nowIso : tx.settled_at,
+        updated_at: nowIso
+      }
+    });
+  }
+  if (tx.counterpart_user_id) {
+    if (calc.repaymentStatus === "pending_confirmation") {
+      await createTargetedNotificationRest({
+        targetUserId: tx.counterpart_user_id,
+        actorUserId: authUser.id,
+        title: `Repayment Confirmation Needed: ${authUser.full_name}`,
+        message: `${authUser.full_name} reported a repayment of \u20B9${repayAmount.toLocaleString("en-IN")} via ${paymentMethod}. Please confirm receipt.`,
+        type: "repayment_pending",
+        relatedEntityId: tx.link_id
+      });
+    } else {
+      await createTargetedNotificationRest({
+        targetUserId: tx.counterpart_user_id,
+        actorUserId: authUser.id,
+        title: calc.isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
+        message: `${authUser.full_name} confirmed a repayment of \u20B9${repayAmount.toLocaleString("en-IN")}. Remaining balance: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
+        type: calc.isSettled ? "settlement" : "repayment",
+        relatedEntityId: tx.link_id
+      });
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      repayment: insertRep.data[0],
+      isPendingConfirmation: calc.repaymentStatus === "pending_confirmation",
+      remainingBalance: calc.nextRemainingAmount,
+      isSettled: calc.isSettled,
+      message: calc.repaymentStatus === "pending_confirmation" ? `Payment of \u20B9${repayAmount.toLocaleString("en-IN")} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.` : calc.isSettled ? "Full repayment recorded! Udhar is now completely settled." : `Repayment of \u20B9${repayAmount.toLocaleString("en-IN")} recorded. Remaining: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`
+    }
+  };
+}
+async function confirmRepaymentRest(authUser, repaymentId) {
+  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const rep = repRes.data[0];
+  if (rep.status === "confirmed") {
+    return { status: 400, body: { success: false, message: "This repayment is already confirmed." } };
+  }
+  const txRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.direction !== "gave") {
+    return { status: 403, body: { success: false, message: "Only the lender can confirm receipt of repayment." } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
+    method: "PATCH",
+    body: { status: "confirmed", confirmed_at: nowIso, confirmed_by: authUser.id, rejection_reason: null }
+  });
+  const allRepsRes = await sbRest(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
+  );
+  const totalConfirmed = roundMoney(
+    (allRepsRes.data || []).reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const origAmt = parseFloat(tx.original_amount) || 0;
+  const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmed));
+  const isSettled = newBalance <= 0.01;
+  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      current_balance: isSettled ? 0 : newBalance,
+      paid_amount: isSettled ? origAmt : totalConfirmed,
+      status: isSettled ? "settled" : "confirmed",
+      settled_at: isSettled ? nowIso : tx.settled_at,
+      updated_at: nowIso
+    }
+  });
+  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
+    await createTargetedNotificationRest({
+      targetUserId: rep.recorded_by_user_id,
+      actorUserId: authUser.id,
+      title: `Repayment Confirmed by ${authUser.full_name}`,
+      message: `${authUser.full_name} confirmed receiving \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Remaining balance: \u20B9${(isSettled ? 0 : newBalance).toLocaleString("en-IN")}.`,
+      type: "repayment_confirmed",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} confirmed!`,
+      remainingBalance: isSettled ? 0 : newBalance,
+      isSettled
+    }
+  };
+}
+async function rejectRepaymentRest(authUser, repaymentId, reason) {
+  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const rep = repRes.data[0];
+  const txRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.direction !== "gave") {
+    return { status: 403, body: { success: false, message: "Only the lender can reject a repayment claim." } };
+  }
+  await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
+    method: "PATCH",
+    body: {
+      status: "rejected",
+      rejection_reason: reason,
+      confirmed_at: (/* @__PURE__ */ new Date()).toISOString(),
+      confirmed_by: authUser.id
+    }
+  });
+  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
+    await createTargetedNotificationRest({
+      targetUserId: rep.recorded_by_user_id,
+      actorUserId: authUser.id,
+      title: "Repayment Claim Rejected",
+      message: `${authUser.full_name} rejected your payment claim of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}: "${reason}".`,
+      type: "repayment_rejected",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return { status: 200, body: { success: true, message: "Repayment claim rejected.", rejectionReason: reason } };
+}
+async function editUdharRest(authUser, txId, body) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const repsRes = await sbRest(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
+  );
+  const confirmedPaid = roundMoney(
+    (repsRes.data || []).reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const editReason = (body.reason_for_edit || body.reason || body.edit_reason || "").trim();
+  const validation = validateUdharEdit(
+    {
+      original_amount: parseFloat(tx.original_amount) || 0,
+      paid_amount: confirmedPaid,
+      status: tx.status,
+      notes: prevPlainNote,
+      transaction_date: tx.transaction_date,
+      due_date: tx.due_date,
+      category: prevMeta.category || "Personal Loan",
+      payment_method: prevMeta.payment_method || "UPI",
+      description: prevMeta.description || null
+    },
+    {
+      amount: body.amount !== void 0 ? parseFloat(body.amount) : void 0,
+      notes: body.notes !== void 0 ? (body.notes || "").trim() : void 0,
+      transaction_date: body.transaction_date || body.date || void 0,
+      due_date: body.due_date !== void 0 ? body.due_date : body.dueDate !== void 0 ? body.dueDate : void 0,
+      category: body.category !== void 0 ? body.category : void 0,
+      payment_method: body.payment_method !== void 0 ? body.payment_method : void 0,
+      description: body.description !== void 0 ? body.description : void 0,
+      reason_for_edit: editReason
+    }
+  );
+  if (!validation.valid) {
+    return { status: 400, body: { success: false, message: validation.error || "Invalid edit." } };
+  }
+  const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
+  const nextPackedNotes = packStructuredNote(nextPlainNote, {
+    category: body.category !== void 0 ? body.category : prevMeta.category,
+    payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
+    description: body.description !== void 0 ? body.description : prevMeta.description,
+    attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url
+  });
+  const nextDate = body.transaction_date || body.date || tx.transaction_date;
+  const nextDueDate = body.due_date !== void 0 ? body.due_date || null : body.dueDate !== void 0 ? body.dueDate || null : tx.due_date;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest("udhar_edit_history", {
+    method: "POST",
+    prefer: "return=minimal",
+    body: {
+      udhar_id: tx.id,
+      link_id: tx.link_id,
+      edited_by_user_id: authUser.id,
+      previous_amount: parseFloat(tx.original_amount) || 0,
+      new_amount: validation.nextOriginalAmount,
+      previous_notes: prevPlainNote || null,
+      new_notes: nextPlainNote || null,
+      previous_date: tx.transaction_date,
+      new_date: nextDate,
+      previous_due_date: tx.due_date || null,
+      new_due_date: nextDueDate,
+      reason_for_edit: editReason
+    }
+  });
+  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      original_amount: validation.nextOriginalAmount,
+      current_balance: validation.nextRemainingAmount,
+      paid_amount: confirmedPaid,
+      status: validation.nextStatus,
+      notes: nextPackedNotes,
+      transaction_date: nextDate,
+      due_date: nextDueDate,
+      last_edited_at: nowIso,
+      last_edited_by: authUser.id,
+      edit_reason: editReason,
+      updated_at: nowIso
+    }
+  });
+  if (tx.counterpart_user_id) {
+    const targetUserId = tx.user_id === authUser.id ? tx.counterpart_user_id : tx.user_id;
+    await createTargetedNotificationRest({
+      targetUserId,
+      actorUserId: authUser.id,
+      title: `Udhar Edited by ${authUser.full_name}`,
+      message: `${authUser.full_name} updated Udhar details (${editReason}). Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
+      type: "udhar_edited",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Udhar updated across both accounts. Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
+      remainingBalance: validation.nextRemainingAmount,
+      isSettled: validation.isSettled,
+      changes: validation.changes
+    }
+  };
+}
+async function settleUdharRest(authUser, txId, body) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.counterpart_user_id && tx.direction === "took") {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: "Only the lender can mark a shared Udhar as settled. As the borrower, record a repayment for lender confirmation."
+      }
+    };
+  }
+  const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
+  if (tx.status === "settled" || currentBal <= 0.01) {
+    return { status: 400, body: { success: false, message: "This transaction is already settled." } };
+  }
+  if (tx.status === "cancelled") {
+    return { status: 400, body: { success: false, message: "Cannot settle a cancelled transaction." } };
+  }
+  const settleDate = body.settlement_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const paymentMethod = (body.payment_method || "UPI").trim();
+  const notes = (body.notes || "Settled in full").trim();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest("udhar_repayments", {
+    method: "POST",
+    prefer: "return=minimal",
+    body: {
+      link_id: tx.link_id,
+      udhar_id: tx.id,
+      recorded_by_user_id: authUser.id,
+      amount: currentBal,
+      repayment_date: settleDate,
+      payment_method: paymentMethod,
+      notes,
+      status: "confirmed",
+      confirmed_at: nowIso,
+      confirmed_by: authUser.id
+    }
+  });
+  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      current_balance: 0,
+      paid_amount: parseFloat(tx.original_amount) || 0,
+      status: "settled",
+      settled_at: nowIso,
+      updated_at: nowIso
+    }
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Settled with ${authUser.full_name}`,
+      message: `${authUser.full_name} marked the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")} as fully settled.`,
+      type: "settlement",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Udhar with ${tx.counterpart_name} settled in full.`,
+      isSettled: true
+    }
+  };
+}
+async function cancelUdharRest(authUser, txId) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&select=status`);
+  const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data : [];
+  const guard = canCancelUdhar({
+    status: tx.status,
+    paid_amount: tx.paid_amount,
+    repayments
+  });
+  if (!guard.allowed) {
+    return { status: 409, body: { success: false, message: guard.reason } };
+  }
+  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: { status: "cancelled", current_balance: 0, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Cancelled by ${authUser.full_name}`,
+      message: `${authUser.full_name} cancelled the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      type: "udhar_cancelled",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: { success: true, message: "Udhar cancelled successfully across connected accounts." }
+  };
+}
+async function getUdharHistoryRest(authUser, txId) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const [repsRes, histRes] = await Promise.all([
+    sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),
+    sbRest(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`)
+  ]);
+  const reps = repsRes.data || [];
+  const hist = histRes.data || [];
+  const userIds = [
+    tx.counterpart_user_id,
+    ...reps.map((r2) => r2.recorded_by_user_id),
+    ...hist.map((h2) => h2.edited_by_user_id)
+  ].filter(Boolean);
+  const userMap = await fetchUsersByIds(userIds);
+  const enriched = enrichTransactionRow(tx, userMap, reps, hist);
+  return {
+    status: 200,
+    body: {
+      success: true,
+      transaction: enriched,
+      editHistory: enriched.edit_history,
+      repayments: enriched.repayments
+    }
+  };
+}
+
+// src/lib/privacyConsent.ts
+var PRIVACY_POLICY_VERSION = "v2.1 \u2014 DPDP Act 2023 & Rules 2025";
+var PRIVACY_POLICY_LAST_UPDATED = "2026-11-25";
+var OPTIONAL_CONSENT_CATEGORIES = [
+  "cloud_sync",
+  "ai_processing",
+  "udhar_sharing",
+  "analytics",
+  "personalization",
+  "marketing_updates"
+];
+function createEmptyOptionalChoices() {
+  return {
+    cloud_sync: false,
+    ai_processing: false,
+    udhar_sharing: false,
+    analytics: false,
+    personalization: false,
+    marketing_updates: false
+  };
+}
+var EMPTY_OPTIONAL_CONSENT_CHOICES = Object.freeze(
+  createEmptyOptionalChoices()
+);
+function isValidOptionalConsentCategory(value) {
+  return OPTIONAL_CONSENT_CATEGORIES.includes(value);
+}
+
+// server/privacyConsentApi.ts
+var LEGACY_ALLOWED_PURPOSES = /* @__PURE__ */ new Set([
+  ...OPTIONAL_CONSENT_CATEGORIES,
+  "optional_feedback_support"
+]);
+var ALLOWED_SOURCES = /* @__PURE__ */ new Set([
+  "privacy_choices_modal",
+  "settings_manage_consent",
+  "ai_assistant_prompt",
+  "receipt_scanner_prompt",
+  "udhar_sharing_prompt",
+  "notification_preferences",
+  "help_support"
+]);
+var recentIdempotencyCache = /* @__PURE__ */ new Map();
+function pruneIdempotencyCache() {
+  const now = Date.now();
+  for (const [k, v] of recentIdempotencyCache.entries()) {
+    if (v.expiresAt <= now) recentIdempotencyCache.delete(k);
+  }
+}
+function sendJson2(res, status, payload) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(payload));
+}
+async function parseJsonBody2(req, maxBytes = 256 * 1024) {
+  return new Promise((resolve3, reject) => {
+    let total = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        reject(new Error("PAYLOAD_TOO_LARGE"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (chunks.length === 0) return resolve3({});
+      try {
+        resolve3(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        reject(new Error("INVALID_JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+function sanitizeSource(raw) {
+  const s2 = String(raw || "").trim();
+  return ALLOWED_SOURCES.has(s2) ? s2 : "privacy_choices_modal";
+}
+function sanitizeAuditMetadata(raw, language) {
+  const out = {};
+  if (language && ["en", "hi", "mr"].includes(language)) {
+    out.language = language;
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw;
+    if (typeof obj.via_select_all === "boolean") out.via_select_all = obj.via_select_all;
+    if (typeof obj.via_withdraw_all === "boolean") out.via_withdraw_all = obj.via_withdraw_all;
+    if (typeof obj.batch_id === "string" && obj.batch_id.length <= 64) {
+      out.batch_id = obj.batch_id.replace(/[^a-zA-Z0-9_-]/g, "");
+    }
+    if (typeof obj.interface_version === "string" && obj.interface_version.length <= 32) {
+      out.interface_version = obj.interface_version.replace(/[^a-zA-Z0-9._-]/g, "");
+    }
+  }
+  return out;
+}
+function sanitizeIdempotencyKey(raw) {
+  if (typeof raw !== "string") return null;
+  const cleaned = raw.trim().replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 96);
+  return cleaned.length >= 6 ? cleaned : null;
+}
+function buildConsentSnapshotFromHistory(rows) {
+  const latestByCategory = {};
+  const choices = createEmptyOptionalChoices();
+  let hasOptionalHistory = false;
+  let lastUpdatedAt = null;
+  for (const row of rows) {
+    const purpose = String(row.purpose || "").trim();
+    if (!purpose) continue;
+    const effectiveStatus = row.consent_status || row.status || "not_granted";
+    const createdAt = row.created_at || row.updated_at || null;
+    if (!latestByCategory[purpose]) {
+      latestByCategory[purpose] = {
+        purpose,
+        category: purpose,
+        status: effectiveStatus,
+        consent_status: effectiveStatus,
+        granted: effectiveStatus === "granted",
+        policyVersion: row.policy_version || PRIVACY_POLICY_VERSION,
+        grantedAt: row.granted_at || (effectiveStatus === "granted" ? createdAt : null),
+        withdrawnAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? createdAt : null),
+        updatedAt: createdAt,
+        source: row.source || null
+      };
+      if (isValidOptionalConsentCategory(purpose)) {
+        hasOptionalHistory = true;
+        choices[purpose] = effectiveStatus === "granted";
+        if (createdAt && (!lastUpdatedAt || createdAt > lastUpdatedAt)) {
+          lastUpdatedAt = createdAt;
+        }
+      }
+    }
+  }
+  return {
+    hasSavedChoices: hasOptionalHistory,
+    consents: latestByCategory,
+    choices,
+    lastUpdatedAt
+  };
+}
+async function insertConsentRowPg(params) {
+  const {
+    authUser,
+    purpose,
+    status,
+    policyVersion,
+    wording,
+    source,
+    auditMetadata,
+    idempotencyKey,
+    clientIp,
+    userAgent
+  } = params;
+  const grantedAt = status === "granted" ? (/* @__PURE__ */ new Date()).toISOString() : null;
+  const withdrawnAt = status === "withdrawn" ? (/* @__PURE__ */ new Date()).toISOString() : null;
+  try {
+    if (idempotencyKey) {
+      const existing = await query(
+        `SELECT * FROM public.user_consents
+         WHERE user_id = $1 AND purpose = $2 AND idempotency_key = $3
+         LIMIT 1`,
+        [authUser.id, purpose, idempotencyKey]
+      );
+      if (existing.rows.length > 0) {
+        return { row: existing.rows[0], deduplicated: true };
+      }
+    }
+    const ins = await query(
+      `INSERT INTO public.user_consents (
+         user_id, user_email, purpose, status, consent_status, action,
+         policy_version, consent_wording, granted_at, withdrawn_at,
+         source, audit_metadata, idempotency_key, ip_address, user_agent,
+         created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, $4, $4, $4,
+         $5, $6, $7, $8,
+         $9, $10::jsonb, $11, $12, $13,
+         NOW(), NOW()
+       )
+       RETURNING *`,
+      [
+        authUser.id,
+        authUser.email,
+        purpose,
+        status,
+        policyVersion,
+        wording,
+        grantedAt,
+        withdrawnAt,
+        source,
+        JSON.stringify(auditMetadata),
+        idempotencyKey,
+        clientIp,
+        userAgent
+      ]
+    );
+    return { row: ins.rows[0], deduplicated: false };
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (msg.includes("column") && msg.includes("does not exist")) {
+      const insLegacy = await query(
+        `INSERT INTO public.user_consents (
+           user_id, user_email, purpose, status, action,
+           policy_version, consent_wording, ip_address, user_agent,
+           created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, NOW(), NOW())
+         RETURNING *`,
+        [authUser.id, authUser.email, purpose, status, policyVersion, wording, clientIp, userAgent]
+      );
+      return { row: insLegacy.rows[0], deduplicated: false };
+    }
+    throw err;
+  }
+}
+async function fetchUserConsentsPg(userId) {
+  try {
+    const res = await query(
+      `SELECT id, user_id, purpose, status, consent_status, action, policy_version,
+              consent_wording, granted_at, withdrawn_at, source, audit_metadata,
+              created_at, updated_at
+       FROM public.user_consents
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 200`,
+      [userId]
+    );
+    return res.rows;
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (msg.includes("column") && msg.includes("does not exist")) {
+      const legacy = await query(
+        `SELECT id, user_id, purpose, status, action, policy_version, consent_wording, created_at, updated_at
+         FROM public.user_consents
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT 200`,
+        [userId]
+      );
+      return legacy.rows;
+    }
+    throw err;
+  }
+}
+async function hasServerUserConsent(authUser, purpose) {
+  if (!authUser?.id || !isValidOptionalConsentCategory(purpose)) return false;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT status FROM public.user_consents
+         WHERE user_id = $1 AND purpose = $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [authUser.id, purpose]
+      );
+      if (res.rows.length > 0) {
+        return res.rows[0].status === "granted";
+      }
+      return false;
+    } catch {
+    }
+  }
+  try {
+    const restRes = await getPrivacyConsentsRest(authUser);
+    if (restRes.status === 200 && restRes.body?.success) {
+      const entry = restRes.body.consents?.[purpose];
+      return entry?.status === "granted";
+    }
+  } catch {
+  }
+  return false;
+}
+async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
+  if (pathname !== "/api/privacy/consents" && pathname !== "/api/privacy/consents/batch" && pathname !== "/api/privacy/consents/withdraw-all") {
+    return false;
+  }
+  const authUser = await authenticateRequest(req);
+  if (!authUser) {
+    sendJson2(res, 401, {
+      success: false,
+      code: "UNAUTHORIZED",
+      message: "Authentication required. Please sign in to view or update your privacy choices."
+    });
+    return true;
+  }
+  if (pathname === "/api/privacy/consents" && method === "GET") {
+    if (isDatabaseAvailable()) {
+      try {
+        const rows2 = await fetchUserConsentsPg(authUser.id);
+        const snapshot2 = buildConsentSnapshotFromHistory(rows2);
+        sendJson2(res, 200, {
+          success: true,
+          userId: authUser.id,
+          hasSavedChoices: snapshot2.hasSavedChoices,
+          consents: snapshot2.consents,
+          choices: snapshot2.choices,
+          history: rows2,
+          policyVersion: PRIVACY_POLICY_VERSION,
+          policyLastUpdated: PRIVACY_POLICY_LAST_UPDATED,
+          lastUpdatedAt: snapshot2.lastUpdatedAt
+        });
+        return true;
+      } catch (err) {
+        console.warn("[PrivacyConsent] PG fetch error, trying Supabase REST:", err?.message);
+      }
+    }
+    const restRes = await getPrivacyConsentsRest(authUser);
+    if (restRes.status !== 200 || !restRes.body?.success) {
+      sendJson2(res, restRes.status || 503, {
+        success: false,
+        code: "STORAGE_UNAVAILABLE",
+        message: restRes.body?.message || "Unable to load saved privacy choices right now."
+      });
+      return true;
+    }
+    const rows = Array.isArray(restRes.body.history) ? restRes.body.history : [];
+    const snapshot = buildConsentSnapshotFromHistory(rows);
+    sendJson2(res, 200, {
+      success: true,
+      userId: authUser.id,
+      hasSavedChoices: snapshot.hasSavedChoices,
+      consents: snapshot.consents,
+      choices: snapshot.choices,
+      history: rows,
+      policyVersion: PRIVACY_POLICY_VERSION,
+      policyLastUpdated: PRIVACY_POLICY_LAST_UPDATED,
+      lastUpdatedAt: snapshot.lastUpdatedAt
+    });
+    return true;
+  }
+  if (pathname === "/api/privacy/consents" && method === "POST") {
+    let body;
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request body." });
+      return true;
+    }
+    const purpose = String(body.category || body.purpose || "").trim();
+    if (!purpose || !LEGACY_ALLOWED_PURPOSES.has(purpose)) {
+      sendJson2(res, 400, {
+        success: false,
+        code: "INVALID_PURPOSE",
+        message: "Invalid or unsupported consent category. Essential processing is not an optional consent toggle."
+      });
+      return true;
+    }
+    if (body.status !== "granted" && body.status !== "withdrawn") {
+      sendJson2(res, 400, {
+        success: false,
+        code: "INVALID_STATUS",
+        message: 'Consent status must be explicitly "granted" or "withdrawn".'
+      });
+      return true;
+    }
+    const status = body.status;
+    const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
+    const source = sanitizeSource(body.source);
+    const language = typeof body.language === "string" ? body.language.trim() : "en";
+    const auditMetadata = sanitizeAuditMetadata(body.auditMetadata, language);
+    const idempotencyKey = sanitizeIdempotencyKey(body.idempotencyKey);
+    const wording = String(
+      body.wording || `User explicitly ${status} optional consent for ${purpose} via ${source} (${policyVersion}).`
+    ).trim().slice(0, 500);
+    pruneIdempotencyCache();
+    const cacheKey = idempotencyKey ? `${authUser.id}:${purpose}:${idempotencyKey}` : null;
+    if (cacheKey && recentIdempotencyCache.has(cacheKey)) {
+      sendJson2(res, 200, recentIdempotencyCache.get(cacheKey).payload);
+      return true;
+    }
+    let savedRecord = null;
+    let persisted = false;
+    let lastError = "Could not save consent preference to database.";
+    if (isDatabaseAvailable()) {
+      try {
+        const result = await insertConsentRowPg({
+          authUser,
+          purpose,
+          status,
+          policyVersion,
+          wording,
+          source,
+          auditMetadata,
+          idempotencyKey,
+          clientIp: meta.clientIp,
+          userAgent: meta.userAgent
+        });
+        savedRecord = result.row;
+        persisted = true;
+      } catch (err) {
+        lastError = err?.message || lastError;
+        console.warn("[PrivacyConsent] PG insert failed, trying Supabase REST:", lastError);
+      }
+    }
+    if (!persisted) {
+      const restRes = await recordPrivacyConsentRest(authUser, {
+        category: purpose,
+        status,
+        wording,
+        policyVersion,
+        source,
+        auditMetadata,
+        idempotencyKey: idempotencyKey || void 0
+      });
+      if (restRes.status === 200 && restRes.body?.success) {
+        savedRecord = restRes.body.consent;
+        persisted = true;
+      } else {
+        lastError = restRes.body?.message || lastError;
+      }
+    }
+    if (!persisted) {
+      sendJson2(res, 503, {
+        success: false,
+        code: "PERSISTENCE_FAILED",
+        message: lastError
+      });
+      return true;
+    }
+    if (purpose === "marketing_updates") {
+      updateUserNotificationPreferences(authUser.id, { notify_offers: status === "granted" }).catch(() => {
+      });
+    }
+    logSecurityEvent(status === "granted" ? "USER_GRANTED_CONSENT" : "USER_WITHDREW_CONSENT", {
+      userId: authUser.id,
+      userEmail: authUser.email,
+      details: { purpose, status, policyVersion, source }
+    }).catch(() => {
+    });
+    const responsePayload = {
+      success: true,
+      category: purpose,
+      purpose,
+      status,
+      consent_status: status,
+      policyVersion,
+      consent: savedRecord
+    };
+    if (cacheKey) {
+      recentIdempotencyCache.set(cacheKey, {
+        expiresAt: Date.now() + 5 * 60 * 1e3,
+        payload: responsePayload
+      });
+    }
+    sendJson2(res, 200, responsePayload);
+    return true;
+  }
+  if (pathname === "/api/privacy/consents/batch" && method === "POST") {
+    let body;
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request body." });
+      return true;
+    }
+    const rawEntries = Array.isArray(body.entries) ? body.entries : body.choices && typeof body.choices === "object" ? Object.entries(body.choices).map(([purpose, val]) => ({
+      purpose,
+      status: val === true ? "granted" : "withdrawn"
+    })) : [];
+    if (rawEntries.length === 0) {
+      sendJson2(res, 400, {
+        success: false,
+        code: "EMPTY_CHOICES",
+        message: "At least one explicit optional consent category is required."
+      });
+      return true;
+    }
+    const validatedEntries = [];
+    const seenPurposes = /* @__PURE__ */ new Set();
+    for (const item of rawEntries) {
+      const purpose = String(item.purpose || "").trim();
+      if (!isValidOptionalConsentCategory(purpose)) {
+        sendJson2(res, 400, {
+          success: false,
+          code: "INVALID_PURPOSE",
+          message: `Unsupported optional consent category: "${purpose}". Essential financial processing cannot be submitted as optional consent.`
+        });
+        return true;
+      }
+      if (item.status !== "granted" && item.status !== "withdrawn") {
+        sendJson2(res, 400, {
+          success: false,
+          code: "INVALID_STATUS",
+          message: `Invalid status for "${purpose}". Expected "granted" or "withdrawn".`
+        });
+        return true;
+      }
+      if (!seenPurposes.has(purpose)) {
+        seenPurposes.add(purpose);
+        validatedEntries.push({ purpose, status: item.status });
+      }
+    }
+    const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
+    const source = sanitizeSource(body.source);
+    const language = typeof body.language === "string" ? body.language.trim() : "en";
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto14.randomBytes(4).toString("hex")}`;
+    const auditMetadata = sanitizeAuditMetadata(
+      { ...body.auditMetadata || {}, batch_id: batchId },
+      language
+    );
+    pruneIdempotencyCache();
+    const batchCacheKey = `${authUser.id}:batch:${batchId}`;
+    if (recentIdempotencyCache.has(batchCacheKey)) {
+      sendJson2(res, 200, recentIdempotencyCache.get(batchCacheKey).payload);
+      return true;
+    }
+    let savedRecords = [];
+    let persisted = false;
+    let lastError = "Could not save your privacy choices to Supabase. Please retry.";
+    if (isDatabaseAvailable()) {
+      try {
+        for (const entry of validatedEntries) {
+          const itemKey = `${batchId}:${entry.purpose}`;
+          const wording = `User explicitly ${entry.status} optional consent for ${entry.purpose} via ${source} (${policyVersion}).`;
+          const ins = await insertConsentRowPg({
+            authUser,
+            purpose: entry.purpose,
+            status: entry.status,
+            policyVersion,
+            wording,
+            source,
+            auditMetadata,
+            idempotencyKey: itemKey,
+            clientIp: meta.clientIp,
+            userAgent: meta.userAgent
+          });
+          savedRecords.push(ins.row);
+        }
+        persisted = true;
+      } catch (err) {
+        lastError = err?.message || lastError;
+        savedRecords = [];
+        console.warn("[PrivacyConsent] Batch PG save failed, trying Supabase REST:", lastError);
+      }
+    }
+    if (!persisted) {
+      const restRes = await recordPrivacyConsentBatchRest(
+        authUser,
+        validatedEntries.map((entry) => ({
+          purpose: entry.purpose,
+          status: entry.status,
+          policyVersion,
+          source,
+          auditMetadata,
+          idempotencyKey: `${batchId}:${entry.purpose}`,
+          wording: `User explicitly ${entry.status} optional consent for ${entry.purpose} via ${source} (${policyVersion}).`
+        }))
+      );
+      if (restRes.status === 200 && restRes.body?.success) {
+        savedRecords = restRes.body.records || [];
+        persisted = true;
+      } else {
+        lastError = restRes.body?.message || lastError;
+      }
+    }
+    if (!persisted) {
+      sendJson2(res, 503, {
+        success: false,
+        code: "PERSISTENCE_FAILED",
+        message: lastError
+      });
+      return true;
+    }
+    const marketingEntry = validatedEntries.find((e2) => e2.purpose === "marketing_updates");
+    if (marketingEntry) {
+      updateUserNotificationPreferences(authUser.id, {
+        notify_offers: marketingEntry.status === "granted"
+      }).catch(() => {
+      });
+    }
+    logSecurityEvent("USER_SAVED_PRIVACY_CHOICES", {
+      userId: authUser.id,
+      userEmail: authUser.email,
+      details: {
+        source,
+        policyVersion,
+        granted: validatedEntries.filter((e2) => e2.status === "granted").map((e2) => e2.purpose),
+        withdrawn: validatedEntries.filter((e2) => e2.status === "withdrawn").map((e2) => e2.purpose)
+      }
+    }).catch(() => {
+    });
+    let latestRows = savedRecords;
+    if (isDatabaseAvailable()) {
+      try {
+        latestRows = await fetchUserConsentsPg(authUser.id);
+      } catch {
+      }
+    } else {
+      const refreshed = await getPrivacyConsentsRest(authUser);
+      if (refreshed.status === 200 && Array.isArray(refreshed.body?.history)) {
+        latestRows = refreshed.body.history;
+      }
+    }
+    const snapshot = buildConsentSnapshotFromHistory(latestRows);
+    const responsePayload = {
+      success: true,
+      message: "Your privacy choices have been saved.",
+      userId: authUser.id,
+      savedCount: savedRecords.length,
+      hasSavedChoices: true,
+      consents: snapshot.consents,
+      choices: snapshot.choices,
+      history: latestRows,
+      policyVersion,
+      policyLastUpdated: PRIVACY_POLICY_LAST_UPDATED,
+      lastUpdatedAt: snapshot.lastUpdatedAt || (/* @__PURE__ */ new Date()).toISOString()
+    };
+    recentIdempotencyCache.set(batchCacheKey, {
+      expiresAt: Date.now() + 5 * 60 * 1e3,
+      payload: responsePayload
+    });
+    sendJson2(res, 200, responsePayload);
+    return true;
+  }
+  if (pathname === "/api/privacy/consents/withdraw-all" && method === "POST") {
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      body = {};
+    }
+    const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
+    const source = sanitizeSource(body.source || "settings_manage_consent");
+    const language = typeof body.language === "string" ? body.language.trim() : "en";
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto14.randomBytes(4).toString("hex")}`;
+    const auditMetadata = sanitizeAuditMetadata(
+      { ...body.auditMetadata || {}, via_withdraw_all: true, batch_id: batchId },
+      language
+    );
+    const entries = OPTIONAL_CONSENT_CATEGORIES.map((purpose) => ({
+      purpose,
+      status: "withdrawn",
+      policyVersion,
+      source,
+      auditMetadata,
+      idempotencyKey: `${batchId}:${purpose}`,
+      wording: `User explicitly withdrew optional consent for ${purpose} via Withdraw All Optional (${policyVersion}). Core account and financial ledger preserved.`
+    }));
+    let persisted = false;
+    let lastError = "Could not withdraw optional consents right now. Please retry.";
+    if (isDatabaseAvailable()) {
+      try {
+        for (const entry of entries) {
+          await insertConsentRowPg({
+            authUser,
+            purpose: entry.purpose,
+            status: "withdrawn",
+            policyVersion: entry.policyVersion,
+            wording: entry.wording,
+            source: entry.source,
+            auditMetadata: entry.auditMetadata,
+            idempotencyKey: entry.idempotencyKey,
+            clientIp: meta.clientIp,
+            userAgent: meta.userAgent
+          });
+        }
+        persisted = true;
+      } catch (err) {
+        lastError = err?.message || lastError;
+      }
+    }
+    if (!persisted) {
+      const restRes = await recordPrivacyConsentBatchRest(authUser, entries);
+      if (restRes.status === 200 && restRes.body?.success) {
+        persisted = true;
+      } else {
+        lastError = restRes.body?.message || lastError;
+      }
+    }
+    if (!persisted) {
+      sendJson2(res, 503, {
+        success: false,
+        code: "PERSISTENCE_FAILED",
+        message: lastError
+      });
+      return true;
+    }
+    updateUserNotificationPreferences(authUser.id, { notify_offers: false }).catch(() => {
+    });
+    logSecurityEvent("USER_WITHDREW_ALL_OPTIONAL_CONSENTS", {
+      userId: authUser.id,
+      userEmail: authUser.email,
+      details: { source, policyVersion }
+    }).catch(() => {
+    });
+    let latestRows = [];
+    if (isDatabaseAvailable()) {
+      try {
+        latestRows = await fetchUserConsentsPg(authUser.id);
+      } catch {
+      }
+    } else {
+      const refreshed = await getPrivacyConsentsRest(authUser);
+      if (refreshed.status === 200 && Array.isArray(refreshed.body?.history)) {
+        latestRows = refreshed.body.history;
+      }
+    }
+    const snapshot = buildConsentSnapshotFromHistory(latestRows);
+    sendJson2(res, 200, {
+      success: true,
+      message: "All optional consents have been withdrawn. Your core financial records remain intact.",
+      userId: authUser.id,
+      hasSavedChoices: true,
+      consents: snapshot.consents,
+      choices: createEmptyOptionalChoices(),
+      history: latestRows,
+      policyVersion,
+      policyLastUpdated: PRIVACY_POLICY_LAST_UPDATED,
+      lastUpdatedAt: snapshot.lastUpdatedAt || (/* @__PURE__ */ new Date()).toISOString()
+    });
+    return true;
+  }
+  return false;
+}
 
 // node_modules/@google/genai/dist/node/index.mjs
 var import_p_retry = __toESM(require_p_retry(), 1);
@@ -83452,7 +86701,7 @@ function defaultUserStore() {
 }
 var DATA_DIR = path8.resolve(process.cwd(), ".data", "ai-finance");
 function safeUserFilePath(userId) {
-  const hash2 = crypto13.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
+  const hash2 = crypto15.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
   const resolved = path8.resolve(DATA_DIR, `u_${hash2}.json`);
   if (!resolved.startsWith(DATA_DIR + path8.sep)) {
     throw new Error("PATH_CONFINEMENT_VIOLATION");
@@ -83500,12 +86749,12 @@ function writeUserStore(userId, store) {
     console.warn("[AI Finance Store] Persistence warning:", err?.message);
   }
 }
-function sendJson2(res, status, payload) {
+function sendJson3(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(payload));
 }
-async function parseJsonBody2(req, maxBytes = 8 * 1024 * 1024) {
+async function parseJsonBody3(req, maxBytes = 8 * 1024 * 1024) {
   return new Promise((resolve3, reject) => {
     let total = 0;
     const chunks = [];
@@ -83534,12 +86783,12 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     return false;
   }
   if (pathname === "/api/ai/status" && method === "GET") {
-    sendJson2(res, 200, { success: true, status: getAiProviderStatus() });
+    sendJson3(res, 200, { success: true, status: getAiProviderStatus() });
     return true;
   }
   const authUser = await authenticateRequest(req);
   if (!authUser) {
-    sendJson2(res, 401, { success: false, message: "Authentication required." });
+    sendJson3(res, 401, { success: false, message: "Authentication required." });
     return true;
   }
   const userId = authUser.id;
@@ -83566,13 +86815,13 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
             ...c,
             messages: byConv.get(c.id) || []
           }));
-          sendJson2(res, 200, { success: true, conversations, status: getAiProviderStatus() });
+          sendJson3(res, 200, { success: true, conversations, status: getAiProviderStatus() });
           return true;
         } catch {
         }
       }
       const store = readUserStore(userId);
-      sendJson2(res, 200, {
+      sendJson3(res, 200, {
         success: true,
         conversations: store.conversations.sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
         status: getAiProviderStatus()
@@ -83580,11 +86829,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       return true;
     }
     if (pathname === "/api/ai/conversations" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const title = String(body.title || "New Financial Chat").trim().slice(0, 120) || "New Financial Chat";
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const conv = {
-        id: `conv_${Date.now()}_${crypto13.randomBytes(4).toString("hex")}`,
+        id: `conv_${Date.now()}_${crypto15.randomBytes(4).toString("hex")}`,
         user_id: userId,
         title,
         created_at: now,
@@ -83597,7 +86846,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
             `INSERT INTO public.ai_conversations (id, user_id, title, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)`,
             [conv.id, userId, conv.title, now]
           );
-          sendJson2(res, 201, { success: true, conversation: conv });
+          sendJson3(res, 201, { success: true, conversation: conv });
           return true;
         } catch {
         }
@@ -83606,7 +86855,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       store.conversations.unshift(conv);
       store.conversations = store.conversations.slice(0, 50);
       writeUserStore(userId, store);
-      sendJson2(res, 201, { success: true, conversation: conv });
+      sendJson3(res, 201, { success: true, conversation: conv });
       return true;
     }
     if (pathname === "/api/ai/conversations" && method === "DELETE") {
@@ -83629,16 +86878,16 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         }).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, message: "All conversations cleared." });
+      sendJson3(res, 200, { success: true, message: "All conversations cleared." });
       return true;
     }
     const convIdMatch = pathname.match(/^\/api\/ai\/conversations\/([a-zA-Z0-9_-]+)$/);
     if (convIdMatch && method === "PATCH") {
       const convId = convIdMatch[1];
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const newTitle = String(body.title || "").trim().slice(0, 120);
       if (!newTitle) {
-        sendJson2(res, 400, { success: false, message: "Conversation title is required." });
+        sendJson3(res, 400, { success: false, message: "Conversation title is required." });
         return true;
       }
       const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -83658,7 +86907,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         target.updated_at = now;
         writeUserStore(userId, store);
       }
-      sendJson2(res, 200, { success: true, title: newTitle });
+      sendJson3(res, 200, { success: true, title: newTitle });
       return true;
     }
     if (convIdMatch && method === "DELETE") {
@@ -83673,10 +86922,19 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       store.conversations = store.conversations.filter((c) => !(c.id === convId && c.user_id === userId));
       writeUserStore(userId, store);
-      sendJson2(res, 200, { success: true, message: "Conversation deleted." });
+      sendJson3(res, 200, { success: true, message: "Conversation deleted." });
       return true;
     }
     if (pathname === "/api/ai/assistant/chat" && method === "POST") {
+      const hasAiConsent = await hasServerUserConsent(authUser, "ai_processing");
+      if (!hasAiConsent) {
+        sendJson3(res, 403, {
+          success: false,
+          code: "AI_CONSENT_REQUIRED",
+          message: "AI External Processing consent is currently off. Enable it under Settings \u2192 Privacy \u2192 Manage Consent to send questions to the external AI provider."
+        });
+        return true;
+      }
       if (!checkAiRateLimit(`chat:${userId}`, 25, 60 * 1e3)) {
         if (useDb) {
           logSecurityEvent("AI_RATE_LIMITED", {
@@ -83687,17 +86945,17 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           }).catch(() => {
           });
         }
-        sendJson2(res, 429, {
+        sendJson3(res, 429, {
           success: false,
           code: "RATE_LIMITED",
           message: "Too many AI questions in a short time. Please wait a minute and try again."
         });
         return true;
       }
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const question = String(body.question || "").trim();
       if (!question || question.length > 1500) {
-        sendJson2(res, 400, { success: false, message: "Please enter a question between 1 and 1500 characters." });
+        sendJson3(res, 400, { success: false, message: "Please enter a question between 1 and 1500 characters." });
         return true;
       }
       const contextSnapshot = body.financialContext || {
@@ -83733,7 +86991,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       if (!conv) {
         conv = {
-          id: convId || `conv_${Date.now()}_${crypto13.randomBytes(4).toString("hex")}`,
+          id: convId || `conv_${Date.now()}_${crypto15.randomBytes(4).toString("hex")}`,
           user_id: userId,
           title: question.slice(0, 64),
           created_at: now,
@@ -83785,7 +87043,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           } catch {
           }
         }
-        sendJson2(res, 200, {
+        sendJson3(res, 200, {
           success: true,
           conversationId: conv.id,
           conversationTitle: conv.title,
@@ -83796,7 +87054,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         return true;
       } catch (err) {
         if (err instanceof AiProviderError) {
-          sendJson2(res, err.statusCode, {
+          sendJson3(res, err.statusCode, {
             success: false,
             code: err.code,
             message: err.message
@@ -83808,17 +87066,17 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     }
     if (pathname === "/api/ai/categorization/rules" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson2(res, 200, { success: true, rules: store.categorizationRules });
+      sendJson3(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
     if (pathname === "/api/ai/categorization/rules" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const merchantPattern = String(body.merchant_pattern || "").trim();
       const category = body.category;
       const subcategory = String(body.subcategory || "other_general");
       const txType = body.transaction_type === "income" ? "income" : "expense";
       if (merchantPattern.length < 2 || !["home", "room", "food", "other", "people"].includes(category)) {
-        sendJson2(res, 400, { success: false, message: "Valid merchant pattern and category are required." });
+        sendJson3(res, 400, { success: false, message: "Valid merchant pattern and category are required." });
         return true;
       }
       const store = readUserStore(userId);
@@ -83845,7 +87103,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           });
         }
       }
-      sendJson2(res, 200, { success: true, rules: store.categorizationRules });
+      sendJson3(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
     const ruleDeleteMatch = pathname.match(/^\/api\/ai\/categorization\/rules\/([a-zA-Z0-9_-]+)$/);
@@ -83858,11 +87116,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         query(`DELETE FROM public.user_categorization_rules WHERE id = $1 AND user_id = $2`, [ruleId, userId]).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, rules: store.categorizationRules });
+      sendJson3(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
     if (pathname === "/api/ai/categorization/predict" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const store = readUserStore(userId);
       const det = categorizeTransactionDeterministic(
         {
@@ -83875,15 +87133,25 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         store.categorizationRules
       );
       if (det && !det.needsAiFallback) {
-        sendJson2(res, 200, { success: true, suggestion: det });
+        sendJson3(res, 200, { success: true, suggestion: det });
         return true;
       }
       if (!getAiProviderStatus().configured) {
-        sendJson2(res, 200, { success: true, suggestion: det, aiFallbackSkipped: true });
+        sendJson3(res, 200, { success: true, suggestion: det, aiFallbackSkipped: true });
+        return true;
+      }
+      const hasAiConsent = await hasServerUserConsent(authUser, "ai_processing");
+      if (!hasAiConsent) {
+        sendJson3(res, 200, {
+          success: true,
+          suggestion: det,
+          aiFallbackSkipped: true,
+          aiConsentRequired: true
+        });
         return true;
       }
       if (!checkAiRateLimit(`cat:${userId}`, 40, 60 * 1e3)) {
-        sendJson2(res, 200, { success: true, suggestion: det, rateLimited: true });
+        sendJson3(res, 200, { success: true, suggestion: det, rateLimited: true });
         return true;
       }
       try {
@@ -83893,7 +87161,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           merchant: body.merchant,
           amount: body.amount
         });
-        sendJson2(res, 200, {
+        sendJson3(res, 200, {
           success: true,
           suggestion: {
             ...aiRes,
@@ -83904,24 +87172,33 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         });
         return true;
       } catch {
-        sendJson2(res, 200, { success: true, suggestion: det, aiFallbackFailed: true });
+        sendJson3(res, 200, { success: true, suggestion: det, aiFallbackFailed: true });
         return true;
       }
     }
     if (pathname === "/api/ai/receipt-ocr" && method === "POST") {
+      const hasAiConsent = await hasServerUserConsent(authUser, "ai_processing");
+      if (!hasAiConsent) {
+        sendJson3(res, 403, {
+          success: false,
+          code: "AI_CONSENT_REQUIRED",
+          message: "AI External Processing consent is currently off. Enable it under Settings \u2192 Privacy \u2192 Manage Consent to scan receipts with external AI OCR, or enter receipt details manually."
+        });
+        return true;
+      }
       if (!checkAiRateLimit(`ocr:${userId}`, 12, 60 * 1e3)) {
-        sendJson2(res, 429, {
+        sendJson3(res, 429, {
           success: false,
           code: "RATE_LIMITED",
           message: "Too many receipt scans in a minute. Please wait briefly and try again."
         });
         return true;
       }
-      const body = await parseJsonBody2(req, 8 * 1024 * 1024);
+      const body = await parseJsonBody3(req, 8 * 1024 * 1024);
       const dataUrl = String(body.imageDataUrl || "");
       const match2 = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/);
       if (!match2) {
-        sendJson2(res, 400, { success: false, message: "Invalid receipt image data. Please upload a JPG, PNG, or WEBP image." });
+        sendJson3(res, 400, { success: false, message: "Invalid receipt image data. Please upload a JPG, PNG, or WEBP image." });
         return true;
       }
       const mimeType = match2[1].toLowerCase();
@@ -83929,7 +87206,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const estimatedBytes = Math.floor(base64Data.length * 3 / 4);
       const validation = validateReceiptUpload(mimeType, estimatedBytes);
       if (!validation.valid) {
-        sendJson2(res, 400, { success: false, message: validation.error });
+        sendJson3(res, 400, { success: false, message: validation.error });
         return true;
       }
       const sigValidation = validateReceiptFileSignature(base64Data, mimeType);
@@ -83943,10 +87220,10 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           }).catch(() => {
           });
         }
-        sendJson2(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
+        sendJson3(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
         return true;
       }
-      const fileHash = crypto13.createHash("sha256").update(base64Data).digest("hex");
+      const fileHash = crypto15.createHash("sha256").update(base64Data).digest("hex");
       try {
         const extraction = await extractReceiptWithOcr({ base64Image: base64Data, mimeType });
         const store = readUserStore(userId);
@@ -83959,7 +87236,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           },
           store.categorizationRules
         );
-        sendJson2(res, 200, {
+        sendJson3(res, 200, {
           success: true,
           fileHash,
           extraction,
@@ -83968,7 +87245,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         return true;
       } catch (err) {
         if (err instanceof AiProviderError) {
-          sendJson2(res, err.statusCode, {
+          sendJson3(res, err.statusCode, {
             success: false,
             code: err.code,
             fileHash,
@@ -83981,14 +87258,14 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     }
     if (pathname === "/api/finance/receipts" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson2(res, 200, { success: true, receipts: store.receiptRecords });
+      sendJson3(res, 200, { success: true, receipts: store.receiptRecords });
       return true;
     }
     if (pathname === "/api/finance/receipts" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const store = readUserStore(userId);
       const record = {
-        id: `rcpt_${Date.now()}_${crypto13.randomBytes(3).toString("hex")}`,
+        id: `rcpt_${Date.now()}_${crypto15.randomBytes(3).toString("hex")}`,
         user_id: userId,
         transaction_id: body.transaction_id || null,
         file_hash: String(body.file_hash || ""),
@@ -84011,12 +87288,12 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson2(res, 201, { success: true, receipt: record });
+      sendJson3(res, 201, { success: true, receipt: record });
       return true;
     }
     if (pathname === "/api/finance/net-worth" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson2(res, 200, {
+      sendJson3(res, 200, {
         success: true,
         assets: store.netWorthAssets,
         liabilities: store.netWorthLiabilities,
@@ -84026,17 +87303,17 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       return true;
     }
     if (pathname === "/api/finance/net-worth/assets" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const name2 = String(body.name || "").trim().slice(0, 100);
       const currentValue = Number(body.current_value);
       if (!name2 || !Number.isFinite(currentValue) || currentValue < 0) {
-        sendJson2(res, 400, { success: false, message: "Asset name and valid non-negative value are required." });
+        sendJson3(res, 400, { success: false, message: "Asset name and valid non-negative value are required." });
         return true;
       }
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const asset = {
-        id: body.id || `asset_${Date.now()}_${crypto13.randomBytes(3).toString("hex")}`,
+        id: body.id || `asset_${Date.now()}_${crypto15.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_value: Math.round(currentValue * 100) / 100,
@@ -84058,7 +87335,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, asset, assets: store.netWorthAssets });
+      sendJson3(res, 200, { success: true, asset, assets: store.netWorthAssets });
       return true;
     }
     const assetIdMatch = pathname.match(/^\/api\/finance\/net-worth\/assets\/([a-zA-Z0-9_-]+)$/);
@@ -84078,21 +87355,21 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         }).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, assets: store.netWorthAssets });
+      sendJson3(res, 200, { success: true, assets: store.netWorthAssets });
       return true;
     }
     if (pathname === "/api/finance/net-worth/liabilities" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const name2 = String(body.name || "").trim().slice(0, 100);
       const currentBalance = Number(body.current_balance);
       if (!name2 || !Number.isFinite(currentBalance) || currentBalance < 0) {
-        sendJson2(res, 400, { success: false, message: "Liability name and valid non-negative balance are required." });
+        sendJson3(res, 400, { success: false, message: "Liability name and valid non-negative balance are required." });
         return true;
       }
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const liability = {
-        id: body.id || `liab_${Date.now()}_${crypto13.randomBytes(3).toString("hex")}`,
+        id: body.id || `liab_${Date.now()}_${crypto15.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_balance: Math.round(currentBalance * 100) / 100,
@@ -84114,7 +87391,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, liability, liabilities: store.netWorthLiabilities });
+      sendJson3(res, 200, { success: true, liability, liabilities: store.netWorthLiabilities });
       return true;
     }
     const liabIdMatch = pathname.match(/^\/api\/finance\/net-worth\/liabilities\/([a-zA-Z0-9_-]+)$/);
@@ -84134,11 +87411,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         }).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, liabilities: store.netWorthLiabilities });
+      sendJson3(res, 200, { success: true, liabilities: store.netWorthLiabilities });
       return true;
     }
     if (pathname === "/api/finance/net-worth/snapshots" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const snapshotDate = String(body.snapshot_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
       const store = readUserStore(userId);
       const snap = {
@@ -84165,11 +87442,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, snapshot: snap, snapshots: store.netWorthSnapshots });
+      sendJson3(res, 200, { success: true, snapshot: snap, snapshots: store.netWorthSnapshots });
       return true;
     }
     if (pathname === "/api/finance/net-worth/settings" && method === "PUT") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const store = readUserStore(userId);
       store.netWorthSettings = {
         includeLiquidBalance: typeof body.includeLiquidBalance === "boolean" ? body.includeLiquidBalance : store.netWorthSettings.includeLiquidBalance,
@@ -84177,16 +87454,16 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         includeUdharPayables: typeof body.includeUdharPayables === "boolean" ? body.includeUdharPayables : store.netWorthSettings.includeUdharPayables
       };
       writeUserStore(userId, store);
-      sendJson2(res, 200, { success: true, settings: store.netWorthSettings });
+      sendJson3(res, 200, { success: true, settings: store.netWorthSettings });
       return true;
     }
     if (pathname === "/api/finance/safe-to-spend/preferences" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson2(res, 200, { success: true, preferences: store.safeToSpendPrefs });
+      sendJson3(res, 200, { success: true, preferences: store.safeToSpendPrefs });
       return true;
     }
     if (pathname === "/api/finance/safe-to-spend/preferences" && method === "PUT") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const store = readUserStore(userId);
       const num = (v, fallback) => {
         const n = Number(v);
@@ -84220,12 +87497,12 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, preferences: store.safeToSpendPrefs });
+      sendJson3(res, 200, { success: true, preferences: store.safeToSpendPrefs });
       return true;
     }
     if (pathname === "/api/finance/smart-alerts/state" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson2(res, 200, {
+      sendJson3(res, 200, {
         success: true,
         preferences: store.smartAlertPrefs,
         eventState: store.smartAlertState
@@ -84233,7 +87510,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       return true;
     }
     if (pathname === "/api/finance/smart-alerts/preferences" && method === "PUT") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const store = readUserStore(userId);
       store.smartAlertPrefs = {
         ...store.smartAlertPrefs,
@@ -84261,11 +87538,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson2(res, 200, { success: true, preferences: store.smartAlertPrefs });
+      sendJson3(res, 200, { success: true, preferences: store.smartAlertPrefs });
       return true;
     }
     if (pathname === "/api/finance/smart-alerts/events" && method === "POST") {
-      const body = await parseJsonBody2(req);
+      const body = await parseJsonBody3(req);
       const action = body.action;
       const keys = Array.isArray(body.keys) ? body.keys.map(String) : body.key ? [String(body.key)] : [];
       const store = readUserStore(userId);
@@ -84295,24 +87572,24 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           });
         }
       }
-      sendJson2(res, 200, { success: true, eventState: store.smartAlertState });
+      sendJson3(res, 200, { success: true, eventState: store.smartAlertState });
       return true;
     }
-    sendJson2(res, 404, { success: false, message: "AI / Finance API endpoint not found." });
+    sendJson3(res, 404, { success: false, message: "AI / Finance API endpoint not found." });
     return true;
   } catch (err) {
     if (err?.message === "PAYLOAD_TOO_LARGE") {
-      sendJson2(res, 413, { success: false, message: "Uploaded image or payload is too large (max 5 MB)." });
+      sendJson3(res, 413, { success: false, message: "Uploaded image or payload is too large (max 5 MB)." });
       return true;
     }
     console.error(`[AI Finance API Error] ${method} ${pathname}:`, err?.message || err);
-    sendJson2(res, 500, { success: false, message: "An internal error occurred while processing your request." });
+    sendJson3(res, 500, { success: false, message: "An internal error occurred while processing your request." });
     return true;
   }
 }
 
 // server/upiDetectionApi.ts
-import crypto14 from "crypto";
+import crypto16 from "crypto";
 
 // src/lib/upiDetectionEngine.ts
 var PARSER_VERSION = "1.0.0";
@@ -84899,13 +88176,13 @@ function getMemoryUserState(userId) {
   }
   return state;
 }
-function sendJson3(res, status, payload) {
+function sendJson4(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(payload));
 }
-async function parseJsonBody3(req) {
+async function parseJsonBody4(req) {
   return new Promise((resolve3) => {
     let raw = "";
     let size = 0;
@@ -85059,7 +88336,7 @@ async function listUserDetected(userId) {
 async function appendDetectionEvent(userId, event) {
   const fullEvent = {
     ...event,
-    id: `upi_evt_${crypto14.randomBytes(6).toString("hex")}`,
+    id: `upi_evt_${crypto16.randomBytes(6).toString("hex")}`,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   if (!isDatabaseAvailable()) {
@@ -85177,16 +88454,16 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
   }
   const authUser = await authResolver(req);
   if (!authUser) {
-    sendJson3(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+    sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
     return true;
   }
   if (pathname === "/api/upi-detection/settings" && method === "GET") {
     const settings = await getUserSettings(authUser.id);
-    sendJson3(res, 200, { success: true, settings });
+    sendJson4(res, 200, { success: true, settings });
     return true;
   }
   if (pathname === "/api/upi-detection/settings" && method === "PUT") {
-    const body = await parseJsonBody3(req);
+    const body = await parseJsonBody4(req);
     const settings = await saveUserSettings(authUser.id, {
       enabled: body.enabled,
       autoPopupEnabled: body.autoPopupEnabled,
@@ -85194,24 +88471,24 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       supportedApps: body.supportedApps,
       retentionDays: body.retentionDays
     });
-    sendJson3(res, 200, { success: true, settings });
+    sendJson4(res, 200, { success: true, settings });
     return true;
   }
   if (pathname === "/api/upi-detection/ingest" && method === "POST") {
     const rate = checkRateLimit(`upi_ingest:${authUser.id}`, 60, 60 * 1e3);
     if (!rate.allowed) {
-      sendJson3(res, 429, {
+      sendJson4(res, 429, {
         success: false,
         code: "RATE_LIMITED",
         message: "Too many notification ingestion requests. Please wait a moment."
       });
       return true;
     }
-    const body = await parseJsonBody3(req);
+    const body = await parseJsonBody4(req);
     const settings = await getUserSettings(authUser.id);
     const isTestSample = Boolean(body.isTestSample);
     if (!settings.enabled && !isTestSample) {
-      sendJson3(res, 200, {
+      sendJson4(res, 200, {
         success: true,
         accepted: false,
         shouldShowPopup: false,
@@ -85230,7 +88507,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       isTestSample
     };
     if (!rawInput.packageName || !rawInput.title && !rawInput.text && !rawInput.bigText) {
-      sendJson3(res, 400, {
+      sendJson4(res, 400, {
         success: false,
         code: "INVALID_NOTIFICATION_PAYLOAD",
         message: "packageName and notification content (title or text) are required."
@@ -85260,7 +88537,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
           maskedPreview: maskSensitiveLogPayload(`${rawInput.title} ${rawInput.text}`).slice(0, 140)
         }
       });
-      sendJson3(res, 200, {
+      sendJson4(res, 200, {
         success: true,
         accepted: false,
         deduplicated: false,
@@ -85295,7 +88572,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       }
     });
     const shouldShowPopup = !dedup.isDuplicate && saved.categorizationStatus === "pending" && (isTestSample || settings.autoPopupEnabled);
-    sendJson3(res, 200, {
+    sendJson4(res, 200, {
       success: true,
       accepted: true,
       deduplicated: dedup.isDuplicate,
@@ -85312,7 +88589,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     );
     const categorized = allDetected.filter((tx) => tx.categorizationStatus === "categorized");
     const dismissed = allDetected.filter((tx) => tx.categorizationStatus === "dismissed");
-    sendJson3(res, 200, {
+    sendJson4(res, 200, {
       success: true,
       pending,
       categorized: categorized.slice(0, 50),
@@ -85329,22 +88606,22 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
   const categorizeMatch = pathname.match(/^\/api\/upi-detection\/([a-zA-Z0-9_-]+)\/categorize$/);
   if (categorizeMatch && method === "POST") {
     const detectedId = categorizeMatch[1];
-    const body = await parseJsonBody3(req);
+    const body = await parseJsonBody4(req);
     const category = String(body.category || "").trim();
     const description = body.description !== void 0 ? String(body.description).trim().slice(0, 240) : null;
     const linkedExpenseId = body.linkedExpenseId ? String(body.linkedExpenseId).trim() : null;
     if (!UPI_EXPENSE_CATEGORIES.some((c) => c.id === category)) {
-      sendJson3(res, 400, { success: false, message: "Invalid expense category selected." });
+      sendJson4(res, 400, { success: false, message: "Invalid expense category selected." });
       return true;
     }
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson3(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     if (existing.categorizationStatus === "categorized" && existing.linkedExpenseId) {
-      sendJson3(res, 200, {
+      sendJson4(res, 200, {
         success: true,
         alreadyCategorized: true,
         transaction: existing
@@ -85372,7 +88649,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
         linkedExpenseId: updated.linkedExpenseId
       }
     });
-    sendJson3(res, 200, {
+    sendJson4(res, 200, {
       success: true,
       alreadyCategorized: false,
       transaction: updated
@@ -85385,7 +88662,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson3(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     const updated = {
@@ -85403,7 +88680,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       rawDataHash: updated.rawDataHash,
       metadata: {}
     });
-    sendJson3(res, 200, { success: true, transaction: updated });
+    sendJson4(res, 200, { success: true, transaction: updated });
     return true;
   }
   const remindMatch = pathname.match(/^\/api\/upi-detection\/([a-zA-Z0-9_-]+)\/remind-later$/);
@@ -85412,7 +88689,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson3(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     const updated = {
@@ -85430,22 +88707,22 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       rawDataHash: updated.rawDataHash,
       metadata: {}
     });
-    sendJson3(res, 200, { success: true, transaction: updated });
+    sendJson4(res, 200, { success: true, transaction: updated });
     return true;
   }
   const editMatch = pathname.match(/^\/api\/upi-detection\/([a-zA-Z0-9_-]+)\/edit$/);
   if (editMatch && method === "PATCH") {
     const detectedId = editMatch[1];
-    const body = await parseJsonBody3(req);
+    const body = await parseJsonBody4(req);
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson3(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     const nextCategory = body.category ? String(body.category).trim() : existing.selectedCategory;
     if (nextCategory && !UPI_EXPENSE_CATEGORIES.some((c) => c.id === nextCategory)) {
-      sendJson3(res, 400, { success: false, message: "Invalid expense category." });
+      sendJson4(res, 400, { success: false, message: "Invalid expense category." });
       return true;
     }
     const updated = {
@@ -85466,11 +88743,11 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
         category: updated.selectedCategory
       }
     });
-    sendJson3(res, 200, { success: true, transaction: updated });
+    sendJson4(res, 200, { success: true, transaction: updated });
     return true;
   }
   if (pathname === "/api/upi-detection/reset" && method === "DELETE") {
-    const body = await parseJsonBody3(req);
+    const body = await parseJsonBody4(req);
     const clearHistory = body.clearHistory !== false;
     const defaults2 = getDefaultDetectionSettings();
     if (!isDatabaseAvailable()) {
@@ -85516,7 +88793,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       details: { clearHistory }
     }).catch(() => {
     });
-    sendJson3(res, 200, {
+    sendJson4(res, 200, {
       success: true,
       settings: defaults2,
       historyCleared: clearHistory,
@@ -85524,2410 +88801,12 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     });
     return true;
   }
-  sendJson3(res, 404, { success: false, message: "UPI detection endpoint not found." });
+  sendJson4(res, 404, { success: false, message: "UPI detection endpoint not found." });
   return true;
 }
 
-// src/lib/sharedUdharEngine.ts
-function roundMoney(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-}
-function normalizeSearchQuery(raw) {
-  if (!raw || typeof raw !== "string") return "";
-  return raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-}
-function classifyLiveSearchQuery(raw) {
-  const normalized2 = normalizeSearchQuery(raw);
-  const digitsOnly = normalized2.replace(/\D/g, "");
-  const last10Digits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
-  if (!normalized2 || normalized2.length < 2) {
-    return { mode: "too_short", normalized: normalized2, digitsOnly, last10Digits };
-  }
-  if (normalized2.includes("@")) {
-    const emailStrictRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-    if (emailStrictRegex.test(normalized2)) {
-      return { mode: "email_exact", normalized: normalized2, digitsOnly, last10Digits };
-    }
-    return { mode: "email_incomplete", normalized: normalized2, digitsOnly, last10Digits };
-  }
-  const looksLikePhone = /^[+\d][\d\s\-().]*$/.test(normalized2) && digitsOnly.length >= 4;
-  if (looksLikePhone) {
-    if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
-      return { mode: "phone_exact", normalized: normalized2, digitsOnly, last10Digits };
-    }
-    return { mode: "phone_incomplete", normalized: normalized2, digitsOnly, last10Digits };
-  }
-  return { mode: "name", normalized: normalized2, digitsOnly, last10Digits };
-}
-function isUpiPaymentQr(raw) {
-  const trimmed = (raw || "").trim().toLowerCase();
-  return trimmed.startsWith("upi://pay") || trimmed.startsWith("upi://collect") || trimmed.startsWith("upi://mandate");
-}
-function maskEmailForPrivacy(email) {
-  if (!email || !email.includes("@")) return "***@***";
-  const [local, domain] = email.trim().split("@");
-  if (!local || !domain) return "***@***";
-  if (local.length <= 2) return `${local.charAt(0)}***@${domain}`;
-  return `${local.charAt(0)}***${local.charAt(local.length - 1)}@${domain}`;
-}
-function maskPhoneForPrivacy(phone) {
-  if (!phone) return null;
-  const clean = phone.replace(/[\s\-()]/g, "");
-  if (clean.length < 6) return "****";
-  return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
-}
-function parseQrPayload(raw) {
-  const trimmed = (raw || "").trim();
-  if (!trimmed) {
-    return { valid: false, errorCode: "EMPTY_QR", error: "Empty QR code detected." };
-  }
-  if (isUpiPaymentQr(trimmed)) {
-    return {
-      valid: false,
-      isUpiPaymentQr: true,
-      errorCode: "UPI_QR_NOT_PAIRING",
-      error: "This is a UPI payment QR code, not a My Money Manager Udhar pairing QR. Please scan your friend's Udhar Pairing QR."
-    };
-  }
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && (parsed.app === "my-money" || parsed.type === "udhar-pair")) {
-        const token = typeof parsed.token === "string" ? parsed.token.trim() : void 0;
-        const code = typeof parsed.code === "string" ? parsed.code.trim().toUpperCase() : void 0;
-        if (token || code) {
-          const result = { valid: true, kind: "json" };
-          if (token !== void 0) result.token = token;
-          if (code !== void 0) result.code = code;
-          return result;
-        }
-      }
-      return {
-        valid: false,
-        errorCode: "INVALID_QR",
-        error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine account pairing QR."
-      };
-    } catch {
-      return {
-        valid: false,
-        errorCode: "MALFORMED_QR",
-        error: "Malformed QR payload. Please scan a genuine My Money Manager Udhar pairing QR."
-      };
-    }
-  }
-  const pairLinkMatch = trimmed.match(/(?:[#?&]pair=)([A-Za-z0-9_-]{6,64})/i);
-  if (pairLinkMatch && pairLinkMatch[1]) {
-    const val = pairLinkMatch[1].trim();
-    if (/^MM-[A-Z0-9]{4,}$/i.test(val)) {
-      return { valid: true, kind: "pair_url", code: val.toUpperCase() };
-    }
-    if (/^[0-9a-fA-F]{64}$/.test(val)) {
-      return { valid: true, kind: "pair_url", token: val };
-    }
-    return { valid: true, kind: "pair_url", code: val.toUpperCase() };
-  }
-  const normalizedCode = trimmed.replace(/\s+/g, "").toUpperCase();
-  if (/^MM-[A-Z0-9]{4,16}$/.test(normalizedCode)) {
-    return { valid: true, kind: "pair_code", code: normalizedCode };
-  }
-  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return { valid: true, kind: "hex_token", token: trimmed };
-  }
-  return {
-    valid: false,
-    errorCode: "INVALID_QR",
-    error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine pairing QR generated inside My Money Manager."
-  };
-}
-function calculateRepaymentApplication(input) {
-  if (input.udharStatus === "cancelled") {
-    return { valid: false, error: "Cannot record repayment on a cancelled Udhar." };
-  }
-  if (input.udharStatus === "settled") {
-    return { valid: false, error: "This Udhar is already fully settled." };
-  }
-  const repayAmt = roundMoney(input.repayAmount);
-  if (!Number.isFinite(repayAmt) || repayAmt <= 0) {
-    return { valid: false, error: "Repayment amount must be greater than \u20B90." };
-  }
-  const remaining = roundMoney(Math.max(0, input.originalAmount - input.confirmedPaidAmount));
-  if (remaining <= 0.01) {
-    return { valid: false, error: "This Udhar has no remaining balance to repay." };
-  }
-  const effectiveRemaining = input.isShared && input.actorRole === "borrower" ? roundMoney(Math.max(0, remaining - Math.max(0, input.pendingRepaymentsAmount))) : remaining;
-  if (repayAmt > effectiveRemaining + 0.01) {
-    if (input.isShared && input.actorRole === "borrower" && input.pendingRepaymentsAmount > 0) {
-      return {
-        valid: false,
-        error: `Amount (\u20B9${repayAmt}) exceeds available remaining balance (\u20B9${effectiveRemaining}) after accounting for \u20B9${roundMoney(input.pendingRepaymentsAmount)} already pending lender confirmation.`
-      };
-    }
-    return {
-      valid: false,
-      error: `Repayment amount (\u20B9${repayAmt}) cannot exceed remaining balance (\u20B9${remaining}).`
-    };
-  }
-  const repaymentStatus = input.isShared && input.actorRole === "borrower" ? "pending_confirmation" : "confirmed";
-  if (repaymentStatus === "pending_confirmation") {
-    return {
-      valid: true,
-      repaymentStatus,
-      nextPaidAmount: roundMoney(input.confirmedPaidAmount),
-      nextRemainingAmount: remaining,
-      nextUdharStatus: "confirmed",
-      isSettled: false
-    };
-  }
-  const nextPaidAmount = roundMoney(input.confirmedPaidAmount + repayAmt);
-  const nextRemainingAmount = roundMoney(Math.max(0, input.originalAmount - nextPaidAmount));
-  const isSettled = nextRemainingAmount <= 0.01;
-  return {
-    valid: true,
-    repaymentStatus: "confirmed",
-    nextPaidAmount: isSettled ? roundMoney(input.originalAmount) : nextPaidAmount,
-    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
-    nextUdharStatus: isSettled ? "settled" : "confirmed",
-    isSettled
-  };
-}
-function validateUdharEdit(current, updates) {
-  if (current.status === "cancelled") {
-    return { valid: false, error: "Cancelled Udhar records cannot be edited." };
-  }
-  const reason = (updates.reason_for_edit || "").trim();
-  if (reason.length < 3) {
-    return { valid: false, error: "Please provide a clear reason (at least 3 characters) for editing this record." };
-  }
-  const nextOriginalAmount = updates.amount !== void 0 ? roundMoney(updates.amount) : roundMoney(current.original_amount);
-  if (!Number.isFinite(nextOriginalAmount) || nextOriginalAmount <= 0) {
-    return { valid: false, error: "Total amount must be greater than \u20B90." };
-  }
-  const paid = roundMoney(Math.max(0, current.paid_amount));
-  if (nextOriginalAmount + 0.01 < paid) {
-    return {
-      valid: false,
-      error: `New amount (\u20B9${nextOriginalAmount}) cannot be less than already confirmed repayments (\u20B9${paid}).`
-    };
-  }
-  const nextRemainingAmount = roundMoney(Math.max(0, nextOriginalAmount - paid));
-  const isSettled = nextRemainingAmount <= 0.01;
-  const changes = [];
-  if (roundMoney(current.original_amount) !== nextOriginalAmount) {
-    changes.push({
-      changed_field: "amount",
-      previous_value: String(roundMoney(current.original_amount)),
-      new_value: String(nextOriginalAmount)
-    });
-  }
-  if (updates.transaction_date && updates.transaction_date !== current.transaction_date) {
-    changes.push({
-      changed_field: "transaction_date",
-      previous_value: current.transaction_date,
-      new_value: updates.transaction_date
-    });
-  }
-  if (updates.due_date !== void 0 && (updates.due_date || null) !== (current.due_date || null)) {
-    changes.push({
-      changed_field: "due_date",
-      previous_value: current.due_date || null,
-      new_value: updates.due_date || null
-    });
-  }
-  if (updates.category !== void 0 && (updates.category || null) !== (current.category || null)) {
-    changes.push({
-      changed_field: "category",
-      previous_value: current.category || null,
-      new_value: updates.category || null
-    });
-  }
-  if (updates.payment_method !== void 0 && (updates.payment_method || null) !== (current.payment_method || null)) {
-    changes.push({
-      changed_field: "payment_method",
-      previous_value: current.payment_method || null,
-      new_value: updates.payment_method || null
-    });
-  }
-  if (updates.description !== void 0 && (updates.description || null) !== (current.description || null)) {
-    changes.push({
-      changed_field: "description",
-      previous_value: current.description || null,
-      new_value: updates.description || null
-    });
-  }
-  if (updates.notes !== void 0 && (updates.notes || null) !== (current.notes || null)) {
-    changes.push({
-      changed_field: "notes",
-      previous_value: current.notes || null,
-      new_value: updates.notes || null
-    });
-  }
-  return {
-    valid: true,
-    nextOriginalAmount,
-    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
-    nextStatus: isSettled ? "settled" : "confirmed",
-    isSettled,
-    changes
-  };
-}
-function canCancelUdhar(udhar) {
-  if (udhar.status === "cancelled") {
-    return { allowed: false, reason: "This Udhar is already cancelled." };
-  }
-  if (udhar.status === "settled") {
-    return {
-      allowed: false,
-      reason: "Settled Udhar records cannot be deleted or cancelled. Keep settled history for audit integrity."
-    };
-  }
-  const paidAmt = parseFloat(String(udhar.paid_amount ?? 0)) || 0;
-  const activeRepayments = (udhar.repayments || []).filter(
-    (r2) => r2.status === "confirmed" || r2.status === "pending_confirmation"
-  );
-  if (paidAmt > 0.01 || activeRepayments.length > 0) {
-    return {
-      allowed: false,
-      reason: "Cannot cancel an Udhar that already has repayments recorded. Use Edit or record a balancing adjustment instead to preserve audit history."
-    };
-  }
-  return { allowed: true };
-}
-function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
-  let totalGiven = 0;
-  let totalTaken = 0;
-  let youWillReceive = 0;
-  let youWillPay = 0;
-  let settledAmount = 0;
-  let overdueAmount = 0;
-  let activeCount = 0;
-  let settledCount = 0;
-  let pendingRepaymentCount = 0;
-  for (const tx of items) {
-    if (tx.status === "cancelled") continue;
-    const orig = parseFloat(String(tx.original_amount)) || 0;
-    const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = tx.status === "settled" || cur <= 0.01;
-    if (tx.direction === "gave") {
-      totalGiven += orig;
-      if (!isSettled) {
-        youWillReceive += cur;
-        activeCount += 1;
-      } else {
-        settledCount += 1;
-      }
-    } else {
-      totalTaken += orig;
-      if (!isSettled) {
-        youWillPay += cur;
-        activeCount += 1;
-      } else {
-        settledCount += 1;
-      }
-    }
-    settledAmount += Math.max(0, orig - cur);
-    if (tx.due_date && tx.due_date < todayStr && !isSettled && cur > 0) {
-      overdueAmount += cur;
-    }
-    if (Array.isArray(tx.repayments)) {
-      pendingRepaymentCount += tx.repayments.filter((r2) => r2.status === "pending_confirmation").length;
-    }
-  }
-  const netBalance = roundMoney(youWillReceive - youWillPay);
-  return {
-    totalGiven: roundMoney(totalGiven),
-    totalTaken: roundMoney(totalTaken),
-    youWillReceive: roundMoney(youWillReceive),
-    youWillPay: roundMoney(youWillPay),
-    netBalance,
-    settledAmount: roundMoney(settledAmount),
-    overdueAmount: roundMoney(overdueAmount),
-    activeCount,
-    settledCount,
-    pendingRepaymentCount
-  };
-}
-function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
-  const base2 = calculatePersonLedgerSummary(items, todayStr);
-  const connectedKeys = /* @__PURE__ */ new Set();
-  const manualKeys = /* @__PURE__ */ new Set();
-  for (const c of contacts) {
-    if (c.linked_user_id) {
-      connectedKeys.add(c.linked_user_id);
-    } else if (c.name) {
-      manualKeys.add(c.name.trim().toLowerCase());
-    }
-  }
-  const activePeopleSet = /* @__PURE__ */ new Set();
-  let pendingConfirmationsCount = 0;
-  for (const tx of items) {
-    if (tx.status === "cancelled") continue;
-    const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = tx.status === "settled" || cur <= 0.01;
-    if (tx.counterpart_user_id) {
-      connectedKeys.add(tx.counterpart_user_id);
-    }
-    if (!isSettled && cur > 0.01) {
-      const personKey = tx.counterpart_user_id || (tx.counterpart_name || "").trim().toLowerCase();
-      if (personKey) activePeopleSet.add(personKey);
-    }
-    if (tx.status === "pending_confirmation") {
-      pendingConfirmationsCount += 1;
-    }
-    if (Array.isArray(tx.repayments)) {
-      pendingConfirmationsCount += tx.repayments.filter((r2) => r2.status === "pending_confirmation").length;
-    }
-  }
-  return {
-    totalLent: base2.totalGiven,
-    totalBorrowed: base2.totalTaken,
-    outstandingReceivable: base2.youWillReceive,
-    outstandingPayable: base2.youWillPay,
-    netBalance: base2.netBalance,
-    settledAmount: base2.settledAmount,
-    overdueAmount: base2.overdueAmount,
-    totalConnectedPeople: connectedKeys.size,
-    totalManualPeople: manualKeys.size,
-    peopleWithActiveUdhar: activePeopleSet.size,
-    pendingConfirmationsCount
-  };
-}
-var META_MARKER = "\n<!--MM_META:";
-var META_END = "-->";
-function packStructuredNote(plainNote, meta) {
-  const cleanNote = (plainNote || "").trim();
-  const filteredMeta = {};
-  if (meta.category && meta.category.trim()) filteredMeta.category = meta.category.trim();
-  if (meta.payment_method && meta.payment_method.trim()) filteredMeta.payment_method = meta.payment_method.trim();
-  if (meta.description && meta.description.trim()) filteredMeta.description = meta.description.trim();
-  if (meta.transaction_ref && meta.transaction_ref.trim()) filteredMeta.transaction_ref = meta.transaction_ref.trim();
-  if (meta.repayment_time && meta.repayment_time.trim()) filteredMeta.repayment_time = meta.repayment_time.trim();
-  if (meta.attachment_url && meta.attachment_url.trim()) filteredMeta.attachment_url = meta.attachment_url.trim();
-  if (Object.keys(filteredMeta).length === 0) {
-    return cleanNote || null;
-  }
-  return `${cleanNote}${META_MARKER}${JSON.stringify(filteredMeta)}${META_END}`.trim();
-}
-function unpackStructuredNote(rawNote) {
-  if (!rawNote || typeof rawNote !== "string") {
-    return { note: "", meta: {} };
-  }
-  const idx = rawNote.indexOf(META_MARKER);
-  if (idx === -1) {
-    return { note: rawNote.trim(), meta: {} };
-  }
-  const endIdx = rawNote.indexOf(META_END, idx + META_MARKER.length);
-  if (endIdx === -1) {
-    return { note: rawNote.trim(), meta: {} };
-  }
-  const notePart = rawNote.slice(0, idx).trim();
-  const jsonPart = rawNote.slice(idx + META_MARKER.length, endIdx);
-  try {
-    const parsed = JSON.parse(jsonPart);
-    if (parsed && typeof parsed === "object") {
-      return { note: notePart, meta: parsed };
-    }
-  } catch {
-  }
-  return { note: rawNote.trim(), meta: {} };
-}
-
-// server/supabaseRestUdhar.ts
-import crypto15 from "crypto";
-var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
-var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
-function getRestConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
-  return { url, key };
-}
-async function sbRest(path9, options = {}) {
-  const { url, key } = getRestConfig();
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    Accept: "application/json"
-  };
-  if (options.body !== void 0) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (options.prefer) {
-    headers["Prefer"] = options.prefer;
-  }
-  const response = await fetch(`${url}/rest/v1/${path9}`, {
-    method: options.method || "GET",
-    headers,
-    body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
-  });
-  const text = await response.text();
-  let parsed = null;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-  if (!response.ok) {
-    const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
-    return { ok: false, status: response.status, data: null, error: errMsg };
-  }
-  return { ok: true, status: response.status, data: parsed };
-}
-function enrichTransactionRow(row, userMap, repayments, editHistory) {
-  const orig = parseFloat(row.original_amount) || 0;
-  const cur = parseFloat(row.current_balance) || 0;
-  const computedPaid = Math.max(0, roundMoney(orig - cur));
-  const { note, meta } = unpackStructuredNote(row.notes);
-  const counterpart = row.counterpart_user_id ? userMap.get(row.counterpart_user_id) : null;
-  return {
-    ...row,
-    counterpart_registered_name: counterpart?.full_name || row.counterpart_registered_name || null,
-    counterpart_email: counterpart?.email || row.counterpart_email || null,
-    counterpart_avatar: counterpart?.avatar_url || row.counterpart_avatar || null,
-    paid_amount: row.paid_amount !== null && row.paid_amount !== void 0 ? parseFloat(row.paid_amount) : computedPaid,
-    category: row.category || meta.category || "Personal Loan",
-    payment_method: row.payment_method || meta.payment_method || "UPI",
-    description: row.description || meta.description || null,
-    clean_notes: note || null,
-    notes: note || null,
-    attachment_url: row.attachment_url || meta.attachment_url || null,
-    repayments: repayments.map((rep) => {
-      const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
-      const recorder = rep.recorded_by_user_id ? userMap.get(rep.recorded_by_user_id) : null;
-      return {
-        ...rep,
-        recorded_by_name: recorder?.full_name || rep.recorded_by_name || null,
-        notes: repNote || null,
-        transaction_ref: rep.transaction_ref || repMeta.transaction_ref || null,
-        repayment_time: rep.repayment_time || repMeta.repayment_time || null,
-        attachment_url: rep.attachment_url || repMeta.attachment_url || null
-      };
-    }),
-    edit_history: editHistory.map((h2) => {
-      const editor = h2.edited_by_user_id ? userMap.get(h2.edited_by_user_id) : null;
-      return {
-        ...h2,
-        edited_by_name: editor?.full_name || h2.edited_by_name || null
-      };
-    })
-  };
-}
-async function fetchUsersByIds(ids) {
-  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
-  const map2 = /* @__PURE__ */ new Map();
-  if (uniqueIds.length === 0) return map2;
-  const inList = uniqueIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
-  const res = await sbRest(
-    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username`
-  );
-  if (res.ok && Array.isArray(res.data)) {
-    for (const u of res.data) {
-      map2.set(u.id, u);
-    }
-  }
-  return map2;
-}
-async function isBlockedBetween(userAId, userBId) {
-  const res = await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(userAId)},user_b_id.eq.${encodeURIComponent(userBId)}),and(user_a_id.eq.${encodeURIComponent(userBId)},user_b_id.eq.${encodeURIComponent(userAId)}))&select=status`
-  );
-  if (!res.ok || !Array.isArray(res.data)) return false;
-  return res.data.some((c) => c.status === "blocked");
-}
-async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend") {
-  await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    body: { user_a_id: authUser.id, user_b_id: targetUser.id, status: "connected" }
-  }).catch(() => {
-  });
-  await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    body: { user_a_id: targetUser.id, user_b_id: authUser.id, status: "connected" }
-  }).catch(() => {
-  });
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const targetName = (targetUser.full_name || targetUser.email?.split("@")[0] || "User").trim();
-  const myName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  const existingMine = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetUser.id)}&limit=1`
-  );
-  if (existingMine.ok && existingMine.data && existingMine.data.length > 0) {
-    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
-      method: "PATCH",
-      body: {
-        name: targetName,
-        email: targetUser.email || existingMine.data[0].email || null,
-        phone: targetUser.phone || existingMine.data[0].phone || null,
-        photo_url: targetUser.avatar_url || existingMine.data[0].photo_url || null,
-        relationship_type: relationshipType || existingMine.data[0].relationship_type || "Friend",
-        updated_at: nowIso
-      }
-    });
-  } else {
-    await sbRest("udhar_contacts?on_conflict=user_id,name", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      body: {
-        user_id: authUser.id,
-        name: targetName,
-        email: targetUser.email || null,
-        phone: targetUser.phone || null,
-        photo_url: targetUser.avatar_url || null,
-        relationship_type: relationshipType || "Friend",
-        linked_user_id: targetUser.id,
-        updated_at: nowIso
-      }
-    });
-  }
-  const existingTheirs = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(targetUser.id)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (existingTheirs.ok && existingTheirs.data && existingTheirs.data.length > 0) {
-    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingTheirs.data[0].id)}`, {
-      method: "PATCH",
-      body: {
-        name: myName,
-        email: authUser.email || existingTheirs.data[0].email || null,
-        phone: authUser.phone || existingTheirs.data[0].phone || null,
-        photo_url: authUser.avatar_url || existingTheirs.data[0].photo_url || null,
-        updated_at: nowIso
-      }
-    });
-  } else {
-    await sbRest("udhar_contacts?on_conflict=user_id,name", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      body: {
-        user_id: targetUser.id,
-        name: myName,
-        email: authUser.email || null,
-        phone: authUser.phone || null,
-        photo_url: authUser.avatar_url || null,
-        relationship_type: relationshipType || "Friend",
-        linked_user_id: authUser.id,
-        updated_at: nowIso
-      }
-    });
-  }
-}
-async function createTargetedNotificationRest(params) {
-  if (!params.targetUserId || params.targetUserId === "all") return;
-  await Promise.all([
-    sbRest("notifications", {
-      method: "POST",
-      prefer: "return=minimal",
-      body: {
-        title: params.title,
-        message: params.message,
-        type: params.type,
-        target_user_id: params.targetUserId,
-        actor_user_id: params.actorUserId,
-        related_entity_id: params.relatedEntityId || null,
-        is_active: true
-      }
-    }).catch(() => {
-    }),
-    sbRest("user_notifications", {
-      method: "POST",
-      prefer: "return=minimal",
-      body: {
-        user_id: params.targetUserId,
-        title: params.title,
-        message: params.message,
-        category: params.category || "udhar",
-        type: params.type === "udhar_connection_request" ? "info" : "success",
-        deep_link: params.deepLink || "people",
-        is_read: false,
-        is_deleted: false,
-        metadata: params.metadata || {
-          actionType: params.type,
-          relatedEntityId: params.relatedEntityId || null,
-          actorUserId: params.actorUserId
-        }
-      }
-    }).catch(() => {
-    })
-  ]);
-}
-async function searchUsersRest(authUser, rawQuery) {
-  const classified = classifyLiveSearchQuery(rawQuery);
-  if (classified.mode === "too_short") {
-    return { status: 200, body: { success: true, users: [], searchMode: "too_short" } };
-  }
-  if (classified.mode === "email_incomplete") {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        users: [],
-        searchMode: "email_incomplete",
-        hint: "Enter the complete email address to find a user."
-      }
-    };
-  }
-  if (classified.mode === "phone_incomplete") {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        users: [],
-        searchMode: "phone_incomplete",
-        hint: "Enter a complete 10-digit mobile number to search."
-      }
-    };
-  }
-  const escaped = classified.normalized.replace(/[%*,()]/g, "");
-  let queryPath = "";
-  if (classified.mode === "email_exact") {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=5`;
-  } else if (classified.mode === "phone_exact") {
-    const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=15`;
-  } else {
-    const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&order=full_name.asc&limit=20`;
-  }
-  const usersRes = await sbRest(queryPath);
-  if (!usersRes.ok) {
-    return {
-      status: 503,
-      body: {
-        success: false,
-        code: "DIRECTORY_UNAVAILABLE",
-        message: "Unable to reach user directory right now. Please retry."
-      }
-    };
-  }
-  let activeUsers = (usersRes.data || []).filter(
-    (u) => !u.deletion_status || u.deletion_status === "none"
-  );
-  if (classified.mode === "email_exact") {
-    activeUsers = activeUsers.filter(
-      (u) => (u.email || "").trim().toLowerCase() === classified.normalized
-    );
-  } else if (classified.mode === "phone_exact") {
-    activeUsers = activeUsers.filter((u) => {
-      const userDigits = String(u.phone || "").replace(/\D/g, "");
-      if (userDigits.length < 10) return false;
-      return userDigits === classified.digitsOnly || userDigits.slice(-10) === classified.last10Digits;
-    });
-  }
-  const [connRes, contactsRes] = await Promise.all([
-    sbRest(
-      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status`
-    ),
-    sbRest(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=linked_user_id`
-    )
-  ]);
-  const statusByUserId = /* @__PURE__ */ new Map();
-  if (connRes.ok && Array.isArray(connRes.data)) {
-    for (const c of connRes.data) {
-      const isOutgoing = c.user_a_id === authUser.id;
-      const otherId = isOutgoing ? c.user_b_id : c.user_a_id;
-      if (!otherId) continue;
-      const prev = statusByUserId.get(otherId)?.status;
-      if (c.status === "blocked" || prev === "blocked") {
-        statusByUserId.set(otherId, { status: "blocked", requestId: c.id });
-      } else if (c.status === "connected" || prev === "connected") {
-        statusByUserId.set(otherId, { status: "connected", requestId: c.id });
-      } else if (c.status === "pending") {
-        statusByUserId.set(otherId, {
-          status: isOutgoing ? "pending" : "incoming_pending",
-          requestId: c.id
-        });
-      }
-    }
-  }
-  const linkedContactSet = /* @__PURE__ */ new Set();
-  if (contactsRes.ok && Array.isArray(contactsRes.data)) {
-    for (const ct of contactsRes.data) {
-      if (ct.linked_user_id) linkedContactSet.add(ct.linked_user_id);
-    }
-  }
-  const sanitized = activeUsers.filter((u) => statusByUserId.get(u.id)?.status !== "blocked").slice(0, 15).map((u) => {
-    const isSelf = u.id === authUser.id;
-    const connEntry = statusByUserId.get(u.id);
-    const isConnected = !isSelf && (connEntry?.status === "connected" || linkedContactSet.has(u.id));
-    const connectionStatus = isSelf ? "self" : isConnected ? "connected" : connEntry?.status === "pending" ? "pending" : connEntry?.status === "incoming_pending" ? "incoming_pending" : "none";
-    const showContactHint = isConnected || isSelf;
-    return {
-      id: u.id,
-      displayName: u.full_name || u.username || "My Money User",
-      fullName: u.full_name || u.username || "My Money User",
-      username: u.username || null,
-      accountIndicator: "My Money Manager Account",
-      emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : void 0,
-      phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
-      avatarUrl: u.avatar_url || null,
-      isSelf,
-      isVerified: Boolean(u.is_verified ?? true),
-      connectionStatus,
-      requestId: connEntry?.requestId || null,
-      isAlreadyConnected: isConnected,
-      isSavedContact: linkedContactSet.has(u.id)
-    };
-  });
-  return { status: 200, body: { success: true, users: sanitized, searchMode: classified.mode } };
-}
-async function connectUserRest(authUser, body) {
-  const targetUserId = (body.targetUserId || "").trim();
-  const relationshipType = (body.relationshipType || "Friend").trim();
-  const requestedVia = (body.requestedVia || "search").trim();
-  if (!targetUserId) {
-    return { status: 400, body: { success: false, code: "MISSING_TARGET", message: "Target user ID is required." } };
-  }
-  if (targetUserId === authUser.id) {
-    return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
-  }
-  const targetRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified`
-  );
-  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
-  }
-  const target = targetRes.data[0];
-  if (target.status !== "active" || target.deletion_status && target.deletion_status !== "none") {
-    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is no longer active." } };
-  }
-  if (await isBlockedBetween(authUser.id, targetUserId)) {
-    return { status: 403, body: { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." } };
-  }
-  const pairRes = await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
-  );
-  const pairRows = pairRes.ok && Array.isArray(pairRes.data) ? pairRes.data : [];
-  const targetName = (target.full_name || target.email?.split("@")[0] || "User").trim();
-  const requesterName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
-  if (pairRows.some((r2) => r2.status === "connected")) {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "connected",
-        alreadyConnected: true,
-        message: `You are already connected with ${targetName}.`,
-        connectedUser: {
-          id: target.id,
-          name: targetName,
-          displayName: targetName,
-          fullName: targetName,
-          avatarUrl: target.avatar_url || null,
-          isVerified: Boolean(target.is_verified ?? true)
-        }
-      }
-    };
-  }
-  const incomingPending = pairRows.find(
-    (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
-  );
-  if (incomingPending) {
-    return acceptConnectionRequestRest(authUser, incomingPending.id);
-  }
-  const outgoingPending = pairRows.find(
-    (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
-  );
-  if (outgoingPending) {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "pending",
-        alreadyPending: true,
-        requestId: outgoingPending.id,
-        message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
-        connectedUser: {
-          id: target.id,
-          name: targetName,
-          displayName: targetName,
-          fullName: targetName,
-          avatarUrl: target.avatar_url || null,
-          isVerified: Boolean(target.is_verified ?? true)
-        }
-      }
-    };
-  }
-  const insRes = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: {
-      user_a_id: authUser.id,
-      user_b_id: targetUserId,
-      status: "pending"
-    }
-  });
-  if (!insRes.ok) {
-    return {
-      status: 503,
-      body: { success: false, code: "REQUEST_FAILED", message: "Unable to send connection request right now. Please try again." }
-    };
-  }
-  const requestId = insRes.data?.[0]?.id || `${authUser.id}:${targetUserId}`;
-  await createTargetedNotificationRest({
-    targetUserId: target.id,
-    actorUserId: authUser.id,
-    title: "Udhar Connection Request",
-    message: `${requesterName} wants to connect with you on My Money Manager Udhar.`,
-    type: "udhar_connection_request",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: String(requestId),
-    metadata: {
-      actionType: "udhar_connection_request",
-      requestId: String(requestId),
-      requesterUserId: authUser.id,
-      requesterName,
-      requestedVia,
-      relationshipType
-    }
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "pending",
-      alreadyConnected: false,
-      alreadyPending: false,
-      requestId: String(requestId),
-      message: `Connection request sent to ${targetName}. You'll be connected once they accept.`,
-      connectedUser: {
-        id: target.id,
-        name: targetName,
-        displayName: targetName,
-        fullName: targetName,
-        avatarUrl: target.avatar_url || null,
-        isVerified: Boolean(target.is_verified ?? true)
-      }
-    }
-  };
-}
-async function getConnectionRequestsRest(authUser) {
-  const connRes = await sbRest(
-    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
-  );
-  if (!connRes.ok) {
-    return { status: 503, body: { success: false, message: "Unable to load connection requests right now." } };
-  }
-  const rows = connRes.data || [];
-  const otherIds = rows.map((r2) => r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(otherIds);
-  const incoming = [];
-  const outgoing = [];
-  const connectedMap = /* @__PURE__ */ new Map();
-  for (const r2 of rows) {
-    if (r2.status === "pending") {
-      if (r2.user_b_id === authUser.id) {
-        const u = userMap.get(r2.user_a_id);
-        incoming.push({
-          id: r2.id,
-          requesterUserId: r2.user_a_id,
-          displayName: u?.full_name || "My Money User",
-          avatarUrl: u?.avatar_url || null,
-          isVerified: Boolean(u?.is_verified ?? true),
-          status: "pending",
-          createdAt: r2.created_at
-        });
-      } else if (r2.user_a_id === authUser.id) {
-        const u = userMap.get(r2.user_b_id);
-        outgoing.push({
-          id: r2.id,
-          targetUserId: r2.user_b_id,
-          displayName: u?.full_name || "My Money User",
-          avatarUrl: u?.avatar_url || null,
-          isVerified: Boolean(u?.is_verified ?? true),
-          status: "pending",
-          createdAt: r2.created_at
-        });
-      }
-    } else if (r2.status === "connected") {
-      const otherId = r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id;
-      if (otherId && !connectedMap.has(otherId)) {
-        const u = userMap.get(otherId);
-        connectedMap.set(otherId, {
-          id: r2.id,
-          userId: otherId,
-          displayName: u?.full_name || "My Money User",
-          avatarUrl: u?.avatar_url || null,
-          isVerified: Boolean(u?.is_verified ?? true),
-          status: "connected",
-          createdAt: r2.created_at
-        });
-      }
-    }
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      incoming,
-      outgoing,
-      connected: Array.from(connectedMap.values())
-    }
-  };
-}
-async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
-  const key = (requestIdOrUserId || "").trim();
-  if (!key) {
-    return { status: 400, body: { success: false, message: "Connection request ID is required." } };
-  }
-  const reqRes = await sbRest(
-    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
-  );
-  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
-  }
-  const pendingRow = reqRes.data[0];
-  const requesterId = pendingRow.user_a_id;
-  const userMap = await fetchUsersByIds([requesterId]);
-  const requester = userMap.get(requesterId);
-  if (!requester || requester.status !== "active") {
-    return { status: 404, body: { success: false, message: "Requester account is no longer active." } };
-  }
-  await ensureConnectionAndReciprocalContactsRest(authUser, requester, "Friend");
-  const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  const requesterName = (requester.full_name || requester.email?.split("@")[0] || "Friend").trim();
-  await createTargetedNotificationRest({
-    targetUserId: requester.id,
-    actorUserId: authUser.id,
-    title: "Udhar Connection Accepted",
-    message: `${acceptorName} accepted your Udhar connection request. You can now track shared Udhar together.`,
-    type: "connection_accepted",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: authUser.id
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "connected",
-      message: `Connected with ${requesterName}! Added to your Saved People.`,
-      connectedUser: {
-        id: requester.id,
-        name: requesterName,
-        displayName: requesterName,
-        fullName: requesterName,
-        avatarUrl: requester.avatar_url || null,
-        isVerified: Boolean(requester.is_verified ?? true)
-      }
-    }
-  };
-}
-async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
-  const key = (requestIdOrUserId || "").trim();
-  if (!key) {
-    return { status: 400, body: { success: false, message: "Connection request ID is required." } };
-  }
-  const reqRes = await sbRest(
-    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
-  );
-  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
-  }
-  const pendingRow = reqRes.data[0];
-  await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-    method: "PATCH",
-    body: { status: "rejected" }
-  });
-  const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  await createTargetedNotificationRest({
-    targetUserId: pendingRow.user_a_id,
-    actorUserId: authUser.id,
-    title: "Connection Request Declined",
-    message: `${rejectorName} declined your My Money Manager Udhar connection request.`,
-    type: "connection_rejected",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: String(pendingRow.id)
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "rejected",
-      message: "Connection request declined. No active connection was created."
-    }
-  };
-}
-async function disconnectUserRest(authUser, targetUserId) {
-  const targetId = (targetUserId || "").trim();
-  if (!targetId) {
-    return { status: 400, body: { success: false, message: "Target user ID is required." } };
-  }
-  await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetId)}),and(user_a_id.eq.${encodeURIComponent(targetId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`,
-    { method: "DELETE" }
-  );
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await Promise.all([
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetId)}`, {
-      method: "PATCH",
-      body: { linked_user_id: null, updated_at: nowIso }
-    }).catch(() => {
-    }),
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(targetId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`, {
-      method: "PATCH",
-      body: { linked_user_id: null, updated_at: nowIso }
-    }).catch(() => {
-    })
-  ]);
-  const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  await createTargetedNotificationRest({
-    targetUserId: targetId,
-    actorUserId: authUser.id,
-    title: "Udhar Connection Disconnected",
-    message: `${actorName} disconnected their Udhar pairing with you. Your existing Udhar history remains preserved.`,
-    type: "connection_disconnected",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: authUser.id
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "disconnected",
-      message: "Disconnected successfully. Existing Udhar transaction history has been preserved."
-    }
-  };
-}
-async function getPrivacyConsentsRest(authUser) {
-  const res = await sbRest(
-    `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,purpose,status,action,policy_version,consent_wording,created_at&order=created_at.desc&limit=100`
-  );
-  if (!res.ok) {
-    return { status: 200, body: { success: true, consents: {}, history: [], policyVersion: "v2.0 - DPDP Act 2023" } };
-  }
-  const history = res.data || [];
-  const latestByCategory = {};
-  for (const row of history) {
-    if (!latestByCategory[row.purpose]) {
-      latestByCategory[row.purpose] = {
-        category: row.purpose,
-        status: row.status,
-        policyVersion: row.policy_version,
-        consentedAt: row.status === "granted" ? row.created_at : null,
-        revokedAt: row.status === "withdrawn" ? row.created_at : null,
-        updatedAt: row.created_at
-      };
-    }
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      consents: latestByCategory,
-      history,
-      policyVersion: "v2.0 - DPDP Act 2023"
-    }
-  };
-}
-async function recordPrivacyConsentRest(authUser, body) {
-  const purpose = (body.category || body.purpose || "").trim();
-  const status = body.status === "withdrawn" ? "withdrawn" : "granted";
-  if (!purpose) {
-    return { status: 400, body: { success: false, message: "Consent category is required." } };
-  }
-  const policyVersion = (body.policyVersion || "v2.0 - DPDP Act 2023").trim();
-  const wording = (body.wording || `User explicitly ${status} consent for ${purpose}.`).trim();
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const ins = await sbRest("user_consents", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      user_id: authUser.id,
-      user_email: authUser.email,
-      purpose,
-      status,
-      action: status,
-      policy_version: policyVersion,
-      consent_wording: wording,
-      created_at: nowIso,
-      updated_at: nowIso
-    }
-  });
-  if (!ins.ok) {
-    return { status: 503, body: { success: false, message: "Could not save consent preference right now." } };
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      category: purpose,
-      status,
-      consent: ins.data?.[0] || { purpose, status, policy_version: policyVersion, created_at: nowIso }
-    }
-  };
-}
-async function getContactsRest(authUser) {
-  const res = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`
-  );
-  if (!res.ok) {
-    return { status: 503, body: { success: false, message: "Failed to load contacts." } };
-  }
-  const rows = res.data || [];
-  const linkedIds = rows.map((r2) => r2.linked_user_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(linkedIds);
-  const contacts = rows.map((c) => {
-    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
-    return {
-      ...c,
-      linked_user_name: u?.full_name || null,
-      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
-      linked_user_avatar: u?.avatar_url || null
-    };
-  });
-  return { status: 200, body: { success: true, contacts } };
-}
-async function getContactsWithBalancesRest(authUser) {
-  const [contactsRes, txRes] = await Promise.all([
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
-    sbRest(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`)
-  ]);
-  if (!contactsRes.ok) {
-    return { status: 503, body: { success: false, message: "Failed to load people contacts." } };
-  }
-  const contacts = contactsRes.data || [];
-  const txs = txRes.ok && Array.isArray(txRes.data) ? txRes.data : [];
-  const linkedIds = contacts.map((c) => c.linked_user_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(linkedIds);
-  const parsedContacts = contacts.map((c) => {
-    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
-    const matchingTxs = txs.filter((t2) => {
-      if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
-      if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
-        return true;
-      }
-      return false;
-    });
-    let totalGiven = 0;
-    let totalTaken = 0;
-    let receivable = 0;
-    let payable = 0;
-    let lastDate = null;
-    let pendingCount = 0;
-    for (const t2 of matchingTxs) {
-      if (t2.status === "cancelled") continue;
-      const orig = parseFloat(t2.original_amount) || 0;
-      const cur = parseFloat(t2.current_balance) || 0;
-      const isSettled = t2.status === "settled" || cur <= 0.01;
-      if (t2.direction === "gave") {
-        totalGiven += orig;
-        if (!isSettled) receivable += cur;
-      } else {
-        totalTaken += orig;
-        if (!isSettled) payable += cur;
-      }
-      if (!isSettled && cur > 0.01) pendingCount += 1;
-      if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
-        lastDate = t2.transaction_date;
-      }
-    }
-    return {
-      ...c,
-      linked_user_name: u?.full_name || null,
-      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
-      linked_user_avatar: u?.avatar_url || null,
-      total_given: roundMoney(totalGiven),
-      total_taken: roundMoney(totalTaken),
-      outstanding_receivable: roundMoney(receivable),
-      outstanding_payable: roundMoney(payable),
-      net_balance: roundMoney(receivable - payable),
-      last_transaction_date: lastDate,
-      total_transactions_count: matchingTxs.filter((t2) => t2.status !== "cancelled").length,
-      pending_transactions_count: pendingCount,
-      is_registered: Boolean(c.linked_user_id)
-    };
-  });
-  return { status: 200, body: { success: true, contacts: parsedContacts } };
-}
-async function saveContactRest(authUser, body) {
-  const name2 = (body.name || "").trim();
-  const email = (body.email || "").trim().toLowerCase();
-  const phone = (body.phone || "").trim();
-  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
-  const notes = (body.notes || "").trim();
-  const photoUrl = (body.photo_url || body.photoUrl || "").trim() || null;
-  const requestedLinkedUserId = (body.linked_user_id || body.linkedUserId || "").trim() || null;
-  if (!name2) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
-  let verifiedTarget = null;
-  if (requestedLinkedUserId) {
-    if (requestedLinkedUserId === authUser.id) {
-      return { status: 400, body: { success: false, message: "You cannot add yourself as a contact." } };
-    }
-    const targetRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status`
-    );
-    if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
-      return { status: 404, body: { success: false, message: "Selected user account was not found." } };
-    }
-    const target = targetRes.data[0];
-    if (target.deletion_status && target.deletion_status !== "none") {
-      return { status: 403, body: { success: false, message: "Selected user account is unavailable." } };
-    }
-    if (await isBlockedBetween(authUser.id, target.id)) {
-      return { status: 403, body: { success: false, message: "Cannot connect with a blocked account." } };
-    }
-    verifiedTarget = target;
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const payload = {
-    user_id: authUser.id,
-    name: verifiedTarget ? verifiedTarget.full_name : name2,
-    email: verifiedTarget ? verifiedTarget.email : email || null,
-    phone: verifiedTarget ? verifiedTarget.phone : phone || null,
-    photo_url: verifiedTarget ? verifiedTarget.avatar_url || photoUrl : photoUrl,
-    relationship_type: relationshipType,
-    notes: notes || null,
-    linked_user_id: verifiedTarget ? verifiedTarget.id : null,
-    updated_at: nowIso
-  };
-  const upsertRes = await sbRest("udhar_contacts?on_conflict=user_id,name", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: payload
-  });
-  if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
-    return { status: 500, body: { success: false, message: upsertRes.error || "Failed to save contact." } };
-  }
-  if (verifiedTarget) {
-    await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      contact: upsertRes.data[0],
-      reciprocallyLinked: Boolean(verifiedTarget)
-    }
-  };
-}
-async function updateContactRest(authUser, contactId, body) {
-  const name2 = (body.name || "").trim();
-  const email = (body.email || "").trim().toLowerCase();
-  const phone = (body.phone || "").trim();
-  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
-  const notes = (body.notes || "").trim();
-  const photoUrl = body.photo_url !== void 0 ? body.photo_url || null : void 0;
-  if (!name2) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
-  const existingRes = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!existingRes.ok || !existingRes.data || existingRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Contact not found." } };
-  }
-  const existing = existingRes.data[0];
-  const patchBody = {
-    name: name2,
-    email: email || null,
-    phone: phone || null,
-    relationship_type: relationshipType,
-    notes: notes || null,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  if (photoUrl !== void 0) patchBody.photo_url = photoUrl;
-  const updRes = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: patchBody
-    }
-  );
-  if (!updRes.ok || !updRes.data || updRes.data.length === 0) {
-    return { status: 500, body: { success: false, message: updRes.error || "Failed to update contact." } };
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      contact: updRes.data[0],
-      reciprocallyLinked: Boolean(existing.linked_user_id)
-    }
-  };
-}
-async function deleteContactRest(authUser, contactId) {
-  const res = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok) {
-    return { status: 500, body: { success: false, message: res.error || "Failed to remove contact." } };
-  }
-  return { status: 200, body: { success: true, message: "Saved contact removed." } };
-}
-async function linkContactRest(authUser, contactId, registeredUserId) {
-  if (!registeredUserId) {
-    return { status: 400, body: { success: false, message: "Target registered user ID is required." } };
-  }
-  if (registeredUserId === authUser.id) {
-    return { status: 400, body: { success: false, message: "You cannot link a contact to your own account." } };
-  }
-  const [contactRes, targetRes] = await Promise.all([
-    sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
-    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`)
-  ]);
-  if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Contact not found." } };
-  }
-  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Registered user not found." } };
-  }
-  const contact = contactRes.data[0];
-  const target = targetRes.data[0];
-  if (target.deletion_status && target.deletion_status !== "none") {
-    return { status: 403, body: { success: false, message: "Target user account is unavailable." } };
-  }
-  if (await isBlockedBetween(authUser.id, target.id)) {
-    return { status: 403, body: { success: false, message: "Cannot link with a blocked account." } };
-  }
-  await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`, {
-    method: "PATCH",
-    body: {
-      linked_user_id: target.id,
-      email: target.email || contact.email || null,
-      phone: target.phone || contact.phone || null,
-      photo_url: target.avatar_url || contact.photo_url || null,
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-    }
-  });
-  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || "Friend");
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Successfully linked ${contact.name} with verified account ${target.full_name}.`
-    }
-  };
-}
-async function getMyQrRest(authUser) {
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const existing = await sbRest(
-    `qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false&expires_at=gt.${encodeURIComponent(nowIso)}&order=created_at.desc&limit=1`
-  );
-  let pairingToken = "";
-  let pairingCode = "";
-  let expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
-  if (existing.ok && existing.data && existing.data.length > 0) {
-    pairingToken = existing.data[0].pairing_token;
-    pairingCode = existing.data[0].pairing_code;
-    expiresAt = existing.data[0].expires_at || expiresAt;
-  } else {
-    pairingToken = crypto15.randomBytes(32).toString("hex");
-    pairingCode = `MM-${crypto15.randomBytes(3).toString("hex").toUpperCase()}`;
-    const ins = await sbRest("qr_pairing_tokens", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: authUser.id,
-        pairing_token: pairingToken,
-        pairing_code: pairingCode,
-        is_single_use: false,
-        used: false,
-        expires_at: expiresAt
-      }
-    });
-    if (!ins.ok) {
-      return {
-        status: 503,
-        body: { success: false, message: "Unable to persist your unique QR identity right now. Please retry." }
-      };
-    }
-  }
-  const qrPayload = JSON.stringify({
-    app: "my-money",
-    v: 2,
-    type: "udhar-pair",
-    token: pairingToken,
-    code: pairingCode,
-    exp: new Date(expiresAt).getTime()
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      pairingToken,
-      pairingCode,
-      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
-      avatarUrl: authUser.avatar_url || null,
-      qrData: qrPayload,
-      expiresAt
-    }
-  };
-}
-async function regenerateQrRest(authUser) {
-  await sbRest(`qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false`, {
-    method: "PATCH",
-    body: { used: true }
-  });
-  const pairingToken = crypto15.randomBytes(32).toString("hex");
-  const pairingCode = `MM-${crypto15.randomBytes(3).toString("hex").toUpperCase()}`;
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
-  const ins = await sbRest("qr_pairing_tokens", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      user_id: authUser.id,
-      pairing_token: pairingToken,
-      pairing_code: pairingCode,
-      is_single_use: false,
-      used: false,
-      expires_at: expiresAt
-    }
-  });
-  if (!ins.ok) {
-    return {
-      status: 503,
-      body: { success: false, message: "Could not regenerate QR code right now. Please try again." }
-    };
-  }
-  const qrPayload = JSON.stringify({
-    app: "my-money",
-    v: 2,
-    type: "udhar-pair",
-    token: pairingToken,
-    code: pairingCode,
-    exp: new Date(expiresAt).getTime()
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: "Fresh QR code generated successfully. Previous codes have been revoked.",
-      pairingToken,
-      pairingCode,
-      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
-      avatarUrl: authUser.avatar_url || null,
-      qrData: qrPayload,
-      expiresAt
-    }
-  };
-}
-async function resolveQrRest(authUser, body) {
-  let targetToken = (body.pairingToken || "").trim();
-  let targetCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
-  const rawData = (body.qrData || "").trim();
-  if (rawData) {
-    const parsed = parseQrPayload(rawData);
-    if (!parsed.valid) {
-      return {
-        status: 400,
-        body: {
-          success: false,
-          code: parsed.errorCode || "INVALID_QR",
-          message: parsed.error || "Invalid QR format."
-        }
-      };
-    }
-    if (parsed.token) targetToken = parsed.token;
-    if (parsed.code) targetCode = parsed.code;
-  }
-  if (!targetToken && !targetCode) {
-    return {
-      status: 400,
-      body: { success: false, code: "INVALID_QR", message: "No valid QR pairing token or code provided." }
-    };
-  }
-  const filter = targetToken && targetCode ? `or=(pairing_token.eq.${encodeURIComponent(targetToken)},pairing_code.eq.${encodeURIComponent(targetCode)})` : targetToken ? `pairing_token=eq.${encodeURIComponent(targetToken)}` : `pairing_code=eq.${encodeURIComponent(targetCode)}`;
-  const tokRes = await sbRest(`qr_pairing_tokens?${filter}&order=created_at.desc&limit=1`);
-  if (!tokRes.ok) {
-    return { status: 503, body: { success: false, code: "SERVICE_UNAVAILABLE", message: "Unable to verify QR code right now. Please retry." } };
-  }
-  if (!tokRes.data || tokRes.data.length === 0) {
-    return {
-      status: 404,
-      body: {
-        success: false,
-        code: "NOT_FOUND",
-        message: "Pairing code or QR not recognized. Ask your friend to share their latest My Money Manager Udhar Pairing QR."
-      }
-    };
-  }
-  const qrRecord = tokRes.data[0];
-  if (qrRecord.used) {
-    return {
-      status: 410,
-      body: {
-        success: false,
-        code: "QR_REVOKED",
-        message: "This pairing QR has been revoked. Ask your friend to share their new Udhar Pairing QR."
-      }
-    };
-  }
-  if (qrRecord.expires_at && new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
-    return {
-      status: 410,
-      body: {
-        success: false,
-        code: "QR_EXPIRED",
-        message: "This pairing QR has expired. Ask your friend to tap Reset QR to generate a fresh code."
-      }
-    };
-  }
-  if (qrRecord.user_id === authUser.id) {
-    return {
-      status: 400,
-      body: {
-        success: false,
-        code: "SELF_CONNECTION",
-        message: "This is your own Udhar pairing QR. You cannot pair with yourself."
-      }
-    };
-  }
-  const userRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified&limit=1`
-  );
-  if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
-    return {
-      status: 404,
-      body: { success: false, code: "NOT_FOUND", message: "Account not found." }
-    };
-  }
-  const owner = userRes.data[0];
-  if (owner.status !== "active" || owner.deletion_status && owner.deletion_status !== "none") {
-    return {
-      status: 403,
-      body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is deactivated or unavailable." }
-    };
-  }
-  if (await isBlockedBetween(authUser.id, owner.id)) {
-    return {
-      status: 403,
-      body: { success: false, code: "BLOCKED", message: "You cannot connect with this account." }
-    };
-  }
-  const connRes = await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(owner.id)}),and(user_a_id.eq.${encodeURIComponent(owner.id)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
-  );
-  const connRows = connRes.ok && Array.isArray(connRes.data) ? connRes.data : [];
-  const isAlreadyConnected = connRows.some((c) => c.status === "connected");
-  const outgoingPending = connRows.find((c) => c.user_a_id === authUser.id && c.status === "pending");
-  const incomingPending = connRows.find((c) => c.user_b_id === authUser.id && c.status === "pending");
-  const connectionStatus = isAlreadyConnected ? "connected" : outgoingPending ? "pending" : incomingPending ? "incoming_pending" : "none";
-  return {
-    status: 200,
-    body: {
-      success: true,
-      owner: {
-        id: owner.id,
-        displayName: owner.full_name || "My Money User",
-        fullName: owner.full_name || "My Money User",
-        accountIndicator: "My Money Manager Account",
-        emailMasked: isAlreadyConnected ? maskEmailForPrivacy(owner.email) : void 0,
-        phoneMasked: isAlreadyConnected ? maskPhoneForPrivacy(owner.phone) : null,
-        avatarUrl: owner.avatar_url || null,
-        isVerified: Boolean(owner.is_verified ?? true)
-      },
-      pairingToken: qrRecord.pairing_token,
-      pairingCode: qrRecord.pairing_code,
-      isAlreadyConnected,
-      connectionStatus,
-      requestId: outgoingPending?.id || incomingPending?.id || null
-    }
-  };
-}
-async function connectQrRest(authUser, body) {
-  const resolved = await resolveQrRest(authUser, body);
-  if (resolved.status !== 200 || !resolved.body.success) {
-    return resolved;
-  }
-  const targetId = resolved.body.owner.id;
-  const relationshipType = (body.relationshipType || "Friend").trim();
-  const connResult = await connectUserRest(authUser, {
-    targetUserId: targetId,
-    relationshipType,
-    requestedVia: "qr"
-  });
-  return connResult;
-}
-async function getUdharTransactionsRest(authUser) {
-  const [txRes, contactsRes] = await Promise.all([
-    sbRest(
-      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&order=transaction_date.desc,created_at.desc`
-    ),
-    sbRest(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=name,linked_user_id`
-    )
-  ]);
-  if (!txRes.ok) {
-    return { status: 503, body: { success: false, message: "Unable to load Udhar ledger right now." } };
-  }
-  const rawTxs = txRes.data || [];
-  const linkIds = Array.from(new Set(rawTxs.map((t2) => t2.link_id).filter(Boolean)));
-  const txIds = rawTxs.map((t2) => t2.id).filter(Boolean);
-  let repaymentsRows = [];
-  let historyRows = [];
-  if (linkIds.length > 0) {
-    const inLinks = linkIds.map((id) => `"${String(id).replace(/"/g, "")}"`).join(",");
-    const [repRes, histRes] = await Promise.all([
-      sbRest(
-        `udhar_repayments?link_id=in.(${encodeURIComponent(inLinks)})&order=repayment_date.desc,created_at.desc`
-      ),
-      sbRest(
-        `udhar_edit_history?link_id=in.(${encodeURIComponent(inLinks)})&order=created_at.desc`
-      )
-    ]);
-    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data;
-    if (histRes.ok && Array.isArray(histRes.data)) historyRows = histRes.data;
-  }
-  const allUserIds = [
-    ...rawTxs.map((t2) => t2.counterpart_user_id),
-    ...repaymentsRows.map((r2) => r2.recorded_by_user_id),
-    ...historyRows.map((h2) => h2.edited_by_user_id)
-  ].filter(Boolean);
-  const userMap = await fetchUsersByIds(allUserIds);
-  const repByLink = /* @__PURE__ */ new Map();
-  const repByTx = /* @__PURE__ */ new Map();
-  for (const r2 of repaymentsRows) {
-    if (r2.link_id) {
-      if (!repByLink.has(r2.link_id)) repByLink.set(r2.link_id, []);
-      repByLink.get(r2.link_id).push(r2);
-    }
-    if (r2.udhar_id) {
-      if (!repByTx.has(r2.udhar_id)) repByTx.set(r2.udhar_id, []);
-      repByTx.get(r2.udhar_id).push(r2);
-    }
-  }
-  const histByLink = /* @__PURE__ */ new Map();
-  for (const h2 of historyRows) {
-    if (!histByLink.has(h2.link_id)) histByLink.set(h2.link_id, []);
-    histByLink.get(h2.link_id).push(h2);
-  }
-  const transactions = rawTxs.map((row) => {
-    const reps = row.link_id && repByLink.get(row.link_id) || repByTx.get(row.id) || [];
-    const hist = row.link_id && histByLink.get(row.link_id) || [];
-    return enrichTransactionRow(row, userMap, reps, hist);
-  });
-  const contacts = contactsRes.ok && Array.isArray(contactsRes.data) ? contactsRes.data : [];
-  const summary = calculatePeopleDashboardSummary(transactions, contacts);
-  return {
-    status: 200,
-    body: {
-      success: true,
-      transactions,
-      summary,
-      count: txIds.length
-    }
-  };
-}
-async function createUdharTransactionRest(authUser, body) {
-  const counterpartName = (body.counterpart_name || body.person_name || "").trim();
-  const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || "").trim() || null;
-  const direction = body.direction;
-  const amount = roundMoney(parseFloat(body.amount));
-  const txDate = body.transaction_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const dueDate = body.due_date || body.dueDate || null;
-  const plainNotes = (body.notes || "").trim();
-  const category = (body.category || "Personal Loan").trim();
-  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
-  const description = (body.description || "").trim();
-  const attachmentUrl = body.attachment_url || null;
-  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
-  if (!counterpartName) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
-  if (!["gave", "took"].includes(direction)) {
-    return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { status: 400, body: { success: false, message: "Amount must be greater than \u20B90." } };
-  }
-  if (idempotencyKey) {
-    const dupCheck = await sbRest(
-      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
-    );
-    if (dupCheck.ok && dupCheck.data && dupCheck.data.length > 0) {
-      const existing = dupCheck.data[0];
-      return {
-        status: 200,
-        body: {
-          success: true,
-          deduplicated: true,
-          message: "Udhar already recorded.",
-          transaction: enrichTransactionRow(existing, /* @__PURE__ */ new Map(), [], []),
-          isLinked: Boolean(existing.counterpart_user_id)
-        }
-      };
-    }
-  }
-  let registeredUser = null;
-  if (counterpartUserId && counterpartUserId !== authUser.id) {
-    const uRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`
-    );
-    if (uRes.ok && uRes.data && uRes.data.length > 0) {
-      const u = uRes.data[0];
-      if (!u.deletion_status || u.deletion_status === "none") {
-        if (await isBlockedBetween(authUser.id, u.id)) {
-          return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
-        }
-        registeredUser = u;
-      }
-    }
-  }
-  const packedNotes = packStructuredNote(plainNotes, {
-    category,
-    payment_method: paymentMethod,
-    description: description || void 0,
-    attachment_url: attachmentUrl || void 0
-  });
-  const linkId = crypto15.randomUUID();
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (registeredUser) {
-    const counterpartDirection = direction === "gave" ? "took" : "gave";
-    const userARow = {
-      link_id: linkId,
-      user_id: authUser.id,
-      counterpart_user_id: registeredUser.id,
-      counterpart_name: registeredUser.full_name,
-      direction,
-      original_amount: amount,
-      current_balance: amount,
-      paid_amount: 0,
-      transaction_date: txDate,
-      due_date: dueDate || null,
-      notes: packedNotes,
-      attachment_url: attachmentUrl,
-      status: "confirmed",
-      confirmation_status: "confirmed",
-      is_initiator: true,
-      idempotency_key: idempotencyKey,
-      created_at: nowIso,
-      updated_at: nowIso
-    };
-    const userBRow = {
-      link_id: linkId,
-      user_id: registeredUser.id,
-      counterpart_user_id: authUser.id,
-      counterpart_name: authUser.full_name,
-      direction: counterpartDirection,
-      original_amount: amount,
-      current_balance: amount,
-      paid_amount: 0,
-      transaction_date: txDate,
-      due_date: dueDate || null,
-      notes: packedNotes,
-      attachment_url: attachmentUrl,
-      status: "confirmed",
-      confirmation_status: "confirmed",
-      is_initiator: false,
-      idempotency_key: idempotencyKey ? `${idempotencyKey}:counterpart` : null,
-      created_at: nowIso,
-      updated_at: nowIso
-    };
-    const insertRes = await sbRest("udhar_transactions", {
-      method: "POST",
-      prefer: "return=representation",
-      body: [userARow, userBRow]
-    });
-    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
-      return { status: 500, body: { success: false, message: insertRes.error || "Failed to create shared Udhar." } };
-    }
-    const createdUserA = insertRes.data.find((r2) => r2.user_id === authUser.id) || insertRes.data[0];
-    await ensureConnectionAndReciprocalContactsRest(authUser, registeredUser, "Friend");
-    await createTargetedNotificationRest({
-      targetUserId: registeredUser.id,
-      actorUserId: authUser.id,
-      title: `New Shared Udhar from ${authUser.full_name}`,
-      message: `${authUser.full_name} recorded an Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}).`,
-      type: "udhar_created",
-      relatedEntityId: linkId
-    });
-    const userMap = /* @__PURE__ */ new Map([[registeredUser.id, registeredUser]]);
-    return {
-      status: 201,
-      body: {
-        success: true,
-        message: `Shared Udhar recorded with ${registeredUser.full_name}. Synced to both accounts.`,
-        transaction: enrichTransactionRow(createdUserA, userMap, [], []),
-        isLinked: true
-      }
-    };
-  } else {
-    const singleRow = {
-      link_id: linkId,
-      user_id: authUser.id,
-      counterpart_user_id: null,
-      counterpart_name: counterpartName,
-      direction,
-      original_amount: amount,
-      current_balance: amount,
-      paid_amount: 0,
-      transaction_date: txDate,
-      due_date: dueDate || null,
-      notes: packedNotes,
-      attachment_url: attachmentUrl,
-      status: "confirmed",
-      confirmation_status: "confirmed",
-      is_initiator: true,
-      idempotency_key: idempotencyKey,
-      created_at: nowIso,
-      updated_at: nowIso
-    };
-    const insertRes = await sbRest("udhar_transactions", {
-      method: "POST",
-      prefer: "return=representation",
-      body: singleRow
-    });
-    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
-      return { status: 500, body: { success: false, message: insertRes.error || "Failed to record local Udhar." } };
-    }
-    await sbRest("udhar_contacts?on_conflict=user_id,name", {
-      method: "POST",
-      prefer: "resolution=ignore-duplicates,return=minimal",
-      body: {
-        user_id: authUser.id,
-        name: counterpartName,
-        relationship_type: "Friend",
-        linked_user_id: null,
-        updated_at: nowIso
-      }
-    }).catch(() => {
-    });
-    return {
-      status: 201,
-      body: {
-        success: true,
-        message: `Local Udhar recorded for ${counterpartName}.`,
-        transaction: enrichTransactionRow(insertRes.data[0], /* @__PURE__ */ new Map(), [], []),
-        isLinked: false
-      }
-    };
-  }
-}
-async function confirmUdharTransactionRest(authUser, txId) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: { status: "confirmed", confirmation_status: "confirmed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
-  });
-  return { status: 200, body: { success: true, message: "Transaction confirmed on both accounts." } };
-}
-async function disputeUdharTransactionRest(authUser, txId, reason) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      status: "disputed",
-      confirmation_status: "disputed",
-      dispute_reason: reason,
-      disputed_at: nowIso,
-      disputed_by: authUser.id,
-      updated_at: nowIso
-    }
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Disputed by ${authUser.full_name}`,
-      message: `${authUser.full_name} flagged an Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}: "${reason}"`,
-      type: "udhar_disputed",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return { status: 200, body: { success: true, message: "Transaction marked as disputed." } };
-}
-async function repayUdharRest(authUser, txId, body) {
-  const repayAmount = roundMoney(parseFloat(body.amount));
-  const repayDate = body.repayment_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const repayTime = (body.repayment_time || body.repaymentTime || "").trim();
-  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
-  const transactionRef = (body.transaction_ref || body.transactionRef || "").trim();
-  const attachmentUrl = (body.attachment_url || body.attachmentUrl || "").trim();
-  const plainNotes = (body.notes || "").trim();
-  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (idempotencyKey) {
-    const dupRep = await sbRest(
-      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
-    );
-    if (dupRep.ok && dupRep.data && dupRep.data.length > 0) {
-      return {
-        status: 200,
-        body: {
-          success: true,
-          deduplicated: true,
-          repayment: dupRep.data[0],
-          isPendingConfirmation: dupRep.data[0].status === "pending_confirmation",
-          remainingBalance: parseFloat(tx.current_balance) || 0,
-          isSettled: tx.status === "settled",
-          message: "Repayment already recorded."
-        }
-      };
-    }
-  }
-  const existingRepsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
-  );
-  const existingReps = existingRepsRes.ok && Array.isArray(existingRepsRes.data) ? existingRepsRes.data : [];
-  const confirmedPaid = roundMoney(
-    existingReps.filter((r2) => r2.status === "confirmed").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const pendingRepayments = roundMoney(
-    existingReps.filter((r2) => r2.status === "pending_confirmation").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const calc = calculateRepaymentApplication({
-    originalAmount: parseFloat(tx.original_amount) || 0,
-    confirmedPaidAmount: confirmedPaid,
-    pendingRepaymentsAmount: pendingRepayments,
-    repayAmount,
-    isShared: Boolean(tx.counterpart_user_id),
-    actorRole: tx.direction === "gave" ? "lender" : "borrower",
-    udharStatus: tx.status
-  });
-  if (!calc.valid) {
-    return { status: 400, body: { success: false, message: calc.error || "Invalid repayment." } };
-  }
-  const packedNote = packStructuredNote(plainNotes, {
-    transaction_ref: transactionRef || void 0,
-    repayment_time: repayTime || void 0,
-    attachment_url: attachmentUrl || void 0
-  });
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const insertRep = await sbRest("udhar_repayments", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      link_id: tx.link_id,
-      udhar_id: tx.id,
-      recorded_by_user_id: authUser.id,
-      amount: repayAmount,
-      repayment_date: repayDate,
-      payment_method: paymentMethod,
-      notes: packedNote,
-      status: calc.repaymentStatus,
-      idempotency_key: idempotencyKey,
-      confirmed_at: calc.repaymentStatus === "confirmed" ? nowIso : null,
-      confirmed_by: calc.repaymentStatus === "confirmed" ? authUser.id : null
-    }
-  });
-  if (!insertRep.ok || !insertRep.data || insertRep.data.length === 0) {
-    return { status: 500, body: { success: false, message: insertRep.error || "Failed to record repayment." } };
-  }
-  if (calc.repaymentStatus === "confirmed") {
-    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-      method: "PATCH",
-      body: {
-        current_balance: calc.nextRemainingAmount,
-        paid_amount: calc.nextPaidAmount,
-        status: calc.nextUdharStatus,
-        settled_at: calc.isSettled ? nowIso : tx.settled_at,
-        updated_at: nowIso
-      }
-    });
-  }
-  if (tx.counterpart_user_id) {
-    if (calc.repaymentStatus === "pending_confirmation") {
-      await createTargetedNotificationRest({
-        targetUserId: tx.counterpart_user_id,
-        actorUserId: authUser.id,
-        title: `Repayment Confirmation Needed: ${authUser.full_name}`,
-        message: `${authUser.full_name} reported a repayment of \u20B9${repayAmount.toLocaleString("en-IN")} via ${paymentMethod}. Please confirm receipt.`,
-        type: "repayment_pending",
-        relatedEntityId: tx.link_id
-      });
-    } else {
-      await createTargetedNotificationRest({
-        targetUserId: tx.counterpart_user_id,
-        actorUserId: authUser.id,
-        title: calc.isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
-        message: `${authUser.full_name} confirmed a repayment of \u20B9${repayAmount.toLocaleString("en-IN")}. Remaining balance: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
-        type: calc.isSettled ? "settlement" : "repayment",
-        relatedEntityId: tx.link_id
-      });
-    }
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      repayment: insertRep.data[0],
-      isPendingConfirmation: calc.repaymentStatus === "pending_confirmation",
-      remainingBalance: calc.nextRemainingAmount,
-      isSettled: calc.isSettled,
-      message: calc.repaymentStatus === "pending_confirmation" ? `Payment of \u20B9${repayAmount.toLocaleString("en-IN")} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.` : calc.isSettled ? "Full repayment recorded! Udhar is now completely settled." : `Repayment of \u20B9${repayAmount.toLocaleString("en-IN")} recorded. Remaining: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`
-    }
-  };
-}
-async function confirmRepaymentRest(authUser, repaymentId) {
-  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
-  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  const rep = repRes.data[0];
-  if (rep.status === "confirmed") {
-    return { status: 400, body: { success: false, message: "This repayment is already confirmed." } };
-  }
-  const txRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.direction !== "gave") {
-    return { status: 403, body: { success: false, message: "Only the lender can confirm receipt of repayment." } };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
-    method: "PATCH",
-    body: { status: "confirmed", confirmed_at: nowIso, confirmed_by: authUser.id, rejection_reason: null }
-  });
-  const allRepsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
-  );
-  const totalConfirmed = roundMoney(
-    (allRepsRes.data || []).reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const origAmt = parseFloat(tx.original_amount) || 0;
-  const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmed));
-  const isSettled = newBalance <= 0.01;
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      current_balance: isSettled ? 0 : newBalance,
-      paid_amount: isSettled ? origAmt : totalConfirmed,
-      status: isSettled ? "settled" : "confirmed",
-      settled_at: isSettled ? nowIso : tx.settled_at,
-      updated_at: nowIso
-    }
-  });
-  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
-    await createTargetedNotificationRest({
-      targetUserId: rep.recorded_by_user_id,
-      actorUserId: authUser.id,
-      title: `Repayment Confirmed by ${authUser.full_name}`,
-      message: `${authUser.full_name} confirmed receiving \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Remaining balance: \u20B9${(isSettled ? 0 : newBalance).toLocaleString("en-IN")}.`,
-      type: "repayment_confirmed",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} confirmed!`,
-      remainingBalance: isSettled ? 0 : newBalance,
-      isSettled
-    }
-  };
-}
-async function rejectRepaymentRest(authUser, repaymentId, reason) {
-  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
-  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  const rep = repRes.data[0];
-  const txRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.direction !== "gave") {
-    return { status: 403, body: { success: false, message: "Only the lender can reject a repayment claim." } };
-  }
-  await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
-    method: "PATCH",
-    body: {
-      status: "rejected",
-      rejection_reason: reason,
-      confirmed_at: (/* @__PURE__ */ new Date()).toISOString(),
-      confirmed_by: authUser.id
-    }
-  });
-  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
-    await createTargetedNotificationRest({
-      targetUserId: rep.recorded_by_user_id,
-      actorUserId: authUser.id,
-      title: "Repayment Claim Rejected",
-      message: `${authUser.full_name} rejected your payment claim of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}: "${reason}".`,
-      type: "repayment_rejected",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return { status: 200, body: { success: true, message: "Repayment claim rejected.", rejectionReason: reason } };
-}
-async function editUdharRest(authUser, txId, body) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const repsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
-  );
-  const confirmedPaid = roundMoney(
-    (repsRes.data || []).reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
-  const editReason = (body.reason_for_edit || body.reason || body.edit_reason || "").trim();
-  const validation = validateUdharEdit(
-    {
-      original_amount: parseFloat(tx.original_amount) || 0,
-      paid_amount: confirmedPaid,
-      status: tx.status,
-      notes: prevPlainNote,
-      transaction_date: tx.transaction_date,
-      due_date: tx.due_date,
-      category: prevMeta.category || "Personal Loan",
-      payment_method: prevMeta.payment_method || "UPI",
-      description: prevMeta.description || null
-    },
-    {
-      amount: body.amount !== void 0 ? parseFloat(body.amount) : void 0,
-      notes: body.notes !== void 0 ? (body.notes || "").trim() : void 0,
-      transaction_date: body.transaction_date || body.date || void 0,
-      due_date: body.due_date !== void 0 ? body.due_date : body.dueDate !== void 0 ? body.dueDate : void 0,
-      category: body.category !== void 0 ? body.category : void 0,
-      payment_method: body.payment_method !== void 0 ? body.payment_method : void 0,
-      description: body.description !== void 0 ? body.description : void 0,
-      reason_for_edit: editReason
-    }
-  );
-  if (!validation.valid) {
-    return { status: 400, body: { success: false, message: validation.error || "Invalid edit." } };
-  }
-  const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
-  const nextPackedNotes = packStructuredNote(nextPlainNote, {
-    category: body.category !== void 0 ? body.category : prevMeta.category,
-    payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
-    description: body.description !== void 0 ? body.description : prevMeta.description,
-    attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url
-  });
-  const nextDate = body.transaction_date || body.date || tx.transaction_date;
-  const nextDueDate = body.due_date !== void 0 ? body.due_date || null : body.dueDate !== void 0 ? body.dueDate || null : tx.due_date;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest("udhar_edit_history", {
-    method: "POST",
-    prefer: "return=minimal",
-    body: {
-      udhar_id: tx.id,
-      link_id: tx.link_id,
-      edited_by_user_id: authUser.id,
-      previous_amount: parseFloat(tx.original_amount) || 0,
-      new_amount: validation.nextOriginalAmount,
-      previous_notes: prevPlainNote || null,
-      new_notes: nextPlainNote || null,
-      previous_date: tx.transaction_date,
-      new_date: nextDate,
-      previous_due_date: tx.due_date || null,
-      new_due_date: nextDueDate,
-      reason_for_edit: editReason
-    }
-  });
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      original_amount: validation.nextOriginalAmount,
-      current_balance: validation.nextRemainingAmount,
-      paid_amount: confirmedPaid,
-      status: validation.nextStatus,
-      notes: nextPackedNotes,
-      transaction_date: nextDate,
-      due_date: nextDueDate,
-      last_edited_at: nowIso,
-      last_edited_by: authUser.id,
-      edit_reason: editReason,
-      updated_at: nowIso
-    }
-  });
-  if (tx.counterpart_user_id) {
-    const targetUserId = tx.user_id === authUser.id ? tx.counterpart_user_id : tx.user_id;
-    await createTargetedNotificationRest({
-      targetUserId,
-      actorUserId: authUser.id,
-      title: `Udhar Edited by ${authUser.full_name}`,
-      message: `${authUser.full_name} updated Udhar details (${editReason}). Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
-      type: "udhar_edited",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Udhar updated across both accounts. Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
-      remainingBalance: validation.nextRemainingAmount,
-      isSettled: validation.isSettled,
-      changes: validation.changes
-    }
-  };
-}
-async function settleUdharRest(authUser, txId, body) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.counterpart_user_id && tx.direction === "took") {
-    return {
-      status: 403,
-      body: {
-        success: false,
-        message: "Only the lender can mark a shared Udhar as settled. As the borrower, record a repayment for lender confirmation."
-      }
-    };
-  }
-  const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
-  if (tx.status === "settled" || currentBal <= 0.01) {
-    return { status: 400, body: { success: false, message: "This transaction is already settled." } };
-  }
-  if (tx.status === "cancelled") {
-    return { status: 400, body: { success: false, message: "Cannot settle a cancelled transaction." } };
-  }
-  const settleDate = body.settlement_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const paymentMethod = (body.payment_method || "UPI").trim();
-  const notes = (body.notes || "Settled in full").trim();
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest("udhar_repayments", {
-    method: "POST",
-    prefer: "return=minimal",
-    body: {
-      link_id: tx.link_id,
-      udhar_id: tx.id,
-      recorded_by_user_id: authUser.id,
-      amount: currentBal,
-      repayment_date: settleDate,
-      payment_method: paymentMethod,
-      notes,
-      status: "confirmed",
-      confirmed_at: nowIso,
-      confirmed_by: authUser.id
-    }
-  });
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      current_balance: 0,
-      paid_amount: parseFloat(tx.original_amount) || 0,
-      status: "settled",
-      settled_at: nowIso,
-      updated_at: nowIso
-    }
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Settled with ${authUser.full_name}`,
-      message: `${authUser.full_name} marked the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")} as fully settled.`,
-      type: "settlement",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Udhar with ${tx.counterpart_name} settled in full.`,
-      isSettled: true
-    }
-  };
-}
-async function cancelUdharRest(authUser, txId) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&select=status`);
-  const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data : [];
-  const guard = canCancelUdhar({
-    status: tx.status,
-    paid_amount: tx.paid_amount,
-    repayments
-  });
-  if (!guard.allowed) {
-    return { status: 409, body: { success: false, message: guard.reason } };
-  }
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: { status: "cancelled", current_balance: 0, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Cancelled by ${authUser.full_name}`,
-      message: `${authUser.full_name} cancelled the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
-      type: "udhar_cancelled",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: { success: true, message: "Udhar cancelled successfully across connected accounts." }
-  };
-}
-async function getUdharHistoryRest(authUser, txId) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const [repsRes, histRes] = await Promise.all([
-    sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),
-    sbRest(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`)
-  ]);
-  const reps = repsRes.data || [];
-  const hist = histRes.data || [];
-  const userIds = [
-    tx.counterpart_user_id,
-    ...reps.map((r2) => r2.recorded_by_user_id),
-    ...hist.map((h2) => h2.edited_by_user_id)
-  ].filter(Boolean);
-  const userMap = await fetchUsersByIds(userIds);
-  const enriched = enrichTransactionRow(tx, userMap, reps, hist);
-  return {
-    status: 200,
-    body: {
-      success: true,
-      transaction: enriched,
-      editHistory: enriched.edit_history,
-      repayments: enriched.repayments
-    }
-  };
-}
-
 // server/api.ts
-async function parseJsonBody4(req) {
+async function parseJsonBody5(req) {
   if (req.body !== void 0 && req.body !== null) {
     if (typeof req.body === "object") {
       return req.body;
@@ -87959,7 +88838,7 @@ async function parseJsonBody4(req) {
     req.on("error", (err) => reject(err));
   });
 }
-function sendJson4(res, statusCode, data, headers = {}) {
+function sendJson5(res, statusCode, data, headers = {}) {
   if (typeof res.status === "function" && typeof res.json === "function") {
     for (const [k, v] of Object.entries(headers)) {
       res.setHeader(k, v);
@@ -88084,7 +88963,7 @@ async function handleApiRequest(req, res) {
     return false;
   }
   if (!isDatabaseAvailable() && (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/profile") || pathname.startsWith("/api/admin/users"))) {
-    sendJson4(res, 503, {
+    sendJson5(res, 503, {
       success: false,
       message: "PostgreSQL database is not connected in this preview environment."
     });
@@ -88128,7 +89007,7 @@ async function handleApiRequest(req, res) {
     return true;
   }
   if (pathname === "/api/health" && method === "GET") {
-    sendJson4(res, 200, {
+    sendJson5(res, 200, {
       success: true,
       status: "ok",
       databaseAvailable: isDatabaseAvailable(),
@@ -88163,10 +89042,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/auth/register" && method === "POST") {
       const rate = checkRateLimit(`register:${clientIp}`, 10, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many registration attempts. Please wait." });
+        sendJson5(res, 429, { success: false, message: "Too many registration attempts. Please wait." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const fullName = (body.fullName || body.name || "").trim();
       const rawEmail = (body.email || "").trim();
       const phone = (body.phone || "").trim();
@@ -88180,13 +89059,13 @@ async function handleApiRequest(req, res) {
       if (!passVal.isValid) errors2.push(...passVal.errors);
       if (password !== confirmPassword) errors2.push("Passwords do not match.");
       if (errors2.length > 0) {
-        sendJson4(res, 400, { success: false, message: errors2[0], errors: errors2 });
+        sendJson5(res, 400, { success: false, message: errors2[0], errors: errors2 });
         return true;
       }
       const email = normalizeEmail(rawEmail);
       const dup = await query("SELECT id FROM public.app_users WHERE LOWER(email) = $1", [email]);
       if (dup.rows.length > 0) {
-        sendJson4(res, 409, {
+        sendJson5(res, 409, {
           success: false,
           message: "An account with this email address already exists. Please log in or reset your password."
         });
@@ -88221,7 +89100,7 @@ async function handleApiRequest(req, res) {
         actorRole: "user",
         ipAddress: clientIp
       });
-      sendJson4(res, 201, {
+      sendJson5(res, 201, {
         success: true,
         message: "Account created successfully!",
         user: sanitizeUserOutput(newUser),
@@ -88230,32 +89109,32 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/login" && method === "POST") {
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const email = normalizeEmail(body.email || "");
       const password = body.password || "";
       const rememberMe = Boolean(body.rememberMe);
       const rate = checkRateLimit(`login_ip:${clientIp}`, 25, 5 * 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, {
+        sendJson5(res, 429, {
           success: false,
           message: `Too many login attempts from this network. Try again in ${rate.retryAfterSec} seconds.`
         });
         return true;
       }
       if (!email || !password) {
-        sendJson4(res, 400, { success: false, message: "Email and password are required." });
+        sendJson5(res, 400, { success: false, message: "Email and password are required." });
         return true;
       }
       const userRes = await query("SELECT * FROM public.app_users WHERE LOWER(email) = $1", [email]);
       if (userRes.rows.length === 0) {
         await logSecurityEvent("LOGIN_FAILED_UNKNOWN_EMAIL", { userEmail: email, ipAddress: clientIp });
-        sendJson4(res, 401, { success: false, message: "Invalid email or password." });
+        sendJson5(res, 401, { success: false, message: "Invalid email or password." });
         return true;
       }
       const user = userRes.rows[0];
       if (user.locked_until && new Date(user.locked_until) > /* @__PURE__ */ new Date()) {
         const remainingSec = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 1e3);
-        sendJson4(res, 429, {
+        sendJson5(res, 429, {
           success: false,
           message: `Account is temporarily locked due to multiple failed login attempts. Try again in ${Math.ceil(remainingSec / 60)} minute(s).`
         });
@@ -88263,14 +89142,14 @@ async function handleApiRequest(req, res) {
       }
       if (user.status === "suspended") {
         await logSecurityEvent("LOGIN_BLOCKED_SUSPENDED", { userId: user.id, userEmail: email, ipAddress: clientIp });
-        sendJson4(res, 403, {
+        sendJson5(res, 403, {
           success: false,
           message: "Your account has been suspended by an administrator. Please contact security support."
         });
         return true;
       }
       if (user.status === "deactivated") {
-        sendJson4(res, 403, {
+        sendJson5(res, 403, {
           success: false,
           message: "This account has been deactivated. Please contact support to reactivate."
         });
@@ -88286,7 +89165,7 @@ async function handleApiRequest(req, res) {
         }
         await query(lockSql, lockParams);
         await logSecurityEvent("LOGIN_FAILED_BAD_PASSWORD", { userId: user.id, userEmail: email, ipAddress: clientIp });
-        sendJson4(res, 401, { success: false, message: "Invalid email or password." });
+        sendJson5(res, 401, { success: false, message: "Invalid email or password." });
         return true;
       }
       await query(
@@ -88304,7 +89183,7 @@ async function handleApiRequest(req, res) {
         actorRole: user.role,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Logged in successfully.",
         user: sanitizeUserOutput(user),
@@ -88322,13 +89201,13 @@ async function handleApiRequest(req, res) {
       if (authUser) {
         await logSecurityEvent("USER_LOGOUT", { userId: authUser.id, userEmail: authUser.email, ipAddress: clientIp });
       }
-      sendJson4(res, 200, { success: true, message: "Logged out successfully." });
+      sendJson5(res, 200, { success: true, message: "Logged out successfully." });
       return true;
     }
     if (pathname === "/api/auth/logout-all-devices" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       await revokeAllUserSessions(authUser.id);
@@ -88338,16 +89217,16 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, { success: true, message: "All active sessions on all devices have been revoked." });
+      sendJson5(res, 200, { success: true, message: "All active sessions on all devices have been revoked." });
       return true;
     }
     if (pathname === "/api/auth/me" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Not authenticated or session expired." });
+        sendJson5(res, 401, { success: false, message: "Not authenticated or session expired." });
         return true;
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         user: sanitizeUserOutput(authUser)
       });
@@ -88357,7 +89236,7 @@ async function handleApiRequest(req, res) {
       try {
         const authUser = await authenticateRequest(req);
         if (!authUser) {
-          sendJson4(res, 401, { success: false, message: "Authentication required." });
+          sendJson5(res, 401, { success: false, message: "Authentication required." });
           return true;
         }
         let activeSessionsCount = 1;
@@ -88371,7 +89250,7 @@ async function handleApiRequest(req, res) {
         } catch {
           activeSessionsCount = 1;
         }
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           profile: {
             ...sanitizeUserOutput(authUser),
@@ -88381,26 +89260,26 @@ async function handleApiRequest(req, res) {
         return true;
       } catch (err) {
         console.error("Error in GET /api/profile:", err);
-        sendJson4(res, 500, { success: false, message: err.message || "Failed to retrieve user profile." });
+        sendJson5(res, 500, { success: false, message: err.message || "Failed to retrieve user profile." });
         return true;
       }
     }
     if (pathname === "/api/profile" && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
       const phone = (body.phone !== void 0 ? body.phone : authUser.phone || "").trim();
       const avatarUrl = body.avatarUrl !== void 0 ? body.avatarUrl : authUser.avatar_url;
       if (!fullName || fullName.length < 2) {
-        sendJson4(res, 400, { success: false, message: "Full name must be at least 2 characters." });
+        sendJson5(res, 400, { success: false, message: "Full name must be at least 2 characters." });
         return true;
       }
       if (phone && !validatePhone(phone)) {
-        sendJson4(res, 400, { success: false, message: "Please enter a valid phone number (10-15 digits)." });
+        sendJson5(res, 400, { success: false, message: "Please enter a valid phone number (10-15 digits)." });
         return true;
       }
       const updatedRes = await query(
@@ -88415,7 +89294,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Profile updated successfully.",
         user: sanitizeUserOutput(updatedRes.rows[0])
@@ -88425,15 +89304,15 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/profile/change-password" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const currentPassword = body.currentPassword || "";
       const newPassword = body.newPassword || "";
       const confirmNewPassword = body.confirmNewPassword || "";
       if (!currentPassword) {
-        sendJson4(res, 400, { success: false, message: "Current password is required." });
+        sendJson5(res, 400, { success: false, message: "Current password is required." });
         return true;
       }
       const userRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -88445,20 +89324,20 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           ipAddress: clientIp
         });
-        sendJson4(res, 400, { success: false, message: "Current password is incorrect." });
+        sendJson5(res, 400, { success: false, message: "Current password is incorrect." });
         return true;
       }
       const passVal = validatePasswordPolicy(newPassword);
       if (!passVal.isValid) {
-        sendJson4(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
+        sendJson5(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
         return true;
       }
       if (newPassword !== confirmNewPassword) {
-        sendJson4(res, 400, { success: false, message: "New password and confirm password do not match." });
+        sendJson5(res, 400, { success: false, message: "New password and confirm password do not match." });
         return true;
       }
       if (newPassword === currentPassword) {
-        sendJson4(res, 400, { success: false, message: "New password cannot be the same as your current password." });
+        sendJson5(res, 400, { success: false, message: "New password cannot be the same as your current password." });
         return true;
       }
       const newHash = await hashPassword(newPassword);
@@ -88485,7 +89364,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Your password was changed successfully. A security confirmation email was dispatched."
       });
@@ -88494,20 +89373,20 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/profile/delete-account" && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const password = body.password || "";
       if (!password) {
-        sendJson4(res, 400, { success: false, message: "Password confirmation is required to delete your account." });
+        sendJson5(res, 400, { success: false, message: "Password confirmation is required to delete your account." });
         return true;
       }
       const userRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
       const currentHash = userRes.rows[0]?.password_hash;
       const isCurrentValid = await verifyPassword(password, currentHash);
       if (!isCurrentValid) {
-        sendJson4(res, 400, { success: false, message: "Incorrect password. Account deletion aborted." });
+        sendJson5(res, 400, { success: false, message: "Incorrect password. Account deletion aborted." });
         return true;
       }
       await query("DELETE FROM public.transactions WHERE user_id = $1", [authUser.id]).catch(() => {
@@ -88521,22 +89400,22 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, { success: true, message: "Your account and all associated data have been permanently deleted." });
+      sendJson5(res, 200, { success: true, message: "Your account and all associated data have been permanently deleted." });
       return true;
     }
     if (pathname === "/api/auth/forgot-password" && method === "POST") {
       const rate = checkRateLimit(`forgot_pass:${clientIp}`, 5, 15 * 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, {
+        sendJson5(res, 429, {
           success: false,
           message: "Too many reset requests. Please wait a few minutes before trying again."
         });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const email = normalizeEmail(body.email || "");
       if (!validateEmail(email)) {
-        sendJson4(res, 400, { success: false, message: "Please provide a valid email address." });
+        sendJson5(res, 400, { success: false, message: "Please provide a valid email address." });
         return true;
       }
       const userRes = await query("SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1", [email]);
@@ -88546,12 +89425,12 @@ async function handleApiRequest(req, res) {
       };
       if (userRes.rows.length === 0) {
         await logSecurityEvent("FORGOT_PASSWORD_UNKNOWN_EMAIL", { userEmail: email, ipAddress: clientIp });
-        sendJson4(res, 200, standardResponse);
+        sendJson5(res, 200, standardResponse);
         return true;
       }
       const user = userRes.rows[0];
       if (user.status !== "active") {
-        sendJson4(res, 200, standardResponse);
+        sendJson5(res, 200, standardResponse);
         return true;
       }
       const rawToken = generateCryptoToken(32);
@@ -88571,7 +89450,7 @@ async function handleApiRequest(req, res) {
         userEmail: user.email,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         ...standardResponse,
         // In local dev, include resetLink for instant testing convenience
         resetLink: process.env.NODE_ENV !== "production" ? resetLink : void 0
@@ -88579,10 +89458,10 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/verify-reset-token" && method === "POST") {
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const rawToken = body.token || "";
       if (!rawToken) {
-        sendJson4(res, 400, { valid: false, message: "Reset token is missing." });
+        sendJson5(res, 400, { valid: false, message: "Reset token is missing." });
         return true;
       }
       const tokenHash = hashToken(rawToken);
@@ -88594,19 +89473,19 @@ async function handleApiRequest(req, res) {
         [tokenHash]
       );
       if (resDb.rows.length === 0) {
-        sendJson4(res, 200, { valid: false, message: "Invalid reset token." });
+        sendJson5(res, 200, { valid: false, message: "Invalid reset token." });
         return true;
       }
       const record = resDb.rows[0];
       if (record.used) {
-        sendJson4(res, 200, { valid: false, message: "This reset token has already been used." });
+        sendJson5(res, 200, { valid: false, message: "This reset token has already been used." });
         return true;
       }
       if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) {
-        sendJson4(res, 200, { valid: false, message: "This password reset link has expired. Please request a new one." });
+        sendJson5(res, 200, { valid: false, message: "This password reset link has expired. Please request a new one." });
         return true;
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         valid: true,
         email: record.email,
         name: record.full_name
@@ -88614,12 +89493,12 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/reset-password" && method === "POST") {
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const rawToken = body.token || "";
       const newPassword = body.newPassword || "";
       const confirmPassword = body.confirmPassword || "";
       if (!rawToken) {
-        sendJson4(res, 400, { success: false, message: "Reset token is required." });
+        sendJson5(res, 400, { success: false, message: "Reset token is required." });
         return true;
       }
       const tokenHash = hashToken(rawToken);
@@ -88631,7 +89510,7 @@ async function handleApiRequest(req, res) {
         [tokenHash]
       );
       if (resDb.rows.length === 0 || resDb.rows[0].used || new Date(resDb.rows[0].expires_at) < /* @__PURE__ */ new Date()) {
-        sendJson4(res, 400, {
+        sendJson5(res, 400, {
           success: false,
           message: "This reset link is invalid, expired, or has already been used. Please request a new one."
         });
@@ -88640,11 +89519,11 @@ async function handleApiRequest(req, res) {
       const record = resDb.rows[0];
       const passVal = validatePasswordPolicy(newPassword);
       if (!passVal.isValid) {
-        sendJson4(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
+        sendJson5(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
         return true;
       }
       if (newPassword !== confirmPassword) {
-        sendJson4(res, 400, { success: false, message: "Passwords do not match." });
+        sendJson5(res, 400, { success: false, message: "Passwords do not match." });
         return true;
       }
       const passwordHash = await hashPassword(newPassword);
@@ -88668,7 +89547,7 @@ async function handleApiRequest(req, res) {
         userEmail: record.email,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Password reset successful! You can now log in with your new password."
       });
@@ -88677,7 +89556,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/admin/users" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Access Denied: Administrator role required." });
+        sendJson5(res, 403, { success: false, message: "Access Denied: Administrator role required." });
         return true;
       }
       let users = [];
@@ -88766,30 +89645,30 @@ async function handleApiRequest(req, res) {
           console.error("Supabase REST fallback error:", apiErr);
         }
       }
-      sendJson4(res, 200, { success: true, users });
+      sendJson5(res, 200, { success: true, users });
       return true;
     }
     const statusMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/status$/);
     if (statusMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const targetUserId = statusMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const newStatus = body.status;
       if (!["active", "suspended", "deactivated"].includes(newStatus)) {
-        sendJson4(res, 400, { success: false, message: "Invalid status. Must be active, suspended, or deactivated." });
+        sendJson5(res, 400, { success: false, message: "Invalid status. Must be active, suspended, or deactivated." });
         return true;
       }
       if (targetUserId === authUser.id && newStatus !== "active") {
-        sendJson4(res, 400, { success: false, message: "Administrators cannot suspend or deactivate their own account." });
+        sendJson5(res, 400, { success: false, message: "Administrators cannot suspend or deactivate their own account." });
         return true;
       }
       const userRes = await query("SELECT * FROM public.app_users WHERE id = $1", [targetUserId]);
       if (userRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "User not found." });
+        sendJson5(res, 404, { success: false, message: "User not found." });
         return true;
       }
       const targetUser = userRes.rows[0];
@@ -88806,25 +89685,25 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { targetUserId, newStatus, targetEmail: targetUser.email }
       });
-      sendJson4(res, 200, { success: true, message: `User status changed to ${newStatus}.` });
+      sendJson5(res, 200, { success: true, message: `User status changed to ${newStatus}.` });
       return true;
     }
     const roleMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/role$/);
     if (roleMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const targetUserId = roleMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const newRole = body.role;
       if (!["user", "admin"].includes(newRole)) {
-        sendJson4(res, 400, { success: false, message: "Invalid role. Must be user or admin." });
+        sendJson5(res, 400, { success: false, message: "Invalid role. Must be user or admin." });
         return true;
       }
       if (targetUserId === authUser.id && newRole !== "admin") {
-        sendJson4(res, 400, { success: false, message: "You cannot demote yourself from admin." });
+        sendJson5(res, 400, { success: false, message: "You cannot demote yourself from admin." });
         return true;
       }
       await query("UPDATE public.app_users SET role = $1, updated_at = NOW() WHERE id = $2", [newRole, targetUserId]);
@@ -88834,20 +89713,20 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { targetUserId, newRole }
       });
-      sendJson4(res, 200, { success: true, message: `User role updated to ${newRole}.` });
+      sendJson5(res, 200, { success: true, message: `User role updated to ${newRole}.` });
       return true;
     }
     const resetEmailMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/send-reset-email$/);
     if (resetEmailMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const targetUserId = resetEmailMatch[1];
       const userRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [targetUserId]);
       if (userRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "User not found." });
+        sendJson5(res, 404, { success: false, message: "User not found." });
         return true;
       }
       const targetUser = userRes.rows[0];
@@ -88869,7 +89748,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { targetUserId, targetEmail: targetUser.email, emailDispatched: sent }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: `Password reset email dispatched to ${targetUser.email}.`,
         resetLink: process.env.NODE_ENV !== "production" ? resetLink : void 0
@@ -88880,7 +89759,7 @@ async function handleApiRequest(req, res) {
     if (forceResetMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const targetUserId = forceResetMatch[1];
@@ -88892,7 +89771,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { targetUserId }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "User account flagged to force password reset on next login. All active sessions revoked."
       });
@@ -88902,7 +89781,7 @@ async function handleApiRequest(req, res) {
     if (revokeMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const targetUserId = revokeMatch[1];
@@ -88913,19 +89792,19 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { targetUserId, revokedCount: count }
       });
-      sendJson4(res, 200, { success: true, message: `Revoked ${count} active session(s) for user.` });
+      sendJson5(res, 200, { success: true, message: `Revoked ${count} active session(s) for user.` });
       return true;
     }
     const deleteMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)$/);
     if (deleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const targetUserId = deleteMatch[1];
       if (targetUserId === authUser.id) {
-        sendJson4(res, 400, { success: false, message: "Administrators cannot delete their own account from admin panel." });
+        sendJson5(res, 400, { success: false, message: "Administrators cannot delete their own account from admin panel." });
         return true;
       }
       const userRes = await query("SELECT email FROM public.app_users WHERE id = $1", [targetUserId]);
@@ -88941,13 +89820,13 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { targetUserId, targetEmail }
       });
-      sendJson4(res, 200, { success: true, message: "User and all associated data permanently deleted." });
+      sendJson5(res, 200, { success: true, message: "User and all associated data permanently deleted." });
       return true;
     }
     if (pathname === "/api/admin/audit-logs" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson4(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const logsRes = await query(
@@ -88956,11 +89835,11 @@ async function handleApiRequest(req, res) {
          ORDER BY created_at DESC 
          LIMIT 100`
       );
-      sendJson4(res, 200, { success: true, logs: logsRes.rows });
+      sendJson5(res, 200, { success: true, logs: logsRes.rows });
       return true;
     }
     if (pathname === "/api/config/public" && method === "GET") {
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         config: {
           appName: APP_CONFIG.appName,
@@ -88982,39 +89861,39 @@ async function handleApiRequest(req, res) {
       let targetLookup = authUser?.id || "";
       if (queryEmail) {
         if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin" && authUser.email !== queryEmail) {
-          sendJson4(res, 403, { success: false, message: "Forbidden" });
+          sendJson5(res, 403, { success: false, message: "Forbidden" });
           return true;
         }
         targetLookup = queryEmail;
       }
       if (!targetLookup) {
-        sendJson4(res, 400, { success: false, message: "Target user ID or email required" });
+        sendJson5(res, 400, { success: false, message: "Target user ID or email required" });
         return true;
       }
       const statusRecord = await getWelcomeEmailDeliveryStatus(targetLookup);
-      sendJson4(res, 200, { success: true, delivery: statusRecord });
+      sendJson5(res, 200, { success: true, delivery: statusRecord });
       return true;
     }
     if (pathname === "/api/auth/resend-welcome-email" && method === "POST") {
       const authUser = await authenticateRequest(req);
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const targetEmail = normalizeEmail(body.email || authUser?.email || "");
       if (!targetEmail) {
-        sendJson4(res, 400, { success: false, message: "Email is required" });
+        sendJson5(res, 400, { success: false, message: "Email is required" });
         return true;
       }
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin" && authUser.email !== targetEmail) {
-        sendJson4(res, 403, { success: false, message: "Forbidden" });
+        sendJson5(res, 403, { success: false, message: "Forbidden" });
         return true;
       }
       const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [targetEmail]);
       if (uRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "User not found" });
+        sendJson5(res, 404, { success: false, message: "User not found" });
         return true;
       }
       const target = uRes.rows[0];
       const result = await sendWelcomeEmail(target.email, target.full_name, target.id, true);
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: result.success,
         message: result.message,
         delivery: result
@@ -89024,19 +89903,19 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/request" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required to initiate account deletion." });
+        sendJson5(res, 401, { success: false, message: "Authentication required to initiate account deletion." });
         return true;
       }
       const rate = checkRateLimit(`del_req:${authUser.id}`, 5, 15 * 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many deletion attempts. Please wait before trying again." });
+        sendJson5(res, 429, { success: false, message: "Too many deletion attempts. Please wait before trying again." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const password = body.password || "";
       const reason = (body.reason || "").trim();
       if (!password) {
-        sendJson4(res, 400, { success: false, message: "Password verification is mandatory to schedule account deletion." });
+        sendJson5(res, 400, { success: false, message: "Password verification is mandatory to schedule account deletion." });
         return true;
       }
       const uRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -89048,7 +89927,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           ipAddress: clientIp
         });
-        sendJson4(res, 400, { success: false, message: "Incorrect password. Deletion request aborted for your security." });
+        sendJson5(res, 400, { success: false, message: "Incorrect password. Deletion request aborted for your security." });
         return true;
       }
       const pendingCheck = await query(
@@ -89060,7 +89939,7 @@ async function handleApiRequest(req, res) {
       if (pendingCheck.rows.length > 0) {
         const existing = pendingCheck.rows[0];
         const remainingSec = Math.ceil((new Date(existing.scheduled_for).getTime() - Date.now()) / 1e3);
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: "An account deletion request is already pending for your account.",
           scheduledFor: existing.scheduled_for,
@@ -89104,7 +89983,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { requestId, scheduledFor: scheduledFor.toISOString(), cancellationWindowHours: 24 }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Account deletion request scheduled. You have 24 hours to cancel.",
         scheduledFor: scheduledFor.toISOString(),
@@ -89117,7 +89996,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/status" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const reqDb = await query(
@@ -89129,7 +90008,7 @@ async function handleApiRequest(req, res) {
         [authUser.id]
       );
       if (reqDb.rows.length === 0 || reqDb.rows[0].status !== "pending") {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           isPending: false,
           status: reqDb.rows[0]?.status || "none"
@@ -89141,7 +90020,7 @@ async function handleApiRequest(req, res) {
       if (remainingMs <= 0) {
         processExpiredAccountDeletions().catch(() => {
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           isPending: false,
           status: "executing",
@@ -89149,7 +90028,7 @@ async function handleApiRequest(req, res) {
         });
         return true;
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         isPending: true,
         status: "pending_deletion",
@@ -89164,7 +90043,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/cancel" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const reqDb = await query(
@@ -89174,7 +90053,7 @@ async function handleApiRequest(req, res) {
         [authUser.id]
       );
       if (reqDb.rows.length === 0) {
-        sendJson4(res, 400, { success: false, message: "No active pending deletion request found to cancel." });
+        sendJson5(res, 400, { success: false, message: "No active pending deletion request found to cancel." });
         return true;
       }
       const reqId = reqDb.rows[0].id;
@@ -89198,7 +90077,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { requestId: reqId }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Your account deletion request has been cancelled. Your account and all records remain safe and active."
       });
@@ -89207,13 +90086,13 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/cancel-by-token" && method === "POST") {
       const rate = checkRateLimit(`cancel_token:${clientIp}`, 15, 5 * 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many requests. Please wait a moment." });
+        sendJson5(res, 429, { success: false, message: "Too many requests. Please wait a moment." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const rawToken = body.token || "";
       if (!rawToken) {
-        sendJson4(res, 400, { success: false, message: "Cancellation token is required." });
+        sendJson5(res, 400, { success: false, message: "Cancellation token is required." });
         return true;
       }
       const tokenHash = hashToken(rawToken);
@@ -89225,19 +90104,19 @@ async function handleApiRequest(req, res) {
         [tokenHash]
       );
       if (reqDb.rows.length === 0) {
-        sendJson4(res, 400, { success: false, message: "Invalid cancellation token." });
+        sendJson5(res, 400, { success: false, message: "Invalid cancellation token." });
         return true;
       }
       const record = reqDb.rows[0];
       if (record.status === "cancelled") {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: "This account deletion request was already cancelled. Your account is active."
         });
         return true;
       }
       if (record.status === "executed") {
-        sendJson4(res, 400, {
+        sendJson5(res, 400, {
           success: false,
           message: "The 24-hour cancellation window has already expired and deletion was completed."
         });
@@ -89263,7 +90142,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { requestId: record.id }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Your account deletion request has been successfully cancelled. Your account remains active."
       });
@@ -89271,7 +90150,7 @@ async function handleApiRequest(req, res) {
     }
     if (pathname === "/api/account/deletion/process-expired" && method === "POST") {
       const processed = await processExpiredAccountDeletions();
-      sendJson4(res, 200, { success: true, processedCount: processed });
+      sendJson5(res, 200, { success: true, processedCount: processed });
       return true;
     }
     async function ensureReciprocalContact(targetUserId, sourceUser, relationshipType = "Friend") {
@@ -89353,12 +90232,12 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/udhar/contacts" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getContactsRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const contactsRes = await query(
@@ -89370,18 +90249,18 @@ async function handleApiRequest(req, res) {
          ORDER BY c.name ASC`,
         [authUser.id]
       );
-      sendJson4(res, 200, { success: true, contacts: contactsRes.rows });
+      sendJson5(res, 200, { success: true, contacts: contactsRes.rows });
       return true;
     }
     if (pathname === "/api/udhar/contacts/with-balances" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getContactsWithBalancesRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const contactsRes = await query(
@@ -89420,19 +90299,19 @@ async function handleApiRequest(req, res) {
         pending_transactions_count: parseInt(row.pending_transactions_count, 10) || 0,
         is_registered: Boolean(row.linked_user_id)
       }));
-      sendJson4(res, 200, { success: true, contacts: parsedContacts });
+      sendJson5(res, 200, { success: true, contacts: parsedContacts });
       return true;
     }
     if (pathname === "/api/udhar/contacts" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await saveContactRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const name2 = (body.name || "").trim();
@@ -89443,12 +90322,12 @@ async function handleApiRequest(req, res) {
       const photoUrl = (body.photo_url || body.photoUrl || "").trim() || null;
       let linkedUserId = (body.linked_user_id || body.linkedUserId || "").trim() || null;
       if (!name2) {
-        sendJson4(res, 400, { success: false, message: "Person's name is required." });
+        sendJson5(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
       if (linkedUserId) {
         if (linkedUserId === authUser.id) {
-          sendJson4(res, 400, { success: false, message: "You cannot add yourself as a contact." });
+          sendJson5(res, 400, { success: false, message: "You cannot add yourself as a contact." });
           return true;
         }
         const targetRes = await query(
@@ -89457,7 +90336,7 @@ async function handleApiRequest(req, res) {
           [linkedUserId]
         );
         if (targetRes.rows.length === 0 || targetRes.rows[0].status !== "active" || targetRes.rows[0].deletion_status !== "none") {
-          sendJson4(res, 404, { success: false, message: "Selected user account is unavailable." });
+          sendJson5(res, 404, { success: false, message: "Selected user account is unavailable." });
           return true;
         }
       }
@@ -89485,7 +90364,7 @@ async function handleApiRequest(req, res) {
         });
         await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         contact: upsertRes.rows[0],
         reciprocallyLinked: Boolean(linkedUserId && linkedUserId !== authUser.id)
@@ -89496,14 +90375,14 @@ async function handleApiRequest(req, res) {
     if (contactUpdateMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactUpdateMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await updateContactRest(authUser, contactId, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const name2 = (body.name || "").trim();
@@ -89514,7 +90393,7 @@ async function handleApiRequest(req, res) {
       const photoUrl = body.photo_url !== void 0 ? body.photo_url || null : void 0;
       const linkedUserId = body.linked_user_id || body.linkedUserId || null;
       if (!name2) {
-        sendJson4(res, 400, { success: false, message: "Person's name is required." });
+        sendJson5(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
       const updRes = await query(
@@ -89527,14 +90406,14 @@ async function handleApiRequest(req, res) {
         [name2, email || null, phone || null, relationshipType, notes || null, photoUrl ?? null, linkedUserId, contactId, authUser.id]
       );
       if (updRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Contact not found." });
+        sendJson5(res, 404, { success: false, message: "Contact not found." });
         return true;
       }
       const finalLinkedId = updRes.rows[0].linked_user_id;
       if (finalLinkedId && finalLinkedId !== authUser.id) {
         await ensureReciprocalContact(finalLinkedId, authUser, relationshipType);
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         contact: updRes.rows[0],
         reciprocallyLinked: Boolean(finalLinkedId && finalLinkedId !== authUser.id)
@@ -89545,40 +90424,40 @@ async function handleApiRequest(req, res) {
     if (contactDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactDeleteMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await deleteContactRest(authUser, contactId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       await query("DELETE FROM public.udhar_contacts WHERE id = $1 AND user_id = $2", [contactId, authUser.id]);
-      sendJson4(res, 200, { success: true, message: "Saved contact removed." });
+      sendJson5(res, 200, { success: true, message: "Saved contact removed." });
       return true;
     }
     const contactLinkMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)\/link-registered$/);
     if (contactLinkMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactLinkMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const registeredUserId = body.registeredUserId || body.userId || "";
       if (!isDatabaseAvailable()) {
         const restRes = await linkContactRest(authUser, contactId, registeredUserId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       if (!registeredUserId) {
-        sendJson4(res, 400, { success: false, message: "Target registered user ID is required." });
+        sendJson5(res, 400, { success: false, message: "Target registered user ID is required." });
         return true;
       }
       if (registeredUserId === authUser.id) {
-        sendJson4(res, 400, { success: false, message: "You cannot link a contact to your own account." });
+        sendJson5(res, 400, { success: false, message: "You cannot link a contact to your own account." });
         return true;
       }
       const contactRes = await query(
@@ -89586,7 +90465,7 @@ async function handleApiRequest(req, res) {
         [contactId, authUser.id]
       );
       if (contactRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Contact not found." });
+        sendJson5(res, 404, { success: false, message: "Contact not found." });
         return true;
       }
       const contact = contactRes.rows[0];
@@ -89596,7 +90475,7 @@ async function handleApiRequest(req, res) {
         [registeredUserId]
       );
       if (targetUserRes.rows.length === 0 || targetUserRes.rows[0].status !== "active" || targetUserRes.rows[0].deletion_status !== "none") {
-        sendJson4(res, 404, { success: false, message: "Registered user not found or unavailable." });
+        sendJson5(res, 404, { success: false, message: "Registered user not found or unavailable." });
         return true;
       }
       await query(
@@ -89619,7 +90498,7 @@ async function handleApiRequest(req, res) {
         [registeredUserId, authUser.id]
       ).catch(() => {
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: `Successfully linked ${contact.name} with verified account ${targetUserRes.rows[0].full_name}.`
       });
@@ -89628,18 +90507,18 @@ async function handleApiRequest(req, res) {
     if ((pathname === "/api/udhar/connections/connect" || pathname === "/api/udhar/connections/request") && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const reqRate = checkRateLimit(`conn_req:${authUser.id}`, 25, 60 * 1e3);
       if (!reqRate.allowed) {
-        sendJson4(res, 429, { success: false, code: "RATE_LIMITED", message: "Too many connection requests. Please wait a moment." });
+        sendJson5(res, 429, { success: false, code: "RATE_LIMITED", message: "Too many connection requests. Please wait a moment." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await connectUserRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -89647,11 +90526,11 @@ async function handleApiRequest(req, res) {
         const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
         const requestedVia = (body.requestedVia || "search").trim();
         if (!targetUserId) {
-          sendJson4(res, 400, { success: false, code: "MISSING_TARGET", message: "Target user ID is required." });
+          sendJson5(res, 400, { success: false, code: "MISSING_TARGET", message: "Target user ID is required." });
           return true;
         }
         if (targetUserId === authUser.id) {
-          sendJson4(res, 400, { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." });
+          sendJson5(res, 400, { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." });
           return true;
         }
         const targetRes = await query(
@@ -89660,12 +90539,12 @@ async function handleApiRequest(req, res) {
           [targetUserId]
         );
         if (targetRes.rows.length === 0) {
-          sendJson4(res, 404, { success: false, code: "NOT_FOUND", message: "User account not found." });
+          sendJson5(res, 404, { success: false, code: "NOT_FOUND", message: "User account not found." });
           return true;
         }
         const target = targetRes.rows[0];
         if (target.status !== "active" || target.deletion_status !== "none") {
-          sendJson4(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is deactivated or unavailable." });
+          sendJson5(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is deactivated or unavailable." });
           return true;
         }
         const pairRes = await query(
@@ -89674,13 +90553,13 @@ async function handleApiRequest(req, res) {
           [authUser.id, targetUserId]
         );
         if (pairRes.rows.some((r2) => r2.status === "blocked")) {
-          sendJson4(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
+          sendJson5(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
           return true;
         }
         const targetDisplayName = (target.full_name || target.email?.split("@")[0] || "Friend").trim();
         const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
         if (pairRes.rows.some((r2) => r2.status === "connected")) {
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: true,
@@ -89733,7 +90612,7 @@ async function handleApiRequest(req, res) {
             channels: ["in_app", "push"]
           }).catch(() => {
           });
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: false,
@@ -89753,7 +90632,7 @@ async function handleApiRequest(req, res) {
           (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
         );
         if (outgoingPending) {
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             status: "pending",
             alreadyPending: true,
@@ -89813,7 +90692,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { targetUserId, requestId: String(requestId), requestedVia }
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           status: "pending",
           alreadyConnected: false,
@@ -89833,19 +90712,19 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Connection Request Fallback]:", pgErr?.message);
         const restRes = await connectUserRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/connections/requests" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getConnectionRequestsRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -89903,7 +90782,7 @@ async function handleApiRequest(req, res) {
             }
           }
         }
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           incoming,
           outgoing,
@@ -89913,7 +90792,7 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Connection Requests Fallback]:", pgErr?.message);
         const restRes = await getConnectionRequestsRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
@@ -89921,13 +90800,13 @@ async function handleApiRequest(req, res) {
     if (connAcceptMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const key = connAcceptMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -89941,7 +90820,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, key]
         );
         if (reqRes.rows.length === 0) {
-          sendJson4(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
+          sendJson5(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
           return true;
         }
         const pending = reqRes.rows[0];
@@ -89984,7 +90863,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { requesterId, requestId: pending.id }
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           status: "connected",
           message: `Connected with ${requesterName}! Added to your Saved People.`,
@@ -90001,7 +90880,7 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Accept Connection Fallback]:", pgErr?.message);
         const restRes = await acceptConnectionRequestRest(authUser, key);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
@@ -90009,13 +90888,13 @@ async function handleApiRequest(req, res) {
     if (connRejectMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const key = connRejectMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -90027,7 +90906,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, key]
         );
         if (reqRes.rows.length === 0) {
-          sendJson4(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
+          sendJson5(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
           return true;
         }
         const pending = reqRes.rows[0];
@@ -90048,7 +90927,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { requesterId: pending.user_a_id, requestId: pending.id }
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           status: "rejected",
           message: "Connection request declined. No active connection was created."
@@ -90057,25 +90936,25 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Reject Connection Fallback]:", pgErr?.message);
         const restRes = await rejectConnectionRequestRest(authUser, key);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/connections/disconnect" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
       if (!targetUserId) {
-        sendJson4(res, 400, { success: false, message: "Target user ID is required." });
+        sendJson5(res, 400, { success: false, message: "Target user ID is required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await disconnectUserRest(authUser, targetUserId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -90107,7 +90986,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { targetUserId }
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           status: "disconnected",
           message: "Disconnected successfully. Existing Udhar transaction history has been preserved."
@@ -90116,7 +90995,7 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Disconnect Fallback]:", pgErr?.message);
         const restRes = await disconnectUserRest(authUser, targetUserId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
@@ -90124,7 +91003,7 @@ async function handleApiRequest(req, res) {
     if (contactInviteMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactInviteMatch[1];
@@ -90133,12 +91012,12 @@ async function handleApiRequest(req, res) {
         [contactId, authUser.id]
       );
       if (contactRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Contact not found." });
+        sendJson5(res, 404, { success: false, message: "Contact not found." });
         return true;
       }
       const contact = contactRes.rows[0];
       if (!contact.email) {
-        sendJson4(res, 400, { success: false, message: "This contact does not have an email address to invite." });
+        sendJson5(res, 400, { success: false, message: "This contact does not have an email address to invite." });
         return true;
       }
       const regUserCheck = await query(
@@ -90152,7 +91031,7 @@ async function handleApiRequest(req, res) {
           [regUser.id, contact.id]
         );
         await ensureReciprocalContact(regUser.id, authUser, contact.relationship_type || "Friend");
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: `${contact.name} is already registered on My Money Manager! Linked accounts automatically.`,
           alreadyRegistered: true,
@@ -90160,7 +91039,7 @@ async function handleApiRequest(req, res) {
         });
         return true;
       }
-      const tokenHash = crypto16.randomBytes(32).toString("hex");
+      const tokenHash = crypto17.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1e3);
       const appBaseUrl = process.env.APP_URL || "http://localhost:3000";
       const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
@@ -90178,7 +91057,7 @@ async function handleApiRequest(req, res) {
         inviteLink,
         inviteToken: tokenHash
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: `Invitation email sent to ${contact.email}.`,
         inviteLink,
@@ -90189,22 +91068,22 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/udhar/users/search" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`user_search:${authUser.id}`, 60, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, code: "RATE_LIMITED", message: "Search rate limit exceeded. Please wait a moment." });
+        sendJson5(res, 429, { success: false, code: "RATE_LIMITED", message: "Search rate limit exceeded. Please wait a moment." });
         return true;
       }
       const rawQ = parsed.query.q || "";
       const classified = classifyLiveSearchQuery(rawQ);
       if (classified.mode === "too_short") {
-        sendJson4(res, 200, { success: true, users: [], searchMode: "too_short" });
+        sendJson5(res, 200, { success: true, users: [], searchMode: "too_short" });
         return true;
       }
       if (classified.mode === "email_incomplete") {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           users: [],
           searchMode: "email_incomplete",
@@ -90213,7 +91092,7 @@ async function handleApiRequest(req, res) {
         return true;
       }
       if (classified.mode === "phone_incomplete") {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           users: [],
           searchMode: "phone_incomplete",
@@ -90223,7 +91102,7 @@ async function handleApiRequest(req, res) {
       }
       if (!isDatabaseAvailable()) {
         const restRes = await searchUsersRest(authUser, rawQ);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -90305,24 +91184,24 @@ async function handleApiRequest(req, res) {
             isSavedContact: Boolean(u.is_saved_contact)
           };
         });
-        sendJson4(res, 200, { success: true, users: sanitizedUsers, searchMode: classified.mode });
+        sendJson5(res, 200, { success: true, users: sanitizedUsers, searchMode: classified.mode });
         return true;
       } catch (pgErr) {
         console.warn("[PG User Search Fallback]:", pgErr?.message);
         const restRes = await searchUsersRest(authUser, rawQ);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/my-code" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getMyQrRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -90342,8 +91221,8 @@ async function handleApiRequest(req, res) {
           if (tokenRes.rows[0].expires_at) expiresAt = tokenRes.rows[0].expires_at;
         }
         if (!pairingToken) {
-          pairingToken = crypto16.randomBytes(32).toString("hex");
-          pairingCode = `MM-${crypto16.randomBytes(3).toString("hex").toUpperCase()}`;
+          pairingToken = crypto17.randomBytes(32).toString("hex");
+          pairingCode = `MM-${crypto17.randomBytes(3).toString("hex").toUpperCase()}`;
           await query(
             `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
              VALUES ($1, $2, $3, FALSE, $4)`,
@@ -90358,7 +91237,7 @@ async function handleApiRequest(req, res) {
           code: pairingCode,
           exp: new Date(expiresAt).getTime()
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           pairingToken,
           pairingCode,
@@ -90371,29 +91250,29 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG My QR Fallback]:", pgErr?.message);
         const restRes = await getMyQrRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/resolve" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
       const qrRate = checkRateLimit(`qr_resolve:${authUser.id}`, 30, 60 * 1e3);
       if (!qrRate.allowed) {
-        sendJson4(res, 429, {
+        sendJson5(res, 429, {
           success: false,
           code: "RATE_LIMITED",
           message: "Too many QR verification attempts. Please wait a minute and try again."
         });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await resolveQrRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -90403,7 +91282,7 @@ async function handleApiRequest(req, res) {
         if (rawData) {
           const parsedQr = parseQrPayload(rawData);
           if (!parsedQr.valid) {
-            sendJson4(res, 400, {
+            sendJson5(res, 400, {
               success: false,
               code: parsedQr.errorCode || "INVALID_QR",
               message: parsedQr.error || "Invalid QR format. Please scan a genuine My Money Manager Udhar pairing QR."
@@ -90414,7 +91293,7 @@ async function handleApiRequest(req, res) {
           if (parsedQr.code) targetCode = parsedQr.code;
         }
         if (!targetToken && !targetCode) {
-          sendJson4(res, 400, {
+          sendJson5(res, 400, {
             success: false,
             code: "INVALID_QR",
             message: "No valid QR pairing token or code provided."
@@ -90432,7 +91311,7 @@ async function handleApiRequest(req, res) {
           [targetToken || "__none__", targetCode || "__none__"]
         );
         if (tokenRes.rows.length === 0) {
-          sendJson4(res, 404, {
+          sendJson5(res, 404, {
             success: false,
             code: "NOT_FOUND",
             message: "Pairing code or QR not recognized. Ask your friend to share their latest My Money Manager Udhar Pairing QR."
@@ -90441,7 +91320,7 @@ async function handleApiRequest(req, res) {
         }
         const qrRecord = tokenRes.rows[0];
         if (qrRecord.used) {
-          sendJson4(res, 410, {
+          sendJson5(res, 410, {
             success: false,
             code: "QR_REVOKED",
             message: "This pairing QR has been revoked. Ask your friend to share their newer Udhar Pairing QR."
@@ -90449,7 +91328,7 @@ async function handleApiRequest(req, res) {
           return true;
         }
         if (new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
-          sendJson4(res, 410, {
+          sendJson5(res, 410, {
             success: false,
             code: "QR_EXPIRED",
             message: "This pairing QR has expired. Ask your friend to tap Reset QR to get a fresh code."
@@ -90457,7 +91336,7 @@ async function handleApiRequest(req, res) {
           return true;
         }
         if (qrRecord.status !== "active" || qrRecord.deletion_status !== "none") {
-          sendJson4(res, 403, {
+          sendJson5(res, 403, {
             success: false,
             code: "ACCOUNT_UNAVAILABLE",
             message: "This user account is currently deactivated or unavailable."
@@ -90465,7 +91344,7 @@ async function handleApiRequest(req, res) {
           return true;
         }
         if (qrRecord.user_id === authUser.id) {
-          sendJson4(res, 400, {
+          sendJson5(res, 400, {
             success: false,
             code: "SELF_CONNECTION",
             message: "This is your own Udhar pairing QR. You cannot pair with yourself."
@@ -90478,7 +91357,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, qrRecord.user_id]
         );
         if (connRes.rows.some((r2) => r2.status === "blocked")) {
-          sendJson4(res, 403, {
+          sendJson5(res, 403, {
             success: false,
             code: "BLOCKED",
             message: "You cannot connect with this account."
@@ -90489,7 +91368,7 @@ async function handleApiRequest(req, res) {
         const outgoingPending = connRes.rows.find((r2) => r2.user_a_id === authUser.id && r2.status === "pending");
         const incomingPending = connRes.rows.find((r2) => r2.user_b_id === authUser.id && r2.status === "pending");
         const connectionStatus = isAlreadyConnected ? "connected" : outgoingPending ? "pending" : incomingPending ? "incoming_pending" : "none";
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           owner: {
             id: qrRecord.user_id,
@@ -90511,25 +91390,25 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG QR Resolve Fallback]:", pgErr?.message);
         const restRes = await resolveQrRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/regenerate" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await regenerateQrRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
         await query("UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1", [authUser.id]);
-        const pairingToken = crypto16.randomBytes(32).toString("hex");
-        const pairingCode = `MM-${crypto16.randomBytes(3).toString("hex").toUpperCase()}`;
+        const pairingToken = crypto17.randomBytes(32).toString("hex");
+        const pairingCode = `MM-${crypto17.randomBytes(3).toString("hex").toUpperCase()}`;
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
         await query(
           `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
@@ -90544,7 +91423,7 @@ async function handleApiRequest(req, res) {
           code: pairingCode,
           exp: expiresAt.getTime()
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: "Fresh pairing QR generated successfully. Previous QR codes have been revoked.",
           pairingToken,
@@ -90558,25 +91437,25 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG QR Regenerate Fallback]:", pgErr?.message);
         const restRes = await regenerateQrRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/connect" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const qrConnRate = checkRateLimit(`qr_connect:${authUser.id}`, 25, 60 * 1e3);
       if (!qrConnRate.allowed) {
-        sendJson4(res, 429, { success: false, code: "RATE_LIMITED", message: "Too many pairing requests. Please wait a moment." });
+        sendJson5(res, 429, { success: false, code: "RATE_LIMITED", message: "Too many pairing requests. Please wait a moment." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await connectQrRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -90592,7 +91471,7 @@ async function handleApiRequest(req, res) {
           [pairingToken || "__none__", pairingCode || "__none__"]
         );
         if (tokenRes.rows.length === 0) {
-          sendJson4(res, 410, {
+          sendJson5(res, 410, {
             success: false,
             code: "QR_INVALID_OR_EXPIRED",
             message: "Pairing QR is expired, revoked, or invalid."
@@ -90602,11 +91481,11 @@ async function handleApiRequest(req, res) {
         const tokenRecord = tokenRes.rows[0];
         const targetUserId = tokenRecord.user_id;
         if (tokenRecord.status !== "active" || tokenRecord.deletion_status !== "none") {
-          sendJson4(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is currently deactivated or unavailable." });
+          sendJson5(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is currently deactivated or unavailable." });
           return true;
         }
         if (targetUserId === authUser.id) {
-          sendJson4(res, 400, { success: false, code: "SELF_CONNECTION", message: "Cannot pair with your own QR code." });
+          sendJson5(res, 400, { success: false, code: "SELF_CONNECTION", message: "Cannot pair with your own QR code." });
           return true;
         }
         const existingConn = await query(
@@ -90615,13 +91494,13 @@ async function handleApiRequest(req, res) {
           [authUser.id, targetUserId]
         );
         if (existingConn.rows.some((r2) => r2.status === "blocked")) {
-          sendJson4(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
+          sendJson5(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
           return true;
         }
         const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split("@")[0] || "Friend").trim();
         const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
         if (existingConn.rows.some((r2) => r2.status === "connected")) {
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: true,
@@ -90671,7 +91550,7 @@ async function handleApiRequest(req, res) {
             userBName: targetDisplayName
           }).catch(() => {
           });
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: false,
@@ -90691,7 +91570,7 @@ async function handleApiRequest(req, res) {
           (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
         );
         if (outgoingPending) {
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             status: "pending",
             alreadyPending: true,
@@ -90757,7 +91636,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { targetUserId, targetName: targetDisplayName, requestId: String(requestId) }
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           status: "pending",
           alreadyConnected: false,
@@ -90777,19 +91656,19 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG QR Connect Fallback]:", pgErr?.message);
         const restRes = await connectQrRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/transactions" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getUdharTransactionsRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const [txRes, repayRes, contactsRes] = await Promise.all([
@@ -90869,7 +91748,7 @@ async function handleApiRequest(req, res) {
         };
       });
       const summary = calculatePeopleDashboardSummary(transactions, contactsRes.rows);
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         transactions,
         summary
@@ -90879,13 +91758,13 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/udhar/transactions" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await createUdharTransactionRest(authUser, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const counterpartName = (body.counterpart_name || body.person_name || "").trim();
@@ -90901,15 +91780,15 @@ async function handleApiRequest(req, res) {
       const attachmentUrl = body.attachment_url || null;
       const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
       if (!counterpartName) {
-        sendJson4(res, 400, { success: false, message: "Person's name is required." });
+        sendJson5(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
       if (!["gave", "took"].includes(direction)) {
-        sendJson4(res, 400, { success: false, message: "Transaction type must be 'gave' (I Gave) or 'took' (I Took)." });
+        sendJson5(res, 400, { success: false, message: "Transaction type must be 'gave' (I Gave) or 'took' (I Took)." });
         return true;
       }
       if (!Number.isFinite(amount) || amount <= 0) {
-        sendJson4(res, 400, { success: false, message: "Please enter a valid amount greater than \u20B90." });
+        sendJson5(res, 400, { success: false, message: "Please enter a valid amount greater than \u20B90." });
         return true;
       }
       if (idempotencyKey) {
@@ -90918,7 +91797,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, idempotencyKey]
         );
         if (dupRes.rows.length > 0) {
-          sendJson4(res, 200, {
+          sendJson5(res, 200, {
             success: true,
             deduplicated: true,
             message: "Udhar already recorded.",
@@ -90934,7 +91813,7 @@ async function handleApiRequest(req, res) {
         description: description || void 0,
         attachment_url: attachmentUrl || void 0
       });
-      const linkId = crypto16.randomUUID();
+      const linkId = crypto17.randomUUID();
       let isRegisteredCounterpart = false;
       let registeredUser = null;
       if (counterpartUserId && counterpartUserId !== authUser.id) {
@@ -90951,7 +91830,7 @@ async function handleApiRequest(req, res) {
             [authUser.id, counterpartUserId]
           );
           if (blk.rows.length > 0) {
-            sendJson4(res, 403, { success: false, message: "Cannot create shared Udhar with a blocked user." });
+            sendJson5(res, 403, { success: false, message: "Cannot create shared Udhar with a blocked user." });
             return true;
           }
           isRegisteredCounterpart = true;
@@ -91043,7 +91922,7 @@ async function handleApiRequest(req, res) {
             status: "confirmed"
           }).catch((e2) => console.warn("[Udhar Created Two-Sided Email Error]:", e2));
           const createdRow = userARes.rows[0];
-          sendJson4(res, 201, {
+          sendJson5(res, 201, {
             success: true,
             message: `Shared Udhar recorded with ${registeredUser.full_name}. Synchronized across both accounts.`,
             transaction: {
@@ -91090,7 +91969,7 @@ async function handleApiRequest(req, res) {
             dueDate
           }).catch((e2) => console.warn("[Notify Udhar Created Error]:", e2));
           const createdRow = singleRes.rows[0];
-          sendJson4(res, 201, {
+          sendJson5(res, 201, {
             success: true,
             message: `Local Udhar recorded for ${counterpartName}.`,
             transaction: {
@@ -91118,18 +91997,18 @@ async function handleApiRequest(req, res) {
     if (confirmMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = confirmMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await confirmUdharTransactionRest(authUser, txId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
       if (txRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Transaction not found." });
+        sendJson5(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -91144,27 +92023,27 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id }
       });
-      sendJson4(res, 200, { success: true, message: "Transaction confirmed successfully on both accounts." });
+      sendJson5(res, 200, { success: true, message: "Transaction confirmed successfully on both accounts." });
       return true;
     }
     const disputeMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/dispute$/);
     if (disputeMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = disputeMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const disputeReason = (body.reason || "Transaction disputed by user").trim();
       if (!isDatabaseAvailable()) {
         const restRes = await disputeUdharTransactionRest(authUser, txId, disputeReason);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
       if (txRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Transaction not found." });
+        sendJson5(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -91179,21 +92058,21 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id, disputeReason }
       });
-      sendJson4(res, 200, { success: true, message: "Transaction marked as disputed. Reason visible to both parties." });
+      sendJson5(res, 200, { success: true, message: "Transaction marked as disputed. Reason visible to both parties." });
       return true;
     }
     const repayMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/repay$/);
     if (repayMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = repayMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await repayUdharRest(authUser, txId, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const repayAmount = roundMoney(parseFloat(body.amount));
@@ -91218,7 +92097,7 @@ async function handleApiRequest(req, res) {
         );
         if (txRes.rows.length === 0) {
           await client.query("ROLLBACK");
-          sendJson4(res, 404, { success: false, message: "Transaction not found." });
+          sendJson5(res, 404, { success: false, message: "Transaction not found." });
           return true;
         }
         const tx = txRes.rows[0];
@@ -91229,7 +92108,7 @@ async function handleApiRequest(req, res) {
           );
           if (dupRep.rows.length > 0) {
             await client.query("COMMIT");
-            sendJson4(res, 200, {
+            sendJson5(res, 200, {
               success: true,
               deduplicated: true,
               repayment: dupRep.rows[0],
@@ -91260,7 +92139,7 @@ async function handleApiRequest(req, res) {
         });
         if (!calc.valid) {
           await client.query("ROLLBACK");
-          sendJson4(res, 400, { success: false, message: calc.error || "Invalid repayment amount." });
+          sendJson5(res, 400, { success: false, message: calc.error || "Invalid repayment amount." });
           return true;
         }
         const repaymentStatus = calc.repaymentStatus;
@@ -91343,7 +92222,7 @@ async function handleApiRequest(req, res) {
             }).catch((e2) => console.warn("[Udhar Settled Email Error]:", e2));
           }
         }
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           repayment: repInsertRes.rows[0],
           isPendingConfirmation: repaymentStatus === "pending_confirmation",
@@ -91363,23 +92242,23 @@ async function handleApiRequest(req, res) {
     if (confirmRepaymentMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const repaymentId = confirmRepaymentMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await confirmRepaymentRest(authUser, repaymentId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const repRes = await query(`SELECT r.* FROM public.udhar_repayments r WHERE r.id = $1`, [repaymentId]);
       if (repRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Repayment record not found." });
+        sendJson5(res, 404, { success: false, message: "Repayment record not found." });
         return true;
       }
       const rep = repRes.rows[0];
       if (rep.status === "confirmed") {
-        sendJson4(res, 400, { success: false, message: "This repayment has already been confirmed." });
+        sendJson5(res, 400, { success: false, message: "This repayment has already been confirmed." });
         return true;
       }
       const txRes = await query(
@@ -91387,12 +92266,12 @@ async function handleApiRequest(req, res) {
         [rep.link_id, authUser.id]
       );
       if (txRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Associated transaction not found for your account." });
+        sendJson5(res, 404, { success: false, message: "Associated transaction not found for your account." });
         return true;
       }
       const tx = txRes.rows[0];
       if (tx.direction !== "gave") {
-        sendJson4(res, 403, {
+        sendJson5(res, 403, {
           success: false,
           message: "Only the lender who gave the money can confirm receipt of repayment."
         });
@@ -91440,7 +92319,7 @@ async function handleApiRequest(req, res) {
           ).catch(() => {
           });
         }
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} confirmed successfully!`,
           remainingBalance: isSettled ? 0 : newBalance,
@@ -91458,20 +92337,20 @@ async function handleApiRequest(req, res) {
     if (rejectRepaymentMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const repaymentId = rejectRepaymentMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const rejectionReason = (body.reason || body.rejection_reason || "Payment not received").trim();
       if (!isDatabaseAvailable()) {
         const restRes = await rejectRepaymentRest(authUser, repaymentId, rejectionReason);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const repRes = await query(`SELECT * FROM public.udhar_repayments WHERE id = $1`, [repaymentId]);
       if (repRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Repayment record not found." });
+        sendJson5(res, 404, { success: false, message: "Repayment record not found." });
         return true;
       }
       const rep = repRes.rows[0];
@@ -91480,12 +92359,12 @@ async function handleApiRequest(req, res) {
         [rep.link_id, authUser.id]
       );
       if (txRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Associated transaction not found." });
+        sendJson5(res, 404, { success: false, message: "Associated transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
       if (tx.direction !== "gave") {
-        sendJson4(res, 403, {
+        sendJson5(res, 403, {
           success: false,
           message: "Only the lender who gave the money can reject a repayment claim."
         });
@@ -91511,7 +92390,7 @@ async function handleApiRequest(req, res) {
         ).catch(() => {
         });
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Repayment claim rejected.",
         rejectionReason
@@ -91522,14 +92401,14 @@ async function handleApiRequest(req, res) {
     if (updateTxMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = updateTxMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await editUdharRest(authUser, txId, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const client = await pool.connect();
@@ -91541,7 +92420,7 @@ async function handleApiRequest(req, res) {
         );
         if (txRes.rows.length === 0) {
           await client.query("ROLLBACK");
-          sendJson4(res, 404, { success: false, message: "Transaction not found." });
+          sendJson5(res, 404, { success: false, message: "Transaction not found." });
           return true;
         }
         const tx = txRes.rows[0];
@@ -91579,7 +92458,7 @@ async function handleApiRequest(req, res) {
         );
         if (!validation.valid) {
           await client.query("ROLLBACK");
-          sendJson4(res, 400, { success: false, message: validation.error || "Invalid edit." });
+          sendJson5(res, 400, { success: false, message: validation.error || "Invalid edit." });
           return true;
         }
         const updatedAmt = validation.nextOriginalAmount;
@@ -91665,7 +92544,7 @@ async function handleApiRequest(req, res) {
           transactionDate: updatedDate,
           status: newStatus
         }).catch((e2) => console.warn("[Udhar Updated Email Error]:", e2));
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: `Udhar transaction updated successfully. Remaining balance: \u20B9${newBalance.toLocaleString("en-IN")}.`,
           remainingBalance: newBalance,
@@ -91684,14 +92563,14 @@ async function handleApiRequest(req, res) {
     if (settleTxMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = settleTxMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       if (!isDatabaseAvailable()) {
         const restRes = await settleUdharRest(authUser, txId, body);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const notes = (body.notes || "Settled in full").trim();
@@ -91706,13 +92585,13 @@ async function handleApiRequest(req, res) {
         );
         if (txRes.rows.length === 0) {
           await client.query("ROLLBACK");
-          sendJson4(res, 404, { success: false, message: "Transaction not found." });
+          sendJson5(res, 404, { success: false, message: "Transaction not found." });
           return true;
         }
         const tx = txRes.rows[0];
         if (tx.counterpart_user_id && tx.direction === "took") {
           await client.query("ROLLBACK");
-          sendJson4(res, 403, {
+          sendJson5(res, 403, {
             success: false,
             message: "Only the lender who gave the money can mark an Udhar as settled. As the borrower, please record a repayment for their confirmation."
           });
@@ -91721,12 +92600,12 @@ async function handleApiRequest(req, res) {
         const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
         if (tx.status === "settled" || currentBal <= 0.01) {
           await client.query("ROLLBACK");
-          sendJson4(res, 400, { success: false, message: "This transaction is already settled." });
+          sendJson5(res, 400, { success: false, message: "This transaction is already settled." });
           return true;
         }
         if (tx.status === "cancelled") {
           await client.query("ROLLBACK");
-          sendJson4(res, 400, { success: false, message: "Cannot settle a cancelled transaction." });
+          sendJson5(res, 400, { success: false, message: "Cannot settle a cancelled transaction." });
           return true;
         }
         await client.query(
@@ -91775,7 +92654,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { txId, linkId: tx.link_id, settledAmount: currentBal }
         });
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           message: `Transaction with ${tx.counterpart_name} has been settled in full.`,
           isSettled: true
@@ -91792,18 +92671,18 @@ async function handleApiRequest(req, res) {
     if (deleteTxMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = deleteTxMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await cancelUdharRest(authUser, txId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
       if (txRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Transaction not found." });
+        sendJson5(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -91817,7 +92696,7 @@ async function handleApiRequest(req, res) {
         repayments: repsRes.rows
       });
       if (!guard.allowed) {
-        sendJson4(res, 409, {
+        sendJson5(res, 409, {
           success: false,
           message: guard.reason
         });
@@ -91848,7 +92727,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Transaction cancelled successfully. Balances updated."
       });
@@ -91858,13 +92737,13 @@ async function handleApiRequest(req, res) {
     if (historyTxMatch && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = historyTxMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await getUdharHistoryRest(authUser, txId);
-        sendJson4(res, restRes.status, restRes.body);
+        sendJson5(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query(
@@ -91872,7 +92751,7 @@ async function handleApiRequest(req, res) {
         [txId, authUser.id]
       );
       if (txRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Transaction not found." });
+        sendJson5(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -91909,7 +92788,7 @@ async function handleApiRequest(req, res) {
           attachment_url: r2.attachment_url || repMeta.attachment_url || null
         };
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         transaction: {
           ...tx,
@@ -91927,7 +92806,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/settings" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           settings: {
             last_mode: "gst",
@@ -91945,7 +92824,7 @@ async function handleApiRequest(req, res) {
         [authUser.id]
       );
       if (row.rows.length > 0) {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           settings: {
             last_mode: row.rows[0].last_mode,
@@ -91955,7 +92834,7 @@ async function handleApiRequest(req, res) {
           }
         });
       } else {
-        sendJson4(res, 200, {
+        sendJson5(res, 200, {
           success: true,
           settings: {
             last_mode: "gst",
@@ -91970,10 +92849,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/settings" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required to save calculator settings." });
+        sendJson5(res, 401, { success: false, message: "Authentication required to save calculator settings." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const lastMode = ["gst", "offer", "split", "basic"].includes(body.last_mode) ? body.last_mode : "gst";
       const defaultGst = typeof body.default_gst_percent === "number" && body.default_gst_percent >= 0 ? body.default_gst_percent : 18;
       const defaultOffer = typeof body.default_offer_percent === "number" && body.default_offer_percent >= 0 && body.default_offer_percent <= 100 ? body.default_offer_percent : 10;
@@ -91990,7 +92869,7 @@ async function handleApiRequest(req, res) {
             updated_at = NOW()`,
         [authUser.id, lastMode, defaultGst, defaultOffer, defaultSplit]
       );
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Calculator settings updated successfully.",
         settings: {
@@ -92005,7 +92884,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/history" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 200, { success: true, history: [] });
+        sendJson5(res, 200, { success: true, history: [] });
         return true;
       }
       const parsedUrl = parseUrl2(req.url || "", true);
@@ -92020,19 +92899,19 @@ async function handleApiRequest(req, res) {
       }
       q += ` ORDER BY created_at DESC LIMIT 50`;
       const result = await query(q, params);
-      sendJson4(res, 200, { success: true, history: result.rows });
+      sendJson5(res, 200, { success: true, history: result.rows });
       return true;
     }
     if (pathname === "/api/calculator/history" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required to save calculation history." });
+        sendJson5(res, 401, { success: false, message: "Authentication required to save calculation history." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const calcType = body.calc_type;
       if (!["gst", "offer", "split", "basic"].includes(calcType)) {
-        sendJson4(res, 400, { success: false, message: "Invalid calculation type." });
+        sendJson5(res, 400, { success: false, message: "Invalid calculation type." });
         return true;
       }
       const title = (body.title || "").trim().slice(0, 100);
@@ -92044,7 +92923,7 @@ async function handleApiRequest(req, res) {
          RETURNING id, calc_type, title, input_values, result_values, created_at`,
         [authUser.id, calcType, title || null, JSON.stringify(inputValues), JSON.stringify(resultValues)]
       );
-      sendJson4(res, 201, {
+      sendJson5(res, 201, {
         success: true,
         message: "Calculation saved to history.",
         record: inserted.rows[0]
@@ -92054,39 +92933,39 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/history" && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const parsedUrl = parseUrl2(req.url || "", true);
-      const targetId = parsedUrl.query.id || (await parseJsonBody4(req)).id;
+      const targetId = parsedUrl.query.id || (await parseJsonBody5(req)).id;
       if (targetId) {
         await query(
           `DELETE FROM public.calculator_history WHERE id = $1 AND user_id = $2`,
           [targetId, authUser.id]
         );
-        sendJson4(res, 200, { success: true, message: "Calculation record deleted." });
+        sendJson5(res, 200, { success: true, message: "Calculation record deleted." });
       } else {
         await query(
           `DELETE FROM public.calculator_history WHERE user_id = $1`,
           [authUser.id]
         );
-        sendJson4(res, 200, { success: true, message: "Calculation history cleared." });
+        sendJson5(res, 200, { success: true, message: "Calculation history cleared." });
       }
       return true;
     }
     if (pathname === "/api/feedback/submit" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const rawRating = body.rating !== void 0 && body.rating !== null ? Number(body.rating) : null;
       const rating = rawRating && rawRating >= 1 && rawRating <= 5 ? rawRating : null;
       const message = (body.message || "").trim();
       const dpdpConsent = Boolean(body.dpdp_consent);
       if (!message || message.length < 3) {
-        sendJson4(res, 400, { success: false, message: "Please share your thoughts, suggestions, or experience." });
+        sendJson5(res, 400, { success: false, message: "Please share your thoughts, suggestions, or experience." });
         return true;
       }
       const uRes = await query("SELECT full_name, email, phone FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -92099,7 +92978,7 @@ async function handleApiRequest(req, res) {
         [authUser.id, message]
       );
       if (dupCheck.rows.length > 0) {
-        sendJson4(res, 409, {
+        sendJson5(res, 409, {
           success: false,
           message: "Duplicate feedback detected. Your previous feedback was already received!"
         });
@@ -92156,7 +93035,7 @@ async function handleApiRequest(req, res) {
         userEmail: trustedEmail,
         details: { rating, feedbackId }
       });
-      sendJson4(res, 201, {
+      sendJson5(res, 201, {
         success: true,
         message: "Thank you for your feedback! Your opinion helps us improve My Money Manager.",
         feedback_id: feedbackId,
@@ -92167,21 +93046,21 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/support/complaint" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const subject = (body.subject || "").trim();
       const description = (body.description || body.message || "").trim();
       const phone = (body.phone || body.user_phone || "").trim() || null;
       const category = (body.category || "General Complaint").trim();
       const attachmentUrl = (body.attachment_url || body.attachment || "").trim() || null;
       if (!subject || subject.length < 3) {
-        sendJson4(res, 400, { success: false, message: "Complaint subject is required (min 3 characters)." });
+        sendJson5(res, 400, { success: false, message: "Complaint subject is required (min 3 characters)." });
         return true;
       }
       if (!description || description.length < 5) {
-        sendJson4(res, 400, { success: false, message: "Detailed description is required (min 5 characters)." });
+        sendJson5(res, 400, { success: false, message: "Detailed description is required (min 5 characters)." });
         return true;
       }
       const uRes = await query("SELECT full_name, email, phone FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -92194,7 +93073,7 @@ async function handleApiRequest(req, res) {
         [authUser.id, subject, description]
       );
       if (dupCheck.rows.length > 0) {
-        sendJson4(res, 409, {
+        sendJson5(res, 409, {
           success: false,
           message: "Duplicate complaint detected. Your previous submission was already received!"
         });
@@ -92227,7 +93106,7 @@ async function handleApiRequest(req, res) {
         userEmail: trustedEmail,
         details: { ticketNumber: ticket.ticket_number }
       });
-      sendJson4(res, 201, {
+      sendJson5(res, 201, {
         success: true,
         message: "Your complaint has been submitted successfully. Our support team will review it and get back to you.",
         ticket_number: ticket.ticket_number,
@@ -92245,20 +93124,20 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/support/ticket" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const category = (body.category || "How to use the app").trim();
       const subject = (body.subject || "").trim();
       const message = (body.message || body.description || "").trim();
       const attachmentUrl = (body.attachment_url || body.attachment || "").trim() || null;
       if (!subject || subject.length < 3) {
-        sendJson4(res, 400, { success: false, message: "Support subject is required." });
+        sendJson5(res, 400, { success: false, message: "Support subject is required." });
         return true;
       }
       if (!message || message.length < 5) {
-        sendJson4(res, 400, { success: false, message: "Support message is required." });
+        sendJson5(res, 400, { success: false, message: "Support message is required." });
         return true;
       }
       const uRes = await query("SELECT full_name, email FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -92286,7 +93165,7 @@ async function handleApiRequest(req, res) {
         userEmail: trustedEmail,
         details: { ticketNumber: ticket.ticket_number, category: ticket.category }
       });
-      sendJson4(res, 201, {
+      sendJson5(res, 201, {
         success: true,
         message: "Your support request has been submitted successfully.",
         ticket: {
@@ -92303,7 +93182,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/user/support-history" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const [feedbacksRes, ticketsRes] = await Promise.all([
@@ -92322,7 +93201,7 @@ async function handleApiRequest(req, res) {
           [authUser.id]
         )
       ]);
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         feedbacks: feedbacksRes.rows,
         tickets: ticketsRes.rows
@@ -92333,7 +93212,7 @@ async function handleApiRequest(req, res) {
     if (userTicketDetailMatch && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const ticketId = userTicketDetailMatch[1];
@@ -92342,7 +93221,7 @@ async function handleApiRequest(req, res) {
         [ticketId, authUser.id]
       );
       if (ticketRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+        sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
         return true;
       }
       const repliesRes = await query(
@@ -92352,7 +93231,7 @@ async function handleApiRequest(req, res) {
          ORDER BY created_at ASC`,
         [ticketId]
       );
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         ticket: ticketRes.rows[0],
         replies: repliesRes.rows
@@ -92363,14 +93242,14 @@ async function handleApiRequest(req, res) {
     if (userTicketReplyMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const ticketId = userTicketReplyMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const message = (body.message || "").trim();
       if (!message) {
-        sendJson4(res, 400, { success: false, message: "Reply message cannot be empty." });
+        sendJson5(res, 400, { success: false, message: "Reply message cannot be empty." });
         return true;
       }
       const ticketRes = await query(
@@ -92378,12 +93257,12 @@ async function handleApiRequest(req, res) {
         [ticketId, authUser.id]
       );
       if (ticketRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+        sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
         return true;
       }
       const ticket = ticketRes.rows[0];
       if (ticket.status === "closed") {
-        sendJson4(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
+        sendJson5(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
         return true;
       }
       const uRes = await query("SELECT full_name FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -92407,7 +93286,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { ticketId, ticketNumber: ticket.ticket_number }
       });
-      sendJson4(res, 201, {
+      sendJson5(res, 201, {
         success: true,
         message: "Reply sent successfully.",
         reply: replyRes.rows[0]
@@ -92417,7 +93296,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/privacy/consent-status" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const consentsRes = await query(
@@ -92430,7 +93309,7 @@ async function handleApiRequest(req, res) {
       const history = consentsRes.rows;
       const latest = history[0] || null;
       const status = latest ? latest.status : "not_granted";
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         status,
         latest,
@@ -92442,10 +93321,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/privacy/consent-grant" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const purpose = (body.purpose || "optional_feedback_support").trim();
       const wording = (body.wording || "User explicitly granted optional processing consent for service quality feedback and support inquiries under the DPDP Act 2023.").trim();
       const insertRes = await query(
@@ -92460,7 +93339,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { purpose, policyVersion: "v1.2 - DPDP Act 2023" }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Optional consent recorded successfully.",
         status: "granted",
@@ -92471,10 +93350,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/privacy/consent-withdraw" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const purpose = (body.purpose || "optional_feedback_support").trim();
       const wording = (body.wording || "User explicitly withdrew optional processing consent. All optional data processing ceased. Core app functionality and account remain active.").trim();
       const prevCheck = await query(
@@ -92484,7 +93363,7 @@ async function handleApiRequest(req, res) {
         [authUser.id, purpose]
       );
       if (!prevCheck.rows.length || prevCheck.rows[0].status === "withdrawn") {
-        sendJson4(res, 400, {
+        sendJson5(res, 400, {
           success: false,
           message: "No active optional consent found to withdraw."
         });
@@ -92502,7 +93381,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { purpose, policyVersion: "v1.2 - DPDP Act 2023" }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Optional consent has been withdrawn. Core account and financial ledgers remain preserved.",
         status: "withdrawn",
@@ -92510,104 +93389,17 @@ async function handleApiRequest(req, res) {
       });
       return true;
     }
-    if (pathname === "/api/privacy/consents" && method === "GET") {
-      const authUser = await authenticateRequest(req);
-      if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
-        return true;
-      }
-      if (!isDatabaseAvailable()) {
-        const restRes = await getPrivacyConsentsRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
-        return true;
-      }
-      try {
-        const resRows = await query(
-          `SELECT id, purpose, status, action, policy_version, consent_wording, created_at
-           FROM public.user_consents
-           WHERE user_id = $1
-           ORDER BY created_at DESC
-           LIMIT 100`,
-          [authUser.id]
-        );
-        const latestByCategory = {};
-        for (const row of resRows.rows) {
-          if (!latestByCategory[row.purpose]) {
-            latestByCategory[row.purpose] = {
-              category: row.purpose,
-              status: row.status,
-              policyVersion: row.policy_version,
-              consentedAt: row.status === "granted" ? row.created_at : null,
-              revokedAt: row.status === "withdrawn" ? row.created_at : null,
-              updatedAt: row.created_at
-            };
-          }
-        }
-        sendJson4(res, 200, {
-          success: true,
-          consents: latestByCategory,
-          history: resRows.rows,
-          policyVersion: "v2.0 - DPDP Act 2023"
-        });
-        return true;
-      } catch {
-        const restRes = await getPrivacyConsentsRest(authUser);
-        sendJson4(res, restRes.status, restRes.body);
-        return true;
-      }
-    }
-    if (pathname === "/api/privacy/consents" && method === "POST") {
-      const authUser = await authenticateRequest(req);
-      if (!authUser) {
-        sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
-        return true;
-      }
-      const body = await parseJsonBody4(req);
-      const category = String(body.category || body.purpose || "").trim();
-      const status = body.status === "withdrawn" ? "withdrawn" : "granted";
-      const policyVersion = String(body.policyVersion || "v2.0 - DPDP Act 2023").trim();
-      const wording = String(
-        body.wording || `User explicitly ${status} consent for ${category} under My Money Manager Privacy Policy.`
-      ).trim();
-      if (!category) {
-        sendJson4(res, 400, { success: false, message: "Consent category is required." });
-        return true;
-      }
-      if (!isDatabaseAvailable()) {
-        const restRes = await recordPrivacyConsentRest(authUser, { category, status, wording, policyVersion });
-        sendJson4(res, restRes.status, restRes.body);
-        return true;
-      }
-      try {
-        const ins = await query(
-          `INSERT INTO public.user_consents (
-             user_id, user_email, purpose, status, action, policy_version, consent_wording, ip_address, user_agent, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, NOW(), NOW())
-           RETURNING *`,
-          [authUser.id, authUser.email, category, status, policyVersion, wording, clientIp, userAgent]
-        );
-        await logSecurityEvent(status === "granted" ? "USER_GRANTED_CONSENT" : "USER_WITHDREW_CONSENT", {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: { category, status, policyVersion }
-        });
-        sendJson4(res, 200, {
-          success: true,
-          category,
-          status,
-          consent: ins.rows[0]
-        });
-        return true;
-      } catch {
-        const restRes = await recordPrivacyConsentRest(authUser, { category, status, wording, policyVersion });
-        sendJson4(res, restRes.status, restRes.body);
-        return true;
-      }
+    if (pathname === "/api/privacy/consents" || pathname === "/api/privacy/consents/batch" || pathname === "/api/privacy/consents/withdraw-all") {
+      const handled = await handlePrivacyConsentApi(req, res, pathname, method, {
+        clientIp,
+        userAgent
+      });
+      if (handled) return true;
     }
     if (pathname === "/api/notifications" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const urlObj = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
@@ -92646,7 +93438,7 @@ async function handleApiRequest(req, res) {
       ]);
       const total = parseInt(countRes.rows[0]?.total || "0", 10);
       const unreadCount = parseInt(unreadRes.rows[0]?.unread_count || "0", 10);
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         notifications: listRes.rows,
         unreadCount,
@@ -92660,7 +93452,7 @@ async function handleApiRequest(req, res) {
     if (notifReadMatch && (method === "PATCH" || method === "POST")) {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const notifId = notifReadMatch[1];
@@ -92672,16 +93464,16 @@ async function handleApiRequest(req, res) {
         [notifId, authUser.id]
       );
       if (updateRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Notification not found." });
+        sendJson5(res, 404, { success: false, message: "Notification not found." });
         return true;
       }
-      sendJson4(res, 200, { success: true, notification: updateRes.rows[0] });
+      sendJson5(res, 200, { success: true, notification: updateRes.rows[0] });
       return true;
     }
     if (pathname === "/api/notifications/mark-all-read" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       await query(
@@ -92690,14 +93482,14 @@ async function handleApiRequest(req, res) {
          WHERE user_id = $1 AND is_deleted = FALSE AND is_read = FALSE`,
         [authUser.id]
       );
-      sendJson4(res, 200, { success: true, message: "All notifications marked as read." });
+      sendJson5(res, 200, { success: true, message: "All notifications marked as read." });
       return true;
     }
     const notifDeleteMatch = pathname.match(/^\/api\/notifications\/([a-zA-Z0-9_-]+)$/);
     if (notifDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const notifId = notifDeleteMatch[1];
@@ -92707,13 +93499,13 @@ async function handleApiRequest(req, res) {
          WHERE id = $1 AND user_id = $2`,
         [notifId, authUser.id]
       );
-      sendJson4(res, 200, { success: true, message: "Notification removed." });
+      sendJson5(res, 200, { success: true, message: "Notification removed." });
       return true;
     }
     if (pathname === "/api/notifications/clear-all" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       await query(
@@ -92722,31 +93514,31 @@ async function handleApiRequest(req, res) {
          WHERE user_id = $1 AND is_deleted = FALSE`,
         [authUser.id]
       );
-      sendJson4(res, 200, { success: true, message: "All notifications cleared." });
+      sendJson5(res, 200, { success: true, message: "All notifications cleared." });
       return true;
     }
     if (pathname === "/api/notifications/preferences" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const prefs = await getUserNotificationPreferences(authUser.id);
-      sendJson4(res, 200, { success: true, preferences: prefs });
+      sendJson5(res, 200, { success: true, preferences: prefs });
       return true;
     }
     if (pathname === "/api/notifications/preferences" && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`notif_prefs:${authUser.id}`, 30, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many preference updates. Please try again shortly." });
+        sendJson5(res, 429, { success: false, message: "Too many preference updates. Please try again shortly." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const updated = await updateUserNotificationPreferences(authUser.id, {
         in_app_enabled: body.in_app_enabled,
         push_enabled: body.push_enabled,
@@ -92767,11 +93559,11 @@ async function handleApiRequest(req, res) {
         quiet_hours_end: body.quiet_hours_end,
         privacy_hide_amounts: body.privacy_hide_amounts
       });
-      sendJson4(res, 200, { success: true, preferences: updated });
+      sendJson5(res, 200, { success: true, preferences: updated });
       return true;
     }
     if (pathname === "/api/notifications/push/vapid-public-key" && method === "GET") {
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         publicKey: APP_CONFIG.vapid.publicKey,
         configured: Boolean(APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey),
@@ -92782,11 +93574,11 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/notifications/push/subscriptions" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const devices = await listUserPushSubscriptions(authUser.id);
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         subscriptions: devices,
         count: devices.length
@@ -92797,46 +93589,46 @@ async function handleApiRequest(req, res) {
     if (pushSubDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_del:${authUser.id}`, 20, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
+        sendJson5(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
         return true;
       }
       const subId = pushSubDeleteMatch[1];
       const { deleted } = await removePushSubscriptionById(authUser.id, subId);
       if (!deleted) {
-        sendJson4(res, 404, { success: false, message: "Device subscription not found for your account." });
+        sendJson5(res, 404, { success: false, message: "Device subscription not found for your account." });
         return true;
       }
       logSecurityEvent("PUSH_DEVICE_REMOVED", { userId: authUser.id, subscriptionId: subId });
-      sendJson4(res, 200, { success: true, message: "Device removed from push notifications." });
+      sendJson5(res, 200, { success: true, message: "Device removed from push notifications." });
       return true;
     }
     if (pathname === "/api/notifications/push/status" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const status = await getPushDeliveryStatus(authUser.id);
-      sendJson4(res, 200, { success: true, ...status });
+      sendJson5(res, 200, { success: true, ...status });
       return true;
     }
     if (pathname === "/api/notifications/push/subscribe" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_sub:${authUser.id}`, 20, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many subscription requests. Try again shortly." });
+        sendJson5(res, 429, { success: false, message: "Too many subscription requests. Try again shortly." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const endpoint = (body.endpoint || "").trim();
       const p256dh = body.keys?.p256dh || body.p256dh || "";
       const authKey = body.keys?.auth || body.auth || "";
@@ -92851,7 +93643,7 @@ async function handleApiRequest(req, res) {
         deviceName
       });
       if (!reg.success) {
-        sendJson4(res, 400, {
+        sendJson5(res, 400, {
           success: false,
           message: reg.error || "Invalid push subscription payload."
         });
@@ -92861,7 +93653,7 @@ async function handleApiRequest(req, res) {
         userId: authUser.id,
         device: reg.subscription?.device_name
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Push notifications registered successfully.",
         subscription: reg.subscription
@@ -92870,10 +93662,10 @@ async function handleApiRequest(req, res) {
     }
     if ((pathname === "/api/pwa/register-device" || pathname === "/api/devices/register" || pathname === "/api/pwa/record-install") && method === "POST") {
       const authUser = await authenticateRequest(req);
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const userId = authUser?.id || body.userId;
       if (!userId) {
-        sendJson4(res, 400, {
+        sendJson5(res, 400, {
           success: false,
           message: "Authenticated user or userId is required to register device installation."
         });
@@ -92891,37 +93683,37 @@ async function handleApiRequest(req, res) {
         pushSubscriptionStatus: body.pushSubscriptionStatus,
         ipAddress: clientIp
       });
-      sendJson4(res, 200, { success: true, ...resDev });
+      sendJson5(res, 200, { success: true, ...resDev });
       return true;
     }
     if (pathname === "/api/notifications/push/unsubscribe" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_unsub:${authUser.id}`, 20, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
+        sendJson5(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const endpoint = (body.endpoint || "").trim();
       if (endpoint) {
         await removePushSubscriptionByEndpoint(authUser.id, endpoint);
       }
-      sendJson4(res, 200, { success: true, message: "Push notifications disabled for this device." });
+      sendJson5(res, 200, { success: true, message: "Push notifications disabled for this device." });
       return true;
     }
     if (pathname === "/api/notifications/push/test" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_test:${authUser.id}`, 5, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, {
+        sendJson5(res, 429, {
           success: false,
           message: "Test notification rate limit reached (max 5 per minute)."
         });
@@ -92938,7 +93730,7 @@ async function handleApiRequest(req, res) {
         channels: ["in_app", "push"],
         skipPreferenceCheck: true
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: result.pushDelivered > 0 ? `Test push delivered to ${result.pushDelivered} of ${result.deviceCount} registered device(s).` : result.deviceCount === 0 ? "In-app test created, but no push devices are currently registered for your account." : "Push delivery failed for registered device(s). Expired subscriptions were cleaned up.",
         vapidPersistent: APP_CONFIG.vapid.isPersistent,
@@ -92949,15 +93741,15 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/notifications/events/transaction-created" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`notif_tx:${authUser.id}`, 30, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Notification event rate limit reached." });
+        sendJson5(res, 429, { success: false, message: "Notification event rate limit reached." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const txId = String(body.id || body.transaction_id || "").trim().slice(0, 100);
       const title = String(body.title || "Transaction").trim().slice(0, 120);
       const amount = Number(body.amount) || 0;
@@ -92975,21 +93767,21 @@ async function handleApiRequest(req, res) {
           section
         });
       }
-      sendJson4(res, 200, { success: true, message: "Transaction notification processed.", delivery });
+      sendJson5(res, 200, { success: true, message: "Transaction notification processed.", delivery });
       return true;
     }
     if (pathname === "/api/notifications/events/financial-alert" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`notif_fin:${authUser.id}`, 30, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson4(res, 429, { success: false, message: "Alert event rate limit reached." });
+        sendJson5(res, 429, { success: false, message: "Alert event rate limit reached." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const allowedCategories = /* @__PURE__ */ new Set([
         "budget",
         "bill",
@@ -93005,7 +93797,7 @@ async function handleApiRequest(req, res) {
       const message = String(body.message || "").trim();
       const dedupeKey = String(body.dedupeKey || "").trim().slice(0, 160);
       if (!allowedCategories.has(category) || !title || !message || !dedupeKey) {
-        sendJson4(res, 400, {
+        sendJson5(res, 400, {
           success: false,
           message: "Valid category, title, message, and dedupeKey are required."
         });
@@ -93021,38 +93813,38 @@ async function handleApiRequest(req, res) {
         dedupeKey,
         relatedEntityId: typeof body.relatedEntityId === "string" ? body.relatedEntityId : void 0
       });
-      sendJson4(res, 200, { success: true, delivery });
+      sendJson5(res, 200, { success: true, delivery });
       return true;
     }
     if (pathname === "/api/budgets" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const listRes = await query(
         `SELECT * FROM public.user_budgets WHERE user_id = $1 ORDER BY created_at ASC`,
         [authUser.id]
       );
-      sendJson4(res, 200, { success: true, budgets: listRes.rows });
+      sendJson5(res, 200, { success: true, budgets: listRes.rows });
       return true;
     }
     if (pathname === "/api/budgets" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const category = (body.category || "").trim().toLowerCase();
       const monthlyLimit = Number(body.monthly_limit || body.monthlyLimit) || 0;
       const alertThreshold = Math.min(100, Math.max(1, Number(body.alert_threshold || body.alertThreshold) || 85));
       if (!category) {
-        sendJson4(res, 400, { success: false, message: "Category is required for budget." });
+        sendJson5(res, 400, { success: false, message: "Category is required for budget." });
         return true;
       }
       if (monthlyLimit <= 0) {
-        sendJson4(res, 400, { success: false, message: "Monthly budget limit must be greater than 0." });
+        sendJson5(res, 400, { success: false, message: "Monthly budget limit must be greater than 0." });
         return true;
       }
       const upsertRes = await query(
@@ -93065,7 +93857,7 @@ async function handleApiRequest(req, res) {
          RETURNING *`,
         [authUser.id, category, monthlyLimit, alertThreshold]
       );
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Budget saved successfully.",
         budget: upsertRes.rows[0]
@@ -93076,7 +93868,7 @@ async function handleApiRequest(req, res) {
     if (budgetDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const budgetId = budgetDeleteMatch[1];
@@ -93084,29 +93876,29 @@ async function handleApiRequest(req, res) {
         `DELETE FROM public.user_budgets WHERE id = $1 AND user_id = $2`,
         [budgetId, authUser.id]
       );
-      sendJson4(res, 200, { success: true, message: "Budget removed successfully." });
+      sendJson5(res, 200, { success: true, message: "Budget removed successfully." });
       return true;
     }
     if (pathname === "/api/savings-goals" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const listRes = await query(
         `SELECT * FROM public.savings_goals WHERE user_id = $1 ORDER BY created_at DESC`,
         [authUser.id]
       );
-      sendJson4(res, 200, { success: true, goals: listRes.rows });
+      sendJson5(res, 200, { success: true, goals: listRes.rows });
       return true;
     }
     if (pathname === "/api/savings-goals" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const title = (body.title || "").trim();
       const targetAmount = Number(body.target_amount || body.targetAmount) || 0;
       const currentAmount = Math.max(0, Number(body.current_amount || body.currentAmount) || 0);
@@ -93115,11 +93907,11 @@ async function handleApiRequest(req, res) {
       const notes = (body.notes || "").trim() || null;
       const isCompleted = !!body.is_completed || currentAmount >= targetAmount;
       if (!title || title.length < 2) {
-        sendJson4(res, 400, { success: false, message: "Goal title must be at least 2 characters." });
+        sendJson5(res, 400, { success: false, message: "Goal title must be at least 2 characters." });
         return true;
       }
       if (targetAmount <= 0) {
-        sendJson4(res, 400, { success: false, message: "Target amount must be greater than 0." });
+        sendJson5(res, 400, { success: false, message: "Target amount must be greater than 0." });
         return true;
       }
       let goalRes;
@@ -93139,7 +93931,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, title, targetAmount, currentAmount, targetDate, category, notes, isCompleted]
         );
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: body.id ? "Savings goal updated." : "Savings goal created.",
         goal: goalRes.rows[0]
@@ -93150,15 +93942,15 @@ async function handleApiRequest(req, res) {
     if (goalContributeMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const goalId = goalContributeMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const delta = Number(body.amount) || 0;
       const action = body.action === "withdraw" ? "withdraw" : "add";
       if (delta <= 0) {
-        sendJson4(res, 400, { success: false, message: "Contribution amount must be greater than 0." });
+        sendJson5(res, 400, { success: false, message: "Contribution amount must be greater than 0." });
         return true;
       }
       const existingGoal = await query(
@@ -93166,7 +93958,7 @@ async function handleApiRequest(req, res) {
         [goalId, authUser.id]
       );
       if (existingGoal.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Savings goal not found." });
+        sendJson5(res, 404, { success: false, message: "Savings goal not found." });
         return true;
       }
       const goal = existingGoal.rows[0];
@@ -93180,7 +93972,7 @@ async function handleApiRequest(req, res) {
          RETURNING *`,
         [newAmount, isCompleted, goalId, authUser.id]
       );
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: action === "withdraw" ? "Amount withdrawn from goal." : "Contribution added to goal!",
         goal: updateRes.rows[0]
@@ -93191,7 +93983,7 @@ async function handleApiRequest(req, res) {
     if (goalDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const goalId = goalDeleteMatch[1];
@@ -93199,29 +93991,29 @@ async function handleApiRequest(req, res) {
         `DELETE FROM public.savings_goals WHERE id = $1 AND user_id = $2`,
         [goalId, authUser.id]
       );
-      sendJson4(res, 200, { success: true, message: "Savings goal deleted." });
+      sendJson5(res, 200, { success: true, message: "Savings goal deleted." });
       return true;
     }
     if (pathname === "/api/recurring-bills" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const listRes = await query(
         `SELECT * FROM public.recurring_bills WHERE user_id = $1 ORDER BY due_day ASC`,
         [authUser.id]
       );
-      sendJson4(res, 200, { success: true, bills: listRes.rows });
+      sendJson5(res, 200, { success: true, bills: listRes.rows });
       return true;
     }
     if (pathname === "/api/recurring-bills" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const title = (body.title || "").trim();
       const category = (body.category || "other").trim().toLowerCase();
       const amount = Number(body.amount) || 0;
@@ -93230,11 +94022,11 @@ async function handleApiRequest(req, res) {
       const reminderEnabled = body.reminder_enabled !== void 0 ? !!body.reminder_enabled : true;
       const isActive = body.is_active !== void 0 ? !!body.is_active : true;
       if (!title || title.length < 2) {
-        sendJson4(res, 400, { success: false, message: "Bill title must be at least 2 characters." });
+        sendJson5(res, 400, { success: false, message: "Bill title must be at least 2 characters." });
         return true;
       }
       if (amount <= 0) {
-        sendJson4(res, 400, { success: false, message: "Bill amount must be greater than 0." });
+        sendJson5(res, 400, { success: false, message: "Bill amount must be greater than 0." });
         return true;
       }
       let billRes;
@@ -93254,7 +94046,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, title, category, amount, frequency, dueDay, reminderEnabled, isActive]
         );
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: body.id ? "Recurring bill updated." : "Recurring bill added.",
         bill: billRes.rows[0]
@@ -93265,11 +94057,11 @@ async function handleApiRequest(req, res) {
     if (billPayMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const billId = billPayMatch[1];
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const paidDate = body.paid_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const updateRes = await query(
         `UPDATE public.recurring_bills
@@ -93279,10 +94071,10 @@ async function handleApiRequest(req, res) {
         [paidDate, billId, authUser.id]
       );
       if (updateRes.rows.length === 0) {
-        sendJson4(res, 404, { success: false, message: "Recurring bill not found." });
+        sendJson5(res, 404, { success: false, message: "Recurring bill not found." });
         return true;
       }
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         message: "Bill marked as paid for this cycle.",
         bill: updateRes.rows[0]
@@ -93293,7 +94085,7 @@ async function handleApiRequest(req, res) {
     if (billDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson4(res, 401, { success: false, message: "Authentication required." });
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const billId = billDeleteMatch[1];
@@ -93301,23 +94093,23 @@ async function handleApiRequest(req, res) {
         `DELETE FROM public.recurring_bills WHERE id = $1 AND user_id = $2`,
         [billId, authUser.id]
       );
-      sendJson4(res, 200, { success: true, message: "Recurring bill deleted." });
+      sendJson5(res, 200, { success: true, message: "Recurring bill deleted." });
       return true;
     }
     if (pathname === "/api/send-reset-email" && method === "POST") {
-      const body = await parseJsonBody4(req);
+      const body = await parseJsonBody5(req);
       const email = normalizeEmail(body.email || "");
       const rawToken = body.token || body.otp || generateCryptoToken(32);
       const resetLink = body.resetLink || `${origin}/#reset-password&token=${rawToken}&email=${encodeURIComponent(email)}`;
       const sent = await sendPasswordResetEmail(email, body.name || "User", resetLink);
-      sendJson4(res, 200, { success: sent, message: sent ? "Reset email dispatched" : "Failed to dispatch email" });
+      sendJson5(res, 200, { success: sent, message: sent ? "Reset email dispatched" : "Failed to dispatch email" });
       return true;
     }
-    sendJson4(res, 404, { success: false, message: "API endpoint not found." });
+    sendJson5(res, 404, { success: false, message: "API endpoint not found." });
     return true;
   } catch (err) {
     console.error(`[API Error] ${method} ${pathname}:`, err);
-    sendJson4(res, 500, {
+    sendJson5(res, 500, {
       success: false,
       message: "An internal server security error occurred. Please try again later."
     });

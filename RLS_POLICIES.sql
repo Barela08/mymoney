@@ -661,6 +661,44 @@ DROP POLICY IF EXISTS "user_connections_member_all" ON public.user_connections;
 CREATE POLICY "user_connections_member_all" ON public.user_connections
     FOR ALL USING (auth.uid() = user_a_id OR auth.uid() = user_b_id OR auth.uid() IS NULL);
 
+-- ------------------------------------------------------------------------------
+-- USER CONSENTS (STRICT USER ISOLATION & APPEND-ONLY AUDIT HISTORY)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_consents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    user_email TEXT,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_granted',
+    consent_status TEXT NOT NULL DEFAULT 'not_granted',
+    action TEXT NOT NULL DEFAULT 'granted',
+    policy_version TEXT NOT NULL DEFAULT 'v2.1 — DPDP Act 2023 & Rules 2025',
+    consent_wording TEXT,
+    granted_at TIMESTAMPTZ,
+    withdrawn_at TIMESTAMPTZ,
+    source TEXT NOT NULL DEFAULT 'privacy_choices_modal',
+    audit_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    idempotency_key TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.user_consents ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_consents_owner_policy" ON public.user_consents;
+DROP POLICY IF EXISTS "user_consents_select_own" ON public.user_consents;
+DROP POLICY IF EXISTS "user_consents_insert_own" ON public.user_consents;
+
+CREATE POLICY "user_consents_select_own" ON public.user_consents
+    FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "user_consents_insert_own" ON public.user_consents
+    FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = user_id);
+
 -- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================

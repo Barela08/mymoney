@@ -96,7 +96,14 @@ const MainContent: React.FC = () => {
         return 'admin';
       }
       if (hash === '#privacy-policy') return 'legal';
-      if (hash === '#delete-account' || hash === '#auto-detection') return 'settings';
+      if (
+        hash === '#delete-account' ||
+        hash === '#auto-detection' ||
+        hash === '#privacy' ||
+        hash === '#manage-consent'
+      ) {
+        return 'settings';
+      }
       if (hash.includes('legal=')) return 'legal';
       return PATH_TO_TAB[p] || 'dashboard';
     }
@@ -180,7 +187,12 @@ const MainContent: React.FC = () => {
       } else if (hash === '#privacy-policy') {
         setInitialLegalPolicy('privacy_policy');
         setCurrentTab('legal');
-      } else if (hash === '#delete-account' || hash === '#auto-detection') {
+      } else if (
+        hash === '#delete-account' ||
+        hash === '#auto-detection' ||
+        hash === '#privacy' ||
+        hash === '#manage-consent'
+      ) {
         setCurrentTab('settings');
       }
     };
@@ -529,9 +541,14 @@ const MainContent: React.FC = () => {
             }}
           />
 
-          {/* DPDP Act 2023 Statutory Consent Banner & Modal Gate */}
+          {/* Privacy Choices & Consent Center Modal Gate */}
           <DpdpConsentBanner onOpenPrivacyModal={() => handleOpenHelpModal('dpdp')} />
-          <DpdpConsentModal onOpenPrivacyPolicy={() => handleOpenHelpModal('dpdp')} />
+          <DpdpConsentModal
+            onOpenPrivacyPolicy={() => {
+              setInitialLegalPolicy('privacy_policy');
+              setCurrentTab('legal');
+            }}
+          />
 
           {/* Notification Preferences Modal */}
           {isNotifPrefsOpen && (

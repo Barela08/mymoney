@@ -441,8 +441,8 @@ export const supportApi = {
         message: payload.message,
         urgency: 'normal',
         status: 'new',
-        dpdp_consent: true,
-        dpdp_consent_at: nowIso,
+        dpdp_consent: false,
+        dpdp_consent_at: null,
         created_at: nowIso,
         updated_at: nowIso,
       };

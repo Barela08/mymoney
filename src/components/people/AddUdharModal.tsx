@@ -14,8 +14,14 @@ import {
   Loader2,
   Sparkles,
   UserCheck,
+  Lock,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import {
+  PRIVACY_CHANGED_EVENT,
+  hasOptionalConsent,
+  privacyConsentApi,
+} from '../../lib/privacyConsentApi';
 import {
   udharDeletionApi,
   UdharContact,
@@ -91,6 +97,47 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
   // Saved Contacts
   const [savedContacts, setSavedContacts] = useState<UdharContact[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(false);
+
+  // Two-way Udhar Sharing optional consent state
+  const [hasUdharSharingConsent, setHasUdharSharingConsent] = useState<boolean>(() =>
+    hasOptionalConsent('udhar_sharing')
+  );
+  const [isGrantingUdharConsent, setIsGrantingUdharConsent] = useState<boolean>(false);
+
+  useEffect(() => {
+    const syncConsent = () => setHasUdharSharingConsent(hasOptionalConsent('udhar_sharing'));
+    window.addEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
+    if (isOpen) {
+      syncConsent();
+      privacyConsentApi
+        .fetchConsents()
+        .then((res) => setHasUdharSharingConsent(Boolean(res.choices.udhar_sharing)))
+        .catch(() => {});
+    }
+    return () => window.removeEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
+  }, [isOpen]);
+
+  const handleGrantUdharSharingConsent = async () => {
+    if (isGrantingUdharConsent) return;
+    setIsGrantingUdharConsent(true);
+    try {
+      await privacyConsentApi.saveSingleConsent({
+        purpose: 'udhar_sharing',
+        status: 'granted',
+        source: 'udhar_sharing_prompt',
+        language: 'en',
+      });
+      setHasUdharSharingConsent(true);
+      toast.success(
+        'Two-way Udhar Sharing enabled',
+        'Only the Udhar entries you share with connected people will be synced.'
+      );
+    } catch (err: any) {
+      toast.error('Could not save consent', err?.message || 'Please try again.');
+    } finally {
+      setIsGrantingUdharConsent(false);
+    }
+  };
 
   // Initialize form whenever modal opens
   useEffect(() => {
@@ -234,6 +281,15 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     const cleanName = personName.trim();
     if (!cleanName) {
       toast.error('Person Required', 'Please select a connected person or enter a name.');
+      return;
+    }
+
+    // Enforce explicit Two-way Udhar Sharing consent before sharing an entry with a connected account
+    if (counterpartUserId && !hasUdharSharingConsent) {
+      toast.info(
+        'Two-way Udhar Sharing Consent Needed',
+        'Enable Two-way Udhar Sharing below to share this entry, or click "Save Locally Only" to record it privately without sharing.'
+      );
       return;
     }
 
@@ -793,6 +849,43 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Explicit Two-way Udhar Sharing Consent Notice when sharing with a connected user */}
+          {counterpartUserId && !hasUdharSharingConsent && (
+            <div className="p-3.5 rounded-2xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 space-y-2.5 text-xs">
+              <div className="flex items-start gap-2">
+                <Lock className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-amber-900 dark:text-amber-200">
+                    Two-way Udhar Sharing is currently off
+                  </p>
+                  <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                    Sharing this entry with {personName || 'your connected contact'} requires your explicit optional consent. Unrelated financial records are never shared.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isGrantingUdharConsent}
+                  onClick={() => void handleGrantUdharSharingConsent()}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isGrantingUdharConsent ? 'Saving...' : 'Enable Two-way Udhar Sharing'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCounterpartUserId(null);
+                    setPersonMode('manual');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-semibold text-[11px] cursor-pointer"
+                >
+                  Save Locally Only (No Sharing)
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
