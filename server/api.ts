@@ -1366,6 +1366,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`admin_search:${authUser.id}`, RATE_LIMITS.ADMIN_USER_SEARCH.max, RATE_LIMITS.ADMIN_USER_SEARCH.windowMs, RATE_LIMITS.ADMIN_USER_SEARCH.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       // Fetch users robustly: Direct SQL (profiles + app_users) with HTTPS Supabase REST API fallback
       let users: any[] = [];
       if (isDatabaseAvailable()) {
@@ -1500,6 +1506,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const targetUserId = statusMatch[1];
       const body = await parseJsonBody(req);
       const newStatus = body.status;
@@ -1578,6 +1590,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`admin_role:${authUser.id}`, RATE_LIMITS.ADMIN_ROLE_CHANGE.max, RATE_LIMITS.ADMIN_ROLE_CHANGE.windowMs, RATE_LIMITS.ADMIN_ROLE_CHANGE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const targetUserId = roleMatch[1];
       const body = await parseJsonBody(req);
       const newRole = body.role;
@@ -1625,6 +1643,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
         sendJson(res, 403, { success: false, message: 'Administrator authorization required.' });
+        return true;
+      }
+
+      const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
         return true;
       }
 
@@ -1692,6 +1716,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const targetUserId = forceResetMatch[1];
       if (isDatabaseAvailable()) {
         await query('UPDATE public.app_users SET force_password_reset = TRUE WHERE id = $1', [targetUserId]).catch(() => {});
@@ -1726,6 +1756,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const targetUserId = revokeMatch[1];
       let count = 0;
       if (isDatabaseAvailable()) {
@@ -1755,6 +1791,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
         sendJson(res, 403, { success: false, message: 'Administrator authorization required.' });
+        return true;
+      }
+
+      const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
         return true;
       }
 
@@ -4085,6 +4127,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`udhar_create:${authUser.id}`, RATE_LIMITS.UDHAR_CREATE.max, RATE_LIMITS.UDHAR_CREATE.windowMs, RATE_LIMITS.UDHAR_CREATE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       if (!isDatabaseAvailable()) {
         const restRes = await createUdharTransactionRest(authUser, body);
@@ -4433,6 +4481,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const rate = await checkRateLimitAsync(`udhar_settle:${authUser.id}`, RATE_LIMITS.UDHAR_SETTLE.max, RATE_LIMITS.UDHAR_SETTLE.windowMs, RATE_LIMITS.UDHAR_SETTLE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
         return true;
       }
 
@@ -5000,6 +5054,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`udhar_settle:${authUser.id}`, RATE_LIMITS.UDHAR_SETTLE.max, RATE_LIMITS.UDHAR_SETTLE.windowMs, RATE_LIMITS.UDHAR_SETTLE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const txId = settleTxMatch[1];
       const body = await parseJsonBody(req);
 
@@ -5123,6 +5183,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rate = await checkRateLimitAsync(`udhar_delete:${authUser.id}`, RATE_LIMITS.UDHAR_DELETE.max, RATE_LIMITS.UDHAR_DELETE.windowMs, RATE_LIMITS.UDHAR_DELETE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const txId = deleteTxMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await cancelUdharRest(authUser, txId);
@@ -5211,6 +5277,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const rate = await checkRateLimitAsync(`udhar_history:${authUser.id}`, RATE_LIMITS.TRANSACTION_DETAILS.max, RATE_LIMITS.TRANSACTION_DETAILS.windowMs, RATE_LIMITS.TRANSACTION_DETAILS.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
         return true;
       }
 

@@ -3579,6 +3579,12 @@ export async function handleAdminApiRequest(
     if (finExportMatch && method === 'POST') {
       const auth = await verifyAdminAuth(req, res, 'users.financial_data.export');
       if (!auth) return true;
+
+      const rate = await checkRateLimitAsync(`admin_export:${auth.authUser.id}`, RATE_LIMITS.ADMIN_DATA_EXPORT.max, RATE_LIMITS.ADMIN_DATA_EXPORT.windowMs, RATE_LIMITS.ADMIN_DATA_EXPORT.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
       if (!isDatabaseAvailable()) {
         sendJson(res, 503, { success: false, message: 'Direct PostgreSQL connection required for encrypted financial-data audit grants.' });
         return true;

@@ -173,6 +173,20 @@ function generateSecureUUID(): string {
   });
 }
 
+// Client-side burst protection to prevent double clicks and duplicate entries
+const clientMutationHistory: number[] = [];
+export function checkClientFinancialRateLimit(maxPerMin = 30): boolean {
+  const now = Date.now();
+  while (clientMutationHistory.length > 0 && clientMutationHistory[0] < now - 60000) {
+    clientMutationHistory.shift();
+  }
+  if (clientMutationHistory.length >= maxPerMin) {
+    return false;
+  }
+  clientMutationHistory.push(now);
+  return true;
+}
+
 export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAdmin } = useAuth();
 
@@ -741,6 +755,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       throw new SecurityAuthorizationError('Authentication required: You must be logged in to record transactions.');
     }
 
+    if (!checkClientFinancialRateLimit(30)) {
+      throw new Error('You have made too many attempts. Please try again after some time.');
+    }
+
     const validation = validateTransactionPayload(payload, user.uid);
     if (!validation.isValid || !validation.sanitizedPayload) {
       throw new Error(`Validation Error: ${validation.errors.join(' ')}`);
@@ -803,6 +821,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       throw new SecurityAuthorizationError('Authentication required.');
     }
 
+    if (!checkClientFinancialRateLimit(30)) {
+      throw new Error('You have made too many attempts. Please try again after some time.');
+    }
+
     const existing = allTransactions.find((t) => t.id === id);
     if (!existing) {
       throw new Error(`Transaction with ID "${id}" not found.`);
@@ -861,6 +883,11 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Delete transaction: Soft delete (Move to Recycle Bin)
   const deleteTransaction = async (id: string): Promise<boolean> => {
     if (!user) return false;
+
+    if (!checkClientFinancialRateLimit(30)) {
+      console.warn('Financial rate limit reached for deletion.');
+      return false;
+    }
 
     const existing = allTransactions.find((t) => t.id === id);
     if (!existing) return false;
