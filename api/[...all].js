@@ -1381,7 +1381,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto21 = require_utils2();
+    var crypto25 = require_utils2();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -1399,7 +1399,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto21.randomBytes(18).toString("base64");
+      const clientNonce = crypto25.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -1441,20 +1441,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto21.hashByName(hashName, peerCert);
+        const certHash = await crypto25.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto21.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto21.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto21.sha256(clientKey);
-      const clientSignature = await crypto21.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto25.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto25.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto25.sha256(clientKey);
+      const clientSignature = await crypto25.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto21.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto21.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto25.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto25.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -3693,7 +3693,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto21 = require_utils2();
+    var crypto25 = require_utils2();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -3948,7 +3948,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto21.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto25.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -10760,14 +10760,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports, module) {
     var Buffer4 = require_safe_buffer().Buffer;
-    var crypto21 = __require("crypto");
+    var crypto25 = __require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = __require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto21.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto25.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -10857,17 +10857,17 @@ var require_jwa = __commonJS({
       return function sign2(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto21.createHmac("sha" + bits, secret);
+        var hmac = crypto25.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual = "timingSafeEqual" in crypto21 ? function timingSafeEqual2(a, b) {
+    var timingSafeEqual = "timingSafeEqual" in crypto25 ? function timingSafeEqual2(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto21.timingSafeEqual(a, b);
+      return crypto25.timingSafeEqual(a, b);
     } : function timingSafeEqual2(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -10884,7 +10884,7 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto21.createSign("RSA-SHA" + bits);
+        var signer = crypto25.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -10894,7 +10894,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto21.createVerify("RSA-SHA" + bits);
+        var verifier = crypto25.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -10903,11 +10903,11 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto21.createSign("RSA-SHA" + bits);
+        var signer = crypto25.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto21.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto21.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto25.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto25.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -10917,12 +10917,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto21.createVerify("RSA-SHA" + bits);
+        var verifier = crypto25.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto21.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto21.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto25.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto25.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -11221,7 +11221,7 @@ var require_jws = __commonJS({
 var require_ece = __commonJS({
   "node_modules/http_ece/ece.js"(exports, module) {
     "use strict";
-    var crypto21 = __require("crypto");
+    var crypto25 = __require("crypto");
     var AES_GCM = "aes-128-gcm";
     var PAD_SIZE = { "aes128gcm": 1, "aesgcm": 2 };
     var TAG_LENGTH = 16;
@@ -11248,7 +11248,7 @@ var require_ece = __commonJS({
       return b;
     }
     function HMAC_hash(key, input) {
-      var hmac = crypto21.createHmac("sha256", key);
+      var hmac = crypto25.createHmac("sha256", key);
       hmac.update(input);
       return hmac.digest();
     }
@@ -11516,7 +11516,7 @@ var require_ece = __commonJS({
     function decryptRecord(key, counter, buffer, header, last) {
       keylog("decrypt", buffer);
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto21.createDecipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto25.createDecipheriv(AES_GCM, key.key, nonce);
       gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
       var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
       data = Buffer.concat([data, gcm.final()]);
@@ -11564,7 +11564,7 @@ var require_ece = __commonJS({
       keylog("encrypt", buffer);
       pad = pad || 0;
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto21.createCipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto25.createCipheriv(AES_GCM, key.key, nonce);
       var ciphertext = [];
       var padSize = PAD_SIZE[header.version];
       var padding = Buffer.alloc(pad + padSize);
@@ -11607,7 +11607,7 @@ var require_ece = __commonJS({
       }
       var header = parseParams(params);
       if (!header.salt) {
-        header.salt = crypto21.randomBytes(KEY_LENGTH);
+        header.salt = crypto25.randomBytes(KEY_LENGTH);
       }
       var result;
       if (header.version === "aes128gcm") {
@@ -12545,9 +12545,9 @@ var require_interceptor = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/agent-base/dist/helpers.js
+// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/gaxios/node_modules/agent-base/dist/helpers.js"(exports) {
+  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -12615,9 +12615,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/agent-base/dist/index.js
+// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js
 var require_dist2 = __commonJS({
-  "node_modules/gaxios/node_modules/agent-base/dist/index.js"(exports) {
+  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -22681,22 +22681,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
-    var crypto21 = __require("crypto");
+    var crypto25 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto21.createHash("sha256").update(str).digest("base64");
+        return crypto25.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto21.randomBytes(count).toString("base64");
+        return crypto25.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto21.createVerify("RSA-SHA256");
+        const verifier = crypto25.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto21.createSign("RSA-SHA256");
+        const signer = crypto25.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -22714,7 +22714,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto21.createHash("sha256").update(str).digest("hex");
+        return crypto25.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -22726,7 +22726,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto21.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto25.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports.NodeCrypto = NodeCrypto;
@@ -23417,10 +23417,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto21 = (0, crypto_1.createCrypto)();
-        const randomString = crypto21.randomBytesBase64(96);
+        const crypto25 = (0, crypto_1.createCrypto)();
+        const randomString = crypto25.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto21.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto25.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -23861,7 +23861,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto21 = (0, crypto_1.createCrypto)();
+        const crypto25 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -23874,7 +23874,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto21.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto25.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -23885,7 +23885,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto21.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto25.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -23902,7 +23902,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto21.verify(cert, signed, signature);
+        const verified = await crypto25.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -26472,14 +26472,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports.AwsRequestSigner = AwsRequestSigner;
-    async function sign2(crypto21, key, msg) {
-      return await crypto21.signWithHmacSha256(key, msg);
+    async function sign2(crypto25, key, msg) {
+      return await crypto25.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto21, key, dateStamp, region, serviceName) {
-      const kDate = await sign2(crypto21, `AWS4${key}`, dateStamp);
-      const kRegion = await sign2(crypto21, kDate, region);
-      const kService = await sign2(crypto21, kRegion, serviceName);
-      const kSigning = await sign2(crypto21, kService, "aws4_request");
+    async function getSigningKey(crypto25, key, dateStamp, region, serviceName) {
+      const kDate = await sign2(crypto25, `AWS4${key}`, dateStamp);
+      const kRegion = await sign2(crypto25, kDate, region);
+      const kService = await sign2(crypto25, kRegion, serviceName);
+      const kSigning = await sign2(crypto25, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -27445,7 +27445,7 @@ var require_gdchclient = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GdchClient = exports.GDCH_SERVICE_ACCOUNT_TYPE = void 0;
-    var crypto21 = __require("crypto");
+    var crypto25 = __require("crypto");
     var fs13 = __require("fs");
     var https4 = __require("https");
     var oauth2client_1 = require_oauth2client();
@@ -27636,7 +27636,7 @@ var require_gdchclient = __commonJS({
         const encodedHeader = this.base64UrlEncode(JSON.stringify(header));
         const encodedPayload = this.base64UrlEncode(JSON.stringify(payload));
         const signingInput = `${encodedHeader}.${encodedPayload}`;
-        const signature = crypto21.sign("sha256", Buffer.from(signingInput), {
+        const signature = crypto25.sign("sha256", Buffer.from(signingInput), {
           key: this.privateKey,
           dsaEncoding: "ieee-p1363"
         });
@@ -28499,24 +28499,24 @@ var require_googleauth = __commonJS({
           const signed = await client.sign(data);
           return signed.signedBlob;
         }
-        const crypto21 = (0, crypto_1.createCrypto)();
+        const crypto25 = (0, crypto_1.createCrypto)();
         if (client instanceof jwtclient_1.JWT && client.key) {
-          const sign2 = await crypto21.sign(client.key, data);
+          const sign2 = await crypto25.sign(client.key, data);
           return sign2;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto21, creds.client_email, data, endpoint);
+        return this.signBlob(crypto25, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto21, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto25, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto21.encodeBase64StringUtf8(data)
+            payload: crypto25.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -32661,7 +32661,7 @@ var require_websocket_server = __commonJS({
 
 // server/api.ts
 import { parse as parseUrl2 } from "url";
-import crypto20 from "crypto";
+import crypto24 from "crypto";
 
 // node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -34838,6 +34838,71 @@ async function logSecurityEvent(eventType, opts = {}) {
 }
 
 // server/auth.ts
+import crypto3 from "crypto";
+var MASTER_ADMIN_EMAILS = /* @__PURE__ */ new Set(["hackifypro@gmail.com", "admin@mymoney.com"]);
+var NON_DISCOVERABLE_ROLES = /* @__PURE__ */ new Set(["admin", "superadmin", "support", "analyst"]);
+function isMasterAdminAccountEmail(email) {
+  if (!email) return false;
+  return MASTER_ADMIN_EMAILS.has(String(email).toLowerCase().trim());
+}
+function isDiscoverableNormalUser(user) {
+  if (!user) return false;
+  if (user.status && String(user.status).toLowerCase().trim() !== "active") return false;
+  if (user.deletion_status && String(user.deletion_status).toLowerCase().trim() !== "none") return false;
+  if (isMasterAdminAccountEmail(user.email)) return false;
+  const normalizedRole = String(user.role || "user").toLowerCase().trim();
+  if (NON_DISCOVERABLE_ROLES.has(normalizedRole) || normalizedRole !== "user") return false;
+  return true;
+}
+var EPHEMERAL_FALLBACK_SECRET = crypto3.randomBytes(32).toString("hex");
+function getFallbackTokenSecret() {
+  return process.env.SESSION_SECRET || process.env.API_KEY_ENCRYPTION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || EPHEMERAL_FALLBACK_SECRET;
+}
+function getAuthSupabaseRestConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co").replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+  return { url, key };
+}
+function signFallbackSessionToken(user, expiresAtMs) {
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: user.id,
+      role: user.role,
+      email: String(user.email || "").toLowerCase().trim(),
+      exp: expiresAtMs
+    }),
+    "utf8"
+  ).toString("base64url");
+  const sig = crypto3.createHmac("sha256", getFallbackTokenSecret()).update(`mmf1.${payload}`).digest("base64url");
+  return `mmf1.${payload}.${sig}`;
+}
+function verifyFallbackSessionToken(token) {
+  if (!token || !token.startsWith("mmf1.")) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [, payloadB64, providedSig] = parts;
+  if (!payloadB64 || !providedSig) return null;
+  const expectedSig = crypto3.createHmac("sha256", getFallbackTokenSecret()).update(`mmf1.${payloadB64}`).digest("base64url");
+  const providedBuf = Buffer.from(providedSig, "utf8");
+  const expectedBuf = Buffer.from(expectedSig, "utf8");
+  if (providedBuf.length !== expectedBuf.length || !crypto3.timingSafeEqual(providedBuf, expectedBuf)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    if (!parsed?.sub || typeof parsed.exp !== "number" || parsed.exp <= Date.now()) {
+      return null;
+    }
+    return {
+      userId: String(parsed.sub),
+      role: String(parsed.role || "user"),
+      email: String(parsed.email || ""),
+      exp: parsed.exp
+    };
+  } catch {
+    return null;
+  }
+}
 var SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1e3;
 var REMEMBER_ME_LIFETIME_MS = 30 * 24 * 60 * 60 * 1e3;
 async function createSession(userId, opts = {}) {
@@ -34845,33 +34910,145 @@ async function createSession(userId, opts = {}) {
   const sessionTokenHash = hashToken(sessionToken);
   const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
   const expiresAt = new Date(Date.now() + duration);
-  const res = await query(
-    `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id`,
-    [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
+      );
+      if (res.rows[0]?.id) {
+        return {
+          sessionId: res.rows[0].id,
+          sessionToken,
+          userId,
+          expiresAt
+        };
+      }
+    } catch (err) {
+      console.warn("createSession PG insert failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        session_token_hash: sessionTokenHash,
+        user_agent: opts.userAgent || null,
+        ip_address: opts.ipAddress || null,
+        expires_at: expiresAt.toISOString(),
+        is_revoked: false
+      })
+    });
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      const createdId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : sessionTokenHash.slice(0, 16);
+      return {
+        sessionId: createdId,
+        sessionToken,
+        userId,
+        expiresAt
+      };
+    }
+  } catch (err) {
+    console.warn("createSession Supabase REST insert notice:", err?.message);
+  }
+  const signedToken = signFallbackSessionToken(
+    {
+      id: userId,
+      role: opts.user?.role || "user",
+      email: opts.user?.email || ""
+    },
+    expiresAt.getTime()
   );
   return {
-    sessionId: res.rows[0].id,
-    sessionToken,
+    sessionId: `hmac_${sessionTokenHash.slice(0, 16)}`,
+    sessionToken: signedToken,
     userId,
     expiresAt
   };
 }
 async function revokeSession(sessionToken) {
+  if (!sessionToken || sessionToken.startsWith("direct_") || sessionToken.startsWith("mmf1.")) {
+    return false;
+  }
   const tokenHash = hashToken(sessionToken);
-  const res = await query(
-    `UPDATE public.user_sessions SET is_revoked = TRUE WHERE session_token_hash = $1`,
-    [tokenHash]
-  );
-  return (res.rowCount ?? 0) > 0;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE WHERE session_token_hash = $1`,
+        [tokenHash]
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      console.warn("revokeSession PG update failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({ is_revoked: true })
+      }
+    );
+    return restRes.ok;
+  } catch {
+    return false;
+  }
 }
 async function revokeAllUserSessions(userId) {
-  const res = await query(
-    `UPDATE public.user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE`,
-    [userId]
-  );
-  return res.rowCount ?? 0;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE`,
+        [userId]
+      );
+      return res.rowCount ?? 0;
+    } catch (err) {
+      console.warn("revokeAllUserSessions PG update failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify({ is_revoked: true })
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      return Array.isArray(rows) ? rows.length : 1;
+    }
+  } catch {
+  }
+  return 0;
 }
 function extractSessionToken(req) {
   const authHeader = req.headers["authorization"];
@@ -34889,10 +35066,30 @@ function extractSessionToken(req) {
   }
   return null;
 }
+function mapRowToAuthenticatedUser(row) {
+  const isMasterAdmin = isMasterAdminAccountEmail(row.email);
+  const metaCompleted = row?.custom_permissions && typeof row.custom_permissions === "object" ? row.custom_permissions.__profile_completed : void 0;
+  const profileCompleted = typeof row.profile_completed === "boolean" ? row.profile_completed : typeof metaCompleted === "boolean" ? metaCompleted : true;
+  return {
+    id: row.id,
+    full_name: row.full_name,
+    email: row.email,
+    username: row.username || null,
+    phone: row.phone,
+    role: isMasterAdmin ? "superadmin" : row.role || "user",
+    status: row.status,
+    email_verified: row.email_verified,
+    avatar_url: row.avatar_url,
+    force_password_reset: row.force_password_reset,
+    profile_completed: profileCompleted,
+    created_at: row.created_at,
+    last_login_at: row.last_login_at,
+    password_changed_at: row.password_changed_at
+  };
+}
 async function resolveUserViaSupabaseRest(userId) {
   try {
-    const supabaseUrl = process.env.SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co";
-    const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+    const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
     const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}&select=*`, {
       headers: {
         apikey: supabaseKey,
@@ -34903,24 +35100,7 @@ async function resolveUserViaSupabaseRest(userId) {
     if (res.ok) {
       const rows = await res.json();
       if (Array.isArray(rows) && rows.length > 0 && rows[0].status === "active") {
-        const row = rows[0];
-        const isMasterAdmin = Boolean(
-          row.email && (row.email.toLowerCase().trim() === "hackifypro@gmail.com" || row.email.toLowerCase().trim() === "admin@mymoney.com")
-        );
-        return {
-          id: row.id,
-          full_name: row.full_name,
-          email: row.email,
-          phone: row.phone,
-          role: isMasterAdmin ? "superadmin" : row.role || "user",
-          status: row.status,
-          email_verified: row.email_verified,
-          avatar_url: row.avatar_url,
-          force_password_reset: row.force_password_reset,
-          created_at: row.created_at,
-          last_login_at: row.last_login_at,
-          password_changed_at: row.password_changed_at
-        };
+        return mapRowToAuthenticatedUser(rows[0]);
       }
     }
   } catch (err) {
@@ -34928,91 +35108,117 @@ async function resolveUserViaSupabaseRest(userId) {
   }
   return null;
 }
+async function verifySupabaseAccessToken(jwtToken) {
+  try {
+    const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseKey) {
+      return null;
+    }
+    const verifyRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: "GET",
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${jwtToken}`,
+        Accept: "application/json"
+      }
+    });
+    if (!verifyRes.ok) {
+      return null;
+    }
+    const authUser = await verifyRes.json();
+    if (!authUser || typeof authUser.id !== "string" || !authUser.id.trim()) {
+      return null;
+    }
+    return {
+      id: authUser.id.trim(),
+      email: typeof authUser.email === "string" ? authUser.email.toLowerCase().trim() : void 0
+    };
+  } catch {
+    return null;
+  }
+}
+async function resolveUserByEmailViaSupabaseRest(email) {
+  try {
+    const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Accept: "application/json"
+        }
+      }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].status === "active") {
+        return mapRowToAuthenticatedUser(rows[0]);
+      }
+    }
+  } catch (err) {
+    console.warn("resolveUserByEmailViaSupabaseRest error:", err);
+  }
+  return null;
+}
+async function resolveActiveUserById(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+         FROM public.app_users WHERE id = $1`,
+        [userId]
+      );
+      if (res.rows.length > 0 && res.rows[0].status === "active") {
+        return mapRowToAuthenticatedUser(res.rows[0]);
+      }
+      return null;
+    } catch (err) {
+      console.warn("resolveActiveUserById DB query failed, attempting Supabase REST fallback:", err);
+    }
+  }
+  return await resolveUserViaSupabaseRest(userId);
+}
 async function authenticateRequest(req) {
   const token = extractSessionToken(req);
   if (!token) return null;
   if (token.startsWith("direct_")) {
-    const parts = token.split("_");
-    const directUserId = parts[1];
-    if (directUserId) {
-      try {
-        const directRes = await query(
-          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
-           FROM public.app_users WHERE id = $1`,
-          [directUserId]
-        );
-        if (directRes.rows.length > 0 && directRes.rows[0].status === "active") {
-          const row = directRes.rows[0];
-          const isMasterAdmin = Boolean(
-            row.email && (row.email.toLowerCase().trim() === "hackifypro@gmail.com" || row.email.toLowerCase().trim() === "admin@mymoney.com")
-          );
-          return {
-            id: row.id,
-            full_name: row.full_name,
-            email: row.email,
-            phone: row.phone,
-            role: isMasterAdmin ? "superadmin" : row.role || "user",
-            status: row.status,
-            email_verified: row.email_verified,
-            avatar_url: row.avatar_url,
-            force_password_reset: row.force_password_reset,
-            created_at: row.created_at,
-            last_login_at: row.last_login_at,
-            password_changed_at: row.password_changed_at
-          };
-        }
-      } catch (err) {
-        console.warn("Direct token DB query failed, attempting Supabase REST fallback:", err);
-      }
-      const restUser = await resolveUserViaSupabaseRest(directUserId);
-      if (restUser) return restUser;
-    }
+    return null;
+  }
+  if (token.startsWith("mmf1.")) {
+    const verified = verifyFallbackSessionToken(token);
+    if (!verified) return null;
+    const resolved = await resolveActiveUserById(verified.userId);
+    if (resolved) return resolved;
+    return null;
   }
   if (token.includes(".") && token.split(".").length === 3) {
-    try {
-      const payloadBase64 = token.split(".")[1];
-      const normalizedBase64 = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
-      const decodedJson = Buffer.from(normalizedBase64, "base64").toString("utf8");
-      const jwtPayload = JSON.parse(decodedJson);
-      const jwtUserId = jwtPayload.sub;
-      if (jwtUserId) {
-        const jwtRes = await query(
-          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
-           FROM public.app_users WHERE id = $1`,
-          [jwtUserId]
-        );
-        if (jwtRes.rows.length > 0 && jwtRes.rows[0].status === "active") {
-          const row = jwtRes.rows[0];
-          const isMasterAdmin = Boolean(
-            row.email && (row.email.toLowerCase().trim() === "hackifypro@gmail.com" || row.email.toLowerCase().trim() === "admin@mymoney.com")
+    const verified = await verifySupabaseAccessToken(token);
+    if (!verified) return null;
+    const byId = await resolveActiveUserById(verified.id);
+    if (byId) return byId;
+    if (verified.email) {
+      if (isDatabaseAvailable()) {
+        try {
+          const byEmailRes = await query(
+            `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+             FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1`,
+            [verified.email]
           );
-          return {
-            id: row.id,
-            full_name: row.full_name,
-            email: row.email,
-            phone: row.phone,
-            role: isMasterAdmin ? "superadmin" : row.role || "user",
-            status: row.status,
-            email_verified: row.email_verified,
-            avatar_url: row.avatar_url,
-            force_password_reset: row.force_password_reset,
-            created_at: row.created_at,
-            last_login_at: row.last_login_at,
-            password_changed_at: row.password_changed_at
-          };
+          if (byEmailRes.rows.length > 0 && byEmailRes.rows[0].status === "active") {
+            return mapRowToAuthenticatedUser(byEmailRes.rows[0]);
+          }
+        } catch {
         }
-        const restUser = await resolveUserViaSupabaseRest(jwtUserId);
-        if (restUser) return restUser;
       }
-    } catch (jwtErr) {
-      console.warn("Supabase JWT token decode notice:", jwtErr);
+      return await resolveUserByEmailViaSupabaseRest(verified.email);
     }
+    return null;
   }
   const tokenHash = hashToken(token);
   async function resolveSessionViaSupabaseRest() {
     try {
-      const supabaseUrl = process.env.SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co";
-      const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+      const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
       const sessRes = await fetch(
         `${supabaseUrl}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}&is_revoked=eq.false&select=id,user_id,expires_at`,
         {
@@ -35096,6 +35302,8 @@ async function authenticateRequest(req) {
   }
 }
 function sanitizeUserOutput(user) {
+  const metaCompleted = user?.custom_permissions && typeof user.custom_permissions === "object" ? user.custom_permissions.__profile_completed : void 0;
+  const profileCompleted = typeof user.profile_completed === "boolean" ? user.profile_completed : typeof metaCompleted === "boolean" ? metaCompleted : true;
   return {
     id: user.id,
     uid: user.id,
@@ -35104,12 +35312,16 @@ function sanitizeUserOutput(user) {
     displayName: user.full_name,
     // compatibility alias
     email: user.email,
+    username: user.username || null,
     phone: user.phone || null,
     role: user.role,
     status: user.status,
     email_verified: user.email_verified,
     avatar_url: user.avatar_url || null,
     force_password_reset: user.force_password_reset,
+    profile_completed: profileCompleted,
+    profileCompleted,
+    // compatibility alias
     created_at: user.created_at,
     createdAt: user.created_at,
     // compatibility alias
@@ -38746,7 +38958,7 @@ function detectExtension(mimeType) {
 }
 
 // node_modules/nodemailer/dist/esm/mime-node/index.js
-import crypto3 from "node:crypto";
+import crypto4 from "node:crypto";
 import fs3 from "node:fs";
 import { PassThrough as PassThrough2, finished as finished2, pipeline } from "node:stream";
 
@@ -40599,7 +40811,7 @@ var MimeNode = class _MimeNode {
   constructor(contentType, options) {
     this.nodeCounter = 0;
     options = options || {};
-    this.baseBoundary = _stripBoundaryControls(options.baseBoundary || crypto3.randomBytes(8).toString("hex"));
+    this.baseBoundary = _stripBoundaryControls(options.baseBoundary || crypto4.randomBytes(8).toString("hex"));
     this.boundaryPrefix = _stripBoundaryControls(options.boundaryPrefix || "--_NmP");
     this.disableFileAccess = !!options.disableFileAccess;
     this.disableUrlAccess = !!options.disableUrlAccess;
@@ -41776,8 +41988,8 @@ var MimeNode = class _MimeNode {
   _generateMessageId() {
     return "<" + [2, 2, 2, 6].reduce(
       // crux to generate UUID-like random strings
-      (prev, len) => prev + "-" + crypto3.randomBytes(len).toString("hex"),
-      crypto3.randomBytes(4).toString("hex")
+      (prev, len) => prev + "-" + crypto4.randomBytes(len).toString("hex"),
+      crypto4.randomBytes(4).toString("hex")
     ) + "@" + // try to use the domain of the FROM address or fallback to server hostname
     (this.getEnvelope().from || this.hostname || "localhost").split("@").pop() + ">";
   }
@@ -42465,7 +42677,7 @@ var message_parser_default = MessageParser;
 
 // node_modules/nodemailer/dist/esm/dkim/relaxed-body.js
 import { Transform as Transform7 } from "node:stream";
-import crypto4 from "node:crypto";
+import crypto5 from "node:crypto";
 var CHAR_CR = 13;
 var CHAR_LF = 10;
 var CHAR_SPACE = 32;
@@ -42476,7 +42688,7 @@ var RelaxedBody = class extends Transform7 {
   constructor(options) {
     super();
     options = options || {};
-    this.bodyHash = crypto4.createHash(options.hashAlgo || "sha256");
+    this.bodyHash = crypto5.createHash(options.hashAlgo || "sha256");
     this.byteLength = 0;
     this.debug = options.debug;
     this._debugBody = options.debug ? [] : false;
@@ -42586,7 +42798,7 @@ var RelaxedBody = class extends Transform7 {
 var relaxed_body_default = RelaxedBody;
 
 // node_modules/nodemailer/dist/esm/dkim/sign.js
-import crypto5 from "node:crypto";
+import crypto6 from "node:crypto";
 function unsupportedHashAlgoError(hashAlgo) {
   const err = new Error('Unsupported DKIM hash algorithm "' + hashAlgo + '"');
   err.code = ECONFIG;
@@ -42601,7 +42813,7 @@ function sign(headers, hashAlgo, bodyHash, options) {
   canonicalizedHeaderData.headers += "dkim-signature:" + relaxedHeaderLine(dkimHeader);
   let signer;
   try {
-    signer = crypto5.createSign(("rsa-" + hashAlgo).toUpperCase());
+    signer = crypto6.createSign(("rsa-" + hashAlgo).toUpperCase());
   } catch (_E) {
     throw unsupportedHashAlgoError(hashAlgo);
   }
@@ -42668,7 +42880,7 @@ function relaxedHeaderLine(line) {
 import { PassThrough as PassThrough3 } from "node:stream";
 import fs4 from "node:fs";
 import path3 from "node:path";
-import crypto6 from "node:crypto";
+import crypto7 from "node:crypto";
 var DKIM_ALGO = "sha256";
 var MAX_MESSAGE_SIZE = 10 * 1024 * 1024;
 var DKIMSigner = class {
@@ -42681,7 +42893,7 @@ var DKIMSigner = class {
     this.chunks = [];
     this.chunklen = 0;
     this.readPos = 0;
-    this.cachePath = this.cacheDir ? path3.join(this.cacheDir, "message." + Date.now() + "-" + crypto6.randomBytes(14).toString("hex")) : false;
+    this.cachePath = this.cacheDir ? path3.join(this.cacheDir, "message." + Date.now() + "-" + crypto7.randomBytes(14).toString("hex")) : false;
     this.cache = false;
     this.headers = false;
     this.bodyHash = false;
@@ -43291,7 +43503,7 @@ var MailMessage = class {
 // node_modules/nodemailer/dist/esm/mailer/index.js
 import net6 from "node:net";
 import dns3 from "node:dns";
-import crypto7 from "node:crypto";
+import crypto8 from "node:crypto";
 var DEFAULT_MAX_RECIPIENTS = 1e5;
 function isAbortSignal(value) {
   return typeof value === "object" && value !== null && "aborted" in value && typeof value.addEventListener === "function" && typeof value.removeEventListener === "function";
@@ -43651,7 +43863,7 @@ var Mail = class extends EventEmitter {
       }
       let cidCounter = 0;
       html = (html || "").toString().replace(/(<img\b[^<>]{0,1024} src\s{0,20}=[\s"']{0,20})(data:([^;"'<>\s]{1,255});[^"'>\s]+)/gi, (match2, prefix, dataUri, mimeType) => {
-        const cid = crypto7.randomBytes(10).toString("hex") + "@localhost";
+        const cid = crypto8.randomBytes(10).toString("hex") + "@localhost";
         if (!mail.data.attachments) {
           mail.data.attachments = [];
         }
@@ -43686,7 +43898,7 @@ import { EventEmitter as EventEmitter2 } from "node:events";
 import net7 from "node:net";
 import tls2 from "node:tls";
 import os2 from "node:os";
-import crypto8 from "node:crypto";
+import crypto9 from "node:crypto";
 
 // node_modules/nodemailer/dist/esm/smtp-connection/data-stream.js
 import { Transform as Transform8 } from "node:stream";
@@ -43851,7 +44063,7 @@ function maskAuthCommand(cmd) {
 var SMTPConnection = class extends EventEmitter2 {
   constructor(options) {
     super(options);
-    this.id = crypto8.randomBytes(8).toString("base64").replace(/\W/g, "");
+    this.id = crypto9.randomBytes(8).toString("base64").replace(/\W/g, "");
     this.stage = "init";
     this.options = options || {};
     if (this.options.requireTLS && (this.options.ignoreTLS || this.options.opportunisticTLS)) {
@@ -45207,7 +45419,7 @@ var SMTPConnection = class extends EventEmitter2 {
       return callback(this._formatError("Invalid login sequence while waiting for server challenge string", "EAUTH", str, "AUTH CRAM-MD5"));
     }
     const base64decoded = Buffer.from(challengeMatch[1], "base64").toString("ascii");
-    const hmacMD5 = crypto8.createHmac("md5", this._auth.credentials.pass);
+    const hmacMD5 = crypto9.createHmac("md5", this._auth.credentials.pass);
     hmacMD5.update(base64decoded);
     const prepended = this._auth.credentials.user + " " + hmacMD5.digest("hex");
     this._responseActions.push((str2) => {
@@ -45541,7 +45753,7 @@ var smtp_connection_default = SMTPConnection;
 
 // node_modules/nodemailer/dist/esm/xoauth2/index.js
 import { Stream } from "node:stream";
-import crypto9 from "node:crypto";
+import crypto10 from "node:crypto";
 var XOAuth2 = class extends Stream {
   constructor(options, logger) {
     super();
@@ -45864,7 +46076,7 @@ var XOAuth2 = class extends Stream {
    */
   jwtSignRS256(payload) {
     const signedPayload = ['{"alg":"RS256","typ":"JWT"}', JSON.stringify(payload)].map((val) => this.toBase64URL(val)).join(".");
-    const signature = crypto9.createSign("RSA-SHA256").update(signedPayload).sign(this.options.privateKey);
+    const signature = crypto10.createSign("RSA-SHA256").update(signedPayload).sign(this.options.privateKey);
     return signedPayload + "." + this.toBase64URL(signature);
   }
 };
@@ -48847,7 +49059,7 @@ var WebPushError = class extends Error {
 // node_modules/web-push/src/vapid-helper.js
 var import_asn1 = __toESM(require_asn1(), 1);
 var import_jws = __toESM(require_jws(), 1);
-import crypto10 from "node:crypto";
+import crypto11 from "node:crypto";
 import { URL as URL3 } from "node:url";
 
 // node_modules/web-push/src/web-push-constants.js
@@ -48889,7 +49101,7 @@ function toPEM(key) {
   });
 }
 function generateVAPIDKeys() {
-  const curve = crypto10.createECDH("prime256v1");
+  const curve = crypto11.createECDH("prime256v1");
   curve.generateKeys();
   let publicKeyBuffer = curve.getPublicKey();
   let privateKeyBuffer = curve.getPrivateKey();
@@ -49036,7 +49248,7 @@ function getVapidHeaders(audience, subject, publicKey, privateKey, contentEncodi
 
 // node_modules/web-push/src/encryption-helper.js
 var import_http_ece = __toESM(require_ece(), 1);
-import crypto11 from "node:crypto";
+import crypto12 from "node:crypto";
 function encrypt(userPublicKey, userAuth, payload, contentEncoding) {
   if (!userPublicKey) {
     throw new Error("No user public key provided for encryption.");
@@ -49062,9 +49274,9 @@ function encrypt(userPublicKey, userAuth, payload, contentEncoding) {
   if (typeof payload === "string" || payload instanceof String) {
     payload = Buffer.from(payload);
   }
-  const localCurve = crypto11.createECDH("prime256v1");
+  const localCurve = crypto12.createECDH("prime256v1");
   const localPublicKey = localCurve.generateKeys();
-  const salt = crypto11.randomBytes(16).toString("base64url");
+  const salt = crypto12.randomBytes(16).toString("base64url");
   const cipherText = import_http_ece.default.encrypt(payload, {
     version: contentEncoding,
     dh: userPublicKey,
@@ -49536,7 +49748,7 @@ var APP_CONFIG = {
 import fs6 from "fs";
 import os4 from "os";
 import path5 from "path";
-import crypto12 from "crypto";
+import crypto13 from "crypto";
 var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
 var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
 var PRIMARY_DATA_DIR = path5.resolve(process.cwd(), ".data", "runtime-store");
@@ -49649,7 +49861,7 @@ function saveIntegrationsConfigFallback(cfg) {
 }
 async function insertFeedbackFallback(payload) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
+  const id = crypto13.randomUUID();
   const record = {
     id,
     user_id: payload.user_id,
@@ -49850,7 +50062,7 @@ function writeNotifStore(store) {
 }
 async function createCampaignFallback(payload) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
+  const id = crypto13.randomUUID();
   const record = {
     id,
     title: payload.title,
@@ -49923,7 +50135,7 @@ async function listCampaignsFallback() {
 }
 async function createBroadcastBannerFallback(payload) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
+  const id = crypto13.randomUUID();
   const banner = {
     id,
     title: payload.title,
@@ -49991,7 +50203,7 @@ async function deactivateBroadcastBannerFallback(id) {
 }
 async function insertUserNotificationFallback(params) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto12.randomUUID();
+  const id = crypto13.randomUUID();
   const record = {
     id,
     user_id: params.user_id,
@@ -50547,7 +50759,7 @@ async function updateEmailTemplateFallback(id, updates) {
 async function createEmailTemplateFallback(input) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const record = {
-    id: input.id || `custom_${crypto12.randomUUID().slice(0, 12)}`,
+    id: input.id || `custom_${crypto13.randomUUID().slice(0, 12)}`,
     slug: input.slug,
     name: input.name,
     category: input.category || "custom",
@@ -50625,7 +50837,7 @@ async function deleteEmailTemplateFallback(id) {
 async function recordEmailLogFallback(entry) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const row = {
-    id: entry.id || crypto12.randomUUID(),
+    id: entry.id || crypto13.randomUUID(),
     user_id: entry.user_id || null,
     email: entry.email,
     email_type: entry.email_type,
@@ -50886,7 +51098,7 @@ async function updateLegalPolicyFallback(policyId, updates) {
   const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
   stored.policies = [updated, ...stored.policies.filter((p) => p.id !== policyId)];
   stored.versions.unshift({
-    id: crypto12.randomUUID(),
+    id: crypto13.randomUUID(),
     policy_id: policyId,
     slug: updated.slug,
     version: updated.version,
@@ -51012,7 +51224,7 @@ async function listSecurityIncidentsFallback(status, severity) {
 async function createSecurityIncidentFallback(payload) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const row = {
-    id: crypto12.randomUUID(),
+    id: crypto13.randomUUID(),
     title: payload.title,
     severity: payload.severity || "medium",
     description: payload.description || "",
@@ -51076,7 +51288,7 @@ async function insertSupportTicketFallback(entry) {
     headers: { Prefer: "return=representation" },
     body: payload
   });
-  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto12.randomUUID(), ...payload };
+  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto13.randomUUID(), ...payload };
   const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
   store.tickets = [savedRow, ...store.tickets.filter((t2) => t2.id !== savedRow.id)].slice(0, 200);
   writeJsonStore("support-tickets.json", store);
@@ -51127,7 +51339,7 @@ async function insertSupportTicketReplyFallback(entry) {
     headers: { Prefer: "return=representation" },
     body: payload
   });
-  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto12.randomUUID(), ...payload };
+  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto13.randomUUID(), ...payload };
   const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
   store.replies = [...store.replies.filter((r2) => r2.id !== savedRow.id), savedRow].slice(-500);
   writeJsonStore("support-tickets.json", store);
@@ -51173,7 +51385,7 @@ async function updateSupportTicketStatusFallback(ticketId, status) {
 }
 
 // server/adminSettingsStore.ts
-import crypto13 from "crypto";
+import crypto14 from "crypto";
 import fs7 from "fs";
 import os5 from "os";
 import path6 from "path";
@@ -51500,17 +51712,17 @@ var GEMINI_SECRET_KEY_NAME = "gemini_api_key";
 function getEncryptionKey() {
   const seed = process.env.API_KEY_ENCRYPTION_SECRET || process.env.SESSION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.DATABASE_URL || "";
   if (seed.trim()) {
-    return crypto13.createHash("sha256").update(`mymoney:admin_secrets:${seed.trim()}`).digest();
+    return crypto14.createHash("sha256").update(`mymoney:admin_secrets:${seed.trim()}`).digest();
   }
   if (!g.__myMoneyEncryptionSaltKey) {
-    g.__myMoneyEncryptionSaltKey = crypto13.randomBytes(32);
+    g.__myMoneyEncryptionSaltKey = crypto14.randomBytes(32);
   }
   return g.__myMoneyEncryptionSaltKey;
 }
 function encryptSecret(plainText) {
   const key = getEncryptionKey();
-  const iv = crypto13.randomBytes(12);
-  const cipher = crypto13.createCipheriv("aes-256-gcm", key, iv);
+  const iv = crypto14.randomBytes(12);
+  const cipher = crypto14.createCipheriv("aes-256-gcm", key, iv);
   const encrypted = Buffer.concat([cipher.update(plainText, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return `v1:${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
@@ -51524,7 +51736,7 @@ function decryptSecret(payload) {
     const authTag = Buffer.from(parts[2], "base64");
     const ciphertext = Buffer.from(parts[3], "base64");
     const key = getEncryptionKey();
-    const decipher = crypto13.createDecipheriv("aes-256-gcm", key, iv);
+    const decipher = crypto14.createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(authTag);
     const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     return decrypted.toString("utf8");
@@ -52020,7 +52232,7 @@ async function getEffectiveSupportAlertEmail() {
 }
 
 // server/emailTemplateService.ts
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 var URL_VARIABLE_KEYS = /* @__PURE__ */ new Set([
   "reset_link",
   "invite_link",
@@ -52287,7 +52499,7 @@ async function createCustomEmailTemplate(input) {
   const rawSlug = String(input.slug || cleanName).trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
   if (!rawSlug) throw new Error("A valid template slug is required.");
   const existingAll = await listEmailTemplates();
-  const uniqueSlug = existingAll.some((t2) => t2.slug === rawSlug) ? `${rawSlug}-${crypto14.randomBytes(2).toString("hex")}` : rawSlug;
+  const uniqueSlug = existingAll.some((t2) => t2.slug === rawSlug) ? `${rawSlug}-${crypto15.randomBytes(2).toString("hex")}` : rawSlug;
   const subject = String(input.subject || "").trim();
   const html = String(input.html_content || "").trim();
   if (!subject || !html) {
@@ -53735,6 +53947,19 @@ async function getEmailTransporterAndConfig() {
   });
   return { transporter, cfg };
 }
+function escapeEmailHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function sanitizeEmailHref(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return escapeEmailHtml(parsed.toString());
+    }
+  } catch {
+  }
+  return escapeEmailHtml(APP_CONFIG.appBaseUrl);
+}
 async function sanitizeSystemVariables(input, recipientName) {
   if (!input || !input.includes("{{")) return input;
   const supportEmail = await getEffectiveSupportAlertEmail().catch(() => APP_CONFIG.supportEmail);
@@ -54020,18 +54245,18 @@ async function sendPasswordResetEmail(email, name2, resetLink) {
           <p>by ${APP_CONFIG.companyName} \xB7 Security Dispatch</p>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hello ${name2 || "User"},</p>
+          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hello ${escapeEmailHtml(name2 || "User")},</p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
-            We received a request to reset the password for your account (<strong>${email}</strong>).
+            We received a request to reset the password for your account (<strong>${escapeEmailHtml(email)}</strong>).
           </p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             Click the secure button below to set your new password. This single-use link is valid for <strong>15 minutes</strong>.
           </p>
           <div style="text-align: center;">
-            <a href="${resetLink}" class="btn" target="_blank">Reset Password Now</a>
+            <a href="${sanitizeEmailHref(resetLink)}" class="btn" target="_blank">Reset Password Now</a>
           </div>
           <p style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Or copy and paste this link into your browser:</p>
-          <div class="url-box">${resetLink}</div>
+          <div class="url-box">${escapeEmailHtml(resetLink)}</div>
           <div class="alert">
             <strong>Security Notice:</strong> If you did not request a password reset, please ignore this email. Your current password remains secure.
           </div>
@@ -54091,10 +54316,10 @@ async function sendPasswordChangedEmail(email, name2, ipAddress) {
           <h1>${APP_CONFIG.appName}</h1>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600;">Hello ${name2 || "User"},</p>
+          <p style="font-size: 15px; font-weight: 600;">Hello ${escapeEmailHtml(name2 || "User")},</p>
           <div class="info-box">
             <strong>\u2713 Password Updated Successfully</strong><br/>
-            Your account password was updated on <strong>${now} IST</strong>${ipAddress ? ` from IP <code>${ipAddress}</code>` : ""}.
+            Your account password was updated on <strong>${escapeEmailHtml(now)} IST</strong>${ipAddress ? ` from IP <code>${escapeEmailHtml(ipAddress)}</code>` : ""}.
           </div>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             All previous active sessions on other devices have been securely invalidated to protect your account.
@@ -82774,7 +82999,7 @@ RULES:
 import fs11 from "fs";
 import os6 from "os";
 import path9 from "path";
-import crypto15 from "crypto";
+import crypto16 from "crypto";
 
 // server/notificationEmailTemplates.ts
 function generateCampaignEmail(data) {
@@ -83084,7 +83309,7 @@ function resolveWritablePushDir() {
   }
 }
 function safeUserPushFile(baseDir, userId) {
-  const safeId = crypto15.createHash("sha256").update(String(userId || "unknown")).digest("hex");
+  const safeId = crypto16.createHash("sha256").update(String(userId || "unknown")).digest("hex");
   const resolved = path9.resolve(baseDir, `${safeId}.json`);
   if (!resolved.startsWith(baseDir + path9.sep)) {
     throw new Error("Invalid storage path");
@@ -83145,7 +83370,7 @@ function writeLocalStore(userId, store) {
   }
 }
 function hashEndpoint(endpoint) {
-  return crypto15.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
+  return crypto16.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
 }
 function formatEndpointPreview(endpoint) {
   try {
@@ -83496,7 +83721,7 @@ async function registerPushSubscription(params) {
   const local = readLocalStore(params.userId);
   const existingIdx = local.subscriptions.findIndex((s2) => s2.endpoint === endpoint);
   const record = {
-    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto15.randomUUID()),
+    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto16.randomUUID()),
     user_id: params.userId,
     endpoint,
     p256dh,
@@ -83736,7 +83961,7 @@ function recordLocalDedupeKey(userId, dedupeKey) {
 function appendLocalDeliveryLog(userId, log) {
   const local = readLocalStore(userId);
   local.deliveryLogs.unshift({
-    id: crypto15.randomUUID(),
+    id: crypto16.randomUUID(),
     ...log,
     created_at: (/* @__PURE__ */ new Date()).toISOString()
   });
@@ -88937,15 +89162,15 @@ ${noteLine}` : noteLine;
 }
 
 // server/aiFinanceApi.ts
-import crypto18 from "crypto";
+import crypto22 from "crypto";
 import fs12 from "fs";
 import path10 from "path";
 
 // server/privacyConsentApi.ts
-import crypto17 from "crypto";
+import crypto21 from "crypto";
 
 // server/supabaseRestUdhar.ts
-import crypto16 from "crypto";
+import crypto17 from "crypto";
 
 // src/lib/sharedUdharEngine.ts
 function roundMoney(value) {
@@ -89199,6 +89424,12 @@ function canCancelUdhar(udhar) {
       reason: "Settled Udhar records cannot be deleted or cancelled. Keep settled history for audit integrity."
     };
   }
+  if (udhar.status === "disputed") {
+    return {
+      allowed: false,
+      reason: "Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history."
+    };
+  }
   const paidAmt = parseFloat(String(udhar.paid_amount ?? 0)) || 0;
   const activeRepayments = (udhar.repayments || []).filter(
     (r2) => r2.status === "confirmed" || r2.status === "pending_confirmation"
@@ -89349,6 +89580,32 @@ function unpackStructuredNote(rawNote) {
   }
   return { note: rawNote.trim(), meta: {} };
 }
+var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUuid(value) {
+  if (!value || typeof value !== "string") return false;
+  return UUID_REGEX.test(value.trim());
+}
+function parseConnectionRequestKey(rawKey) {
+  const raw = (rawKey || "").trim();
+  if (!raw) {
+    return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
+  }
+  if (isValidUuid(raw)) {
+    return { valid: true, kind: "uuid", raw, uuid: raw, requesterUserId: null, targetUserId: null };
+  }
+  const parts = raw.split(":").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 2 && isValidUuid(parts[0]) && isValidUuid(parts[1])) {
+    return {
+      valid: true,
+      kind: "composite",
+      raw,
+      uuid: null,
+      requesterUserId: parts[0],
+      targetUserId: parts[1]
+    };
+  }
+  return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
+}
 
 // server/supabaseRestUdhar.ts
 var DEFAULT_SUPABASE_URL2 = "https://frgrfajnrzqwnevhlrio.supabase.co";
@@ -89435,9 +89692,14 @@ async function fetchUsersByIds(ids) {
   const map2 = /* @__PURE__ */ new Map();
   if (uniqueIds.length === 0) return map2;
   const inList = uniqueIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
-  const res = await sbRest(
-    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username`
+  let res = await sbRest(
+    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role,is_verified,username`
   );
+  if (!res.ok && res.status === 400) {
+    res = await sbRest(
+      `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role`
+    );
+  }
   if (res.ok && Array.isArray(res.data)) {
     for (const u of res.data) {
       map2.set(u.id, u);
@@ -89452,27 +89714,93 @@ async function isBlockedBetween(userAId, userBId) {
   if (!res.ok || !Array.isArray(res.data)) return false;
   return res.data.some((c) => c.status === "blocked");
 }
+async function upsertUserConnectionRest(userAId, userBId, status) {
+  const res = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: { user_a_id: userAId, user_b_id: userBId, status }
+  });
+  if (res.ok) return res;
+  const errText = String(res.error || "");
+  if (errText.includes("user_connections_status_check") || errText.includes("23514")) {
+    return res;
+  }
+  const existing = await sbRest(
+    `user_connections?user_a_id=eq.${encodeURIComponent(userAId)}&user_b_id=eq.${encodeURIComponent(userBId)}&select=id,status&limit=1`
+  );
+  if (existing.ok && existing.data && existing.data.length > 0) {
+    return sbRest(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: { status }
+    });
+  }
+  return sbRest("user_connections", {
+    method: "POST",
+    prefer: "return=representation",
+    body: { user_a_id: userAId, user_b_id: userBId, status }
+  });
+}
+async function upsertUdharContactRest(payload) {
+  const res = await sbRest("udhar_contacts?on_conflict=user_id,name", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: payload
+  });
+  if (res.ok && res.data && res.data.length > 0) {
+    return res;
+  }
+  if (payload.linked_user_id) {
+    const byLink = await sbRest(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&linked_user_id=eq.${encodeURIComponent(payload.linked_user_id)}&limit=1`
+    );
+    if (byLink.ok && byLink.data && byLink.data.length > 0) {
+      return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(byLink.data[0].id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: payload
+      });
+    }
+  }
+  const byName = await sbRest(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&name=ilike.${encodeURIComponent(payload.name)}&limit=1`
+  );
+  if (byName.ok && byName.data && byName.data.length > 0) {
+    return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(byName.data[0].id)}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        ...payload,
+        linked_user_id: payload.linked_user_id || byName.data[0].linked_user_id || null
+      }
+    });
+  }
+  return sbRest("udhar_contacts", {
+    method: "POST",
+    prefer: "return=representation",
+    body: payload
+  });
+}
 async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend") {
-  await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    body: { user_a_id: authUser.id, user_b_id: targetUser.id, status: "connected" }
-  }).catch(() => {
-  });
-  await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    body: { user_a_id: targetUser.id, user_b_id: authUser.id, status: "connected" }
-  }).catch(() => {
-  });
+  const [connAB, connBA] = await Promise.all([
+    upsertUserConnectionRest(authUser.id, targetUser.id, "connected"),
+    upsertUserConnectionRest(targetUser.id, authUser.id, "connected")
+  ]);
+  if (!connAB.ok && !connBA.ok) {
+    return {
+      ok: false,
+      error: connAB.error || connBA.error || "Failed to establish connection record."
+    };
+  }
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const targetName = (targetUser.full_name || targetUser.email?.split("@")[0] || "User").trim();
   const myName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
   const existingMine = await sbRest(
     `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetUser.id)}&limit=1`
   );
+  let mineRes;
   if (existingMine.ok && existingMine.data && existingMine.data.length > 0) {
-    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
+    mineRes = await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
       method: "PATCH",
       body: {
         name: targetName,
@@ -89484,20 +89812,22 @@ async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, r
       }
     });
   } else {
-    await sbRest("udhar_contacts?on_conflict=user_id,name", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      body: {
-        user_id: authUser.id,
-        name: targetName,
-        email: targetUser.email || null,
-        phone: targetUser.phone || null,
-        photo_url: targetUser.avatar_url || null,
-        relationship_type: relationshipType || "Friend",
-        linked_user_id: targetUser.id,
-        updated_at: nowIso
-      }
+    mineRes = await upsertUdharContactRest({
+      user_id: authUser.id,
+      name: targetName,
+      email: targetUser.email || null,
+      phone: targetUser.phone || null,
+      photo_url: targetUser.avatar_url || null,
+      relationship_type: relationshipType || "Friend",
+      linked_user_id: targetUser.id,
+      updated_at: nowIso
     });
+  }
+  if (!mineRes.ok) {
+    return {
+      ok: false,
+      error: mineRes.error || "Failed to save connected contact."
+    };
   }
   const existingTheirs = await sbRest(
     `udhar_contacts?user_id=eq.${encodeURIComponent(targetUser.id)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
@@ -89512,23 +89842,22 @@ async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, r
         photo_url: authUser.avatar_url || existingTheirs.data[0].photo_url || null,
         updated_at: nowIso
       }
+    }).catch(() => {
     });
   } else {
-    await sbRest("udhar_contacts?on_conflict=user_id,name", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      body: {
-        user_id: targetUser.id,
-        name: myName,
-        email: authUser.email || null,
-        phone: authUser.phone || null,
-        photo_url: authUser.avatar_url || null,
-        relationship_type: relationshipType || "Friend",
-        linked_user_id: authUser.id,
-        updated_at: nowIso
-      }
+    await upsertUdharContactRest({
+      user_id: targetUser.id,
+      name: myName,
+      email: authUser.email || null,
+      phone: authUser.phone || null,
+      photo_url: authUser.avatar_url || null,
+      relationship_type: relationshipType || "Friend",
+      linked_user_id: authUser.id,
+      updated_at: nowIso
+    }).catch(() => {
     });
   }
+  return { ok: true };
 }
 async function createTargetedNotificationRest(params) {
   if (!params.targetUserId || params.targetUserId === "all") return;
@@ -89597,17 +89926,22 @@ async function searchUsersRest(authUser, rawQuery) {
     };
   }
   const escaped = classified.normalized.replace(/[%*,()]/g, "");
-  let queryPath = "";
-  if (classified.mode === "email_exact") {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=5`;
-  } else if (classified.mode === "phone_exact") {
-    const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=15`;
-  } else {
-    const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&order=full_name.asc&limit=20`;
+  const buildQueryPath = (includeOptionalCols) => {
+    const selectCols = includeOptionalCols ? "id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role" : "id,full_name,email,phone,avatar_url,status,deletion_status,role";
+    if (classified.mode === "email_exact") {
+      return `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=${selectCols}&limit=5`;
+    }
+    if (classified.mode === "phone_exact") {
+      const tail = classified.last10Digits;
+      return `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=${selectCols}&limit=15`;
+    }
+    const orClauses = includeOptionalCols ? [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`] : [`full_name.ilike.*${escaped}*`];
+    return `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=${selectCols}&order=full_name.asc&limit=20`;
+  };
+  let usersRes = await sbRest(buildQueryPath(true));
+  if (!usersRes.ok && usersRes.status === 400) {
+    usersRes = await sbRest(buildQueryPath(false));
   }
-  const usersRes = await sbRest(queryPath);
   if (!usersRes.ok) {
     return {
       status: 503,
@@ -89618,9 +89952,7 @@ async function searchUsersRest(authUser, rawQuery) {
       }
     };
   }
-  let activeUsers = (usersRes.data || []).filter(
-    (u) => (!u.deletion_status || u.deletion_status === "none") && String(u.role || "").toLowerCase() !== "admin" && String(u.email || "").toLowerCase().trim() !== "admin@mymoney.com"
-  );
+  let activeUsers = (usersRes.data || []).filter((u) => isDiscoverableNormalUser(u));
   if (classified.mode === "email_exact") {
     activeUsers = activeUsers.filter(
       (u) => (u.email || "").trim().toLowerCase() === classified.normalized
@@ -89691,24 +90023,32 @@ async function searchUsersRest(authUser, rawQuery) {
   return { status: 200, body: { success: true, users: sanitized, searchMode: classified.mode } };
 }
 async function connectUserRest(authUser, body) {
-  const targetUserId = (body.targetUserId || "").trim();
-  const relationshipType = (body.relationshipType || "Friend").trim();
-  const requestedVia = (body.requestedVia || "search").trim();
+  const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
+  const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
+  const requestedVia = (body.requestedVia || body.source || "search").trim();
   if (!targetUserId) {
     return { status: 400, body: { success: false, code: "MISSING_TARGET", message: "Target user ID is required." } };
   }
   if (targetUserId === authUser.id) {
     return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
   }
-  const targetRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified`
+  let targetRes = await sbRest(
+    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified`
   );
-  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+  if (!targetRes.ok && targetRes.status === 400) {
+    targetRes = await sbRest(
+      `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
+    );
+  }
+  if (!targetRes.ok) {
+    return { status: 503, body: { success: false, code: "DIRECTORY_UNAVAILABLE", message: "Unable to verify target account right now. Please retry." } };
+  }
+  if (!targetRes.data || targetRes.data.length === 0) {
     return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
   }
   const target = targetRes.data[0];
-  if (target.status !== "active" || target.deletion_status && target.deletion_status !== "none") {
-    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is no longer active." } };
+  if (!isDiscoverableNormalUser(target)) {
+    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is not eligible for Udhar connections." } };
   }
   if (await isBlockedBetween(authUser.id, targetUserId)) {
     return { status: 403, body: { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." } };
@@ -89716,7 +90056,10 @@ async function connectUserRest(authUser, body) {
   const pairRes = await sbRest(
     `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
   );
-  const pairRows = pairRes.ok && Array.isArray(pairRes.data) ? pairRes.data : [];
+  if (!pairRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to inspect connection state right now. Please retry." } };
+  }
+  const pairRows = Array.isArray(pairRes.data) ? pairRes.data : [];
   const targetName = (target.full_name || target.email?.split("@")[0] || "User").trim();
   const requesterName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
   if (pairRows.some((r2) => r2.status === "connected")) {
@@ -89742,7 +90085,7 @@ async function connectUserRest(authUser, body) {
     (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
   );
   if (incomingPending) {
-    return acceptConnectionRequestRest(authUser, incomingPending.id);
+    return acceptConnectionRequestRest(authUser, incomingPending.id || targetUserId);
   }
   const outgoingPending = pairRows.find(
     (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
@@ -89754,7 +90097,7 @@ async function connectUserRest(authUser, body) {
         success: true,
         status: "pending",
         alreadyPending: true,
-        requestId: outgoingPending.id,
+        requestId: outgoingPending.id || `${authUser.id}:${targetUserId}`,
         message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
         connectedUser: {
           id: target.id,
@@ -89767,19 +90110,60 @@ async function connectUserRest(authUser, body) {
       }
     };
   }
-  const insRes = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: {
-      user_a_id: authUser.id,
-      user_b_id: targetUserId,
-      status: "pending"
-    }
-  });
+  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, "pending");
   if (!insRes.ok) {
+    const errText = String(insRes.error || "");
+    const isStatusConstraint = errText.includes("user_connections_status_check") || errText.includes("23514");
+    if (isStatusConstraint) {
+      const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, target, relationshipType);
+      if (!syncRes.ok) {
+        return {
+          status: 503,
+          body: {
+            success: false,
+            code: "REQUEST_FAILED",
+            message: syncRes.error || "Unable to save connection right now. Please try again."
+          }
+        };
+      }
+      await createTargetedNotificationRest({
+        targetUserId: target.id,
+        actorUserId: authUser.id,
+        title: "New Udhar Connection",
+        message: `${requesterName} connected with you on My Money Manager Udhar.`,
+        type: "connection_accepted",
+        category: "udhar",
+        deepLink: "people",
+        relatedEntityId: authUser.id
+      }).catch(() => {
+      });
+      return {
+        status: 200,
+        body: {
+          success: true,
+          status: "connected",
+          alreadyConnected: false,
+          alreadyPending: false,
+          message: `Connected with ${targetName}! Added to your Saved People.`,
+          connectedUser: {
+            id: target.id,
+            name: targetName,
+            displayName: targetName,
+            fullName: targetName,
+            avatarUrl: target.avatar_url || null,
+            isVerified: Boolean(target.is_verified ?? true)
+          }
+        }
+      };
+    }
+    console.error("[connectUserRest failed]:", insRes.status, errText);
     return {
       status: 503,
-      body: { success: false, code: "REQUEST_FAILED", message: "Unable to send connection request right now. Please try again." }
+      body: {
+        success: false,
+        code: "REQUEST_FAILED",
+        message: "Unable to send connection request right now. Please try again."
+      }
     };
   }
   const requestId = insRes.data?.[0]?.id || `${authUser.id}:${targetUserId}`;
@@ -89886,14 +90270,22 @@ async function getConnectionRequestsRest(authUser) {
   };
 }
 async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
-  const key = (requestIdOrUserId || "").trim();
-  if (!key) {
-    return { status: 400, body: { success: false, message: "Connection request ID is required." } };
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
   }
-  const reqRes = await sbRest(
-    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
-  );
-  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
+  let queryPath = "";
+  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === "composite" && parsedKey.requesterUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
+  }
+  const reqRes = await sbRest(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
+  }
+  if (!reqRes.data || reqRes.data.length === 0) {
     return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
   }
   const pendingRow = reqRes.data[0];
@@ -89903,7 +90295,10 @@ async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
   if (!requester || requester.status !== "active") {
     return { status: 404, body: { success: false, message: "Requester account is no longer active." } };
   }
-  await ensureConnectionAndReciprocalContactsRest(authUser, requester, "Friend");
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, requester, "Friend");
+  if (!syncRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: syncRes.error || "Failed to finalize connection." } };
+  }
   const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
   const requesterName = (requester.full_name || requester.email?.split("@")[0] || "Friend").trim();
   await createTargetedNotificationRest({
@@ -89934,21 +90329,32 @@ async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
   };
 }
 async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
-  const key = (requestIdOrUserId || "").trim();
-  if (!key) {
-    return { status: 400, body: { success: false, message: "Connection request ID is required." } };
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
   }
-  const reqRes = await sbRest(
-    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
-  );
-  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
+  let queryPath = "";
+  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === "composite" && parsedKey.requesterUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
+  }
+  const reqRes = await sbRest(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
+  }
+  if (!reqRes.data || reqRes.data.length === 0) {
     return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
   }
   const pendingRow = reqRes.data[0];
-  await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+  const patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
     method: "PATCH",
     body: { status: "rejected" }
   });
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to decline request right now." } };
+  }
   const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
   await createTargetedNotificationRest({
     targetUserId: pendingRow.user_a_id,
@@ -90333,16 +90739,18 @@ async function saveContactRest(authUser, body) {
     linked_user_id: verifiedTarget ? verifiedTarget.id : null,
     updated_at: nowIso
   };
-  const upsertRes = await sbRest("udhar_contacts?on_conflict=user_id,name", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: payload
-  });
+  const upsertRes = await upsertUdharContactRest(payload);
   if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
     return { status: 500, body: { success: false, message: upsertRes.error || "Failed to save contact." } };
   }
   if (verifiedTarget) {
-    await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
+    const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
+    if (!syncRes.ok) {
+      return {
+        status: 503,
+        body: { success: false, message: syncRes.error || "Saved contact locally, but failed to sync reciprocal connection." }
+      };
+    }
   }
   return {
     status: 200,
@@ -90466,8 +90874,8 @@ async function getMyQrRest(authUser) {
     pairingCode = existing.data[0].pairing_code;
     expiresAt = existing.data[0].expires_at || expiresAt;
   } else {
-    pairingToken = crypto16.randomBytes(32).toString("hex");
-    pairingCode = `MM-${crypto16.randomBytes(3).toString("hex").toUpperCase()}`;
+    pairingToken = crypto17.randomBytes(32).toString("hex");
+    pairingCode = `MM-${crypto17.randomBytes(3).toString("hex").toUpperCase()}`;
     const ins = await sbRest("qr_pairing_tokens", {
       method: "POST",
       prefer: "return=representation",
@@ -90513,8 +90921,8 @@ async function regenerateQrRest(authUser) {
     method: "PATCH",
     body: { used: true }
   });
-  const pairingToken = crypto16.randomBytes(32).toString("hex");
-  const pairingCode = `MM-${crypto16.randomBytes(3).toString("hex").toUpperCase()}`;
+  const pairingToken = crypto17.randomBytes(32).toString("hex");
+  const pairingCode = `MM-${crypto17.randomBytes(3).toString("hex").toUpperCase()}`;
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
   const ins = await sbRest("qr_pairing_tokens", {
     method: "POST",
@@ -90824,7 +91232,7 @@ async function createUdharTransactionRest(authUser, body) {
     description: description || void 0,
     attachment_url: attachmentUrl || void 0
   });
-  const linkId = crypto16.randomUUID();
+  const linkId = crypto17.randomUUID();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   if (registeredUser) {
     const counterpartDirection = direction === "gave" ? "took" : "gave";
@@ -91430,23 +91838,41 @@ async function cancelUdharRest(authUser, txId) {
   if (!guard.allowed) {
     return { status: 409, body: { success: false, message: guard.reason } };
   }
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const softDelRes = await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
     method: "PATCH",
-    body: { status: "cancelled", current_balance: 0, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+    body: {
+      status: "cancelled",
+      current_balance: 0,
+      deleted_at: nowIso,
+      deleted_by: authUser.id,
+      updated_at: nowIso
+    }
   });
+  if (!softDelRes.ok) {
+    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+      method: "PATCH",
+      body: { status: "cancelled", current_balance: 0, updated_at: nowIso }
+    });
+  }
   if (tx.counterpart_user_id) {
     await createTargetedNotificationRest({
       targetUserId: tx.counterpart_user_id,
       actorUserId: authUser.id,
-      title: `Udhar Cancelled by ${authUser.full_name}`,
-      message: `${authUser.full_name} cancelled the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      title: `Udhar Removed by ${authUser.full_name}`,
+      message: `${authUser.full_name} deleted the pending Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
       type: "udhar_cancelled",
       relatedEntityId: tx.link_id
     });
   }
   return {
     status: 200,
-    body: { success: true, message: "Udhar cancelled successfully across connected accounts." }
+    body: {
+      success: true,
+      deletedTransactionId: tx.id,
+      linkId: tx.link_id,
+      message: "Udhar entry deleted successfully. Totals have been recalculated."
+    }
   };
 }
 async function getUdharHistoryRest(authUser, txId) {
@@ -91509,10 +91935,1918 @@ function isValidOptionalConsentCategory(value) {
   return OPTIONAL_CONSENT_CATEGORIES.includes(value);
 }
 
+// server/userAccountExtensions.ts
+import crypto20 from "crypto";
+
+// src/lib/upiQrUtils.ts
+var UPI_CONSENT_PURPOSE = "upi_qr_storage";
+var UPI_CONSENT_POLICY_VERSION = "v2.1 \u2014 DPDP Act 2023 & Rules 2025";
+var UPI_CONSENT_WORDING = "I agree that My Money Manager may securely store and use my UPI ID and payee details to generate and display my personal UPI payment QR codes. I understand that I can update or remove this information from my settings.";
+var UPI_ID_REGEX = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9]{2,64}$/;
+function validateUpiId(raw) {
+  const cleaned = String(raw || "").trim().toLowerCase();
+  if (!cleaned) {
+    return { isValid: false, normalized: "", error: "Please enter your UPI ID (for example: yourname@upi)." };
+  }
+  if (/\s/.test(cleaned)) {
+    return { isValid: false, normalized: cleaned, error: "UPI ID cannot contain spaces." };
+  }
+  const atParts = cleaned.split("@");
+  if (atParts.length !== 2) {
+    return { isValid: false, normalized: cleaned, error: "UPI ID must include a single @ handle (e.g. yourname@upi)." };
+  }
+  const [prefix, handle] = atParts;
+  if (prefix.length < 2) {
+    return { isValid: false, normalized: cleaned, error: "Enter at least 2 characters before @ in your UPI ID." };
+  }
+  if (handle.includes(".")) {
+    return {
+      isValid: false,
+      normalized: cleaned,
+      error: "That looks like an email address. Please enter a valid UPI ID (e.g. yourname@upi, name@okaxis, 9876543210@ybl)."
+    };
+  }
+  if (!UPI_ID_REGEX.test(cleaned)) {
+    return {
+      isValid: false,
+      normalized: cleaned,
+      error: "Invalid UPI ID format. Use letters, numbers, dots, hyphens or underscores before @ and an alphanumeric UPI handle after @."
+    };
+  }
+  return { isValid: true, normalized: cleaned };
+}
+function sanitizeUpiText(raw, maxLen) {
+  return String(raw || "").replace(/[\r\n\t]+/g, " ").replace(/[<>]/g, "").trim().slice(0, maxLen);
+}
+
+// server/webauthn.ts
+import crypto18 from "crypto";
+var CHALLENGE_TTL_MS = 5 * 60 * 1e3;
+var challengeStore = /* @__PURE__ */ new Map();
+function pruneChallenges() {
+  const now = Date.now();
+  for (const [k, v] of challengeStore.entries()) {
+    if (v.expiresAt <= now) challengeStore.delete(k);
+  }
+}
+function base64UrlToBuffer(b64u) {
+  const normalized2 = String(b64u || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - normalized2.length % 4) % 4;
+  return Buffer.from(normalized2 + "=".repeat(padLen), "base64");
+}
+function bufferToBase64Url(buf) {
+  return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function issueWebAuthnChallenge(params) {
+  pruneChallenges();
+  const challengeId = crypto18.randomBytes(16).toString("hex");
+  const challenge = bufferToBase64Url(crypto18.randomBytes(32));
+  const expiresAt = Date.now() + CHALLENGE_TTL_MS;
+  challengeStore.set(challengeId, {
+    challenge,
+    type: params.type,
+    userId: params.userId,
+    rpId: params.rpId,
+    origin: params.origin,
+    expiresAt
+  });
+  return { challengeId, challenge, expiresAt };
+}
+function consumeWebAuthnChallenge(challengeId, expectedType, expectedUserId) {
+  pruneChallenges();
+  const record = challengeStore.get(challengeId);
+  if (!record) return null;
+  challengeStore.delete(challengeId);
+  if (record.expiresAt <= Date.now()) return null;
+  if (record.type !== expectedType) return null;
+  if (expectedUserId && record.userId && record.userId !== expectedUserId) return null;
+  return record;
+}
+function decodeCborValue(buf, offset) {
+  if (offset >= buf.length) throw new Error("CBOR unexpected end of buffer");
+  const first = buf[offset++];
+  const major = first >> 5;
+  const additional = first & 31;
+  const readUint = () => {
+    if (additional < 24) return additional;
+    if (additional === 24) return buf[offset++];
+    if (additional === 25) {
+      const v = buf.readUInt16BE(offset);
+      offset += 2;
+      return v;
+    }
+    if (additional === 26) {
+      const v = buf.readUInt32BE(offset);
+      offset += 4;
+      return v;
+    }
+    if (additional === 27) {
+      const hi = buf.readUInt32BE(offset);
+      const lo = buf.readUInt32BE(offset + 4);
+      offset += 8;
+      return hi * 4294967296 + lo;
+    }
+    throw new Error(`Unsupported CBOR length encoding: ${additional}`);
+  };
+  if (major === 0) {
+    return { value: readUint(), nextOffset: offset };
+  }
+  if (major === 1) {
+    return { value: -1 - readUint(), nextOffset: offset };
+  }
+  if (major === 2) {
+    const len = readUint();
+    const slice = Buffer.from(buf.subarray(offset, offset + len));
+    return { value: slice, nextOffset: offset + len };
+  }
+  if (major === 3) {
+    const len = readUint();
+    const str = buf.subarray(offset, offset + len).toString("utf8");
+    return { value: str, nextOffset: offset + len };
+  }
+  if (major === 4) {
+    const len = readUint();
+    const arr = [];
+    for (let i2 = 0; i2 < len; i2++) {
+      const item = decodeCborValue(buf, offset);
+      arr.push(item.value);
+      offset = item.nextOffset;
+    }
+    return { value: arr, nextOffset: offset };
+  }
+  if (major === 5) {
+    const len = readUint();
+    const map2 = /* @__PURE__ */ new Map();
+    for (let i2 = 0; i2 < len; i2++) {
+      const k = decodeCborValue(buf, offset);
+      offset = k.nextOffset;
+      const v = decodeCborValue(buf, offset);
+      offset = v.nextOffset;
+      map2.set(k.value, v.value);
+    }
+    return { value: map2, nextOffset: offset };
+  }
+  if (major === 6) {
+    readUint();
+    return decodeCborValue(buf, offset);
+  }
+  if (major === 7) {
+    if (additional === 20) return { value: false, nextOffset: offset };
+    if (additional === 21) return { value: true, nextOffset: offset };
+    if (additional === 22) return { value: null, nextOffset: offset };
+    if (additional === 23) return { value: void 0, nextOffset: offset };
+    if (additional === 25) {
+      offset += 2;
+      return { value: 0, nextOffset: offset };
+    }
+    if (additional === 26) {
+      const v = buf.readFloatBE(offset);
+      offset += 4;
+      return { value: v, nextOffset: offset };
+    }
+    if (additional === 27) {
+      const v = buf.readDoubleBE(offset);
+      offset += 8;
+      return { value: v, nextOffset: offset };
+    }
+  }
+  throw new Error(`Unsupported CBOR major type ${major}`);
+}
+function coseKeyMapToSpkiPem(coseMap) {
+  const kty = coseMap.get(1);
+  const alg = Number(coseMap.get(3));
+  if (kty === 2) {
+    const x2 = coseMap.get(-2);
+    const y = coseMap.get(-3);
+    if (!Buffer.isBuffer(x2) || !Buffer.isBuffer(y)) {
+      throw new Error("Invalid COSE EC2 public key coordinates");
+    }
+    const keyObj = crypto18.createPublicKey({
+      key: {
+        kty: "EC",
+        crv: "P-256",
+        x: bufferToBase64Url(x2),
+        y: bufferToBase64Url(y)
+      },
+      format: "jwk"
+    });
+    return {
+      spkiPem: keyObj.export({ type: "spki", format: "pem" }).toString(),
+      algorithm: alg || -7
+    };
+  }
+  if (kty === 3) {
+    const n = coseMap.get(-1);
+    const e2 = coseMap.get(-2);
+    if (!Buffer.isBuffer(n) || !Buffer.isBuffer(e2)) {
+      throw new Error("Invalid COSE RSA public key components");
+    }
+    const keyObj = crypto18.createPublicKey({
+      key: {
+        kty: "RSA",
+        n: bufferToBase64Url(n),
+        e: bufferToBase64Url(e2)
+      },
+      format: "jwk"
+    });
+    return {
+      spkiPem: keyObj.export({ type: "spki", format: "pem" }).toString(),
+      algorithm: alg || -257
+    };
+  }
+  throw new Error(`Unsupported COSE key type: ${kty}`);
+}
+function extractCredentialFromAttestation(params) {
+  const clientDataBuf = base64UrlToBuffer(params.clientDataJSON);
+  const clientData = JSON.parse(clientDataBuf.toString("utf8"));
+  if (clientData.type !== "webauthn.create") {
+    throw new Error("Invalid WebAuthn ceremony type for passkey registration.");
+  }
+  if (clientData.challenge !== params.expectedChallenge) {
+    throw new Error("WebAuthn registration challenge mismatch.");
+  }
+  if (!isOriginAllowed(clientData.origin, params.expectedOrigin, params.expectedRpId)) {
+    throw new Error(`WebAuthn origin mismatch: ${clientData.origin}`);
+  }
+  const attBuf = base64UrlToBuffer(params.attestationObject);
+  const decoded = decodeCborValue(attBuf, 0).value;
+  if (!(decoded instanceof Map)) {
+    throw new Error("Invalid CBOR attestationObject.");
+  }
+  const authData = decoded.get("authData");
+  if (!Buffer.isBuffer(authData) || authData.length < 55) {
+    throw new Error("Invalid authenticatorData in attestationObject.");
+  }
+  const rpIdHash = authData.subarray(0, 32);
+  const expectedRpIdHash = crypto18.createHash("sha256").update(params.expectedRpId).digest();
+  if (!crypto18.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+    throw new Error("WebAuthn RP ID hash verification failed.");
+  }
+  const flags = authData[32];
+  const userPresent = Boolean(flags & 1);
+  const hasAttestedCred = Boolean(flags & 64);
+  if (!userPresent || !hasAttestedCred) {
+    throw new Error("Authenticator did not verify user presence or attested credential data.");
+  }
+  const counter = authData.readUInt32BE(33);
+  const credIdLen = authData.readUInt16BE(53);
+  const credIdBuf = authData.subarray(55, 55 + credIdLen);
+  const credentialId = bufferToBase64Url(credIdBuf);
+  const coseSlice = authData.subarray(55 + credIdLen);
+  let publicKeySpki = "";
+  let algorithm = -7;
+  try {
+    const coseDecoded = decodeCborValue(coseSlice, 0).value;
+    if (coseDecoded instanceof Map) {
+      const converted = coseKeyMapToSpkiPem(coseDecoded);
+      publicKeySpki = converted.spkiPem;
+      algorithm = converted.algorithm;
+    }
+  } catch (err) {
+    if (params.publicKeySpkiBase64) {
+      const der = base64UrlToBuffer(params.publicKeySpkiBase64);
+      const pubKey = crypto18.createPublicKey({ key: der, format: "der", type: "spki" });
+      publicKeySpki = pubKey.export({ type: "spki", format: "pem" }).toString();
+      algorithm = pubKey.asymmetricKeyType === "rsa" ? -257 : -7;
+    } else {
+      throw err;
+    }
+  }
+  if (!publicKeySpki) {
+    throw new Error("Could not extract passkey public key from attestation.");
+  }
+  return { credentialId, publicKeySpki, algorithm, counter };
+}
+function verifyPasskeyAssertion(params) {
+  try {
+    const clientDataBuf = base64UrlToBuffer(params.clientDataJSON);
+    const clientData = JSON.parse(clientDataBuf.toString("utf8"));
+    if (clientData.type !== "webauthn.get") {
+      return { valid: false, newCounter: params.previousCounter, error: "Invalid WebAuthn assertion type." };
+    }
+    if (clientData.challenge !== params.expectedChallenge) {
+      return { valid: false, newCounter: params.previousCounter, error: "Passkey challenge mismatch." };
+    }
+    if (!isOriginAllowed(clientData.origin, params.expectedOrigin, params.expectedRpId)) {
+      return { valid: false, newCounter: params.previousCounter, error: "Passkey origin verification failed." };
+    }
+    const authDataBuf = base64UrlToBuffer(params.authenticatorData);
+    if (authDataBuf.length < 37) {
+      return { valid: false, newCounter: params.previousCounter, error: "Malformed authenticatorData." };
+    }
+    const rpIdHash = authDataBuf.subarray(0, 32);
+    const expectedRpIdHash = crypto18.createHash("sha256").update(params.expectedRpId).digest();
+    if (!crypto18.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+      return { valid: false, newCounter: params.previousCounter, error: "Passkey RP ID mismatch." };
+    }
+    const flags = authDataBuf[32];
+    if (!(flags & 1)) {
+      return { valid: false, newCounter: params.previousCounter, error: "User presence flag missing." };
+    }
+    const newCounter = authDataBuf.readUInt32BE(33);
+    if (params.previousCounter > 0 && newCounter > 0 && newCounter <= params.previousCounter) {
+      return {
+        valid: false,
+        newCounter: params.previousCounter,
+        error: "Passkey signCount replay check failed. Please re-register this passkey."
+      };
+    }
+    const clientDataHash = crypto18.createHash("sha256").update(clientDataBuf).digest();
+    const signedData = Buffer.concat([authDataBuf, clientDataHash]);
+    const sigBuf = base64UrlToBuffer(params.signature);
+    const publicKey = crypto18.createPublicKey(params.publicKeySpki);
+    const ok = crypto18.verify("sha256", signedData, publicKey, sigBuf);
+    if (!ok) {
+      return { valid: false, newCounter: params.previousCounter, error: "Passkey cryptographic signature invalid." };
+    }
+    return { valid: true, newCounter };
+  } catch (err) {
+    return {
+      valid: false,
+      newCounter: params.previousCounter,
+      error: err?.message || "Passkey verification failed."
+    };
+  }
+}
+function isOriginAllowed(actualOrigin, expectedOrigin, rpId) {
+  if (!actualOrigin) return false;
+  if (actualOrigin === expectedOrigin) return true;
+  try {
+    const parsed = new URL(actualOrigin);
+    if (parsed.hostname === rpId || parsed.hostname.endsWith(`.${rpId}`)) {
+      return parsed.protocol === "https:" || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    }
+  } catch {
+  }
+  return false;
+}
+function resolveRpContext(reqHeaders) {
+  const originHeader = String(reqHeaders["origin"] || "").trim();
+  if (originHeader) {
+    try {
+      const u = new URL(originHeader);
+      return { rpId: u.hostname, origin: u.origin };
+    } catch {
+    }
+  }
+  const hostHeader = String(reqHeaders["x-forwarded-host"] || reqHeaders["host"] || "localhost:3000").trim();
+  const hostname = hostHeader.split(":")[0] || "localhost";
+  const proto = String(reqHeaders["x-forwarded-proto"] || (hostname === "localhost" ? "http" : "https")).trim();
+  return { rpId: hostname, origin: `${proto}://${hostHeader}` };
+}
+
+// server/firebaseVerify.ts
+import crypto19 from "crypto";
+var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
+var cachedCerts = null;
+var cachedCertsExpiresAt = 0;
+function decodeBase64UrlJson(segment) {
+  const normalized2 = segment.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (4 - normalized2.length % 4) % 4;
+  return JSON.parse(Buffer.from(normalized2 + "=".repeat(pad), "base64").toString("utf8"));
+}
+function base64UrlToBuffer2(segment) {
+  const normalized2 = segment.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (4 - normalized2.length % 4) % 4;
+  return Buffer.from(normalized2 + "=".repeat(pad), "base64");
+}
+async function getGooglePublicCerts() {
+  if (cachedCerts && Date.now() < cachedCertsExpiresAt) {
+    return cachedCerts;
+  }
+  const res = await fetch(GOOGLE_CERTS_URL, { headers: { Accept: "application/json" } });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google signing certificates (HTTP ${res.status}).`);
+  }
+  const cacheControl = res.headers.get("cache-control") || "";
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const ttlSec = maxAgeMatch ? Math.max(60, parseInt(maxAgeMatch[1], 10)) : 3600;
+  const certs = await res.json();
+  cachedCerts = certs;
+  cachedCertsExpiresAt = Date.now() + ttlSec * 1e3;
+  return certs;
+}
+function verifyFirebaseJwtWithKey(idToken, publicKeyOrCert, expectedProjectId, nowEpochSec = Math.floor(Date.now() / 1e3)) {
+  const parts = String(idToken || "").trim().split(".");
+  if (parts.length !== 3) {
+    throw new Error("Malformed Firebase ID token.");
+  }
+  const [headerB64, payloadB64, sigB64] = parts;
+  const header = decodeBase64UrlJson(headerB64);
+  const payload = decodeBase64UrlJson(payloadB64);
+  if (header?.alg !== "RS256") {
+    throw new Error("Unsupported Firebase token algorithm.");
+  }
+  const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, "utf8");
+  const signature = base64UrlToBuffer2(sigB64);
+  const verified = crypto19.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
+  if (!verified) {
+    throw new Error("Firebase ID token signature verification failed.");
+  }
+  if (!expectedProjectId) {
+    throw new Error("Firebase project ID is not configured on the server.");
+  }
+  if (payload.aud !== expectedProjectId) {
+    throw new Error("Firebase ID token audience mismatch.");
+  }
+  if (payload.iss !== `https://securetoken.google.com/${expectedProjectId}`) {
+    throw new Error("Firebase ID token issuer mismatch.");
+  }
+  if (typeof payload.exp !== "number" || payload.exp <= nowEpochSec) {
+    throw new Error("Firebase ID token has expired.");
+  }
+  if (typeof payload.iat !== "number" || payload.iat > nowEpochSec + 300) {
+    throw new Error("Firebase ID token issued-at time is invalid.");
+  }
+  if (typeof payload.sub !== "string" || !payload.sub.trim() || payload.sub.length > 128) {
+    throw new Error("Firebase ID token subject (UID) is missing.");
+  }
+  const email = typeof payload.email === "string" ? payload.email.toLowerCase().trim() : "";
+  if (!email) {
+    throw new Error("Google account email is required.");
+  }
+  return {
+    uid: payload.sub.trim(),
+    email,
+    emailVerified: Boolean(payload.email_verified),
+    name: typeof payload.name === "string" ? payload.name.trim() : "",
+    picture: typeof payload.picture === "string" ? payload.picture.trim() : null,
+    provider: String(payload?.firebase?.sign_in_provider || "google.com")
+  };
+}
+async function verifyFirebaseIdToken(idToken) {
+  const projectId = (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "").trim();
+  if (!projectId) {
+    throw new Error(
+      "Google Sign-In via Firebase is not configured on this server yet (FIREBASE_PROJECT_ID missing)."
+    );
+  }
+  const parts = String(idToken || "").trim().split(".");
+  if (parts.length !== 3) {
+    throw new Error("Malformed Firebase ID token.");
+  }
+  const header = decodeBase64UrlJson(parts[0]);
+  const kid = String(header?.kid || "");
+  if (!kid) {
+    throw new Error("Firebase ID token missing key ID (kid).");
+  }
+  const certs = await getGooglePublicCerts();
+  const cert = certs[kid];
+  if (!cert) {
+    cachedCerts = null;
+    const freshCerts = await getGooglePublicCerts();
+    if (!freshCerts[kid]) {
+      throw new Error("Firebase signing key not recognized.");
+    }
+    return verifyFirebaseJwtWithKey(idToken, freshCerts[kid], projectId);
+  }
+  return verifyFirebaseJwtWithKey(idToken, cert, projectId);
+}
+
+// server/userAccountExtensions.ts
+function getSbConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co").replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+  return { url, key };
+}
+async function sbRest2(path11, opts = {}) {
+  const { url, key } = getSbConfig();
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    Accept: "application/json"
+  };
+  if (opts.body !== void 0) headers["Content-Type"] = "application/json";
+  if (opts.prefer) headers["Prefer"] = opts.prefer;
+  try {
+    const res = await fetch(`${url}/rest/v1/${path11}`, {
+      method: opts.method || "GET",
+      headers,
+      body: opts.body !== void 0 ? JSON.stringify(opts.body) : void 0
+    });
+    const text = await res.text();
+    let parsed = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        data: null,
+        error: typeof parsed === "object" && parsed ? parsed.message || parsed.error || text : String(parsed || res.status)
+      };
+    }
+    return { ok: true, status: res.status, data: parsed };
+  } catch (err) {
+    return { ok: false, status: 503, data: null, error: err?.message || "Supabase network error" };
+  }
+}
+function sendJson2(res, status, payload) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(payload));
+}
+function setSessionCookie(res, sessionToken, expiresAt) {
+  const isProd = process.env.NODE_ENV === "production";
+  const secureFlag = isProd ? "; Secure" : "";
+  const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1e3));
+  res.setHeader(
+    "Set-Cookie",
+    `session_token=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureFlag}`
+  );
+}
+async function parseJsonBody2(req, maxBytes = 256 * 1024) {
+  const preParsed = req.body;
+  if (preParsed !== void 0 && preParsed !== null) {
+    if (typeof preParsed === "object") return preParsed;
+    if (typeof preParsed === "string") return JSON.parse(preParsed);
+  }
+  return new Promise((resolve3, reject) => {
+    let total = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        reject(new Error("PAYLOAD_TOO_LARGE"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (chunks.length === 0) return resolve3({});
+      try {
+        resolve3(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        reject(new Error("INVALID_JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+async function getUserPrivateMeta(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query("SELECT custom_permissions FROM public.app_users WHERE id = $1", [userId]);
+      const meta2 = r2.rows[0]?.custom_permissions;
+      if (meta2 && typeof meta2 === "object" && !Array.isArray(meta2)) return { ...meta2 };
+    } catch {
+    }
+  }
+  const rest = await sbRest2(`app_users?id=eq.${encodeURIComponent(userId)}&select=custom_permissions&limit=1`);
+  const meta = rest.data?.[0]?.custom_permissions;
+  if (meta && typeof meta === "object" && !Array.isArray(meta)) return { ...meta };
+  return {};
+}
+async function setUserPrivateMeta(userId, updater) {
+  const current = await getUserPrivateMeta(userId);
+  const next = updater({ ...current });
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        "UPDATE public.app_users SET custom_permissions = $1::jsonb, updated_at = NOW() WHERE id = $2",
+        [JSON.stringify(next), userId]
+      );
+      return true;
+    } catch {
+    }
+  }
+  const res = await sbRest2(`app_users?id=eq.${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: { custom_permissions: next, updated_at: nowIso }
+  });
+  return res.ok;
+}
+async function getSavedUpiProfileForUser(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `SELECT id, user_id, upi_id, payee_name, payment_note, created_at, updated_at
+         FROM public.user_upi_profiles WHERE user_id = $1 LIMIT 1`,
+        [userId]
+      );
+      if (r2.rows[0]) {
+        const row = r2.rows[0];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          upiId: row.upi_id,
+          payeeName: row.payee_name || "",
+          paymentNote: row.payment_note || "",
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      }
+      return null;
+    } catch {
+    }
+  }
+  const rest = await sbRest2(
+    `user_upi_profiles?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id,upi_id,payee_name,payment_note,created_at,updated_at&limit=1`
+  );
+  if (rest.ok) {
+    const row = rest.data?.[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      upiId: row.upi_id,
+      payeeName: row.payee_name || "",
+      paymentNote: row.payment_note || "",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  const meta = await getUserPrivateMeta(userId);
+  const saved = meta.__upi_profile;
+  if (saved && typeof saved === "object" && saved.upiId) {
+    return {
+      id: saved.id || `upi_${userId.slice(0, 8)}`,
+      userId,
+      upiId: String(saved.upiId),
+      payeeName: String(saved.payeeName || ""),
+      paymentNote: String(saved.paymentNote || ""),
+      createdAt: saved.createdAt || null,
+      updatedAt: saved.updatedAt || null
+    };
+  }
+  return null;
+}
+async function upsertSavedUpiProfileForUser(userId, payload) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `INSERT INTO public.user_upi_profiles (user_id, upi_id, payee_name, payment_note, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_id) DO UPDATE
+           SET upi_id = EXCLUDED.upi_id,
+               payee_name = EXCLUDED.payee_name,
+               payment_note = EXCLUDED.payment_note,
+               updated_at = NOW()
+         RETURNING id, user_id, upi_id, payee_name, payment_note, created_at, updated_at`,
+        [userId, payload.upiId, payload.payeeName || null, payload.paymentNote || null]
+      );
+      if (r2.rows[0]) {
+        const row = r2.rows[0];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          upiId: row.upi_id,
+          payeeName: row.payee_name || "",
+          paymentNote: row.payment_note || "",
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      }
+    } catch {
+    }
+  }
+  const rest = await sbRest2("user_upi_profiles?on_conflict=user_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: {
+      user_id: userId,
+      upi_id: payload.upiId,
+      payee_name: payload.payeeName || null,
+      payment_note: payload.paymentNote || null,
+      updated_at: nowIso
+    }
+  });
+  if (rest.ok && rest.data?.[0]) {
+    const row = rest.data[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      upiId: row.upi_id,
+      payeeName: row.payee_name || "",
+      paymentNote: row.payment_note || "",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  let savedRecord = {
+    id: crypto20.randomUUID(),
+    userId,
+    upiId: payload.upiId,
+    payeeName: payload.payeeName,
+    paymentNote: payload.paymentNote,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+  await setUserPrivateMeta(userId, (prev) => {
+    const existing = prev.__upi_profile;
+    savedRecord = {
+      id: existing?.id || crypto20.randomUUID(),
+      userId,
+      upiId: payload.upiId,
+      payeeName: payload.payeeName,
+      paymentNote: payload.paymentNote,
+      createdAt: existing?.createdAt || nowIso,
+      updatedAt: nowIso
+    };
+    return { ...prev, __upi_profile: savedRecord };
+  });
+  return savedRecord;
+}
+async function clearSavedUpiProfileForUser(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      await query("DELETE FROM public.user_upi_profiles WHERE user_id = $1", [userId]);
+    } catch {
+    }
+  }
+  await sbRest2(`user_upi_profiles?user_id=eq.${encodeURIComponent(userId)}`, { method: "DELETE" }).catch(() => {
+  });
+  await setUserPrivateMeta(userId, (prev) => {
+    const next = { ...prev };
+    delete next.__upi_profile;
+    return next;
+  }).catch(() => {
+  });
+}
+async function recordUpiConsentEvent(authUser, status, source, clientIp, userAgent) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `INSERT INTO public.user_consents (
+          user_id, user_email, purpose, status, consent_status, action,
+          policy_version, consent_wording, granted_at, withdrawn_at, source, audit_metadata, ip_address, user_agent
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)`,
+        [
+          authUser.id,
+          authUser.email,
+          UPI_CONSENT_PURPOSE,
+          status,
+          status,
+          status,
+          UPI_CONSENT_POLICY_VERSION,
+          UPI_CONSENT_WORDING,
+          status === "granted" ? nowIso : null,
+          status === "withdrawn" ? nowIso : null,
+          source,
+          JSON.stringify({ feature: "upi_qr_storage" }),
+          clientIp,
+          userAgent
+        ]
+      );
+      return;
+    } catch {
+    }
+  }
+  await recordPrivacyConsentRest(authUser, {
+    category: UPI_CONSENT_PURPOSE,
+    status,
+    wording: UPI_CONSENT_WORDING,
+    policyVersion: UPI_CONSENT_POLICY_VERSION,
+    source,
+    auditMetadata: { feature: "upi_qr_storage" }
+  }).catch(() => {
+  });
+}
+async function getLatestUpiConsentStatus(authUser) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `SELECT COALESCE(consent_status, status) AS st FROM public.user_consents
+         WHERE user_id = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1`,
+        [authUser.id, UPI_CONSENT_PURPOSE]
+      );
+      const st = r2.rows[0]?.st;
+      if (st === "granted" || st === "withdrawn") return st;
+    } catch {
+    }
+  }
+  const restRes = await getPrivacyConsentsRest(authUser);
+  const rows = restRes.status === 200 && Array.isArray(restRes.body?.history) ? restRes.body.history : [];
+  const latest = rows.find((r2) => r2.purpose === UPI_CONSENT_PURPOSE);
+  if (latest) {
+    const st = latest.consent_status || latest.status;
+    if (st === "granted" || st === "withdrawn") return st;
+  }
+  return "not_granted";
+}
+async function findIdentityByProviderUid(provider, providerUid) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `SELECT id, user_id, provider, provider_uid, provider_email, is_verified, linked_at
+         FROM public.user_auth_identities WHERE provider = $1 AND provider_uid = $2 LIMIT 1`,
+        [provider, providerUid]
+      );
+      if (r2.rows[0]) {
+        const row = r2.rows[0];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          provider: row.provider,
+          providerUid: row.provider_uid,
+          providerEmail: row.provider_email,
+          isVerified: Boolean(row.is_verified),
+          linkedAt: row.linked_at
+        };
+      }
+      return null;
+    } catch {
+    }
+  }
+  const rest = await sbRest2(
+    `user_auth_identities?provider=eq.${encodeURIComponent(provider)}&provider_uid=eq.${encodeURIComponent(providerUid)}&limit=1`
+  );
+  if (rest.ok) {
+    const row = rest.data?.[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      provider: row.provider,
+      providerUid: row.provider_uid,
+      providerEmail: row.provider_email,
+      isVerified: Boolean(row.is_verified),
+      linkedAt: row.linked_at
+    };
+  }
+  const scan = await sbRest2("app_users?select=id,custom_permissions&limit=1000");
+  if (scan.ok && Array.isArray(scan.data)) {
+    for (const u of scan.data) {
+      const list = Array.isArray(u.custom_permissions?.__auth_identities) ? u.custom_permissions.__auth_identities : [];
+      const found = list.find((it) => it.provider === provider && it.providerUid === providerUid);
+      if (found) return { ...found, userId: u.id };
+    }
+  }
+  return null;
+}
+async function listIdentitiesForUser(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `SELECT id, user_id, provider, provider_uid, provider_email, is_verified, linked_at
+         FROM public.user_auth_identities WHERE user_id = $1 ORDER BY linked_at DESC`,
+        [userId]
+      );
+      return r2.rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        provider: row.provider,
+        providerUid: row.provider_uid,
+        providerEmail: row.provider_email,
+        isVerified: Boolean(row.is_verified),
+        linkedAt: row.linked_at
+      }));
+    } catch {
+    }
+  }
+  const rest = await sbRest2(
+    `user_auth_identities?user_id=eq.${encodeURIComponent(userId)}&order=linked_at.desc`
+  );
+  if (rest.ok && Array.isArray(rest.data)) {
+    return rest.data.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      provider: row.provider,
+      providerUid: row.provider_uid,
+      providerEmail: row.provider_email,
+      isVerified: Boolean(row.is_verified),
+      linkedAt: row.linked_at
+    }));
+  }
+  const meta = await getUserPrivateMeta(userId);
+  return Array.isArray(meta.__auth_identities) ? meta.__auth_identities : [];
+}
+async function saveIdentityForUser(userId, provider, providerUid, providerEmail, isVerified) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `INSERT INTO public.user_auth_identities (user_id, provider, provider_uid, provider_email, is_verified, linked_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (provider, provider_uid) DO NOTHING
+         RETURNING id, user_id, provider, provider_uid, provider_email, is_verified, linked_at`,
+        [userId, provider, providerUid, providerEmail, isVerified]
+      );
+      if (r2.rows[0]) {
+        const row = r2.rows[0];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          provider: row.provider,
+          providerUid: row.provider_uid,
+          providerEmail: row.provider_email,
+          isVerified: Boolean(row.is_verified),
+          linkedAt: row.linked_at
+        };
+      }
+    } catch {
+    }
+  }
+  const rest = await sbRest2("user_auth_identities", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      user_id: userId,
+      provider,
+      provider_uid: providerUid,
+      provider_email: providerEmail,
+      is_verified: isVerified,
+      linked_at: nowIso
+    }
+  });
+  if (rest.ok && rest.data?.[0]) {
+    const row = rest.data[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      provider: row.provider,
+      providerUid: row.provider_uid,
+      providerEmail: row.provider_email,
+      isVerified: Boolean(row.is_verified),
+      linkedAt: row.linked_at
+    };
+  }
+  const record = {
+    id: crypto20.randomUUID(),
+    userId,
+    provider,
+    providerUid,
+    providerEmail,
+    isVerified,
+    linkedAt: nowIso
+  };
+  await setUserPrivateMeta(userId, (prev) => {
+    const existing = Array.isArray(prev.__auth_identities) ? prev.__auth_identities : [];
+    const filtered = existing.filter((it) => !(it.provider === provider && it.providerUid === providerUid));
+    return { ...prev, __auth_identities: [...filtered, record] };
+  });
+  return record;
+}
+async function deleteGoogleIdentityForUser(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `DELETE FROM public.user_auth_identities WHERE user_id = $1 AND provider = 'google_firebase'`,
+        [userId]
+      );
+    } catch {
+    }
+  }
+  await sbRest2(
+    `user_auth_identities?user_id=eq.${encodeURIComponent(userId)}&provider=eq.google_firebase`,
+    { method: "DELETE" }
+  ).catch(() => {
+  });
+  await setUserPrivateMeta(userId, (prev) => {
+    const existing = Array.isArray(prev.__auth_identities) ? prev.__auth_identities : [];
+    return {
+      ...prev,
+      __auth_identities: existing.filter((it) => it.provider !== "google_firebase")
+    };
+  }).catch(() => {
+  });
+}
+async function listPasskeysForUser(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `SELECT id, user_id, credential_id, public_key_spki, algorithm, counter, transports, device_name, created_at, last_used_at
+         FROM public.user_passkeys WHERE user_id = $1 ORDER BY created_at DESC`,
+        [userId]
+      );
+      return r2.rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        credentialId: row.credential_id,
+        publicKeySpki: row.public_key_spki,
+        algorithm: Number(row.algorithm || -7),
+        counter: Number(row.counter || 0),
+        transports: Array.isArray(row.transports) ? row.transports : [],
+        deviceName: row.device_name || "Passkey Device",
+        createdAt: row.created_at,
+        lastUsedAt: row.last_used_at || null
+      }));
+    } catch {
+    }
+  }
+  const rest = await sbRest2(
+    `user_passkeys?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc`
+  );
+  if (rest.ok && Array.isArray(rest.data)) {
+    return rest.data.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      credentialId: row.credential_id,
+      publicKeySpki: row.public_key_spki,
+      algorithm: Number(row.algorithm || -7),
+      counter: Number(row.counter || 0),
+      transports: Array.isArray(row.transports) ? row.transports : [],
+      deviceName: row.device_name || "Passkey Device",
+      createdAt: row.created_at,
+      lastUsedAt: row.last_used_at || null
+    }));
+  }
+  const meta = await getUserPrivateMeta(userId);
+  return Array.isArray(meta.__passkeys) ? meta.__passkeys : [];
+}
+async function findPasskeyByCredentialId(credentialId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `SELECT id, user_id, credential_id, public_key_spki, algorithm, counter, transports, device_name, created_at, last_used_at
+         FROM public.user_passkeys WHERE credential_id = $1 LIMIT 1`,
+        [credentialId]
+      );
+      if (r2.rows[0]) {
+        const row = r2.rows[0];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          credentialId: row.credential_id,
+          publicKeySpki: row.public_key_spki,
+          algorithm: Number(row.algorithm || -7),
+          counter: Number(row.counter || 0),
+          transports: Array.isArray(row.transports) ? row.transports : [],
+          deviceName: row.device_name || "Passkey Device",
+          createdAt: row.created_at,
+          lastUsedAt: row.last_used_at || null
+        };
+      }
+      return null;
+    } catch {
+    }
+  }
+  const rest = await sbRest2(
+    `user_passkeys?credential_id=eq.${encodeURIComponent(credentialId)}&limit=1`
+  );
+  if (rest.ok) {
+    const row = rest.data?.[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      credentialId: row.credential_id,
+      publicKeySpki: row.public_key_spki,
+      algorithm: Number(row.algorithm || -7),
+      counter: Number(row.counter || 0),
+      transports: Array.isArray(row.transports) ? row.transports : [],
+      deviceName: row.device_name || "Passkey Device",
+      createdAt: row.created_at,
+      lastUsedAt: row.last_used_at || null
+    };
+  }
+  const scan = await sbRest2("app_users?select=id,custom_permissions&limit=1000");
+  if (scan.ok && Array.isArray(scan.data)) {
+    for (const u of scan.data) {
+      const list = Array.isArray(u.custom_permissions?.__passkeys) ? u.custom_permissions.__passkeys : [];
+      const found = list.find((p) => p.credentialId === credentialId);
+      if (found) return { ...found, userId: u.id };
+    }
+  }
+  return null;
+}
+async function savePasskeyForUser(pk) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `INSERT INTO public.user_passkeys (user_id, credential_id, public_key_spki, algorithm, counter, transports, device_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING id, user_id, credential_id, public_key_spki, algorithm, counter, transports, device_name, created_at, last_used_at`,
+        [pk.userId, pk.credentialId, pk.publicKeySpki, pk.algorithm, pk.counter, pk.transports, pk.deviceName]
+      );
+      if (r2.rows[0]) {
+        const row = r2.rows[0];
+        return {
+          id: row.id,
+          userId: row.user_id,
+          credentialId: row.credential_id,
+          publicKeySpki: row.public_key_spki,
+          algorithm: Number(row.algorithm || -7),
+          counter: Number(row.counter || 0),
+          transports: Array.isArray(row.transports) ? row.transports : [],
+          deviceName: row.device_name || "Passkey Device",
+          createdAt: row.created_at,
+          lastUsedAt: row.last_used_at || null
+        };
+      }
+    } catch {
+    }
+  }
+  const rest = await sbRest2("user_passkeys", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      user_id: pk.userId,
+      credential_id: pk.credentialId,
+      public_key_spki: pk.publicKeySpki,
+      algorithm: pk.algorithm,
+      counter: pk.counter,
+      transports: pk.transports,
+      device_name: pk.deviceName
+    }
+  });
+  if (rest.ok && rest.data?.[0]) {
+    const row = rest.data[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      credentialId: row.credential_id,
+      publicKeySpki: row.public_key_spki,
+      algorithm: Number(row.algorithm || -7),
+      counter: Number(row.counter || 0),
+      transports: Array.isArray(row.transports) ? row.transports : [],
+      deviceName: row.device_name || "Passkey Device",
+      createdAt: row.created_at,
+      lastUsedAt: row.last_used_at || null
+    };
+  }
+  const created = {
+    ...pk,
+    id: crypto20.randomUUID(),
+    createdAt: nowIso,
+    lastUsedAt: null
+  };
+  await setUserPrivateMeta(pk.userId, (prev) => {
+    const list = Array.isArray(prev.__passkeys) ? prev.__passkeys : [];
+    return { ...prev, __passkeys: [created, ...list.filter((p) => p.credentialId !== pk.credentialId)] };
+  });
+  return created;
+}
+async function updatePasskeyUsage(passkey, newCounter) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `UPDATE public.user_passkeys SET counter = $1, last_used_at = NOW() WHERE credential_id = $2`,
+        [newCounter, passkey.credentialId]
+      );
+      return;
+    } catch {
+    }
+  }
+  const rest = await sbRest2(`user_passkeys?credential_id=eq.${encodeURIComponent(passkey.credentialId)}`, {
+    method: "PATCH",
+    body: { counter: newCounter, last_used_at: nowIso }
+  });
+  if (rest.ok) return;
+  await setUserPrivateMeta(passkey.userId, (prev) => {
+    const list = Array.isArray(prev.__passkeys) ? prev.__passkeys : [];
+    return {
+      ...prev,
+      __passkeys: list.map(
+        (p) => p.credentialId === passkey.credentialId ? { ...p, counter: newCounter, lastUsedAt: nowIso } : p
+      )
+    };
+  }).catch(() => {
+  });
+}
+async function deletePasskeyForUser(userId, passkeyId) {
+  let deleted = false;
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query(
+        `DELETE FROM public.user_passkeys WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [passkeyId, userId]
+      );
+      if ((r2.rowCount ?? 0) > 0) deleted = true;
+    } catch {
+    }
+  }
+  const rest = await sbRest2(
+    `user_passkeys?id=eq.${encodeURIComponent(passkeyId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "DELETE", prefer: "return=representation" }
+  );
+  if (rest.ok && Array.isArray(rest.data) && rest.data.length > 0) deleted = true;
+  await setUserPrivateMeta(userId, (prev) => {
+    const list = Array.isArray(prev.__passkeys) ? prev.__passkeys : [];
+    const next = list.filter((p) => p.id !== passkeyId);
+    if (next.length !== list.length) deleted = true;
+    return { ...prev, __passkeys: next };
+  }).catch(() => {
+  });
+  return deleted;
+}
+async function fetchUserRowById(userId) {
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query("SELECT * FROM public.app_users WHERE id = $1 LIMIT 1", [userId]);
+      if (r2.rows[0]) return r2.rows[0];
+    } catch {
+    }
+  }
+  const rest = await sbRest2(`app_users?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`);
+  return rest.ok && rest.data?.[0] ? rest.data[0] : null;
+}
+async function fetchUserRowByEmail(email) {
+  const norm = normalizeEmail(email);
+  if (isDatabaseAvailable()) {
+    try {
+      const r2 = await query("SELECT * FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1", [norm]);
+      if (r2.rows[0]) return r2.rows[0];
+    } catch {
+    }
+  }
+  const rest = await sbRest2(`app_users?email=ilike.${encodeURIComponent(norm)}&select=*&limit=1`);
+  return rest.ok && rest.data?.[0] ? rest.data[0] : null;
+}
+async function userHasPasswordAuth(userRow) {
+  const hash2 = String(userRow?.password_hash || "");
+  return Boolean(hash2 && !hash2.startsWith("OAUTH_NO_PASSWORD_"));
+}
+async function handleUserAccountExtensions(req, res, pathname, method, clientIp, userAgent) {
+  if (pathname === "/api/upi/profile" && method === "GET") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    const [profile, consentStatus] = await Promise.all([
+      getSavedUpiProfileForUser(authUser.id),
+      getLatestUpiConsentStatus(authUser)
+    ]);
+    sendJson2(res, 200, {
+      success: true,
+      profile,
+      consentStatus
+    });
+    return true;
+  }
+  if (pathname === "/api/upi/profile" && (method === "POST" || method === "PUT")) {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request payload." });
+      return true;
+    }
+    const validation = validateUpiId(body.upiId || body.upi_id || "");
+    if (!validation.isValid) {
+      sendJson2(res, 400, { success: false, code: "INVALID_UPI_ID", message: validation.error });
+      return true;
+    }
+    const consentAccepted = body.consentAccepted === true;
+    const existingConsent = await getLatestUpiConsentStatus(authUser);
+    const existingProfile = await getSavedUpiProfileForUser(authUser.id);
+    if (!consentAccepted && (existingConsent !== "granted" || !existingProfile || body.consentAccepted === false)) {
+      sendJson2(res, 400, {
+        success: false,
+        code: "CONSENT_REQUIRED",
+        message: "You must explicitly agree to the UPI QR consent notice before saving your UPI ID."
+      });
+      return true;
+    }
+    const payeeName = sanitizeUpiText(body.payeeName ?? body.payee_name ?? authUser.full_name, 80);
+    const paymentNote = sanitizeUpiText(body.paymentNote ?? body.payment_note ?? "", 80);
+    const source = body.source === "settings_upi_qr" ? "settings_upi_qr" : "upi_qr_setup";
+    if (consentAccepted) {
+      await recordUpiConsentEvent(authUser, "granted", source, clientIp, userAgent);
+    }
+    const saved = await upsertSavedUpiProfileForUser(authUser.id, {
+      upiId: validation.normalized,
+      payeeName,
+      paymentNote
+    });
+    await logSecurityEvent("UPI_PROFILE_SAVED", {
+      userId: authUser.id,
+      userEmail: authUser.email,
+      ipAddress: clientIp,
+      metadata: { source, consentGranted: consentAccepted || existingConsent === "granted" }
+    }).catch(() => {
+    });
+    sendJson2(res, 200, {
+      success: true,
+      message: "Your UPI QR details have been securely saved.",
+      profile: saved,
+      consentStatus: "granted"
+    });
+    return true;
+  }
+  if (pathname === "/api/upi/profile" && method === "DELETE") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+    }
+    await clearSavedUpiProfileForUser(authUser.id);
+    const withdrawConsent = body?.withdrawConsent !== false;
+    const source = body?.source === "settings_upi_qr" ? "settings_upi_qr" : "upi_qr_setup";
+    if (withdrawConsent) {
+      await recordUpiConsentEvent(authUser, "withdrawn", source, clientIp, userAgent);
+    }
+    await logSecurityEvent("UPI_PROFILE_REMOVED", {
+      userId: authUser.id,
+      userEmail: authUser.email,
+      ipAddress: clientIp,
+      metadata: { withdrawConsent }
+    }).catch(() => {
+    });
+    sendJson2(res, 200, {
+      success: true,
+      message: "Saved UPI details removed and UPI QR consent withdrawn.",
+      profile: null,
+      consentStatus: withdrawConsent ? "withdrawn" : await getLatestUpiConsentStatus(authUser)
+    });
+    return true;
+  }
+  if (pathname === "/api/profile/complete" && method === "POST") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid request body." });
+      return true;
+    }
+    const fullName = String(body.fullName || body.full_name || "").trim();
+    const phone = String(body.phone || "").trim();
+    const rawUsername = body.username !== void 0 ? String(body.username || "").trim().toLowerCase() : void 0;
+    if (!fullName || fullName.length < 2 || fullName.length > 80) {
+      sendJson2(res, 400, { success: false, message: "Please enter your full name (2 to 80 characters)." });
+      return true;
+    }
+    if (phone && !validatePhone(phone)) {
+      sendJson2(res, 400, { success: false, message: "Please enter a valid mobile number (10-15 digits)." });
+      return true;
+    }
+    if (rawUsername) {
+      if (!/^[a-z0-9_]{3,30}$/.test(rawUsername)) {
+        sendJson2(res, 400, {
+          success: false,
+          message: "Username must be 3-30 characters using lowercase letters, numbers, or underscores."
+        });
+        return true;
+      }
+      const dupRest = await sbRest2(
+        `app_users?username=eq.${encodeURIComponent(rawUsername)}&id=neq.${encodeURIComponent(authUser.id)}&select=id&limit=1`
+      );
+      if (dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0) {
+        sendJson2(res, 409, { success: false, message: "That username is already taken. Please choose another." });
+        return true;
+      }
+    }
+    const meta = await getUserPrivateMeta(authUser.id);
+    const updatedMeta = { ...meta, __profile_completed: true };
+    let updatedRow = null;
+    if (isDatabaseAvailable()) {
+      try {
+        const r2 = await query(
+          `UPDATE public.app_users
+           SET full_name = $1,
+               phone = COALESCE($2, phone),
+               username = COALESCE($3, username),
+               custom_permissions = $4::jsonb,
+               updated_at = NOW()
+           WHERE id = $5
+           RETURNING *`,
+          [fullName, phone || null, rawUsername || null, JSON.stringify(updatedMeta), authUser.id]
+        );
+        updatedRow = r2.rows[0] || null;
+        await query("UPDATE public.app_users SET profile_completed = TRUE WHERE id = $1", [authUser.id]).catch(() => {
+        });
+      } catch {
+      }
+    }
+    if (!updatedRow) {
+      const patchPayload = {
+        full_name: fullName,
+        custom_permissions: updatedMeta,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (phone) patchPayload.phone = phone;
+      if (rawUsername) patchPayload.username = rawUsername;
+      const restUpd = await sbRest2(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: patchPayload
+      });
+      if (!restUpd.ok || !restUpd.data?.[0]) {
+        sendJson2(res, 503, { success: false, message: restUpd.error || "Could not complete profile right now." });
+        return true;
+      }
+      updatedRow = restUpd.data[0];
+    }
+    sendJson2(res, 200, {
+      success: true,
+      message: "Profile completed! Welcome to My Money Manager.",
+      user: sanitizeUserOutput({ ...authUser, ...updatedRow, profile_completed: true })
+    });
+    return true;
+  }
+  if (pathname === "/api/profile/security-methods" && method === "GET") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    const [userRow, identities, passkeys] = await Promise.all([
+      fetchUserRowById(authUser.id),
+      listIdentitiesForUser(authUser.id),
+      listPasskeysForUser(authUser.id)
+    ]);
+    const googleIdentity = identities.find((i2) => i2.provider === "google_firebase") || null;
+    const hasPassword = await userHasPasswordAuth(userRow);
+    sendJson2(res, 200, {
+      success: true,
+      security: {
+        email: {
+          address: authUser.email,
+          verified: Boolean(authUser.email_verified),
+          hasPassword
+        },
+        google: googleIdentity ? {
+          linked: true,
+          email: googleIdentity.providerEmail,
+          linkedAt: googleIdentity.linkedAt
+        } : { linked: false, email: null, linkedAt: null },
+        passkeys: passkeys.map((p) => ({
+          id: p.id,
+          deviceName: p.deviceName,
+          transports: p.transports,
+          createdAt: p.createdAt,
+          lastUsedAt: p.lastUsedAt
+        }))
+      }
+    });
+    return true;
+  }
+  if (pathname === "/api/auth/google" && method === "POST") {
+    const rate = await checkRateLimitAsync(
+      `login:ip:${clientIp}`,
+      RATE_LIMITS.LOGIN_IP.max,
+      RATE_LIMITS.LOGIN_IP.windowMs,
+      RATE_LIMITS.LOGIN_IP.op
+    );
+    if (!rate.allowed) {
+      sendJson2(res, 429, { success: false, message: "Too many authentication attempts. Please try again later." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request." });
+      return true;
+    }
+    const idToken = String(body.idToken || "").trim();
+    if (!idToken) {
+      sendJson2(res, 400, { success: false, message: "Firebase Google ID token is required." });
+      return true;
+    }
+    let verified;
+    try {
+      verified = await verifyFirebaseIdToken(idToken);
+    } catch (err) {
+      sendJson2(res, 401, { success: false, message: err?.message || "Google token verification failed." });
+      return true;
+    }
+    const existingIdentity = await findIdentityByProviderUid("google_firebase", verified.uid);
+    if (existingIdentity) {
+      const userRow = await fetchUserRowById(existingIdentity.userId);
+      if (!userRow || userRow.status !== "active") {
+        sendJson2(res, 403, { success: false, message: "Your account is not active. Please contact support." });
+        return true;
+      }
+      const session2 = await createSession(userRow.id, {
+        rememberMe: true,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: userRow.role, email: userRow.email }
+      });
+      setSessionCookie(res, session2.sessionToken, session2.expiresAt);
+      const outUser2 = sanitizeUserOutput(userRow);
+      sendJson2(res, 200, {
+        success: true,
+        isNewUser: false,
+        requiresProfileCompletion: outUser2.profile_completed === false,
+        user: outUser2,
+        sessionToken: session2.sessionToken
+      });
+      return true;
+    }
+    const existingByEmail = await fetchUserRowByEmail(verified.email);
+    if (existingByEmail) {
+      sendJson2(res, 409, {
+        success: false,
+        code: "ACCOUNT_LINK_REQUIRED",
+        message: "An account with this email already exists. For your security, sign in with your existing password or passkey first, then link your Google account in Profile \u2192 Security."
+      });
+      return true;
+    }
+    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto20.randomBytes(24).toString("hex")}`;
+    const initialName = verified.name || verified.email.split("@")[0] || "User";
+    const initialMeta = { __profile_completed: false };
+    let createdUser = null;
+    if (isDatabaseAvailable()) {
+      try {
+        const r2 = await query(
+          `INSERT INTO public.app_users (
+            full_name, email, password_hash, role, status, email_verified, avatar_url, custom_permissions
+          ) VALUES ($1, $2, $3, 'user', 'active', $4, $5, $6::jsonb)
+          RETURNING *`,
+          [
+            initialName,
+            verified.email,
+            placeholderPasswordHash,
+            verified.emailVerified,
+            verified.picture,
+            JSON.stringify(initialMeta)
+          ]
+        );
+        createdUser = r2.rows[0] || null;
+      } catch {
+      }
+    }
+    if (!createdUser) {
+      const ins = await sbRest2("app_users", {
+        method: "POST",
+        prefer: "return=representation",
+        body: {
+          full_name: initialName,
+          email: verified.email,
+          password_hash: placeholderPasswordHash,
+          role: "user",
+          status: "active",
+          email_verified: verified.emailVerified,
+          avatar_url: verified.picture,
+          custom_permissions: initialMeta
+        }
+      });
+      if (!ins.ok || !ins.data?.[0]) {
+        sendJson2(res, 503, { success: false, message: ins.error || "Could not create Google account right now." });
+        return true;
+      }
+      createdUser = ins.data[0];
+    }
+    await saveIdentityForUser(createdUser.id, "google_firebase", verified.uid, verified.email, verified.emailVerified);
+    const session = await createSession(createdUser.id, {
+      rememberMe: true,
+      userAgent,
+      ipAddress: clientIp,
+      user: { role: "user", email: createdUser.email }
+    });
+    setSessionCookie(res, session.sessionToken, session.expiresAt);
+    await logSecurityEvent("GOOGLE_USER_REGISTERED", {
+      userId: createdUser.id,
+      userEmail: createdUser.email,
+      ipAddress: clientIp
+    }).catch(() => {
+    });
+    const outUser = sanitizeUserOutput({ ...createdUser, profile_completed: false });
+    sendJson2(res, 201, {
+      success: true,
+      isNewUser: true,
+      requiresProfileCompletion: true,
+      message: "Google account connected! Please complete your profile to continue.",
+      user: outUser,
+      sessionToken: session.sessionToken
+    });
+    return true;
+  }
+  if (pathname === "/api/auth/google/link" && method === "POST") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request." });
+      return true;
+    }
+    const idToken = String(body.idToken || "").trim();
+    if (!idToken) {
+      sendJson2(res, 400, { success: false, message: "Firebase Google ID token is required." });
+      return true;
+    }
+    let verified;
+    try {
+      verified = await verifyFirebaseIdToken(idToken);
+    } catch (err) {
+      sendJson2(res, 401, { success: false, message: err?.message || "Google token verification failed." });
+      return true;
+    }
+    const existing = await findIdentityByProviderUid("google_firebase", verified.uid);
+    if (existing && existing.userId !== authUser.id) {
+      sendJson2(res, 409, {
+        success: false,
+        message: "This Google account is already linked to a different My Money Manager user."
+      });
+      return true;
+    }
+    await saveIdentityForUser(authUser.id, "google_firebase", verified.uid, verified.email, verified.emailVerified);
+    sendJson2(res, 200, {
+      success: true,
+      message: `Linked Google account (${verified.email}) to your profile.`,
+      google: { linked: true, email: verified.email }
+    });
+    return true;
+  }
+  if (pathname === "/api/auth/google/link" && method === "DELETE") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    const [userRow, passkeys] = await Promise.all([
+      fetchUserRowById(authUser.id),
+      listPasskeysForUser(authUser.id)
+    ]);
+    const hasPassword = await userHasPasswordAuth(userRow);
+    if (!hasPassword && passkeys.length === 0) {
+      sendJson2(res, 400, {
+        success: false,
+        message: "Set a password or register a passkey before unlinking Google so you are not locked out."
+      });
+      return true;
+    }
+    await deleteGoogleIdentityForUser(authUser.id);
+    sendJson2(res, 200, { success: true, message: "Google account unlinked from your profile." });
+    return true;
+  }
+  if (pathname === "/api/auth/passkey/register/options" && method === "POST") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required to register a passkey." });
+      return true;
+    }
+    const { rpId, origin: origin2 } = resolveRpContext(req.headers);
+    const issued = issueWebAuthnChallenge({ type: "register", userId: authUser.id, rpId, origin: origin2 });
+    const existing = await listPasskeysForUser(authUser.id);
+    sendJson2(res, 200, {
+      success: true,
+      challengeId: issued.challengeId,
+      options: {
+        challenge: issued.challenge,
+        rp: {
+          name: "My Money Manager by HackifyPro",
+          id: rpId
+        },
+        user: {
+          id: bufferToBase64Url(Buffer.from(authUser.id, "utf8")),
+          name: authUser.email,
+          displayName: authUser.full_name || authUser.email
+        },
+        pubKeyCredParams: [
+          { type: "public-key", alg: -7 },
+          // ES256 (P-256)
+          { type: "public-key", alg: -257 }
+          // RS256
+        ],
+        timeout: 6e4,
+        attestation: "none",
+        authenticatorSelection: {
+          residentKey: "preferred",
+          userVerification: "preferred"
+        },
+        excludeCredentials: existing.map((p) => ({
+          id: p.credentialId,
+          type: "public-key",
+          transports: p.transports.length ? p.transports : ["internal", "hybrid"]
+        }))
+      }
+    });
+    return true;
+  }
+  if (pathname === "/api/auth/passkey/register/verify" && method === "POST") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request." });
+      return true;
+    }
+    const challengeRecord = consumeWebAuthnChallenge(String(body.challengeId || ""), "register", authUser.id);
+    if (!challengeRecord) {
+      sendJson2(res, 400, { success: false, message: "Passkey registration challenge expired or invalid. Please try again." });
+      return true;
+    }
+    try {
+      const extracted = extractCredentialFromAttestation({
+        clientDataJSON: String(body.response?.clientDataJSON || ""),
+        attestationObject: String(body.response?.attestationObject || ""),
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: challengeRecord.origin,
+        expectedRpId: challengeRecord.rpId,
+        publicKeySpkiBase64: body.response?.publicKeySpkiBase64 ? String(body.response.publicKeySpkiBase64) : void 0
+      });
+      const duplicate = await findPasskeyByCredentialId(extracted.credentialId);
+      if (duplicate) {
+        sendJson2(res, 409, { success: false, message: "This passkey is already registered." });
+        return true;
+      }
+      const deviceName = String(body.deviceName || "").trim().slice(0, 60) || (userAgent.includes("iPhone") ? "iPhone Passkey" : userAgent.includes("Android") ? "Android Passkey" : userAgent.includes("Mac") ? "Mac Passkey" : userAgent.includes("Windows") ? "Windows Hello Passkey" : "My Device Passkey");
+      const transports = Array.isArray(body.response?.transports) ? body.response.transports.map((t2) => String(t2)).slice(0, 6) : ["internal"];
+      const saved = await savePasskeyForUser({
+        userId: authUser.id,
+        credentialId: extracted.credentialId,
+        publicKeySpki: extracted.publicKeySpki,
+        algorithm: extracted.algorithm,
+        counter: extracted.counter,
+        transports,
+        deviceName
+      });
+      await logSecurityEvent("PASSKEY_REGISTERED", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        metadata: { deviceName }
+      }).catch(() => {
+      });
+      sendJson2(res, 201, {
+        success: true,
+        message: `Passkey "${saved.deviceName}" registered successfully.`,
+        passkey: {
+          id: saved.id,
+          deviceName: saved.deviceName,
+          createdAt: saved.createdAt,
+          lastUsedAt: saved.lastUsedAt
+        }
+      });
+    } catch (err) {
+      sendJson2(res, 400, { success: false, message: err?.message || "Passkey verification failed." });
+    }
+    return true;
+  }
+  if (pathname === "/api/auth/passkey/login/options" && method === "POST") {
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+    }
+    const { rpId, origin: origin2 } = resolveRpContext(req.headers);
+    const issued = issueWebAuthnChallenge({ type: "login", rpId, origin: origin2 });
+    let allowCredentials = [];
+    const email = body?.email ? normalizeEmail(String(body.email)) : "";
+    if (email) {
+      const userRow = await fetchUserRowByEmail(email);
+      if (userRow) {
+        const keys = await listPasskeysForUser(userRow.id);
+        allowCredentials = keys.map((k) => ({
+          id: k.credentialId,
+          type: "public-key",
+          transports: k.transports.length ? k.transports : ["internal", "hybrid"]
+        }));
+      }
+    }
+    sendJson2(res, 200, {
+      success: true,
+      challengeId: issued.challengeId,
+      options: {
+        challenge: issued.challenge,
+        rpId,
+        timeout: 6e4,
+        userVerification: "preferred",
+        allowCredentials
+      }
+    });
+    return true;
+  }
+  if (pathname === "/api/auth/passkey/login/verify" && method === "POST") {
+    const rate = await checkRateLimitAsync(
+      `login:ip:${clientIp}`,
+      RATE_LIMITS.LOGIN_IP.max,
+      RATE_LIMITS.LOGIN_IP.windowMs,
+      RATE_LIMITS.LOGIN_IP.op
+    );
+    if (!rate.allowed) {
+      sendJson2(res, 429, { success: false, message: "Too many login attempts. Please wait and try again." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await parseJsonBody2(req);
+    } catch {
+      sendJson2(res, 400, { success: false, message: "Invalid JSON request." });
+      return true;
+    }
+    const challengeRecord = consumeWebAuthnChallenge(String(body.challengeId || ""), "login");
+    if (!challengeRecord) {
+      sendJson2(res, 400, { success: false, message: "Passkey login challenge expired or invalid. Please try again." });
+      return true;
+    }
+    const credentialId = String(body.id || body.rawId || "").trim();
+    if (!credentialId) {
+      sendJson2(res, 400, { success: false, message: "Missing passkey credential ID." });
+      return true;
+    }
+    const stored = await findPasskeyByCredentialId(credentialId);
+    if (!stored) {
+      sendJson2(res, 401, {
+        success: false,
+        message: "No account found for this passkey. Register a passkey in Profile \u2192 Security first."
+      });
+      return true;
+    }
+    const check = verifyPasskeyAssertion({
+      clientDataJSON: String(body.response?.clientDataJSON || ""),
+      authenticatorData: String(body.response?.authenticatorData || ""),
+      signature: String(body.response?.signature || ""),
+      expectedChallenge: challengeRecord.challenge,
+      expectedOrigin: challengeRecord.origin,
+      expectedRpId: challengeRecord.rpId,
+      publicKeySpki: stored.publicKeySpki,
+      previousCounter: stored.counter
+    });
+    if (!check.valid) {
+      sendJson2(res, 401, { success: false, message: check.error || "Passkey verification failed." });
+      return true;
+    }
+    const userRow = await fetchUserRowById(stored.userId);
+    if (!userRow || userRow.status !== "active") {
+      sendJson2(res, 403, { success: false, message: "This account is not active." });
+      return true;
+    }
+    await updatePasskeyUsage(stored, check.newCounter);
+    const session = await createSession(userRow.id, {
+      rememberMe: true,
+      userAgent,
+      ipAddress: clientIp,
+      user: { role: userRow.role, email: userRow.email }
+    });
+    setSessionCookie(res, session.sessionToken, session.expiresAt);
+    await logSecurityEvent("PASSKEY_LOGIN_SUCCESS", {
+      userId: userRow.id,
+      userEmail: userRow.email,
+      ipAddress: clientIp
+    }).catch(() => {
+    });
+    const outUser = sanitizeUserOutput(userRow);
+    sendJson2(res, 200, {
+      success: true,
+      message: "Signed in with Passkey.",
+      requiresProfileCompletion: outUser.profile_completed === false,
+      user: outUser,
+      sessionToken: session.sessionToken
+    });
+    return true;
+  }
+  if (pathname.startsWith("/api/auth/passkeys/") && method === "DELETE") {
+    const authUser = await authenticateRequest(req);
+    if (!authUser) {
+      sendJson2(res, 401, { success: false, message: "Authentication required." });
+      return true;
+    }
+    const passkeyId = decodeURIComponent(pathname.slice("/api/auth/passkeys/".length)).trim();
+    if (!passkeyId) {
+      sendJson2(res, 400, { success: false, message: "Passkey ID is required." });
+      return true;
+    }
+    const [userRow, identities, passkeys] = await Promise.all([
+      fetchUserRowById(authUser.id),
+      listIdentitiesForUser(authUser.id),
+      listPasskeysForUser(authUser.id)
+    ]);
+    const hasPassword = await userHasPasswordAuth(userRow);
+    const hasGoogle = identities.some((i2) => i2.provider === "google_firebase");
+    if (passkeys.length <= 1 && !hasPassword && !hasGoogle) {
+      sendJson2(res, 400, {
+        success: false,
+        message: "Cannot remove your last sign-in method. Set a password or link Google first."
+      });
+      return true;
+    }
+    const ok = await deletePasskeyForUser(authUser.id, passkeyId);
+    if (!ok) {
+      sendJson2(res, 404, { success: false, message: "Passkey not found." });
+      return true;
+    }
+    sendJson2(res, 200, { success: true, message: "Passkey removed from your account." });
+    return true;
+  }
+  return false;
+}
+
 // server/privacyConsentApi.ts
 var LEGACY_ALLOWED_PURPOSES = /* @__PURE__ */ new Set([
   ...OPTIONAL_CONSENT_CATEGORIES,
-  "optional_feedback_support"
+  "optional_feedback_support",
+  "upi_qr_storage"
 ]);
 var ALLOWED_SOURCES = /* @__PURE__ */ new Set([
   "privacy_choices_modal",
@@ -91521,7 +93855,9 @@ var ALLOWED_SOURCES = /* @__PURE__ */ new Set([
   "receipt_scanner_prompt",
   "udhar_sharing_prompt",
   "notification_preferences",
-  "help_support"
+  "help_support",
+  "upi_qr_setup",
+  "settings_upi_qr"
 ]);
 var recentIdempotencyCache = /* @__PURE__ */ new Map();
 function pruneIdempotencyCache() {
@@ -91530,12 +93866,12 @@ function pruneIdempotencyCache() {
     if (v.expiresAt <= now) recentIdempotencyCache.delete(k);
   }
 }
-function sendJson2(res, status, payload) {
+function sendJson3(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(payload));
 }
-async function parseJsonBody2(req, maxBytes = 256 * 1024) {
+async function parseJsonBody3(req, maxBytes = 256 * 1024) {
   const preParsed = req.body;
   if (preParsed !== void 0 && preParsed !== null) {
     if (typeof preParsed === "object") return preParsed;
@@ -91773,7 +94109,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
   }
   const authUser = await authenticateRequest(req);
   if (!authUser) {
-    sendJson2(res, 401, {
+    sendJson3(res, 401, {
       success: false,
       code: "UNAUTHORIZED",
       message: "Authentication required. Please sign in to view or update your privacy choices."
@@ -91785,7 +94121,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       try {
         const rows2 = await fetchUserConsentsPg(authUser.id);
         const snapshot2 = buildConsentSnapshotFromHistory(rows2);
-        sendJson2(res, 200, {
+        sendJson3(res, 200, {
           success: true,
           userId: authUser.id,
           hasSavedChoices: snapshot2.hasSavedChoices,
@@ -91803,7 +94139,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     }
     const restRes = await getPrivacyConsentsRest(authUser);
     if (restRes.status !== 200 || !restRes.body?.success) {
-      sendJson2(res, restRes.status || 503, {
+      sendJson3(res, restRes.status || 503, {
         success: false,
         code: "STORAGE_UNAVAILABLE",
         message: restRes.body?.message || "Unable to load saved privacy choices right now."
@@ -91812,7 +94148,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     }
     const rows = Array.isArray(restRes.body.history) ? restRes.body.history : [];
     const snapshot = buildConsentSnapshotFromHistory(rows);
-    sendJson2(res, 200, {
+    sendJson3(res, 200, {
       success: true,
       userId: authUser.id,
       hasSavedChoices: snapshot.hasSavedChoices,
@@ -91828,14 +94164,14 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
   if (pathname === "/api/privacy/consents" && method === "POST") {
     let body;
     try {
-      body = await parseJsonBody2(req);
+      body = await parseJsonBody3(req);
     } catch {
-      sendJson2(res, 400, { success: false, message: "Invalid JSON request body." });
+      sendJson3(res, 400, { success: false, message: "Invalid JSON request body." });
       return true;
     }
     const purpose = String(body.category || body.purpose || "").trim();
     if (!purpose || !LEGACY_ALLOWED_PURPOSES.has(purpose)) {
-      sendJson2(res, 400, {
+      sendJson3(res, 400, {
         success: false,
         code: "INVALID_PURPOSE",
         message: "Invalid or unsupported consent category. Essential processing is not an optional consent toggle."
@@ -91843,7 +94179,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       return true;
     }
     if (body.status !== "granted" && body.status !== "withdrawn") {
-      sendJson2(res, 400, {
+      sendJson3(res, 400, {
         success: false,
         code: "INVALID_STATUS",
         message: 'Consent status must be explicitly "granted" or "withdrawn".'
@@ -91862,7 +94198,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     pruneIdempotencyCache();
     const cacheKey = idempotencyKey ? `${authUser.id}:${purpose}:${idempotencyKey}` : null;
     if (cacheKey && recentIdempotencyCache.has(cacheKey)) {
-      sendJson2(res, 200, recentIdempotencyCache.get(cacheKey).payload);
+      sendJson3(res, 200, recentIdempotencyCache.get(cacheKey).payload);
       return true;
     }
     let savedRecord = null;
@@ -91907,7 +94243,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       }
     }
     if (!persisted) {
-      sendJson2(res, 503, {
+      sendJson3(res, 503, {
         success: false,
         code: "PERSISTENCE_FAILED",
         message: lastError
@@ -91916,6 +94252,10 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     }
     if (purpose === "marketing_updates") {
       updateUserNotificationPreferences(authUser.id, { notify_offers: status === "granted" }).catch(() => {
+      });
+    }
+    if (purpose === "upi_qr_storage" && status === "withdrawn") {
+      clearSavedUpiProfileForUser(authUser.id).catch(() => {
       });
     }
     logSecurityEvent(status === "granted" ? "USER_GRANTED_CONSENT" : "USER_WITHDREW_CONSENT", {
@@ -91939,15 +94279,15 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
         payload: responsePayload
       });
     }
-    sendJson2(res, 200, responsePayload);
+    sendJson3(res, 200, responsePayload);
     return true;
   }
   if (pathname === "/api/privacy/consents/batch" && method === "POST") {
     let body;
     try {
-      body = await parseJsonBody2(req);
+      body = await parseJsonBody3(req);
     } catch {
-      sendJson2(res, 400, { success: false, message: "Invalid JSON request body." });
+      sendJson3(res, 400, { success: false, message: "Invalid JSON request body." });
       return true;
     }
     const rawEntries = Array.isArray(body.entries) ? body.entries : body.choices && typeof body.choices === "object" ? Object.entries(body.choices).map(([purpose, val]) => ({
@@ -91955,7 +94295,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       status: val === true ? "granted" : "withdrawn"
     })) : [];
     if (rawEntries.length === 0) {
-      sendJson2(res, 400, {
+      sendJson3(res, 400, {
         success: false,
         code: "EMPTY_CHOICES",
         message: "At least one explicit optional consent category is required."
@@ -91967,7 +94307,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     for (const item of rawEntries) {
       const purpose = String(item.purpose || "").trim();
       if (!isValidOptionalConsentCategory(purpose)) {
-        sendJson2(res, 400, {
+        sendJson3(res, 400, {
           success: false,
           code: "INVALID_PURPOSE",
           message: `Unsupported optional consent category: "${purpose}". Essential financial processing cannot be submitted as optional consent.`
@@ -91975,7 +94315,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
         return true;
       }
       if (item.status !== "granted" && item.status !== "withdrawn") {
-        sendJson2(res, 400, {
+        sendJson3(res, 400, {
           success: false,
           code: "INVALID_STATUS",
           message: `Invalid status for "${purpose}". Expected "granted" or "withdrawn".`
@@ -91990,7 +94330,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source);
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto17.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto21.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, batch_id: batchId },
       language
@@ -91998,7 +94338,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     pruneIdempotencyCache();
     const batchCacheKey = `${authUser.id}:batch:${batchId}`;
     if (recentIdempotencyCache.has(batchCacheKey)) {
-      sendJson2(res, 200, recentIdempotencyCache.get(batchCacheKey).payload);
+      sendJson3(res, 200, recentIdempotencyCache.get(batchCacheKey).payload);
       return true;
     }
     let savedRecords = [];
@@ -92051,7 +94391,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       }
     }
     if (!persisted) {
-      sendJson2(res, 503, {
+      sendJson3(res, 503, {
         success: false,
         code: "PERSISTENCE_FAILED",
         message: lastError
@@ -92106,20 +94446,20 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       expiresAt: Date.now() + 5 * 60 * 1e3,
       payload: responsePayload
     });
-    sendJson2(res, 200, responsePayload);
+    sendJson3(res, 200, responsePayload);
     return true;
   }
   if (pathname === "/api/privacy/consents/withdraw-all" && method === "POST") {
     let body = {};
     try {
-      body = await parseJsonBody2(req);
+      body = await parseJsonBody3(req);
     } catch {
       body = {};
     }
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source || "settings_manage_consent");
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto17.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto21.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, via_withdraw_all: true, batch_id: batchId },
       language
@@ -92165,7 +94505,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       }
     }
     if (!persisted) {
-      sendJson2(res, 503, {
+      sendJson3(res, 503, {
         success: false,
         code: "PERSISTENCE_FAILED",
         message: lastError
@@ -92193,7 +94533,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
       }
     }
     const snapshot = buildConsentSnapshotFromHistory(latestRows);
-    sendJson2(res, 200, {
+    sendJson3(res, 200, {
       success: true,
       message: "All optional consents have been withdrawn. Your core financial records remain intact.",
       userId: authUser.id,
@@ -92655,7 +94995,7 @@ function defaultUserStore() {
 }
 var DATA_DIR = path10.resolve(process.cwd(), ".data", "ai-finance");
 function safeUserFilePath(userId) {
-  const hash2 = crypto18.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
+  const hash2 = crypto22.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
   const resolved = path10.resolve(DATA_DIR, `u_${hash2}.json`);
   if (!resolved.startsWith(DATA_DIR + path10.sep)) {
     throw new Error("PATH_CONFINEMENT_VIOLATION");
@@ -92703,12 +95043,12 @@ function writeUserStore(userId, store) {
     console.warn("[AI Finance Store] Persistence warning:", err?.message);
   }
 }
-function sendJson3(res, status, payload) {
+function sendJson4(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(payload));
 }
-async function parseJsonBody3(req, maxBytes = 8 * 1024 * 1024) {
+async function parseJsonBody4(req, maxBytes = 8 * 1024 * 1024) {
   const preParsed = req.body;
   if (preParsed !== void 0 && preParsed !== null) {
     if (typeof preParsed === "object") return preParsed;
@@ -92748,12 +95088,12 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     return false;
   }
   if (pathname === "/api/ai/status" && method === "GET") {
-    sendJson3(res, 200, { success: true, status: await getAiProviderStatus() });
+    sendJson4(res, 200, { success: true, status: await getAiProviderStatus() });
     return true;
   }
   const authUser = await authenticateRequest(req);
   if (!authUser) {
-    sendJson3(res, 401, { success: false, message: "Authentication required." });
+    sendJson4(res, 401, { success: false, message: "Authentication required." });
     return true;
   }
   const userId = authUser.id;
@@ -92780,13 +95120,13 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
             ...c,
             messages: byConv.get(c.id) || []
           }));
-          sendJson3(res, 200, { success: true, conversations, status: await getAiProviderStatus() });
+          sendJson4(res, 200, { success: true, conversations, status: await getAiProviderStatus() });
           return true;
         } catch {
         }
       }
       const store = readUserStore(userId);
-      sendJson3(res, 200, {
+      sendJson4(res, 200, {
         success: true,
         conversations: store.conversations.sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
         status: await getAiProviderStatus()
@@ -92794,11 +95134,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       return true;
     }
     if (pathname === "/api/ai/conversations" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const title = String(body.title || "New Financial Chat").trim().slice(0, 120) || "New Financial Chat";
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const conv = {
-        id: `conv_${Date.now()}_${crypto18.randomBytes(4).toString("hex")}`,
+        id: `conv_${Date.now()}_${crypto22.randomBytes(4).toString("hex")}`,
         user_id: userId,
         title,
         created_at: now,
@@ -92811,7 +95151,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
             `INSERT INTO public.ai_conversations (id, user_id, title, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)`,
             [conv.id, userId, conv.title, now]
           );
-          sendJson3(res, 201, { success: true, conversation: conv });
+          sendJson4(res, 201, { success: true, conversation: conv });
           return true;
         } catch {
         }
@@ -92820,7 +95160,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       store.conversations.unshift(conv);
       store.conversations = store.conversations.slice(0, 50);
       writeUserStore(userId, store);
-      sendJson3(res, 201, { success: true, conversation: conv });
+      sendJson4(res, 201, { success: true, conversation: conv });
       return true;
     }
     if (pathname === "/api/ai/conversations" && method === "DELETE") {
@@ -92843,16 +95183,16 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         }).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, message: "All conversations cleared." });
+      sendJson4(res, 200, { success: true, message: "All conversations cleared." });
       return true;
     }
     const convIdMatch = pathname.match(/^\/api\/ai\/conversations\/([a-zA-Z0-9_-]+)$/);
     if (convIdMatch && method === "PATCH") {
       const convId = convIdMatch[1];
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const newTitle = String(body.title || "").trim().slice(0, 120);
       if (!newTitle) {
-        sendJson3(res, 400, { success: false, message: "Conversation title is required." });
+        sendJson4(res, 400, { success: false, message: "Conversation title is required." });
         return true;
       }
       const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -92872,7 +95212,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         target.updated_at = now;
         writeUserStore(userId, store);
       }
-      sendJson3(res, 200, { success: true, title: newTitle });
+      sendJson4(res, 200, { success: true, title: newTitle });
       return true;
     }
     if (convIdMatch && method === "DELETE") {
@@ -92887,13 +95227,13 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       store.conversations = store.conversations.filter((c) => !(c.id === convId && c.user_id === userId));
       writeUserStore(userId, store);
-      sendJson3(res, 200, { success: true, message: "Conversation deleted." });
+      sendJson4(res, 200, { success: true, message: "Conversation deleted." });
       return true;
     }
     if (pathname === "/api/ai/assistant/chat" && method === "POST") {
       const hasAiConsent = await hasServerUserConsent(authUser, "ai_processing");
       if (!hasAiConsent) {
-        sendJson3(res, 403, {
+        sendJson4(res, 403, {
           success: false,
           code: "AI_CONSENT_REQUIRED",
           message: "AI External Processing consent is currently off. Enable it under Settings \u2192 Privacy \u2192 Manage Consent to send questions to the external AI provider."
@@ -92910,17 +95250,17 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           }).catch(() => {
           });
         }
-        sendJson3(res, 429, {
+        sendJson4(res, 429, {
           success: false,
           code: "RATE_LIMITED",
           message: "Too many AI questions in a short time. Please wait a minute and try again."
         });
         return true;
       }
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const question = String(body.question || "").trim();
       if (!question || question.length > 1500) {
-        sendJson3(res, 400, { success: false, message: "Please enter a question between 1 and 1500 characters." });
+        sendJson4(res, 400, { success: false, message: "Please enter a question between 1 and 1500 characters." });
         return true;
       }
       const contextSnapshot = body.financialContext || {
@@ -92956,7 +95296,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       if (!conv) {
         conv = {
-          id: convId || `conv_${Date.now()}_${crypto18.randomBytes(4).toString("hex")}`,
+          id: convId || `conv_${Date.now()}_${crypto22.randomBytes(4).toString("hex")}`,
           user_id: userId,
           title: question.slice(0, 64),
           created_at: now,
@@ -93010,7 +95350,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           } catch {
           }
         }
-        sendJson3(res, 200, {
+        sendJson4(res, 200, {
           success: true,
           conversationId: conv.id,
           conversationTitle: conv.title,
@@ -93021,7 +95361,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         return true;
       } catch (err) {
         if (err instanceof AiProviderError) {
-          sendJson3(res, err.statusCode, {
+          sendJson4(res, err.statusCode, {
             success: false,
             code: err.code,
             message: err.message
@@ -93033,17 +95373,17 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     }
     if (pathname === "/api/ai/categorization/rules" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson3(res, 200, { success: true, rules: store.categorizationRules });
+      sendJson4(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
     if (pathname === "/api/ai/categorization/rules" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const merchantPattern = String(body.merchant_pattern || "").trim();
       const category = body.category;
       const subcategory = String(body.subcategory || "other_general");
       const txType = body.transaction_type === "income" ? "income" : "expense";
       if (merchantPattern.length < 2 || !["home", "room", "food", "other", "people"].includes(category)) {
-        sendJson3(res, 400, { success: false, message: "Valid merchant pattern and category are required." });
+        sendJson4(res, 400, { success: false, message: "Valid merchant pattern and category are required." });
         return true;
       }
       const store = readUserStore(userId);
@@ -93070,7 +95410,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           });
         }
       }
-      sendJson3(res, 200, { success: true, rules: store.categorizationRules });
+      sendJson4(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
     const ruleDeleteMatch = pathname.match(/^\/api\/ai\/categorization\/rules\/([a-zA-Z0-9_-]+)$/);
@@ -93083,11 +95423,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         query(`DELETE FROM public.user_categorization_rules WHERE id = $1 AND user_id = $2`, [ruleId, userId]).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, rules: store.categorizationRules });
+      sendJson4(res, 200, { success: true, rules: store.categorizationRules });
       return true;
     }
     if (pathname === "/api/ai/categorization/predict" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       const det = categorizeTransactionDeterministic(
         {
@@ -93100,16 +95440,16 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         store.categorizationRules
       );
       if (det && !det.needsAiFallback) {
-        sendJson3(res, 200, { success: true, suggestion: det });
+        sendJson4(res, 200, { success: true, suggestion: det });
         return true;
       }
       if (!(await getAiProviderStatus()).configured) {
-        sendJson3(res, 200, { success: true, suggestion: det, aiFallbackSkipped: true });
+        sendJson4(res, 200, { success: true, suggestion: det, aiFallbackSkipped: true });
         return true;
       }
       const hasAiConsent = await hasServerUserConsent(authUser, "ai_processing");
       if (!hasAiConsent) {
-        sendJson3(res, 200, {
+        sendJson4(res, 200, {
           success: true,
           suggestion: det,
           aiFallbackSkipped: true,
@@ -93118,7 +95458,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         return true;
       }
       if (!checkAiRateLimit(`cat:${userId}`, 40, 60 * 1e3)) {
-        sendJson3(res, 200, { success: true, suggestion: det, rateLimited: true });
+        sendJson4(res, 200, { success: true, suggestion: det, rateLimited: true });
         return true;
       }
       try {
@@ -93128,7 +95468,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           merchant: body.merchant,
           amount: body.amount
         });
-        sendJson3(res, 200, {
+        sendJson4(res, 200, {
           success: true,
           suggestion: {
             ...aiRes,
@@ -93139,14 +95479,14 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         });
         return true;
       } catch {
-        sendJson3(res, 200, { success: true, suggestion: det, aiFallbackFailed: true });
+        sendJson4(res, 200, { success: true, suggestion: det, aiFallbackFailed: true });
         return true;
       }
     }
     if (pathname === "/api/ai/receipt-ocr" && method === "POST") {
       const hasAiConsent = await hasServerUserConsent(authUser, "ai_processing");
       if (!hasAiConsent) {
-        sendJson3(res, 403, {
+        sendJson4(res, 403, {
           success: false,
           code: "AI_CONSENT_REQUIRED",
           message: "AI External Processing consent is currently off. Enable it under Settings \u2192 Privacy \u2192 Manage Consent to scan receipts with external AI OCR, or enter receipt details manually."
@@ -93154,18 +95494,18 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         return true;
       }
       if (!checkAiRateLimit(`ocr:${userId}`, 12, 60 * 1e3)) {
-        sendJson3(res, 429, {
+        sendJson4(res, 429, {
           success: false,
           code: "RATE_LIMITED",
           message: "Too many receipt scans in a minute. Please wait briefly and try again."
         });
         return true;
       }
-      const body = await parseJsonBody3(req, 8 * 1024 * 1024);
+      const body = await parseJsonBody4(req, 8 * 1024 * 1024);
       const dataUrl = String(body.imageDataUrl || "");
       const match2 = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/);
       if (!match2) {
-        sendJson3(res, 400, { success: false, message: "Invalid receipt image data. Please upload a JPG, PNG, or WEBP image." });
+        sendJson4(res, 400, { success: false, message: "Invalid receipt image data. Please upload a JPG, PNG, or WEBP image." });
         return true;
       }
       const mimeType = match2[1].toLowerCase();
@@ -93173,7 +95513,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const estimatedBytes = Math.floor(base64Data.length * 3 / 4);
       const validation = validateReceiptUpload(mimeType, estimatedBytes);
       if (!validation.valid) {
-        sendJson3(res, 400, { success: false, message: validation.error });
+        sendJson4(res, 400, { success: false, message: validation.error });
         return true;
       }
       const sigValidation = validateReceiptFileSignature(base64Data, mimeType);
@@ -93187,10 +95527,10 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           }).catch(() => {
           });
         }
-        sendJson3(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
+        sendJson4(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
         return true;
       }
-      const fileHash = crypto18.createHash("sha256").update(base64Data).digest("hex");
+      const fileHash = crypto22.createHash("sha256").update(base64Data).digest("hex");
       try {
         const extraction = await extractReceiptWithOcr({ base64Image: base64Data, mimeType });
         const store = readUserStore(userId);
@@ -93203,7 +95543,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           },
           store.categorizationRules
         );
-        sendJson3(res, 200, {
+        sendJson4(res, 200, {
           success: true,
           fileHash,
           extraction,
@@ -93212,7 +95552,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         return true;
       } catch (err) {
         if (err instanceof AiProviderError) {
-          sendJson3(res, err.statusCode, {
+          sendJson4(res, err.statusCode, {
             success: false,
             code: err.code,
             fileHash,
@@ -93225,14 +95565,14 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     }
     if (pathname === "/api/finance/receipts" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson3(res, 200, { success: true, receipts: store.receiptRecords });
+      sendJson4(res, 200, { success: true, receipts: store.receiptRecords });
       return true;
     }
     if (pathname === "/api/finance/receipts" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       const record = {
-        id: `rcpt_${Date.now()}_${crypto18.randomBytes(3).toString("hex")}`,
+        id: `rcpt_${Date.now()}_${crypto22.randomBytes(3).toString("hex")}`,
         user_id: userId,
         transaction_id: body.transaction_id || null,
         file_hash: String(body.file_hash || ""),
@@ -93255,12 +95595,12 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson3(res, 201, { success: true, receipt: record });
+      sendJson4(res, 201, { success: true, receipt: record });
       return true;
     }
     if (pathname === "/api/finance/net-worth" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson3(res, 200, {
+      sendJson4(res, 200, {
         success: true,
         assets: store.netWorthAssets,
         liabilities: store.netWorthLiabilities,
@@ -93270,17 +95610,17 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       return true;
     }
     if (pathname === "/api/finance/net-worth/assets" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const name2 = String(body.name || "").trim().slice(0, 100);
       const currentValue = Number(body.current_value);
       if (!name2 || !Number.isFinite(currentValue) || currentValue < 0) {
-        sendJson3(res, 400, { success: false, message: "Asset name and valid non-negative value are required." });
+        sendJson4(res, 400, { success: false, message: "Asset name and valid non-negative value are required." });
         return true;
       }
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const asset = {
-        id: body.id || `asset_${Date.now()}_${crypto18.randomBytes(3).toString("hex")}`,
+        id: body.id || `asset_${Date.now()}_${crypto22.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_value: Math.round(currentValue * 100) / 100,
@@ -93302,7 +95642,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, asset, assets: store.netWorthAssets });
+      sendJson4(res, 200, { success: true, asset, assets: store.netWorthAssets });
       return true;
     }
     const assetIdMatch = pathname.match(/^\/api\/finance\/net-worth\/assets\/([a-zA-Z0-9_-]+)$/);
@@ -93322,21 +95662,21 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         }).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, assets: store.netWorthAssets });
+      sendJson4(res, 200, { success: true, assets: store.netWorthAssets });
       return true;
     }
     if (pathname === "/api/finance/net-worth/liabilities" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const name2 = String(body.name || "").trim().slice(0, 100);
       const currentBalance = Number(body.current_balance);
       if (!name2 || !Number.isFinite(currentBalance) || currentBalance < 0) {
-        sendJson3(res, 400, { success: false, message: "Liability name and valid non-negative balance are required." });
+        sendJson4(res, 400, { success: false, message: "Liability name and valid non-negative balance are required." });
         return true;
       }
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const liability = {
-        id: body.id || `liab_${Date.now()}_${crypto18.randomBytes(3).toString("hex")}`,
+        id: body.id || `liab_${Date.now()}_${crypto22.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_balance: Math.round(currentBalance * 100) / 100,
@@ -93358,7 +95698,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, liability, liabilities: store.netWorthLiabilities });
+      sendJson4(res, 200, { success: true, liability, liabilities: store.netWorthLiabilities });
       return true;
     }
     const liabIdMatch = pathname.match(/^\/api\/finance\/net-worth\/liabilities\/([a-zA-Z0-9_-]+)$/);
@@ -93378,11 +95718,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         }).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, liabilities: store.netWorthLiabilities });
+      sendJson4(res, 200, { success: true, liabilities: store.netWorthLiabilities });
       return true;
     }
     if (pathname === "/api/finance/net-worth/snapshots" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const snapshotDate = String(body.snapshot_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
       const store = readUserStore(userId);
       const snap = {
@@ -93409,11 +95749,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, snapshot: snap, snapshots: store.netWorthSnapshots });
+      sendJson4(res, 200, { success: true, snapshot: snap, snapshots: store.netWorthSnapshots });
       return true;
     }
     if (pathname === "/api/finance/net-worth/settings" && method === "PUT") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       store.netWorthSettings = {
         includeLiquidBalance: typeof body.includeLiquidBalance === "boolean" ? body.includeLiquidBalance : store.netWorthSettings.includeLiquidBalance,
@@ -93421,16 +95761,16 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         includeUdharPayables: typeof body.includeUdharPayables === "boolean" ? body.includeUdharPayables : store.netWorthSettings.includeUdharPayables
       };
       writeUserStore(userId, store);
-      sendJson3(res, 200, { success: true, settings: store.netWorthSettings });
+      sendJson4(res, 200, { success: true, settings: store.netWorthSettings });
       return true;
     }
     if (pathname === "/api/finance/safe-to-spend/preferences" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson3(res, 200, { success: true, preferences: store.safeToSpendPrefs });
+      sendJson4(res, 200, { success: true, preferences: store.safeToSpendPrefs });
       return true;
     }
     if (pathname === "/api/finance/safe-to-spend/preferences" && method === "PUT") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       const num = (v, fallback) => {
         const n = Number(v);
@@ -93464,12 +95804,12 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, preferences: store.safeToSpendPrefs });
+      sendJson4(res, 200, { success: true, preferences: store.safeToSpendPrefs });
       return true;
     }
     if (pathname === "/api/finance/smart-alerts/state" && method === "GET") {
       const store = readUserStore(userId);
-      sendJson3(res, 200, {
+      sendJson4(res, 200, {
         success: true,
         preferences: store.smartAlertPrefs,
         eventState: store.smartAlertState
@@ -93477,7 +95817,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       return true;
     }
     if (pathname === "/api/finance/smart-alerts/preferences" && method === "PUT") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       store.smartAlertPrefs = {
         ...store.smartAlertPrefs,
@@ -93505,11 +95845,11 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         ).catch(() => {
         });
       }
-      sendJson3(res, 200, { success: true, preferences: store.smartAlertPrefs });
+      sendJson4(res, 200, { success: true, preferences: store.smartAlertPrefs });
       return true;
     }
     if (pathname === "/api/finance/smart-alerts/events" && method === "POST") {
-      const body = await parseJsonBody3(req);
+      const body = await parseJsonBody4(req);
       const action = body.action;
       const keys = Array.isArray(body.keys) ? body.keys.map(String) : body.key ? [String(body.key)] : [];
       const store = readUserStore(userId);
@@ -93539,24 +95879,24 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           });
         }
       }
-      sendJson3(res, 200, { success: true, eventState: store.smartAlertState });
+      sendJson4(res, 200, { success: true, eventState: store.smartAlertState });
       return true;
     }
-    sendJson3(res, 404, { success: false, message: "AI / Finance API endpoint not found." });
+    sendJson4(res, 404, { success: false, message: "AI / Finance API endpoint not found." });
     return true;
   } catch (err) {
     if (err?.message === "PAYLOAD_TOO_LARGE") {
-      sendJson3(res, 413, { success: false, message: "Uploaded image or payload is too large (max 5 MB)." });
+      sendJson4(res, 413, { success: false, message: "Uploaded image or payload is too large (max 5 MB)." });
       return true;
     }
     console.error(`[AI Finance API Error] ${method} ${pathname}:`, err?.message || err);
-    sendJson3(res, 500, { success: false, message: "An internal error occurred while processing your request." });
+    sendJson4(res, 500, { success: false, message: "An internal error occurred while processing your request." });
     return true;
   }
 }
 
 // server/upiDetectionApi.ts
-import crypto19 from "crypto";
+import crypto23 from "crypto";
 
 // src/lib/upiDetectionEngine.ts
 var PARSER_VERSION = "1.0.0";
@@ -94143,13 +96483,13 @@ function getMemoryUserState(userId) {
   }
   return state;
 }
-function sendJson4(res, status, payload) {
+function sendJson5(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(payload));
 }
-async function parseJsonBody4(req) {
+async function parseJsonBody5(req) {
   const preParsed = req.body;
   if (preParsed !== void 0 && preParsed !== null) {
     if (typeof preParsed === "object") return preParsed;
@@ -94314,7 +96654,7 @@ async function listUserDetected(userId) {
 async function appendDetectionEvent(userId, event) {
   const fullEvent = {
     ...event,
-    id: `upi_evt_${crypto19.randomBytes(6).toString("hex")}`,
+    id: `upi_evt_${crypto23.randomBytes(6).toString("hex")}`,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   if (!isDatabaseAvailable()) {
@@ -94432,16 +96772,16 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
   }
   const authUser = await authResolver(req);
   if (!authUser) {
-    sendJson4(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+    sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
     return true;
   }
   if (pathname === "/api/upi-detection/settings" && method === "GET") {
     const settings = await getUserSettings(authUser.id);
-    sendJson4(res, 200, { success: true, settings });
+    sendJson5(res, 200, { success: true, settings });
     return true;
   }
   if (pathname === "/api/upi-detection/settings" && method === "PUT") {
-    const body = await parseJsonBody4(req);
+    const body = await parseJsonBody5(req);
     const settings = await saveUserSettings(authUser.id, {
       enabled: body.enabled,
       autoPopupEnabled: body.autoPopupEnabled,
@@ -94449,24 +96789,24 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       supportedApps: body.supportedApps,
       retentionDays: body.retentionDays
     });
-    sendJson4(res, 200, { success: true, settings });
+    sendJson5(res, 200, { success: true, settings });
     return true;
   }
   if (pathname === "/api/upi-detection/ingest" && method === "POST") {
     const rate = checkRateLimit(`upi_ingest:${authUser.id}`, 60, 60 * 1e3);
     if (!rate.allowed) {
-      sendJson4(res, 429, {
+      sendJson5(res, 429, {
         success: false,
         code: "RATE_LIMITED",
         message: "Too many notification ingestion requests. Please wait a moment."
       });
       return true;
     }
-    const body = await parseJsonBody4(req);
+    const body = await parseJsonBody5(req);
     const settings = await getUserSettings(authUser.id);
     const isTestSample = Boolean(body.isTestSample);
     if (!settings.enabled && !isTestSample) {
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         accepted: false,
         shouldShowPopup: false,
@@ -94485,7 +96825,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       isTestSample
     };
     if (!rawInput.packageName || !rawInput.title && !rawInput.text && !rawInput.bigText) {
-      sendJson4(res, 400, {
+      sendJson5(res, 400, {
         success: false,
         code: "INVALID_NOTIFICATION_PAYLOAD",
         message: "packageName and notification content (title or text) are required."
@@ -94515,7 +96855,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
           maskedPreview: maskSensitiveLogPayload(`${rawInput.title} ${rawInput.text}`).slice(0, 140)
         }
       });
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         accepted: false,
         deduplicated: false,
@@ -94550,7 +96890,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       }
     });
     const shouldShowPopup = !dedup.isDuplicate && saved.categorizationStatus === "pending" && (isTestSample || settings.autoPopupEnabled);
-    sendJson4(res, 200, {
+    sendJson5(res, 200, {
       success: true,
       accepted: true,
       deduplicated: dedup.isDuplicate,
@@ -94567,7 +96907,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     );
     const categorized = allDetected.filter((tx) => tx.categorizationStatus === "categorized");
     const dismissed = allDetected.filter((tx) => tx.categorizationStatus === "dismissed");
-    sendJson4(res, 200, {
+    sendJson5(res, 200, {
       success: true,
       pending,
       categorized: categorized.slice(0, 50),
@@ -94584,22 +96924,22 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
   const categorizeMatch = pathname.match(/^\/api\/upi-detection\/([a-zA-Z0-9_-]+)\/categorize$/);
   if (categorizeMatch && method === "POST") {
     const detectedId = categorizeMatch[1];
-    const body = await parseJsonBody4(req);
+    const body = await parseJsonBody5(req);
     const category = String(body.category || "").trim();
     const description = body.description !== void 0 ? String(body.description).trim().slice(0, 240) : null;
     const linkedExpenseId = body.linkedExpenseId ? String(body.linkedExpenseId).trim() : null;
     if (!UPI_EXPENSE_CATEGORIES.some((c) => c.id === category)) {
-      sendJson4(res, 400, { success: false, message: "Invalid expense category selected." });
+      sendJson5(res, 400, { success: false, message: "Invalid expense category selected." });
       return true;
     }
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson5(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     if (existing.categorizationStatus === "categorized" && existing.linkedExpenseId) {
-      sendJson4(res, 200, {
+      sendJson5(res, 200, {
         success: true,
         alreadyCategorized: true,
         transaction: existing
@@ -94627,7 +96967,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
         linkedExpenseId: updated.linkedExpenseId
       }
     });
-    sendJson4(res, 200, {
+    sendJson5(res, 200, {
       success: true,
       alreadyCategorized: false,
       transaction: updated
@@ -94640,7 +96980,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson5(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     const updated = {
@@ -94658,7 +96998,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       rawDataHash: updated.rawDataHash,
       metadata: {}
     });
-    sendJson4(res, 200, { success: true, transaction: updated });
+    sendJson5(res, 200, { success: true, transaction: updated });
     return true;
   }
   const remindMatch = pathname.match(/^\/api\/upi-detection\/([a-zA-Z0-9_-]+)\/remind-later$/);
@@ -94667,7 +97007,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson5(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     const updated = {
@@ -94685,22 +97025,22 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       rawDataHash: updated.rawDataHash,
       metadata: {}
     });
-    sendJson4(res, 200, { success: true, transaction: updated });
+    sendJson5(res, 200, { success: true, transaction: updated });
     return true;
   }
   const editMatch = pathname.match(/^\/api\/upi-detection\/([a-zA-Z0-9_-]+)\/edit$/);
   if (editMatch && method === "PATCH") {
     const detectedId = editMatch[1];
-    const body = await parseJsonBody4(req);
+    const body = await parseJsonBody5(req);
     const allDetected = await listUserDetected(authUser.id);
     const existing = allDetected.find((tx) => tx.id === detectedId);
     if (!existing) {
-      sendJson4(res, 404, { success: false, message: "Detected transaction not found." });
+      sendJson5(res, 404, { success: false, message: "Detected transaction not found." });
       return true;
     }
     const nextCategory = body.category ? String(body.category).trim() : existing.selectedCategory;
     if (nextCategory && !UPI_EXPENSE_CATEGORIES.some((c) => c.id === nextCategory)) {
-      sendJson4(res, 400, { success: false, message: "Invalid expense category." });
+      sendJson5(res, 400, { success: false, message: "Invalid expense category." });
       return true;
     }
     const updated = {
@@ -94721,11 +97061,11 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
         category: updated.selectedCategory
       }
     });
-    sendJson4(res, 200, { success: true, transaction: updated });
+    sendJson5(res, 200, { success: true, transaction: updated });
     return true;
   }
   if (pathname === "/api/upi-detection/reset" && method === "DELETE") {
-    const body = await parseJsonBody4(req);
+    const body = await parseJsonBody5(req);
     const clearHistory = body.clearHistory !== false;
     const defaults2 = getDefaultDetectionSettings();
     if (!isDatabaseAvailable()) {
@@ -94771,7 +97111,7 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
       details: { clearHistory }
     }).catch(() => {
     });
-    sendJson4(res, 200, {
+    sendJson5(res, 200, {
       success: true,
       settings: defaults2,
       historyCleared: clearHistory,
@@ -94779,12 +97119,12 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     });
     return true;
   }
-  sendJson4(res, 404, { success: false, message: "UPI detection endpoint not found." });
+  sendJson5(res, 404, { success: false, message: "UPI detection endpoint not found." });
   return true;
 }
 
 // server/api.ts
-async function parseJsonBody5(req) {
+async function parseJsonBody6(req) {
   if (req.body !== void 0 && req.body !== null) {
     if (typeof req.body === "object") {
       return req.body;
@@ -94816,7 +97156,7 @@ async function parseJsonBody5(req) {
     req.on("error", (err) => reject(err));
   });
 }
-function sendJson5(res, statusCode, data, headers = {}) {
+function sendJson6(res, statusCode, data, headers = {}) {
   if (typeof res.status === "function" && typeof res.json === "function") {
     for (const [k, v] of Object.entries(headers)) {
       res.setHeader(k, v);
@@ -94840,7 +97180,7 @@ function getClientIp2(req) {
   }
   return req.socket.remoteAddress || "127.0.0.1";
 }
-function setSessionCookie(res, sessionToken, expiresAt) {
+function setSessionCookie2(res, sessionToken, expiresAt) {
   const isProd = process.env.NODE_ENV === "production";
   const cookieVal = [
     `session_token=${encodeURIComponent(sessionToken)}`,
@@ -94978,7 +97318,7 @@ async function handleApiRequest(req, res) {
     return true;
   }
   if (pathname === "/api/health" && method === "GET") {
-    sendJson5(res, 200, {
+    sendJson6(res, 200, {
       success: true,
       status: "ok",
       databaseAvailable: isDatabaseAvailable(),
@@ -94992,13 +97332,13 @@ async function handleApiRequest(req, res) {
         getMaintenanceSettings(),
         getAppPopupSettings()
       ]);
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         maintenance,
         appPopup
       });
     } catch {
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         maintenance: { isEnabled: false },
         appPopup: { enabled: true, downloadUrl: "/#install" }
@@ -95019,7 +97359,7 @@ async function handleApiRequest(req, res) {
       return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
     };
     if (pathname === "/api/admin/auth/login" && method === "POST") {
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const email = normalizeEmail(body.email || "");
       const password = String(body.password || "");
       const rememberMe = Boolean(body.rememberMe);
@@ -95036,7 +97376,7 @@ async function handleApiRequest(req, res) {
         }
       }
       if (!email || !password) {
-        sendJson5(res, 400, { success: false, message: "Admin email and password are required." });
+        sendJson6(res, 400, { success: false, message: "Admin email and password are required." });
         return true;
       }
       const ADMIN_ROLES = /* @__PURE__ */ new Set(["superadmin", "admin", "support", "analyst"]);
@@ -95060,19 +97400,19 @@ async function handleApiRequest(req, res) {
       if (!userRecord) {
         await logSecurityEvent("ADMIN_LOGIN_FAILED_UNKNOWN", { userEmail: email, ipAddress: clientIp }).catch(() => {
         });
-        sendJson5(res, 401, { success: false, message: "Invalid administrator credentials." });
+        sendJson6(res, 401, { success: false, message: "Invalid administrator credentials." });
         return true;
       }
       if (userRecord.locked_until && new Date(userRecord.locked_until) > /* @__PURE__ */ new Date()) {
         const remainingMin = Math.ceil((new Date(userRecord.locked_until).getTime() - Date.now()) / 6e4);
-        sendJson5(res, 429, {
+        sendJson6(res, 429, {
           success: false,
           message: `Administrator account is temporarily locked. Try again in ${remainingMin} minute(s).`
         });
         return true;
       }
       if (userRecord.status === "suspended" || userRecord.status === "deactivated") {
-        sendJson5(res, 403, {
+        sendJson6(res, 403, {
           success: false,
           message: `This account is ${userRecord.status}. Administrative sign-in blocked.`
         });
@@ -95092,7 +97432,7 @@ async function handleApiRequest(req, res) {
           ipAddress: clientIp
         }).catch(() => {
         });
-        sendJson5(res, 401, { success: false, message: "Invalid administrator credentials." });
+        sendJson6(res, 401, { success: false, message: "Invalid administrator credentials." });
         return true;
       }
       const effectiveRole = isMasterAdminEmail(email) ? "superadmin" : String(userRecord.role || "user").toLowerCase().trim();
@@ -95104,15 +97444,13 @@ async function handleApiRequest(req, res) {
           ipAddress: clientIp
         }).catch(() => {
         });
-        sendJson5(res, 403, {
+        sendJson6(res, 403, {
           success: false,
           code: "ADMIN_ROLE_REQUIRED",
           message: "Access Denied: This login portal is restricted to authorized administrators only."
         });
         return true;
       }
-      let sessionToken = `direct_${userRecord.id}_${Date.now()}`;
-      let expiresAt = new Date(Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1e3);
       if (isDatabaseAvailable()) {
         try {
           await query(
@@ -95121,13 +97459,29 @@ async function handleApiRequest(req, res) {
              WHERE id = $2`,
             [clientIp, userRecord.id]
           );
-          const session = await createSession(userRecord.id, { rememberMe, userAgent, ipAddress: clientIp });
-          sessionToken = session.sessionToken;
-          expiresAt = session.expiresAt;
         } catch {
         }
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(userRecord.id)}`, {
+          method: "PATCH",
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+            last_login_ip: clientIp
+          }
+        }).catch(() => {
+        });
       }
-      setSessionCookie(res, sessionToken, expiresAt);
+      const session = await createSession(userRecord.id, {
+        rememberMe,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: effectiveRole, email }
+      });
+      const sessionToken = session.sessionToken;
+      const expiresAt = session.expiresAt;
+      setSessionCookie2(res, sessionToken, expiresAt);
       await resetRateLimitAsync(`admin_login:ip:${clientIp}`);
       await resetRateLimitAsync(`admin_login:account:${email}`);
       const sanitizedUser = sanitizeUserOutput({
@@ -95141,7 +97495,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp
       }).catch(() => {
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Administrator authenticated successfully.",
         user: sanitizedUser,
@@ -95163,7 +97517,7 @@ async function handleApiRequest(req, res) {
       );
       if (!isReqAdmin) {
         const maint = await getMaintenanceSettings();
-        sendJson5(res, 503, {
+        sendJson6(res, 503, {
           success: false,
           code: "MAINTENANCE_MODE",
           maintenance: true,
@@ -95173,13 +97527,6 @@ async function handleApiRequest(req, res) {
         return true;
       }
     }
-    if (!isDatabaseAvailable() && (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/profile"))) {
-      sendJson5(res, 503, {
-        success: false,
-        message: "PostgreSQL database is not connected in this preview environment."
-      });
-      return true;
-    }
     if (pathname.startsWith("/api/ai/") || pathname.startsWith("/api/finance/")) {
       const handled = await handleAiFinanceRequest(req, res, pathname, method);
       if (handled) return true;
@@ -95188,13 +97535,17 @@ async function handleApiRequest(req, res) {
       const handled = await handleUpiDetectionRequest(req, res, pathname, method);
       if (handled) return true;
     }
+    if (pathname === "/api/upi/profile" || pathname === "/api/profile/complete" || pathname === "/api/profile/security-methods" || pathname.startsWith("/api/auth/google") || pathname.startsWith("/api/auth/passkey")) {
+      const handled = await handleUserAccountExtensions(req, res, pathname, method, clientIp, userAgent);
+      if (handled) return true;
+    }
     if (pathname === "/api/auth/register" && method === "POST") {
       const rate = await checkRateLimitAsync(`signup:ip:${clientIp}`, RATE_LIMITS.SIGNUP_IP.max, RATE_LIMITS.SIGNUP_IP.windowMs, RATE_LIMITS.SIGNUP_IP.op);
       if (!rate.allowed) {
         sendRateLimitExceeded(res, rate);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const fullName = (body.fullName || body.name || "").trim();
       const rawEmail = (body.email || "").trim();
       const phone = (body.phone || "").trim();
@@ -95208,29 +97559,85 @@ async function handleApiRequest(req, res) {
       if (!passVal.isValid) errors2.push(...passVal.errors);
       if (password !== confirmPassword) errors2.push("Passwords do not match.");
       if (errors2.length > 0) {
-        sendJson5(res, 400, { success: false, message: errors2[0], errors: errors2 });
+        sendJson6(res, 400, { success: false, message: errors2[0], errors: errors2 });
         return true;
       }
       const email = normalizeEmail(rawEmail);
-      const dup = await query("SELECT id FROM public.app_users WHERE LOWER(email) = $1", [email]);
-      if (dup.rows.length > 0) {
-        sendJson5(res, 409, {
+      let emailExists = false;
+      if (isDatabaseAvailable()) {
+        try {
+          const dup = await query("SELECT id FROM public.app_users WHERE LOWER(email) = $1", [email]);
+          emailExists = dup.rows.length > 0;
+        } catch (err) {
+          console.warn("[Register] PG duplicate check failed, falling back to Supabase REST:", err?.message);
+          const dupRest = await sbRestRequest(
+            `app_users?email=ilike.${encodeURIComponent(email)}&select=id&limit=1`
+          );
+          emailExists = Boolean(dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0);
+        }
+      } else {
+        const dupRest = await sbRestRequest(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=id&limit=1`
+        );
+        emailExists = Boolean(dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0);
+      }
+      if (emailExists) {
+        sendJson6(res, 409, {
           success: false,
           message: "An account with this email address already exists. Please log in or reset your password."
         });
         return true;
       }
       const passwordHash = await hashPassword(password);
-      const userRes = await query(
-        `INSERT INTO public.app_users (
-          full_name, email, phone, password_hash, role, status, email_verified
-        ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE)
-        RETURNING *`,
-        [fullName, email, phone || null, passwordHash]
-      );
-      const newUser = userRes.rows[0];
-      const session = await createSession(newUser.id, { userAgent, ipAddress: clientIp });
-      setSessionCookie(res, session.sessionToken, session.expiresAt);
+      const requireProfileCompletion = body.requireProfileCompletion === true;
+      const initialCustomPermissions = requireProfileCompletion ? { __profile_completed: false } : {};
+      let newUser = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query(
+            `INSERT INTO public.app_users (
+              full_name, email, phone, password_hash, role, status, email_verified, custom_permissions
+            ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE, $5::jsonb)
+            RETURNING *`,
+            [fullName, email, phone || null, passwordHash, JSON.stringify(initialCustomPermissions)]
+          );
+          newUser = userRes.rows[0] || null;
+        } catch (err) {
+          console.warn("[Register] PG insert failed, attempting Supabase REST:", err?.message);
+        }
+      }
+      if (!newUser) {
+        const insertRest = await sbRestRequest("app_users", {
+          method: "POST",
+          prefer: "return=representation",
+          body: {
+            full_name: fullName,
+            email,
+            phone: phone || null,
+            password_hash: passwordHash,
+            role: "user",
+            status: "active",
+            email_verified: false,
+            custom_permissions: initialCustomPermissions
+          }
+        });
+        if (!insertRest.ok || !Array.isArray(insertRest.data) || !insertRest.data[0]) {
+          const errMsg = insertRest.error || "Could not create your account right now. Please try again.";
+          const isDup = String(errMsg).toLowerCase().includes("duplicate") || insertRest.status === 409;
+          sendJson6(res, isDup ? 409 : 503, {
+            success: false,
+            message: isDup ? "An account with this email address already exists. Please log in or reset your password." : errMsg
+          });
+          return true;
+        }
+        newUser = insertRest.data[0];
+      }
+      const session = await createSession(newUser.id, {
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: "user", email }
+      });
+      setSessionCookie2(res, session.sessionToken, session.expiresAt);
       sendWelcomeEmail(email, newUser.full_name, newUser.id).catch((err) => {
         console.error("[Welcome Email Background Error]:", err);
       });
@@ -95248,8 +97655,9 @@ async function handleApiRequest(req, res) {
         userEmail: email,
         actorRole: "user",
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 201, {
+      sendJson6(res, 201, {
         success: true,
         message: "Account created successfully!",
         user: sanitizeUserOutput(newUser),
@@ -95258,7 +97666,7 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/login" && method === "POST") {
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const email = normalizeEmail(body.email || "");
       const password = body.password || "";
       const rememberMe = Boolean(body.rememberMe);
@@ -95275,34 +97683,51 @@ async function handleApiRequest(req, res) {
         }
       }
       if (!email || !password) {
-        sendJson5(res, 400, { success: false, message: "Email and password are required." });
+        sendJson6(res, 400, { success: false, message: "Email and password are required." });
         return true;
       }
-      const userRes = await query("SELECT * FROM public.app_users WHERE LOWER(email) = $1", [email]);
-      if (userRes.rows.length === 0) {
-        await logSecurityEvent("LOGIN_FAILED_UNKNOWN_EMAIL", { userEmail: email, ipAddress: clientIp });
-        sendJson5(res, 401, { success: false, message: "Invalid email or password." });
+      let user = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT * FROM public.app_users WHERE LOWER(email) = $1", [email]);
+          if (userRes.rows.length > 0) user = userRes.rows[0];
+        } catch (err) {
+          console.warn("[Login] PG lookup failed, attempting Supabase REST:", err?.message);
+        }
+      }
+      if (!user) {
+        const restUser = await sbRestRequest(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (restUser.ok && Array.isArray(restUser.data) && restUser.data.length > 0) {
+          user = restUser.data[0];
+        }
+      }
+      if (!user) {
+        await logSecurityEvent("LOGIN_FAILED_UNKNOWN_EMAIL", { userEmail: email, ipAddress: clientIp }).catch(() => {
+        });
+        sendJson6(res, 401, { success: false, message: "Invalid email or password." });
         return true;
       }
-      const user = userRes.rows[0];
       if (user.locked_until && new Date(user.locked_until) > /* @__PURE__ */ new Date()) {
         const remainingSec = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 1e3);
-        sendJson5(res, 429, {
+        sendJson6(res, 429, {
           success: false,
           message: `Account is temporarily locked due to multiple failed login attempts. Try again in ${Math.ceil(remainingSec / 60)} minute(s).`
         });
         return true;
       }
       if (user.status === "suspended") {
-        await logSecurityEvent("LOGIN_BLOCKED_SUSPENDED", { userId: user.id, userEmail: email, ipAddress: clientIp });
-        sendJson5(res, 403, {
+        await logSecurityEvent("LOGIN_BLOCKED_SUSPENDED", { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {
+        });
+        sendJson6(res, 403, {
           success: false,
           message: "Your account has been suspended by an administrator. Please contact security support."
         });
         return true;
       }
       if (user.status === "deactivated") {
-        sendJson5(res, 403, {
+        sendJson6(res, 403, {
           success: false,
           message: "This account has been deactivated. Please contact support to reactivate."
         });
@@ -95311,24 +97736,53 @@ async function handleApiRequest(req, res) {
       const isValid = await verifyPassword(password, user.password_hash);
       if (!isValid) {
         const attempts = (user.failed_login_attempts || 0) + 1;
-        let lockSql = "UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2";
-        let lockParams = [attempts, user.id];
-        if (attempts >= 5) {
-          lockSql = "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2";
+        const lockUntilIso = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1e3).toISOString() : null;
+        if (isDatabaseAvailable()) {
+          let lockSql = "UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2";
+          if (attempts >= 5) {
+            lockSql = "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2";
+          }
+          await query(lockSql, [attempts, user.id]).catch(() => {
+          });
+        } else {
+          await sbRestRequest(`app_users?id=eq.${encodeURIComponent(user.id)}`, {
+            method: "PATCH",
+            body: lockUntilIso ? { failed_login_attempts: attempts, locked_until: lockUntilIso } : { failed_login_attempts: attempts }
+          }).catch(() => {
+          });
         }
-        await query(lockSql, lockParams);
-        await logSecurityEvent("LOGIN_FAILED_BAD_PASSWORD", { userId: user.id, userEmail: email, ipAddress: clientIp });
-        sendJson5(res, 401, { success: false, message: "Invalid email or password." });
+        await logSecurityEvent("LOGIN_FAILED_BAD_PASSWORD", { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {
+        });
+        sendJson6(res, 401, { success: false, message: "Invalid email or password." });
         return true;
       }
-      await query(
-        `UPDATE public.app_users 
-         SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1 
-         WHERE id = $2`,
-        [clientIp, user.id]
-      );
-      const session = await createSession(user.id, { rememberMe, userAgent, ipAddress: clientIp });
-      setSessionCookie(res, session.sessionToken, session.expiresAt);
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.app_users 
+           SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1 
+           WHERE id = $2`,
+          [clientIp, user.id]
+        ).catch(() => {
+        });
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(user.id)}`, {
+          method: "PATCH",
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+            last_login_ip: clientIp
+          }
+        }).catch(() => {
+        });
+      }
+      const session = await createSession(user.id, {
+        rememberMe,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: user.role, email }
+      });
+      setSessionCookie2(res, session.sessionToken, session.expiresAt);
       await resetRateLimitAsync(`login:ip:${clientIp}`);
       await resetRateLimitAsync(`login:account:${email}`);
       await logSecurityEvent("USER_LOGIN_SUCCESS", {
@@ -95336,8 +97790,9 @@ async function handleApiRequest(req, res) {
         userEmail: email,
         actorRole: user.role,
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Logged in successfully.",
         user: sanitizeUserOutput(user),
@@ -95355,13 +97810,13 @@ async function handleApiRequest(req, res) {
       if (authUser) {
         await logSecurityEvent("USER_LOGOUT", { userId: authUser.id, userEmail: authUser.email, ipAddress: clientIp });
       }
-      sendJson5(res, 200, { success: true, message: "Logged out successfully." });
+      sendJson6(res, 200, { success: true, message: "Logged out successfully." });
       return true;
     }
     if (pathname === "/api/auth/logout-all-devices" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       await revokeAllUserSessions(authUser.id);
@@ -95371,16 +97826,16 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         ipAddress: clientIp
       });
-      sendJson5(res, 200, { success: true, message: "All active sessions on all devices have been revoked." });
+      sendJson6(res, 200, { success: true, message: "All active sessions on all devices have been revoked." });
       return true;
     }
     if (pathname === "/api/auth/me" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Not authenticated or session expired." });
+        sendJson6(res, 401, { success: false, message: "Not authenticated or session expired." });
         return true;
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         user: sanitizeUserOutput(authUser)
       });
@@ -95390,7 +97845,7 @@ async function handleApiRequest(req, res) {
       try {
         const authUser = await authenticateRequest(req);
         if (!authUser) {
-          sendJson5(res, 401, { success: false, message: "Authentication required." });
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
           return true;
         }
         let activeSessionsCount = 1;
@@ -95404,7 +97859,7 @@ async function handleApiRequest(req, res) {
         } catch {
           activeSessionsCount = 1;
         }
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           profile: {
             ...sanitizeUserOutput(authUser),
@@ -95414,102 +97869,188 @@ async function handleApiRequest(req, res) {
         return true;
       } catch (err) {
         console.error("Error in GET /api/profile:", err);
-        sendJson5(res, 500, { success: false, message: err.message || "Failed to retrieve user profile." });
+        sendJson6(res, 500, { success: false, message: err.message || "Failed to retrieve user profile." });
         return true;
       }
     }
     if (pathname === "/api/profile" && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
       const phone = (body.phone !== void 0 ? body.phone : authUser.phone || "").trim();
       const avatarUrl = body.avatarUrl !== void 0 ? body.avatarUrl : authUser.avatar_url;
-      if (!fullName || fullName.length < 2) {
-        sendJson5(res, 400, { success: false, message: "Full name must be at least 2 characters." });
+      const rawUsername = body.username !== void 0 ? String(body.username || "").trim().toLowerCase() : authUser.username || "";
+      if (!fullName || fullName.length < 2 || fullName.length > 80) {
+        sendJson6(res, 400, { success: false, message: "Full name must be between 2 and 80 characters." });
         return true;
       }
       if (phone && !validatePhone(phone)) {
-        sendJson5(res, 400, { success: false, message: "Please enter a valid phone number (10-15 digits)." });
+        sendJson6(res, 400, { success: false, message: "Please enter a valid phone number (10-15 digits)." });
         return true;
       }
-      const updatedRes = await query(
-        `UPDATE public.app_users 
-         SET full_name = $1, phone = $2, avatar_url = $3, updated_at = NOW() 
-         WHERE id = $4 
-         RETURNING *`,
-        [fullName, phone || null, avatarUrl || null, authUser.id]
-      );
+      if (rawUsername && !/^[a-z0-9_]{3,30}$/.test(rawUsername)) {
+        sendJson6(res, 400, {
+          success: false,
+          message: "Username must be 3-30 characters using lowercase letters, numbers, or underscores."
+        });
+        return true;
+      }
+      if (rawUsername && rawUsername !== (authUser.username || "").toLowerCase()) {
+        const dupUsername = await sbRestRequest(
+          `app_users?username=eq.${encodeURIComponent(rawUsername)}&id=neq.${encodeURIComponent(authUser.id)}&select=id&limit=1`
+        );
+        if (dupUsername.ok && Array.isArray(dupUsername.data) && dupUsername.data.length > 0) {
+          sendJson6(res, 409, { success: false, message: "That username is already taken. Please choose another." });
+          return true;
+        }
+      }
+      let updatedUser = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const updatedRes = await query(
+            `UPDATE public.app_users 
+             SET full_name = $1, phone = $2, avatar_url = $3, username = $4, updated_at = NOW() 
+             WHERE id = $5 
+             RETURNING *`,
+            [fullName, phone || null, avatarUrl || null, rawUsername || null, authUser.id]
+          );
+          updatedUser = updatedRes.rows[0] || null;
+        } catch (err) {
+          console.warn("[Profile PUT] PG update failed, attempting Supabase REST:", err?.message);
+        }
+      }
+      if (!updatedUser) {
+        const restUpd = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+          method: "PATCH",
+          prefer: "return=representation",
+          body: {
+            full_name: fullName,
+            phone: phone || null,
+            avatar_url: avatarUrl || null,
+            username: rawUsername || null,
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        });
+        if (!restUpd.ok || !Array.isArray(restUpd.data) || !restUpd.data[0]) {
+          sendJson6(res, 503, { success: false, message: restUpd.error || "Failed to update profile." });
+          return true;
+        }
+        updatedUser = restUpd.data[0];
+      }
       await logSecurityEvent("PROFILE_UPDATED", {
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Profile updated successfully.",
-        user: sanitizeUserOutput(updatedRes.rows[0])
+        user: sanitizeUserOutput(updatedUser)
       });
       return true;
     }
     if (pathname === "/api/profile/change-password" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const currentPassword = body.currentPassword || "";
       const newPassword = body.newPassword || "";
       const confirmNewPassword = body.confirmNewPassword || "";
       if (!currentPassword) {
-        sendJson5(res, 400, { success: false, message: "Current password is required." });
+        sendJson6(res, 400, { success: false, message: "Current password is required." });
         return true;
       }
-      const userRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
-      const currentHash = userRes.rows[0]?.password_hash;
-      const isCurrentValid = await verifyPassword(currentPassword, currentHash);
+      let currentHash = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
+          currentHash = userRes.rows[0]?.password_hash || null;
+        } catch {
+        }
+      }
+      if (!currentHash) {
+        const restUser = await sbRestRequest(
+          `app_users?id=eq.${encodeURIComponent(authUser.id)}&select=password_hash&limit=1`
+        );
+        currentHash = restUser.ok && Array.isArray(restUser.data) ? restUser.data[0]?.password_hash || null : null;
+      }
+      const isCurrentValid = currentHash ? await verifyPassword(currentPassword, currentHash) : false;
       if (!isCurrentValid) {
         await logSecurityEvent("PASSWORD_CHANGE_FAILED_WRONG_CURRENT", {
           userId: authUser.id,
           userEmail: authUser.email,
           ipAddress: clientIp
+        }).catch(() => {
         });
-        sendJson5(res, 400, { success: false, message: "Current password is incorrect." });
+        sendJson6(res, 400, { success: false, message: "Current password is incorrect." });
         return true;
       }
       const passVal = validatePasswordPolicy(newPassword);
       if (!passVal.isValid) {
-        sendJson5(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
+        sendJson6(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
         return true;
       }
       if (newPassword !== confirmNewPassword) {
-        sendJson5(res, 400, { success: false, message: "New password and confirm password do not match." });
+        sendJson6(res, 400, { success: false, message: "New password and confirm password do not match." });
         return true;
       }
       if (newPassword === currentPassword) {
-        sendJson5(res, 400, { success: false, message: "New password cannot be the same as your current password." });
+        sendJson6(res, 400, { success: false, message: "New password cannot be the same as your current password." });
         return true;
       }
       const newHash = await hashPassword(newPassword);
-      await query(
-        `UPDATE public.app_users 
-         SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, updated_at = NOW() 
-         WHERE id = $2`,
-        [newHash, authUser.id]
-      );
-      const currentToken = (req.headers["authorization"]?.slice(7) || "").trim();
-      if (currentToken) {
-        const curHash = hashToken(currentToken);
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      if (isDatabaseAvailable()) {
         await query(
-          `UPDATE public.user_sessions 
-           SET is_revoked = TRUE 
-           WHERE user_id = $1 AND session_token_hash <> $2`,
-          [authUser.id, curHash]
+          `UPDATE public.app_users 
+           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, updated_at = NOW() 
+           WHERE id = $2`,
+          [newHash, authUser.id]
         );
+      } else {
+        const updRest = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+          method: "PATCH",
+          body: {
+            password_hash: newHash,
+            password_changed_at: nowIso,
+            force_password_reset: false,
+            updated_at: nowIso
+          }
+        });
+        if (!updRest.ok) {
+          sendJson6(res, 503, { success: false, message: updRest.error || "Failed to update password." });
+          return true;
+        }
+      }
+      const currentToken = (req.headers["authorization"]?.slice(7) || "").trim();
+      if (currentToken && !currentToken.startsWith("mmf1.")) {
+        const curHash = hashToken(currentToken);
+        if (isDatabaseAvailable()) {
+          await query(
+            `UPDATE public.user_sessions 
+             SET is_revoked = TRUE 
+             WHERE user_id = $1 AND session_token_hash <> $2`,
+            [authUser.id, curHash]
+          ).catch(() => {
+          });
+        } else {
+          await sbRestRequest(
+            `user_sessions?user_id=eq.${encodeURIComponent(authUser.id)}&session_token_hash=neq.${encodeURIComponent(curHash)}`,
+            {
+              method: "PATCH",
+              body: { is_revoked: true }
+            }
+          ).catch(() => {
+          });
+        }
       }
       sendPasswordChangedEmail(authUser.email, authUser.full_name, clientIp).catch(() => {
       });
@@ -95517,8 +98058,9 @@ async function handleApiRequest(req, res) {
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Your password was changed successfully. A security confirmation email was dispatched."
       });
@@ -95527,34 +98069,59 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/profile/delete-account" && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const password = body.password || "";
       if (!password) {
-        sendJson5(res, 400, { success: false, message: "Password confirmation is required to delete your account." });
+        sendJson6(res, 400, { success: false, message: "Password confirmation is required to delete your account." });
         return true;
       }
-      const userRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
-      const currentHash = userRes.rows[0]?.password_hash;
-      const isCurrentValid = await verifyPassword(password, currentHash);
+      let currentHash = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
+          currentHash = userRes.rows[0]?.password_hash || null;
+        } catch {
+        }
+      }
+      if (!currentHash) {
+        const restUser = await sbRestRequest(
+          `app_users?id=eq.${encodeURIComponent(authUser.id)}&select=password_hash&limit=1`
+        );
+        currentHash = restUser.ok && Array.isArray(restUser.data) ? restUser.data[0]?.password_hash || null : null;
+      }
+      const isCurrentValid = currentHash ? await verifyPassword(password, currentHash) : false;
       if (!isCurrentValid) {
-        sendJson5(res, 400, { success: false, message: "Incorrect password. Account deletion aborted." });
+        sendJson6(res, 400, { success: false, message: "Incorrect password. Account deletion aborted." });
         return true;
       }
-      await query("DELETE FROM public.transactions WHERE user_id = $1", [authUser.id]).catch(() => {
-      });
-      await query("DELETE FROM public.user_sessions WHERE user_id = $1", [authUser.id]);
-      await query("DELETE FROM public.password_resets WHERE user_id = $1", [authUser.id]);
-      await query("DELETE FROM public.app_users WHERE id = $1", [authUser.id]);
+      if (isDatabaseAvailable()) {
+        await query("DELETE FROM public.transactions WHERE user_id = $1", [authUser.id]).catch(() => {
+        });
+        await query("DELETE FROM public.user_sessions WHERE user_id = $1", [authUser.id]).catch(() => {
+        });
+        await query("DELETE FROM public.password_resets WHERE user_id = $1", [authUser.id]).catch(() => {
+        });
+        await query("DELETE FROM public.app_users WHERE id = $1", [authUser.id]);
+      } else {
+        await sbRestRequest(`transactions?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: "DELETE" }).catch(() => {
+        });
+        await sbRestRequest(`user_sessions?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: "DELETE" }).catch(() => {
+        });
+        await sbRestRequest(`password_resets?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: "DELETE" }).catch(() => {
+        });
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, { method: "DELETE" });
+      }
       clearSessionCookie(res);
       await logSecurityEvent("ACCOUNT_DELETED_BY_USER", {
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 200, { success: true, message: "Your account and all associated data have been permanently deleted." });
+      sendJson6(res, 200, { success: true, message: "Your account and all associated data have been permanently deleted." });
       return true;
     }
     if (pathname === "/api/auth/forgot-password" && method === "POST") {
@@ -95563,10 +98130,10 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rateIp);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const email = normalizeEmail(body.email || "");
       if (!validateEmail(email)) {
-        sendJson5(res, 400, { success: false, message: "Please provide a valid email address." });
+        sendJson6(res, 400, { success: false, message: "Please provide a valid email address." });
         return true;
       }
       const rateAcct = await checkRateLimitAsync(`forgot_pass:account:${email}`, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.max, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.windowMs, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.op);
@@ -95574,30 +98141,64 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rateAcct);
         return true;
       }
-      const userRes = await query("SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1", [email]);
+      let user = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1", [email]);
+          if (userRes.rows.length > 0) user = userRes.rows[0];
+        } catch {
+        }
+      }
+      if (!user) {
+        const restUser = await sbRestRequest(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=id,full_name,email,status&limit=1`
+        );
+        if (restUser.ok && Array.isArray(restUser.data) && restUser.data.length > 0) {
+          user = restUser.data[0];
+        }
+      }
       const standardResponse = {
         success: true,
         message: "If an account exists with this email, a password reset link has been sent."
       };
-      if (userRes.rows.length === 0) {
-        await logSecurityEvent("FORGOT_PASSWORD_UNKNOWN_EMAIL", { userEmail: email, ipAddress: clientIp });
-        sendJson5(res, 200, standardResponse);
+      if (!user) {
+        await logSecurityEvent("FORGOT_PASSWORD_UNKNOWN_EMAIL", { userEmail: email, ipAddress: clientIp }).catch(() => {
+        });
+        sendJson6(res, 200, standardResponse);
         return true;
       }
-      const user = userRes.rows[0];
       if (user.status !== "active") {
-        sendJson5(res, 200, standardResponse);
+        sendJson6(res, 200, standardResponse);
         return true;
       }
       const rawToken = generateCryptoToken(32);
       const tokenHash = hashToken(rawToken);
-      await query("UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE", [user.id]);
       const expiresAt = new Date(Date.now() + 15 * 60 * 1e3);
-      await query(
-        `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, tokenHash, expiresAt, clientIp, userAgent]
-      );
+      if (isDatabaseAvailable()) {
+        await query("UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE", [user.id]);
+        await query(
+          `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [user.id, tokenHash, expiresAt, clientIp, userAgent]
+        );
+      } else {
+        await sbRestRequest(
+          `password_resets?user_id=eq.${encodeURIComponent(user.id)}&used=eq.false`,
+          { method: "PATCH", body: { used: true } }
+        ).catch(() => {
+        });
+        await sbRestRequest("password_resets", {
+          method: "POST",
+          body: {
+            user_id: user.id,
+            token_hash: tokenHash,
+            expires_at: expiresAt.toISOString(),
+            ip_address: clientIp,
+            user_agent: userAgent,
+            used: false
+          }
+        });
+      }
       const appBase = process.env.APP_BASE_URL || "https://mymoney.nileshbarela.site";
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
       await sendPasswordResetEmail(user.email, user.full_name, resetLink);
@@ -95605,8 +98206,9 @@ async function handleApiRequest(req, res) {
         userId: user.id,
         userEmail: user.email,
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 200, standardResponse);
+      sendJson6(res, 200, standardResponse);
       return true;
     }
     if (pathname === "/api/auth/verify-reset-token" && method === "POST") {
@@ -95615,34 +98217,55 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rate);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const rawToken = body.token || "";
       if (!rawToken) {
-        sendJson5(res, 400, { valid: false, message: "Reset token is missing." });
+        sendJson6(res, 400, { valid: false, message: "Reset token is missing." });
         return true;
       }
       const tokenHash = hashToken(rawToken);
-      const resDb = await query(
-        `SELECT pr.id, pr.expires_at, pr.used, u.email, u.full_name
-         FROM public.password_resets pr
-         JOIN public.app_users u ON pr.user_id = u.id
-         WHERE pr.token_hash = $1`,
-        [tokenHash]
-      );
-      if (resDb.rows.length === 0) {
-        sendJson5(res, 200, { valid: false, message: "Invalid reset token." });
+      let record = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const resDb = await query(
+            `SELECT pr.id, pr.expires_at, pr.used, u.email, u.full_name
+             FROM public.password_resets pr
+             JOIN public.app_users u ON pr.user_id = u.id
+             WHERE pr.token_hash = $1`,
+            [tokenHash]
+          );
+          if (resDb.rows.length > 0) record = resDb.rows[0];
+        } catch {
+        }
+      }
+      if (!record) {
+        const restPr = await sbRestRequest(
+          `password_resets?token_hash=eq.${encodeURIComponent(tokenHash)}&select=id,user_id,expires_at,used&limit=1`
+        );
+        if (restPr.ok && Array.isArray(restPr.data) && restPr.data[0]) {
+          const prRow = restPr.data[0];
+          const restU = await sbRestRequest(
+            `app_users?id=eq.${encodeURIComponent(prRow.user_id)}&select=email,full_name&limit=1`
+          );
+          const uRow = restU.ok && Array.isArray(restU.data) ? restU.data[0] : null;
+          if (uRow) {
+            record = { ...prRow, email: uRow.email, full_name: uRow.full_name };
+          }
+        }
+      }
+      if (!record) {
+        sendJson6(res, 200, { valid: false, message: "Invalid reset token." });
         return true;
       }
-      const record = resDb.rows[0];
       if (record.used) {
-        sendJson5(res, 200, { valid: false, message: "This reset token has already been used." });
+        sendJson6(res, 200, { valid: false, message: "This reset token has already been used." });
         return true;
       }
       if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) {
-        sendJson5(res, 200, { valid: false, message: "This password reset link has expired. Please request a new one." });
+        sendJson6(res, 200, { valid: false, message: "This password reset link has expired. Please request a new one." });
         return true;
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         valid: true,
         email: record.email,
         name: record.full_name
@@ -95655,12 +98278,12 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rateIp);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const rawToken = body.token || "";
       const newPassword = body.newPassword || "";
       const confirmPassword = body.confirmPassword || "";
       if (!rawToken) {
-        sendJson5(res, 400, { success: false, message: "Reset token is required." });
+        sendJson6(res, 400, { success: false, message: "Reset token is required." });
         return true;
       }
       const tokenHash = hashToken(rawToken);
@@ -95669,43 +98292,88 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rateSession);
         return true;
       }
-      const resDb = await query(
-        `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
-         FROM public.password_resets pr
-         JOIN public.app_users u ON pr.user_id = u.id
-         WHERE pr.token_hash = $1`,
-        [tokenHash]
-      );
-      if (resDb.rows.length === 0 || resDb.rows[0].used || new Date(resDb.rows[0].expires_at) < /* @__PURE__ */ new Date()) {
-        sendJson5(res, 400, {
+      let record = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const resDb = await query(
+            `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
+             FROM public.password_resets pr
+             JOIN public.app_users u ON pr.user_id = u.id
+             WHERE pr.token_hash = $1`,
+            [tokenHash]
+          );
+          if (resDb.rows.length > 0) record = resDb.rows[0];
+        } catch {
+        }
+      }
+      if (!record) {
+        const restPr = await sbRestRequest(
+          `password_resets?token_hash=eq.${encodeURIComponent(tokenHash)}&select=id,user_id,expires_at,used&limit=1`
+        );
+        if (restPr.ok && Array.isArray(restPr.data) && restPr.data[0]) {
+          const prRow = restPr.data[0];
+          const restU = await sbRestRequest(
+            `app_users?id=eq.${encodeURIComponent(prRow.user_id)}&select=email,full_name&limit=1`
+          );
+          const uRow = restU.ok && Array.isArray(restU.data) ? restU.data[0] : null;
+          if (uRow) {
+            record = { ...prRow, email: uRow.email, full_name: uRow.full_name };
+          }
+        }
+      }
+      if (!record || record.used || new Date(record.expires_at) < /* @__PURE__ */ new Date()) {
+        sendJson6(res, 400, {
           success: false,
           message: "This reset link is invalid, expired, or has already been used. Please request a new one."
         });
         return true;
       }
-      const record = resDb.rows[0];
       const passVal = validatePasswordPolicy(newPassword);
       if (!passVal.isValid) {
-        sendJson5(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
+        sendJson6(res, 400, { success: false, message: passVal.errors[0], errors: passVal.errors });
         return true;
       }
       if (newPassword !== confirmPassword) {
-        sendJson5(res, 400, { success: false, message: "Passwords do not match." });
+        sendJson6(res, 400, { success: false, message: "Passwords do not match." });
         return true;
       }
       const passwordHash = await hashPassword(newPassword);
-      await query(
-        `UPDATE public.app_users 
-         SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
-         WHERE id = $2`,
-        [passwordHash, record.user_id]
-      );
-      await query(
-        `UPDATE public.password_resets 
-         SET used = TRUE, used_at = NOW() 
-         WHERE id = $1`,
-        [record.id]
-      );
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.app_users 
+           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
+           WHERE id = $2`,
+          [passwordHash, record.user_id]
+        );
+        await query(
+          `UPDATE public.password_resets 
+           SET used = TRUE, used_at = NOW() 
+           WHERE id = $1`,
+          [record.id]
+        );
+      } else {
+        const updUser = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(record.user_id)}`, {
+          method: "PATCH",
+          body: {
+            password_hash: passwordHash,
+            password_changed_at: nowIso,
+            force_password_reset: false,
+            failed_login_attempts: 0,
+            locked_until: null,
+            updated_at: nowIso
+          }
+        });
+        if (!updUser.ok) {
+          sendJson6(res, 503, { success: false, message: "Failed to update password right now. Please retry." });
+          return true;
+        }
+        await sbRestRequest(`password_resets?id=eq.${encodeURIComponent(record.id)}`, {
+          method: "PATCH",
+          body: { used: true, used_at: nowIso }
+        }).catch(() => {
+        });
+      }
       await revokeAllUserSessions(record.user_id);
       await resetRateLimitAsync(`reset_pass:session:${tokenHash}`);
       await resetRateLimitAsync(`login:account:${record.email}`);
@@ -95715,8 +98383,9 @@ async function handleApiRequest(req, res) {
         userId: record.user_id,
         userEmail: record.email,
         ipAddress: clientIp
+      }).catch(() => {
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Password reset successful! You can now log in with your new password."
       });
@@ -95725,7 +98394,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/admin/users" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Access Denied: Administrator role required." });
+        sendJson6(res, 403, { success: false, message: "Access Denied: Administrator role required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_search:${authUser.id}`, RATE_LIMITS.ADMIN_USER_SEARCH.max, RATE_LIMITS.ADMIN_USER_SEARCH.windowMs, RATE_LIMITS.ADMIN_USER_SEARCH.op);
@@ -95846,14 +98515,14 @@ async function handleApiRequest(req, res) {
           console.error("Supabase REST fallback error:", apiErr);
         }
       }
-      sendJson5(res, 200, { success: true, users });
+      sendJson6(res, 200, { success: true, users });
       return true;
     }
     const statusMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/status$/);
     if (statusMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
@@ -95862,14 +98531,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const targetUserId = statusMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const newStatus = body.status;
       if (!["active", "suspended", "deactivated"].includes(newStatus)) {
-        sendJson5(res, 400, { success: false, message: "Invalid status. Must be active, suspended, or deactivated." });
+        sendJson6(res, 400, { success: false, message: "Invalid status. Must be active, suspended, or deactivated." });
         return true;
       }
       if (targetUserId === authUser.id && newStatus !== "active") {
-        sendJson5(res, 400, { success: false, message: "Administrators cannot suspend or deactivate their own account." });
+        sendJson6(res, 400, { success: false, message: "Administrators cannot suspend or deactivate their own account." });
         return true;
       }
       let targetUser = null;
@@ -95901,7 +98570,7 @@ async function handleApiRequest(req, res) {
         }
       }
       if (!targetUser) {
-        sendJson5(res, 404, { success: false, message: "User not found." });
+        sendJson6(res, 404, { success: false, message: "User not found." });
         return true;
       }
       if (targetUser.email) {
@@ -95918,14 +98587,14 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      sendJson5(res, 200, { success: true, message: `User status changed to ${newStatus}.` });
+      sendJson6(res, 200, { success: true, message: `User status changed to ${newStatus}.` });
       return true;
     }
     const roleMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/role$/);
     if (roleMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_role:${authUser.id}`, RATE_LIMITS.ADMIN_ROLE_CHANGE.max, RATE_LIMITS.ADMIN_ROLE_CHANGE.windowMs, RATE_LIMITS.ADMIN_ROLE_CHANGE.op);
@@ -95934,14 +98603,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const targetUserId = roleMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const newRole = body.role;
       if (!["user", "admin"].includes(newRole)) {
-        sendJson5(res, 400, { success: false, message: "Invalid role. Must be user or admin." });
+        sendJson6(res, 400, { success: false, message: "Invalid role. Must be user or admin." });
         return true;
       }
       if (targetUserId === authUser.id && newRole !== "admin") {
-        sendJson5(res, 400, { success: false, message: "You cannot demote yourself from admin." });
+        sendJson6(res, 400, { success: false, message: "You cannot demote yourself from admin." });
         return true;
       }
       if (isDatabaseAvailable()) {
@@ -95965,14 +98634,14 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      sendJson5(res, 200, { success: true, message: `User role updated to ${newRole}.` });
+      sendJson6(res, 200, { success: true, message: `User role updated to ${newRole}.` });
       return true;
     }
     const resetEmailMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/send-reset-email$/);
     if (resetEmailMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
@@ -95994,7 +98663,7 @@ async function handleApiRequest(req, res) {
         targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
       }
       if (!targetUser || !targetUser.email) {
-        sendJson5(res, 404, { success: false, message: "User not found." });
+        sendJson6(res, 404, { success: false, message: "User not found." });
         return true;
       }
       const rawToken = generateCryptoToken(32);
@@ -96022,7 +98691,7 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: sent,
         message: sent ? `Password reset email dispatched to ${targetUser.email}.` : `Could not send password reset email to ${targetUser.email}. Check SMTP_USER / SMTP_PASS server configuration.`
       });
@@ -96032,7 +98701,7 @@ async function handleApiRequest(req, res) {
     if (forceResetMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
@@ -96058,7 +98727,7 @@ async function handleApiRequest(req, res) {
         method: "PATCH",
         body: { force_password_reset: true, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "User account flagged to force password reset on next login. All active sessions revoked."
       });
@@ -96068,7 +98737,7 @@ async function handleApiRequest(req, res) {
     if (revokeMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
@@ -96093,14 +98762,14 @@ async function handleApiRequest(req, res) {
           body: { is_revoked: true }
         });
       }
-      sendJson5(res, 200, { success: true, message: `Revoked ${count} active session(s) for user.` });
+      sendJson6(res, 200, { success: true, message: `Revoked ${count} active session(s) for user.` });
       return true;
     }
     const deleteMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)$/);
     if (deleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`admin_sensitive:${authUser.id}`, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.max, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_SENSITIVE_ACCOUNT.op);
@@ -96110,7 +98779,7 @@ async function handleApiRequest(req, res) {
       }
       const targetUserId = deleteMatch[1];
       if (targetUserId === authUser.id) {
-        sendJson5(res, 400, { success: false, message: "Administrators cannot delete their own account from admin panel." });
+        sendJson6(res, 400, { success: false, message: "Administrators cannot delete their own account from admin panel." });
         return true;
       }
       let targetEmail;
@@ -96138,13 +98807,13 @@ async function handleApiRequest(req, res) {
       }
       await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, { method: "DELETE" });
       await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, { method: "DELETE" });
-      sendJson5(res, 200, { success: true, message: "User and all associated data permanently deleted." });
+      sendJson6(res, 200, { success: true, message: "User and all associated data permanently deleted." });
       return true;
     }
     if (pathname === "/api/admin/audit-logs" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
-        sendJson5(res, 403, { success: false, message: "Administrator authorization required." });
+        sendJson6(res, 403, { success: false, message: "Administrator authorization required." });
         return true;
       }
       const logsRes = await query(
@@ -96153,11 +98822,11 @@ async function handleApiRequest(req, res) {
          ORDER BY created_at DESC 
          LIMIT 100`
       );
-      sendJson5(res, 200, { success: true, logs: logsRes.rows });
+      sendJson6(res, 200, { success: true, logs: logsRes.rows });
       return true;
     }
     if (pathname === "/api/config/public" && method === "GET") {
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         config: {
           appName: APP_CONFIG.appName,
@@ -96179,39 +98848,39 @@ async function handleApiRequest(req, res) {
       let targetLookup = authUser?.id || "";
       if (queryEmail) {
         if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin" && authUser.email !== queryEmail) {
-          sendJson5(res, 403, { success: false, message: "Forbidden" });
+          sendJson6(res, 403, { success: false, message: "Forbidden" });
           return true;
         }
         targetLookup = queryEmail;
       }
       if (!targetLookup) {
-        sendJson5(res, 400, { success: false, message: "Target user ID or email required" });
+        sendJson6(res, 400, { success: false, message: "Target user ID or email required" });
         return true;
       }
       const statusRecord = await getWelcomeEmailDeliveryStatus(targetLookup);
-      sendJson5(res, 200, { success: true, delivery: statusRecord });
+      sendJson6(res, 200, { success: true, delivery: statusRecord });
       return true;
     }
     if (pathname === "/api/auth/resend-welcome-email" && method === "POST") {
       const authUser = await authenticateRequest(req);
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const targetEmail = normalizeEmail(body.email || authUser?.email || "");
       if (!targetEmail) {
-        sendJson5(res, 400, { success: false, message: "Email is required" });
+        sendJson6(res, 400, { success: false, message: "Email is required" });
         return true;
       }
       if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin" && authUser.email !== targetEmail) {
-        sendJson5(res, 403, { success: false, message: "Forbidden" });
+        sendJson6(res, 403, { success: false, message: "Forbidden" });
         return true;
       }
       const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [targetEmail]);
       if (uRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "User not found" });
+        sendJson6(res, 404, { success: false, message: "User not found" });
         return true;
       }
       const target = uRes.rows[0];
       const result = await sendWelcomeEmail(target.email, target.full_name, target.id, true);
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: result.success,
         message: result.message,
         delivery: result
@@ -96221,19 +98890,19 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/request" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required to initiate account deletion." });
+        sendJson6(res, 401, { success: false, message: "Authentication required to initiate account deletion." });
         return true;
       }
       const rate = checkRateLimit(`del_req:${authUser.id}`, 5, 15 * 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many deletion attempts. Please wait before trying again." });
+        sendJson6(res, 429, { success: false, message: "Too many deletion attempts. Please wait before trying again." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const password = body.password || "";
       const reason = (body.reason || "").trim();
       if (!password) {
-        sendJson5(res, 400, { success: false, message: "Password verification is mandatory to schedule account deletion." });
+        sendJson6(res, 400, { success: false, message: "Password verification is mandatory to schedule account deletion." });
         return true;
       }
       const uRes = await query("SELECT password_hash FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -96245,7 +98914,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           ipAddress: clientIp
         });
-        sendJson5(res, 400, { success: false, message: "Incorrect password. Deletion request aborted for your security." });
+        sendJson6(res, 400, { success: false, message: "Incorrect password. Deletion request aborted for your security." });
         return true;
       }
       const pendingCheck = await query(
@@ -96257,7 +98926,7 @@ async function handleApiRequest(req, res) {
       if (pendingCheck.rows.length > 0) {
         const existing = pendingCheck.rows[0];
         const remainingSec = Math.ceil((new Date(existing.scheduled_for).getTime() - Date.now()) / 1e3);
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: "An account deletion request is already pending for your account.",
           scheduledFor: existing.scheduled_for,
@@ -96301,7 +98970,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { requestId, scheduledFor: scheduledFor.toISOString(), cancellationWindowHours: 24 }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Account deletion request scheduled. You have 24 hours to cancel.",
         scheduledFor: scheduledFor.toISOString(),
@@ -96314,7 +98983,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/status" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const reqDb = await query(
@@ -96326,7 +98995,7 @@ async function handleApiRequest(req, res) {
         [authUser.id]
       );
       if (reqDb.rows.length === 0 || reqDb.rows[0].status !== "pending") {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           isPending: false,
           status: reqDb.rows[0]?.status || "none"
@@ -96338,7 +99007,7 @@ async function handleApiRequest(req, res) {
       if (remainingMs <= 0) {
         processExpiredAccountDeletions().catch(() => {
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           isPending: false,
           status: "executing",
@@ -96346,7 +99015,7 @@ async function handleApiRequest(req, res) {
         });
         return true;
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         isPending: true,
         status: "pending_deletion",
@@ -96361,7 +99030,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/cancel" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const reqDb = await query(
@@ -96371,7 +99040,7 @@ async function handleApiRequest(req, res) {
         [authUser.id]
       );
       if (reqDb.rows.length === 0) {
-        sendJson5(res, 400, { success: false, message: "No active pending deletion request found to cancel." });
+        sendJson6(res, 400, { success: false, message: "No active pending deletion request found to cancel." });
         return true;
       }
       const reqId = reqDb.rows[0].id;
@@ -96395,7 +99064,7 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { requestId: reqId }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Your account deletion request has been cancelled. Your account and all records remain safe and active."
       });
@@ -96404,13 +99073,13 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/cancel-by-token" && method === "POST") {
       const rate = checkRateLimit(`cancel_token:${clientIp}`, 15, 5 * 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many requests. Please wait a moment." });
+        sendJson6(res, 429, { success: false, message: "Too many requests. Please wait a moment." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const rawToken = body.token || "";
       if (!rawToken) {
-        sendJson5(res, 400, { success: false, message: "Cancellation token is required." });
+        sendJson6(res, 400, { success: false, message: "Cancellation token is required." });
         return true;
       }
       const tokenHash = hashToken(rawToken);
@@ -96422,19 +99091,19 @@ async function handleApiRequest(req, res) {
         [tokenHash]
       );
       if (reqDb.rows.length === 0) {
-        sendJson5(res, 400, { success: false, message: "Invalid cancellation token." });
+        sendJson6(res, 400, { success: false, message: "Invalid cancellation token." });
         return true;
       }
       const record = reqDb.rows[0];
       if (record.status === "cancelled") {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: "This account deletion request was already cancelled. Your account is active."
         });
         return true;
       }
       if (record.status === "executed") {
-        sendJson5(res, 400, {
+        sendJson6(res, 400, {
           success: false,
           message: "The 24-hour cancellation window has already expired and deletion was completed."
         });
@@ -96460,15 +99129,25 @@ async function handleApiRequest(req, res) {
         ipAddress: clientIp,
         details: { requestId: record.id }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Your account deletion request has been successfully cancelled. Your account remains active."
       });
       return true;
     }
     if (pathname === "/api/account/deletion/process-expired" && method === "POST") {
+      const cronSecret = process.env.CRON_SECRET || "";
+      const providedCron = String(req.headers["x-cron-secret"] || "").trim();
+      const validCron = cronSecret.length >= 16 && providedCron.length === cronSecret.length && crypto24.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
+      if (!validCron) {
+        const authUser = await authenticateRequest(req);
+        if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
+          sendJson6(res, 403, { success: false, message: "Access Denied: Administrator or cron secret required." });
+          return true;
+        }
+      }
       const processed = await processExpiredAccountDeletions();
-      sendJson5(res, 200, { success: true, processedCount: processed });
+      sendJson6(res, 200, { success: true, processedCount: processed });
       return true;
     }
     async function ensureReciprocalContact(targetUserId, sourceUser, relationshipType = "Friend") {
@@ -96550,12 +99229,12 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/udhar/contacts" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getContactsRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const contactsRes = await query(
@@ -96567,18 +99246,18 @@ async function handleApiRequest(req, res) {
          ORDER BY c.name ASC`,
         [authUser.id]
       );
-      sendJson5(res, 200, { success: true, contacts: contactsRes.rows });
+      sendJson6(res, 200, { success: true, contacts: contactsRes.rows });
       return true;
     }
     if (pathname === "/api/udhar/contacts/with-balances" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getContactsWithBalancesRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const contactsRes = await query(
@@ -96617,19 +99296,19 @@ async function handleApiRequest(req, res) {
         pending_transactions_count: parseInt(row.pending_transactions_count, 10) || 0,
         is_registered: Boolean(row.linked_user_id)
       }));
-      sendJson5(res, 200, { success: true, contacts: parsedContacts });
+      sendJson6(res, 200, { success: true, contacts: parsedContacts });
       return true;
     }
     if (pathname === "/api/udhar/contacts" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await saveContactRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const name2 = (body.name || "").trim();
@@ -96640,12 +99319,12 @@ async function handleApiRequest(req, res) {
       const photoUrl = (body.photo_url || body.photoUrl || "").trim() || null;
       let linkedUserId = (body.linked_user_id || body.linkedUserId || "").trim() || null;
       if (!name2) {
-        sendJson5(res, 400, { success: false, message: "Person's name is required." });
+        sendJson6(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
       if (linkedUserId) {
         if (linkedUserId === authUser.id) {
-          sendJson5(res, 400, { success: false, message: "You cannot add yourself as a contact." });
+          sendJson6(res, 400, { success: false, message: "You cannot add yourself as a contact." });
           return true;
         }
         const targetRes = await query(
@@ -96654,7 +99333,7 @@ async function handleApiRequest(req, res) {
           [linkedUserId]
         );
         if (targetRes.rows.length === 0 || targetRes.rows[0].status !== "active" || targetRes.rows[0].deletion_status !== "none") {
-          sendJson5(res, 404, { success: false, message: "Selected user account is unavailable." });
+          sendJson6(res, 404, { success: false, message: "Selected user account is unavailable." });
           return true;
         }
       }
@@ -96682,7 +99361,7 @@ async function handleApiRequest(req, res) {
         });
         await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         contact: upsertRes.rows[0],
         reciprocallyLinked: Boolean(linkedUserId && linkedUserId !== authUser.id)
@@ -96693,14 +99372,14 @@ async function handleApiRequest(req, res) {
     if (contactUpdateMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactUpdateMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await updateContactRest(authUser, contactId, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const name2 = (body.name || "").trim();
@@ -96711,7 +99390,7 @@ async function handleApiRequest(req, res) {
       const photoUrl = body.photo_url !== void 0 ? body.photo_url || null : void 0;
       const linkedUserId = body.linked_user_id || body.linkedUserId || null;
       if (!name2) {
-        sendJson5(res, 400, { success: false, message: "Person's name is required." });
+        sendJson6(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
       const updRes = await query(
@@ -96724,14 +99403,14 @@ async function handleApiRequest(req, res) {
         [name2, email || null, phone || null, relationshipType, notes || null, photoUrl ?? null, linkedUserId, contactId, authUser.id]
       );
       if (updRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Contact not found." });
+        sendJson6(res, 404, { success: false, message: "Contact not found." });
         return true;
       }
       const finalLinkedId = updRes.rows[0].linked_user_id;
       if (finalLinkedId && finalLinkedId !== authUser.id) {
         await ensureReciprocalContact(finalLinkedId, authUser, relationshipType);
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         contact: updRes.rows[0],
         reciprocallyLinked: Boolean(finalLinkedId && finalLinkedId !== authUser.id)
@@ -96742,40 +99421,40 @@ async function handleApiRequest(req, res) {
     if (contactDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactDeleteMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await deleteContactRest(authUser, contactId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       await query("DELETE FROM public.udhar_contacts WHERE id = $1 AND user_id = $2", [contactId, authUser.id]);
-      sendJson5(res, 200, { success: true, message: "Saved contact removed." });
+      sendJson6(res, 200, { success: true, message: "Saved contact removed." });
       return true;
     }
     const contactLinkMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)\/link-registered$/);
     if (contactLinkMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactLinkMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const registeredUserId = body.registeredUserId || body.userId || "";
       if (!isDatabaseAvailable()) {
         const restRes = await linkContactRest(authUser, contactId, registeredUserId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       if (!registeredUserId) {
-        sendJson5(res, 400, { success: false, message: "Target registered user ID is required." });
+        sendJson6(res, 400, { success: false, message: "Target registered user ID is required." });
         return true;
       }
       if (registeredUserId === authUser.id) {
-        sendJson5(res, 400, { success: false, message: "You cannot link a contact to your own account." });
+        sendJson6(res, 400, { success: false, message: "You cannot link a contact to your own account." });
         return true;
       }
       const contactRes = await query(
@@ -96783,7 +99462,7 @@ async function handleApiRequest(req, res) {
         [contactId, authUser.id]
       );
       if (contactRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Contact not found." });
+        sendJson6(res, 404, { success: false, message: "Contact not found." });
         return true;
       }
       const contact = contactRes.rows[0];
@@ -96793,7 +99472,7 @@ async function handleApiRequest(req, res) {
         [registeredUserId]
       );
       if (targetUserRes.rows.length === 0 || targetUserRes.rows[0].status !== "active" || targetUserRes.rows[0].deletion_status !== "none") {
-        sendJson5(res, 404, { success: false, message: "Registered user not found or unavailable." });
+        sendJson6(res, 404, { success: false, message: "Registered user not found or unavailable." });
         return true;
       }
       await query(
@@ -96816,7 +99495,7 @@ async function handleApiRequest(req, res) {
         [registeredUserId, authUser.id]
       ).catch(() => {
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: `Successfully linked ${contact.name} with verified account ${targetUserRes.rows[0].full_name}.`
       });
@@ -96825,7 +99504,7 @@ async function handleApiRequest(req, res) {
     if ((pathname === "/api/udhar/connections/connect" || pathname === "/api/udhar/connections/request") && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const reqRate = await checkRateLimitAsync(`conn_request:${authUser.id}`, RATE_LIMITS.CONNECTION_REQUEST.max, RATE_LIMITS.CONNECTION_REQUEST.windowMs, RATE_LIMITS.CONNECTION_REQUEST.op);
@@ -96833,36 +99512,36 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, reqRate);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await connectUserRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
         const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
         const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
-        const requestedVia = (body.requestedVia || "search").trim();
+        const requestedVia = (body.requestedVia || body.source || "search").trim();
         if (!targetUserId) {
-          sendJson5(res, 400, { success: false, code: "MISSING_TARGET", message: "Target user ID is required." });
+          sendJson6(res, 400, { success: false, code: "MISSING_TARGET", message: "Target user ID is required." });
           return true;
         }
         if (targetUserId === authUser.id) {
-          sendJson5(res, 400, { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." });
+          sendJson6(res, 400, { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." });
           return true;
         }
         const targetRes = await query(
-          `SELECT id, full_name, email, phone, avatar_url, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, phone, avatar_url, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [targetUserId]
         );
         if (targetRes.rows.length === 0) {
-          sendJson5(res, 404, { success: false, code: "NOT_FOUND", message: "User account not found." });
+          sendJson6(res, 404, { success: false, code: "NOT_FOUND", message: "User account not found." });
           return true;
         }
         const target = targetRes.rows[0];
-        if (target.status !== "active" || target.deletion_status !== "none") {
-          sendJson5(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is deactivated or unavailable." });
+        if (!isDiscoverableNormalUser(target)) {
+          sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is not eligible for Udhar connections." });
           return true;
         }
         const pairRes = await query(
@@ -96871,13 +99550,13 @@ async function handleApiRequest(req, res) {
           [authUser.id, targetUserId]
         );
         if (pairRes.rows.some((r2) => r2.status === "blocked")) {
-          sendJson5(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
+          sendJson6(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
           return true;
         }
         const targetDisplayName = (target.full_name || target.email?.split("@")[0] || "Friend").trim();
         const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
         if (pairRes.rows.some((r2) => r2.status === "connected")) {
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: true,
@@ -96930,7 +99609,7 @@ async function handleApiRequest(req, res) {
             channels: ["in_app", "push"]
           }).catch(() => {
           });
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: false,
@@ -96950,7 +99629,7 @@ async function handleApiRequest(req, res) {
           (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
         );
         if (outgoingPending) {
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             status: "pending",
             alreadyPending: true,
@@ -97010,7 +99689,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { targetUserId, requestId: String(requestId), requestedVia }
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           status: "pending",
           alreadyConnected: false,
@@ -97030,19 +99709,19 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Connection Request Fallback]:", pgErr?.message);
         const restRes = await connectUserRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/connections/requests" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getConnectionRequestsRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -97100,7 +99779,7 @@ async function handleApiRequest(req, res) {
             }
           }
         }
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           incoming,
           outgoing,
@@ -97110,7 +99789,7 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Connection Requests Fallback]:", pgErr?.message);
         const restRes = await getConnectionRequestsRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
@@ -97118,16 +99797,22 @@ async function handleApiRequest(req, res) {
     if (connAcceptMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const key = connAcceptMatch[1];
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        sendJson6(res, 400, { success: false, message: "Valid connection request ID is required." });
+        return true;
+      }
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
+        const lookupKey = parsedKey.kind === "composite" ? parsedKey.requesterUserId || key : parsedKey.uuid || key;
         const reqRes = await query(
           `SELECT uc.id, uc.user_a_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
            FROM public.user_connections uc
@@ -97135,10 +99820,10 @@ async function handleApiRequest(req, res) {
            WHERE uc.user_b_id = $1 AND uc.status = 'pending'
              AND (uc.id::text = $2 OR uc.user_a_id::text = $2)
            LIMIT 1`,
-          [authUser.id, key]
+          [authUser.id, lookupKey]
         );
         if (reqRes.rows.length === 0) {
-          sendJson5(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
+          sendJson6(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
           return true;
         }
         const pending = reqRes.rows[0];
@@ -97181,7 +99866,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { requesterId, requestId: pending.id }
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           status: "connected",
           message: `Connected with ${requesterName}! Added to your Saved People.`,
@@ -97198,7 +99883,7 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Accept Connection Fallback]:", pgErr?.message);
         const restRes = await acceptConnectionRequestRest(authUser, key);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
@@ -97206,25 +99891,31 @@ async function handleApiRequest(req, res) {
     if (connRejectMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const key = connRejectMatch[1];
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        sendJson6(res, 400, { success: false, message: "Valid connection request ID is required." });
+        return true;
+      }
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
+        const lookupKey = parsedKey.kind === "composite" ? parsedKey.requesterUserId || key : parsedKey.uuid || key;
         const reqRes = await query(
           `SELECT id, user_a_id FROM public.user_connections
            WHERE user_b_id = $1 AND status = 'pending'
              AND (id::text = $2 OR user_a_id::text = $2)
            LIMIT 1`,
-          [authUser.id, key]
+          [authUser.id, lookupKey]
         );
         if (reqRes.rows.length === 0) {
-          sendJson5(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
+          sendJson6(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
           return true;
         }
         const pending = reqRes.rows[0];
@@ -97245,7 +99936,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { requesterId: pending.user_a_id, requestId: pending.id }
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           status: "rejected",
           message: "Connection request declined. No active connection was created."
@@ -97254,25 +99945,25 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Reject Connection Fallback]:", pgErr?.message);
         const restRes = await rejectConnectionRequestRest(authUser, key);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/connections/disconnect" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
       if (!targetUserId) {
-        sendJson5(res, 400, { success: false, message: "Target user ID is required." });
+        sendJson6(res, 400, { success: false, message: "Target user ID is required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await disconnectUserRest(authUser, targetUserId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -97304,7 +99995,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { targetUserId }
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           status: "disconnected",
           message: "Disconnected successfully. Existing Udhar transaction history has been preserved."
@@ -97313,7 +100004,7 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG Disconnect Fallback]:", pgErr?.message);
         const restRes = await disconnectUserRest(authUser, targetUserId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
@@ -97321,7 +100012,7 @@ async function handleApiRequest(req, res) {
     if (contactInviteMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const contactId = contactInviteMatch[1];
@@ -97330,12 +100021,12 @@ async function handleApiRequest(req, res) {
         [contactId, authUser.id]
       );
       if (contactRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Contact not found." });
+        sendJson6(res, 404, { success: false, message: "Contact not found." });
         return true;
       }
       const contact = contactRes.rows[0];
       if (!contact.email) {
-        sendJson5(res, 400, { success: false, message: "This contact does not have an email address to invite." });
+        sendJson6(res, 400, { success: false, message: "This contact does not have an email address to invite." });
         return true;
       }
       const regUserCheck = await query(
@@ -97349,7 +100040,7 @@ async function handleApiRequest(req, res) {
           [regUser.id, contact.id]
         );
         await ensureReciprocalContact(regUser.id, authUser, contact.relationship_type || "Friend");
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: `${contact.name} is already registered on My Money Manager! Linked accounts automatically.`,
           alreadyRegistered: true,
@@ -97357,7 +100048,7 @@ async function handleApiRequest(req, res) {
         });
         return true;
       }
-      const tokenHash = crypto20.randomBytes(32).toString("hex");
+      const tokenHash = crypto24.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1e3);
       const appBaseUrl = process.env.APP_URL || "http://localhost:3000";
       const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
@@ -97375,7 +100066,7 @@ async function handleApiRequest(req, res) {
         inviteLink,
         inviteToken: tokenHash
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: `Invitation email sent to ${contact.email}.`,
         inviteLink,
@@ -97386,7 +100077,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/udhar/users/search" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`user_search:${authUser.id}`, RATE_LIMITS.PEOPLE_SEARCH.max, RATE_LIMITS.PEOPLE_SEARCH.windowMs, RATE_LIMITS.PEOPLE_SEARCH.op);
@@ -97397,11 +100088,11 @@ async function handleApiRequest(req, res) {
       const rawQ = parsed.query.q || "";
       const classified = classifyLiveSearchQuery(rawQ);
       if (classified.mode === "too_short") {
-        sendJson5(res, 200, { success: true, users: [], searchMode: "too_short" });
+        sendJson6(res, 200, { success: true, users: [], searchMode: "too_short" });
         return true;
       }
       if (classified.mode === "email_incomplete") {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           users: [],
           searchMode: "email_incomplete",
@@ -97410,7 +100101,7 @@ async function handleApiRequest(req, res) {
         return true;
       }
       if (classified.mode === "phone_incomplete") {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           users: [],
           searchMode: "phone_incomplete",
@@ -97420,7 +100111,7 @@ async function handleApiRequest(req, res) {
       }
       if (!isDatabaseAvailable()) {
         const restRes = await searchUsersRest(authUser, rawQ);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -97440,7 +100131,8 @@ async function handleApiRequest(req, res) {
           queryParams = [authUser.id, `%${classified.normalized}%`];
         }
         const usersRes = await query(
-          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username,
+          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username, u.role, u.status,
+             COALESCE(u.deletion_status, 'none') AS deletion_status,
              COALESCE(u.is_verified, TRUE) AS is_verified,
              (
                SELECT uc.status FROM public.user_connections uc
@@ -97468,8 +100160,8 @@ async function handleApiRequest(req, res) {
            FROM public.app_users u
            WHERE u.status = 'active'
            AND COALESCE(u.deletion_status, 'none') = 'none'
-           AND COALESCE(u.role, 'user') != 'admin'
-           AND LOWER(TRIM(COALESCE(u.email, ''))) != 'admin@mymoney.com'
+           AND COALESCE(LOWER(u.role), 'user') = 'user'
+           AND LOWER(TRIM(COALESCE(u.email, ''))) NOT IN ('admin@mymoney.com', 'hackifypro@gmail.com')
            AND NOT EXISTS (
                SELECT 1 FROM public.user_connections blk
                WHERE ((blk.user_a_id = $1 AND blk.user_b_id = u.id) OR (blk.user_b_id = $1 AND blk.user_a_id = u.id))
@@ -97480,7 +100172,7 @@ async function handleApiRequest(req, res) {
            LIMIT 15`,
           queryParams
         );
-        const sanitizedUsers = usersRes.rows.map((u) => {
+        const sanitizedUsers = usersRes.rows.filter((u) => isDiscoverableNormalUser(u)).map((u) => {
           const isSelf = u.id === authUser.id;
           const isConnected = !isSelf && (u.conn_status === "connected" || Boolean(u.is_saved_contact));
           const isIncomingPending = !isSelf && !isConnected && u.conn_status === "pending" && u.pending_requester_id === u.id;
@@ -97504,19 +100196,19 @@ async function handleApiRequest(req, res) {
             isSavedContact: Boolean(u.is_saved_contact)
           };
         });
-        sendJson5(res, 200, { success: true, users: sanitizedUsers, searchMode: classified.mode });
+        sendJson6(res, 200, { success: true, users: sanitizedUsers, searchMode: classified.mode });
         return true;
       } catch (pgErr) {
         console.warn("[PG User Search Fallback]:", pgErr?.message);
         const restRes = await searchUsersRest(authUser, rawQ);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/my-code" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
       const rate = await checkRateLimitAsync(`qr_generate:${authUser.id}`, RATE_LIMITS.QR_GENERATION.max, RATE_LIMITS.QR_GENERATION.windowMs, RATE_LIMITS.QR_GENERATION.op);
@@ -97526,7 +100218,7 @@ async function handleApiRequest(req, res) {
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getMyQrRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -97546,8 +100238,8 @@ async function handleApiRequest(req, res) {
           if (tokenRes.rows[0].expires_at) expiresAt = tokenRes.rows[0].expires_at;
         }
         if (!pairingToken) {
-          pairingToken = crypto20.randomBytes(32).toString("hex");
-          pairingCode = `MM-${crypto20.randomBytes(3).toString("hex").toUpperCase()}`;
+          pairingToken = crypto24.randomBytes(32).toString("hex");
+          pairingCode = `MM-${crypto24.randomBytes(3).toString("hex").toUpperCase()}`;
           await query(
             `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
              VALUES ($1, $2, $3, FALSE, $4)`,
@@ -97562,7 +100254,7 @@ async function handleApiRequest(req, res) {
           code: pairingCode,
           exp: new Date(expiresAt).getTime()
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           pairingToken,
           pairingCode,
@@ -97575,14 +100267,14 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG My QR Fallback]:", pgErr?.message);
         const restRes = await getMyQrRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/resolve" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
       const qrRate = await checkRateLimitAsync(`qr_resolve:${authUser.id}`, RATE_LIMITS.QR_SCAN_VALIDATE.max, RATE_LIMITS.QR_SCAN_VALIDATE.windowMs, RATE_LIMITS.QR_SCAN_VALIDATE.op);
@@ -97590,10 +100282,10 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, qrRate);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await resolveQrRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -97603,7 +100295,7 @@ async function handleApiRequest(req, res) {
         if (rawData) {
           const parsedQr = parseQrPayload(rawData);
           if (!parsedQr.valid) {
-            sendJson5(res, 400, {
+            sendJson6(res, 400, {
               success: false,
               code: parsedQr.errorCode || "INVALID_QR",
               message: parsedQr.error || "Invalid QR format. Please scan a genuine My Money Manager Udhar pairing QR."
@@ -97614,7 +100306,7 @@ async function handleApiRequest(req, res) {
           if (parsedQr.code) targetCode = parsedQr.code;
         }
         if (!targetToken && !targetCode) {
-          sendJson5(res, 400, {
+          sendJson6(res, 400, {
             success: false,
             code: "INVALID_QR",
             message: "No valid QR pairing token or code provided."
@@ -97632,7 +100324,7 @@ async function handleApiRequest(req, res) {
           [targetToken || "__none__", targetCode || "__none__"]
         );
         if (tokenRes.rows.length === 0) {
-          sendJson5(res, 404, {
+          sendJson6(res, 404, {
             success: false,
             code: "NOT_FOUND",
             message: "Pairing code or QR not recognized. Ask your friend to share their latest My Money Manager Udhar Pairing QR."
@@ -97641,7 +100333,7 @@ async function handleApiRequest(req, res) {
         }
         const qrRecord = tokenRes.rows[0];
         if (qrRecord.used) {
-          sendJson5(res, 410, {
+          sendJson6(res, 410, {
             success: false,
             code: "QR_REVOKED",
             message: "This pairing QR has been revoked. Ask your friend to share their newer Udhar Pairing QR."
@@ -97649,7 +100341,7 @@ async function handleApiRequest(req, res) {
           return true;
         }
         if (new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
-          sendJson5(res, 410, {
+          sendJson6(res, 410, {
             success: false,
             code: "QR_EXPIRED",
             message: "This pairing QR has expired. Ask your friend to tap Reset QR to get a fresh code."
@@ -97657,7 +100349,7 @@ async function handleApiRequest(req, res) {
           return true;
         }
         if (qrRecord.status !== "active" || qrRecord.deletion_status !== "none") {
-          sendJson5(res, 403, {
+          sendJson6(res, 403, {
             success: false,
             code: "ACCOUNT_UNAVAILABLE",
             message: "This user account is currently deactivated or unavailable."
@@ -97665,7 +100357,7 @@ async function handleApiRequest(req, res) {
           return true;
         }
         if (qrRecord.user_id === authUser.id) {
-          sendJson5(res, 400, {
+          sendJson6(res, 400, {
             success: false,
             code: "SELF_CONNECTION",
             message: "This is your own Udhar pairing QR. You cannot pair with yourself."
@@ -97678,7 +100370,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, qrRecord.user_id]
         );
         if (connRes.rows.some((r2) => r2.status === "blocked")) {
-          sendJson5(res, 403, {
+          sendJson6(res, 403, {
             success: false,
             code: "BLOCKED",
             message: "You cannot connect with this account."
@@ -97689,7 +100381,7 @@ async function handleApiRequest(req, res) {
         const outgoingPending = connRes.rows.find((r2) => r2.user_a_id === authUser.id && r2.status === "pending");
         const incomingPending = connRes.rows.find((r2) => r2.user_b_id === authUser.id && r2.status === "pending");
         const connectionStatus = isAlreadyConnected ? "connected" : outgoingPending ? "pending" : incomingPending ? "incoming_pending" : "none";
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           owner: {
             id: qrRecord.user_id,
@@ -97711,14 +100403,14 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG QR Resolve Fallback]:", pgErr?.message);
         const restRes = await resolveQrRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/regenerate" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
       const rate = await checkRateLimitAsync(`qr_generate:${authUser.id}`, RATE_LIMITS.QR_GENERATION.max, RATE_LIMITS.QR_GENERATION.windowMs, RATE_LIMITS.QR_GENERATION.op);
@@ -97728,13 +100420,13 @@ async function handleApiRequest(req, res) {
       }
       if (!isDatabaseAvailable()) {
         const restRes = await regenerateQrRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
         await query("UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1", [authUser.id]);
-        const pairingToken = crypto20.randomBytes(32).toString("hex");
-        const pairingCode = `MM-${crypto20.randomBytes(3).toString("hex").toUpperCase()}`;
+        const pairingToken = crypto24.randomBytes(32).toString("hex");
+        const pairingCode = `MM-${crypto24.randomBytes(3).toString("hex").toUpperCase()}`;
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
         await query(
           `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
@@ -97749,7 +100441,7 @@ async function handleApiRequest(req, res) {
           code: pairingCode,
           exp: expiresAt.getTime()
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: "Fresh pairing QR generated successfully. Previous QR codes have been revoked.",
           pairingToken,
@@ -97763,14 +100455,14 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG QR Regenerate Fallback]:", pgErr?.message);
         const restRes = await regenerateQrRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/qr/connect" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
       const qrConnRate = await checkRateLimitAsync(`conn_request:${authUser.id}`, RATE_LIMITS.CONNECTION_REQUEST.max, RATE_LIMITS.CONNECTION_REQUEST.windowMs, RATE_LIMITS.CONNECTION_REQUEST.op);
@@ -97778,10 +100470,10 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, qrConnRate);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await connectQrRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
@@ -97797,7 +100489,7 @@ async function handleApiRequest(req, res) {
           [pairingToken || "__none__", pairingCode || "__none__"]
         );
         if (tokenRes.rows.length === 0) {
-          sendJson5(res, 410, {
+          sendJson6(res, 410, {
             success: false,
             code: "QR_INVALID_OR_EXPIRED",
             message: "Pairing QR is expired, revoked, or invalid."
@@ -97807,11 +100499,11 @@ async function handleApiRequest(req, res) {
         const tokenRecord = tokenRes.rows[0];
         const targetUserId = tokenRecord.user_id;
         if (tokenRecord.status !== "active" || tokenRecord.deletion_status !== "none") {
-          sendJson5(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is currently deactivated or unavailable." });
+          sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is currently deactivated or unavailable." });
           return true;
         }
         if (targetUserId === authUser.id) {
-          sendJson5(res, 400, { success: false, code: "SELF_CONNECTION", message: "Cannot pair with your own QR code." });
+          sendJson6(res, 400, { success: false, code: "SELF_CONNECTION", message: "Cannot pair with your own QR code." });
           return true;
         }
         const existingConn = await query(
@@ -97820,13 +100512,13 @@ async function handleApiRequest(req, res) {
           [authUser.id, targetUserId]
         );
         if (existingConn.rows.some((r2) => r2.status === "blocked")) {
-          sendJson5(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
+          sendJson6(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
           return true;
         }
         const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split("@")[0] || "Friend").trim();
         const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
         if (existingConn.rows.some((r2) => r2.status === "connected")) {
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: true,
@@ -97876,7 +100568,7 @@ async function handleApiRequest(req, res) {
             userBName: targetDisplayName
           }).catch(() => {
           });
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             status: "connected",
             alreadyConnected: false,
@@ -97896,7 +100588,7 @@ async function handleApiRequest(req, res) {
           (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
         );
         if (outgoingPending) {
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             status: "pending",
             alreadyPending: true,
@@ -97962,7 +100654,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { targetUserId, targetName: targetDisplayName, requestId: String(requestId) }
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           status: "pending",
           alreadyConnected: false,
@@ -97982,19 +100674,19 @@ async function handleApiRequest(req, res) {
       } catch (pgErr) {
         console.warn("[PG QR Connect Fallback]:", pgErr?.message);
         const restRes = await connectQrRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
     }
     if (pathname === "/api/udhar/transactions" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const restRes = await getUdharTransactionsRest(authUser);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const [txRes, repayRes, contactsRes] = await Promise.all([
@@ -98074,7 +100766,7 @@ async function handleApiRequest(req, res) {
         };
       });
       const summary = calculatePeopleDashboardSummary(transactions, contactsRes.rows);
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         transactions,
         summary
@@ -98084,7 +100776,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/udhar/transactions" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`udhar_create:${authUser.id}`, RATE_LIMITS.UDHAR_CREATE.max, RATE_LIMITS.UDHAR_CREATE.windowMs, RATE_LIMITS.UDHAR_CREATE.op);
@@ -98092,10 +100784,10 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rate);
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await createUdharTransactionRest(authUser, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const counterpartName = (body.counterpart_name || body.person_name || "").trim();
@@ -98111,15 +100803,15 @@ async function handleApiRequest(req, res) {
       const attachmentUrl = body.attachment_url || null;
       const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
       if (!counterpartName) {
-        sendJson5(res, 400, { success: false, message: "Person's name is required." });
+        sendJson6(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
       if (!["gave", "took"].includes(direction)) {
-        sendJson5(res, 400, { success: false, message: "Transaction type must be 'gave' (I Gave) or 'took' (I Took)." });
+        sendJson6(res, 400, { success: false, message: "Transaction type must be 'gave' (I Gave) or 'took' (I Took)." });
         return true;
       }
       if (!Number.isFinite(amount) || amount <= 0) {
-        sendJson5(res, 400, { success: false, message: "Please enter a valid amount greater than \u20B90." });
+        sendJson6(res, 400, { success: false, message: "Please enter a valid amount greater than \u20B90." });
         return true;
       }
       if (idempotencyKey) {
@@ -98128,7 +100820,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, idempotencyKey]
         );
         if (dupRes.rows.length > 0) {
-          sendJson5(res, 200, {
+          sendJson6(res, 200, {
             success: true,
             deduplicated: true,
             message: "Udhar already recorded.",
@@ -98144,7 +100836,7 @@ async function handleApiRequest(req, res) {
         description: description || void 0,
         attachment_url: attachmentUrl || void 0
       });
-      const linkId = crypto20.randomUUID();
+      const linkId = crypto24.randomUUID();
       let isRegisteredCounterpart = false;
       let registeredUser = null;
       if (counterpartUserId && counterpartUserId !== authUser.id) {
@@ -98161,7 +100853,7 @@ async function handleApiRequest(req, res) {
             [authUser.id, counterpartUserId]
           );
           if (blk.rows.length > 0) {
-            sendJson5(res, 403, { success: false, message: "Cannot create shared Udhar with a blocked user." });
+            sendJson6(res, 403, { success: false, message: "Cannot create shared Udhar with a blocked user." });
             return true;
           }
           isRegisteredCounterpart = true;
@@ -98254,7 +100946,7 @@ async function handleApiRequest(req, res) {
             status: "confirmed"
           }).catch((e2) => console.warn("[Udhar Created Two-Sided Email Error]:", e2));
           const createdRow = userARes.rows[0];
-          sendJson5(res, 201, {
+          sendJson6(res, 201, {
             success: true,
             message: `Shared Udhar recorded with ${registeredUser.full_name}. Synchronized across both accounts.`,
             transaction: {
@@ -98301,7 +100993,7 @@ async function handleApiRequest(req, res) {
             dueDate
           }).catch((e2) => console.warn("[Notify Udhar Created Error]:", e2));
           const createdRow = singleRes.rows[0];
-          sendJson5(res, 201, {
+          sendJson6(res, 201, {
             success: true,
             message: `Local Udhar recorded for ${counterpartName}.`,
             transaction: {
@@ -98329,18 +101021,18 @@ async function handleApiRequest(req, res) {
     if (confirmMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = confirmMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await confirmUdharTransactionRest(authUser, txId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
       if (txRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Transaction not found." });
+        sendJson6(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -98355,27 +101047,27 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id }
       });
-      sendJson5(res, 200, { success: true, message: "Transaction confirmed successfully on both accounts." });
+      sendJson6(res, 200, { success: true, message: "Transaction confirmed successfully on both accounts." });
       return true;
     }
     const disputeMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/dispute$/);
     if (disputeMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = disputeMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const disputeReason = (body.reason || "Transaction disputed by user").trim();
       if (!isDatabaseAvailable()) {
         const restRes = await disputeUdharTransactionRest(authUser, txId, disputeReason);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
       if (txRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Transaction not found." });
+        sendJson6(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -98390,14 +101082,14 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id, disputeReason }
       });
-      sendJson5(res, 200, { success: true, message: "Transaction marked as disputed. Reason visible to both parties." });
+      sendJson6(res, 200, { success: true, message: "Transaction marked as disputed. Reason visible to both parties." });
       return true;
     }
     const repayMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/repay$/);
     if (repayMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`udhar_settle:${authUser.id}`, RATE_LIMITS.UDHAR_SETTLE.max, RATE_LIMITS.UDHAR_SETTLE.windowMs, RATE_LIMITS.UDHAR_SETTLE.op);
@@ -98406,10 +101098,10 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const txId = repayMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await repayUdharRest(authUser, txId, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const repayAmount = roundMoney(parseFloat(body.amount));
@@ -98434,7 +101126,7 @@ async function handleApiRequest(req, res) {
         );
         if (txRes.rows.length === 0) {
           await client.query("ROLLBACK");
-          sendJson5(res, 404, { success: false, message: "Transaction not found." });
+          sendJson6(res, 404, { success: false, message: "Transaction not found." });
           return true;
         }
         const tx = txRes.rows[0];
@@ -98445,7 +101137,7 @@ async function handleApiRequest(req, res) {
           );
           if (dupRep.rows.length > 0) {
             await client.query("COMMIT");
-            sendJson5(res, 200, {
+            sendJson6(res, 200, {
               success: true,
               deduplicated: true,
               repayment: dupRep.rows[0],
@@ -98476,7 +101168,7 @@ async function handleApiRequest(req, res) {
         });
         if (!calc.valid) {
           await client.query("ROLLBACK");
-          sendJson5(res, 400, { success: false, message: calc.error || "Invalid repayment amount." });
+          sendJson6(res, 400, { success: false, message: calc.error || "Invalid repayment amount." });
           return true;
         }
         const repaymentStatus = calc.repaymentStatus;
@@ -98559,7 +101251,7 @@ async function handleApiRequest(req, res) {
             }).catch((e2) => console.warn("[Udhar Settled Email Error]:", e2));
           }
         }
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           repayment: repInsertRes.rows[0],
           isPendingConfirmation: repaymentStatus === "pending_confirmation",
@@ -98579,23 +101271,23 @@ async function handleApiRequest(req, res) {
     if (confirmRepaymentMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const repaymentId = confirmRepaymentMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await confirmRepaymentRest(authUser, repaymentId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const repRes = await query(`SELECT r.* FROM public.udhar_repayments r WHERE r.id = $1`, [repaymentId]);
       if (repRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Repayment record not found." });
+        sendJson6(res, 404, { success: false, message: "Repayment record not found." });
         return true;
       }
       const rep = repRes.rows[0];
       if (rep.status === "confirmed") {
-        sendJson5(res, 400, { success: false, message: "This repayment has already been confirmed." });
+        sendJson6(res, 400, { success: false, message: "This repayment has already been confirmed." });
         return true;
       }
       const txRes = await query(
@@ -98603,12 +101295,12 @@ async function handleApiRequest(req, res) {
         [rep.link_id, authUser.id]
       );
       if (txRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Associated transaction not found for your account." });
+        sendJson6(res, 404, { success: false, message: "Associated transaction not found for your account." });
         return true;
       }
       const tx = txRes.rows[0];
       if (tx.direction !== "gave") {
-        sendJson5(res, 403, {
+        sendJson6(res, 403, {
           success: false,
           message: "Only the lender who gave the money can confirm receipt of repayment."
         });
@@ -98656,7 +101348,7 @@ async function handleApiRequest(req, res) {
           ).catch(() => {
           });
         }
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} confirmed successfully!`,
           remainingBalance: isSettled ? 0 : newBalance,
@@ -98674,20 +101366,20 @@ async function handleApiRequest(req, res) {
     if (rejectRepaymentMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const repaymentId = rejectRepaymentMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const rejectionReason = (body.reason || body.rejection_reason || "Payment not received").trim();
       if (!isDatabaseAvailable()) {
         const restRes = await rejectRepaymentRest(authUser, repaymentId, rejectionReason);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const repRes = await query(`SELECT * FROM public.udhar_repayments WHERE id = $1`, [repaymentId]);
       if (repRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Repayment record not found." });
+        sendJson6(res, 404, { success: false, message: "Repayment record not found." });
         return true;
       }
       const rep = repRes.rows[0];
@@ -98696,12 +101388,12 @@ async function handleApiRequest(req, res) {
         [rep.link_id, authUser.id]
       );
       if (txRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Associated transaction not found." });
+        sendJson6(res, 404, { success: false, message: "Associated transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
       if (tx.direction !== "gave") {
-        sendJson5(res, 403, {
+        sendJson6(res, 403, {
           success: false,
           message: "Only the lender who gave the money can reject a repayment claim."
         });
@@ -98727,7 +101419,7 @@ async function handleApiRequest(req, res) {
         ).catch(() => {
         });
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Repayment claim rejected.",
         rejectionReason
@@ -98738,14 +101430,14 @@ async function handleApiRequest(req, res) {
     if (updateTxMatch && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const txId = updateTxMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await editUdharRest(authUser, txId, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const client = await pool.connect();
@@ -98757,7 +101449,7 @@ async function handleApiRequest(req, res) {
         );
         if (txRes.rows.length === 0) {
           await client.query("ROLLBACK");
-          sendJson5(res, 404, { success: false, message: "Transaction not found." });
+          sendJson6(res, 404, { success: false, message: "Transaction not found." });
           return true;
         }
         const tx = txRes.rows[0];
@@ -98795,7 +101487,7 @@ async function handleApiRequest(req, res) {
         );
         if (!validation.valid) {
           await client.query("ROLLBACK");
-          sendJson5(res, 400, { success: false, message: validation.error || "Invalid edit." });
+          sendJson6(res, 400, { success: false, message: validation.error || "Invalid edit." });
           return true;
         }
         const updatedAmt = validation.nextOriginalAmount;
@@ -98881,7 +101573,7 @@ async function handleApiRequest(req, res) {
           transactionDate: updatedDate,
           status: newStatus
         }).catch((e2) => console.warn("[Udhar Updated Email Error]:", e2));
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: `Udhar transaction updated successfully. Remaining balance: \u20B9${newBalance.toLocaleString("en-IN")}.`,
           remainingBalance: newBalance,
@@ -98900,7 +101592,7 @@ async function handleApiRequest(req, res) {
     if (settleTxMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`udhar_settle:${authUser.id}`, RATE_LIMITS.UDHAR_SETTLE.max, RATE_LIMITS.UDHAR_SETTLE.windowMs, RATE_LIMITS.UDHAR_SETTLE.op);
@@ -98909,10 +101601,10 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const txId = settleTxMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       if (!isDatabaseAvailable()) {
         const restRes = await settleUdharRest(authUser, txId, body);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const notes = (body.notes || "Settled in full").trim();
@@ -98927,13 +101619,13 @@ async function handleApiRequest(req, res) {
         );
         if (txRes.rows.length === 0) {
           await client.query("ROLLBACK");
-          sendJson5(res, 404, { success: false, message: "Transaction not found." });
+          sendJson6(res, 404, { success: false, message: "Transaction not found." });
           return true;
         }
         const tx = txRes.rows[0];
         if (tx.counterpart_user_id && tx.direction === "took") {
           await client.query("ROLLBACK");
-          sendJson5(res, 403, {
+          sendJson6(res, 403, {
             success: false,
             message: "Only the lender who gave the money can mark an Udhar as settled. As the borrower, please record a repayment for their confirmation."
           });
@@ -98942,12 +101634,12 @@ async function handleApiRequest(req, res) {
         const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
         if (tx.status === "settled" || currentBal <= 0.01) {
           await client.query("ROLLBACK");
-          sendJson5(res, 400, { success: false, message: "This transaction is already settled." });
+          sendJson6(res, 400, { success: false, message: "This transaction is already settled." });
           return true;
         }
         if (tx.status === "cancelled") {
           await client.query("ROLLBACK");
-          sendJson5(res, 400, { success: false, message: "Cannot settle a cancelled transaction." });
+          sendJson6(res, 400, { success: false, message: "Cannot settle a cancelled transaction." });
           return true;
         }
         await client.query(
@@ -98996,7 +101688,7 @@ async function handleApiRequest(req, res) {
           userEmail: authUser.email,
           details: { txId, linkId: tx.link_id, settledAmount: currentBal }
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           message: `Transaction with ${tx.counterpart_name} has been settled in full.`,
           isSettled: true
@@ -99013,7 +101705,7 @@ async function handleApiRequest(req, res) {
     if (deleteTxMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`udhar_delete:${authUser.id}`, RATE_LIMITS.UDHAR_DELETE.max, RATE_LIMITS.UDHAR_DELETE.windowMs, RATE_LIMITS.UDHAR_DELETE.op);
@@ -99024,17 +101716,17 @@ async function handleApiRequest(req, res) {
       const txId = deleteTxMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await cancelUdharRest(authUser, txId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
       if (txRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Transaction not found." });
+        sendJson6(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
       if (tx.counterpart_user_id && tx.direction === "took") {
-        sendJson5(res, 403, {
+        sendJson6(res, 403, {
           success: false,
           message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
         });
@@ -99050,7 +101742,7 @@ async function handleApiRequest(req, res) {
         repayments: repsRes.rows
       });
       if (!guard.allowed) {
-        sendJson5(res, 409, {
+        sendJson6(res, 409, {
           success: false,
           message: guard.reason
         });
@@ -99089,7 +101781,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Transaction cancelled successfully. Balances updated."
       });
@@ -99099,7 +101791,7 @@ async function handleApiRequest(req, res) {
     if (historyTxMatch && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = await checkRateLimitAsync(`udhar_history:${authUser.id}`, RATE_LIMITS.TRANSACTION_DETAILS.max, RATE_LIMITS.TRANSACTION_DETAILS.windowMs, RATE_LIMITS.TRANSACTION_DETAILS.op);
@@ -99110,7 +101802,7 @@ async function handleApiRequest(req, res) {
       const txId = historyTxMatch[1];
       if (!isDatabaseAvailable()) {
         const restRes = await getUdharHistoryRest(authUser, txId);
-        sendJson5(res, restRes.status, restRes.body);
+        sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       const txRes = await query(
@@ -99118,7 +101810,7 @@ async function handleApiRequest(req, res) {
         [txId, authUser.id]
       );
       if (txRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Transaction not found." });
+        sendJson6(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
       const tx = txRes.rows[0];
@@ -99155,7 +101847,7 @@ async function handleApiRequest(req, res) {
           attachment_url: r2.attachment_url || repMeta.attachment_url || null
         };
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         transaction: {
           ...tx,
@@ -99173,7 +101865,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/settings" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           settings: {
             last_mode: "gst",
@@ -99191,7 +101883,7 @@ async function handleApiRequest(req, res) {
         [authUser.id]
       );
       if (row.rows.length > 0) {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           settings: {
             last_mode: row.rows[0].last_mode,
@@ -99201,7 +101893,7 @@ async function handleApiRequest(req, res) {
           }
         });
       } else {
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           settings: {
             last_mode: "gst",
@@ -99216,10 +101908,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/settings" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required to save calculator settings." });
+        sendJson6(res, 401, { success: false, message: "Authentication required to save calculator settings." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const lastMode = ["gst", "offer", "split", "basic"].includes(body.last_mode) ? body.last_mode : "gst";
       const defaultGst = typeof body.default_gst_percent === "number" && body.default_gst_percent >= 0 ? body.default_gst_percent : 18;
       const defaultOffer = typeof body.default_offer_percent === "number" && body.default_offer_percent >= 0 && body.default_offer_percent <= 100 ? body.default_offer_percent : 10;
@@ -99236,7 +101928,7 @@ async function handleApiRequest(req, res) {
             updated_at = NOW()`,
         [authUser.id, lastMode, defaultGst, defaultOffer, defaultSplit]
       );
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Calculator settings updated successfully.",
         settings: {
@@ -99251,7 +101943,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/history" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 200, { success: true, history: [] });
+        sendJson6(res, 200, { success: true, history: [] });
         return true;
       }
       const parsedUrl = parseUrl2(req.url || "", true);
@@ -99266,19 +101958,19 @@ async function handleApiRequest(req, res) {
       }
       q += ` ORDER BY created_at DESC LIMIT 50`;
       const result = await query(q, params);
-      sendJson5(res, 200, { success: true, history: result.rows });
+      sendJson6(res, 200, { success: true, history: result.rows });
       return true;
     }
     if (pathname === "/api/calculator/history" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required to save calculation history." });
+        sendJson6(res, 401, { success: false, message: "Authentication required to save calculation history." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const calcType = body.calc_type;
       if (!["gst", "offer", "split", "basic"].includes(calcType)) {
-        sendJson5(res, 400, { success: false, message: "Invalid calculation type." });
+        sendJson6(res, 400, { success: false, message: "Invalid calculation type." });
         return true;
       }
       const title = (body.title || "").trim().slice(0, 100);
@@ -99290,7 +101982,7 @@ async function handleApiRequest(req, res) {
          RETURNING id, calc_type, title, input_values, result_values, created_at`,
         [authUser.id, calcType, title || null, JSON.stringify(inputValues), JSON.stringify(resultValues)]
       );
-      sendJson5(res, 201, {
+      sendJson6(res, 201, {
         success: true,
         message: "Calculation saved to history.",
         record: inserted.rows[0]
@@ -99300,39 +101992,39 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/calculator/history" && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const parsedUrl = parseUrl2(req.url || "", true);
-      const targetId = parsedUrl.query.id || (await parseJsonBody5(req)).id;
+      const targetId = parsedUrl.query.id || (await parseJsonBody6(req)).id;
       if (targetId) {
         await query(
           `DELETE FROM public.calculator_history WHERE id = $1 AND user_id = $2`,
           [targetId, authUser.id]
         );
-        sendJson5(res, 200, { success: true, message: "Calculation record deleted." });
+        sendJson6(res, 200, { success: true, message: "Calculation record deleted." });
       } else {
         await query(
           `DELETE FROM public.calculator_history WHERE user_id = $1`,
           [authUser.id]
         );
-        sendJson5(res, 200, { success: true, message: "Calculation history cleared." });
+        sendJson6(res, 200, { success: true, message: "Calculation history cleared." });
       }
       return true;
     }
     if (pathname === "/api/feedback/submit" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const rawRating = body.rating !== void 0 && body.rating !== null ? Number(body.rating) : null;
       const rating = rawRating && rawRating >= 1 && rawRating <= 5 ? rawRating : null;
       const message = (body.message || "").trim();
       const dpdpConsent = Boolean(body.dpdp_consent);
       if (!message || message.length < 3) {
-        sendJson5(res, 400, { success: false, message: "Please share your thoughts, suggestions, or experience." });
+        sendJson6(res, 400, { success: false, message: "Please share your thoughts, suggestions, or experience." });
         return true;
       }
       const useDb = isDatabaseAvailable();
@@ -99350,7 +102042,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, message]
         );
         if (dupCheck.rows.length > 0) {
-          sendJson5(res, 409, {
+          sendJson6(res, 409, {
             success: false,
             message: "Duplicate feedback detected. Your previous feedback was already received!"
           });
@@ -99363,7 +102055,7 @@ async function handleApiRequest(req, res) {
           (f3) => f3.message === message && f3.created_at && nowMs - new Date(f3.created_at).getTime() < 15e3
         );
         if (isDup) {
-          sendJson5(res, 409, {
+          sendJson6(res, 409, {
             success: false,
             message: "Duplicate feedback detected. Your previous feedback was already received!"
           });
@@ -99450,7 +102142,7 @@ async function handleApiRequest(req, res) {
           details: { rating, feedbackId, userEmailSent }
         });
       }
-      sendJson5(res, 201, {
+      sendJson6(res, 201, {
         success: true,
         message: userEmailSent ? "Thank you for your feedback! A confirmation email has been sent to you." : "Thank you for your feedback! Your opinion helps us improve My Money Manager.",
         feedback_id: feedbackId,
@@ -99462,21 +102154,21 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/support/complaint" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const subject = (body.subject || "").trim();
       const description = (body.description || body.message || "").trim();
       const phone = (body.phone || body.user_phone || "").trim() || null;
       const category = (body.category || "General Complaint").trim();
       const attachmentUrl = (body.attachment_url || body.attachment || "").trim() || null;
       if (!subject || subject.length < 3) {
-        sendJson5(res, 400, { success: false, message: "Complaint subject is required (min 3 characters)." });
+        sendJson6(res, 400, { success: false, message: "Complaint subject is required (min 3 characters)." });
         return true;
       }
       if (!description || description.length < 5) {
-        sendJson5(res, 400, { success: false, message: "Detailed description is required (min 5 characters)." });
+        sendJson6(res, 400, { success: false, message: "Detailed description is required (min 5 characters)." });
         return true;
       }
       const useDb = isDatabaseAvailable();
@@ -99494,7 +102186,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, subject, description]
         );
         if (dupCheck.rows.length > 0) {
-          sendJson5(res, 409, {
+          sendJson6(res, 409, {
             success: false,
             message: "Duplicate complaint detected. Your previous submission was already received!"
           });
@@ -99507,7 +102199,7 @@ async function handleApiRequest(req, res) {
           (t2) => t2.subject === subject && t2.description === description && t2.created_at && nowMs - new Date(t2.created_at).getTime() < 15e3
         );
         if (isDup) {
-          sendJson5(res, 409, {
+          sendJson6(res, 409, {
             success: false,
             message: "Duplicate complaint detected. Your previous submission was already received!"
           });
@@ -99585,7 +102277,7 @@ async function handleApiRequest(req, res) {
           details: { ticketNumber: ticket.ticket_number, userEmailSent }
         });
       }
-      sendJson5(res, 201, {
+      sendJson6(res, 201, {
         success: true,
         message: userEmailSent ? "Your complaint has been submitted and a confirmation email has been sent to you." : "Your complaint has been submitted successfully. Our support team will review it and get back to you.",
         ticket_number: ticket.ticket_number,
@@ -99604,20 +102296,20 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/support/ticket" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const category = (body.category || "How to use the app").trim();
       const subject = (body.subject || "").trim();
       const message = (body.message || body.description || "").trim();
       const attachmentUrl = (body.attachment_url || body.attachment || "").trim() || null;
       if (!subject || subject.length < 3) {
-        sendJson5(res, 400, { success: false, message: "Support subject is required." });
+        sendJson6(res, 400, { success: false, message: "Support subject is required." });
         return true;
       }
       if (!message || message.length < 5) {
-        sendJson5(res, 400, { success: false, message: "Support message is required." });
+        sendJson6(res, 400, { success: false, message: "Support message is required." });
         return true;
       }
       const useDb = isDatabaseAvailable();
@@ -99698,7 +102390,7 @@ async function handleApiRequest(req, res) {
           details: { ticketNumber: ticket.ticket_number, category: ticket.category, userEmailSent }
         });
       }
-      sendJson5(res, 201, {
+      sendJson6(res, 201, {
         success: true,
         message: userEmailSent ? "Your support request has been submitted and a confirmation email has been sent to you." : "Your support request has been submitted successfully.",
         emailDispatched: userEmailSent,
@@ -99716,7 +102408,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/user/support-history" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       if (!isDatabaseAvailable()) {
@@ -99724,7 +102416,7 @@ async function handleApiRequest(req, res) {
           listFeedbacksFallback({ userId: authUser.id }),
           listSupportTicketsFallback(authUser.id)
         ]);
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           feedbacks: fbRes.feedbacks,
           tickets
@@ -99747,7 +102439,7 @@ async function handleApiRequest(req, res) {
           [authUser.id]
         )
       ]);
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         feedbacks: feedbacksRes.rows,
         tickets: ticketsRes.rows
@@ -99758,18 +102450,18 @@ async function handleApiRequest(req, res) {
     if (userTicketDetailMatch && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const ticketId = userTicketDetailMatch[1];
       if (!isDatabaseAvailable()) {
         const ticket = await getSupportTicketByIdFallback(ticketId, authUser.id);
         if (!ticket) {
-          sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+          sendJson6(res, 404, { success: false, message: "Ticket not found or unauthorized." });
           return true;
         }
         const replies = await getSupportTicketRepliesFallback(ticketId, false);
-        sendJson5(res, 200, { success: true, ticket, replies });
+        sendJson6(res, 200, { success: true, ticket, replies });
         return true;
       }
       const ticketRes = await query(
@@ -99777,7 +102469,7 @@ async function handleApiRequest(req, res) {
         [ticketId, authUser.id]
       );
       if (ticketRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+        sendJson6(res, 404, { success: false, message: "Ticket not found or unauthorized." });
         return true;
       }
       const repliesRes = await query(
@@ -99787,7 +102479,7 @@ async function handleApiRequest(req, res) {
          ORDER BY created_at ASC`,
         [ticketId]
       );
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         ticket: ticketRes.rows[0],
         replies: repliesRes.rows
@@ -99798,24 +102490,24 @@ async function handleApiRequest(req, res) {
     if (userTicketReplyMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const ticketId = userTicketReplyMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const message = (body.message || "").trim();
       if (!message) {
-        sendJson5(res, 400, { success: false, message: "Reply message cannot be empty." });
+        sendJson6(res, 400, { success: false, message: "Reply message cannot be empty." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         const ticket2 = await getSupportTicketByIdFallback(ticketId, authUser.id);
         if (!ticket2) {
-          sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+          sendJson6(res, 404, { success: false, message: "Ticket not found or unauthorized." });
           return true;
         }
         if (ticket2.status === "closed") {
-          sendJson5(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
+          sendJson6(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
           return true;
         }
         const senderName2 = authUser.full_name || "User";
@@ -99842,7 +102534,7 @@ async function handleApiRequest(req, res) {
           subject: `Reply on #${ticket2.ticket_number}: ${ticket2.subject}`
         }).catch(() => {
         });
-        sendJson5(res, 201, { success: true, message: "Reply sent successfully.", reply });
+        sendJson6(res, 201, { success: true, message: "Reply sent successfully.", reply });
         return true;
       }
       const ticketRes = await query(
@@ -99850,12 +102542,12 @@ async function handleApiRequest(req, res) {
         [ticketId, authUser.id]
       );
       if (ticketRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+        sendJson6(res, 404, { success: false, message: "Ticket not found or unauthorized." });
         return true;
       }
       const ticket = ticketRes.rows[0];
       if (ticket.status === "closed") {
-        sendJson5(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
+        sendJson6(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
         return true;
       }
       const uRes = await query("SELECT full_name FROM public.app_users WHERE id = $1", [authUser.id]);
@@ -99889,7 +102581,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { ticketId, ticketNumber: ticket.ticket_number }
       });
-      sendJson5(res, 201, {
+      sendJson6(res, 201, {
         success: true,
         message: "Reply sent successfully.",
         reply: replyRes.rows[0]
@@ -99899,7 +102591,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/privacy/consent-status" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
       const consentsRes = await query(
@@ -99912,7 +102604,7 @@ async function handleApiRequest(req, res) {
       const history = consentsRes.rows;
       const latest = history[0] || null;
       const status = latest ? latest.status : "not_granted";
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         status,
         latest,
@@ -99924,10 +102616,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/privacy/consent-grant" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const purpose = (body.purpose || "optional_feedback_support").trim();
       const wording = (body.wording || "User explicitly granted optional processing consent for service quality feedback and support inquiries under the DPDP Act 2023.").trim();
       const insertRes = await query(
@@ -99942,7 +102634,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { purpose, policyVersion: "v1.2 - DPDP Act 2023" }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Optional consent recorded successfully.",
         status: "granted",
@@ -99953,10 +102645,10 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/privacy/consent-withdraw" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required. Please log in." });
+        sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const purpose = (body.purpose || "optional_feedback_support").trim();
       const wording = (body.wording || "User explicitly withdrew optional processing consent. All optional data processing ceased. Core app functionality and account remain active.").trim();
       const prevCheck = await query(
@@ -99966,7 +102658,7 @@ async function handleApiRequest(req, res) {
         [authUser.id, purpose]
       );
       if (!prevCheck.rows.length || prevCheck.rows[0].status === "withdrawn") {
-        sendJson5(res, 400, {
+        sendJson6(res, 400, {
           success: false,
           message: "No active optional consent found to withdraw."
         });
@@ -99984,7 +102676,7 @@ async function handleApiRequest(req, res) {
         userEmail: authUser.email,
         details: { purpose, policyVersion: "v1.2 - DPDP Act 2023" }
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Optional consent has been withdrawn. Core account and financial ledgers remain preserved.",
         status: "withdrawn",
@@ -100002,7 +102694,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/notifications" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const urlObj = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
@@ -100018,7 +102710,7 @@ async function handleApiRequest(req, res) {
           page,
           limit
         });
-        sendJson5(res, 200, {
+        sendJson6(res, 200, {
           success: true,
           notifications: fbRes.notifications,
           unreadCount: fbRes.unreadCount,
@@ -100058,7 +102750,7 @@ async function handleApiRequest(req, res) {
       ]);
       const total = parseInt(countRes.rows[0]?.total || "0", 10);
       const unreadCount = parseInt(unreadRes.rows[0]?.unread_count || "0", 10);
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         notifications: listRes.rows,
         unreadCount,
@@ -100072,13 +102764,13 @@ async function handleApiRequest(req, res) {
     if (notifReadMatch && (method === "PATCH" || method === "POST")) {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const notifId = notifReadMatch[1];
       if (!isDatabaseAvailable() || notifId.startsWith("broadcast_")) {
         const updated = await markUserNotificationReadFallback(authUser.id, notifId);
-        sendJson5(res, 200, { success: true, notification: updated });
+        sendJson6(res, 200, { success: true, notification: updated });
         return true;
       }
       const updateRes = await query(
@@ -100089,21 +102781,21 @@ async function handleApiRequest(req, res) {
         [notifId, authUser.id]
       );
       if (updateRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Notification not found." });
+        sendJson6(res, 404, { success: false, message: "Notification not found." });
         return true;
       }
-      sendJson5(res, 200, { success: true, notification: updateRes.rows[0] });
+      sendJson6(res, 200, { success: true, notification: updateRes.rows[0] });
       return true;
     }
     if (pathname === "/api/notifications/mark-all-read" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         await markAllUserNotificationsReadFallback(authUser.id);
-        sendJson5(res, 200, { success: true, message: "All notifications marked as read." });
+        sendJson6(res, 200, { success: true, message: "All notifications marked as read." });
         return true;
       }
       await query(
@@ -100112,20 +102804,20 @@ async function handleApiRequest(req, res) {
          WHERE user_id = $1 AND is_deleted = FALSE AND is_read = FALSE`,
         [authUser.id]
       );
-      sendJson5(res, 200, { success: true, message: "All notifications marked as read." });
+      sendJson6(res, 200, { success: true, message: "All notifications marked as read." });
       return true;
     }
     const notifDeleteMatch = pathname.match(/^\/api\/notifications\/([a-zA-Z0-9_-]+)$/);
     if (notifDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const notifId = notifDeleteMatch[1];
       if (!isDatabaseAvailable() || notifId.startsWith("broadcast_")) {
         await deleteUserNotificationFallback(authUser.id, notifId);
-        sendJson5(res, 200, { success: true, message: "Notification removed." });
+        sendJson6(res, 200, { success: true, message: "Notification removed." });
         return true;
       }
       await query(
@@ -100134,18 +102826,18 @@ async function handleApiRequest(req, res) {
          WHERE id = $1 AND user_id = $2`,
         [notifId, authUser.id]
       );
-      sendJson5(res, 200, { success: true, message: "Notification removed." });
+      sendJson6(res, 200, { success: true, message: "Notification removed." });
       return true;
     }
     if (pathname === "/api/notifications/clear-all" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       if (!isDatabaseAvailable()) {
         await clearAllUserNotificationsFallback(authUser.id);
-        sendJson5(res, 200, { success: true, message: "All notifications cleared." });
+        sendJson6(res, 200, { success: true, message: "All notifications cleared." });
         return true;
       }
       await query(
@@ -100154,31 +102846,31 @@ async function handleApiRequest(req, res) {
          WHERE user_id = $1 AND is_deleted = FALSE`,
         [authUser.id]
       );
-      sendJson5(res, 200, { success: true, message: "All notifications cleared." });
+      sendJson6(res, 200, { success: true, message: "All notifications cleared." });
       return true;
     }
     if (pathname === "/api/notifications/preferences" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const prefs = await getUserNotificationPreferences(authUser.id);
-      sendJson5(res, 200, { success: true, preferences: prefs });
+      sendJson6(res, 200, { success: true, preferences: prefs });
       return true;
     }
     if (pathname === "/api/notifications/preferences" && method === "PUT") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`notif_prefs:${authUser.id}`, 30, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many preference updates. Please try again shortly." });
+        sendJson6(res, 429, { success: false, message: "Too many preference updates. Please try again shortly." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const updated = await updateUserNotificationPreferences(authUser.id, {
         in_app_enabled: body.in_app_enabled,
         push_enabled: body.push_enabled,
@@ -100200,11 +102892,11 @@ async function handleApiRequest(req, res) {
         quiet_hours_end: body.quiet_hours_end,
         privacy_hide_amounts: body.privacy_hide_amounts
       });
-      sendJson5(res, 200, { success: true, preferences: updated });
+      sendJson6(res, 200, { success: true, preferences: updated });
       return true;
     }
     if (pathname === "/api/notifications/push/vapid-public-key" && method === "GET") {
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         publicKey: APP_CONFIG.vapid.publicKey,
         configured: Boolean(APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.privateKey),
@@ -100215,11 +102907,11 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/notifications/push/subscriptions" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const devices = await listUserPushSubscriptions(authUser.id);
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         subscriptions: devices,
         count: devices.length
@@ -100230,46 +102922,46 @@ async function handleApiRequest(req, res) {
     if (pushSubDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_del:${authUser.id}`, 20, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
+        sendJson6(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
         return true;
       }
       const subId = pushSubDeleteMatch[1];
       const { deleted } = await removePushSubscriptionById(authUser.id, subId);
       if (!deleted) {
-        sendJson5(res, 404, { success: false, message: "Device subscription not found for your account." });
+        sendJson6(res, 404, { success: false, message: "Device subscription not found for your account." });
         return true;
       }
       logSecurityEvent("PUSH_DEVICE_REMOVED", { userId: authUser.id, subscriptionId: subId });
-      sendJson5(res, 200, { success: true, message: "Device removed from push notifications." });
+      sendJson6(res, 200, { success: true, message: "Device removed from push notifications." });
       return true;
     }
     if (pathname === "/api/notifications/push/status" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const status = await getPushDeliveryStatus(authUser.id);
-      sendJson5(res, 200, { success: true, ...status });
+      sendJson6(res, 200, { success: true, ...status });
       return true;
     }
     if (pathname === "/api/notifications/push/subscribe" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_sub:${authUser.id}`, 20, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many subscription requests. Try again shortly." });
+        sendJson6(res, 429, { success: false, message: "Too many subscription requests. Try again shortly." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const endpoint = (body.endpoint || "").trim();
       const p256dh = body.keys?.p256dh || body.p256dh || "";
       const authKey = body.keys?.auth || body.auth || "";
@@ -100284,7 +102976,7 @@ async function handleApiRequest(req, res) {
         deviceName
       });
       if (!reg.success) {
-        sendJson5(res, 400, {
+        sendJson6(res, 400, {
           success: false,
           message: reg.error || "Invalid push subscription payload."
         });
@@ -100294,7 +102986,7 @@ async function handleApiRequest(req, res) {
         userId: authUser.id,
         device: reg.subscription?.device_name
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Push notifications registered successfully.",
         subscription: reg.subscription
@@ -100303,10 +102995,10 @@ async function handleApiRequest(req, res) {
     }
     if ((pathname === "/api/pwa/register-device" || pathname === "/api/devices/register" || pathname === "/api/pwa/record-install") && method === "POST") {
       const authUser = await authenticateRequest(req);
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const userId = authUser?.id || body.userId;
       if (!userId) {
-        sendJson5(res, 400, {
+        sendJson6(res, 400, {
           success: false,
           message: "Authenticated user or userId is required to register device installation."
         });
@@ -100324,37 +103016,37 @@ async function handleApiRequest(req, res) {
         pushSubscriptionStatus: body.pushSubscriptionStatus,
         ipAddress: clientIp
       });
-      sendJson5(res, 200, { success: true, ...resDev });
+      sendJson6(res, 200, { success: true, ...resDev });
       return true;
     }
     if (pathname === "/api/notifications/push/unsubscribe" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_unsub:${authUser.id}`, 20, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
+        sendJson6(res, 429, { success: false, message: "Too many requests. Please wait a minute." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const endpoint = (body.endpoint || "").trim();
       if (endpoint) {
         await removePushSubscriptionByEndpoint(authUser.id, endpoint);
       }
-      sendJson5(res, 200, { success: true, message: "Push notifications disabled for this device." });
+      sendJson6(res, 200, { success: true, message: "Push notifications disabled for this device." });
       return true;
     }
     if (pathname === "/api/notifications/push/test" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`push_test:${authUser.id}`, 5, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, {
+        sendJson6(res, 429, {
           success: false,
           message: "Test notification rate limit reached (max 5 per minute)."
         });
@@ -100371,7 +103063,7 @@ async function handleApiRequest(req, res) {
         channels: ["in_app", "push"],
         skipPreferenceCheck: true
       });
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: result.pushDelivered > 0 ? `Test push delivered to ${result.pushDelivered} of ${result.deviceCount} registered device(s).` : result.deviceCount === 0 ? "In-app test created, but no push devices are currently registered for your account." : "Push delivery failed for registered device(s). Expired subscriptions were cleaned up.",
         vapidPersistent: APP_CONFIG.vapid.isPersistent,
@@ -100382,15 +103074,15 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/notifications/events/transaction-created" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`notif_tx:${authUser.id}`, 30, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Notification event rate limit reached." });
+        sendJson6(res, 429, { success: false, message: "Notification event rate limit reached." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const txId = String(body.id || body.transaction_id || "").trim().slice(0, 100);
       const title = String(body.title || "Transaction").trim().slice(0, 120);
       const amount = Number(body.amount) || 0;
@@ -100408,21 +103100,21 @@ async function handleApiRequest(req, res) {
           section
         });
       }
-      sendJson5(res, 200, { success: true, message: "Transaction notification processed.", delivery });
+      sendJson6(res, 200, { success: true, message: "Transaction notification processed.", delivery });
       return true;
     }
     if (pathname === "/api/notifications/events/financial-alert" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const rate = checkRateLimit(`notif_fin:${authUser.id}`, 30, 60 * 1e3);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Alert event rate limit reached." });
+        sendJson6(res, 429, { success: false, message: "Alert event rate limit reached." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const allowedCategories = /* @__PURE__ */ new Set([
         "budget",
         "bill",
@@ -100438,7 +103130,7 @@ async function handleApiRequest(req, res) {
       const message = String(body.message || "").trim();
       const dedupeKey = String(body.dedupeKey || "").trim().slice(0, 160);
       if (!allowedCategories.has(category) || !title || !message || !dedupeKey) {
-        sendJson5(res, 400, {
+        sendJson6(res, 400, {
           success: false,
           message: "Valid category, title, message, and dedupeKey are required."
         });
@@ -100454,38 +103146,38 @@ async function handleApiRequest(req, res) {
         dedupeKey,
         relatedEntityId: typeof body.relatedEntityId === "string" ? body.relatedEntityId : void 0
       });
-      sendJson5(res, 200, { success: true, delivery });
+      sendJson6(res, 200, { success: true, delivery });
       return true;
     }
     if (pathname === "/api/budgets" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const listRes = await query(
         `SELECT * FROM public.user_budgets WHERE user_id = $1 ORDER BY created_at ASC`,
         [authUser.id]
       );
-      sendJson5(res, 200, { success: true, budgets: listRes.rows });
+      sendJson6(res, 200, { success: true, budgets: listRes.rows });
       return true;
     }
     if (pathname === "/api/budgets" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const category = (body.category || "").trim().toLowerCase();
       const monthlyLimit = Number(body.monthly_limit || body.monthlyLimit) || 0;
       const alertThreshold = Math.min(100, Math.max(1, Number(body.alert_threshold || body.alertThreshold) || 85));
       if (!category) {
-        sendJson5(res, 400, { success: false, message: "Category is required for budget." });
+        sendJson6(res, 400, { success: false, message: "Category is required for budget." });
         return true;
       }
       if (monthlyLimit <= 0) {
-        sendJson5(res, 400, { success: false, message: "Monthly budget limit must be greater than 0." });
+        sendJson6(res, 400, { success: false, message: "Monthly budget limit must be greater than 0." });
         return true;
       }
       const upsertRes = await query(
@@ -100498,7 +103190,7 @@ async function handleApiRequest(req, res) {
          RETURNING *`,
         [authUser.id, category, monthlyLimit, alertThreshold]
       );
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Budget saved successfully.",
         budget: upsertRes.rows[0]
@@ -100509,7 +103201,7 @@ async function handleApiRequest(req, res) {
     if (budgetDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const budgetId = budgetDeleteMatch[1];
@@ -100517,29 +103209,29 @@ async function handleApiRequest(req, res) {
         `DELETE FROM public.user_budgets WHERE id = $1 AND user_id = $2`,
         [budgetId, authUser.id]
       );
-      sendJson5(res, 200, { success: true, message: "Budget removed successfully." });
+      sendJson6(res, 200, { success: true, message: "Budget removed successfully." });
       return true;
     }
     if (pathname === "/api/savings-goals" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const listRes = await query(
         `SELECT * FROM public.savings_goals WHERE user_id = $1 ORDER BY created_at DESC`,
         [authUser.id]
       );
-      sendJson5(res, 200, { success: true, goals: listRes.rows });
+      sendJson6(res, 200, { success: true, goals: listRes.rows });
       return true;
     }
     if (pathname === "/api/savings-goals" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const title = (body.title || "").trim();
       const targetAmount = Number(body.target_amount || body.targetAmount) || 0;
       const currentAmount = Math.max(0, Number(body.current_amount || body.currentAmount) || 0);
@@ -100548,11 +103240,11 @@ async function handleApiRequest(req, res) {
       const notes = (body.notes || "").trim() || null;
       const isCompleted = !!body.is_completed || currentAmount >= targetAmount;
       if (!title || title.length < 2) {
-        sendJson5(res, 400, { success: false, message: "Goal title must be at least 2 characters." });
+        sendJson6(res, 400, { success: false, message: "Goal title must be at least 2 characters." });
         return true;
       }
       if (targetAmount <= 0) {
-        sendJson5(res, 400, { success: false, message: "Target amount must be greater than 0." });
+        sendJson6(res, 400, { success: false, message: "Target amount must be greater than 0." });
         return true;
       }
       let goalRes;
@@ -100572,7 +103264,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, title, targetAmount, currentAmount, targetDate, category, notes, isCompleted]
         );
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: body.id ? "Savings goal updated." : "Savings goal created.",
         goal: goalRes.rows[0]
@@ -100583,15 +103275,15 @@ async function handleApiRequest(req, res) {
     if (goalContributeMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const goalId = goalContributeMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const delta = Number(body.amount) || 0;
       const action = body.action === "withdraw" ? "withdraw" : "add";
       if (delta <= 0) {
-        sendJson5(res, 400, { success: false, message: "Contribution amount must be greater than 0." });
+        sendJson6(res, 400, { success: false, message: "Contribution amount must be greater than 0." });
         return true;
       }
       const existingGoal = await query(
@@ -100599,7 +103291,7 @@ async function handleApiRequest(req, res) {
         [goalId, authUser.id]
       );
       if (existingGoal.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Savings goal not found." });
+        sendJson6(res, 404, { success: false, message: "Savings goal not found." });
         return true;
       }
       const goal = existingGoal.rows[0];
@@ -100613,7 +103305,7 @@ async function handleApiRequest(req, res) {
          RETURNING *`,
         [newAmount, isCompleted, goalId, authUser.id]
       );
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: action === "withdraw" ? "Amount withdrawn from goal." : "Contribution added to goal!",
         goal: updateRes.rows[0]
@@ -100624,7 +103316,7 @@ async function handleApiRequest(req, res) {
     if (goalDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const goalId = goalDeleteMatch[1];
@@ -100632,29 +103324,29 @@ async function handleApiRequest(req, res) {
         `DELETE FROM public.savings_goals WHERE id = $1 AND user_id = $2`,
         [goalId, authUser.id]
       );
-      sendJson5(res, 200, { success: true, message: "Savings goal deleted." });
+      sendJson6(res, 200, { success: true, message: "Savings goal deleted." });
       return true;
     }
     if (pathname === "/api/recurring-bills" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const listRes = await query(
         `SELECT * FROM public.recurring_bills WHERE user_id = $1 ORDER BY due_day ASC`,
         [authUser.id]
       );
-      sendJson5(res, 200, { success: true, bills: listRes.rows });
+      sendJson6(res, 200, { success: true, bills: listRes.rows });
       return true;
     }
     if (pathname === "/api/recurring-bills" && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const title = (body.title || "").trim();
       const category = (body.category || "other").trim().toLowerCase();
       const amount = Number(body.amount) || 0;
@@ -100663,11 +103355,11 @@ async function handleApiRequest(req, res) {
       const reminderEnabled = body.reminder_enabled !== void 0 ? !!body.reminder_enabled : true;
       const isActive = body.is_active !== void 0 ? !!body.is_active : true;
       if (!title || title.length < 2) {
-        sendJson5(res, 400, { success: false, message: "Bill title must be at least 2 characters." });
+        sendJson6(res, 400, { success: false, message: "Bill title must be at least 2 characters." });
         return true;
       }
       if (amount <= 0) {
-        sendJson5(res, 400, { success: false, message: "Bill amount must be greater than 0." });
+        sendJson6(res, 400, { success: false, message: "Bill amount must be greater than 0." });
         return true;
       }
       let billRes;
@@ -100687,7 +103379,7 @@ async function handleApiRequest(req, res) {
           [authUser.id, title, category, amount, frequency, dueDay, reminderEnabled, isActive]
         );
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: body.id ? "Recurring bill updated." : "Recurring bill added.",
         bill: billRes.rows[0]
@@ -100698,11 +103390,11 @@ async function handleApiRequest(req, res) {
     if (billPayMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const billId = billPayMatch[1];
-      const body = await parseJsonBody5(req);
+      const body = await parseJsonBody6(req);
       const paidDate = body.paid_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const updateRes = await query(
         `UPDATE public.recurring_bills
@@ -100712,10 +103404,10 @@ async function handleApiRequest(req, res) {
         [paidDate, billId, authUser.id]
       );
       if (updateRes.rows.length === 0) {
-        sendJson5(res, 404, { success: false, message: "Recurring bill not found." });
+        sendJson6(res, 404, { success: false, message: "Recurring bill not found." });
         return true;
       }
-      sendJson5(res, 200, {
+      sendJson6(res, 200, {
         success: true,
         message: "Bill marked as paid for this cycle.",
         bill: updateRes.rows[0]
@@ -100726,7 +103418,7 @@ async function handleApiRequest(req, res) {
     if (billDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
-        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
         return true;
       }
       const billId = billDeleteMatch[1];
@@ -100734,23 +103426,33 @@ async function handleApiRequest(req, res) {
         `DELETE FROM public.recurring_bills WHERE id = $1 AND user_id = $2`,
         [billId, authUser.id]
       );
-      sendJson5(res, 200, { success: true, message: "Recurring bill deleted." });
+      sendJson6(res, 200, { success: true, message: "Recurring bill deleted." });
       return true;
     }
     if (pathname === "/api/send-reset-email" && method === "POST") {
-      const body = await parseJsonBody5(req);
+      const authUser = await authenticateRequest(req);
+      if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
+        sendJson6(res, 403, { success: false, message: "Access Denied: Administrator authentication required." });
+        return true;
+      }
+      const body = await parseJsonBody6(req);
       const email = normalizeEmail(body.email || "");
-      const rawToken = body.token || body.otp || generateCryptoToken(32);
-      const resetLink = body.resetLink || `${origin}/#reset-password&token=${rawToken}&email=${encodeURIComponent(email)}`;
-      const sent = await sendPasswordResetEmail(email, body.name || "User", resetLink);
-      sendJson5(res, 200, { success: sent, message: sent ? "Reset email dispatched" : "Failed to dispatch email" });
+      if (!validateEmail(email)) {
+        sendJson6(res, 400, { success: false, message: "Valid email address is required." });
+        return true;
+      }
+      const rawToken = generateCryptoToken(32);
+      const appBase = process.env.APP_BASE_URL || "https://mymoney.nileshbarela.site";
+      const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+      const sent = await sendPasswordResetEmail(email, String(body.name || "User").slice(0, 80), resetLink);
+      sendJson6(res, 200, { success: sent, message: sent ? "Reset email dispatched" : "Failed to dispatch email" });
       return true;
     }
-    sendJson5(res, 404, { success: false, message: "API endpoint not found." });
+    sendJson6(res, 404, { success: false, message: "API endpoint not found." });
     return true;
   } catch (err) {
     console.error(`[API Error] ${method} ${pathname}:`, err);
-    sendJson5(res, 500, {
+    sendJson6(res, 500, {
       success: false,
       message: "An internal server security error occurred. Please try again later."
     });

@@ -786,3 +786,47 @@ export function unpackStructuredNote(rawNote: string | null | undefined): {
   }
   return { note: rawNote.trim(), meta: {} };
 }
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string | null | undefined): boolean {
+  if (!value || typeof value !== 'string') return false;
+  return UUID_REGEX.test(value.trim());
+}
+
+export interface ParsedConnectionRequestKey {
+  valid: boolean;
+  kind: 'uuid' | 'composite' | 'invalid';
+  raw: string;
+  uuid: string | null;
+  requesterUserId: string | null;
+  targetUserId: string | null;
+}
+
+/**
+ * Safely parses a connection request identifier which may be either a standard UUID
+ * (row id or requester user_a_id) OR a composite "<requesterUuid>:<targetUuid>" fallback key.
+ * Prevents PostgREST/Postgres 22P02 uuid cast errors on accept/reject.
+ */
+export function parseConnectionRequestKey(rawKey: string | null | undefined): ParsedConnectionRequestKey {
+  const raw = (rawKey || '').trim();
+  if (!raw) {
+    return { valid: false, kind: 'invalid', raw, uuid: null, requesterUserId: null, targetUserId: null };
+  }
+  if (isValidUuid(raw)) {
+    return { valid: true, kind: 'uuid', raw, uuid: raw, requesterUserId: null, targetUserId: null };
+  }
+  const parts = raw.split(':').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 2 && isValidUuid(parts[0]) && isValidUuid(parts[1])) {
+    return {
+      valid: true,
+      kind: 'composite',
+      raw,
+      uuid: null,
+      requesterUserId: parts[0],
+      targetUserId: parts[1],
+    };
+  }
+  return { valid: false, kind: 'invalid', raw, uuid: null, requesterUserId: null, targetUserId: null };
+}
+

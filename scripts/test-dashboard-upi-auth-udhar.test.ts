@@ -19,6 +19,7 @@ import {
 } from '../server/webauthn';
 import { verifyFirebaseJwtWithKey } from '../server/firebaseVerify';
 import { isDiscoverableNormalUser, sanitizeUserOutput } from '../server/auth';
+import { isValidUuid, parseConnectionRequestKey } from '../src/lib/sharedUdharEngine';
 
 test('validateUpiId accepts valid Indian UPI VPAs and rejects emails & malformed strings', () => {
   const validIds = ['yourname@upi', 'name.123@okhdfcbank', '9876543210@ybl', 'Nilesh_08@okaxis', 'shop-pay@paytm'];
@@ -280,3 +281,73 @@ test('isDiscoverableNormalUser strictly excludes admin/staff accounts and saniti
   assert.equal(sanitized.profileCompleted, false);
   assert.equal('custom_permissions' in sanitized, false);
 });
+
+test('isDiscoverableNormalUser rejects analyst/admin emails and pending-deletion accounts', () => {
+  assert.equal(
+    isDiscoverableNormalUser({ role: 'analyst', email: 'analyst@example.com', status: 'active' }),
+    false
+  );
+  assert.equal(
+    isDiscoverableNormalUser({ role: 'user', email: 'admin@mymoney.com', status: 'active' }),
+    false
+  );
+  assert.equal(
+    isDiscoverableNormalUser({ role: 'user', email: 'hackifypro@gmail.com', status: 'active' }),
+    false
+  );
+  assert.equal(
+    isDiscoverableNormalUser({
+      role: 'user',
+      email: 'deleting@example.com',
+      status: 'active',
+      deletion_status: 'pending_deletion',
+    }),
+    false
+  );
+});
+
+test('parseConnectionRequestKey safely distinguishes UUIDs, composite requester:target keys, and invalid inputs', () => {
+  const uuidA = '11111111-1111-4111-8111-111111111111';
+  const uuidB = '22222222-2222-4222-8222-222222222222';
+
+  assert.equal(isValidUuid(uuidA), true);
+  assert.equal(isValidUuid('not-a-uuid'), false);
+
+  const single = parseConnectionRequestKey(` ${uuidA} `);
+  assert.deepEqual(single, {
+    valid: true,
+    kind: 'uuid',
+    raw: uuidA,
+    uuid: uuidA,
+    requesterUserId: null,
+    targetUserId: null,
+  });
+
+  const composite = parseConnectionRequestKey(`${uuidA}:${uuidB}`);
+  assert.deepEqual(composite, {
+    valid: true,
+    kind: 'composite',
+    raw: `${uuidA}:${uuidB}`,
+    uuid: null,
+    requesterUserId: uuidA,
+    targetUserId: uuidB,
+  });
+
+  for (const bad of ['', '   ', 'abc:def', `${uuidA}:not-uuid`, `${uuidA}:${uuidB}:extra`]) {
+    const parsed = parseConnectionRequestKey(bad);
+    assert.equal(parsed.valid, false, `Expected "${bad}" to be invalid`);
+    assert.equal(parsed.kind, 'invalid');
+  }
+});
+
+test('validateAmountForUpiQr and buildAmountUpiUri enforce INR precision and upper/lower bounds', () => {
+  assert.equal(validateAmountForUpiQr('0.01').isValid, true);
+  assert.equal(validateAmountForUpiQr('100.5').isValid, true);
+  assert.equal(validateAmountForUpiQr('10000000').isValid, true);
+  assert.equal(validateAmountForUpiQr('10000000.01').isValid, false);
+  assert.equal(validateAmountForUpiQr('12.345').isValid, false);
+
+  const uri = buildAmountUpiUri({ upiId: 'demo@okaxis', amount: '100.5' });
+  assert.equal(uri, 'upi://pay?pa=demo%40okaxis&am=100.50&cu=INR');
+});
+

@@ -107,6 +107,7 @@ import {
   packStructuredNote,
   unpackStructuredNote,
   roundMoney,
+  parseConnectionRequestKey,
 } from '../src/lib/sharedUdharEngine.js';
 import {
   searchUsersRest,
@@ -3023,7 +3024,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       try {
         const targetUserId = (body.targetUserId || body.target_user_id || '').trim();
         const relationshipType = (body.relationshipType || body.relationship_type || 'Friend').trim();
-        const requestedVia = (body.requestedVia || 'search').trim();
+        const requestedVia = (body.requestedVia || body.source || 'search').trim();
 
         if (!targetUserId) {
           sendJson(res, 400, { success: false, code: 'MISSING_TARGET', message: 'Target user ID is required.' });
@@ -3329,6 +3330,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const key = connAcceptMatch[1];
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        sendJson(res, 400, { success: false, message: 'Valid connection request ID is required.' });
+        return true;
+      }
+
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -3336,6 +3343,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       try {
+        const lookupKey = parsedKey.kind === 'composite' ? (parsedKey.requesterUserId || key) : (parsedKey.uuid || key);
         const reqRes = await query(
           `SELECT uc.id, uc.user_a_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
            FROM public.user_connections uc
@@ -3343,7 +3351,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            WHERE uc.user_b_id = $1 AND uc.status = 'pending'
              AND (uc.id::text = $2 OR uc.user_a_id::text = $2)
            LIMIT 1`,
-          [authUser.id, key]
+          [authUser.id, lookupKey]
         );
 
         if (reqRes.rows.length === 0) {
@@ -3427,6 +3435,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const key = connRejectMatch[1];
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        sendJson(res, 400, { success: false, message: 'Valid connection request ID is required.' });
+        return true;
+      }
+
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -3434,12 +3448,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       try {
+        const lookupKey = parsedKey.kind === 'composite' ? (parsedKey.requesterUserId || key) : (parsedKey.uuid || key);
         const reqRes = await query(
           `SELECT id, user_a_id FROM public.user_connections
            WHERE user_b_id = $1 AND status = 'pending'
              AND (id::text = $2 OR user_a_id::text = $2)
            LIMIT 1`,
-          [authUser.id, key]
+          [authUser.id, lookupKey]
         );
         if (reqRes.rows.length === 0) {
           sendJson(res, 404, { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending connection request not found.' });
@@ -3708,7 +3723,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const usersRes = await query(
-          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username,
+          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username, u.role, u.status,
+             COALESCE(u.deletion_status, 'none') AS deletion_status,
              COALESCE(u.is_verified, TRUE) AS is_verified,
              (
                SELECT uc.status FROM public.user_connections uc
@@ -3736,8 +3752,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            FROM public.app_users u
            WHERE u.status = 'active'
            AND COALESCE(u.deletion_status, 'none') = 'none'
-           AND COALESCE(u.role, 'user') != 'admin'
-           AND LOWER(TRIM(COALESCE(u.email, ''))) != 'admin@mymoney.com'
+           AND COALESCE(LOWER(u.role), 'user') = 'user'
+           AND LOWER(TRIM(COALESCE(u.email, ''))) NOT IN ('admin@mymoney.com', 'hackifypro@gmail.com')
            AND NOT EXISTS (
                SELECT 1 FROM public.user_connections blk
                WHERE ((blk.user_a_id = $1 AND blk.user_b_id = u.id) OR (blk.user_b_id = $1 AND blk.user_a_id = u.id))
@@ -3750,7 +3766,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         );
 
         // Privacy-preserving output: partial name search NEVER exposes email or phone before consent
-        const sanitizedUsers = usersRes.rows.map((u: any) => {
+        const sanitizedUsers = usersRes.rows
+          .filter((u: any) => isDiscoverableNormalUser(u))
+          .map((u: any) => {
           const isSelf = u.id === authUser.id;
           const isConnected = !isSelf && (u.conn_status === 'connected' || Boolean(u.is_saved_contact));
           const isIncomingPending = !isSelf && !isConnected && u.conn_status === 'pending' && u.pending_requester_id === u.id;

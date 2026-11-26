@@ -320,19 +320,23 @@ export const UpiDetectionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     ])
       .then(([remoteSettings, remoteLists]) => {
         if (cancelled) return;
-        setSettings(remoteSettings);
-        saveCachedJson(`${SETTINGS_CACHE_PREFIX}${userId}`, remoteSettings);
-        syncConfigToNativeBridge(remoteSettings);
+        const safeSettings: ExpenseDetectionSettings =
+          remoteSettings && typeof remoteSettings === 'object'
+            ? { ...getDefaultDetectionSettings(), ...remoteSettings }
+            : cachedSettings;
+        setSettings(safeSettings);
+        saveCachedJson(`${SETTINGS_CACHE_PREFIX}${userId}`, safeSettings);
+        syncConfigToNativeBridge(safeSettings);
 
-        const nextStatus = verifyNotificationAccessStatus(remoteSettings.enabled);
+        const nextStatus = verifyNotificationAccessStatus(Boolean(safeSettings.enabled));
         prevPermissionRef.current = nextStatus;
         setPermissionStatus(nextStatus);
 
-        if (remoteLists) {
+        if (remoteLists && typeof remoteLists === 'object') {
           const merged = [
-            ...remoteLists.pending,
-            ...remoteLists.categorized,
-            ...remoteLists.dismissed,
+            ...(Array.isArray(remoteLists.pending) ? remoteLists.pending : []),
+            ...(Array.isArray(remoteLists.categorized) ? remoteLists.categorized : []),
+            ...(Array.isArray(remoteLists.dismissed) ? remoteLists.dismissed : []),
           ];
           if (merged.length > 0 || cachedDetected.length === 0) {
             setDetectedList(merged);
@@ -343,7 +347,7 @@ export const UpiDetectionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const seenLocal =
           typeof window !== 'undefined' &&
           localStorage.getItem(`${ONBOARDING_DISMISSED_PREFIX}${userId}`) === '1';
-        if (!remoteSettings.onboardingCompleted && !seenLocal && platform === 'android_native_bridge') {
+        if (!safeSettings.onboardingCompleted && !seenLocal && platform === 'android_native_bridge') {
           setIsOnboardingOpen(true);
         }
 

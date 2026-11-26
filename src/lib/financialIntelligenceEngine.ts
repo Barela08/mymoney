@@ -1370,7 +1370,10 @@ export function evaluateSmartAlerts(params: {
   eventState?: SmartAlertEventState;
   referenceDate?: Date;
 }): SmartAlertItem[] {
-  const { preferences } = params;
+  const preferences: SmartAlertPreferences = {
+    ...DEFAULT_SMART_ALERT_PREFS,
+    ...(params.preferences || {}),
+  };
   if (!preferences.enabled) return [];
 
   const now = params.referenceDate || new Date();

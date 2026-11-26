@@ -382,13 +382,15 @@ export const AuthPage: React.FC = () => {
               {appBranding?.appName || 'My Money Manager'}
             </h1>
             <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-              {appBranding?.subTitle || 'by HackifyPro'} · Production Security
+              {appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
+                ? appBranding.subTitle
+                : 'A product of HackifyPro'}
             </p>
           </div>
         </div>
 
         <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-2">
-          Enterprise Security Architecture · Bcrypt Encryption · Multi-Tenant Isolation
+          Personal Finance, Room Budgets, Udhar Ledger &amp; UPI QR
         </p>
       </div>
 
@@ -912,6 +914,11 @@ export const AuthPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Consistent Product Branding Footer */}
+      <p className="mt-6 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        {appBranding?.appName || 'My Money Manager'} — A product of HackifyPro
+      </p>
 
       {/* Standalone Trilingual Privacy Notice (read-only informational preview before login) */}
       <PrivacyNoticeModal

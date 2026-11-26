@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { AuthenticatedUser } from './auth.js';
+import { isDiscoverableNormalUser, type AuthenticatedUser } from './auth.js';
 import {
   normalizeSearchQuery,
   classifyLiveSearchQuery,
@@ -13,6 +13,7 @@ import {
   packStructuredNote,
   unpackStructuredNote,
   roundMoney,
+  parseConnectionRequestKey,
 } from '../src/lib/sharedUdharEngine.js';
 
 const DEFAULT_SUPABASE_URL = 'https://frgrfajnrzqwnevhlrio.supabase.co';
@@ -131,9 +132,14 @@ async function fetchUsersByIds(ids: string[]): Promise<Map<string, any>> {
   const map = new Map<string, any>();
   if (uniqueIds.length === 0) return map;
   const inList = uniqueIds.map((id) => `"${id.replace(/"/g, '')}"`).join(',');
-  const res = await sbRest<any[]>(
-    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username`
+  let res = await sbRest<any[]>(
+    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role,is_verified,username`
   );
+  if (!res.ok && res.status === 400) {
+    res = await sbRest<any[]>(
+      `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role`
+    );
+  }
   if (res.ok && Array.isArray(res.data)) {
     for (const u of res.data) {
       map.set(u.id, u);
@@ -150,22 +156,113 @@ async function isBlockedBetween(userAId: string, userBId: string): Promise<boole
   return res.data.some((c) => c.status === 'blocked');
 }
 
+async function upsertUserConnectionRest(
+  userAId: string,
+  userBId: string,
+  status: 'pending' | 'connected' | 'rejected'
+): Promise<{ ok: boolean; status: number; data: any[] | null; error?: string }> {
+  const res = await sbRest<any[]>('user_connections?on_conflict=user_a_id,user_b_id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=representation',
+    body: { user_a_id: userAId, user_b_id: userBId, status },
+  });
+  if (res.ok) return res;
+
+  const errText = String(res.error || '');
+  // If database rejects 'pending' via check constraint, let caller handle legacy fallback
+  if (errText.includes('user_connections_status_check') || errText.includes('23514')) {
+    return res;
+  }
+
+  // Fallback for missing unique constraint (42P10) or duplicate key (23505)
+  const existing = await sbRest<any[]>(
+    `user_connections?user_a_id=eq.${encodeURIComponent(userAId)}&user_b_id=eq.${encodeURIComponent(userBId)}&select=id,status&limit=1`
+  );
+  if (existing.ok && existing.data && existing.data.length > 0) {
+    return sbRest<any[]>(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: { status },
+    });
+  }
+
+  return sbRest<any[]>('user_connections', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: { user_a_id: userAId, user_b_id: userBId, status },
+  });
+}
+
+async function upsertUdharContactRest(payload: {
+  user_id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  photo_url: string | null;
+  relationship_type: string;
+  notes?: string | null;
+  linked_user_id: string | null;
+  updated_at: string;
+}): Promise<{ ok: boolean; status: number; data: any[] | null; error?: string }> {
+  const res = await sbRest<any[]>('udhar_contacts?on_conflict=user_id,name', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=representation',
+    body: payload,
+  });
+  if (res.ok && res.data && res.data.length > 0) {
+    return res;
+  }
+
+  if (payload.linked_user_id) {
+    const byLink = await sbRest<any[]>(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&linked_user_id=eq.${encodeURIComponent(payload.linked_user_id)}&limit=1`
+    );
+    if (byLink.ok && byLink.data && byLink.data.length > 0) {
+      return sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(byLink.data[0].id)}`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: payload,
+      });
+    }
+  }
+
+  const byName = await sbRest<any[]>(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&name=ilike.${encodeURIComponent(payload.name)}&limit=1`
+  );
+  if (byName.ok && byName.data && byName.data.length > 0) {
+    return sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(byName.data[0].id)}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        ...payload,
+        linked_user_id: payload.linked_user_id || byName.data[0].linked_user_id || null,
+      },
+    });
+  }
+
+  return sbRest<any[]>('udhar_contacts', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: payload,
+  });
+}
+
 async function ensureConnectionAndReciprocalContactsRest(
   authUser: AuthenticatedUser,
   targetUser: { id: string; full_name: string; email?: string | null; phone?: string | null; avatar_url?: string | null },
   relationshipType: string = 'Friend'
-) {
+): Promise<{ ok: boolean; error?: string }> {
   // 1. Bidirectional user_connections
-  await sbRest('user_connections?on_conflict=user_a_id,user_b_id', {
-    method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=minimal',
-    body: { user_a_id: authUser.id, user_b_id: targetUser.id, status: 'connected' },
-  }).catch(() => {});
-  await sbRest('user_connections?on_conflict=user_a_id,user_b_id', {
-    method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=minimal',
-    body: { user_a_id: targetUser.id, user_b_id: authUser.id, status: 'connected' },
-  }).catch(() => {});
+  const [connAB, connBA] = await Promise.all([
+    upsertUserConnectionRest(authUser.id, targetUser.id, 'connected'),
+    upsertUserConnectionRest(targetUser.id, authUser.id, 'connected'),
+  ]);
+  if (!connAB.ok && !connBA.ok) {
+    return {
+      ok: false,
+      error: connAB.error || connBA.error || 'Failed to establish connection record.',
+    };
+  }
 
   const nowIso = new Date().toISOString();
   const targetName = (targetUser.full_name || targetUser.email?.split('@')[0] || 'User').trim();
@@ -175,8 +272,9 @@ async function ensureConnectionAndReciprocalContactsRest(
   const existingMine = await sbRest<any[]>(
     `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetUser.id)}&limit=1`
   );
+  let mineRes: { ok: boolean; error?: string };
   if (existingMine.ok && existingMine.data && existingMine.data.length > 0) {
-    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
+    mineRes = await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
       method: 'PATCH',
       body: {
         name: targetName,
@@ -188,20 +286,23 @@ async function ensureConnectionAndReciprocalContactsRest(
       },
     });
   } else {
-    await sbRest('udhar_contacts?on_conflict=user_id,name', {
-      method: 'POST',
-      prefer: 'resolution=merge-duplicates,return=minimal',
-      body: {
-        user_id: authUser.id,
-        name: targetName,
-        email: targetUser.email || null,
-        phone: targetUser.phone || null,
-        photo_url: targetUser.avatar_url || null,
-        relationship_type: relationshipType || 'Friend',
-        linked_user_id: targetUser.id,
-        updated_at: nowIso,
-      },
+    mineRes = await upsertUdharContactRest({
+      user_id: authUser.id,
+      name: targetName,
+      email: targetUser.email || null,
+      phone: targetUser.phone || null,
+      photo_url: targetUser.avatar_url || null,
+      relationship_type: relationshipType || 'Friend',
+      linked_user_id: targetUser.id,
+      updated_at: nowIso,
     });
+  }
+
+  if (!mineRes.ok) {
+    return {
+      ok: false,
+      error: mineRes.error || 'Failed to save connected contact.',
+    };
   }
 
   // 3. Reciprocally ensure authUser is in targetUser's udhar_contacts
@@ -218,23 +319,21 @@ async function ensureConnectionAndReciprocalContactsRest(
         photo_url: authUser.avatar_url || existingTheirs.data[0].photo_url || null,
         updated_at: nowIso,
       },
-    });
+    }).catch(() => {});
   } else {
-    await sbRest('udhar_contacts?on_conflict=user_id,name', {
-      method: 'POST',
-      prefer: 'resolution=merge-duplicates,return=minimal',
-      body: {
-        user_id: targetUser.id,
-        name: myName,
-        email: authUser.email || null,
-        phone: authUser.phone || null,
-        photo_url: authUser.avatar_url || null,
-        relationship_type: relationshipType || 'Friend',
-        linked_user_id: authUser.id,
-        updated_at: nowIso,
-      },
-    });
+    await upsertUdharContactRest({
+      user_id: targetUser.id,
+      name: myName,
+      email: authUser.email || null,
+      phone: authUser.phone || null,
+      photo_url: authUser.avatar_url || null,
+      relationship_type: relationshipType || 'Friend',
+      linked_user_id: authUser.id,
+      updated_at: nowIso,
+    }).catch(() => {});
   }
+
+  return { ok: true };
 }
 
 async function createTargetedNotificationRest(params: {
@@ -319,19 +418,27 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
   }
 
   const escaped = classified.normalized.replace(/[%*,()]/g, '');
-  let queryPath = '';
+  const buildQueryPath = (includeOptionalCols: boolean) => {
+    const selectCols = includeOptionalCols
+      ? 'id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role'
+      : 'id,full_name,email,phone,avatar_url,status,deletion_status,role';
+    if (classified.mode === 'email_exact') {
+      return `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=${selectCols}&limit=5`;
+    }
+    if (classified.mode === 'phone_exact') {
+      const tail = classified.last10Digits;
+      return `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=${selectCols}&limit=15`;
+    }
+    const orClauses = includeOptionalCols
+      ? [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`]
+      : [`full_name.ilike.*${escaped}*`];
+    return `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(','))})&select=${selectCols}&order=full_name.asc&limit=20`;
+  };
 
-  if (classified.mode === 'email_exact') {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=5`;
-  } else if (classified.mode === 'phone_exact') {
-    const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=15`;
-  } else {
-    const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(','))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&order=full_name.asc&limit=20`;
+  let usersRes = await sbRest<any[]>(buildQueryPath(true));
+  if (!usersRes.ok && usersRes.status === 400) {
+    usersRes = await sbRest<any[]>(buildQueryPath(false));
   }
-
-  const usersRes = await sbRest<any[]>(queryPath);
 
   if (!usersRes.ok) {
     return {
@@ -344,12 +451,7 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
     };
   }
 
-  let activeUsers = (usersRes.data || []).filter(
-  (u) =>
-  (!u.deletion_status || u.deletion_status === 'none') &&
-  String(u.role || '').toLowerCase() !== 'admin' &&
-  String(u.email || '').toLowerCase().trim() !== 'admin@mymoney.com'
-  );
+  let activeUsers = (usersRes.data || []).filter((u) => isDiscoverableNormalUser(u));
 
   // Strict post-filter for exact email / exact normalized phone match
   if (classified.mode === 'email_exact') {
@@ -446,11 +548,11 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
 // ============================================================================
 export async function connectUserRest(
   authUser: AuthenticatedUser,
-  body: { targetUserId?: string; relationshipType?: string; requestedVia?: string }
+  body: { targetUserId?: string; target_user_id?: string; relationshipType?: string; relationship_type?: string; requestedVia?: string; source?: string }
 ) {
-  const targetUserId = (body.targetUserId || '').trim();
-  const relationshipType = (body.relationshipType || 'Friend').trim();
-  const requestedVia = (body.requestedVia || 'search').trim();
+  const targetUserId = (body.targetUserId || body.target_user_id || '').trim();
+  const relationshipType = (body.relationshipType || body.relationship_type || 'Friend').trim();
+  const requestedVia = (body.requestedVia || body.source || 'search').trim();
 
   if (!targetUserId) {
     return { status: 400, body: { success: false, code: 'MISSING_TARGET', message: 'Target user ID is required.' } };
@@ -459,10 +561,18 @@ export async function connectUserRest(
     return { status: 400, body: { success: false, code: 'SELF_CONNECTION', message: 'You cannot connect with your own account.' } };
   }
 
-  const targetRes = await sbRest<any[]>(
+  let targetRes = await sbRest<any[]>(
     `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified`
   );
-  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+  if (!targetRes.ok && targetRes.status === 400) {
+    targetRes = await sbRest<any[]>(
+      `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
+    );
+  }
+  if (!targetRes.ok) {
+    return { status: 503, body: { success: false, code: 'DIRECTORY_UNAVAILABLE', message: 'Unable to verify target account right now. Please retry.' } };
+  }
+  if (!targetRes.data || targetRes.data.length === 0) {
     return { status: 404, body: { success: false, code: 'NOT_FOUND', message: 'User account not found.' } };
   }
 
@@ -478,7 +588,10 @@ export async function connectUserRest(
   const pairRes = await sbRest<any[]>(
     `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
   );
-  const pairRows = (pairRes.ok && Array.isArray(pairRes.data)) ? pairRes.data : [];
+  if (!pairRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to inspect connection state right now. Please retry.' } };
+  }
+  const pairRows = Array.isArray(pairRes.data) ? pairRes.data : [];
 
   const targetName = (target.full_name || target.email?.split('@')[0] || 'User').trim();
   const requesterName = (authUser.full_name || authUser.email?.split('@')[0] || 'A user').trim();
@@ -509,7 +622,7 @@ export async function connectUserRest(
     (r) => r.user_a_id === targetUserId && r.user_b_id === authUser.id && r.status === 'pending'
   );
   if (incomingPending) {
-    return acceptConnectionRequestRest(authUser, incomingPending.id);
+    return acceptConnectionRequestRest(authUser, incomingPending.id || targetUserId);
   }
 
   // Case 3: Duplicate outgoing pending request -> prevent duplicates
@@ -523,7 +636,7 @@ export async function connectUserRest(
         success: true,
         status: 'pending',
         alreadyPending: true,
-        requestId: outgoingPending.id,
+        requestId: outgoingPending.id || `${authUser.id}:${targetUserId}`,
         message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
         connectedUser: {
           id: target.id,
@@ -537,16 +650,8 @@ export async function connectUserRest(
     };
   }
 
-  // Case 4: Create a NEW pending connection request (or direct connected fallback if DB constraint predates 'pending')
-  const insRes = await sbRest<any[]>('user_connections?on_conflict=user_a_id,user_b_id', {
-    method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=representation',
-    body: {
-      user_a_id: authUser.id,
-      user_b_id: targetUserId,
-      status: 'pending',
-    },
-  });
+  // Case 4: Create a NEW pending connection request (with 42P10 fallback + legacy 23514 fallback)
+  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, 'pending');
 
   if (!insRes.ok) {
     const errText = String(insRes.error || '');
@@ -556,7 +661,17 @@ export async function connectUserRest(
     if (isStatusConstraint) {
       // Live Supabase table has not yet migrated user_connections_status_check to allow 'pending'.
       // Establish a verified mutual connection + reciprocal Udhar contacts immediately.
-      await ensureConnectionAndReciprocalContactsRest(authUser, target, relationshipType);
+      const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, target, relationshipType);
+      if (!syncRes.ok) {
+        return {
+          status: 503,
+          body: {
+            success: false,
+            code: 'REQUEST_FAILED',
+            message: syncRes.error || 'Unable to save connection right now. Please try again.',
+          },
+        };
+      }
 
       await createTargetedNotificationRest({
         targetUserId: target.id,
@@ -589,6 +704,7 @@ export async function connectUserRest(
       };
     }
 
+    console.error('[connectUserRest failed]:', insRes.status, errText);
     return {
       status: 503,
       body: {
@@ -713,15 +829,24 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
 }
 
 export async function acceptConnectionRequestRest(authUser: AuthenticatedUser, requestIdOrUserId: string) {
-  const key = (requestIdOrUserId || '').trim();
-  if (!key) {
-    return { status: 400, body: { success: false, message: 'Connection request ID is required.' } };
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: 'Valid connection request ID is required.' } };
   }
 
-  const reqRes = await sbRest<any[]>(
-    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
-  );
-  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
+  let queryPath = '';
+  if (parsedKey.kind === 'uuid' && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === 'composite' && parsedKey.requesterUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
+  }
+
+  const reqRes = await sbRest<any[]>(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to verify connection request right now.' } };
+  }
+  if (!reqRes.data || reqRes.data.length === 0) {
     return { status: 404, body: { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending connection request not found.' } };
   }
 
@@ -733,7 +858,10 @@ export async function acceptConnectionRequestRest(authUser: AuthenticatedUser, r
     return { status: 404, body: { success: false, message: 'Requester account is no longer active.' } };
   }
 
-  await ensureConnectionAndReciprocalContactsRest(authUser, requester, 'Friend');
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, requester, 'Friend');
+  if (!syncRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: syncRes.error || 'Failed to finalize connection.' } };
+  }
 
   const acceptorName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
   const requesterName = (requester.full_name || requester.email?.split('@')[0] || 'Friend').trim();
@@ -768,23 +896,35 @@ export async function acceptConnectionRequestRest(authUser: AuthenticatedUser, r
 }
 
 export async function rejectConnectionRequestRest(authUser: AuthenticatedUser, requestIdOrUserId: string) {
-  const key = (requestIdOrUserId || '').trim();
-  if (!key) {
-    return { status: 400, body: { success: false, message: 'Connection request ID is required.' } };
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: 'Valid connection request ID is required.' } };
   }
 
-  const reqRes = await sbRest<any[]>(
-    `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encodeURIComponent(key)},user_a_id.eq.${encodeURIComponent(key)})&limit=1`
-  );
-  if (!reqRes.ok || !reqRes.data || reqRes.data.length === 0) {
+  let queryPath = '';
+  if (parsedKey.kind === 'uuid' && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === 'composite' && parsedKey.requesterUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
+  }
+
+  const reqRes = await sbRest<any[]>(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to verify connection request right now.' } };
+  }
+  if (!reqRes.data || reqRes.data.length === 0) {
     return { status: 404, body: { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending connection request not found.' } };
   }
 
   const pendingRow = reqRes.data[0];
-  await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+  const patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
     method: 'PATCH',
     body: { status: 'rejected' },
   });
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to decline request right now.' } };
+  }
 
   const rejectorName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
   await createTargetedNotificationRest({
@@ -1237,18 +1377,20 @@ export async function saveContactRest(authUser: AuthenticatedUser, body: any) {
     updated_at: nowIso,
   };
 
-  const upsertRes = await sbRest<any[]>('udhar_contacts?on_conflict=user_id,name', {
-    method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=representation',
-    body: payload,
-  });
+  const upsertRes = await upsertUdharContactRest(payload);
 
   if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
     return { status: 500, body: { success: false, message: upsertRes.error || 'Failed to save contact.' } };
   }
 
   if (verifiedTarget) {
-    await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
+    const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
+    if (!syncRes.ok) {
+      return {
+        status: 503,
+        body: { success: false, message: syncRes.error || 'Saved contact locally, but failed to sync reciprocal connection.' },
+      };
+    }
   }
 
   return {

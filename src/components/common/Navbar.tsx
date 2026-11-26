@@ -84,6 +84,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     food: { title: 'Food & Dining Section', shortTitle: 'Food & Dining', subtitle: 'Restaurant, fast food, snacks, tea/coffee & food delivery' },
     other: { title: 'Other Expenses', shortTitle: 'Other Expenses', subtitle: 'Shopping, travel, medical, bills & personal' },
     people: { title: 'People Section (Udhar)', shortTitle: 'People (Udhar)', subtitle: 'Money given & received from people' },
+    upi_qr: { title: 'UPI QR', shortTitle: 'UPI QR', subtitle: 'Saved UPI ID, default QR & amount-based payment QR generator' },
     budget: { title: 'Budget Planner', shortTitle: 'Budgets', subtitle: 'Category-wise limits & spend tracking' },
     savings_goals: { title: 'Savings Goals', shortTitle: 'Savings', subtitle: 'Target amounts & progress milestones' },
     recurring_bills: { title: 'Recurring Bills', shortTitle: 'Bills', subtitle: 'Subscriptions, rent, power & dues' },

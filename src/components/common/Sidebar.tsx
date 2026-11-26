@@ -9,7 +9,7 @@ import {
   BarChart3,
   ListOrdered,
   Settings,
-  Wallet,
+  QrCode,
   Sun,
   Moon,
   PlusCircle,
@@ -59,6 +59,7 @@ export type NavTab =
   | 'food'
   | 'other'
   | 'people'
+  | 'upi_qr'
   | 'budget'
   | 'savings_goals'
   | 'recurring_bills'
@@ -160,7 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Financial Tools',
       items: [
         { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
-{ id: 'upi_qr' as NavTab, label: 'UPI QR Generator', icon: Wallet },
+        { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
         { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
         { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
@@ -214,7 +215,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {appBranding?.appName || 'My Money Manager'}
             </h1>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-              {appBranding?.subTitle || 'by HackifyPro'}
+              {appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
+                ? appBranding.subTitle
+                : 'A product of HackifyPro'}
             </p>
           </div>
         </div>

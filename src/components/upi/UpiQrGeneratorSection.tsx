@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
   QrCode,
@@ -6,20 +7,29 @@ import {
   Share2,
   Copy,
   Check,
-  ShieldCheck,
   AlertTriangle,
-  Info,
   RefreshCw,
   ExternalLink,
   IndianRupee,
   Sparkles,
   ArrowRight,
-  ShieldAlert,
+  Edit3,
+  Trash2,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { formatINR } from '../../lib/dateUtils';
 import { upiProfileApi } from '../../lib/upiProfileApi';
-import { validateUpiId } from '../../lib/upiQrUtils';
+import {
+  buildNormalUpiUri,
+  buildAmountUpiUri,
+  validateAmountForUpiQr,
+  validateUpiId,
+  type UpiProfileRecord,
+} from '../../lib/upiQrUtils';
+import { UpiSetupModal } from './UpiSetupModal';
 
 interface UpiQrGeneratorSectionProps {
   initialVpa?: string;
@@ -36,16 +46,23 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
   initialNote = '',
   onNavigate,
 }) => {
+  const { user } = useAuth();
   const toast = useToast();
+
+  const [savedProfile, setSavedProfile] = useState<UpiProfileRecord | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState<boolean>(!initialVpa);
+  const [setupModalOpen, setSetupModalOpen] = useState<boolean>(false);
+  const [pendingModeAfterSetup, setPendingModeAfterSetup] = useState<'normal' | 'fixed'>('normal');
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState<boolean>(false);
+  const [removing, setRemoving] = useState<boolean>(false);
 
   const [vpa, setVpa] = useState<string>(initialVpa);
   const [payeeName, setPayeeName] = useState<string>(initialPayeeName);
-  const [amount, setAmount] = useState<string>(
-    initialAmount ? String(initialAmount) : ''
-  );
+  const [amount, setAmount] = useState<string>(initialAmount ? String(initialAmount) : '');
   const [note, setNote] = useState<string>(initialNote);
-  const [mode, setMode] = useState<'fixed' | 'normal'>(
-    initialAmount ? 'fixed' : 'normal'
+  const [mode, setMode] = useState<'fixed' | 'normal'>(initialAmount ? 'fixed' : 'normal');
+  const [generatedFixedAmount, setGeneratedFixedAmount] = useState<string | null>(
+    initialAmount ? String(initialAmount) : null
   );
 
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -55,64 +72,78 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
   const [isCopiedVpa, setIsCopiedVpa] = useState<boolean>(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
 
-  // Auto-populate from user's saved UPI profile if not explicitly provided via props
-  useEffect(() => {
-    if (initialVpa) return;
-    let active = true;
-    upiProfileApi
-      .getProfile()
-      .then((res) => {
-        if (!active || !res.success || !res.profile) return;
-        setVpa((prev) => prev || res.profile!.upiId);
-        setPayeeName((prev) => prev || res.profile!.payeeName || '');
-        setNote((prev) => prev || res.profile!.paymentNote || '');
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [initialVpa]);
+  const defaultPayeeName =
+    user?.full_name || user?.displayName || user?.email?.split('@')[0] || '';
 
-  // Validation states
+  const loadSavedProfile = useCallback(async () => {
+    if (initialVpa) {
+      setLoadingProfile(false);
+      return;
+    }
+    setLoadingProfile(true);
+    try {
+      const res = await upiProfileApi.getProfile();
+      if (res.success && res.profile) {
+        setSavedProfile(res.profile);
+        setVpa(res.profile.upiId);
+        setPayeeName(res.profile.payeeName || defaultPayeeName);
+        setNote((prev) => prev || res.profile!.paymentNote || '');
+      } else {
+        setSavedProfile(null);
+        setVpa('');
+      }
+    } catch {
+      // Keep UI interactive if transient failure occurs
+    } finally {
+      setLoadingProfile(false);
+    }
+  }, [initialVpa, defaultPayeeName]);
+
+  useEffect(() => {
+    void loadSavedProfile();
+    const onProfileChanged = () => {
+      void loadSavedProfile();
+    };
+    window.addEventListener('my-money-upi-profile-changed', onProfileChanged);
+    return () => window.removeEventListener('my-money-upi-profile-changed', onProfileChanged);
+  }, [loadSavedProfile]);
+
   const vpaTrimmed = vpa.trim();
   const isVpaValid = validateUpiId(vpaTrimmed).isValid;
-  const numAmount = parseFloat(amount);
-  const isAmountValid =
-    mode === 'normal' || (!isNaN(numAmount) && numAmount > 0);
+  const amountValidation = validateAmountForUpiQr(amount);
+  const activeAmountForQr = mode === 'fixed' ? generatedFixedAmount : null;
 
-  // Build the official UPI specification URI
-  const generateUpiUri = (): string => {
+  const computePaymentUri = useCallback((): string => {
     if (!vpaTrimmed || !isVpaValid) return '';
-    const params = new URLSearchParams();
-    params.set('pa', vpaTrimmed);
-
-    const name = payeeName.trim();
-    if (name) params.set('pn', name);
-
-    params.set('cu', 'INR');
-
-    if (mode === 'fixed' && !isNaN(numAmount) && numAmount > 0) {
-      params.set('am', numAmount.toFixed(2));
+    try {
+      if (mode === 'fixed') {
+        if (!activeAmountForQr) return '';
+        return buildAmountUpiUri({
+          upiId: vpaTrimmed,
+          payeeName: payeeName.trim() || defaultPayeeName,
+          amount: activeAmountForQr,
+          paymentNote: note.trim() || 'Payment via My Money Manager',
+        });
+      }
+      return buildNormalUpiUri({
+        upiId: vpaTrimmed,
+        payeeName: payeeName.trim() || defaultPayeeName,
+        paymentNote: note.trim() || 'Payment via My Money Manager',
+      });
+    } catch {
+      return '';
     }
+  }, [vpaTrimmed, isVpaValid, mode, activeAmountForQr, payeeName, defaultPayeeName, note]);
 
-    const cleanNote = note.trim();
-    if (cleanNote) {
-      params.set('tn', cleanNote.slice(0, 80));
-    }
-
-    return `upi://pay?${params.toString()}`;
-  };
-
-  // Re-generate QR whenever relevant fields change
   useEffect(() => {
     let active = true;
-    if (!vpaTrimmed || !isVpaValid || (mode === 'fixed' && !isAmountValid)) {
+    const uri = computePaymentUri();
+    if (!uri) {
       setQrDataUrl('');
       setPaymentUri('');
       return;
     }
 
-    const uri = generateUpiUri();
     setPaymentUri(uri);
     setIsGenerating(true);
 
@@ -120,10 +151,7 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
       width: 512,
       margin: 2,
       errorCorrectionLevel: 'H',
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff',
-      },
+      color: { dark: '#0f172a', light: '#ffffff' },
     })
       .then((url) => {
         if (active) {
@@ -131,17 +159,79 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
           setIsGenerating(false);
         }
       })
-      .catch((err) => {
-        if (active) {
-          console.error('Failed to generate UPI QR:', err);
-          setIsGenerating(false);
-        }
+      .catch(() => {
+        if (active) setIsGenerating(false);
       });
 
     return () => {
       active = false;
     };
-  }, [vpaTrimmed, isVpaValid, payeeName, amount, note, mode, isAmountValid]);
+  }, [computePaymentUri]);
+
+  const handleOpenSetup = (targetMode: 'normal' | 'fixed') => {
+    setPendingModeAfterSetup(targetMode);
+    setSetupModalOpen(true);
+  };
+
+  const handleUpiProfileSaved = (saved: UpiProfileRecord) => {
+    setSavedProfile(saved);
+    setVpa(saved.upiId);
+    setPayeeName(saved.payeeName || defaultPayeeName);
+    setNote(saved.paymentNote || '');
+    setMode(pendingModeAfterSetup);
+    toast.success(
+      'UPI ID Saved',
+      pendingModeAfterSetup === 'fixed'
+        ? 'Now enter the amount to generate your dynamic UPI QR.'
+        : 'Your default UPI QR is ready.'
+    );
+  };
+
+  const handleGenerateAmountQr = () => {
+    if (!vpaTrimmed || !isVpaValid) {
+      handleOpenSetup('fixed');
+      toast.info('Set Up UPI ID First', 'Please set up your UPI ID first to generate an amount QR.');
+      return;
+    }
+    const check = validateAmountForUpiQr(amount);
+    if (!check.isValid) {
+      setMode('fixed');
+      setGeneratedFixedAmount(null);
+      toast.error('Invalid Amount', check.error || 'Please enter an amount greater than ₹0.');
+      const el = document.getElementById('upi-qr-amount-input');
+      if (el) el.focus();
+      return;
+    }
+    setMode('fixed');
+    setGeneratedFixedAmount(check.formatted);
+    toast.success('Amount QR Generated', `Fixed amount of ₹${check.formatted} encoded into QR.`);
+  };
+
+  const handleGenerateAnotherQr = () => {
+    setAmount('');
+    setGeneratedFixedAmount(null);
+    setNote(savedProfile?.paymentNote || '');
+    setMode('fixed');
+  };
+
+  const handleRemoveSavedUpi = async () => {
+    setRemoving(true);
+    try {
+      await upiProfileApi.removeProfile({ withdrawConsent: true, source: 'upi_qr_setup' });
+      setSavedProfile(null);
+      setVpa('');
+      setPayeeName('');
+      setAmount('');
+      setGeneratedFixedAmount(null);
+      setNote('');
+      setRemoveConfirmOpen(false);
+      toast.info('UPI ID Removed', 'Your saved UPI ID was removed. Transaction history was kept intact.');
+    } catch (err: any) {
+      toast.error('Remove Failed', err?.message || 'Could not remove saved UPI ID.');
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   const handleCopyUri = async () => {
     if (!paymentUri) return;
@@ -172,7 +262,7 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
     const a = document.createElement('a');
     a.href = qrDataUrl;
     const filenameAmount =
-      mode === 'fixed' && numAmount > 0 ? `_INR_${Math.round(numAmount)}` : '';
+      mode === 'fixed' && generatedFixedAmount ? `_INR_${generatedFixedAmount}` : '';
     a.download = `UPI_QR_${vpaTrimmed.replace(/[^a-zA-Z0-9]/g, '_')}${filenameAmount}.png`;
     document.body.appendChild(a);
     a.click();
@@ -192,7 +282,9 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             title: `Pay ${payeeName || vpaTrimmed} via UPI`,
-            text: `Pay ₹${mode === 'fixed' && numAmount ? numAmount.toFixed(2) : ''} to ${payeeName || vpaTrimmed} (${vpaTrimmed}) using any UPI app (GPay, PhonePe, Paytm, BHIM).`,
+            text: `Pay ${
+              mode === 'fixed' && generatedFixedAmount ? `₹${generatedFixedAmount} ` : ''
+            }to ${payeeName || vpaTrimmed} (${vpaTrimmed}) using any UPI app.`,
             files: [file],
           });
           toast.success('Shared', 'UPI QR shared successfully.');
@@ -207,22 +299,17 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
         return;
       } catch (err: any) {
         if (err.name !== 'AbortError') {
-          handleCopyUri();
+          void handleCopyUri();
         }
         return;
       }
     }
 
-    handleCopyUri();
+    void handleCopyUri();
   };
 
-  const handleReset = () => {
-    setVpa('');
-    setPayeeName('');
-    setAmount('');
-    setNote('');
-    setMode('normal');
-  };
+  const hasSavedOrInitialVpa = Boolean(vpaTrimmed && isVpaValid);
+  const parsedDisplayAmount = generatedFixedAmount ? Number(generatedFixedAmount) : 0;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
@@ -235,14 +322,13 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
         <div className="relative z-10 max-w-2xl space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Official NPCI Standard UPI QR</span>
+            <span>My Money Manager — a product of HackifyPro</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-            Universal UPI Payment QR Generator
+            UPI QR &amp; Dynamic Amount QR
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Generate custom, scan-and-pay UPI QR codes compatible with Google Pay,
-            PhonePe, Paytm, BHIM, CRED, and all Indian bank UPI apps.
+            Manage your saved UPI ID, display your default QR, or generate amount-based payment QRs compatible with Google Pay, PhonePe, Paytm, BHIM, and all Indian bank UPI apps.
           </p>
         </div>
       </div>
@@ -251,469 +337,460 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
       <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-800 dark:text-amber-200">
         <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
         <div className="space-y-1 text-xs leading-relaxed">
-          <p className="font-bold">
-            Important Payment Safety Notice (सुरक्षा सूचना):
-          </p>
+          <p className="font-bold">Important Payment Safety Notice:</p>
           <p>
-            Generating or scanning a UPI QR code does <span className="underline font-bold">NOT</span> confirm that money has been received.
-            Always open your actual banking app or SMS alert to confirm credited funds before handing over cash or marking Udhar as settled.
-            The system <span className="font-bold">never</span> automatically settles any financial transactions from generating a QR code.
+            Generating or sharing a UPI QR code does <span className="underline font-bold">NOT</span> confirm that payment was received or automatically update your balances or Udhar ledger. Always verify credited funds in your bank or UPI app before confirming settlement.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Form: Inputs & Configuration */}
-        <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
-                Payment Details
-              </h2>
-              <p className="text-xs text-slate-500">
-                Enter your VPA (UPI ID) and optional transaction parameters
-              </p>
-            </div>
-
+      {/* Setup Gate when user has no saved UPI ID */}
+      {!loadingProfile && !hasSavedOrInitialVpa ? (
+        <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-200/70 dark:border-emerald-800/60">
+            <QrCode className="w-7 h-7" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1.5">
+            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+              Please set up your UPI ID first.
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Save your UPI ID once with explicit consent to unlock both your default UPI QR and instant amount-based UPI QRs.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             <button
               type="button"
-              onClick={handleReset}
-              className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 font-semibold cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </button>
-          </div>
-
-          {/* QR Type Options & Explicit Generation Buttons */}
-          <div className="space-y-3">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              QR Generation Options
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                id="btn-generate-normal-qr"
-                onClick={() => {
-                  setMode('normal');
-                  if (!vpaTrimmed) {
-                    toast.error('UPI ID Required', 'Please enter your UPI ID first.');
-                  } else if (!isVpaValid) {
-                    toast.error('Invalid UPI ID', 'Please enter a valid UPI format (e.g. name@bank).');
-                  } else {
-                    toast.success('Normal UPI QR Active', 'Payer will enter an open amount in their UPI app.');
-                  }
-                }}
-                className={`p-3.5 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
-                  mode === 'normal'
-                    ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 shadow-sm ring-1 ring-indigo-500/30'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-sm">Option A: Normal UPI QR</span>
-                  {mode === 'normal' && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
-                </div>
-                <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1">
-                  Generate a QR without a fixed amount. The payer can enter an amount in their UPI app.
-                </div>
-              </button>
-
-              <button
-                type="button"
-                id="btn-generate-amount-qr"
-                onClick={() => {
-                  setMode('fixed');
-                  if (!vpaTrimmed) {
-                    toast.error('UPI ID Required', 'Please enter your UPI ID first.');
-                    return;
-                  }
-                  if (!isVpaValid) {
-                    toast.error('Invalid UPI ID', 'Please enter a valid UPI format.');
-                    return;
-                  }
-                  if (!amount || isNaN(numAmount) || numAmount <= 0) {
-                    toast.error('Amount Required', 'Please enter an amount greater than zero.');
-                    const el = document.getElementById('upi-qr-amount-input');
-                    if (el) el.focus();
-                    return;
-                  }
-                  toast.success('Amount QR Generated', `Fixed amount of ₹${numAmount.toFixed(2)} encoded into QR.`);
-                }}
-                className={`p-3.5 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
-                  mode === 'fixed'
-                    ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 shadow-sm ring-1 ring-emerald-500/30'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-sm">Option B: Amount QR</span>
-                  {mode === 'fixed' && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-                </div>
-                <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1">
-                  Click <strong>Generate Amount QR</strong> to validate &amp; encode the exact amount.
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Form Fields */}
-          <div className="space-y-4">
-            {/* UPI ID (VPA) */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Receiver UPI ID (VPA) <span className="text-rose-500">*</span>
-                </label>
-                {vpaTrimmed && (
-                  <span
-                    className={`text-[11px] font-bold ${
-                      isVpaValid ? 'text-emerald-600' : 'text-rose-500'
-                    }`}
-                  >
-                    {isVpaValid ? '✓ Valid UPI format' : '✗ Invalid UPI ID format'}
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={vpa}
-                  onChange={(e) => setVpa(e.target.value.toLowerCase().trim())}
-                  placeholder="e.g. yourname@okhdfcbank or 9876543210@paytm"
-                  className={`block w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono transition-all ${
-                    vpaTrimmed && !isVpaValid
-                      ? 'border-rose-300 focus:ring-rose-500 bg-rose-50/30'
-                      : 'border-slate-300 dark:border-slate-700 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-                  }`}
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Format: username@bank (e.g. mobile@ybl, name@oksbi, business@okaxis)
-              </p>
-            </div>
-
-            {/* Payee Name */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Payee / Beneficiary Name (Optional)
-              </label>
-              <input
-                type="text"
-                value={payeeName}
-                onChange={(e) => setPayeeName(e.target.value)}
-                placeholder="e.g. Nilesh Barela / My Store"
-                maxLength={60}
-                className="block w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-indigo-500"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Displays on payer's screen before they confirm the payment
-              </p>
-            </div>
-
-            {/* Amount Field (Optional for Normal QR, Required for Amount QR) */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Enter Amount (INR ₹)</span>
-                  <span className={mode === 'fixed' ? 'text-rose-500 font-black' : 'text-slate-400 font-normal'}>
-                    {mode === 'fixed' ? '* Required' : '(Optional for Normal QR)'}
-                  </span>
-                </label>
-                {amount && (
-                  <span
-                    className={`text-[11px] font-bold ${
-                      isAmountValid ? 'text-emerald-600' : 'text-rose-500'
-                    }`}
-                  >
-                    {isAmountValid
-                      ? formatINR(numAmount)
-                      : 'Enter a valid amount > ₹0'}
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold">
-                  ₹
-                </div>
-                <input
-                  id="upi-qr-amount-input"
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="e.g. 250"
-                  className="block w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* Transaction Note */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Payment Note / Remarks (Optional)
-              </label>
-              <input
-                type="text"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. Udhar settlement / Dinner share"
-                maxLength={80}
-                className="block w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-indigo-500"
-              />
-            </div>
-          </div>
-
-          {/* Quick preset amount chips */}
-          <div className="space-y-1.5 pt-2">
-            <span className="text-[11px] font-bold text-slate-500">Quick Amounts:</span>
-            <div className="flex items-center gap-2 flex-wrap">
-              {[100, 200, 250, 500, 1000, 2000].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => {
-                    setAmount(String(preset));
-                    setMode('fixed');
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
-                >
-                  ₹{preset}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Dedicated Action Buttons */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('normal');
-                if (!vpaTrimmed) {
-                  toast.error('UPI ID Required', 'Please enter your UPI ID first.');
-                } else if (!isVpaValid) {
-                  toast.error('Invalid UPI ID', 'Please enter a valid UPI format (e.g. name@bank).');
-                } else {
-                  toast.success('Normal UPI QR Generated', 'Open amount QR ready. Payer enters amount.');
-                }
-              }}
-              className="py-3 px-4 rounded-xl border border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center gap-2 hover:bg-indigo-100 transition-all cursor-pointer"
+              onClick={() => handleOpenSetup('normal')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm cursor-pointer"
             >
               <QrCode className="w-4 h-4" />
-              <span>Generate Normal QR</span>
+              <span>Set UPI ID for Default QR</span>
             </button>
-
             <button
               type="button"
-              onClick={() => {
-                if (!vpaTrimmed) {
-                  toast.error('UPI ID Required', 'Please enter your UPI ID first.');
-                  return;
-                }
-                if (!isVpaValid) {
-                  toast.error('Invalid UPI ID', 'Please enter a valid UPI format.');
-                  return;
-                }
-                if (!amount || isNaN(numAmount) || numAmount <= 0) {
-                  setMode('fixed');
-                  toast.error('Amount Required', 'Please enter an amount greater than zero.');
-                  const el = document.getElementById('upi-qr-amount-input');
-                  if (el) el.focus();
-                  return;
-                }
-                setMode('fixed');
-                toast.success('Amount QR Generated', `Fixed amount of ₹${numAmount.toFixed(2)} encoded into QR.`);
-              }}
-              className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+              onClick={() => handleOpenSetup('fixed')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold cursor-pointer"
             >
               <IndianRupee className="w-4 h-4" />
-              <span>Generate Amount QR</span>
+              <span>Set UPI ID for Amount QR</span>
             </button>
           </div>
         </div>
-
-        {/* Right Preview & Action Column */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col items-center text-center space-y-4">
-            <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">
-              Live QR Preview
-            </h3>
-
-            {/* QR Card Presentation */}
-            <div className="w-full max-w-xs bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-800/80 dark:to-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-md space-y-3">
-              {/* Card Header with UPI Branding */}
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-                  BHIM UPI
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Form: Saved UPI ID Management & Amount Controls */}
+          <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
+            {/* Saved UPI Profile Summary */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Saved UPI Identity
                 </span>
-                <span className="text-[10px] font-bold text-slate-400">
-                  {mode === 'fixed' && numAmount ? `Fixed ₹${numAmount}` : 'Universal QR'}
-                </span>
-              </div>
-
-              {/* Prominent Amount Display Above QR (Option B) */}
-              {mode === 'fixed' && numAmount > 0 && (
-                <div className="w-full bg-emerald-50 dark:bg-emerald-950/70 border-2 border-emerald-500/50 rounded-xl py-2 px-3 text-center animate-in fade-in zoom-in-95 duration-200 shadow-xs">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
-                    Amount to Pay (देय राशि)
+                <p className="text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5">
+                  {payeeName || defaultPayeeName || 'My UPI Account'}
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate">
+                    {vpaTrimmed || 'Loading...'}
                   </span>
-                  <span className="text-2xl font-black text-emerald-700 dark:text-emerald-300 font-mono tracking-tight">
-                    ₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
+                  {vpaTrimmed && (
+                    <button
+                      type="button"
+                      onClick={handleCopyVpa}
+                      className="p-1 rounded text-slate-400 hover:text-emerald-600 cursor-pointer"
+                      title="Copy UPI ID"
+                    >
+                      {isCopiedVpa ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {/* QR Image Container */}
-              <div className="bg-white p-3 rounded-xl shadow-inner flex items-center justify-center min-h-[220px]">
-                {qrDataUrl ? (
-                  <img
-                    src={qrDataUrl}
-                    alt="UPI Payment QR Code"
-                    className="w-52 h-52 object-contain rounded-lg"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-6 text-slate-400 space-y-2">
-                    <QrCode className="w-12 h-12 stroke-[1.5]" />
-                    <p className="text-xs font-semibold">
-                      {vpaTrimmed
-                        ? 'Enter a valid UPI format'
-                        : 'Enter your UPI ID to generate QR'}
-                    </p>
-                  </div>
-                )}
               </div>
 
-              {/* Payee Info on Card */}
-              {qrDataUrl && (
-                <div className="space-y-1 pt-1">
-                  <div className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
-                    {payeeName || 'Verified Payee'}
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-500 truncate">
-                    {vpaTrimmed}
-                  </div>
-                  {mode === 'fixed' && numAmount > 0 && (
-                    <div className="text-base font-black text-emerald-600 dark:text-emerald-400 pt-1">
-                      ₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                  )}
-                  {note && (
-                    <div className="text-[10px] text-slate-400 italic truncate">
-                      "{note}"
-                    </div>
-                  )}
+              {!initialVpa && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSetup(mode)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemoveConfirmOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Action Buttons */}
-            {qrDataUrl && (
-              <div className="w-full space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDownload}
-                    className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Download PNG</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleShare}
-                    className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    <span>Share QR</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCopyVpa}
-                    className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    {isCopiedVpa ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{isCopiedVpa ? 'Copied' : 'Copy UPI ID'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyUri}
-                    className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    {isCopiedUri ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                    <span>{isCopiedUri ? 'Copied' : 'Copy Pay Link'}</span>
-                  </button>
-                </div>
-
-                {/* Regenerate QR Button */}
+            {/* Mode Cards */}
+            <div className="space-y-2.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Choose QR Mode
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  id="btn-regenerate-qr"
+                  id="btn-generate-normal-qr"
                   onClick={() => {
-                    if (!vpaTrimmed || !isVpaValid) {
-                      toast.error('Invalid UPI ID', 'Please enter a valid UPI ID first.');
-                      return;
-                    }
-                    if (mode === 'fixed' && (!amount || isNaN(numAmount) || numAmount <= 0)) {
-                      toast.error('Amount Required', 'Please enter an amount greater than zero.');
-                      return;
-                    }
-                    const uri = generateUpiUri();
-                    setPaymentUri(uri);
-                    setIsGenerating(true);
-                    QRCode.toDataURL(uri, {
-                      width: 512,
-                      margin: 2,
-                      errorCorrectionLevel: 'H',
-                      color: { dark: '#0f172a', light: '#ffffff' },
-                    })
-                      .then((url) => {
-                        setQrDataUrl(url);
-                        setIsGenerating(false);
-                        toast.success('QR Code Regenerated', 'Updated with latest payment parameters.');
-                      })
-                      .catch(() => setIsGenerating(false));
+                    setMode('normal');
+                    toast.success('Default UPI QR Active', 'Payer can enter any amount in their UPI app.');
                   }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                  className={`p-3.5 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                    mode === 'normal'
+                      ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 shadow-sm ring-1 ring-indigo-500/30'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                  }`}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-                  <span>Regenerate QR Code</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-sm">UPI QR (Default)</span>
+                    {mode === 'normal' && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                  </div>
+                  <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1">
+                    Open-amount QR using your saved UPI ID.
+                  </div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setIsPreviewOpen(true)}
-                  className="w-full py-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  id="btn-generate-amount-qr"
+                  onClick={() => setMode('fixed')}
+                  className={`p-3.5 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                    mode === 'fixed'
+                      ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 shadow-sm ring-1 ring-emerald-500/30'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                  }`}
                 >
-                  View Full Screen QR Modal &rarr;
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-sm">Generate UPI QR (Amount)</span>
+                    {mode === 'fixed' && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
+                  </div>
+                  <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1">
+                    Fixed-amount payment QR without altering your saved default QR.
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Amount & Note Controls */}
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label
+                    htmlFor="upi-qr-amount-input"
+                    className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
+                  >
+                    <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Amount (INR ₹)</span>
+                    <span className={mode === 'fixed' ? 'text-rose-500 font-black' : 'text-slate-400 font-normal'}>
+                      {mode === 'fixed' ? '* Required' : '(Used in Amount QR mode)'}
+                    </span>
+                  </label>
+                  {amount && (
+                    <span className={`text-[11px] font-bold ${amountValidation.isValid ? 'text-emerald-600' : 'text-rose-500'}`}>
+                      {amountValidation.isValid ? formatINR(Number(amountValidation.formatted)) : amountValidation.error}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold">
+                    ₹
+                  </div>
+                  <input
+                    id="upi-qr-amount-input"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={amount}
+                    onChange={(e) => {
+                      setAmount(e.target.value);
+                      if (mode !== 'fixed') setMode('fixed');
+                    }}
+                    placeholder="e.g. 250"
+                    className="block w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Payment Note / Remarks (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. Udhar settlement / Dinner share"
+                  maxLength={80}
+                  className="block w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Quick preset amount chips */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-slate-500">Quick Amounts:</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {[100, 200, 250, 500, 1000, 2000].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      setAmount(String(preset));
+                      setGeneratedFixedAmount(preset.toFixed(2));
+                      setMode('fixed');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    ₹{preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Dedicated Action Buttons */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={handleGenerateAmountQr}
+                className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+              >
+                <IndianRupee className="w-4 h-4" />
+                <span>Generate Amount QR</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateAnotherQr}
+                className="py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Generate Another QR</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right Preview & Action Column */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col items-center text-center space-y-4">
+              <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                {mode === 'fixed' && parsedDisplayAmount > 0 ? 'Amount-Based UPI QR' : 'Default UPI QR Preview'}
+              </h3>
+
+              <div className="w-full max-w-xs bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-800/80 dark:to-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-md space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                    BHIM UPI
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {mode === 'fixed' && parsedDisplayAmount > 0
+                      ? `Fixed ₹${parsedDisplayAmount.toLocaleString('en-IN')}`
+                      : 'Universal QR'}
+                  </span>
+                </div>
+
+                {mode === 'fixed' && parsedDisplayAmount > 0 && (
+                  <div className="w-full bg-emerald-50 dark:bg-emerald-950/70 border-2 border-emerald-500/50 rounded-xl py-2 px-3 text-center shadow-xs">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                      Amount to Pay
+                    </span>
+                    <span className="text-2xl font-black text-emerald-700 dark:text-emerald-300 font-mono tracking-tight">
+                      ₹{parsedDisplayAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                <div className="bg-white p-3 rounded-xl shadow-inner flex items-center justify-center min-h-[220px]">
+                  {qrDataUrl ? (
+                    <img
+                      src={qrDataUrl}
+                      alt="UPI Payment QR Code"
+                      className="w-52 h-52 object-contain rounded-lg"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-6 text-slate-400 space-y-2">
+                      <QrCode className="w-12 h-12 stroke-[1.5]" />
+                      <p className="text-xs font-semibold">
+                        {mode === 'fixed'
+                          ? 'Enter an amount and click Generate Amount QR'
+                          : 'Loading your UPI QR...'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {qrDataUrl && (
+                  <div className="space-y-1 pt-1">
+                    <div className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                      {payeeName || defaultPayeeName || 'Verified Payee'}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-500 truncate">
+                      {vpaTrimmed}
+                    </div>
+                    {note && (
+                      <div className="text-[10px] text-slate-400 italic truncate">
+                        &ldquo;{note}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {qrDataUrl && (
+                <div className="w-full space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download PNG</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleShare}
+                      className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      <span>Share QR</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyVpa}
+                      className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      {isCopiedVpa ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{isCopiedVpa ? 'Copied' : 'Copy UPI ID'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCopyUri}
+                      className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      {isCopiedUri ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                      <span>{isCopiedUri ? 'Copied' : 'Copy Pay Link'}</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    id="btn-regenerate-qr"
+                    onClick={() => {
+                      const uri = computePaymentUri();
+                      if (!uri) return;
+                      setIsGenerating(true);
+                      QRCode.toDataURL(uri, {
+                        width: 512,
+                        margin: 2,
+                        errorCorrectionLevel: 'H',
+                        color: { dark: '#0f172a', light: '#ffffff' },
+                      })
+                        .then((url) => {
+                          setQrDataUrl(url);
+                          setIsGenerating(false);
+                          toast.success('QR Refreshed', 'Updated with latest payment parameters.');
+                        })
+                        .catch(() => setIsGenerating(false));
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+                    <span>Refresh QR Code</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewOpen(true)}
+                    className="w-full py-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    View Full Screen QR &rarr;
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {onNavigate && (
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+                <span className="text-slate-500">Need to record debts or loans?</span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('people')}
+                  className="font-bold text-emerald-600 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Open Udhar</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
           </div>
+        </div>
+      )}
 
-          {/* Quick link back to Udhar or Calculator */}
-          {onNavigate && (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
-              <span className="text-slate-500">Need to record debts or loans?</span>
+      {/* Setup / Edit UPI Modal */}
+      <UpiSetupModal
+        isOpen={setupModalOpen}
+        onClose={() => setSetupModalOpen(false)}
+        defaultPayeeName={defaultPayeeName}
+        existingProfile={savedProfile}
+        source="upi_qr_setup"
+        onSaved={handleUpiProfileSaved}
+      />
+
+      {/* Remove UPI ID Confirmation Modal */}
+      {removeConfirmOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[90] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !removing && setRemoveConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Remove Saved UPI ID?</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  This will remove <strong className="font-mono">{savedProfile?.upiId || vpaTrimmed}</strong> from your profile. Your existing transactions remain untouched.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => onNavigate('people')}
-                className="font-bold text-emerald-600 hover:underline flex items-center gap-1 cursor-pointer"
+                onClick={() => setRemoveConfirmOpen(false)}
+                disabled={removing}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
-                <span>Open Udhar</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveSavedUpi}
+                disabled={removing}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50 cursor-pointer"
+              >
+                {removing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Remove UPI ID
               </button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Full Screen View Modal */}
       {isPreviewOpen && qrDataUrl && (
@@ -724,6 +801,7 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
                 BHIM UPI QR
               </span>
               <button
+                type="button"
                 onClick={() => setIsPreviewOpen(false)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
               >
@@ -744,9 +822,9 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
                 {payeeName || 'Universal Payment QR'}
               </div>
               <div className="text-xs font-mono text-slate-500">{vpaTrimmed}</div>
-              {mode === 'fixed' && numAmount > 0 && (
+              {mode === 'fixed' && parsedDisplayAmount > 0 && (
                 <div className="text-lg font-black text-emerald-600">
-                  ₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{parsedDisplayAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
               )}
             </div>

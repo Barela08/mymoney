@@ -516,7 +516,7 @@ return (
               />
 
               {/* Dynamic Section Views */}
-              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
+              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[calc(6rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
                 <Suspense fallback={<SectionFallback />}>
                   {currentTab === 'dashboard' && (
                     <DashboardView

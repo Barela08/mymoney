@@ -16,6 +16,8 @@ import {
   Info,
   Loader2,
   Sparkles,
+  ExternalLink,
+  RotateCcw,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { upiProfileApi } from '../../lib/upiProfileApi';
@@ -63,6 +65,7 @@ export const DashboardUpiQrSection: React.FC = () => {
   const [profile, setProfile] = useState<UpiProfileRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [pendingModeAfterSetup, setPendingModeAfterSetup] = useState<QrMode>('normal');
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrMode, setQrMode] = useState<QrMode>('normal');
   const [amountInput, setAmountInput] = useState('');
@@ -71,6 +74,7 @@ export const DashboardUpiQrSection: React.FC = () => {
   const [amountError, setAmountError] = useState<string | null>(null);
   const [qrVersion, setQrVersion] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -106,6 +110,7 @@ export const DashboardUpiQrSection: React.FC = () => {
 
   const handleOpenMyQr = (mode: QrMode = 'normal') => {
     if (!profile?.upiId) {
+      setPendingModeAfterSetup(mode);
       setQrMode(mode);
       setSetupModalOpen(true);
       return;
@@ -120,8 +125,8 @@ export const DashboardUpiQrSection: React.FC = () => {
 
   const handleUpiSaved = (saved: UpiProfileRecord) => {
     setProfile(saved);
+    setQrMode(pendingModeAfterSetup);
     setQrVersion((v) => v + 1);
-    // Immediately present the generated QR right after first-time setup!
     setQrModalOpen(true);
   };
 
@@ -159,12 +164,28 @@ export const DashboardUpiQrSection: React.FC = () => {
     setQrVersion((v) => v + 1);
   };
 
+  const handleGenerateAnotherQr = () => {
+    setAmountInput('');
+    setAmountNote('');
+    setGeneratedAmount(null);
+    setAmountError(null);
+  };
+
   const handleCopyUpi = async () => {
     if (!profile?.upiId) return;
     try {
       await navigator.clipboard.writeText(profile.upiId);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
+    } catch {}
+  };
+
+  const handleCopyPaymentLink = async () => {
+    if (!activeQrUri) return;
+    try {
+      await navigator.clipboard.writeText(activeQrUri);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 1800);
     } catch {}
   };
 
@@ -212,7 +233,7 @@ export const DashboardUpiQrSection: React.FC = () => {
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '600 14px system-ui, -apple-system, sans-serif';
-    ctx.fillText('My Money Manager by HackifyPro', width / 2, height - 28);
+    ctx.fillText('My Money Manager — a product of HackifyPro', width / 2, height - 28);
 
     return new Promise((resolve) => out.toBlob((blob) => resolve(blob), 'image/png'));
   };
@@ -270,6 +291,7 @@ export const DashboardUpiQrSection: React.FC = () => {
       setProfile(null);
       setGeneratedAmount(null);
       setAmountInput('');
+      setAmountNote('');
       setRemoveConfirmOpen(false);
       setQrModalOpen(false);
     } finally {
@@ -286,89 +308,166 @@ export const DashboardUpiQrSection: React.FC = () => {
     : '';
 
   return (
-    <div className="!mt-0">
-      {/* Visually connected UPI QR strip directly below Available Balance */}
+    <div className="mt-3">
+      {/* Two-Card UPI QR Row directly below Available Balance */}
       <div
         data-testid="dashboard-upi-qr-section"
-        className="-mt-2 pt-4 pb-3.5 px-4 sm:px-5 rounded-b-2xl rounded-t-lg bg-white dark:bg-slate-900 border border-t-0 border-slate-200/90 dark:border-slate-800 shadow-sm transition-colors"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-3"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-          {/* Left: Icon / Compact Saved QR Preview + Copy */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => handleOpenMyQr('normal')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleOpenMyQr('normal');
-              }
-            }}
-            className="flex items-center gap-3.5 cursor-pointer group min-w-0 flex-1"
-          >
-            {profile?.upiId && previewUri ? (
-              <div className="p-1.5 rounded-xl bg-white border border-slate-200 dark:border-slate-700 shadow-xs shrink-0 group-hover:border-emerald-400 transition-colors">
-                <QrCanvas value={previewUri} size={44} level="M" />
-              </div>
-            ) : (
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                <QrCode className="w-5 h-5" />
-              </div>
-            )}
+        {/* Card 1: Saved UPI QR */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-3.5">
+          <div className="flex items-start justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0">
+              {profile?.upiId && previewUri ? (
+                <button
+                  type="button"
+                  onClick={() => handleOpenMyQr('normal')}
+                  aria-label="Open saved UPI QR"
+                  className="p-1.5 rounded-xl bg-white border border-slate-200 dark:border-slate-700 shadow-xs shrink-0 hover:border-emerald-400 transition-colors cursor-pointer"
+                >
+                  <QrCanvas value={previewUri} size={46} level="M" />
+                </button>
+              ) : (
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
+              )}
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
-                  UPI QR
-                </h3>
-                {profile?.upiId && (
-                  <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 truncate max-w-[180px] sm:max-w-[240px]">
-                    {profile.upiId}
-                  </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+                    UPI QR
+                  </h3>
+                  {profile?.upiId ? (
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60">
+                      Saved
+                    </span>
+                  ) : null}
+                </div>
+
+                {loading ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Checking your saved UPI ID...
+                  </p>
+                ) : profile?.upiId ? (
+                  <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                    <span className="text-xs font-mono text-emerald-700 dark:text-emerald-400 truncate">
+                      {profile.upiId}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyUpi}
+                      className="p-1 rounded text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 shrink-0 cursor-pointer"
+                      title="Copy UPI ID"
+                      aria-label="Copy saved UPI ID"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Save your UPI ID once to display your personal payment QR.
+                  </p>
                 )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                {loading
-                  ? 'Checking your UPI QR settings...'
-                  : profile?.upiId
-                  ? `Ready to receive payments as ${profile.payeeName || defaultPayeeName}`
-                  : 'Receive payments using your UPI ID'}
-              </p>
             </div>
           </div>
 
-          {/* Right: Action Buttons */}
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-800/80">
             {profile?.upiId ? (
               <>
                 <button
                   type="button"
                   onClick={() => handleOpenMyQr('normal')}
                   data-testid="dashboard-generate-my-qr-btn"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
                 >
                   <QrCode className="w-3.5 h-3.5" />
                   <span>Show My QR</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenMyQr('amount')}
-                  data-testid="dashboard-generate-amount-qr-btn"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 transition-colors"
-                >
-                  <IndianRupee className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Amount QR</span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingModeAfterSetup('normal');
+                      setSetupModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    title="Edit saved UPI ID"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemoveConfirmOpen(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                    title="Delete saved UPI ID"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
               </>
             ) : (
               <button
                 type="button"
                 onClick={() => handleOpenMyQr('normal')}
                 data-testid="dashboard-generate-my-qr-btn"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
               >
                 <QrCode className="w-3.5 h-3.5" />
                 <span>Generate My QR</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Generate Amount-Based UPI QR */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-3.5">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/70 dark:border-indigo-800/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <IndianRupee className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+                Generate UPI QR
+              </h3>
+              {profile?.upiId ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Create a dynamic amount-based UPI QR without changing your saved default QR.
+                </p>
+              ) : (
+                <p
+                  data-testid="dashboard-amount-qr-needs-setup"
+                  className="text-xs text-amber-700 dark:text-amber-400 font-medium mt-0.5"
+                >
+                  Please set up your UPI ID first.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-1 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+            {profile?.upiId ? (
+              <button
+                type="button"
+                onClick={() => handleOpenMyQr('amount')}
+                data-testid="dashboard-generate-amount-qr-btn"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Generate Amount QR</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleOpenMyQr('amount')}
+                data-testid="dashboard-generate-amount-qr-btn"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Set UPI ID</span>
               </button>
             )}
           </div>
@@ -405,22 +504,25 @@ export const DashboardUpiQrSection: React.FC = () => {
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">My UPI QR</h2>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                    {qrMode === 'amount' ? 'Generate UPI QR' : 'My UPI QR'}
+                  </h2>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    My Money Manager by HackifyPro
+                    My Money Manager — a product of HackifyPro
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setQrModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Close UPI QR modal"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Option A / Option B Mode Switcher */}
+            {/* Mode Switcher */}
             <div className="px-5 pt-4">
               <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
                 <button
@@ -430,7 +532,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                     setAmountError(null);
                   }}
                   data-testid="upi-tab-normal"
-                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     qrMode === 'normal'
                       ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -442,7 +544,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                   type="button"
                   onClick={() => setQrMode('amount')}
                   data-testid="upi-tab-amount"
-                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     qrMode === 'amount'
                       ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -454,7 +556,7 @@ export const DashboardUpiQrSection: React.FC = () => {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Option B: Fixed Amount Form */}
+              {/* Fixed Amount Form */}
               {qrMode === 'amount' && (
                 <form onSubmit={handleGenerateAmountQr} className="space-y-3">
                   <div>
@@ -493,7 +595,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                     <button
                       type="submit"
                       data-testid="upi-amount-generate-btn"
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 cursor-pointer"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       Generate
@@ -542,7 +644,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                       type="button"
                       onClick={handleCopyUpi}
                       data-testid="upi-copy-id-btn"
-                      className="p-1 rounded-md text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60"
+                      className="p-1 rounded-md text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 cursor-pointer"
                       title="Copy UPI ID"
                     >
                       {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -570,20 +672,42 @@ export const DashboardUpiQrSection: React.FC = () => {
                       type="button"
                       onClick={handleDownloadQr}
                       data-testid="upi-download-btn"
-                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Download QR
+                      Download PNG
                     </button>
                     <button
                       type="button"
                       onClick={handleShareQr}
                       data-testid="upi-share-btn"
-                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                     >
                       <Share2 className="w-3.5 h-3.5" />
                       Share QR
                     </button>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-center gap-2 w-full">
+                    <button
+                      type="button"
+                      onClick={handleCopyPaymentLink}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                      <span>{copiedLink ? 'Link Copied' : 'Copy Link'}</span>
+                    </button>
+                    {qrMode === 'amount' && (
+                      <button
+                        type="button"
+                        onClick={handleGenerateAnotherQr}
+                        data-testid="upi-generate-another-btn"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Generate Another QR</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -598,7 +722,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setQrVersion((v) => v + 1)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     Regenerate
@@ -607,10 +731,11 @@ export const DashboardUpiQrSection: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setQrModalOpen(false);
+                      setPendingModeAfterSetup(qrMode);
                       setSetupModalOpen(true);
                     }}
                     data-testid="upi-edit-details-btn"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     Edit UPI Details
@@ -621,7 +746,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                   type="button"
                   onClick={() => setRemoveConfirmOpen(true)}
                   data-testid="upi-remove-btn"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Remove UPI ID
@@ -650,7 +775,7 @@ export const DashboardUpiQrSection: React.FC = () => {
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Remove Saved UPI ID?</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  This will delete <strong className="font-mono">{profile?.upiId}</strong> from your account and withdraw your UPI QR storage consent. You can set it up again anytime.
+                  This will remove <strong className="font-mono">{profile?.upiId}</strong> from your saved profile and withdraw UPI QR storage consent. Your existing transactions remain untouched.
                 </p>
               </div>
             </div>
@@ -659,7 +784,7 @@ export const DashboardUpiQrSection: React.FC = () => {
                 type="button"
                 onClick={() => setRemoveConfirmOpen(false)}
                 disabled={removing}
-                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 Cancel
               </button>
@@ -668,10 +793,10 @@ export const DashboardUpiQrSection: React.FC = () => {
                 onClick={handleRemoveUpi}
                 disabled={removing}
                 data-testid="upi-confirm-remove-btn"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50 cursor-pointer"
               >
                 {removing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Remove & Withdraw Consent
+                Remove UPI ID
               </button>
             </div>
           </div>

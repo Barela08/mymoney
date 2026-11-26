@@ -27,6 +27,7 @@ interface SavedPeopleManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onContactsUpdated?: () => void;
+  onRequestsUpdated?: () => void;
   onSelectPersonForUdhar?: (personName: string) => void;
 }
 
@@ -34,6 +35,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
   isOpen,
   onClose,
   onContactsUpdated,
+  onRequestsUpdated,
   onSelectPersonForUdhar,
 }) => {
   const toast = useToast();
@@ -85,22 +87,30 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     }
   }, [isOpen]);
 
+  const [linkingSearchError, setLinkingSearchError] = useState<string | null>(null);
+
   // Handle Search for Linking
   useEffect(() => {
     if (!linkingContact || searchRegisteredQuery.trim().length < 2) {
       setRegisteredSearchResults([]);
+      setLinkingSearchError(null);
       return;
     }
 
     const t = setTimeout(async () => {
       try {
         setIsSearchingRegistered(true);
+        setLinkingSearchError(null);
         const res = await udharDeletionApi.searchUsers(searchRegisteredQuery);
         if (res.success) {
-          setRegisteredSearchResults(res.users);
+          setRegisteredSearchResults(res.users || []);
+        } else {
+          setRegisteredSearchResults([]);
+          setLinkingSearchError('Could not complete search. Please retry.');
         }
-      } catch {
-        // ignore
+      } catch (err: any) {
+        setRegisteredSearchResults([]);
+        setLinkingSearchError(err?.message || 'Unable to reach user directory right now.');
       } finally {
         setIsSearchingRegistered(false);
       }
@@ -228,26 +238,45 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     if (!user || user.isSelf || requestingId) return;
     try {
       setRequestingId(user.id);
-      const res = await udharDeletionApi.sendConnectionRequest({
-        targetUserId: user.id,
-        relationshipType: 'Friend',
-        source: liveQuery.includes('@') ? 'manual' : 'search',
-      });
-      if (res.status === 'connected') {
-        toast.success('Connected', res.message || 'You are already connected with this person.');
+      if (user.connectionStatus === 'incoming_pending') {
+        const res = await udharDeletionApi.respondToConnectionRequest(
+          user.requestId || user.id,
+          'accept'
+        );
+        toast.success('Connected!', res.message || `Connected with ${user.displayName}. Added to your Saved People.`);
         setLiveResults((prev) =>
           prev.map((u) =>
             u.id === user.id ? { ...u, connectionStatus: 'connected', isAlreadyConnected: true } : u
           )
         );
         await fetchContacts();
-        if (onContactsUpdated) onContactsUpdated();
+        onContactsUpdated?.();
+        onRequestsUpdated?.();
+        return;
+      }
+
+      const res = await udharDeletionApi.sendConnectionRequest({
+        targetUserId: user.id,
+        relationshipType: 'Friend',
+        source: liveQuery.includes('@') ? 'manual' : 'search',
+      });
+      if (res.status === 'connected') {
+        toast.success('Connected', res.message || 'You are now connected with this person.');
+        setLiveResults((prev) =>
+          prev.map((u) =>
+            u.id === user.id ? { ...u, connectionStatus: 'connected', isAlreadyConnected: true } : u
+          )
+        );
+        await fetchContacts();
+        onContactsUpdated?.();
+        onRequestsUpdated?.();
       } else {
         toast.success('Request Sent', res.message || 'They must approve the request before any details are shared.');
         setPendingIds((prev) => ({ ...prev, [user.id]: true }));
         setLiveResults((prev) =>
           prev.map((u) => (u.id === user.id ? { ...u, connectionStatus: 'pending' } : u))
         );
+        onRequestsUpdated?.();
       }
     } catch (err: any) {
       toast.error('Request Failed', err?.message || 'Could not send the connection request.');
@@ -496,6 +525,17 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
               <p className="text-xs text-slate-400 text-center py-2 animate-pulse">Searching users...</p>
             )}
 
+            {!isSearchingRegistered && linkingSearchError && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 text-center py-2">{linkingSearchError}</p>
+            )}
+
+            {!isSearchingRegistered &&
+              !linkingSearchError &&
+              searchRegisteredQuery.trim().length >= 2 &&
+              registeredSearchResults.length === 0 && (
+                <p className="text-xs text-slate-500 text-center py-2">No matching registered accounts found.</p>
+              )}
+
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
               {registeredSearchResults.map((su) => (
                 <div
@@ -508,7 +548,9 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{su.displayName}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{su.emailMasked}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        {su.emailMasked || su.phoneMasked || 'Registered My Money Manager account'}
+                      </p>
                     </div>
                   </div>
 
@@ -570,7 +612,9 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                           </div>
                           <div>
                             <p className="font-bold text-slate-800 dark:text-slate-200">{usr.displayName}</p>
-                            <p className="text-[10px] text-slate-400">{usr.emailMasked}</p>
+                            <p className="text-[10px] text-slate-400">
+                              {usr.emailMasked || usr.phoneMasked || 'Registered My Money Manager account'}
+                            </p>
                           </div>
                         </div>
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
@@ -764,7 +808,8 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                   {liveResults.map((u) => {
                     const isConnected = u.connectionStatus === 'connected' || u.isAlreadyConnected;
-                    const isPending = u.connectionStatus === 'pending' || pendingIds[u.id];
+                    const isIncomingPending = !isConnected && u.connectionStatus === 'incoming_pending';
+                    const isPending = !isConnected && !isIncomingPending && (u.connectionStatus === 'pending' || pendingIds[u.id]);
                     return (
                       <div
                         key={u.id}
@@ -794,6 +839,20 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                           <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-2 py-1 rounded-lg">
                             Connected
                           </span>
+                        ) : isIncomingPending ? (
+                          <button
+                            type="button"
+                            disabled={requestingId === u.id}
+                            onClick={() => void handleSendRequest(u)}
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer shrink-0 flex items-center gap-1"
+                          >
+                            {requestingId === u.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
+                            <span>Accept</span>
+                          </button>
                         ) : isPending ? (
                           <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-1 rounded-lg">
                             Request Sent

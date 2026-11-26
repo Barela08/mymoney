@@ -120,6 +120,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People Section (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
+    { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
     { id: 'all_transactions' as NavTab, label: 'All Transactions Ledger', icon: ListOrdered, count: summary.totalTransactionsCount },
     { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
     { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
@@ -408,7 +409,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         </button>
       </div>
 
-      {/* Floating Notch 5-Tab Bottom Navigation for Mobile (Home, Transactions, People, Reports, More) */}
+      {/* Floating Notch 6-Tab Bottom Navigation for Mobile (Home, Transactions, People, UPI QR, Reports, More) */}
       {(() => {
         const MORE_TABS = new Set([
           'ai_assistant',
@@ -424,24 +425,32 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           'notifications',
           'settings',
           'help_support',
-          'upi_qr',
+          'recycle_bin',
+          'legal',
+          'home',
+          'room',
+          'food',
+          'other',
         ]);
         const activeIndex = isMoreSheetOpen || MORE_TABS.has(currentTab)
-          ? 4
+          ? 5
           : currentTab === 'dashboard'
           ? 0
           : currentTab === 'all_transactions'
           ? 1
           : currentTab === 'people'
           ? 2
-          : currentTab === 'reports'
+          : currentTab === 'upi_qr'
           ? 3
+          : currentTab === 'reports'
+          ? 4
           : 0;
 
-        const navItems = [
+        const mobileBottomItems = [
           {
             key: 'dashboard',
             label: 'Home',
+            shortLabel: 'Home',
             icon: LayoutDashboard,
             onClick: () => {
               setIsMoreSheetOpen(false);
@@ -451,6 +460,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           {
             key: 'all_transactions',
             label: 'Transactions',
+            shortLabel: 'Txns',
             icon: ListOrdered,
             onClick: () => {
               setIsMoreSheetOpen(false);
@@ -460,6 +470,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           {
             key: 'people',
             label: 'People',
+            shortLabel: 'People',
             icon: Users,
             onClick: () => {
               setIsMoreSheetOpen(false);
@@ -467,8 +478,19 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             },
           },
           {
+            key: 'upi_qr',
+            label: 'UPI QR',
+            shortLabel: 'UPI QR',
+            icon: QrCode,
+            onClick: () => {
+              setIsMoreSheetOpen(false);
+              onSelectTab('upi_qr');
+            },
+          },
+          {
             key: 'reports',
             label: 'Reports',
+            shortLabel: 'Reports',
             icon: BarChart3,
             onClick: () => {
               setIsMoreSheetOpen(false);
@@ -478,6 +500,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           {
             key: 'more',
             label: 'More',
+            shortLabel: 'More',
             icon: MoreHorizontal,
             onClick: () => setIsMoreSheetOpen(!isMoreSheetOpen),
           },
@@ -487,25 +510,25 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           <nav
             aria-label="Mobile Navigation"
             data-testid="floating-notch-tab-bar"
-            className="fixed bottom-0 inset-x-0 z-30 lg:hidden pointer-events-none px-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-2"
+            className="fixed bottom-0 inset-x-0 z-30 lg:hidden pointer-events-none px-2 sm:px-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-2"
           >
-            <div className="pointer-events-auto relative mx-auto max-w-md rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.65)] px-1.5 py-1.5">
+            <div className="pointer-events-auto relative mx-auto max-w-lg rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.65)] px-1.5 py-1.5">
               {/* Smooth Sliding Floating Notch Pill */}
               <div
                 aria-hidden="true"
                 data-testid="floating-notch-indicator"
                 data-active-index={activeIndex}
-                className="absolute top-1.5 bottom-1.5 left-1.5 w-[calc((100%-0.75rem)/5)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.35,0.64,1)] pointer-events-none"
+                className="absolute top-1.5 bottom-1.5 left-1.5 w-[calc((100%-0.75rem)/6)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.35,0.64,1)] pointer-events-none"
                 style={{ transform: `translateX(${activeIndex * 100}%)` }}
               >
                 <div className="relative w-full h-full rounded-xl bg-emerald-50 dark:bg-emerald-950/75 border border-emerald-200/80 dark:border-emerald-700/60 shadow-xs">
                   {/* Top Notch Accent Crest */}
-                  <span className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-6 h-1 rounded-full bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.65)]" />
+                  <span className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-5 h-1 rounded-full bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.65)]" />
                 </div>
               </div>
 
-              <div className="relative z-10 grid grid-cols-5 items-center">
-                {navItems.map((item, idx) => {
+              <div className="relative z-10 grid grid-cols-6 items-center">
+                {mobileBottomItems.map((item, idx) => {
                   const Icon = item.icon;
                   const isActive = idx === activeIndex;
                   return (
@@ -514,20 +537,28 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                       type="button"
                       onClick={item.onClick}
                       aria-current={isActive ? 'page' : undefined}
+                      aria-label={item.label}
                       data-testid={`mobile-tab-${item.key}`}
-                      className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all duration-200 select-none ${
+                      className={`flex flex-col items-center justify-center min-h-[44px] py-1.5 px-0.5 rounded-xl transition-all duration-200 select-none cursor-pointer ${
                         isActive
                           ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
                           : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                       }`}
                     >
                       <Icon
-                        className={`w-[18px] h-[18px] mb-0.5 transition-transform duration-200 ${
+                        className={`w-[18px] h-[18px] mb-0.5 transition-transform duration-200 shrink-0 ${
                           isActive ? '-translate-y-0.5 stroke-[2.25]' : 'stroke-[1.75]'
                         }`}
                       />
-                      <span className="text-[10.5px] leading-tight truncate max-w-full">
-                        {item.label}
+                      <span className="text-[9.5px] sm:text-[10.5px] leading-tight whitespace-nowrap truncate max-w-full">
+                        {item.shortLabel !== item.label ? (
+                          <>
+                            <span className="min-[410px]:hidden">{item.shortLabel}</span>
+                            <span className="hidden min-[410px]:inline">{item.label}</span>
+                          </>
+                        ) : (
+                          item.label
+                        )}
                       </span>
                     </button>
                   );

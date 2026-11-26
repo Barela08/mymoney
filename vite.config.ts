@@ -43,10 +43,11 @@ export default defineConfig({
     headers: {
       'Content-Security-Policy': [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'",
+        "script-src 'self' 'unsafe-inline' https://apis.google.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://fcm.googleapis.com https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com",
+        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
         "img-src 'self' data: https:",
         "object-src 'none'",
         "base-uri 'self'",
@@ -64,10 +65,11 @@ export default defineConfig({
     headers: {
       'Content-Security-Policy': [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'",
+        "script-src 'self' 'unsafe-inline' https://apis.google.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://fcm.googleapis.com https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com",
+        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
         "img-src 'self' data: https:",
         "object-src 'none'",
         "base-uri 'self'",

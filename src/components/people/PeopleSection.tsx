@@ -882,10 +882,12 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
       <AddPersonModal
         isOpen={isAddPersonModalOpen}
         onClose={() => setIsAddPersonModalOpen(false)}
-        onPersonAdded={(pName) => {
+        onPersonAdded={() => {
           fetchUdharData();
           refreshContacts();
+          setRequestsRefreshKey((k) => k + 1);
         }}
+        onRequestSent={() => setRequestsRefreshKey((k) => k + 1)}
       />
 
       <RepayUdharModal
@@ -915,7 +917,9 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         onContactsUpdated={() => {
           fetchUdharData();
           refreshContacts();
+          setRequestsRefreshKey((k) => k + 1);
         }}
+        onRequestsUpdated={() => setRequestsRefreshKey((k) => k + 1)}
         onSelectPersonForUdhar={(pName) => {
           setInitialPersonForAdd(pName);
           setIsAddUdharOpen(true);

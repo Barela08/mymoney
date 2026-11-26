@@ -104,6 +104,15 @@ export interface ConnectionRequestListResponse {
   success: boolean;
   incoming: ConnectionRequestItem[];
   outgoing: ConnectionRequestItem[];
+  connected?: Array<{
+    id: string;
+    userId: string;
+    displayName: string;
+    avatarUrl?: string | null;
+    isVerified?: boolean;
+    status: string;
+    createdAt: string;
+  }>;
 }
 
 export interface ConnectionRequestResult {
@@ -374,10 +383,16 @@ export const udharDeletionApi = {
   async connectUser(payload: {
     targetUserId: string;
     relationshipType?: string;
+    requestedVia?: string;
   }): Promise<ConnectionRequestResult> {
     return apiRequest('/api/udhar/connections/connect', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, source: 'search', consentConfirmed: true }),
+      body: JSON.stringify({
+        ...payload,
+        requestedVia: payload.requestedVia || 'search',
+        source: 'search',
+        consentConfirmed: true,
+      }),
     });
   },
 
@@ -392,7 +407,11 @@ export const udharDeletionApi = {
   }): Promise<ConnectionRequestResult> {
     return apiRequest('/api/udhar/connections/request', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, consentConfirmed: true }),
+      body: JSON.stringify({
+        ...payload,
+        requestedVia: payload.source || 'search',
+        consentConfirmed: true,
+      }),
     });
   },
 
