@@ -330,6 +330,10 @@ export const AuthPage: React.FC = () => {
         const res = await login(email, password, rememberMe);
         if (res.success) {
           toast.success('Welcome back!', 'Authenticated securely.');
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', '/');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
         } else {
           setErrorMessage(res.message || 'Login failed. Please check your credentials.');
         }
@@ -339,6 +343,10 @@ export const AuthPage: React.FC = () => {
           // Do NOT bundle or auto-grant optional consents (cloud_sync, ai_processing, etc.).
           // The Privacy Choices & Consent Center will prompt the authenticated user explicitly.
           toast.success('Account Created!', 'Welcome to My Money Manager by HackifyPro.');
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', '/');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
         } else {
           setErrorMessage(res.message || 'Registration failed.');
           if (res.errors) setValidationErrors(res.errors);

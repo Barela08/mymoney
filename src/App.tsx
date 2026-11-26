@@ -391,17 +391,31 @@ return (
     );
   }
 
+  // Automatically navigate away from /login or /register to /dashboard once user is authenticated
+  useEffect(() => {
+    if (user && (routeLocation.pathname === '/login' || routeLocation.pathname === '/register' || routeLocation.hash === '#register')) {
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', '/');
+      }
+      setRouteLocation({ pathname: '/', hash: '' });
+      setCurrentTabState('dashboard');
+    }
+  }, [user, routeLocation.pathname, routeLocation.hash]);
+
   // If user is in password recovery mode, visiting auth routes, or not logged in, render AuthPage + AppDownloadPopup
   const isAuthRoute =
-    routeLocation.pathname === '/forgot-password' ||
+    isRecoveryMode ||
     routeLocation.pathname === '/reset-password' ||
-    routeLocation.pathname === '/login' ||
-    routeLocation.pathname === '/register' ||
     routeLocation.hash.includes('reset-password') ||
-    routeLocation.hash === '#forgot-password' ||
-    routeLocation.hash === '#register';
+    (!user && (
+      routeLocation.pathname === '/forgot-password' ||
+      routeLocation.pathname === '/login' ||
+      routeLocation.pathname === '/register' ||
+      routeLocation.hash === '#forgot-password' ||
+      routeLocation.hash === '#register'
+    ));
 
-  if (isRecoveryMode || isAuthRoute || !user) {
+  if (!user || isAuthRoute) {
     return (
       <>
         <AuthPage />
