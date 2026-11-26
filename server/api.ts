@@ -13,6 +13,10 @@ import {
   generateCryptoToken,
   checkRateLimit,
   resetRateLimit,
+  checkRateLimitAsync,
+  resetRateLimitAsync,
+  sendRateLimitExceeded,
+  RATE_LIMITS,
   logSecurityEvent,
 } from './security.js';
 import {
