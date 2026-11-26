@@ -95553,18 +95553,20 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/forgot-password" && method === "POST") {
-      const rate = checkRateLimit(`forgot_pass:${clientIp}`, 5, 15 * 60 * 1e3);
-      if (!rate.allowed) {
-        sendJson5(res, 429, {
-          success: false,
-          message: "Too many reset requests. Please wait a few minutes before trying again."
-        });
+      const rateIp = await checkRateLimitAsync(`forgot_pass:ip:${clientIp}`, RATE_LIMITS.FORGOT_PASSWORD_IP.max, RATE_LIMITS.FORGOT_PASSWORD_IP.windowMs, RATE_LIMITS.FORGOT_PASSWORD_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
         return true;
       }
       const body = await parseJsonBody5(req);
       const email = normalizeEmail(body.email || "");
       if (!validateEmail(email)) {
         sendJson5(res, 400, { success: false, message: "Please provide a valid email address." });
+        return true;
+      }
+      const rateAcct = await checkRateLimitAsync(`forgot_pass:account:${email}`, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.max, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.windowMs, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.op);
+      if (!rateAcct.allowed) {
+        sendRateLimitExceeded(res, rateAcct);
         return true;
       }
       const userRes = await query("SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1", [email]);
@@ -95599,14 +95601,15 @@ async function handleApiRequest(req, res) {
         userEmail: user.email,
         ipAddress: clientIp
       });
-      sendJson5(res, 200, {
-        ...standardResponse,
-        // In local dev, include resetLink for instant testing convenience
-        resetLink: process.env.NODE_ENV !== "production" ? resetLink : void 0
-      });
+      sendJson5(res, 200, standardResponse);
       return true;
     }
     if (pathname === "/api/auth/verify-reset-token" && method === "POST") {
+      const rate = await checkRateLimitAsync(`verify_token:ip:${clientIp}`, RATE_LIMITS.VERIFY_RESET_TOKEN_IP.max, RATE_LIMITS.VERIFY_RESET_TOKEN_IP.windowMs, RATE_LIMITS.VERIFY_RESET_TOKEN_IP.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
       const body = await parseJsonBody5(req);
       const rawToken = body.token || "";
       if (!rawToken) {
@@ -95642,6 +95645,11 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/reset-password" && method === "POST") {
+      const rateIp = await checkRateLimitAsync(`reset_pass:ip:${clientIp}`, RATE_LIMITS.PASSWORD_RESET_IP.max, RATE_LIMITS.PASSWORD_RESET_IP.windowMs, RATE_LIMITS.PASSWORD_RESET_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
+        return true;
+      }
       const body = await parseJsonBody5(req);
       const rawToken = body.token || "";
       const newPassword = body.newPassword || "";
@@ -95651,6 +95659,11 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const tokenHash = hashToken(rawToken);
+      const rateSession = await checkRateLimitAsync(`reset_pass:session:${tokenHash}`, RATE_LIMITS.PASSWORD_RESET_SUBMIT.max, RATE_LIMITS.PASSWORD_RESET_SUBMIT.windowMs, RATE_LIMITS.PASSWORD_RESET_SUBMIT.op);
+      if (!rateSession.allowed) {
+        sendRateLimitExceeded(res, rateSession);
+        return true;
+      }
       const resDb = await query(
         `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
          FROM public.password_resets pr
@@ -95689,6 +95702,8 @@ async function handleApiRequest(req, res) {
         [record.id]
       );
       await revokeAllUserSessions(record.user_id);
+      await resetRateLimitAsync(`reset_pass:session:${tokenHash}`);
+      await resetRateLimitAsync(`login:account:${record.email}`);
       sendPasswordChangedEmail(record.email, record.full_name, clientIp).catch(() => {
       });
       await logSecurityEvent("PASSWORD_RESET_SUCCESSFUL", {
@@ -95984,8 +95999,7 @@ async function handleApiRequest(req, res) {
       }
       sendJson5(res, 200, {
         success: sent,
-        message: sent ? `Password reset email dispatched to ${targetUser.email}.` : `Could not send password reset email to ${targetUser.email}. Check SMTP_USER / SMTP_PASS server configuration.`,
-        resetLink: process.env.NODE_ENV !== "production" ? resetLink : void 0
+        message: sent ? `Password reset email dispatched to ${targetUser.email}.` : `Could not send password reset email to ${targetUser.email}. Check SMTP_USER / SMTP_PASS server configuration.`
       });
       return true;
     }
@@ -97335,9 +97349,9 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const rate = checkRateLimit(`user_search:${authUser.id}`, 60, 60 * 1e3);
+      const rate = await checkRateLimitAsync(`user_search:${authUser.id}`, RATE_LIMITS.PEOPLE_SEARCH.max, RATE_LIMITS.PEOPLE_SEARCH.windowMs, RATE_LIMITS.PEOPLE_SEARCH.op);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, code: "RATE_LIMITED", message: "Search rate limit exceeded. Please wait a moment." });
+        sendRateLimitExceeded(res, rate);
         return true;
       }
       const rawQ = parsed.query.q || "";

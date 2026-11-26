@@ -3285,9 +3285,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const rate = checkRateLimit(`user_search:${authUser.id}`, 60, 60 * 1000);
+      const rate = await checkRateLimitAsync(`user_search:${authUser.id}`, RATE_LIMITS.PEOPLE_SEARCH.max, RATE_LIMITS.PEOPLE_SEARCH.windowMs, RATE_LIMITS.PEOPLE_SEARCH.op);
       if (!rate.allowed) {
-        sendJson(res, 429, { success: false, code: 'RATE_LIMITED', message: 'Search rate limit exceeded. Please wait a moment.' });
+        sendRateLimitExceeded(res, rate);
         return true;
       }
 
