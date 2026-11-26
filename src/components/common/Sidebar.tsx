@@ -160,6 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Financial Tools',
       items: [
         { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
+{ id: 'upi_qr' as NavTab, label: 'UPI QR Generator', icon: Wallet },
         { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
         { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },

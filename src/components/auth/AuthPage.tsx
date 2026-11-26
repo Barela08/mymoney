@@ -134,10 +134,10 @@ export const AuthPage: React.FC = () => {
 
       if (isReset) {
         setMode('reset_password');
-        let token = searchParams.get('token');
+        let token = searchParams.get('token') || searchParams.get('code');
         if (!token) {
-          const matchToken = hash.match(/token=([a-zA-Z0-9_-]+)/);
-          if (matchToken && matchToken[1]) token = matchToken[1];
+        const matchToken = hash.match(/(?:token|access_token)=([a-zA-Z0-9_.-]+)/);
+        if (matchToken && matchToken[1]) token = matchToken[1];
         }
         if (!token && recoveryToken) token = recoveryToken;
 

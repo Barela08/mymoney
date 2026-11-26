@@ -322,13 +322,13 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
   let queryPath = '';
 
   if (classified.mode === 'email_exact') {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=5`;
+    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=5`;
   } else if (classified.mode === 'phone_exact') {
     const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=15`;
+    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=15`;
   } else {
     const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(','))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&order=full_name.asc&limit=20`;
+    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(','))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&order=full_name.asc&limit=20`;
   }
 
   const usersRes = await sbRest<any[]>(queryPath);
@@ -345,7 +345,10 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
   }
 
   let activeUsers = (usersRes.data || []).filter(
-    (u) => !u.deletion_status || u.deletion_status === 'none'
+  (u) =>
+  (!u.deletion_status || u.deletion_status === 'none') &&
+  String(u.role || '').toLowerCase() !== 'admin' &&
+  String(u.email || '').toLowerCase().trim() !== 'admin@mymoney.com'
   );
 
   // Strict post-filter for exact email / exact normalized phone match
@@ -2422,6 +2425,16 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
     return { status: 404, body: { success: false, message: 'Transaction not found.' } };
   }
   const tx = txRes.data[0];
+
+  if (tx.counterpart_user_id && tx.direction === 'took') {
+  return {
+  status: 403,
+  body: {
+  success: false,
+  message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
+  },
+  };
+  }
 
   const repsRes = await sbRest<any[]>(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&select=status`);
   const repayments = (repsRes.ok && Array.isArray(repsRes.data)) ? repsRes.data : [];

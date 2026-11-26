@@ -55,6 +55,7 @@ const SmartAlertsSection = lazy(() => import('./components/alerts/SmartAlertsSec
 const ReceiptScannerSection = lazy(() => import('./components/receipts/ReceiptScannerSection').then(m => ({ default: m.ReceiptScannerSection })));
 const NetWorthSection = lazy(() => import('./components/net-worth/NetWorthSection').then(m => ({ default: m.NetWorthSection })));
 const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToSpendSection').then(m => ({ default: m.SafeToSpendSection })));
+const UpiQrGeneratorSection = lazy(() => import('./components/upi/UpiQrGeneratorSection').then(m => ({ default: m.UpiQrGeneratorSection })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
@@ -65,7 +66,8 @@ const PATH_TO_TAB: Record<string, NavTab> = {
   '/receipt-scanner': 'receipt_scanner',
   '/net-worth': 'net_worth',
   '/safe-to-spend': 'safe_to_spend',
-};
+  '/upi-qr': 'upi_qr',
+  };
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
@@ -76,7 +78,8 @@ const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   receipt_scanner: '/receipt-scanner',
   net_worth: '/net-worth',
   safe_to_spend: '/safe-to-spend',
-};
+  upi_qr: '/upi-qr',
+  };
 
 const SectionFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-20 min-h-[300px] space-y-3 animate-pulse">
@@ -302,29 +305,63 @@ const MainContent: React.FC = () => {
     routeLocation.pathname === '/admin' ||
     routeLocation.hash === '#admin' ||
     routeLocation.hash.startsWith('#admin=');
+// Separate Admin Portal Route (/admin) — Always accessible even during Maintenance Mode
+if (isAdminRoute) {
+if (!user) {
+return (
+<AdminLoginPage
+onReturnHome={() => {
+if (typeof window !== 'undefined') {
+window.history.pushState(null, '', '/');
+if (window.location.hash.startsWith('#admin')) {
+window.location.hash = '';
+}
+}
+setRouteLocation({ pathname: '/', hash: '' });
+setCurrentTabState('dashboard');
+}}
+/>
+);
+}
 
-  // Separate Admin Portal Route (/admin) — Always accessible even during Maintenance Mode
-  if (isAdminRoute) {
-    if (!user) {
-      return (
-        <AdminLoginPage
-          onReturnHome={() => {
-            if (typeof window !== 'undefined') {
-              window.history.pushState(null, '', '/');
-              if (window.location.hash.startsWith('#admin')) {
-                window.location.hash = '';
-              }
-            }
-            setRouteLocation({ pathname: '/', hash: '' });
-            setCurrentTabState('dashboard');
-          }}
-        />
-      );
-    }
+// Role Enforcement: Non-admin users are strictly blocked with 403 Forbidden
+if (user && !isAdmin) {
+return (
+<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+<div className="max-w-md w-full bg-slate-900 border border-rose-500/30 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
+<div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto ring-8 ring-rose-500/5">
+<AlertTriangle className="w-8 h-8" />
+</div>
+<div className="space-y-2">
+<h2 className="text-xl font-black text-white">403 Forbidden: Access Denied</h2>
+<p className="text-xs text-slate-400 leading-relaxed">
+You do not have administrative privileges to access the Admin Control Center.
+This incident has been logged for security.
+</p>
+</div>
+<button
+onClick={() => {
+if (typeof window !== 'undefined') {
+window.history.pushState(null, '', '/');
+if (window.location.hash.startsWith('#admin')) {
+window.location.hash = '';
+}
+}
+setRouteLocation({ pathname: '/', hash: '' });
+setCurrentTabState('dashboard');
+}}
+className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-emerald-900/30 cursor-pointer"
+>
+Return to Safe Dashboard
+</button>
+</div>
+</div>
+);
+}
 
-    return (
-      <Suspense fallback={<SectionFallback />}>
-        <AdminDashboard
+return (
+<Suspense fallback={<SectionFallback />}>
+<AdminDashboard
           onExit={() => {
             if (typeof window !== 'undefined') {
               if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
@@ -478,10 +515,13 @@ const MainContent: React.FC = () => {
                   {currentTab === 'net_worth' && (
                     <NetWorthSection />
                   )}
+{currentTab === 'safe_to_spend' && (
+<SafeToSpendSection onSelectTab={setCurrentTab} />
+)}
 
-                  {currentTab === 'safe_to_spend' && (
-                    <SafeToSpendSection onSelectTab={setCurrentTab} />
-                  )}
+{currentTab === 'upi_qr' && (
+<UpiQrGeneratorSection onNavigate={setCurrentTab} />
+)}
 
                   {currentTab === 'home' && (
                     <HomeSection onOpenAddModal={handleOpenAddModal} />

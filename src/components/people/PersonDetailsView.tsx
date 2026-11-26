@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
+  QrCode,
   ArrowLeft,
   Phone,
   Mail,
@@ -132,13 +133,13 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
       setIsSettling(false);
     }
   };
-
-  const handleSettleSingleTx = async (txId: string) => {
-    if (!confirm('Settle this entire debt balance to ₹0?')) return;
-    try {
-      const res = await udharDeletionApi.settleUdharTransaction(txId);
-      if (res.success) {
-        toast.success('Settled', res.message);
+const handleSettleSingleTx = async (tx: UdharTransactionItem) => {
+const curBal = parseFloat(String(tx.current_balance)) || 0;
+if (!confirm(`Are you sure you want to mark this Udhar of ₹${curBal.toLocaleString('en-IN')} as SETTLED to ₹0 for ${person.name}? This confirms you have received payment.`)) return;
+try {
+const res = await udharDeletionApi.settleUdharTransaction(tx.id);
+if (res.success) {
+toast.success('Settled', res.message);
         if (onRefreshUdhar) await onRefreshUdhar();
       }
     } catch (err: any) {
@@ -317,15 +318,28 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
               <span>Add Udhar</span>
             </button>
 
-            {!isSettled && (
-              <button
-                onClick={() => setIsSettleModalOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white active:scale-95 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Settle Full (हिसाब चुकता)</span>
-              </button>
-            )}
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', '/upi-qr');
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white active:scale-95 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Open UPI QR Generator for fast payment"
+            >
+              <QrCode className="w-4 h-4" />
+              <span>UPI QR</span>
+            </button>
+{!isSettled && isOwedToYou && (
+<button
+onClick={() => setIsSettleModalOpen(true)}
+className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white active:scale-95 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+>
+<CheckCircle2 className="w-4 h-4" />
+<span>Settle Full (हिसाब चुकता)</span>
+</button>
+)}
           </div>
         </div>
 
@@ -451,28 +465,33 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
                         Details
                       </button>
                       {!isTxSettled && curBal > 0 && (
-                        <>
-                          <button
-                            onClick={() => setSelectedTxForRepay(tx)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                          >
-                            Record Repayment
-                          </button>
-                          <button
-                            onClick={() => handleSettleSingleTx(tx.id)}
-                            className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold cursor-pointer"
-                          >
-                            Settle
-                          </button>
-                        </>
-                      )}
+                      <>
                       <button
-                        onClick={() => handleCancelSingleTx(tx.id)}
-                        className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold cursor-pointer"
-                        title="Cancel this record"
+                      onClick={() => setSelectedTxForRepay(tx)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
                       >
-                        Cancel
+                      Record Repayment
                       </button>
+                      {isGave && (
+                      <button
+                      onClick={() => handleSettleSingleTx(tx)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold cursor-pointer"
+                      title="Settle this loan (Lender only)"
+                      >
+                      Settle
+                      </button>
+                      )}
+                      </>
+                      )}
+                      {isGave && (
+                      <button
+                      onClick={() => handleCancelSingleTx(tx.id)}
+                      className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold cursor-pointer"
+                      title="Cancel this record (Lender only)"
+                      >
+                      Cancel
+                      </button>
+                      )}
                     </div>
                   </div>
 

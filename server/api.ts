@@ -3331,8 +3331,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
              ) AS is_saved_contact
            FROM public.app_users u
            WHERE u.status = 'active'
-             AND COALESCE(u.deletion_status, 'none') = 'none'
-             AND NOT EXISTS (
+           AND COALESCE(u.deletion_status, 'none') = 'none'
+           AND COALESCE(u.role, 'user') != 'admin'
+           AND LOWER(TRIM(COALESCE(u.email, ''))) != 'admin@mymoney.com'
+           AND NOT EXISTS (
                SELECT 1 FROM public.user_connections blk
                WHERE ((blk.user_a_id = $1 AND blk.user_b_id = u.id) OR (blk.user_b_id = $1 AND blk.user_a_id = u.id))
                  AND blk.status = 'blocked'
@@ -5090,6 +5092,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
+      if (tx.counterpart_user_id && tx.direction === 'took') {
+      sendJson(res, 403, {
+      success: false,
+      message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
+      });
+      return true;
+      }
       const repsRes = await query(
         `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
         [tx.link_id]
@@ -5110,11 +5119,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       await query(
-        `UPDATE public.udhar_transactions 
-         SET status = 'cancelled', current_balance = 0, updated_at = NOW() 
-         WHERE link_id = $1`,
-        [tx.link_id]
+      `UPDATE public.udhar_transactions
+      SET status = 'cancelled', current_balance = 0, updated_at = NOW(),
+      deleted_at = NOW(), deleted_by = $2
+      WHERE link_id = $1`,
+      [tx.link_id, authUser.id]
+      ).catch(async () => {
+      await query(
+      `UPDATE public.udhar_transactions
+      SET status = 'cancelled', current_balance = 0, updated_at = NOW()
+      WHERE link_id = $1`,
+      [tx.link_id]
       );
+      });
 
       if (tx.counterpart_user_id) {
         await query(
