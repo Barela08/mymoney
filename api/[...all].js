@@ -96788,9 +96788,9 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const reqRate = checkRateLimit(`conn_req:${authUser.id}`, 25, 60 * 1e3);
+      const reqRate = await checkRateLimitAsync(`conn_request:${authUser.id}`, RATE_LIMITS.CONNECTION_REQUEST.max, RATE_LIMITS.CONNECTION_REQUEST.windowMs, RATE_LIMITS.CONNECTION_REQUEST.op);
       if (!reqRate.allowed) {
-        sendJson5(res, 429, { success: false, code: "RATE_LIMITED", message: "Too many connection requests. Please wait a moment." });
+        sendRateLimitExceeded(res, reqRate);
         return true;
       }
       const body = await parseJsonBody5(req);
@@ -97479,6 +97479,11 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
+      const rate = await checkRateLimitAsync(`qr_generate:${authUser.id}`, RATE_LIMITS.QR_GENERATION.max, RATE_LIMITS.QR_GENERATION.windowMs, RATE_LIMITS.QR_GENERATION.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
       if (!isDatabaseAvailable()) {
         const restRes = await getMyQrRest(authUser);
         sendJson5(res, restRes.status, restRes.body);
@@ -97540,13 +97545,9 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
-      const qrRate = checkRateLimit(`qr_resolve:${authUser.id}`, 30, 60 * 1e3);
+      const qrRate = await checkRateLimitAsync(`qr_resolve:${authUser.id}`, RATE_LIMITS.QR_SCAN_VALIDATE.max, RATE_LIMITS.QR_SCAN_VALIDATE.windowMs, RATE_LIMITS.QR_SCAN_VALIDATE.op);
       if (!qrRate.allowed) {
-        sendJson5(res, 429, {
-          success: false,
-          code: "RATE_LIMITED",
-          message: "Too many QR verification attempts. Please wait a minute and try again."
-        });
+        sendRateLimitExceeded(res, qrRate);
         return true;
       }
       const body = await parseJsonBody5(req);
@@ -97680,6 +97681,11 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required. Please log in." });
         return true;
       }
+      const rate = await checkRateLimitAsync(`qr_generate:${authUser.id}`, RATE_LIMITS.QR_GENERATION.max, RATE_LIMITS.QR_GENERATION.windowMs, RATE_LIMITS.QR_GENERATION.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
       if (!isDatabaseAvailable()) {
         const restRes = await regenerateQrRest(authUser);
         sendJson5(res, restRes.status, restRes.body);
@@ -97727,9 +97733,9 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const qrConnRate = checkRateLimit(`qr_connect:${authUser.id}`, 25, 60 * 1e3);
+      const qrConnRate = await checkRateLimitAsync(`conn_request:${authUser.id}`, RATE_LIMITS.CONNECTION_REQUEST.max, RATE_LIMITS.CONNECTION_REQUEST.windowMs, RATE_LIMITS.CONNECTION_REQUEST.op);
       if (!qrConnRate.allowed) {
-        sendJson5(res, 429, { success: false, code: "RATE_LIMITED", message: "Too many pairing requests. Please wait a moment." });
+        sendRateLimitExceeded(res, qrConnRate);
         return true;
       }
       const body = await parseJsonBody5(req);
