@@ -415,13 +415,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const password = String(body.password || '');
       const rememberMe = Boolean(body.rememberMe);
 
-      const rate = checkRateLimit(`admin_login_ip:${clientIp}`, 15, 5 * 60 * 1000);
-      if (!rate.allowed) {
-        sendJson(res, 429, {
-          success: false,
-          message: `Too many admin login attempts. Try again in ${rate.retryAfterSec} seconds.`,
-        });
+      const rateIp = await checkRateLimitAsync(`admin_login:ip:${clientIp}`, RATE_LIMITS.ADMIN_LOGIN_IP.max, RATE_LIMITS.ADMIN_LOGIN_IP.windowMs, RATE_LIMITS.ADMIN_LOGIN_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
         return true;
+      }
+
+      if (email) {
+        const rateAcct = await checkRateLimitAsync(`admin_login:account:${email}`, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.max, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.op);
+        if (!rateAcct.allowed) {
+          sendRateLimitExceeded(res, rateAcct);
+          return true;
+        }
       }
 
       if (!email || !password) {
@@ -533,7 +538,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       setSessionCookie(res, sessionToken, expiresAt);
-      resetRateLimit(`admin_login_ip:${clientIp}`);
+      await resetRateLimitAsync(`admin_login:ip:${clientIp}`);
+      await resetRateLimitAsync(`admin_login:account:${email}`);
 
       const sanitizedUser = sanitizeUserOutput({
         ...userRecord,
@@ -636,9 +642,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 1. REGISTER: POST /api/auth/register
     // ---------------------------------------------------------
     if (pathname === '/api/auth/register' && method === 'POST') {
-      const rate = checkRateLimit(`register:${clientIp}`, 10, 60 * 1000);
+      const rate = await checkRateLimitAsync(`signup:ip:${clientIp}`, RATE_LIMITS.SIGNUP_IP.max, RATE_LIMITS.SIGNUP_IP.windowMs, RATE_LIMITS.SIGNUP_IP.op);
       if (!rate.allowed) {
-        sendJson(res, 429, { success: false, message: 'Too many registration attempts. Please wait.' });
+        sendRateLimitExceeded(res, rate);
         return true;
       }
 
@@ -735,14 +741,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const password = body.password || '';
       const rememberMe = Boolean(body.rememberMe);
 
-      // Rate limiting: 25 attempts per 5 minutes per IP
-      const rate = checkRateLimit(`login_ip:${clientIp}`, 25, 5 * 60 * 1000);
-      if (!rate.allowed) {
-        sendJson(res, 429, {
-          success: false,
-          message: `Too many login attempts from this network. Try again in ${rate.retryAfterSec} seconds.`,
-        });
+      // Rate limiting: 15 attempts / 15m per IP; 5 attempts / 15m per account
+      const rateIp = await checkRateLimitAsync(`login:ip:${clientIp}`, RATE_LIMITS.LOGIN_IP.max, RATE_LIMITS.LOGIN_IP.windowMs, RATE_LIMITS.LOGIN_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
         return true;
+      }
+
+      if (email) {
+        const rateAcct = await checkRateLimitAsync(`login:account:${email}`, RATE_LIMITS.LOGIN_ACCOUNT.max, RATE_LIMITS.LOGIN_ACCOUNT.windowMs, RATE_LIMITS.LOGIN_ACCOUNT.op);
+        if (!rateAcct.allowed) {
+          sendRateLimitExceeded(res, rateAcct);
+          return true;
+        }
       }
 
       if (!email || !password) {
@@ -818,7 +829,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const session = await createSession(user.id, { rememberMe, userAgent, ipAddress: clientIp });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
-      resetRateLimit(`login_ip:${clientIp}`);
+      await resetRateLimitAsync(`login:ip:${clientIp}`);
+      await resetRateLimitAsync(`login:account:${email}`);
 
       await logSecurityEvent('USER_LOGIN_SUCCESS', {
         userId: user.id,
@@ -1121,12 +1133,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 10. FORGOT PASSWORD: POST /api/auth/forgot-password
     // ---------------------------------------------------------
     if (pathname === '/api/auth/forgot-password' && method === 'POST') {
-      const rate = checkRateLimit(`forgot_pass:${clientIp}`, 5, 15 * 60 * 1000);
-      if (!rate.allowed) {
-        sendJson(res, 429, {
-          success: false,
-          message: 'Too many reset requests. Please wait a few minutes before trying again.',
-        });
+      const rateIp = await checkRateLimitAsync(`forgot_pass:ip:${clientIp}`, RATE_LIMITS.FORGOT_PASSWORD_IP.max, RATE_LIMITS.FORGOT_PASSWORD_IP.windowMs, RATE_LIMITS.FORGOT_PASSWORD_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
         return true;
       }
 
@@ -1135,6 +1144,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       if (!validateEmail(email)) {
         sendJson(res, 400, { success: false, message: 'Please provide a valid email address.' });
+        return true;
+      }
+
+      const rateAcct = await checkRateLimitAsync(`forgot_pass:account:${email}`, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.max, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.windowMs, RATE_LIMITS.FORGOT_PASSWORD_ACCOUNT.op);
+      if (!rateAcct.allowed) {
+        sendRateLimitExceeded(res, rateAcct);
         return true;
       }
 
@@ -1186,11 +1201,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         ipAddress: clientIp,
       });
 
-      sendJson(res, 200, {
-        ...standardResponse,
-        // In local dev, include resetLink for instant testing convenience
-        resetLink: process.env.NODE_ENV !== 'production' ? resetLink : undefined,
-      });
+      // Strict security: Never return raw recovery URL or token in API responses
+      sendJson(res, 200, standardResponse);
       return true;
     }
 
@@ -1198,6 +1210,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 11. VERIFY RESET TOKEN: POST /api/auth/verify-reset-token
     // ---------------------------------------------------------
     if (pathname === '/api/auth/verify-reset-token' && method === 'POST') {
+      const rate = await checkRateLimitAsync(`verify_token:ip:${clientIp}`, RATE_LIMITS.VERIFY_RESET_TOKEN_IP.max, RATE_LIMITS.VERIFY_RESET_TOKEN_IP.windowMs, RATE_LIMITS.VERIFY_RESET_TOKEN_IP.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       const rawToken = body.token || '';
 
@@ -1243,6 +1261,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 12. RESET PASSWORD: POST /api/auth/reset-password
     // ---------------------------------------------------------
     if (pathname === '/api/auth/reset-password' && method === 'POST') {
+      const rateIp = await checkRateLimitAsync(`reset_pass:ip:${clientIp}`, RATE_LIMITS.PASSWORD_RESET_IP.max, RATE_LIMITS.PASSWORD_RESET_IP.windowMs, RATE_LIMITS.PASSWORD_RESET_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       const rawToken = body.token || '';
       const newPassword = body.newPassword || '';
@@ -1254,6 +1278,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tokenHash = hashToken(rawToken);
+
+      const rateSession = await checkRateLimitAsync(`reset_pass:session:${tokenHash}`, RATE_LIMITS.PASSWORD_RESET_SUBMIT.max, RATE_LIMITS.PASSWORD_RESET_SUBMIT.windowMs, RATE_LIMITS.PASSWORD_RESET_SUBMIT.op);
+      if (!rateSession.allowed) {
+        sendRateLimitExceeded(res, rateSession);
+        return true;
+      }
       const resDb = await query(
         `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
          FROM public.password_resets pr
@@ -1305,6 +1335,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Invalidate all existing sessions
       await revokeAllUserSessions(record.user_id);
+
+      // Clear any lockout / rate limits on the updated account
+      await resetRateLimitAsync(`reset_pass:session:${tokenHash}`);
+      await resetRateLimitAsync(`login:account:${record.email}`);
 
       // Dispatch confirmation email
       sendPasswordChangedEmail(record.email, record.full_name, clientIp).catch(() => {});
@@ -1643,7 +1677,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         message: sent
           ? `Password reset email dispatched to ${targetUser.email}.`
           : `Could not send password reset email to ${targetUser.email}. Check SMTP_USER / SMTP_PASS server configuration.`,
-        resetLink: process.env.NODE_ENV !== 'production' ? resetLink : undefined,
       });
       return true;
     }

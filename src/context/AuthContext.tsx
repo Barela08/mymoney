@@ -33,7 +33,7 @@ interface AuthContextType {
   ) => Promise<{ success: boolean; message?: string; errors?: string[] }>;
   logout: () => Promise<void>;
   logoutAllDevices: () => Promise<void>;
-  requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string; resetLink?: string }>;
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordReset: (token: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message: string }>;
   changePassword: (currentPassword: string, newPassword: string, confirmNewPassword: string) => Promise<{ success: boolean; message: string }>;
   updateUserProfile: (payload: { fullName?: string; phone?: string; avatarUrl?: string }) => Promise<{ success: boolean; message: string }>;
@@ -42,7 +42,7 @@ interface AuthContextType {
   getAdminUsersList: () => Promise<AdminUserListItem[]>;
   toggleUserStatus: (targetUserId: string, newStatus: 'active' | 'suspended' | 'deactivated') => Promise<{ success: boolean; message: string }>;
   adminUpdateUserRole: (targetUserId: string, newRole: 'user' | 'admin') => Promise<{ success: boolean; message: string }>;
-  adminSendResetEmail: (targetUserId: string) => Promise<{ success: boolean; message: string; resetLink?: string }>;
+  adminSendResetEmail: (targetUserId: string) => Promise<{ success: boolean; message: string }>;
   adminForcePasswordReset: (targetUserId: string) => Promise<{ success: boolean; message: string }>;
   adminRevokeSessions: (targetUserId: string) => Promise<{ success: boolean; message: string }>;
   adminDeleteUser: (targetUserId: string) => Promise<{ success: boolean; message: string }>;
@@ -90,7 +90,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        if (token) setRecoveryToken(token);
+        if (token) {
+          setRecoveryToken(token);
+          // Immediately strip recovery tokens from visible address bar
+          if (window.location.search || window.location.hash) {
+            try {
+              window.history.replaceState(null, '', '/reset-password');
+            } catch {}
+          }
+        }
         if (email) setRecoveryEmail(email);
       }
     };
@@ -98,9 +106,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkRecoveryRoute();
     window.addEventListener('hashchange', checkRecoveryRoute);
     window.addEventListener('popstate', checkRecoveryRoute);
+
+    const supabase = getSupabaseClient();
+    let authListener: any = null;
+    if (supabase) {
+      try {
+        const { data } = supabase.auth.onAuthStateChange((event) => {
+          if (event === 'PASSWORD_RECOVERY') {
+            setIsRecoveryMode(true);
+            try {
+              window.history.replaceState(null, '', '/reset-password');
+            } catch {}
+          }
+        });
+        authListener = data?.subscription;
+      } catch {}
+    }
+
     return () => {
       window.removeEventListener('hashchange', checkRecoveryRoute);
       window.removeEventListener('popstate', checkRecoveryRoute);
+      if (authListener?.unsubscribe) {
+        authListener.unsubscribe();
+      }
     };
   }, []);
 
@@ -398,8 +426,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await authApi.forgotPassword(email);
       return {
         success: true,
-        message: res.message,
-        resetLink: res.resetLink,
+        message: res.message || 'If an account exists with this email, a password reset link has been sent.',
       };
     } catch (err: any) {
       return {
@@ -555,7 +582,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const adminSendResetEmail = async (targetUserId: string) => {
     try {
       const res = await authApi.adminSendResetEmail(targetUserId);
-      return { success: true, message: res.message, resetLink: res.resetLink };
+      return { success: true, message: res.message };
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to dispatch reset email.' };
     }

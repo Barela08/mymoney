@@ -71,8 +71,6 @@ export const AuthPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
-  const [generatedResetLink, setGeneratedResetLink] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // Navigate between auth modes and synchronize URL
   const navigateToMode = (newMode: 'login' | 'register' | 'forgot_password' | 'reset_password') => {
@@ -85,8 +83,7 @@ export const AuthPage: React.FC = () => {
       if (newMode === 'forgot_password') {
         window.history.pushState(null, '', '/forgot-password');
       } else if (newMode === 'reset_password') {
-        const qs = activeToken ? `?token=${encodeURIComponent(activeToken)}` : '';
-        window.history.pushState(null, '', `/reset-password${qs}`);
+        window.history.pushState(null, '', '/reset-password');
       } else if (newMode === 'register') {
         window.history.pushState(null, '', '/register');
       } else {
@@ -136,13 +133,20 @@ export const AuthPage: React.FC = () => {
         setMode('reset_password');
         let token = searchParams.get('token') || searchParams.get('code');
         if (!token) {
-        const matchToken = hash.match(/(?:token|access_token)=([a-zA-Z0-9_.-]+)/);
-        if (matchToken && matchToken[1]) token = matchToken[1];
+          const matchToken = hash.match(/(?:token|access_token)=([a-zA-Z0-9_.-]+)/);
+          if (matchToken && matchToken[1]) token = matchToken[1];
         }
         if (!token && recoveryToken) token = recoveryToken;
 
         const foundToken = token || '';
         setActiveToken(foundToken);
+
+        // Immediately strip sensitive token/query parameters from address bar to protect against history & referer leakage
+        if (typeof window !== 'undefined' && (window.location.search || window.location.hash)) {
+          try {
+            window.history.replaceState(null, '', '/reset-password');
+          } catch {}
+        }
 
         if (foundToken) {
           setTokenStatus('checking');
@@ -157,9 +161,10 @@ export const AuthPage: React.FC = () => {
                 setErrorMessage(res.message || 'This reset link is invalid, expired, or has already been used.');
               }
             })
-            .catch(() => {
+            .catch((err: any) => {
               setTokenStatus('invalid');
-              setErrorMessage('Unable to verify reset link. Please check your network or request a new link.');
+              const msg = err?.data?.message || err?.message || 'Unable to verify reset link. Please request a new link.';
+              setErrorMessage(msg);
             });
         } else {
           setTokenStatus('invalid');
@@ -215,15 +220,6 @@ export const AuthPage: React.FC = () => {
     return { isValid, label, color, width, meetsLength };
   }, [password]);
 
-  const handleCopyResetLink = () => {
-    if (generatedResetLink) {
-      navigator.clipboard.writeText(generatedResetLink);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-      toast.info('Copied', 'Password reset link copied to clipboard.');
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -261,7 +257,8 @@ export const AuthPage: React.FC = () => {
           setErrorMessage(res.message || 'Failed to update password.');
         }
       } catch (err: any) {
-        setErrorMessage(err.message || 'An error occurred during password reset.');
+        const msg = err?.data?.message || err?.message || 'An error occurred during password reset.';
+        setErrorMessage(msg);
       } finally {
         setIsSubmitting(false);
       }
@@ -278,16 +275,18 @@ export const AuthPage: React.FC = () => {
       try {
         setIsSubmitting(true);
         const res = await requestPasswordReset(email);
-        setResetSuccessMessage(
-          res.message || 'If an account exists with this email, a password reset link has been sent.'
-        );
-        setResendCooldown(60);
-        if (res.resetLink) {
-          setGeneratedResetLink(res.resetLink);
+        if (res.success) {
+          setResetSuccessMessage(
+            res.message || 'If an account exists with this email, a password reset link has been sent.'
+          );
+          setResendCooldown(60);
+          toast.success('Reset Request Dispatched', res.message || 'Instructions sent if account exists.');
+        } else {
+          setErrorMessage(res.message || 'Failed to dispatch reset request.');
         }
-        toast.success('Reset Request Dispatched', res.message || 'Instructions sent if account exists.');
       } catch (err: any) {
-        setErrorMessage(err.message || 'Failed to dispatch reset request.');
+        const msg = err?.data?.message || err?.message || 'You have made too many attempts. Please try again after some time.';
+        setErrorMessage(msg);
       } finally {
         setIsSubmitting(false);
       }
@@ -467,31 +466,6 @@ export const AuthPage: React.FC = () => {
               <p className="text-xs text-emerald-700 dark:text-emerald-300 leading-relaxed">
                 {resetSuccessMessage}
               </p>
-
-              {/* Developer preview of link in local dev mode */}
-              {generatedResetLink && (
-                <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-800/60">
-                  <p className="text-[10px] text-emerald-800 dark:text-emerald-300 font-bold uppercase tracking-wider mb-1">
-                    Direct Reset Link:
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={generatedResetLink}
-                      className="text-[11px] font-mono bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700 text-slate-800 dark:text-slate-200 flex-1 truncate"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCopyResetLink}
-                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-1 shrink-0"
-                    >
-                      {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedLink ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

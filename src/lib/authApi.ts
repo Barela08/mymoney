@@ -655,7 +655,7 @@ async function directSupabaseDeleteAccount(password: string): Promise<{ success:
   };
 }
 
-async function directSupabaseForgotPassword(email: string): Promise<{ success: boolean; message: string; resetLink?: string }> {
+async function directSupabaseForgotPassword(email: string): Promise<{ success: boolean; message: string }> {
   const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
   const normEmail = email.toLowerCase().trim();
 
@@ -669,7 +669,7 @@ async function directSupabaseForgotPassword(email: string): Promise<{ success: b
       if (Array.isArray(rows) && rows.length > 0) {
         const u = rows[0];
         const token = 'rst_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
         await fetch(`${supabaseUrl}/rest/v1/password_resets`, {
           method: 'POST',
@@ -696,7 +696,6 @@ async function directSupabaseForgotPassword(email: string): Promise<{ success: b
         return {
           success: true,
           message: 'If an account exists with this email, a password reset link has been sent.',
-          resetLink,
         };
       }
     }
@@ -801,7 +800,7 @@ export const authApi = {
       }
       return data;
     } catch (err: any) {
-      if (err.status === 400 || err.status === 409 || err?.data?.code === 'MAINTENANCE_MODE') {
+      if (err.status === 400 || err.status === 409 || err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS' || err?.data?.code === 'MAINTENANCE_MODE') {
         throw err;
       }
       console.warn('Backend register API unreachable, attempting direct registration:', err.message);
@@ -952,13 +951,16 @@ export const authApi = {
   },
 
   // Password Recovery
-  async forgotPassword(email: string): Promise<{ success: boolean; message: string; resetLink?: string }> {
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
     try {
       return await request('/api/auth/forgot-password', {
         method: 'POST',
         body: JSON.stringify({ email }),
       });
     } catch (err: any) {
+      if (err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS') {
+        throw err;
+      }
       console.warn('Backend forgot-password unreachable, using direct Supabase fallback:', err.message);
       return await directSupabaseForgotPassword(email);
     }
@@ -971,6 +973,9 @@ export const authApi = {
         body: JSON.stringify({ token }),
       });
     } catch (err: any) {
+      if (err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS') {
+        throw err;
+      }
       console.warn('Backend verify-reset-token unreachable, using direct Supabase fallback:', err.message);
       return await directSupabaseVerifyResetToken(token);
     }
@@ -987,6 +992,9 @@ export const authApi = {
         body: JSON.stringify(payload),
       });
     } catch (err: any) {
+      if (err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS' || err.status === 400) {
+        throw err;
+      }
       console.warn('Backend reset-password unreachable, using direct Supabase fallback:', err.message);
       return await directSupabaseResetPassword(payload);
     }
@@ -1094,7 +1102,7 @@ export const authApi = {
     }
   },
 
-  async adminSendResetEmail(userId: string): Promise<{ success: boolean; message: string; resetLink?: string }> {
+  async adminSendResetEmail(userId: string): Promise<{ success: boolean; message: string }> {
     return request(`/api/admin/users/${encodeURIComponent(userId)}/send-reset-email`, {
       method: 'POST',
     });

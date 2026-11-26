@@ -135,11 +135,31 @@ export async function sendPasswordResetEmail(payload: {
   });
 }
 
+// Rate limit map for serverless email dispatch
+const emailRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function checkEmailDispatchRateLimit(key: string, maxAttempts = 5, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  const rec = emailRateLimit.get(key);
+  if (!rec || now > rec.resetAt) {
+    emailRateLimit.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, remaining: maxAttempts - 1 };
+  }
+  if (rec.count >= maxAttempts) {
+    const retryAfter = Math.ceil((rec.resetAt - now) / 1000);
+    return { allowed: false, remaining: 0, retryAfter };
+  }
+  rec.count++;
+  return { allowed: true, remaining: maxAttempts - rec.count };
+}
+
 // Handler for Vercel / Node serverless function
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1';
 
   try {
     const { email, name, otp, resetLink } = req.body || {};
@@ -147,7 +167,22 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Email and OTP are required' });
     }
 
-    const info = await sendPasswordResetEmail({ email, name, otp, resetLink });
+    const normEmail = String(email).toLowerCase().trim();
+    const rateIp = checkEmailDispatchRateLimit(`send_reset_ip:${clientIp}`, 5, 15 * 60 * 1000);
+    const rateAcct = checkEmailDispatchRateLimit(`send_reset_email:${normEmail}`, 3, 60 * 60 * 1000);
+
+    if (!rateIp.allowed || !rateAcct.allowed) {
+      const retryAfter = Math.max(rateIp.retryAfter || 60, rateAcct.retryAfter || 60);
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json({
+        success: false,
+        code: 'TOO_MANY_REQUESTS',
+        message: 'You have made too many attempts. Please try again after some time.',
+        retryAfter,
+      });
+    }
+
+    const info = await sendPasswordResetEmail({ email: normEmail, name, otp, resetLink });
     return res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error: any) {
     console.error('Email dispatch error:', error);
