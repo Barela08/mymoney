@@ -7,7 +7,7 @@ import { parse as parseUrl } from 'url';
 import { query, isDatabaseAvailable } from './db.js';
 import { APP_CONFIG } from './config.js';
 import { authenticateRequest, revokeAllUserSessions } from './auth.js';
-import { logSecurityEvent, generateCryptoToken } from './security.js';
+import { logSecurityEvent, generateCryptoToken, checkRateLimitAsync, sendRateLimitExceeded, RATE_LIMITS } from './security.js';
 import {
   ALLOWED_GEMINI_MODELS,
   getAiProviderStatus,
