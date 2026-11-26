@@ -31,8 +31,13 @@ function writeCookie(name: string, value: string, days: number): void {
 }
 
 function isPopupSuppressedByUser(): boolean {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === 'undefined') return false;
   if (isRunningStandalone()) return true;
+
+  // Never suppress if user navigates to #install anchor
+  if (typeof window !== 'undefined' && window.location?.hash === '#install') {
+    return false;
+  }
 
   const cookieVal = readCookie(POPUP_COOKIE_NAME);
   if (cookieVal === 'dismissed' || cookieVal === 'downloaded') {
@@ -95,14 +100,18 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   const [isHidden, setIsHidden] = useState<boolean>(() => isPopupSuppressedByUser());
 
   useEffect(() => {
+    // Only re-check suppression if user state explicitly changes, do not randomly hide
     setIsHidden(isPopupSuppressedByUser());
   }, []);
 
-  if (isAdminRoute || isMaintenanceBlocked || !appPopupSettings?.enabled || isHidden) {
+  // Popup is visible by default unless explicitly disabled by admin, suppressed by user, or in standalone app mode
+  const isEnabled = appPopupSettings?.enabled !== false;
+
+  if (isAdminRoute || isMaintenanceBlocked || !isEnabled || isHidden) {
     return null;
   }
 
-  const safeHref = sanitizeDownloadHref(appPopupSettings.downloadUrl);
+  const safeHref = sanitizeDownloadHref(appPopupSettings?.downloadUrl);
   const isInternalInstallAction = safeHref === '/#install' || safeHref === '#install';
   const isExternal = /^https?:\/\//i.test(safeHref);
 
@@ -111,13 +120,22 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
     setIsHidden(true);
   };
 
-  const handleDownloadClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    persistUserPopupPreference('downloaded');
-    setIsHidden(true);
-
+  const handleDownloadClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (isInternalInstallAction) {
       e.preventDefault();
-      triggerInstallPrompt().catch(() => {});
+      try {
+        const result = await triggerInstallPrompt();
+        if (result.status === 'accepted' || result.status === 'already_installed') {
+          persistUserPopupPreference('downloaded');
+          setIsHidden(true);
+        }
+      } catch (err) {
+        console.warn('Install prompt error:', err);
+      }
+    } else {
+      // External store or download link
+      persistUserPopupPreference('downloaded');
+      setIsHidden(true);
     }
   };
 
@@ -154,10 +172,10 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
               {appTitle} · HackifyPro
             </p>
             <h4 className="text-sm font-black text-slate-900 dark:text-white leading-snug mt-0.5">
-              {appPopupSettings.title || 'Get the My Money Manager App'}
+              {appPopupSettings?.title || 'Get the My Money Manager App'}
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-1">
-              {appPopupSettings.description ||
+              {appPopupSettings?.description ||
                 'Install our fast, offline-ready app for instant expense tracking & UPI alerts.'}
             </p>
           </div>
@@ -189,7 +207,7 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/25 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{appPopupSettings.buttonLabel || 'Download App'}</span>
+            <span>{appPopupSettings?.buttonLabel || 'Download App'}</span>
           </a>
         </div>
       </div>

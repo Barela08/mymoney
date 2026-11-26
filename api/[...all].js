@@ -1381,7 +1381,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto19 = require_utils2();
+    var crypto21 = require_utils2();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -1399,7 +1399,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto19.randomBytes(18).toString("base64");
+      const clientNonce = crypto21.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -1441,20 +1441,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto19.hashByName(hashName, peerCert);
+        const certHash = await crypto21.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto19.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto19.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto19.sha256(clientKey);
-      const clientSignature = await crypto19.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto21.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto21.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto21.sha256(clientKey);
+      const clientSignature = await crypto21.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto19.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto19.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto21.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto21.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -1657,15 +1657,15 @@ var require_pg_connection_string = __commonJS({
       if (config.sslnegotiation === "direct" && config.ssl === void 0) {
         config.ssl = true;
       }
-      const fs12 = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
+      const fs13 = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
       if (config.sslcert) {
-        config.ssl.cert = fs12.readFileSync(config.sslcert).toString();
+        config.ssl.cert = fs13.readFileSync(config.sslcert).toString();
       }
       if (config.sslkey) {
-        config.ssl.key = fs12.readFileSync(config.sslkey).toString();
+        config.ssl.key = fs13.readFileSync(config.sslkey).toString();
       }
       if (config.sslrootcert) {
-        config.ssl.ca = fs12.readFileSync(config.sslrootcert).toString();
+        config.ssl.ca = fs13.readFileSync(config.sslrootcert).toString();
       }
       if (options.useLibpqCompat && config.uselibpqcompat) {
         throw new Error("Both useLibpqCompat and uselibpqcompat are set. Please use only one of them.");
@@ -3493,7 +3493,7 @@ var require_split2 = __commonJS({
 var require_helper = __commonJS({
   "node_modules/pgpass/lib/helper.js"(exports, module) {
     "use strict";
-    var path10 = __require("path");
+    var path11 = __require("path");
     var Stream5 = __require("stream").Stream;
     var split = require_split2();
     var util3 = __require("util");
@@ -3532,7 +3532,7 @@ var require_helper = __commonJS({
     };
     module.exports.getFileName = function(rawEnv) {
       var env2 = rawEnv || process.env;
-      var file = env2.PGPASSFILE || (isWin ? path10.join(env2.APPDATA || "./", "postgresql", "pgpass.conf") : path10.join(env2.HOME || "./", ".pgpass"));
+      var file = env2.PGPASSFILE || (isWin ? path11.join(env2.APPDATA || "./", "postgresql", "pgpass.conf") : path11.join(env2.HOME || "./", ".pgpass"));
       return file;
     };
     module.exports.usePgPass = function(stats, fname) {
@@ -3664,16 +3664,16 @@ var require_helper = __commonJS({
 var require_lib = __commonJS({
   "node_modules/pgpass/lib/index.js"(exports, module) {
     "use strict";
-    var path10 = __require("path");
-    var fs12 = __require("fs");
+    var path11 = __require("path");
+    var fs13 = __require("fs");
     var helper = require_helper();
     module.exports = function(connInfo, cb) {
       var file = helper.getFileName();
-      fs12.stat(file, function(err, stat3) {
+      fs13.stat(file, function(err, stat3) {
         if (err || !helper.usePgPass(stat3, file)) {
           return cb(void 0);
         }
-        var st = fs12.createReadStream(file);
+        var st = fs13.createReadStream(file);
         helper.getPassword(connInfo, st, cb);
       });
     };
@@ -3693,7 +3693,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto19 = require_utils2();
+    var crypto21 = require_utils2();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -3948,7 +3948,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto19.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto21.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -8102,11 +8102,11 @@ var require_bn = __commonJS({
         var B = new BN(0);
         var C = new BN(0);
         var D = new BN(1);
-        var g = 0;
+        var g2 = 0;
         while (x2.isEven() && y.isEven()) {
           x2.iushrn(1);
           y.iushrn(1);
-          ++g;
+          ++g2;
         }
         var yp = y.clone();
         var xp = x2.clone();
@@ -8148,7 +8148,7 @@ var require_bn = __commonJS({
         return {
           a: C,
           b: D,
-          gcd: y.iushln(g)
+          gcd: y.iushln(g2)
         };
       };
       BN.prototype._invmp = function _invmp(p) {
@@ -8980,7 +8980,7 @@ var require_reporter = __commonJS({
       if (state.obj !== null)
         state.obj[key] = value;
     };
-    Reporter.prototype.path = function path10() {
+    Reporter.prototype.path = function path11() {
       return this._reporterState.path.join("/");
     };
     Reporter.prototype.enterObject = function enterObject() {
@@ -9021,8 +9021,8 @@ var require_reporter = __commonJS({
         errors: state.errors
       };
     };
-    function ReporterError(path10, msg) {
-      this.path = path10;
+    function ReporterError(path11, msg) {
+      this.path = path11;
       this.rethrow(msg);
     }
     inherits(ReporterError, Error);
@@ -10760,14 +10760,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports, module) {
     var Buffer4 = require_safe_buffer().Buffer;
-    var crypto19 = __require("crypto");
+    var crypto21 = __require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = __require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto19.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto21.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -10857,17 +10857,17 @@ var require_jwa = __commonJS({
       return function sign2(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto19.createHmac("sha" + bits, secret);
+        var hmac = crypto21.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual = "timingSafeEqual" in crypto19 ? function timingSafeEqual2(a, b) {
+    var timingSafeEqual = "timingSafeEqual" in crypto21 ? function timingSafeEqual2(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto19.timingSafeEqual(a, b);
+      return crypto21.timingSafeEqual(a, b);
     } : function timingSafeEqual2(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -10884,7 +10884,7 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto19.createSign("RSA-SHA" + bits);
+        var signer = crypto21.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -10894,7 +10894,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto19.createVerify("RSA-SHA" + bits);
+        var verifier = crypto21.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -10903,11 +10903,11 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto19.createSign("RSA-SHA" + bits);
+        var signer = crypto21.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto19.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto19.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto21.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto21.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -10917,12 +10917,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto19.createVerify("RSA-SHA" + bits);
+        var verifier = crypto21.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto19.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto19.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto21.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto21.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -11221,7 +11221,7 @@ var require_jws = __commonJS({
 var require_ece = __commonJS({
   "node_modules/http_ece/ece.js"(exports, module) {
     "use strict";
-    var crypto19 = __require("crypto");
+    var crypto21 = __require("crypto");
     var AES_GCM = "aes-128-gcm";
     var PAD_SIZE = { "aes128gcm": 1, "aesgcm": 2 };
     var TAG_LENGTH = 16;
@@ -11248,7 +11248,7 @@ var require_ece = __commonJS({
       return b;
     }
     function HMAC_hash(key, input) {
-      var hmac = crypto19.createHmac("sha256", key);
+      var hmac = crypto21.createHmac("sha256", key);
       hmac.update(input);
       return hmac.digest();
     }
@@ -11516,7 +11516,7 @@ var require_ece = __commonJS({
     function decryptRecord(key, counter, buffer, header, last) {
       keylog("decrypt", buffer);
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto19.createDecipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto21.createDecipheriv(AES_GCM, key.key, nonce);
       gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
       var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
       data = Buffer.concat([data, gcm.final()]);
@@ -11564,7 +11564,7 @@ var require_ece = __commonJS({
       keylog("encrypt", buffer);
       pad = pad || 0;
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto19.createCipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto21.createCipheriv(AES_GCM, key.key, nonce);
       var ciphertext = [];
       var padSize = PAD_SIZE[header.version];
       var padding = Buffer.alloc(pad + padSize);
@@ -11607,7 +11607,7 @@ var require_ece = __commonJS({
       }
       var header = parseParams(params);
       if (!header.salt) {
-        header.salt = crypto19.randomBytes(KEY_LENGTH);
+        header.salt = crypto21.randomBytes(KEY_LENGTH);
       }
       var result;
       if (header.version === "aes128gcm") {
@@ -12545,9 +12545,9 @@ var require_interceptor = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js
+// node_modules/gaxios/node_modules/agent-base/dist/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js"(exports) {
+  "node_modules/gaxios/node_modules/agent-base/dist/helpers.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -12615,9 +12615,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js
+// node_modules/gaxios/node_modules/agent-base/dist/index.js
 var require_dist2 = __commonJS({
-  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js"(exports) {
+  "node_modules/gaxios/node_modules/agent-base/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -17812,7 +17812,7 @@ var require_node_domexception = __commonJS({
 });
 
 // node_modules/fetch-blob/from.js
-import { statSync, createReadStream, promises as fs8 } from "node:fs";
+import { statSync, createReadStream, promises as fs9 } from "node:fs";
 import { basename } from "node:path";
 var import_node_domexception, stat, blobFromSync, blobFrom, fileFrom, fileFromSync, fromBlob, fromFile, BlobDataItem;
 var init_from = __esm({
@@ -17820,23 +17820,23 @@ var init_from = __esm({
     import_node_domexception = __toESM(require_node_domexception(), 1);
     init_file();
     init_fetch_blob();
-    ({ stat } = fs8);
-    blobFromSync = (path10, type) => fromBlob(statSync(path10), path10, type);
-    blobFrom = (path10, type) => stat(path10).then((stat3) => fromBlob(stat3, path10, type));
-    fileFrom = (path10, type) => stat(path10).then((stat3) => fromFile(stat3, path10, type));
-    fileFromSync = (path10, type) => fromFile(statSync(path10), path10, type);
-    fromBlob = (stat3, path10, type = "") => new fetch_blob_default([new BlobDataItem({
-      path: path10,
+    ({ stat } = fs9);
+    blobFromSync = (path11, type) => fromBlob(statSync(path11), path11, type);
+    blobFrom = (path11, type) => stat(path11).then((stat3) => fromBlob(stat3, path11, type));
+    fileFrom = (path11, type) => stat(path11).then((stat3) => fromFile(stat3, path11, type));
+    fileFromSync = (path11, type) => fromFile(statSync(path11), path11, type);
+    fromBlob = (stat3, path11, type = "") => new fetch_blob_default([new BlobDataItem({
+      path: path11,
       size: stat3.size,
       lastModified: stat3.mtimeMs,
       start: 0
     })], { type });
-    fromFile = (stat3, path10, type = "") => new file_default([new BlobDataItem({
-      path: path10,
+    fromFile = (stat3, path11, type = "") => new file_default([new BlobDataItem({
+      path: path11,
       size: stat3.size,
       lastModified: stat3.mtimeMs,
       start: 0
-    })], basename(path10), { type, lastModified: stat3.mtimeMs });
+    })], basename(path11), { type, lastModified: stat3.mtimeMs });
     BlobDataItem = class _BlobDataItem {
       #path;
       #start;
@@ -22681,22 +22681,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
-    var crypto19 = __require("crypto");
+    var crypto21 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto19.createHash("sha256").update(str).digest("base64");
+        return crypto21.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto19.randomBytes(count).toString("base64");
+        return crypto21.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto19.createVerify("RSA-SHA256");
+        const verifier = crypto21.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto19.createSign("RSA-SHA256");
+        const signer = crypto21.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -22714,7 +22714,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto19.createHash("sha256").update(str).digest("hex");
+        return crypto21.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -22726,7 +22726,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto19.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto21.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports.NodeCrypto = NodeCrypto;
@@ -22793,9 +22793,9 @@ var require_util2 = __commonJS({
     exports.removeUndefinedValuesInObject = removeUndefinedValuesInObject;
     exports.isValidFile = isValidFile;
     exports.getWellKnownCertificateConfigFileLocation = getWellKnownCertificateConfigFileLocation;
-    var fs12 = __require("fs");
-    var os5 = __require("os");
-    var path10 = __require("path");
+    var fs13 = __require("fs");
+    var os7 = __require("os");
+    var path11 = __require("path");
     var WELL_KNOWN_CERTIFICATE_CONFIG_FILE = "certificate_config.json";
     var CLOUDSDK_CONFIG_DIRECTORY = "gcloud";
     function snakeToCamel(str) {
@@ -22881,18 +22881,18 @@ var require_util2 = __commonJS({
     }
     async function isValidFile(filePath) {
       try {
-        const stats = await fs12.promises.lstat(filePath);
+        const stats = await fs13.promises.lstat(filePath);
         return stats.isFile();
       } catch (e2) {
         return false;
       }
     }
     function getWellKnownCertificateConfigFileLocation() {
-      const configDir = process.env.CLOUDSDK_CONFIG || (_isWindows() ? path10.join(process.env.APPDATA || "", CLOUDSDK_CONFIG_DIRECTORY) : path10.join(process.env.HOME || "", ".config", CLOUDSDK_CONFIG_DIRECTORY));
-      return path10.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
+      const configDir = process.env.CLOUDSDK_CONFIG || (_isWindows() ? path11.join(process.env.APPDATA || "", CLOUDSDK_CONFIG_DIRECTORY) : path11.join(process.env.HOME || "", ".config", CLOUDSDK_CONFIG_DIRECTORY));
+      return path11.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
     }
     function _isWindows() {
-      return os5.platform().startsWith("win");
+      return os7.platform().startsWith("win");
     }
   }
 });
@@ -23417,10 +23417,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto19 = (0, crypto_1.createCrypto)();
-        const randomString = crypto19.randomBytesBase64(96);
+        const crypto21 = (0, crypto_1.createCrypto)();
+        const randomString = crypto21.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto19.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto21.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -23861,7 +23861,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto19 = (0, crypto_1.createCrypto)();
+        const crypto21 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -23874,7 +23874,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto19.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto21.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -23885,7 +23885,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto19.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto21.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -23902,7 +23902,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto19.verify(cert, signed, signature);
+        const verified = await crypto21.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -24292,11 +24292,11 @@ var require_getCredentials = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getCredentials = getCredentials;
-    var path10 = __require("path");
-    var fs12 = __require("fs");
+    var path11 = __require("path");
+    var fs13 = __require("fs");
     var util_1 = __require("util");
     var errorWithCode_1 = require_errorWithCode();
-    var readFile = fs12.readFile ? (0, util_1.promisify)(fs12.readFile) : async () => {
+    var readFile = fs13.readFile ? (0, util_1.promisify)(fs13.readFile) : async () => {
       throw new errorWithCode_1.ErrorWithCode("use key rather than keyFile.", "MISSING_CREDENTIALS");
     };
     var ExtensionFiles;
@@ -24364,7 +24364,7 @@ var require_getCredentials = __commonJS({
        * @returns An instance of a class that implements ICredentialsProvider.
        */
       static create(keyFilePath) {
-        const keyFileExtension = path10.extname(keyFilePath);
+        const keyFileExtension = path11.extname(keyFilePath);
         switch (keyFileExtension) {
           case ExtensionFiles.JSON:
             return new JsonCredentialsProvider(keyFilePath);
@@ -24486,9 +24486,9 @@ var require_revokeToken = __commonJS({
     exports.revokeToken = revokeToken;
     var GOOGLE_REVOKE_TOKEN_URL = "https://oauth2.googleapis.com/revoke?token=";
     var DEFAULT_RETRY_VALUE = true;
-    async function revokeToken(accessToken, transporter2) {
+    async function revokeToken(accessToken, transporter) {
       const url = GOOGLE_REVOKE_TOKEN_URL + accessToken;
-      return await transporter2.request({
+      return await transporter.request({
         url,
         retry: DEFAULT_RETRY_VALUE
       });
@@ -25973,12 +25973,12 @@ var require_filesubjecttokensupplier = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FileSubjectTokenSupplier = void 0;
     var util_1 = __require("util");
-    var fs12 = __require("fs");
-    var readFile = (0, util_1.promisify)(fs12.readFile ?? (() => {
+    var fs13 = __require("fs");
+    var readFile = (0, util_1.promisify)(fs13.readFile ?? (() => {
     }));
-    var realpath = (0, util_1.promisify)(fs12.realpath ?? (() => {
+    var realpath = (0, util_1.promisify)(fs13.realpath ?? (() => {
     }));
-    var lstat = (0, util_1.promisify)(fs12.lstat ?? (() => {
+    var lstat = (0, util_1.promisify)(fs13.lstat ?? (() => {
     }));
     var FileSubjectTokenSupplier = class {
       filePath;
@@ -26096,7 +26096,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CertificateSubjectTokenSupplier = exports.InvalidConfigurationError = exports.CertificateSourceUnavailableError = exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = void 0;
     var util_1 = require_util2();
-    var fs12 = __require("fs");
+    var fs13 = __require("fs");
     var crypto_1 = __require("crypto");
     var https4 = __require("https");
     exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = "GOOGLE_API_CERTIFICATE_CONFIG";
@@ -26190,7 +26190,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
         const configPath = this.certificateConfigPath;
         let fileContents;
         try {
-          fileContents = await fs12.promises.readFile(configPath, "utf8");
+          fileContents = await fs13.promises.readFile(configPath, "utf8");
         } catch (err) {
           throw new CertificateSourceUnavailableError(`Failed to read certificate config file at: ${configPath}`);
         }
@@ -26215,14 +26215,14 @@ var require_certificatesubjecttokensupplier = __commonJS({
       async #getKeyAndCert(certPath, keyPath) {
         let cert, key;
         try {
-          cert = await fs12.promises.readFile(certPath);
+          cert = await fs13.promises.readFile(certPath);
           new crypto_1.X509Certificate(cert);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           throw new CertificateSourceUnavailableError(`Failed to read certificate file at ${certPath}: ${message}`);
         }
         try {
-          key = await fs12.promises.readFile(keyPath);
+          key = await fs13.promises.readFile(keyPath);
           (0, crypto_1.createPrivateKey)(key);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -26241,7 +26241,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
           return JSON.stringify([leafCert.raw.toString("base64")]);
         }
         try {
-          const chainPems = await fs12.promises.readFile(this.trustChainPath, "utf8");
+          const chainPems = await fs13.promises.readFile(this.trustChainPath, "utf8");
           const pemBlocks = chainPems.match(/-----BEGIN CERTIFICATE-----[^-]+-----END CERTIFICATE-----/g) ?? [];
           const chainCerts = pemBlocks.map((pem, index) => {
             try {
@@ -26472,14 +26472,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports.AwsRequestSigner = AwsRequestSigner;
-    async function sign2(crypto19, key, msg) {
-      return await crypto19.signWithHmacSha256(key, msg);
+    async function sign2(crypto21, key, msg) {
+      return await crypto21.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto19, key, dateStamp, region, serviceName) {
-      const kDate = await sign2(crypto19, `AWS4${key}`, dateStamp);
-      const kRegion = await sign2(crypto19, kDate, region);
-      const kService = await sign2(crypto19, kRegion, serviceName);
-      const kSigning = await sign2(crypto19, kService, "aws4_request");
+    async function getSigningKey(crypto21, key, dateStamp, region, serviceName) {
+      const kDate = await sign2(crypto21, `AWS4${key}`, dateStamp);
+      const kRegion = await sign2(crypto21, kDate, region);
+      const kService = await sign2(crypto21, kRegion, serviceName);
+      const kSigning = await sign2(crypto21, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -26619,7 +26619,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
        * @param transporter The transporter to use for requests.
        * @return A promise that resolves with the IMDSv2 Session Token.
        */
-      async #getImdsV2SessionToken(transporter2) {
+      async #getImdsV2SessionToken(transporter) {
         const opts = {
           ...this.additionalGaxiosOptions,
           url: this.imdsV2SessionTokenUrl,
@@ -26628,7 +26628,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
           headers: { "x-aws-ec2-metadata-token-ttl-seconds": "300" }
         };
         authclient_1.AuthClient.setMethodName(opts, "#getImdsV2SessionToken");
-        const response = await transporter2.request(opts);
+        const response = await transporter.request(opts);
         return response.data;
       }
       /**
@@ -26637,7 +26637,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
        * @return A promise that resolves with the assigned role to the current
        *   AWS VM. This is needed for calling the security-credentials endpoint.
        */
-      async #getAwsRoleName(headers, transporter2) {
+      async #getAwsRoleName(headers, transporter) {
         if (!this.securityCredentialsUrl) {
           throw new Error('Unable to determine AWS role name due to missing "options.credential_source.url"');
         }
@@ -26649,7 +26649,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
           headers
         };
         authclient_1.AuthClient.setMethodName(opts, "#getAwsRoleName");
-        const response = await transporter2.request(opts);
+        const response = await transporter.request(opts);
         return response.data;
       }
       /**
@@ -26661,7 +26661,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
        * @return A promise that resolves with the temporary AWS credentials
        *   needed for creating the GetCallerIdentity signed request.
        */
-      async #retrieveAwsSecurityCredentials(roleName, headers, transporter2) {
+      async #retrieveAwsSecurityCredentials(roleName, headers, transporter) {
         const opts = {
           ...this.additionalGaxiosOptions,
           url: `${this.securityCredentialsUrl}/${roleName}`,
@@ -26669,7 +26669,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
           responseType: "json"
         };
         authclient_1.AuthClient.setMethodName(opts, "#retrieveAwsSecurityCredentials");
-        const response = await transporter2.request(opts);
+        const response = await transporter.request(opts);
         return response.data;
       }
       get #regionFromEnv() {
@@ -26943,7 +26943,7 @@ var require_pluggable_auth_handler = __commonJS({
     exports.PluggableAuthHandler = exports.ExecutableError = void 0;
     var executable_response_1 = require_executable_response();
     var childProcess = __require("child_process");
-    var fs12 = __require("fs");
+    var fs13 = __require("fs");
     var ExecutableError = class extends Error {
       /**
        * The exit code returned by the executable.
@@ -27028,14 +27028,14 @@ var require_pluggable_auth_handler = __commonJS({
         }
         let filePath;
         try {
-          filePath = await fs12.promises.realpath(this.outputFile);
+          filePath = await fs13.promises.realpath(this.outputFile);
         } catch {
           return void 0;
         }
-        if (!(await fs12.promises.lstat(filePath)).isFile()) {
+        if (!(await fs13.promises.lstat(filePath)).isFile()) {
           return void 0;
         }
-        const responseString = await fs12.promises.readFile(filePath, {
+        const responseString = await fs13.promises.readFile(filePath, {
           encoding: "utf8"
         });
         if (responseString === "") {
@@ -27445,8 +27445,8 @@ var require_gdchclient = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GdchClient = exports.GDCH_SERVICE_ACCOUNT_TYPE = void 0;
-    var crypto19 = __require("crypto");
-    var fs12 = __require("fs");
+    var crypto21 = __require("crypto");
+    var fs13 = __require("fs");
     var https4 = __require("https");
     var oauth2client_1 = require_oauth2client();
     var DEFAULT_LIFETIME_IN_SECONDS = 3600;
@@ -27636,7 +27636,7 @@ var require_gdchclient = __commonJS({
         const encodedHeader = this.base64UrlEncode(JSON.stringify(header));
         const encodedPayload = this.base64UrlEncode(JSON.stringify(payload));
         const signingInput = `${encodedHeader}.${encodedPayload}`;
-        const signature = crypto19.sign("sha256", Buffer.from(signingInput), {
+        const signature = crypto21.sign("sha256", Buffer.from(signingInput), {
           key: this.privateKey,
           dsaEncoding: "ieee-p1363"
         });
@@ -27669,7 +27669,7 @@ var require_gdchclient = __commonJS({
         const currentPath = this.caCertPath;
         this.caAgentPromise = (async () => {
           try {
-            const ca = await fs12.promises.readFile(currentPath);
+            const ca = await fs13.promises.readFile(currentPath);
             return new https4.Agent({ ca });
           } catch (err) {
             if (this.cachedCaCertPath === currentPath) {
@@ -27729,11 +27729,11 @@ var require_googleauth = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleAuth = exports.GoogleAuthExceptionMessages = void 0;
     var child_process_1 = __require("child_process");
-    var fs12 = __require("fs");
+    var fs13 = __require("fs");
     var gaxios_1 = require_src2();
     var gcpMetadata = require_src4();
-    var os5 = __require("os");
-    var path10 = __require("path");
+    var os7 = __require("os");
+    var path11 = __require("path");
     var crypto_1 = require_crypto3();
     var computeclient_1 = require_computeclient();
     var idtokenclient_1 = require_idtokenclient();
@@ -28018,20 +28018,20 @@ var require_googleauth = __commonJS({
         if (!configDir) {
           if (this._isWindows()) {
             if (process.env["APPDATA"]) {
-              configDir = path10.join(process.env["APPDATA"], "gcloud");
+              configDir = path11.join(process.env["APPDATA"], "gcloud");
             }
           } else {
             const home = process.env["HOME"];
             if (home) {
-              configDir = path10.join(home, ".config", "gcloud");
+              configDir = path11.join(home, ".config", "gcloud");
             }
           }
         }
         if (!configDir) {
           return null;
         }
-        const location = path10.join(configDir, "application_default_credentials.json");
-        if (!fs12.existsSync(location)) {
+        const location = path11.join(configDir, "application_default_credentials.json");
+        if (!fs13.existsSync(location)) {
           return null;
         }
         const client = await this._getApplicationCredentialsFromFilePath(location, options);
@@ -28048,8 +28048,8 @@ var require_googleauth = __commonJS({
           throw new Error("The file path is invalid.");
         }
         try {
-          filePath = fs12.realpathSync(filePath);
-          if (!fs12.lstatSync(filePath).isFile()) {
+          filePath = fs13.realpathSync(filePath);
+          if (!fs13.lstatSync(filePath).isFile()) {
             throw new Error();
           }
         } catch (err) {
@@ -28058,7 +28058,7 @@ var require_googleauth = __commonJS({
           }
           throw err;
         }
-        const readStream = fs12.createReadStream(filePath);
+        const readStream = fs13.createReadStream(filePath);
         return this.fromStream(readStream, options);
       }
       /**
@@ -28241,7 +28241,7 @@ var require_googleauth = __commonJS({
        * @api private
        */
       _isWindows() {
-        const sys = os5.platform();
+        const sys = os7.platform();
         if (sys && sys.length >= 3) {
           if (sys.substring(0, 3).toLowerCase() === "win") {
             return true;
@@ -28385,8 +28385,8 @@ var require_googleauth = __commonJS({
         if (this.jsonContent) {
           return this._cacheClientFromJSON(this.jsonContent, this.clientOptions);
         } else if (this.keyFilename) {
-          const filePath = path10.resolve(this.keyFilename);
-          const stream = fs12.createReadStream(filePath);
+          const filePath = path11.resolve(this.keyFilename);
+          const stream = fs13.createReadStream(filePath);
           return await this.fromStreamAsync(stream, this.clientOptions);
         } else if (this.apiKey) {
           const client = await this.fromAPIKey(this.apiKey, this.clientOptions);
@@ -28499,24 +28499,24 @@ var require_googleauth = __commonJS({
           const signed = await client.sign(data);
           return signed.signedBlob;
         }
-        const crypto19 = (0, crypto_1.createCrypto)();
+        const crypto21 = (0, crypto_1.createCrypto)();
         if (client instanceof jwtclient_1.JWT && client.key) {
-          const sign2 = await crypto19.sign(client.key, data);
+          const sign2 = await crypto21.sign(client.key, data);
           return sign2;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto19, creds.client_email, data, endpoint);
+        return this.signBlob(crypto21, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto19, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto21, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto19.encodeBase64StringUtf8(data)
+            payload: crypto21.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -32661,7 +32661,7 @@ var require_websocket_server = __commonJS({
 
 // server/api.ts
 import { parse as parseUrl2 } from "url";
-import crypto18 from "crypto";
+import crypto20 from "crypto";
 
 // node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -35551,11 +35551,11 @@ var Cookies = class {
   getPath(pathname) {
     const pathParts = (pathname || "/").split("/");
     pathParts.pop();
-    const path10 = pathParts.join("/").trim();
-    if (path10.charAt(0) !== "/") {
+    const path11 = pathParts.join("/").trim();
+    if (path11.charAt(0) !== "/") {
       return "/";
     }
-    return path10;
+    return path11;
   }
 };
 var cookies_default = Cookies;
@@ -43160,7 +43160,7 @@ function isAbortSignal(value) {
   return typeof value === "object" && value !== null && "aborted" in value && typeof value.addEventListener === "function" && typeof value.removeEventListener === "function";
 }
 var Mail = class extends EventEmitter {
-  constructor(transporter2, options, defaults2) {
+  constructor(transporter, options, defaults2) {
     super();
     this.options = options || {};
     this._defaults = defaults2 || {};
@@ -43174,7 +43174,7 @@ var Mail = class extends EventEmitter {
     };
     this.meta = /* @__PURE__ */ new Map();
     this.dkim = this.options.dkim ? new dkim_default(this.options.dkim) : false;
-    this.transporter = transporter2;
+    this.transporter = transporter;
     this.transporter.mailer = this;
     this.logger = getLogger(this.options, {
       component: this.options.component || "mail"
@@ -48143,28 +48143,28 @@ var etherealWeb = () => (process.env.ETHEREAL_WEB || "https://ethereal.email").r
 var etherealApiKey = () => (process.env.ETHEREAL_API_KEY || "").replace(/\s*/g, "") || null;
 var etherealCache = () => ["true", "yes", "y", "1"].includes((process.env.ETHEREAL_CACHE || "yes").toString().trim().toLowerCase());
 var testAccount = false;
-function createTransport(transporter2, defaults2) {
+function createTransport(transporter, defaults2) {
   let options;
   if (
     // provided transporter is a configuration object, not transporter plugin
-    typeof transporter2 === "object" && typeof transporter2.send !== "function" || // provided transporter looks like a connection url
-    typeof transporter2 === "string" && /^(smtps?|direct):/i.test(transporter2)
+    typeof transporter === "object" && typeof transporter.send !== "function" || // provided transporter looks like a connection url
+    typeof transporter === "string" && /^(smtps?|direct):/i.test(transporter)
   ) {
-    const urlConfig = typeof transporter2 === "string" ? transporter2 : transporter2.url;
+    const urlConfig = typeof transporter === "string" ? transporter : transporter.url;
     if (urlConfig) {
       const parsed = parseConnectionUrl(urlConfig);
-      options = typeof transporter2 === "object" ? assign(false, copyOwnKeys({}, transporter2, (key) => key === "url"), parsed) : parsed;
+      options = typeof transporter === "object" ? assign(false, copyOwnKeys({}, transporter, (key) => key === "url"), parsed) : parsed;
     } else {
-      options = transporter2;
+      options = transporter;
     }
     if (options.pool) {
-      transporter2 = new smtp_pool_default(options);
+      transporter = new smtp_pool_default(options);
     } else if (options.sendmail) {
-      transporter2 = new sendmail_transport_default(options);
+      transporter = new sendmail_transport_default(options);
     } else if (options.streamTransport) {
-      transporter2 = new stream_transport_default(options);
+      transporter = new stream_transport_default(options);
     } else if (options.jsonTransport) {
-      transporter2 = new json_transport_default(options);
+      transporter = new json_transport_default(options);
     } else if (options.SES) {
       const ses = options.SES;
       if (ses.ses && ses.aws) {
@@ -48172,12 +48172,12 @@ function createTransport(transporter2, defaults2) {
         error2.code = ECONFIG;
         throw error2;
       }
-      transporter2 = new ses_transport_default(options);
+      transporter = new ses_transport_default(options);
     } else {
-      transporter2 = new smtp_transport_default(options);
+      transporter = new smtp_transport_default(options);
     }
   }
-  return new mailer_default(transporter2, options, defaults2);
+  return new mailer_default(transporter, options, defaults2);
 }
 function createTestAccount(apiUrl, callback) {
   let promise;
@@ -48271,11 +48271,12 @@ var nodemailer = {
 var nodemailer_default = nodemailer;
 
 // server/email.ts
-import fs7 from "fs";
-import path6 from "path";
+import fs8 from "fs";
+import path7 from "path";
 
 // server/config.ts
 import fs5 from "fs";
+import os3 from "os";
 import path4 from "path";
 
 // node_modules/web-push/src/web-push-lib.js
@@ -49267,28 +49268,6 @@ var generateRequestDetails = webPush.generateRequestDetails;
 var sendNotification = webPush.sendNotification.bind(webPush);
 
 // server/config.ts
-function isValidVapidKeyPair(publicKey, privateKey) {
-  if (!publicKey || !privateKey) return false;
-  try {
-    const pubBytes = Buffer.from(publicKey.trim(), "base64url");
-    const privBytes = Buffer.from(privateKey.trim(), "base64url");
-    return pubBytes.length === 65 && privBytes.length === 32;
-  } catch {
-    return false;
-  }
-}
-function resolveVapidKeys() {
-  const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
-  const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
-  if (isValidVapidKeyPair(envPublic, envPrivate)) {
-    return { publicKey: envPublic, privateKey: envPrivate, isPersistent: true };
-  }
-  const g = globalThis;
-  if (!g.__myMoneyVapidKeys) {
-    g.__myMoneyVapidKeys = generateVAPIDKeys();
-  }
-  return { ...g.__myMoneyVapidKeys, isPersistent: false };
-}
 try {
   const envPath = path4.resolve(process.cwd(), ".env");
   if (fs5.existsSync(envPath)) {
@@ -49311,6 +49290,76 @@ try {
   }
 } catch (e2) {
   console.warn("Notice loading .env in config.ts:", e2);
+}
+function isValidVapidKeyPair(publicKey, privateKey) {
+  if (!publicKey || !privateKey) return false;
+  try {
+    const pubBytes = Buffer.from(publicKey.trim(), "base64url");
+    const privBytes = Buffer.from(privateKey.trim(), "base64url");
+    return pubBytes.length === 65 && privBytes.length === 32;
+  } catch {
+    return false;
+  }
+}
+function resolveVapidKeys() {
+  const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
+  const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
+  if (isValidVapidKeyPair(envPublic, envPrivate)) {
+    return { publicKey: envPublic, privateKey: envPrivate, isPersistent: true };
+  }
+  const g2 = globalThis;
+  if (g2.__myMoneyVapidKeys && isValidVapidKeyPair(g2.__myMoneyVapidKeys.publicKey, g2.__myMoneyVapidKeys.privateKey)) {
+    return g2.__myMoneyVapidKeys;
+  }
+  const candidatePaths = [
+    path4.resolve(process.cwd(), ".data", "runtime-store", "vapid-keys.json"),
+    path4.resolve(os3.tmpdir(), "mymoney-vapid-keys.json")
+  ];
+  for (const filePath of candidatePaths) {
+    try {
+      if (fs5.existsSync(filePath)) {
+        const parsed = JSON.parse(fs5.readFileSync(filePath, "utf8"));
+        if (isValidVapidKeyPair(parsed?.publicKey, parsed?.privateKey)) {
+          g2.__myMoneyVapidKeys = {
+            publicKey: String(parsed.publicKey).trim(),
+            privateKey: String(parsed.privateKey).trim(),
+            isPersistent: true
+          };
+          return g2.__myMoneyVapidKeys;
+        }
+      }
+    } catch {
+    }
+  }
+  const generated = generateVAPIDKeys();
+  let persisted = false;
+  for (const filePath of candidatePaths) {
+    try {
+      fs5.mkdirSync(path4.dirname(filePath), { recursive: true });
+      fs5.writeFileSync(
+        filePath,
+        JSON.stringify(
+          {
+            publicKey: generated.publicKey,
+            privateKey: generated.privateKey,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString()
+          },
+          null,
+          2
+        ),
+        { encoding: "utf8", mode: 384 }
+      );
+      persisted = true;
+      break;
+    } catch {
+    }
+  }
+  g2.__myMoneyVapidKeys = {
+    publicKey: generated.publicKey,
+    privateKey: generated.privateKey,
+    isPersistent: persisted
+  };
+  return g2.__myMoneyVapidKeys;
 }
 var APP_CONFIG = {
   appName: process.env.APP_NAME || "My Money Manager",
@@ -49348,13 +49397,13 @@ var APP_CONFIG = {
 
 // server/supabaseRestFallback.ts
 import fs6 from "fs";
-import os3 from "os";
+import os4 from "os";
 import path5 from "path";
 import crypto12 from "crypto";
 var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
 var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
 var PRIMARY_DATA_DIR = path5.resolve(process.cwd(), ".data", "runtime-store");
-var TMP_DATA_DIR = path5.resolve(os3.tmpdir(), "mymoney-runtime-store");
+var TMP_DATA_DIR = path5.resolve(os4.tmpdir(), "mymoney-runtime-store");
 var memoryFallbackStore = /* @__PURE__ */ new Map();
 function resolveWritableStoreDir() {
   try {
@@ -50015,10 +50064,12 @@ var DEFAULT_EMAIL_TEMPLATES = [
     name: "Welcome & Account Verification",
     category: "authentication",
     subject: "Welcome to {{app_name}}! Your Account is Active",
-    variables: ["user_name", "app_name", "support_email", "date"],
-    text_content: "Hi {{user_name}},\n\nWelcome to {{app_name}}! Your account has been created successfully on {{date}}.\n\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team",
-    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Welcome, {{user_name}}!</h2><p>Your account on <strong>{{app_name}}</strong> is now active.</p><p>Registration Date: {{date}}</p><p>If you have any questions, reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div>',
+    variables: ["user_name", "user_email", "app_name", "company_name", "login_url", "support_email", "support_phone", "date"],
+    text_content: "Hi {{user_name}},\n\nWelcome to {{app_name}} by {{company_name}}! Your account ({{user_email}}) has been created successfully on {{date}}.\n\nLogin here: {{login_url}}\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Welcome to {{app_name}}!</h2><p style="margin: 6px 0 0; font-size: 12px; color: #a7f3d0;">by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account (<strong>{{user_email}}</strong>) is now active as of {{date}}.</p><p style="text-align: center; margin: 24px 0;"><a href="{{login_url}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Open {{app_name}}</a></p><p style="font-size: 12px; color: #64748b;">Need help? Reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>`,
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: "2026-11-25T00:00:00.000Z"
   },
@@ -50027,11 +50078,13 @@ var DEFAULT_EMAIL_TEMPLATES = [
     slug: "password-reset",
     name: "Password Reset Request",
     category: "security",
-    subject: "Reset Your My Money Manager Password",
-    variables: ["user_name", "app_name", "reset_link", "support_email"],
-    text_content: "Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account.\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes.\n\nIf you did not request this, please contact {{support_email}} immediately.",
-    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Password Reset Request</h2><p>Hi {{user_name}}, click the button below to reset your password:</p><p><a href="{{reset_link}}" style="background: #059669; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 6px;">Reset Password</a></p><p>Link expires in 15 minutes.</p></div>',
+    subject: "Reset Your {{app_name}} Password",
+    variables: ["user_name", "user_email", "app_name", "company_name", "reset_link", "support_email"],
+    text_content: "Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account ({{user_email}}).\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes. If you did not request this, contact {{support_email}}.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Password Reset Request</h2><p>Hi <strong>{{user_name}}</strong>, click below to reset the password for {{user_email}}:</p><p style="text-align: center; margin: 22px 0;"><a href="{{reset_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Reset Password</a></p><p style="font-size: 12px; color: #64748b;">Link expires in 15 minutes. Support: {{support_email}}</p></div>`,
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: "2026-11-25T00:00:00.000Z"
   },
@@ -50040,24 +50093,208 @@ var DEFAULT_EMAIL_TEMPLATES = [
     slug: "password-changed",
     name: "Security Alert: Password Changed",
     category: "security",
-    subject: "[Security Alert] Your Password Was Successfully Changed \u2014 {{app_name}}",
-    variables: ["user_name", "app_name", "date", "support_email"],
-    text_content: "Hi {{user_name}},\n\nYour password for {{app_name}} was successfully updated on {{date}}.\nAll other device sessions have been revoked.\n\nIf you did not make this change, please contact {{support_email}} immediately.",
-    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Security Alert: Password Changed</h2><p>Hi {{user_name}}, your password was updated on {{date}}.</p><p>All other device sessions were revoked for your safety.</p></div>',
+    subject: "[Security Alert] Your Password Was Changed \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "app_name", "company_name", "date", "ip_address", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour password for {{app_name}} ({{user_email}}) was updated on {{date}} (IP: {{ip_address}}).\nAll previous sessions were revoked.\n\nIf you did not make this change, contact {{support_email}} immediately.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Security Alert: Password Changed</h2><p>Hi <strong>{{user_name}}</strong>, your password for {{user_email}} was updated on <strong>{{date}}</strong> (IP: {{ip_address}}).</p><p>All previous device sessions have been revoked for your protection.</p><p style="color: #b91c1c; font-weight: 600;">Not you? Contact {{support_email}} immediately.</p></div>`,
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: "2026-11-25T00:00:00.000Z"
   },
   {
     id: "tmpl_feedback_confirmation",
     slug: "feedback-confirmation",
-    name: "User Feedback Confirmation & Admin Alert",
+    name: "Feedback Received (User Confirmation)",
     category: "support",
-    subject: "Thank You for Your Feedback \u2014 {{app_name}}",
-    variables: ["user_name", "app_name", "rating", "category", "support_email"],
-    text_content: "Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback with {{app_name}} by HackifyPro. Our team reviews every submission carefully.",
-    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Thank You for Your Feedback</h2><p>Hi {{user_name}}, we appreciate your {{rating}}-star feedback for <strong>{{app_name}}</strong>.</p></div>',
+    subject: "Thank You for Your Feedback (#{{feedback_id}}) \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "feedback_id", "rating", "category", "message", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback (#{{feedback_id}}) with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nMessage: {{message}}\n\nOur product team reviews every submission carefully.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Thank You for Your Feedback!</h2><p style="margin: 4px 0 0; font-size: 12px; color: #a7f3d0;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>We received your <strong>{{rating}}/5</strong> rating (Ref: <code>#{{feedback_id}}</code>, Category: {{category}}):</p><blockquote style="background: #f8fafc; border-left: 4px solid #059669; margin: 14px 0; padding: 12px 16px;">{{message}}</blockquote><p style="font-size: 12px; color: #64748b;">Support: {{support_email}}</p></div></div>`,
     is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_feedback_admin",
+    slug: "feedback-admin-alert",
+    name: "New User Feedback Alert (To Admin)",
+    category: "support",
+    subject: "[Admin Alert] New {{rating}}\u2605 Feedback (#{{feedback_id}}) from {{user_name}}",
+    variables: ["user_name", "user_email", "user_id", "feedback_id", "rating", "message", "submitted_at", "app_name", "company_name"],
+    text_content: "New User Feedback Received \u2014 {{app_name}} ({{company_name}})\n\nRef: #{{feedback_id}}\nFrom: {{user_name}} ({{user_email}})\nRating: {{rating}}/5\nSubmitted At: {{submitted_at}}\n\nMessage:\n{{message}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">New User Feedback (#{{feedback_id}})</h2><p><strong>User:</strong> {{user_name}} ({{user_email}})</p><p><strong>Rating:</strong> {{rating}}/5 \xB7 <strong>Submitted:</strong> {{submitted_at}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 12px;">{{message}}</div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_complaint_confirmation",
+    slug: "complaint-confirmation",
+    name: "Complaint Registered (User Confirmation)",
+    category: "support",
+    subject: "Complaint Registered (#{{ticket_number}}) \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour complaint #{{ticket_number}} has been registered with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nSubject: {{subject}}\nDetails: {{description}}\n\nOur support team will respond shortly.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Complaint Registered (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, we have logged your complaint under <strong>{{category}}</strong>.</p><p><strong>Subject:</strong> {{subject}}</p><div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need urgent help? Contact {{support_email}}.</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_complaint_admin",
+    slug: "complaint-admin-alert",
+    name: "New User Complaint Alert (To Admin)",
+    category: "support",
+    subject: "[Complaint Alert] #{{ticket_number}}: {{subject}}",
+    variables: ["user_name", "user_email", "user_phone", "ticket_number", "category", "subject", "description", "submitted_at", "app_name"],
+    text_content: "New Complaint Alert \u2014 {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}}, Phone: {{user_phone}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #fecaca; border-radius: 16px; padding: 24px;"><h2 style="color: #b91c1c; margin-top: 0;">New Complaint Alert (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}} \xB7 {{user_phone}})</p><p><strong>Category:</strong> {{category}} \xB7 <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_support_confirmation",
+    slug: "support-confirmation",
+    name: "Support Ticket Received (User Confirmation)",
+    category: "support",
+    subject: "Support Ticket Created (#{{ticket_number}}) \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour support request #{{ticket_number}} has been received by {{app_name}} ({{company_name}}).\n\nSubject: {{subject}}\nCategory: {{category}}\nMessage: {{description}}\n\nWe will notify you by email and push alert when our team replies.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Support Ticket Created (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, thank you for contacting {{app_name}} Support.</p><p><strong>Subject:</strong> {{subject}} ({{category}})</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 14px;">Support: {{support_email}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_support_admin",
+    slug: "support-admin-alert",
+    name: "New Support Request Alert (To Admin)",
+    category: "support",
+    subject: "[Support Request] #{{ticket_number}}: {{subject}}",
+    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "submitted_at", "app_name"],
+    text_content: "New Support Ticket \u2014 {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #0f766e; margin-top: 0;">New Support Request (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}})</p><p><strong>Category:</strong> {{category}} \xB7 <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_admin_ticket_reply",
+    slug: "admin-ticket-reply",
+    name: "Admin Reply to User Support Ticket",
+    category: "support",
+    subject: "Re: [Ticket #{{ticket_number}}] {{original_subject}} \u2014 {{app_name}}",
+    variables: ["user_name", "ticket_number", "ticket_type", "original_subject", "admin_reply", "admin_name", "status", "app_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\n{{admin_name}} replied to your ticket #{{ticket_number}} ({{original_subject}}) [Status: {{status}}]:\n\n{{admin_reply}}\n\nBest regards,\n{{app_name}} Support",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Update on Ticket #{{ticket_number}}</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>{{admin_name}}</strong> posted a reply (Status: <strong>{{status}}</strong>):</p><div style="background: #f0fdf4; border-left: 4px solid #059669; padding: 14px; border-radius: 8px; margin: 14px 0;">{{admin_reply}}</div><p style="font-size: 12px; color: #64748b;">Subject: {{original_subject}} \xB7 Support: {{support_email}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_udhar_created",
+    slug: "udhar-created",
+    name: "Udhar Transaction Recorded",
+    category: "udhar",
+    subject: "Udhar Recorded: \u20B9{{amount}} with {{other_person_name}} \u2014 {{app_name}}",
+    variables: ["user_name", "other_person_name", "transaction_id", "amount", "direction_label", "description", "transaction_date", "status", "app_name"],
+    text_content: "Hi {{user_name}},\n\nA new Udhar entry (#{{transaction_id}}) of \u20B9{{amount}} ({{direction_label}}) with {{other_person_name}} was recorded on {{transaction_date}}.\n\nNotes: {{description}}\nStatus: {{status}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Transaction Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Amount:</strong> \u20B9{{amount}} ({{direction_label}})<br/><strong>With:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{transaction_date}}<br/><strong>Status:</strong> {{status}}</p><p>{{description}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_udhar_updated",
+    slug: "udhar-updated",
+    name: "Udhar Transaction Updated",
+    category: "udhar",
+    subject: "Udhar Updated: \u20B9{{amount}} with {{other_person_name}} \u2014 {{app_name}}",
+    variables: ["user_name", "other_person_name", "transaction_id", "amount", "direction_label", "description", "transaction_date", "status", "app_name"],
+    text_content: "Hi {{user_name}},\n\nUdhar entry #{{transaction_id}} with {{other_person_name}} was updated to \u20B9{{amount}} ({{direction_label}}) \xB7 Status: {{status}}.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Record Updated</h2><p>Hi <strong>{{user_name}}</strong>,</p><p>Record #{{transaction_id}} with <strong>{{other_person_name}}</strong> is now <strong>\u20B9{{amount}}</strong> ({{direction_label}} \xB7 {{status}}).</p><p>{{description}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_udhar_settled",
+    slug: "udhar-settled",
+    name: "Udhar Repayment / Settlement Notice",
+    category: "udhar",
+    subject: "Udhar Settlement: \u20B9{{amount_settled}} with {{other_person_name}} \u2014 {{app_name}}",
+    variables: ["user_name", "other_person_name", "transaction_id", "amount_settled", "updated_balance", "settlement_date", "app_name"],
+    text_content: "Hi {{user_name}},\n\nA settlement of \u20B9{{amount_settled}} with {{other_person_name}} (Ref #{{transaction_id}}) was recorded on {{settlement_date}}.\nRemaining Balance: \u20B9{{updated_balance}}.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Settlement Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Settled Amount:</strong> \u20B9{{amount_settled}}<br/><strong>Party:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{settlement_date}}<br/><strong>Remaining Balance:</strong> \u20B9{{updated_balance}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_contact_invitation",
+    slug: "contact-invitation",
+    name: "Contact Invitation to Join App",
+    category: "udhar",
+    subject: "{{inviter_name}} invited you to {{app_name}}",
+    variables: ["user_name", "inviter_name", "invite_link", "app_name", "company_name"],
+    text_content: "Hi {{user_name}},\n\n{{inviter_name}} invited you to track shared Udhar and finances on {{app_name}} by {{company_name}}.\nJoin here: {{invite_link}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">You are Invited to {{app_name}}!</h2><p>Hi <strong>{{user_name}}</strong>, <strong>{{inviter_name}}</strong> added you as a contact to track lending & repayments digitally.</p><p style="text-align: center; margin: 22px 0;"><a href="{{invite_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Accept Invitation</a></p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_notification_alert",
+    slug: "notification-alert",
+    name: "Transaction, Budget & Security Alert Email",
+    category: "notifications",
+    subject: "{{title}} \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "title", "message", "category", "action_url", "action_text", "app_name", "company_name"],
+    text_content: "Hi {{user_name}},\n\n[{{category}}] {{title}}\n\n{{message}}\n\nOpen: {{action_url}}\n\n{{app_name}} by {{company_name}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 4px 0 0; font-size: 11px; color: #a7f3d0; text-transform: uppercase;">{{category}} \xB7 {{app_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 22px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 11px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_campaign_announcement",
+    slug: "campaign-announcement",
+    name: "Admin Broadcast & Campaign Announcement",
+    category: "broadcast",
+    subject: "{{title}} \u2014 {{app_name}} by {{company_name}}",
+    variables: ["user_name", "user_email", "title", "message", "category", "action_url", "action_text", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\n{{title}}\n\n{{message}}\n\nOpen in App: {{action_url}}\n\nRegards,\n{{app_name}} ({{company_name}})",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden;"><div style="background: linear-gradient(135deg, #065f46, #047857); padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 6px 0 0; font-size: 12px; color: #d1fae5;">Official Announcement \xB7 {{company_name}}</p></div><div style="padding: 26px; color: #1e293b; font-size: 14px; line-height: 1.65;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 24px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p><p style="font-size: 12px; color: #64748b;">Questions? Contact {{support_email}}</p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: "2026-11-25T00:00:00.000Z"
   },
@@ -50067,28 +50304,65 @@ var DEFAULT_EMAIL_TEMPLATES = [
     name: "Account Deletion Scheduled Notice",
     category: "lifecycle",
     subject: "[Notice] Account Deletion Scheduled (24-Hour Grace Period) \u2014 {{app_name}}",
-    variables: ["user_name", "app_name", "scheduled_date", "support_email"],
-    text_content: "Hi {{user_name}},\n\nYou requested deletion of your account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.",
-    html_content: '<div style="font-family: sans-serif; padding: 20px;"><h2>Account Deletion Scheduled</h2><p>Hi {{user_name}}, your account is scheduled for deletion on {{scheduled_date}}.</p><p>You may cancel by logging into your account anytime before this window ends.</p></div>',
+    variables: ["user_name", "app_name", "company_name", "scheduled_date", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYou requested deletion of your {{app_name}} account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.\n\nSupport: {{support_email}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #991b1b; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Account Deletion Scheduled</h2><p style="margin: 4px 0 0; font-size: 12px; color: #fecaca;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account deletion request has been scheduled for permanent purge on <strong>{{scheduled_date}}</strong> (24-hour statutory grace period).</p><p>If you changed your mind, log back into <strong>{{app_name}}</strong> anytime before that window ends to cancel deletion immediately.</p><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need help? Contact <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>`,
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: "2026-11-25T00:00:00.000Z"
   }
 ];
+function mergeTemplateRow(def, row, defaultSlugs) {
+  const slug = String(row.slug || def?.slug || "").trim();
+  const version2 = Number(row.version || 1);
+  const isCustom = !defaultSlugs.has(slug);
+  const isCustomized = isCustom ? true : Boolean(row.is_customized ?? version2 > 1);
+  if (def && !isCustomized && version2 <= 1) {
+    return {
+      ...def,
+      id: def.id,
+      slug: def.slug,
+      is_active: row.is_active !== void 0 ? Boolean(row.is_active) : def.is_active,
+      is_custom: false,
+      is_customized: false,
+      version: 1,
+      updated_at: def.updated_at || row.updated_at
+    };
+  }
+  return {
+    ...def,
+    ...row,
+    id: def?.id || String(row.id),
+    slug,
+    variables: Array.isArray(row.variables) ? row.variables : def?.variables || [],
+    is_custom: isCustom,
+    is_customized: isCustomized,
+    version: version2
+  };
+}
 async function listEmailTemplatesFallback() {
   const sbRes = await sbRestRequest("email_templates?select=*&order=category.asc,name.asc");
   const stored = readJsonStore("email-templates.json", { templates: [] });
+  const defaultSlugs = new Set(DEFAULT_EMAIL_TEMPLATES.map((t2) => t2.slug));
   const map2 = /* @__PURE__ */ new Map();
   for (const t2 of DEFAULT_EMAIL_TEMPLATES) {
-    map2.set(t2.id, { ...t2 });
+    map2.set(t2.slug, { ...t2 });
   }
   if (sbRes.ok && Array.isArray(sbRes.data)) {
     for (const row of sbRes.data) {
-      if (row?.id) map2.set(String(row.id), row);
+      const slug = String(row?.slug || "").trim();
+      if (!slug) continue;
+      const def = map2.get(slug);
+      map2.set(slug, mergeTemplateRow(def, row, defaultSlugs));
     }
   }
   for (const row of stored.templates) {
-    if (row?.id) map2.set(String(row.id), row);
+    const slug = String(row?.slug || "").trim();
+    if (!slug) continue;
+    const def = map2.get(slug);
+    map2.set(slug, mergeTemplateRow(def, row, defaultSlugs));
   }
   return Array.from(map2.values()).sort(
     (a, b) => `${a.category || ""}:${a.name || ""}`.localeCompare(`${b.category || ""}:${b.name || ""}`)
@@ -50096,32 +50370,120 @@ async function listEmailTemplatesFallback() {
 }
 async function updateEmailTemplateFallback(id, updates) {
   const all = await listEmailTemplatesFallback();
-  const existing = all.find((t2) => t2.id === id);
+  const existing = all.find((t2) => t2.id === id || t2.slug === id);
   if (!existing) return null;
   const updated = {
     ...existing,
+    name: updates.name !== void 0 ? updates.name : existing.name,
+    category: updates.category !== void 0 ? updates.category : existing.category,
     subject: updates.subject !== void 0 ? updates.subject : existing.subject,
     html_content: updates.html_content !== void 0 ? updates.html_content : existing.html_content,
     text_content: updates.text_content !== void 0 ? updates.text_content : existing.text_content,
+    variables: Array.isArray(updates.variables) ? updates.variables : existing.variables,
     is_active: updates.is_active !== void 0 ? updates.is_active : existing.is_active,
-    version: Number(existing.version || 1) + 1,
+    is_customized: true,
+    version: Math.max(2, Number(existing.version || 1) + 1),
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
+  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(existing.slug)}`, {
     method: "PATCH",
     body: {
+      name: updated.name,
+      category: updated.category,
       subject: updated.subject,
       html_content: updated.html_content,
       text_content: updated.text_content,
+      variables: updated.variables,
       is_active: updated.is_active,
       version: updated.version,
       updated_at: updated.updated_at
     }
   });
   const stored = readJsonStore("email-templates.json", { templates: [] });
-  stored.templates = [updated, ...stored.templates.filter((t2) => t2.id !== id)];
+  stored.templates = [
+    updated,
+    ...stored.templates.filter((t2) => t2.id !== existing.id && t2.slug !== existing.slug)
+  ];
   writeJsonStore("email-templates.json", stored);
   return updated;
+}
+async function createEmailTemplateFallback(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const record = {
+    id: input.id || `custom_${crypto12.randomUUID().slice(0, 12)}`,
+    slug: input.slug,
+    name: input.name,
+    category: input.category || "custom",
+    subject: input.subject,
+    html_content: input.html_content,
+    text_content: input.text_content,
+    variables: Array.isArray(input.variables) ? input.variables : [],
+    is_active: input.is_active !== false,
+    is_custom: true,
+    is_customized: true,
+    version: 1,
+    created_at: now,
+    updated_at: now
+  };
+  await sbRestRequest("email_templates", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      slug: record.slug,
+      name: record.name,
+      category: record.category,
+      subject: record.subject,
+      html_content: record.html_content,
+      text_content: record.text_content,
+      variables: record.variables,
+      is_active: record.is_active,
+      version: 1,
+      created_at: now,
+      updated_at: now
+    }
+  });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  stored.templates = [record, ...stored.templates.filter((t2) => t2.id !== record.id && t2.slug !== record.slug)];
+  writeJsonStore("email-templates.json", stored);
+  return record;
+}
+async function resetEmailTemplateFallback(id) {
+  const def = DEFAULT_EMAIL_TEMPLATES.find((t2) => t2.id === id || t2.slug === id);
+  if (!def) return null;
+  const restored = {
+    ...def,
+    is_customized: false,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(def.slug)}`, {
+    method: "PATCH",
+    body: {
+      name: restored.name,
+      category: restored.category,
+      subject: restored.subject,
+      html_content: restored.html_content,
+      text_content: restored.text_content,
+      variables: restored.variables,
+      is_active: true,
+      version: 1,
+      updated_at: restored.updated_at
+    }
+  });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  stored.templates = stored.templates.filter((t2) => t2.id !== def.id && t2.slug !== def.slug);
+  writeJsonStore("email-templates.json", stored);
+  return restored;
+}
+async function deleteEmailTemplateFallback(id) {
+  if (DEFAULT_EMAIL_TEMPLATES.some((t2) => t2.id === id || t2.slug === id)) {
+    return false;
+  }
+  await sbRestRequest(`email_templates?or=(id.eq.${encodeURIComponent(id)},slug.eq.${encodeURIComponent(id)})`, { method: "DELETE" });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  const before = stored.templates.length;
+  stored.templates = stored.templates.filter((t2) => t2.id !== id && t2.slug !== id);
+  writeJsonStore("email-templates.json", stored);
+  return stored.templates.length < before;
 }
 async function recordEmailLogFallback(entry) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -50555,9 +50917,1328 @@ async function getAdminDashboardStatsFallback() {
     recentActivity
   };
 }
+async function insertSupportTicketFallback(entry) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const payload = {
+    ticket_number: entry.ticket_number,
+    user_id: entry.user_id,
+    user_name: entry.user_name,
+    user_email: entry.user_email,
+    ticket_type: entry.ticket_type,
+    category: entry.category || "General",
+    subject: entry.subject,
+    description: entry.description,
+    priority: entry.priority || "normal",
+    status: entry.status || "open",
+    attachment_url: entry.attachment_url || null,
+    created_at: now,
+    updated_at: now
+  };
+  const sbRes = await sbRestRequest("support_tickets", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: payload
+  });
+  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto12.randomUUID(), ...payload };
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  store.tickets = [savedRow, ...store.tickets.filter((t2) => t2.id !== savedRow.id)].slice(0, 200);
+  writeJsonStore("support-tickets.json", store);
+  return savedRow;
+}
+async function listSupportTicketsFallback(userId) {
+  const pathSuffix = userId ? `support_tickets?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=100` : "support_tickets?select=*&order=created_at.desc&limit=150";
+  const sbRes = await sbRestRequest(pathSuffix);
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of store.tickets) {
+    if (row?.id && !map2.has(String(row.id))) {
+      if (!userId || row.user_id === userId) {
+        map2.set(String(row.id), row);
+      }
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+async function getSupportTicketByIdFallback(ticketId, userId) {
+  const all = await listSupportTicketsFallback(userId);
+  return all.find((t2) => t2.id === ticketId && (!userId || t2.user_id === userId)) || null;
+}
+async function insertSupportTicketReplyFallback(entry) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const payload = {
+    ticket_id: entry.ticket_id,
+    sender_id: entry.sender_id || null,
+    sender_name: entry.sender_name,
+    sender_role: entry.sender_role,
+    sender_type: entry.sender_type,
+    message: entry.message,
+    message_type: entry.message_type || (entry.sender_type === "user" ? "user_message" : "admin_reply"),
+    is_internal: Boolean(entry.is_internal),
+    email_status: entry.email_status || "none",
+    delivery_error: entry.delivery_error || null,
+    created_at: now
+  };
+  const sbRes = await sbRestRequest("support_ticket_replies", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: payload
+  });
+  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto12.randomUUID(), ...payload };
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  store.replies = [...store.replies.filter((r2) => r2.id !== savedRow.id), savedRow].slice(-500);
+  writeJsonStore("support-tickets.json", store);
+  return savedRow;
+}
+async function getSupportTicketRepliesFallback(ticketId, includeInternal = false) {
+  const sbRes = await sbRestRequest(
+    `support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`
+  );
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of store.replies) {
+    if (row?.id && row.ticket_id === ticketId && !map2.has(String(row.id))) {
+      map2.set(String(row.id), row);
+    }
+  }
+  return Array.from(map2.values()).filter((r2) => includeInternal || !r2.is_internal).sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+}
+async function updateSupportTicketStatusFallback(ticketId, status) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const patch = {
+    status,
+    updated_at: now
+  };
+  if (status === "resolved" || status === "closed") {
+    patch.resolved_at = now;
+  }
+  await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+    method: "PATCH",
+    body: patch
+  });
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  const idx = store.tickets.findIndex((t2) => t2.id === ticketId);
+  if (idx >= 0) {
+    store.tickets[idx] = { ...store.tickets[idx], ...patch };
+    writeJsonStore("support-tickets.json", store);
+  }
+}
+
+// server/adminSettingsStore.ts
+import crypto13 from "crypto";
+import fs7 from "fs";
+import os5 from "os";
+import path6 from "path";
+var DEFAULT_MAINTENANCE_CONFIG = {
+  isEnabled: false,
+  title: "My Money Manager is Under Scheduled Maintenance",
+  message: "We are upgrading our secure financial infrastructure to deliver better performance and security. Normal services will resume shortly.",
+  expectedRestoration: "Within 2 hours"
+};
+var DEFAULT_APP_POPUP_CONFIG = {
+  enabled: true,
+  downloadUrl: "/#install",
+  title: "Get My Money Manager App",
+  description: "Track expenses, Udhar & smart insights faster with our mobile app.",
+  buttonLabel: "Download App"
+};
+var PRIMARY_DATA_DIR2 = path6.resolve(process.cwd(), ".data", "runtime-store");
+var TMP_DATA_DIR2 = path6.resolve(os5.tmpdir(), "mymoney-runtime-store");
+var g = globalThis;
+if (!g.__myMoneyRuntimeCache) {
+  g.__myMoneyRuntimeCache = /* @__PURE__ */ new Map();
+}
+function resolveWritableStoreDir2() {
+  try {
+    if (!fs7.existsSync(PRIMARY_DATA_DIR2)) {
+      fs7.mkdirSync(PRIMARY_DATA_DIR2, { recursive: true });
+    }
+    fs7.accessSync(PRIMARY_DATA_DIR2, fs7.constants.W_OK);
+    return PRIMARY_DATA_DIR2;
+  } catch {
+    try {
+      if (!fs7.existsSync(TMP_DATA_DIR2)) {
+        fs7.mkdirSync(TMP_DATA_DIR2, { recursive: true });
+      }
+      return TMP_DATA_DIR2;
+    } catch {
+      return PRIMARY_DATA_DIR2;
+    }
+  }
+}
+function safeStoreFile2(baseDir, name2) {
+  const safeName = name2.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const resolved = path6.resolve(baseDir, safeName);
+  if (!resolved.startsWith(baseDir + path6.sep)) {
+    throw new Error("PATH_CONFINEMENT_VIOLATION");
+  }
+  return resolved;
+}
+function readJsonFallback(fileName) {
+  for (const dir of [PRIMARY_DATA_DIR2, TMP_DATA_DIR2]) {
+    try {
+      const file = safeStoreFile2(dir, fileName);
+      if (fs7.existsSync(file)) {
+        const raw = fs7.readFileSync(file, "utf8");
+        if (raw.trim()) {
+          const parsed = JSON.parse(raw);
+          g.__myMoneyRuntimeCache?.set(fileName, parsed);
+          return parsed;
+        }
+      }
+    } catch {
+    }
+  }
+  if (g.__myMoneyRuntimeCache?.has(fileName)) {
+    return g.__myMoneyRuntimeCache.get(fileName);
+  }
+  return null;
+}
+function writeJsonFallback(fileName, data) {
+  g.__myMoneyRuntimeCache?.set(fileName, data);
+  try {
+    const dir = resolveWritableStoreDir2();
+    const file = safeStoreFile2(dir, fileName);
+    fs7.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.warn(`[AdminSettingsStore] Write notice (${fileName}):`, err?.message);
+  }
+}
+function parseTimestampMs(iso) {
+  if (!iso) return 0;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
+}
+var REMOTE_SYNC_TTL_MS = 4e3;
+var remoteSyncCache = /* @__PURE__ */ new Map();
+async function fetchRemoteAppSettingWithTtl(key) {
+  const cached = remoteSyncCache.get(key);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < REMOTE_SYNC_TTL_MS) {
+    return { checked: true, data: cached.data };
+  }
+  try {
+    const sbRes = await sbRestRequest(
+      `app_settings?key=eq.${encodeURIComponent(key)}&select=value,updated_at&limit=1`
+    );
+    if (sbRes.ok && Array.isArray(sbRes.data)) {
+      const row = sbRes.data[0];
+      const value = row?.value && typeof row.value === "object" ? {
+        ...row.value,
+        updatedAt: row.value.updatedAt || row.updated_at
+      } : null;
+      remoteSyncCache.set(key, { fetchedAt: now, data: value });
+      return { checked: true, data: value };
+    }
+  } catch {
+  }
+  return { checked: false, data: null };
+}
+function invalidateRemoteSyncCache(key, data) {
+  if (data !== void 0) {
+    remoteSyncCache.set(key, { fetchedAt: Date.now(), data });
+  } else {
+    remoteSyncCache.delete(key);
+  }
+}
+function validateAppDownloadUrl(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed) {
+    return { valid: false, normalized: "", error: "App Download URL is required." };
+  }
+  if (trimmed.length > 1e3 || /[\r\n\0]/.test(trimmed)) {
+    return { valid: false, normalized: "", error: "App Download URL contains invalid characters or exceeds 1000 characters." };
+  }
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return { valid: true, normalized: trimmed };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return {
+        valid: false,
+        normalized: "",
+        error: "App Download URL must start with https://, http://, or a relative path (/...)."
+      };
+    }
+    return { valid: true, normalized: parsed.toString() };
+  } catch {
+    return {
+      valid: false,
+      normalized: "",
+      error: "Please enter a valid URL (e.g. https://play.google.com/... or https://example.com/app.apk)."
+    };
+  }
+}
+function normalizeMaintenanceConfig(raw) {
+  return {
+    isEnabled: Boolean(raw?.isEnabled),
+    title: typeof raw?.title === "string" && raw.title.trim() ? raw.title.trim().slice(0, 140) : DEFAULT_MAINTENANCE_CONFIG.title,
+    message: typeof raw?.message === "string" && raw.message.trim() ? raw.message.trim().slice(0, 600) : DEFAULT_MAINTENANCE_CONFIG.message,
+    expectedRestoration: typeof raw?.expectedRestoration === "string" && raw.expectedRestoration.trim() ? raw.expectedRestoration.trim().slice(0, 100) : DEFAULT_MAINTENANCE_CONFIG.expectedRestoration,
+    updatedAt: typeof raw?.updatedAt === "string" ? raw.updatedAt : void 0,
+    updatedBy: typeof raw?.updatedBy === "string" ? raw.updatedBy : void 0
+  };
+}
+async function getMaintenanceSettings() {
+  const local = readJsonFallback("maintenance-settings.json");
+  let remote = null;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT value, updated_at FROM public.app_settings WHERE key = $1 LIMIT 1`,
+        ["maintenance_mode"]
+      );
+      if (res.rows[0]?.value) {
+        remote = normalizeMaintenanceConfig({
+          ...res.rows[0].value,
+          updatedAt: res.rows[0].value.updatedAt || res.rows[0].updated_at
+        });
+      }
+    } catch {
+    }
+  } else {
+    const remoteRes = await fetchRemoteAppSettingWithTtl("maintenance_mode");
+    if (remoteRes.checked && remoteRes.data) {
+      remote = normalizeMaintenanceConfig(remoteRes.data);
+    }
+  }
+  if (remote && local) {
+    if (parseTimestampMs(remote.updatedAt) > parseTimestampMs(local.updatedAt)) {
+      writeJsonFallback("maintenance-settings.json", remote);
+      return remote;
+    }
+    return normalizeMaintenanceConfig(local);
+  }
+  if (remote) {
+    writeJsonFallback("maintenance-settings.json", remote);
+    return remote;
+  }
+  if (local) {
+    return normalizeMaintenanceConfig(local);
+  }
+  return { ...DEFAULT_MAINTENANCE_CONFIG };
+}
+async function isMaintenanceModeEnabled() {
+  const settings = await getMaintenanceSettings();
+  return Boolean(settings.isEnabled);
+}
+async function saveMaintenanceSettings(input, updatedBy) {
+  const current = await getMaintenanceSettings();
+  const next = normalizeMaintenanceConfig({
+    ...current,
+    ...input,
+    isEnabled: typeof input.isEnabled === "boolean" ? input.isEnabled : current.isEnabled,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedBy: updatedBy.email || current.updatedBy || "admin"
+  });
+  writeJsonFallback("maintenance-settings.json", next);
+  invalidateRemoteSyncCache("maintenance_mode", next);
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+         VALUES ($1, $2::jsonb, NOW(), $3)
+         ON CONFLICT (key) DO UPDATE
+         SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+        ["maintenance_mode", JSON.stringify(next), updatedBy.id || null]
+      );
+    } catch (err) {
+      console.warn("[AdminSettingsStore] DB maintenance save notice:", err?.message);
+    }
+  } else {
+    await sbRestRequest("app_settings?on_conflict=key", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates",
+      body: {
+        key: "maintenance_mode",
+        value: next,
+        updated_at: next.updatedAt
+      }
+    }).catch(() => {
+    });
+  }
+  return next;
+}
+function normalizeAppPopupConfig(raw) {
+  const urlCheck = validateAppDownloadUrl(raw?.downloadUrl || DEFAULT_APP_POPUP_CONFIG.downloadUrl);
+  return {
+    enabled: typeof raw?.enabled === "boolean" ? raw.enabled : DEFAULT_APP_POPUP_CONFIG.enabled,
+    downloadUrl: urlCheck.valid ? urlCheck.normalized : DEFAULT_APP_POPUP_CONFIG.downloadUrl,
+    title: typeof raw?.title === "string" && raw.title.trim() ? raw.title.trim().slice(0, 80) : DEFAULT_APP_POPUP_CONFIG.title,
+    description: typeof raw?.description === "string" && raw.description.trim() ? raw.description.trim().slice(0, 220) : DEFAULT_APP_POPUP_CONFIG.description,
+    buttonLabel: typeof raw?.buttonLabel === "string" && raw.buttonLabel.trim() ? raw.buttonLabel.trim().slice(0, 32) : DEFAULT_APP_POPUP_CONFIG.buttonLabel,
+    updatedAt: typeof raw?.updatedAt === "string" ? raw.updatedAt : void 0,
+    updatedBy: typeof raw?.updatedBy === "string" ? raw.updatedBy : void 0
+  };
+}
+async function getAppPopupSettings() {
+  const local = readJsonFallback("app-download-popup.json");
+  let remote = null;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT value, updated_at FROM public.app_settings WHERE key = $1 LIMIT 1`,
+        ["app_download_popup"]
+      );
+      if (res.rows[0]?.value) {
+        remote = normalizeAppPopupConfig({
+          ...res.rows[0].value,
+          updatedAt: res.rows[0].value.updatedAt || res.rows[0].updated_at
+        });
+      }
+    } catch {
+    }
+  } else {
+    const remoteRes = await fetchRemoteAppSettingWithTtl("app_download_popup");
+    if (remoteRes.checked && remoteRes.data) {
+      remote = normalizeAppPopupConfig(remoteRes.data);
+    }
+  }
+  if (remote && local) {
+    if (parseTimestampMs(remote.updatedAt) > parseTimestampMs(local.updatedAt)) {
+      writeJsonFallback("app-download-popup.json", remote);
+      return remote;
+    }
+    return normalizeAppPopupConfig(local);
+  }
+  if (remote) {
+    writeJsonFallback("app-download-popup.json", remote);
+    return remote;
+  }
+  if (local) {
+    return normalizeAppPopupConfig(local);
+  }
+  return { ...DEFAULT_APP_POPUP_CONFIG };
+}
+async function saveAppPopupSettings(input, updatedBy) {
+  const current = await getAppPopupSettings();
+  const next = normalizeAppPopupConfig({
+    ...current,
+    ...input,
+    enabled: typeof input.enabled === "boolean" ? input.enabled : current.enabled,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedBy: updatedBy.email || current.updatedBy || "admin"
+  });
+  writeJsonFallback("app-download-popup.json", next);
+  invalidateRemoteSyncCache("app_download_popup", next);
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+         VALUES ($1, $2::jsonb, NOW(), $3)
+         ON CONFLICT (key) DO UPDATE
+         SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+        ["app_download_popup", JSON.stringify(next), updatedBy.id || null]
+      );
+    } catch (err) {
+      console.warn("[AdminSettingsStore] DB app_popup save notice:", err?.message);
+    }
+  } else {
+    await sbRestRequest("app_settings?on_conflict=key", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates",
+      body: {
+        key: "app_download_popup",
+        value: next,
+        updated_at: next.updatedAt
+      }
+    }).catch(() => {
+    });
+  }
+  return next;
+}
+var GEMINI_SECRET_KEY_NAME = "gemini_api_key";
+function getEncryptionKey() {
+  const seed = process.env.API_KEY_ENCRYPTION_SECRET || process.env.SESSION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.DATABASE_URL || "";
+  if (seed.trim()) {
+    return crypto13.createHash("sha256").update(`mymoney:admin_secrets:${seed.trim()}`).digest();
+  }
+  if (!g.__myMoneyEncryptionSaltKey) {
+    g.__myMoneyEncryptionSaltKey = crypto13.randomBytes(32);
+  }
+  return g.__myMoneyEncryptionSaltKey;
+}
+function encryptSecret(plainText) {
+  const key = getEncryptionKey();
+  const iv = crypto13.randomBytes(12);
+  const cipher = crypto13.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plainText, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `v1:${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
+}
+function decryptSecret(payload) {
+  try {
+    if (!payload || !payload.startsWith("v1:")) return null;
+    const parts = payload.split(":");
+    if (parts.length !== 4) return null;
+    const iv = Buffer.from(parts[1], "base64");
+    const authTag = Buffer.from(parts[2], "base64");
+    const ciphertext = Buffer.from(parts[3], "base64");
+    const key = getEncryptionKey();
+    const decipher = crypto13.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return decrypted.toString("utf8");
+  } catch {
+    return null;
+  }
+}
+function maskSecretKey(rawKey) {
+  const trimmed = (rawKey || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.length <= 10) return "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+  return `${trimmed.slice(0, 4)}\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${trimmed.slice(-4)}`;
+}
+async function ensureAdminSecretsTable() {
+  if (!isDatabaseAvailable()) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS public.admin_secrets (
+        key TEXT PRIMARY KEY,
+        encrypted_value TEXT NOT NULL,
+        masked_preview TEXT NOT NULL,
+        is_encrypted BOOLEAN NOT NULL DEFAULT TRUE,
+        last_validation_status TEXT,
+        last_validation_message TEXT,
+        last_validated_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_by TEXT
+      );
+    `);
+    await query(`ALTER TABLE public.admin_secrets ENABLE ROW LEVEL SECURITY;`);
+  } catch {
+  }
+}
+async function saveGeminiApiKey(rawApiKey, updatedBy, validation) {
+  const trimmed = String(rawApiKey || "").trim();
+  if (!trimmed || trimmed.length < 20 || trimmed.length > 256 || /\s/.test(trimmed)) {
+    throw new Error("Please enter a valid API key (20\u2013256 characters, no spaces).");
+  }
+  const encryptedValue = encryptSecret(trimmed);
+  const maskedPreview = maskSecretKey(trimmed);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  g.__myMoneyEncryptedSecret = {
+    encryptedValue,
+    maskedPreview,
+    updatedAt: now,
+    updatedBy,
+    lastValidation: validation || null
+  };
+  if (isDatabaseAvailable()) {
+    await ensureAdminSecretsTable();
+    await query(
+      `INSERT INTO public.admin_secrets (
+         key, encrypted_value, masked_preview, is_encrypted,
+         last_validation_status, last_validation_message, last_validated_at,
+         updated_at, updated_by
+       ) VALUES ($1, $2, $3, TRUE, $4, $5, $6, NOW(), $7)
+       ON CONFLICT (key) DO UPDATE SET
+         encrypted_value = EXCLUDED.encrypted_value,
+         masked_preview = EXCLUDED.masked_preview,
+         is_encrypted = TRUE,
+         last_validation_status = EXCLUDED.last_validation_status,
+         last_validation_message = EXCLUDED.last_validation_message,
+         last_validated_at = EXCLUDED.last_validated_at,
+         updated_at = NOW(),
+         updated_by = EXCLUDED.updated_by`,
+      [
+        GEMINI_SECRET_KEY_NAME,
+        encryptedValue,
+        maskedPreview,
+        validation ? validation.valid ? "valid" : "invalid" : null,
+        validation?.message || null,
+        validation?.checkedAt || null,
+        updatedBy
+      ]
+    );
+  }
+  return getMaskedGeminiApiKeyInfo();
+}
+async function updateGeminiKeyValidationStatus(validation) {
+  if (g.__myMoneyEncryptedSecret) {
+    g.__myMoneyEncryptedSecret.lastValidation = validation;
+  }
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `UPDATE public.admin_secrets
+         SET last_validation_status = $1,
+             last_validation_message = $2,
+             last_validated_at = $3
+         WHERE key = $4`,
+        [validation.valid ? "valid" : "invalid", validation.message, validation.checkedAt, GEMINI_SECRET_KEY_NAME]
+      );
+    } catch {
+    }
+  }
+}
+async function removeGeminiApiKey() {
+  g.__myMoneyEncryptedSecret = null;
+  if (isDatabaseAvailable()) {
+    try {
+      await query(`DELETE FROM public.admin_secrets WHERE key = $1`, [GEMINI_SECRET_KEY_NAME]);
+    } catch {
+    }
+  }
+  return getMaskedGeminiApiKeyInfo();
+}
+async function getEffectiveGeminiApiKey() {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT encrypted_value, masked_preview, last_validation_status, last_validation_message, last_validated_at, updated_at, updated_by
+         FROM public.admin_secrets
+         WHERE key = $1 LIMIT 1`,
+        [GEMINI_SECRET_KEY_NAME]
+      );
+      if (res.rows[0]?.encrypted_value) {
+        const plain = decryptSecret(res.rows[0].encrypted_value);
+        if (plain && plain.length > 10) {
+          g.__myMoneyEncryptedSecret = {
+            encryptedValue: res.rows[0].encrypted_value,
+            maskedPreview: res.rows[0].masked_preview || maskSecretKey(plain),
+            updatedAt: res.rows[0].updated_at || (/* @__PURE__ */ new Date()).toISOString(),
+            updatedBy: res.rows[0].updated_by || null,
+            lastValidation: res.rows[0].last_validation_status ? {
+              valid: res.rows[0].last_validation_status === "valid",
+              message: res.rows[0].last_validation_message || "",
+              checkedAt: res.rows[0].last_validated_at || (/* @__PURE__ */ new Date()).toISOString()
+            } : null
+          };
+          return { apiKey: plain, source: "admin_settings" };
+        }
+      }
+    } catch {
+    }
+  }
+  if (g.__myMoneyEncryptedSecret?.encryptedValue) {
+    const plain = decryptSecret(g.__myMoneyEncryptedSecret.encryptedValue);
+    if (plain && plain.length > 10) {
+      return { apiKey: plain, source: "admin_settings" };
+    }
+  }
+  const envKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim();
+  if (envKey.length > 10) {
+    return { apiKey: envKey, source: "env" };
+  }
+  return { apiKey: "", source: "none" };
+}
+async function getMaskedGeminiApiKeyInfo() {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT masked_preview, last_validation_status, last_validation_message, last_validated_at, updated_at, updated_by
+         FROM public.admin_secrets
+         WHERE key = $1 LIMIT 1`,
+        [GEMINI_SECRET_KEY_NAME]
+      );
+      if (res.rows[0]) {
+        const row = res.rows[0];
+        return {
+          configured: true,
+          hasSavedKey: true,
+          maskedApiKey: row.masked_preview || "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
+          source: "admin_settings",
+          updatedAt: row.updated_at || null,
+          updatedBy: row.updated_by || null,
+          lastValidation: row.last_validation_status ? {
+            valid: row.last_validation_status === "valid",
+            message: row.last_validation_message || "",
+            checkedAt: row.last_validated_at || (/* @__PURE__ */ new Date()).toISOString()
+          } : null
+        };
+      }
+    } catch {
+    }
+  }
+  if (g.__myMoneyEncryptedSecret) {
+    return {
+      configured: true,
+      hasSavedKey: true,
+      maskedApiKey: g.__myMoneyEncryptedSecret.maskedPreview,
+      source: "admin_settings",
+      updatedAt: g.__myMoneyEncryptedSecret.updatedAt,
+      updatedBy: g.__myMoneyEncryptedSecret.updatedBy,
+      lastValidation: g.__myMoneyEncryptedSecret.lastValidation
+    };
+  }
+  const envKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim();
+  if (envKey.length > 10) {
+    return {
+      configured: true,
+      hasSavedKey: false,
+      maskedApiKey: maskSecretKey(envKey),
+      source: "env",
+      updatedAt: null,
+      updatedBy: "Server Environment Variable",
+      lastValidation: null
+    };
+  }
+  return {
+    configured: false,
+    hasSavedKey: false,
+    maskedApiKey: "",
+    source: "none",
+    updatedAt: null,
+    updatedBy: null,
+    lastValidation: null
+  };
+}
+var SMTP_SECRET_KEY_NAME = "smtp_password";
+var SMTP_CONFIG_FILE = "smtp-config.json";
+var SMTP_SECRET_FILE = "smtp-secret.json";
+function getEnvSmtpDefaults() {
+  const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+  const port = parseInt(process.env.SMTP_PORT || "465", 10) || 465;
+  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465;
+  const user = (process.env.SMTP_USER || "hackifypro@gmail.com").trim();
+  const pass = (process.env.SMTP_PASS || "").trim();
+  const fromEmail = (process.env.SMTP_FROM_EMAIL || user || "hackifypro@gmail.com").trim();
+  const fromName = (process.env.SMTP_FROM_NAME || "My Money Manager by HackifyPro").trim();
+  return {
+    host,
+    port,
+    secure,
+    user,
+    pass,
+    fromEmail,
+    fromName,
+    enabled: true
+  };
+}
+async function readStoredSmtpMetadata() {
+  const local = readJsonFallback(SMTP_CONFIG_FILE);
+  let remote = null;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT value, updated_at FROM public.app_settings WHERE key = $1 LIMIT 1`,
+        ["smtp_config"]
+      );
+      if (res.rows[0]?.value && typeof res.rows[0].value === "object") {
+        remote = {
+          ...res.rows[0].value,
+          updatedAt: res.rows[0].value.updatedAt || res.rows[0].updated_at
+        };
+      }
+    } catch {
+    }
+  } else {
+    const remoteRes = await fetchRemoteAppSettingWithTtl("smtp_config");
+    if (remoteRes.checked && remoteRes.data && typeof remoteRes.data === "object") {
+      remote = remoteRes.data;
+    }
+  }
+  if (remote && local) {
+    if (parseTimestampMs(remote.updatedAt) > parseTimestampMs(local.updatedAt)) {
+      writeJsonFallback(SMTP_CONFIG_FILE, remote);
+      return remote;
+    }
+    return local;
+  }
+  if (remote) {
+    writeJsonFallback(SMTP_CONFIG_FILE, remote);
+    return remote;
+  }
+  return local || null;
+}
+async function readSavedSmtpSecret() {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT encrypted_value, masked_preview, updated_at, updated_by
+         FROM public.admin_secrets
+         WHERE key = $1 LIMIT 1`,
+        [SMTP_SECRET_KEY_NAME]
+      );
+      if (res.rows[0]?.encrypted_value) {
+        const plain = decryptSecret(res.rows[0].encrypted_value);
+        if (plain) {
+          g.__myMoneySmtpEncryptedSecret = {
+            encryptedValue: res.rows[0].encrypted_value,
+            maskedPreview: res.rows[0].masked_preview || maskSecretKey(plain),
+            updatedAt: res.rows[0].updated_at || (/* @__PURE__ */ new Date()).toISOString(),
+            updatedBy: res.rows[0].updated_by || null
+          };
+          return {
+            plain,
+            maskedPreview: g.__myMoneySmtpEncryptedSecret.maskedPreview,
+            updatedAt: g.__myMoneySmtpEncryptedSecret.updatedAt,
+            updatedBy: g.__myMoneySmtpEncryptedSecret.updatedBy
+          };
+        }
+      }
+    } catch {
+    }
+  }
+  if (g.__myMoneySmtpEncryptedSecret?.encryptedValue) {
+    const plain = decryptSecret(g.__myMoneySmtpEncryptedSecret.encryptedValue);
+    if (plain) {
+      return {
+        plain,
+        maskedPreview: g.__myMoneySmtpEncryptedSecret.maskedPreview,
+        updatedAt: g.__myMoneySmtpEncryptedSecret.updatedAt,
+        updatedBy: g.__myMoneySmtpEncryptedSecret.updatedBy
+      };
+    }
+  }
+  const fileSecret = readJsonFallback(SMTP_SECRET_FILE);
+  if (fileSecret?.encryptedValue) {
+    const plain = decryptSecret(fileSecret.encryptedValue);
+    if (plain) {
+      g.__myMoneySmtpEncryptedSecret = fileSecret;
+      return {
+        plain,
+        maskedPreview: fileSecret.maskedPreview || maskSecretKey(plain),
+        updatedAt: fileSecret.updatedAt || null,
+        updatedBy: fileSecret.updatedBy || null
+      };
+    }
+  }
+  return null;
+}
+async function saveSmtpSettings(input, updatedBy = {}) {
+  const envDefaults = getEnvSmtpDefaults();
+  const existingMeta = await readStoredSmtpMetadata();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const actor = updatedBy?.email || "admin";
+  const port = Number(input.port ?? existingMeta?.port ?? envDefaults.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("SMTP Port must be a valid port number (e.g. 465 or 587).");
+  }
+  const host = String(input.host ?? existingMeta?.host ?? envDefaults.host).trim();
+  if (!host || host.length > 200 || /[\s\r\n]/.test(host)) {
+    throw new Error("Please enter a valid SMTP host (e.g. smtp.gmail.com).");
+  }
+  const user = String(input.user ?? existingMeta?.user ?? envDefaults.user).trim();
+  if (!user || user.length > 200) {
+    throw new Error("Please enter a valid SMTP username or email address.");
+  }
+  const fromEmail = String(input.fromEmail ?? existingMeta?.fromEmail ?? user ?? envDefaults.fromEmail).trim();
+  if (fromEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+    throw new Error("Please enter a valid Sender From email address.");
+  }
+  const fromName = String(input.fromName ?? existingMeta?.fromName ?? envDefaults.fromName).trim().slice(0, 100) || "My Money Manager by HackifyPro";
+  const secure = typeof input.secure === "boolean" ? input.secure : port === 465;
+  const enabled = typeof input.enabled === "boolean" ? input.enabled : existingMeta?.enabled ?? true;
+  const meta = {
+    host,
+    port,
+    secure,
+    user,
+    fromEmail: fromEmail || user,
+    fromName,
+    enabled,
+    updatedAt: now,
+    updatedBy: actor
+  };
+  writeJsonFallback(SMTP_CONFIG_FILE, meta);
+  invalidateRemoteSyncCache("smtp_config", meta);
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+         VALUES ($1, $2::jsonb, NOW(), $3)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+        ["smtp_config", JSON.stringify(meta), updatedBy.id || null]
+      );
+    } catch (err) {
+      console.warn("[AdminSettingsStore] DB smtp_config save notice:", err?.message);
+    }
+  } else {
+    await sbRestRequest("app_settings?on_conflict=key", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates",
+      body: {
+        key: "smtp_config",
+        value: meta,
+        updated_at: now
+      }
+    }).catch(() => {
+    });
+  }
+  if (typeof input.pass === "string" && input.pass.trim().length > 0) {
+    const cleanPass = input.pass.trim();
+    if (cleanPass.length < 4 || cleanPass.length > 256) {
+      throw new Error("SMTP password / App Password must be between 4 and 256 characters.");
+    }
+    const encryptedValue = encryptSecret(cleanPass);
+    const maskedPreview = maskSecretKey(cleanPass);
+    const secretPayload = {
+      encryptedValue,
+      maskedPreview,
+      updatedAt: now,
+      updatedBy: actor
+    };
+    g.__myMoneySmtpEncryptedSecret = secretPayload;
+    writeJsonFallback(SMTP_SECRET_FILE, secretPayload);
+    if (isDatabaseAvailable()) {
+      await ensureAdminSecretsTable();
+      await query(
+        `INSERT INTO public.admin_secrets (
+           key, encrypted_value, masked_preview, is_encrypted, updated_at, updated_by
+         ) VALUES ($1, $2, $3, TRUE, NOW(), $4)
+         ON CONFLICT (key) DO UPDATE SET
+           encrypted_value = EXCLUDED.encrypted_value,
+           masked_preview = EXCLUDED.masked_preview,
+           is_encrypted = TRUE,
+           updated_at = NOW(),
+           updated_by = EXCLUDED.updated_by`,
+        [SMTP_SECRET_KEY_NAME, encryptedValue, maskedPreview, actor]
+      );
+    }
+  }
+  return getMaskedSmtpSettings();
+}
+async function removeSavedSmtpPassword() {
+  g.__myMoneySmtpEncryptedSecret = null;
+  writeJsonFallback(SMTP_SECRET_FILE, null);
+  if (isDatabaseAvailable()) {
+    try {
+      await query(`DELETE FROM public.admin_secrets WHERE key = $1`, [SMTP_SECRET_KEY_NAME]);
+    } catch {
+    }
+  }
+  return getMaskedSmtpSettings();
+}
+async function getEffectiveSmtpConfig() {
+  const envDefaults = getEnvSmtpDefaults();
+  const meta = await readStoredSmtpMetadata();
+  const savedSecret = await readSavedSmtpSecret();
+  const host = (meta?.host || envDefaults.host).trim();
+  const port = meta?.port || envDefaults.port;
+  const secure = meta ? Boolean(meta.secure) : envDefaults.secure;
+  const user = (meta?.user || envDefaults.user).trim();
+  const pass = (savedSecret?.plain || envDefaults.pass || "").trim();
+  const fromEmail = (meta?.fromEmail || user || envDefaults.fromEmail).trim();
+  const fromName = (meta?.fromName || envDefaults.fromName).trim();
+  const enabled = meta ? Boolean(meta.enabled) : true;
+  const source = savedSecret?.plain ? "admin_settings" : envDefaults.pass ? "env" : "none";
+  const configured = Boolean(enabled && host && user && pass);
+  const safeName = fromName.replace(/["\r\n]/g, "");
+  const from = fromEmail ? `"${safeName}" <${fromEmail}>` : process.env.SMTP_FROM || `"${safeName}" <${user}>`;
+  return {
+    configured,
+    enabled,
+    host,
+    port,
+    secure,
+    user,
+    pass,
+    from,
+    fromEmail,
+    fromName,
+    source
+  };
+}
+async function getMaskedSmtpSettings() {
+  const effective = await getEffectiveSmtpConfig();
+  const meta = await readStoredSmtpMetadata();
+  const savedSecret = await readSavedSmtpSecret();
+  return {
+    configured: effective.configured,
+    enabled: effective.enabled,
+    hasSavedPassword: Boolean(savedSecret?.plain),
+    maskedPassword: savedSecret ? savedSecret.maskedPreview : effective.pass ? maskSecretKey(effective.pass) : "",
+    host: effective.host,
+    port: effective.port,
+    secure: effective.secure,
+    user: effective.user,
+    fromEmail: effective.fromEmail,
+    fromName: effective.fromName,
+    source: effective.source,
+    updatedAt: savedSecret?.updatedAt || meta?.updatedAt || null,
+    updatedBy: savedSecret?.updatedBy || meta?.updatedBy || (effective.source === "env" ? "Server Environment Variable" : null)
+  };
+}
+async function getEffectiveSupportAlertEmail() {
+  const fallbackAdmin = (process.env.SUPPORT_EMAIL || "hackifypro@gmail.com").trim();
+  const localInt = readJsonFallback("integrations-config.json");
+  if (localInt && typeof localInt.supportEmail === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(localInt.supportEmail.trim())) {
+    return localInt.supportEmail.trim().toLowerCase();
+  }
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(`SELECT value FROM public.app_settings WHERE key = 'integrations_config' LIMIT 1`);
+      const em = res.rows[0]?.value?.supportEmail;
+      if (typeof em === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em.trim())) {
+        return em.trim().toLowerCase();
+      }
+    } catch {
+    }
+  }
+  return fallbackAdmin;
+}
+
+// server/emailTemplateService.ts
+import crypto14 from "crypto";
+var URL_VARIABLE_KEYS = /* @__PURE__ */ new Set([
+  "reset_link",
+  "invite_link",
+  "login_url",
+  "action_url",
+  "app_url",
+  "deep_link"
+]);
+function escapeHtml(val) {
+  const str = String(val ?? "");
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function sanitizeHrefUrl(val) {
+  const raw = String(val ?? "").trim();
+  if (!raw) return "#";
+  if (/^https?:\/\//i.test(raw) || raw.startsWith("/")) {
+    return raw.replace(/["'<>]/g, "");
+  }
+  return "#";
+}
+function extractTemplateVariables(subject, html, text) {
+  const found = /* @__PURE__ */ new Set();
+  const combined = `${subject}
+${html}
+${text}`;
+  const regex = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+  let match2;
+  while ((match2 = regex.exec(combined)) !== null) {
+    if (match2[1]) found.add(match2[1]);
+  }
+  return Array.from(found);
+}
+function ensureBrandedEmailHtml(rawHtml, opts) {
+  const html = String(rawHtml || "").trim();
+  const appName = escapeHtml(opts?.appName || APP_CONFIG.appName || "My Money Manager");
+  const companyName = escapeHtml(opts?.companyName || APP_CONFIG.companyName || "HackifyPro");
+  const supportEmail = escapeHtml(opts?.supportEmail || APP_CONFIG.supportEmail || "hackifypro@gmail.com");
+  const actionUrl = sanitizeHrefUrl(opts?.actionUrl || APP_CONFIG.appBaseUrl || "/");
+  if (!html) {
+    return ensureBrandedEmailHtml("<p>You have a new message from My Money Manager.</p>", opts);
+  }
+  const hasStyledWrapper = /max-width\s*:/i.test(html) || /#065f46|#047857|#991b1b|linear-gradient/i.test(html) || /<table[\s>]/i.test(html);
+  if (hasStyledWrapper) {
+    return html;
+  }
+  const bareMatch = html.match(/^<div\s+style=["']font-family:\s*sans-serif;\s*padding:\s*20px;?["'][^>]*>([\s\S]*)<\/div>$/i);
+  const innerHtml = bareMatch ? bareMatch[1].trim() : /<[a-z][\s\S]*>/i.test(html) ? html : `<p>${escapeHtml(html).replace(/\r?\n/g, "<br/>")}</p>`;
+  const heading = escapeHtml(opts?.title || `${appName} Notification`);
+  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: linear-gradient(135deg, #065f46, #047857); padding: 22px 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0; font-size: 20px; font-weight: 700;">${heading}</h2><p style="margin: 6px 0 0; font-size: 12px; color: #d1fae5;">${appName} \xB7 A product of ${companyName}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.65;">${innerHtml}<p style="text-align: center; margin: 24px 0 8px;"><a href="${actionUrl}" style="background: #059669; color: #ffffff; padding: 11px 24px; text-decoration: none; border-radius: 10px; font-weight: 700; display: inline-block;">Open ${appName}</a></p></div><div style="background: #f8fafc; padding: 14px 24px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center;">\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} ${appName} \xB7 Product of ${companyName} \xB7 Support: <a href="mailto:${supportEmail}" style="color: #059669;">${supportEmail}</a></div></div>`;
+}
+async function renderEmailTemplate(template, variables = {}, options) {
+  const supportEmail = await getEffectiveSupportAlertEmail().catch(() => APP_CONFIG.supportEmail);
+  const nowStr = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
+  const baseVars = {
+    app_name: APP_CONFIG.appName || "My Money Manager",
+    company_name: APP_CONFIG.companyName || "HackifyPro",
+    support_email: supportEmail || APP_CONFIG.supportEmail || "hackifypro@gmail.com",
+    support_phone: APP_CONFIG.supportPhone || "+91 8109923730",
+    login_url: APP_CONFIG.appLoginUrl || APP_CONFIG.appBaseUrl || "/",
+    app_url: APP_CONFIG.appBaseUrl || "/",
+    action_url: APP_CONFIG.appBaseUrl || "/",
+    action_text: "Open My Money Manager",
+    date: nowStr,
+    submitted_at: nowStr,
+    year: String((/* @__PURE__ */ new Date()).getFullYear())
+  };
+  for (const [k, v] of Object.entries(variables)) {
+    if (v !== void 0 && v !== null) {
+      baseVars[k] = String(v);
+    }
+  }
+  if (!baseVars.user_name || !baseVars.user_name.trim()) {
+    baseVars.user_name = "Valued User";
+  }
+  const replacePlaceholders = (input, isHtml) => {
+    return String(input || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_full, key) => {
+      if (!(key in baseVars)) {
+        return "";
+      }
+      const raw = baseVars[key];
+      if (!isHtml) return raw;
+      if (URL_VARIABLE_KEYS.has(key)) {
+        return sanitizeHrefUrl(raw);
+      }
+      return escapeHtml(raw).replace(/\r?\n/g, "<br/>");
+    });
+  };
+  const renderedSubject = replacePlaceholders(template.subject, false).replace(/[\r\n]/g, " ").trim();
+  const rawRenderedHtml = replacePlaceholders(template.html_content, true);
+  const finalHtml = options?.ensureBranded === false ? rawRenderedHtml : ensureBrandedEmailHtml(rawRenderedHtml, {
+    title: options?.brandTitle || renderedSubject || baseVars.title || baseVars.app_name,
+    appName: baseVars.app_name,
+    companyName: baseVars.company_name,
+    supportEmail: baseVars.support_email,
+    actionUrl: baseVars.action_url
+  });
+  return {
+    subject: renderedSubject,
+    html: finalHtml,
+    text: replacePlaceholders(template.text_content || "", false)
+  };
+}
+async function listEmailTemplates() {
+  const map2 = /* @__PURE__ */ new Map();
+  const defaultSlugs = new Set(DEFAULT_EMAIL_TEMPLATES.map((t2) => t2.slug));
+  for (const def of DEFAULT_EMAIL_TEMPLATES) {
+    map2.set(def.slug, { ...def, is_custom: false, is_customized: false });
+  }
+  const fbRows = await listEmailTemplatesFallback();
+  for (const row of fbRows) {
+    if (!row?.slug) continue;
+    const def = map2.get(row.slug);
+    const isCustomized = def ? Boolean(row.is_customized ?? Number(row.version || 1) > 1) : true;
+    if (def && !isCustomized && Number(row.version || 1) <= 1) {
+      map2.set(row.slug, {
+        ...def,
+        is_active: row.is_active !== void 0 ? Boolean(row.is_active) : def.is_active,
+        is_custom: false,
+        is_customized: false
+      });
+    } else {
+      map2.set(row.slug, {
+        ...def,
+        ...row,
+        id: def?.id || String(row.id),
+        variables: Array.isArray(row.variables) ? row.variables : def?.variables || [],
+        is_custom: !defaultSlugs.has(row.slug),
+        is_customized: isCustomized
+      });
+    }
+  }
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query("SELECT * FROM public.email_templates ORDER BY category, name ASC");
+      for (const row of res.rows || []) {
+        if (!row?.slug) continue;
+        const def = map2.get(row.slug);
+        const isCustomized = def ? Number(row.version || 1) > 1 : true;
+        if (def && !isCustomized && Number(row.version || 1) <= 1) {
+          map2.set(row.slug, {
+            ...def,
+            is_active: row.is_active !== void 0 ? Boolean(row.is_active) : def.is_active,
+            is_custom: false,
+            is_customized: false
+          });
+        } else {
+          map2.set(row.slug, {
+            ...def,
+            ...row,
+            id: def?.id || String(row.id),
+            variables: Array.isArray(row.variables) ? row.variables : def?.variables || [],
+            is_custom: !defaultSlugs.has(row.slug),
+            is_customized: isCustomized
+          });
+        }
+      }
+    } catch {
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => `${a.category || ""}:${a.name || ""}`.localeCompare(`${b.category || ""}:${b.name || ""}`)
+  );
+}
+async function getEmailTemplateByIdOrSlug(idOrSlug) {
+  const key = String(idOrSlug || "").trim();
+  if (!key) return null;
+  const all = await listEmailTemplates();
+  return all.find((t2) => t2.id === key || t2.slug === key) || null;
+}
+async function getRenderedCustomTemplateIfActive(slug, variables) {
+  try {
+    const tmpl = await getEmailTemplateByIdOrSlug(slug);
+    if (!tmpl || !tmpl.is_active) return null;
+    if (!tmpl.is_customized && !tmpl.is_custom && Number(tmpl.version || 1) <= 1) {
+      return null;
+    }
+    return await renderEmailTemplate(tmpl, variables);
+  } catch {
+    return null;
+  }
+}
+async function saveEmailTemplate(id, updates) {
+  const existing = await getEmailTemplateByIdOrSlug(id);
+  if (!existing) return null;
+  const nextSubject = updates.subject !== void 0 ? String(updates.subject).trim() : existing.subject;
+  const nextHtml = updates.html_content !== void 0 ? String(updates.html_content) : existing.html_content;
+  const nextText = updates.text_content !== void 0 ? String(updates.text_content) : existing.text_content;
+  const nextName = updates.name !== void 0 ? String(updates.name).trim() : existing.name;
+  const nextCategory = updates.category !== void 0 ? String(updates.category).trim().toLowerCase() : existing.category;
+  const nextActive = updates.is_active !== void 0 ? Boolean(updates.is_active) : existing.is_active;
+  const detectedVars = extractTemplateVariables(nextSubject, nextHtml, nextText);
+  const nextVars = Array.isArray(updates.variables) && updates.variables.length > 0 ? Array.from(/* @__PURE__ */ new Set([...updates.variables, ...detectedVars])) : Array.from(/* @__PURE__ */ new Set([...existing.variables || [], ...detectedVars]));
+  if (isDatabaseAvailable()) {
+    try {
+      const upRes = await query(
+        `UPDATE public.email_templates
+         SET name = $1,
+             category = $2,
+             subject = $3,
+             html_content = $4,
+             text_content = $5,
+             variables = $6::jsonb,
+             is_active = $7,
+             version = version + 1,
+             updated_at = NOW()
+         WHERE id = $8 OR slug = $9
+         RETURNING *`,
+        [
+          nextName,
+          nextCategory,
+          nextSubject,
+          nextHtml,
+          nextText,
+          JSON.stringify(nextVars),
+          nextActive,
+          existing.id,
+          existing.slug
+        ]
+      );
+      if (upRes.rows.length === 0) {
+        await query(
+          `INSERT INTO public.email_templates (slug, name, category, subject, html_content, text_content, variables, is_active, version)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, 2)
+           ON CONFLICT (slug) DO UPDATE SET
+             name = EXCLUDED.name,
+             category = EXCLUDED.category,
+             subject = EXCLUDED.subject,
+             html_content = EXCLUDED.html_content,
+             text_content = EXCLUDED.text_content,
+             variables = EXCLUDED.variables,
+             is_active = EXCLUDED.is_active,
+             version = public.email_templates.version + 1,
+             updated_at = NOW()`,
+          [
+            existing.slug,
+            nextName,
+            nextCategory,
+            nextSubject,
+            nextHtml,
+            nextText,
+            JSON.stringify(nextVars),
+            nextActive
+          ]
+        );
+      }
+    } catch (err) {
+      console.warn("[EmailTemplateService] PG update fallback notice:", err?.message);
+    }
+  }
+  const fbUpdated = await updateEmailTemplateFallback(existing.id, {
+    name: nextName,
+    category: nextCategory,
+    subject: nextSubject,
+    html_content: nextHtml,
+    text_content: nextText,
+    variables: nextVars,
+    is_active: nextActive
+  });
+  return fbUpdated || await getEmailTemplateByIdOrSlug(existing.id);
+}
+async function createCustomEmailTemplate(input) {
+  const cleanName = String(input.name || "").trim();
+  if (!cleanName) throw new Error("Template name is required.");
+  const rawSlug = String(input.slug || cleanName).trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!rawSlug) throw new Error("A valid template slug is required.");
+  const existingAll = await listEmailTemplates();
+  const uniqueSlug = existingAll.some((t2) => t2.slug === rawSlug) ? `${rawSlug}-${crypto14.randomBytes(2).toString("hex")}` : rawSlug;
+  const subject = String(input.subject || "").trim();
+  const html = String(input.html_content || "").trim();
+  if (!subject || !html) {
+    throw new Error("Subject and HTML body are required.");
+  }
+  const text = String(input.text_content || html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+  const detectedVars = extractTemplateVariables(subject, html, text);
+  const variables = Array.from(/* @__PURE__ */ new Set([...input.variables || [], ...detectedVars]));
+  const category = String(input.category || "custom").trim().toLowerCase() || "custom";
+  const isActive = input.is_active !== false;
+  let pgId;
+  if (isDatabaseAvailable()) {
+    try {
+      const insRes = await query(
+        `INSERT INTO public.email_templates (slug, name, category, subject, html_content, text_content, variables, is_active, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, 1)
+         RETURNING id`,
+        [uniqueSlug, cleanName, category, subject, html, text, JSON.stringify(variables), isActive]
+      );
+      pgId = insRes.rows[0]?.id;
+    } catch (err) {
+      console.warn("[EmailTemplateService] PG create notice:", err?.message);
+    }
+  }
+  return await createEmailTemplateFallback({
+    id: pgId,
+    slug: uniqueSlug,
+    name: cleanName,
+    category,
+    subject,
+    html_content: html,
+    text_content: text,
+    variables,
+    is_active: isActive
+  });
+}
+async function resetEmailTemplate(id) {
+  const def = DEFAULT_EMAIL_TEMPLATES.find((t2) => t2.id === id || t2.slug === id);
+  if (!def) return null;
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `UPDATE public.email_templates
+         SET name = $1,
+             category = $2,
+             subject = $3,
+             html_content = $4,
+             text_content = $5,
+             variables = $6::jsonb,
+             is_active = TRUE,
+             version = 1,
+             updated_at = NOW()
+         WHERE id = $7 OR slug = $8`,
+        [
+          def.name,
+          def.category,
+          def.subject,
+          def.html_content,
+          def.text_content,
+          JSON.stringify(def.variables),
+          def.id,
+          def.slug
+        ]
+      );
+    } catch {
+    }
+  }
+  return await resetEmailTemplateFallback(def.id);
+}
+async function deleteCustomEmailTemplate(id) {
+  const existing = await getEmailTemplateByIdOrSlug(id);
+  if (!existing || !existing.is_custom) {
+    return false;
+  }
+  if (isDatabaseAvailable()) {
+    try {
+      await query(`DELETE FROM public.email_templates WHERE id = $1 OR slug = $2`, [
+        existing.id,
+        existing.slug
+      ]);
+    } catch {
+    }
+  }
+  return await deleteEmailTemplateFallback(existing.id);
+}
 
 // server/welcomeEmailTemplate.ts
-function escapeHtml(str) {
+function escapeHtml2(str) {
   if (!str || typeof str !== "string") return "";
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -50576,7 +52257,7 @@ function formatPersonalizedGreeting(rawName) {
   if (!/[a-zA-Z\u00C0-\u024F\u0900-\u097F]/.test(firstName)) {
     return "Hi there,";
   }
-  const cleanName = escapeHtml(firstName);
+  const cleanName = escapeHtml2(firstName);
   return `Hi ${cleanName},`;
 }
 function generateWelcomeEmail(data) {
@@ -50594,7 +52275,7 @@ function generateWelcomeEmail(data) {
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="x-apple-disable-message-reformatting" />
-  <title>${escapeHtml(APP_CONFIG.appName)} - Welcome Aboard</title>
+  <title>${escapeHtml2(APP_CONFIG.appName)} - Welcome Aboard</title>
   <!--[if mso]>
   <style type="text/css">
     body, table, td, a, span { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
@@ -50667,24 +52348,24 @@ function generateWelcomeEmail(data) {
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
                 <tr>
                   <td align="center">
-                    <img src="${logoSrc}" alt="${escapeHtml(APP_CONFIG.appName)} Logo" width="64" height="64" style="display: block; width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 1px solid #e2e8f0;" />
+                    <img src="${logoSrc}" alt="${escapeHtml2(APP_CONFIG.appName)} Logo" width="64" height="64" style="display: block; width: 64px; height: 64px; border-radius: 14px; object-fit: cover; border: 1px solid #e2e8f0;" />
                   </td>
                 </tr>
               </table>
 
               <!-- 2. Brand Name -->
               <h1 style="margin: 14px 0 0 0; font-size: 22px; font-weight: 800; color: #065f46; letter-spacing: -0.3px; line-height: 1.3;">
-                ${escapeHtml(APP_CONFIG.appName)}
+                ${escapeHtml2(APP_CONFIG.appName)}
               </h1>
 
               <!-- 3. Tagline -->
               <p style="margin: 4px 0 0 0; font-size: 13px; font-weight: 500; color: #475569; letter-spacing: 0.1px;">
-                ${escapeHtml(APP_CONFIG.appTagline)}
+                ${escapeHtml2(APP_CONFIG.appTagline)}
               </p>
 
               <!-- 4. Subtle A product of HackifyPro -->
               <p style="margin: 8px 0 0 0; font-size: 11px; font-weight: 600; color: #047857; text-transform: uppercase; letter-spacing: 0.8px;">
-                A product of ${escapeHtml(APP_CONFIG.companyName)}
+                A product of ${escapeHtml2(APP_CONFIG.companyName)}
               </p>
 
             </td>
@@ -50717,7 +52398,7 @@ function generateWelcomeEmail(data) {
 
               <!-- 8. Short Welcome Message -->
               <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-                Welcome to ${escapeHtml(APP_CONFIG.appName)}. We&#39;re happy to have you with us!
+                Welcome to ${escapeHtml2(APP_CONFIG.appName)}. We&#39;re happy to have you with us!
               </p>
               <p style="margin: 0 0 20px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
                 Your money management journey just got simpler. Track your income, manage expenses, plan budgets, and build better financial habits\u2014all in one place.
@@ -50768,16 +52449,16 @@ function generateWelcomeEmail(data) {
                       <tr>
                         <td style="font-size: 12px; color: #334155; line-height: 1.6;">
                           <strong style="color: #0f172a;">Support Email:</strong> 
-                          <a href="mailto:${escapeHtml(supportEmail)}" style="color: #047857; text-decoration: underline; font-weight: 600;">
-                            ${escapeHtml(supportEmail)}
+                          <a href="mailto:${escapeHtml2(supportEmail)}" style="color: #047857; text-decoration: underline; font-weight: 600;">
+                            ${escapeHtml2(supportEmail)}
                           </a>
                         </td>
                       </tr>
                       <tr>
                         <td style="font-size: 12px; color: #334155; line-height: 1.6; padding-top: 4px;">
                           <strong style="color: #0f172a;">Support Phone:</strong> 
-                          <a href="tel:${escapeHtml(supportPhoneClean)}" style="color: #047857; text-decoration: underline; font-weight: 600;">
-                            ${escapeHtml(supportPhone)}
+                          <a href="tel:${escapeHtml2(supportPhoneClean)}" style="color: #047857; text-decoration: underline; font-weight: 600;">
+                            ${escapeHtml2(supportPhone)}
                           </a>
                         </td>
                       </tr>
@@ -50794,7 +52475,7 @@ function generateWelcomeEmail(data) {
                 Warm regards,
               </p>
               <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46; line-height: 1.5;">
-                Team ${escapeHtml(APP_CONFIG.appName)}
+                Team ${escapeHtml2(APP_CONFIG.appName)}
               </p>
 
             </td>
@@ -50808,10 +52489,10 @@ function generateWelcomeEmail(data) {
                 A product proudly built by
               </p>
               <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #065f46; letter-spacing: 0.8px;">
-                ${escapeHtml(APP_CONFIG.companyName.toUpperCase())}
+                ${escapeHtml2(APP_CONFIG.companyName.toUpperCase())}
               </p>
               <p style="margin: 0 0 14px 0; font-size: 11px; font-style: italic; color: #64748b;">
-                ${escapeHtml(APP_CONFIG.companyTagline)}
+                ${escapeHtml2(APP_CONFIG.companyTagline)}
               </p>
 
               <!-- Divider line in footer -->
@@ -50823,7 +52504,7 @@ function generateWelcomeEmail(data) {
 
               <!-- Copyright -->
               <p style="margin: 0; font-size: 11px; font-weight: 400; color: #94a3b8; line-height: 1.4;">
-                ${escapeHtml(APP_CONFIG.footerCopyright)}
+                ${escapeHtml2(APP_CONFIG.footerCopyright)}
               </p>
 
             </td>
@@ -50895,7 +52576,7 @@ function wrapEmailHtml(title, bodyContent) {
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="x-apple-disable-message-reformatting" />
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml2(title)}</title>
   <style type="text/css">
     body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
     table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
@@ -50919,18 +52600,18 @@ function wrapEmailHtml(title, bodyContent) {
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
                 <tr>
                   <td align="center">
-                    <img src="${logoSrc}" alt="${escapeHtml(APP_CONFIG.appName)} Logo" width="56" height="56" style="display: block; width: 56px; height: 56px; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0;" />
+                    <img src="${logoSrc}" alt="${escapeHtml2(APP_CONFIG.appName)} Logo" width="56" height="56" style="display: block; width: 56px; height: 56px; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0;" />
                   </td>
                 </tr>
               </table>
               <h1 style="margin: 12px 0 0 0; font-size: 20px; font-weight: 800; color: #065f46; letter-spacing: -0.3px;">
-                ${escapeHtml(APP_CONFIG.appName)}
+                ${escapeHtml2(APP_CONFIG.appName)}
               </h1>
               <p style="margin: 4px 0 0 0; font-size: 12px; font-weight: 500; color: #475569;">
-                ${escapeHtml(APP_CONFIG.appTagline)}
+                ${escapeHtml2(APP_CONFIG.appTagline)}
               </p>
               <p style="margin: 6px 0 0 0; font-size: 11px; font-weight: 600; color: #047857; text-transform: uppercase; letter-spacing: 0.8px;">
-                A product of ${escapeHtml(APP_CONFIG.companyName)}
+                A product of ${escapeHtml2(APP_CONFIG.companyName)}
               </p>
             </td>
           </tr>
@@ -50955,16 +52636,16 @@ function wrapEmailHtml(title, bodyContent) {
                 A product proudly built by
               </p>
               <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: #065f46; letter-spacing: 0.8px;">
-                ${escapeHtml(APP_CONFIG.companyName.toUpperCase())}
+                ${escapeHtml2(APP_CONFIG.companyName.toUpperCase())}
               </p>
               <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #64748b;">
-                ${escapeHtml(APP_CONFIG.companyTagline)}
+                ${escapeHtml2(APP_CONFIG.companyTagline)}
               </p>
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 10px 0;">
                 <tr><td style="border-top: 1px solid #cbd5e1; font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
               </table>
               <p style="margin: 0; font-size: 11px; font-weight: 400; color: #94a3b8; line-height: 1.4;">
-                ${escapeHtml(APP_CONFIG.footerCopyright)}
+                ${escapeHtml2(APP_CONFIG.footerCopyright)}
               </p>
             </td>
           </tr>
@@ -51000,16 +52681,16 @@ function generateFeedbackReceivedEmail(data) {
       <tr>
         <td>
           <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;">
-            <strong>Feedback ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml(fbId)}</span>
+            <strong>Feedback ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml2(fbId)}</span>
           </p>
           <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;">
-            <strong>Rating:</strong> <span style="font-size: 15px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml(ratingText)})
+            <strong>Rating:</strong> <span style="font-size: 15px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml2(ratingText)})
           </p>
-          ${data.category ? `<p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;"><strong>Category:</strong> ${escapeHtml(data.category)}</p>` : ""}
+          ${data.category ? `<p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46;"><strong>Category:</strong> ${escapeHtml2(data.category)}</p>` : ""}
           <div style="margin: 10px 0 0 0;">
             <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase;">Your Feedback:</p>
             <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-              ${escapeHtml(messageContent)}
+              ${escapeHtml2(messageContent)}
             </p>
           </div>
         </td>
@@ -51024,7 +52705,7 @@ function generateFeedbackReceivedEmail(data) {
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
       HackifyPro Support Team<br>
-      ${escapeHtml(APP_CONFIG.appName)}
+      ${escapeHtml2(APP_CONFIG.appName)}
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
@@ -51069,13 +52750,13 @@ function generateFeedbackAdminNotificationEmail(data) {
             User Details
           </h3>
           <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;">
-            <strong>Name:</strong> ${escapeHtml(data.userName)}
+            <strong>Name:</strong> ${escapeHtml2(data.userName)}
           </p>
           <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;">
-            <strong>Email:</strong> <span style="font-family: monospace;">${escapeHtml(data.userEmail)}</span>
+            <strong>Email:</strong> <span style="font-family: monospace;">${escapeHtml2(data.userEmail)}</span>
           </p>
           <p style="margin: 0; font-size: 13px; color: #334155;">
-            <strong>User ID:</strong> <span style="font-family: monospace; font-size: 12px;">${escapeHtml(data.userId)}</span>
+            <strong>User ID:</strong> <span style="font-family: monospace; font-size: 12px;">${escapeHtml2(data.userId)}</span>
           </p>
         </td>
       </tr>
@@ -51089,18 +52770,18 @@ function generateFeedbackAdminNotificationEmail(data) {
             Feedback Details
           </h3>
           <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;">
-            <strong>Feedback ID:</strong> <span style="font-family: monospace; font-size: 13px; font-weight: 700; color: #065f46;">#${escapeHtml(data.feedbackId)}</span>
+            <strong>Feedback ID:</strong> <span style="font-family: monospace; font-size: 13px; font-weight: 700; color: #065f46;">#${escapeHtml2(data.feedbackId)}</span>
           </p>
           <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
-            <strong>Rating:</strong> <span style="font-size: 14px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml(data.rating)}/5)
+            <strong>Rating:</strong> <span style="font-size: 14px; color: #eab308; letter-spacing: 2px;">${starsRender}</span> (${escapeHtml2(data.rating)}/5)
           </p>
           <p style="margin: 0 0 8px 0; font-size: 13px; color: #334155;">
-            <strong>Submitted At:</strong> ${escapeHtml(data.submittedAt)}
+            <strong>Submitted At:</strong> ${escapeHtml2(data.submittedAt)}
           </p>
           <div style="margin: 8px 0 0 0;">
             <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase;">Feedback:</p>
             <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-              ${escapeHtml(data.message)}
+              ${escapeHtml2(data.message)}
             </p>
           </div>
         </td>
@@ -51157,17 +52838,17 @@ function generateComplaintReceivedEmail(data) {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #991b1b; padding-bottom: 6px;">
-                <strong>Complaint / Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #fca5a5;">#${escapeHtml(ticketNum)}</span>
+                <strong>Complaint / Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #fca5a5;">#${escapeHtml2(ticketNum)}</span>
               </td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #991b1b; padding-bottom: 6px;">
-                <strong>Category:</strong> ${escapeHtml(data.category)}
+                <strong>Category:</strong> ${escapeHtml2(data.category)}
               </td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #991b1b; padding-bottom: 6px;">
-                <strong>Subject:</strong> ${escapeHtml(data.subject)}
+                <strong>Subject:</strong> ${escapeHtml2(data.subject)}
               </td>
             </tr>
             <tr>
@@ -51177,7 +52858,7 @@ function generateComplaintReceivedEmail(data) {
             </tr>
           </table>
           <p style="margin: 12px 0 0 0; font-size: 13px; color: #4b5563; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
-            ${escapeHtml(data.description)}
+            ${escapeHtml2(data.description)}
           </p>
         </td>
       </tr>
@@ -51192,7 +52873,7 @@ function generateComplaintReceivedEmail(data) {
       <tr>
         <td style="font-size: 12px; color: #334155; line-height: 1.6;">
           <strong>Need urgent assistance?</strong> Contact us directly:<br/>
-          Email: <a href="mailto:${escapeHtml(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: underline;">${escapeHtml(APP_CONFIG.supportEmail)}</a> &bull; Phone: <a href="tel:${escapeHtml(APP_CONFIG.supportPhoneRaw)}" style="color: #047857; text-decoration: underline;">${escapeHtml(APP_CONFIG.supportPhone)}</a>
+          Email: <a href="mailto:${escapeHtml2(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: underline;">${escapeHtml2(APP_CONFIG.supportEmail)}</a> &bull; Phone: <a href="tel:${escapeHtml2(APP_CONFIG.supportPhoneRaw)}" style="color: #047857; text-decoration: underline;">${escapeHtml2(APP_CONFIG.supportPhone)}</a>
         </td>
       </tr>
     </table>
@@ -51201,7 +52882,7 @@ function generateComplaintReceivedEmail(data) {
       Warm regards,
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
-      Team ${escapeHtml(APP_CONFIG.appName)}
+      Team ${escapeHtml2(APP_CONFIG.appName)}
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
@@ -51251,22 +52932,22 @@ function generateSupportTicketReceivedEmail(data) {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #166534; padding-bottom: 6px;">
-                <strong>Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml(ticketNum)}</span>
+                <strong>Ticket ID:</strong> <span style="font-family: monospace; font-size: 14px; background: #ffffff; padding: 2px 8px; border-radius: 6px; border: 1px solid #86efac;">#${escapeHtml2(ticketNum)}</span>
               </td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #166534; padding-bottom: 6px;">
-                <strong>Category:</strong> ${escapeHtml(data.category)}
+                <strong>Category:</strong> ${escapeHtml2(data.category)}
               </td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #166534;">
-                <strong>Subject:</strong> ${escapeHtml(data.subject)}
+                <strong>Subject:</strong> ${escapeHtml2(data.subject)}
               </td>
             </tr>
           </table>
           <p style="margin: 12px 0 0 0; font-size: 13px; color: #334155; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
-            ${escapeHtml(desc)}
+            ${escapeHtml2(desc)}
           </p>
         </td>
       </tr>
@@ -51280,7 +52961,7 @@ function generateSupportTicketReceivedEmail(data) {
       Warm regards,
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
-      Team ${escapeHtml(APP_CONFIG.appName)}
+      Team ${escapeHtml2(APP_CONFIG.appName)}
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
@@ -51320,14 +53001,14 @@ function generateAdminReplyEmail(data) {
       ${greeting}
     </p>
     <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-      Our support team has reviewed your ${ticketLabel} regarding <strong>&ldquo;${escapeHtml(data.originalSubject)}&rdquo;</strong> (Ticket: <span style="font-family: monospace; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">#${escapeHtml(ticketNum)}</span>).
+      Our support team has reviewed your ${ticketLabel} regarding <strong>&ldquo;${escapeHtml2(data.originalSubject)}&rdquo;</strong> (Ticket: <span style="font-family: monospace; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">#${escapeHtml2(ticketNum)}</span>).
     </p>
 
     ${data.status ? `
     <div style="margin: 0 0 16px 0;">
       <span style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Ticket Status: </span>
       <span style="display: inline-block; background: #dcfce7; color: #166534; font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 6px; text-transform: uppercase;">
-        ${escapeHtml(data.status.replace(/_/g, " ").toUpperCase())}
+        ${escapeHtml2(data.status.replace(/_/g, " ").toUpperCase())}
       </span>
     </div>
     ` : ""}
@@ -51337,17 +53018,17 @@ function generateAdminReplyEmail(data) {
       <tr>
         <td>
           <p style="margin: 0 0 6px 0; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;">
-            Message from ${escapeHtml(data.adminName || "Support Team")}:
+            Message from ${escapeHtml2(data.adminName || "Support Team")}:
           </p>
           <div style="font-size: 14px; color: #1e293b; line-height: 1.6; white-space: pre-wrap;">
-${escapeHtml(data.adminReply)}
+${escapeHtml2(data.adminReply)}
           </div>
         </td>
       </tr>
     </table>
 
     <p style="margin: 0 0 16px 0; font-size: 13px; color: #475569; line-height: 1.6;">
-      If you need any further assistance, you can reply directly inside the <strong>Feedback & Support History</strong> section in the app, or email us at <a href="mailto:${escapeHtml(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: underline; font-weight: 600;">${escapeHtml(APP_CONFIG.supportEmail)}</a>.
+      If you need any further assistance, you can reply directly inside the <strong>Feedback & Support History</strong> section in the app, or email us at <a href="mailto:${escapeHtml2(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: underline; font-weight: 600;">${escapeHtml2(APP_CONFIG.supportEmail)}</a>.
     </p>
 
     <!-- Quick Link Button to App -->
@@ -51357,7 +53038,7 @@ ${escapeHtml(data.adminReply)}
           <table role="presentation" border="0" cellpadding="0" cellspacing="0">
             <tr>
               <td align="center" style="border-radius: 10px; background-color: #047857; text-align: center;">
-                <a href="${escapeHtml(APP_CONFIG.appLoginUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #047857; color: #ffffff !important; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 700; line-height: 1; text-decoration: none; padding: 13px 28px; border-radius: 10px; border: 1px solid #047857;">
+                <a href="${escapeHtml2(APP_CONFIG.appLoginUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #047857; color: #ffffff !important; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 700; line-height: 1; text-decoration: none; padding: 13px 28px; border-radius: 10px; border: 1px solid #047857;">
                   View Ticket in App &rarr;
                 </a>
               </td>
@@ -51372,7 +53053,7 @@ ${escapeHtml(data.adminReply)}
     </p>
     <p style="margin: 0; font-size: 14px; font-weight: 700; color: #065f46;">
       My Money Manager Support<br/>
-      <span style="font-size: 12px; font-weight: 400; color: #64748b;">A product of ${escapeHtml(APP_CONFIG.companyName)}</span>
+      <span style="font-size: 12px; font-weight: 400; color: #64748b;">A product of ${escapeHtml2(APP_CONFIG.companyName)}</span>
     </p>
   `;
   const html = wrapEmailHtml(subject, bodyContent);
@@ -51397,15 +53078,114 @@ A product of ${APP_CONFIG.companyName}
 `;
   return { subject, html, text };
 }
+function generateComplaintAdminNotificationEmail(data) {
+  const subject = `[Complaint #${data.ticketNumber}] ${data.subject} \u2013 ${APP_CONFIG.appName}`;
+  const bodyContent = `
+    <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #991b1b;">
+      New User Complaint Registered
+    </h2>
+    <p style="margin: 0 0 14px 0; font-size: 14px; color: #334155; line-height: 1.6;">
+      Hello Admin, a new complaint ticket requires review in ${escapeHtml2(APP_CONFIG.appName)}.
+    </p>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 16px 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>User:</strong> ${escapeHtml2(data.userName)}</p>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>Email:</strong> ${escapeHtml2(data.userEmail)}</p>
+          ${data.userPhone ? `<p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>Phone:</strong> ${escapeHtml2(data.userPhone)}</p>` : ""}
+          <p style="margin: 0; font-size: 13px; color: #334155;"><strong>Submitted At:</strong> ${escapeHtml2(data.submittedAt)}</p>
+        </td>
+      </tr>
+    </table>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #9f1239;"><strong>Ticket ID:</strong> #${escapeHtml2(data.ticketNumber)}</p>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #9f1239;"><strong>Category:</strong> ${escapeHtml2(data.category)}</p>
+          <p style="margin: 0 0 8px 0; font-size: 13px; color: #9f1239;"><strong>Subject:</strong> ${escapeHtml2(data.subject)}</p>
+          <p style="margin: 0; font-size: 13px; color: #334155; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
+            ${escapeHtml2(data.description)}
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0; font-size: 13px; font-weight: 700; color: #065f46;">
+      ${escapeHtml2(APP_CONFIG.appName)} \xB7 ${escapeHtml2(APP_CONFIG.companyName)}
+    </p>
+  `;
+  const html = wrapEmailHtml(subject, bodyContent);
+  const text = `New Complaint #${data.ticketNumber}
+User: ${data.userName} (${data.userEmail})
+Category: ${data.category}
+Subject: ${data.subject}
+Submitted At: ${data.submittedAt}
+
+Details:
+${data.description}
+`;
+  return { subject, html, text };
+}
+function generateSupportTicketAdminNotificationEmail(data) {
+  const subject = `[Support #${data.ticketNumber}] ${data.subject} \u2013 ${APP_CONFIG.appName}`;
+  const bodyContent = `
+    <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
+      New Support Request Received
+    </h2>
+    <p style="margin: 0 0 14px 0; font-size: 14px; color: #334155; line-height: 1.6;">
+      Hello Admin, a user has submitted a new support request in ${escapeHtml2(APP_CONFIG.appName)}.
+    </p>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 16px 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>User:</strong> ${escapeHtml2(data.userName)}</p>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>Email:</strong> ${escapeHtml2(data.userEmail)}</p>
+          <p style="margin: 0; font-size: 13px; color: #334155;"><strong>Submitted At:</strong> ${escapeHtml2(data.submittedAt)}</p>
+        </td>
+      </tr>
+    </table>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #166534;"><strong>Ticket ID:</strong> #${escapeHtml2(data.ticketNumber)}</p>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #166534;"><strong>Category:</strong> ${escapeHtml2(data.category)}</p>
+          <p style="margin: 0 0 8px 0; font-size: 13px; color: #166534;"><strong>Subject:</strong> ${escapeHtml2(data.subject)}</p>
+          <p style="margin: 0; font-size: 13px; color: #334155; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
+            ${escapeHtml2(data.description)}
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0; font-size: 13px; font-weight: 700; color: #065f46;">
+      ${escapeHtml2(APP_CONFIG.appName)} \xB7 ${escapeHtml2(APP_CONFIG.companyName)}
+    </p>
+  `;
+  const html = wrapEmailHtml(subject, bodyContent);
+  const text = `New Support Ticket #${data.ticketNumber}
+User: ${data.userName} (${data.userEmail})
+Category: ${data.category}
+Subject: ${data.subject}
+Submitted At: ${data.submittedAt}
+
+Details:
+${data.description}
+`;
+  return { subject, html, text };
+}
 
 // server/udharEmailTemplates.ts
-function escapeHtml2(text) {
+function escapeHtml3(text) {
   if (text === null || text === void 0) return "";
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 function formatGreeting(name2) {
   const clean = (name2 || "").trim();
-  return clean ? `Hello ${escapeHtml2(clean)},` : "Hello,";
+  return clean ? `Hello ${escapeHtml3(clean)},` : "Hello,";
 }
 function wrapEmailHtml2(subject, contentHtml) {
   return `<!DOCTYPE html>
@@ -51413,7 +53193,7 @@ function wrapEmailHtml2(subject, contentHtml) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml2(subject)}</title>
+  <title>${escapeHtml3(subject)}</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased;">
   <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; padding: 24px 12px;">
@@ -51428,10 +53208,10 @@ function wrapEmailHtml2(subject, contentHtml) {
                 <tr>
                   <td>
                     <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
-                      ${escapeHtml2(APP_CONFIG.appName)}
+                      ${escapeHtml3(APP_CONFIG.appName)}
                     </h1>
                     <p style="margin: 4px 0 0 0; font-size: 12px; font-weight: 500; color: #a7f3d0; text-transform: uppercase; letter-spacing: 0.5px;">
-                      Powered by ${escapeHtml2(APP_CONFIG.companyName)}
+                      Powered by ${escapeHtml3(APP_CONFIG.companyName)}
                     </p>
                   </td>
                 </tr>
@@ -51450,10 +53230,10 @@ function wrapEmailHtml2(subject, contentHtml) {
           <tr>
             <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 32px; text-align: center;">
               <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; font-weight: 600;">
-                Support: <a href="mailto:${escapeHtml2(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: none;">${escapeHtml2(APP_CONFIG.supportEmail)}</a> | WhatsApp: <a href="https://wa.me/917414935405" style="color: #047857; text-decoration: none;">+91 74149 35405</a>
+                Support: <a href="mailto:${escapeHtml3(APP_CONFIG.supportEmail)}" style="color: #047857; text-decoration: none;">${escapeHtml3(APP_CONFIG.supportEmail)}</a> | WhatsApp: <a href="https://wa.me/917414935405" style="color: #047857; text-decoration: none;">+91 74149 35405</a>
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${escapeHtml2(APP_CONFIG.appName)}. All rights reserved.
+                &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} ${escapeHtml3(APP_CONFIG.appName)}. All rights reserved.
               </p>
             </td>
           </tr>
@@ -51490,31 +53270,31 @@ function generateUdharCreatedEmailForInitiator(data) {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0; width: 38%;">Transaction ID:</td>
-              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml2(data.transactionId)}</td>
+              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml3(data.transactionId)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Person:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.otherPersonName)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.otherPersonName)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Amount:</td>
-              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml2(formattedAmt)}</td>
+              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml3(formattedAmt)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Type:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.gaveOrReceived)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.gaveOrReceived)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Description:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(desc)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(desc)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Date:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(data.transactionDate)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(data.transactionDate)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Current Status:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #047857; padding: 4px 0; text-transform: capitalize;">${escapeHtml2(data.status.replace(/_/g, " "))}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #047857; padding: 4px 0; text-transform: capitalize;">${escapeHtml3(data.status.replace(/_/g, " "))}</td>
             </tr>
           </table>
         </td>
@@ -51575,31 +53355,31 @@ function generateUdharCreatedEmailForRecipient(data) {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0; width: 42%;">Transaction ID:</td>
-              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml2(data.transactionId)}</td>
+              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml3(data.transactionId)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Recorded By:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.senderName)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.senderName)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Amount:</td>
-              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml2(formattedAmt)}</td>
+              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml3(formattedAmt)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Transaction Type:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.recipientTransactionType)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.recipientTransactionType)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Description:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(desc)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(desc)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Date:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(data.transactionDate)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(data.transactionDate)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Current Status:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #047857; padding: 4px 0; text-transform: capitalize;">${escapeHtml2(data.status.replace(/_/g, " "))}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #047857; padding: 4px 0; text-transform: capitalize;">${escapeHtml3(data.status.replace(/_/g, " "))}</td>
             </tr>
           </table>
         </td>
@@ -51655,7 +53435,7 @@ function generateUdharSettledEmail(data) {
       ${greeting}
     </p>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: #334155; line-height: 1.6;">
-      An Udhar settlement between you and <strong>${escapeHtml2(data.counterpartName)}</strong> has been recorded.
+      An Udhar settlement between you and <strong>${escapeHtml3(data.counterpartName)}</strong> has been recorded.
     </p>
 
     <!-- Details Card -->
@@ -51668,23 +53448,23 @@ function generateUdharSettledEmail(data) {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0; width: 42%;">Transaction Ref:</td>
-              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml2(data.transactionId)}</td>
+              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml3(data.transactionId)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Person:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.counterpartName)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.counterpartName)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Amount Settled:</td>
-              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml2(formattedAmt)}</td>
+              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml3(formattedAmt)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Settlement Date:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(data.settlementDate)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(data.settlementDate)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Updated Balance:</td>
-              <td style="font-size: 14px; font-weight: 800; color: #065f46; padding: 4px 0;">${escapeHtml2(balanceText)}</td>
+              <td style="font-size: 14px; font-weight: 800; color: #065f46; padding: 4px 0;">${escapeHtml3(balanceText)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Status:</td>
@@ -51733,7 +53513,7 @@ function generateUdharUpdatedEmail(data) {
       ${greeting}
     </p>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: #334155; line-height: 1.6;">
-      An Udhar transaction involving ${escapeHtml2(data.counterpartName)} has been updated with latest records.
+      An Udhar transaction involving ${escapeHtml3(data.counterpartName)} has been updated with latest records.
     </p>
 
     <!-- Details Card -->
@@ -51746,31 +53526,31 @@ function generateUdharUpdatedEmail(data) {
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0; width: 42%;">Transaction ID:</td>
-              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml2(data.transactionId)}</td>
+              <td style="font-size: 13px; font-family: monospace; font-weight: 700; color: #0f172a; padding: 4px 0;">#${escapeHtml3(data.transactionId)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Person:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.counterpartName)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.counterpartName)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Amount:</td>
-              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml2(formattedAmt)}</td>
+              <td style="font-size: 15px; font-weight: 800; color: #047857; padding: 4px 0;">\u20B9${escapeHtml3(formattedAmt)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Transaction Type:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml2(data.gaveOrReceived)}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #0f172a; padding: 4px 0;">${escapeHtml3(data.gaveOrReceived)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Description:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(desc)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(desc)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Date:</td>
-              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml2(data.transactionDate)}</td>
+              <td style="font-size: 13px; color: #334155; padding: 4px 0;">${escapeHtml3(data.transactionDate)}</td>
             </tr>
             <tr>
               <td style="font-size: 13px; color: #64748b; padding: 4px 0;">Current Status:</td>
-              <td style="font-size: 13px; font-weight: 700; color: #047857; padding: 4px 0; text-transform: capitalize;">${escapeHtml2(data.status.replace(/_/g, " "))}</td>
+              <td style="font-size: 13px; font-weight: 700; color: #047857; padding: 4px 0; text-transform: capitalize;">${escapeHtml3(data.status.replace(/_/g, " "))}</td>
             </tr>
           </table>
         </td>
@@ -51805,42 +53585,212 @@ Team ${APP_CONFIG.appName}
 }
 
 // server/email.ts
-var transporter = nodemailer_default.createTransport({
-  host: APP_CONFIG.smtp.host,
-  port: APP_CONFIG.smtp.port,
-  secure: APP_CONFIG.smtp.secure,
-  auth: {
-    user: APP_CONFIG.smtp.user,
-    pass: APP_CONFIG.smtp.pass
-  }
-});
+async function getEmailTransporterAndConfig() {
+  const cfg = await getEffectiveSmtpConfig();
+  const transporter = nodemailer_default.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: {
+      user: cfg.user,
+      pass: cfg.pass
+    }
+  });
+  return { transporter, cfg };
+}
+async function sanitizeSystemVariables(input, recipientName) {
+  if (!input || !input.includes("{{")) return input;
+  const supportEmail = await getEffectiveSupportAlertEmail().catch(() => APP_CONFIG.supportEmail);
+  const nowStr = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
+  const replacements = {
+    app_name: APP_CONFIG.appName || "My Money Manager",
+    company_name: APP_CONFIG.companyName || "HackifyPro",
+    support_email: supportEmail || APP_CONFIG.supportEmail || "hackifypro@gmail.com",
+    support_phone: APP_CONFIG.supportPhone || "+91 74149 35405",
+    login_url: APP_CONFIG.appLoginUrl || APP_CONFIG.appBaseUrl || "/",
+    app_url: APP_CONFIG.appBaseUrl || "/",
+    action_url: APP_CONFIG.appBaseUrl || "/",
+    action_text: "Open My Money Manager",
+    date: nowStr,
+    submitted_at: nowStr,
+    year: String((/* @__PURE__ */ new Date()).getFullYear()),
+    user_name: recipientName || "Valued User"
+  };
+  return input.replace(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (full, key) => key in replacements ? replacements[key] : full
+  );
+}
 function sanitizeErrorMessage(err) {
   if (!err) return "Unknown error";
   const msg = typeof err === "string" ? err : err.message || JSON.stringify(err);
   return msg.replace(/[a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9_\-]+:[^\s@]+/g, "[REDACTED_CREDENTIALS]").replace(/pass(word)?\s*=\s*[^\s&]+/gi, "password=[REDACTED]").slice(0, 500);
 }
-async function sendEmail(opts) {
+async function createDispatchLogRecord(params) {
+  if (isDatabaseAvailable()) {
+    try {
+      const conflictClause = params.upsertIdempotency ? `ON CONFLICT (idempotency_key) DO UPDATE SET status = EXCLUDED.status, last_error = EXCLUDED.last_error, updated_at = NOW()` : "";
+      const res = await query(
+        `INSERT INTO public.email_dispatch_logs (
+          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
+          last_error, reference_id, trigger_event, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, $12)
+        ${conflictClause}
+        RETURNING id`,
+        [
+          params.userId || null,
+          params.email,
+          params.emailType,
+          params.idempotencyKey,
+          params.recipientName || null,
+          params.subject,
+          params.status || "pending",
+          params.maxAttempts ?? 3,
+          params.lastError || null,
+          params.referenceId || null,
+          params.triggerEvent,
+          JSON.stringify(params.metadata || {})
+        ]
+      );
+      if (res.rows[0]?.id) {
+        return res.rows[0].id;
+      }
+    } catch (dbErr) {
+      console.warn(`[Email Dispatch Log Insert Warn - ${params.emailType}]:`, sanitizeErrorMessage(dbErr));
+    }
+  }
+  const fbRow = await recordEmailLogFallback({
+    user_id: params.userId || null,
+    email: params.email || "(none)",
+    email_type: params.emailType,
+    recipient_name: params.recipientName || "",
+    subject: params.subject,
+    status: params.status || "pending",
+    attempts: 0,
+    last_error: params.lastError || null,
+    trigger_event: params.triggerEvent
+  }).catch(() => null);
+  return fbRow?.id || `fb_${params.emailType}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+async function lookupRegisteredUser(opts) {
+  if (isDatabaseAvailable()) {
+    try {
+      if (opts.userId) {
+        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [opts.userId]);
+        if (uRes.rows.length > 0 && uRes.rows[0].email) return uRes.rows[0];
+      } else if (opts.email) {
+        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [
+          opts.email.trim().toLowerCase()
+        ]);
+        if (uRes.rows.length > 0 && uRes.rows[0].email) return uRes.rows[0];
+      }
+    } catch {
+    }
+  }
+  try {
+    const users = await listAllAppUsersFallback();
+    if (opts.userId) {
+      const found = users.find((u) => u.id === opts.userId && u.email);
+      if (found) return { id: found.id, full_name: found.full_name || "User", email: found.email };
+    } else if (opts.email) {
+      const clean = opts.email.trim().toLowerCase();
+      const found = users.find((u) => String(u.email || "").trim().toLowerCase() === clean);
+      if (found) return { id: found.id, full_name: found.full_name || "User", email: found.email };
+    }
+  } catch {
+  }
+  return null;
+}
+async function sendEmailDetailed(opts) {
+  const to = (opts.to || "").trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return { success: false, error: "Invalid recipient email address." };
+  }
+  const { transporter, cfg } = await getEmailTransporterAndConfig();
+  if (!cfg.enabled) {
+    return { success: false, error: "SMTP Email Dispatch is disabled in Admin Settings." };
+  }
+  if (!cfg.configured) {
+    return {
+      success: false,
+      error: "SMTP credentials are not configured. Set SMTP password in Admin Panel \u2192 Settings \u2192 SMTP Email Configuration (or SMTP_PASS env var)."
+    };
+  }
+  const safeSubject = await sanitizeSystemVariables(opts.subject, opts.recipientName);
+  const safeHtml = await sanitizeSystemVariables(opts.html, opts.recipientName);
+  const safeText = await sanitizeSystemVariables(opts.text, opts.recipientName);
   try {
     const info = await transporter.sendMail({
-      from: APP_CONFIG.smtp.from,
-      to: opts.to,
-      subject: opts.subject,
-      html: opts.html,
-      text: opts.text,
+      from: cfg.from,
+      to,
+      subject: safeSubject,
+      html: safeHtml,
+      text: safeText,
       attachments: opts.attachments
     });
-    console.log(`[Email Sent] MessageId: ${info.messageId} to ${opts.to} - Subject: "${opts.subject}"`);
-    return true;
+    console.log(`[Email Sent] MessageId: ${info.messageId} to ${to} - Subject: "${safeSubject}"`);
+    return { success: true, messageId: info.messageId };
   } catch (err) {
-    console.error(`[Email Failed] To: ${opts.to} - Error:`, sanitizeErrorMessage(err));
-    return false;
+    const safeErr = sanitizeErrorMessage(err);
+    console.error(`[Email Failed] To: ${to} - Error:`, safeErr);
+    return { success: false, error: safeErr };
   }
+}
+async function sendEmail(opts) {
+  const result = await sendEmailDetailed(opts);
+  if (opts.emailType) {
+    const logStatus = result.success ? "sent" : "failed";
+    if (isDatabaseAvailable()) {
+      await query(
+        `INSERT INTO public.email_dispatch_logs (
+          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, trigger_event, sent_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, 3, $8, $9, ${result.success ? "NOW()" : "NULL"})`,
+        [
+          opts.userId || null,
+          opts.to,
+          opts.emailType,
+          `${opts.emailType}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+          opts.recipientName || null,
+          opts.subject,
+          logStatus,
+          result.error || null,
+          opts.emailType
+        ]
+      ).catch(() => {
+      });
+    } else {
+      await recordEmailLogFallback({
+        user_id: opts.userId || null,
+        email: opts.to,
+        email_type: opts.emailType,
+        recipient_name: opts.recipientName || "",
+        subject: opts.subject,
+        status: logStatus,
+        attempts: 1,
+        last_error: result.error || null,
+        trigger_event: opts.emailType
+      }).catch(() => {
+      });
+    }
+  }
+  return result.success;
 }
 async function sendAdminTestEmail(opts) {
   const recipient = (opts.to || "").trim();
-  const subject = (opts.subject || "Test Email from My Money Manager Admin").trim();
   const emailType = opts.emailType || "admin_test";
-  const recipientName = opts.recipientName || "Administrator";
+  const recipientName = opts.recipientName || "Valued User";
+  const subject = await sanitizeSystemVariables(
+    (opts.subject || "Test Email from My Money Manager Admin").trim(),
+    recipientName
+  );
+  const sanitizedHtml = await sanitizeSystemVariables(opts.html || "", recipientName);
+  const brandedHtml = ensureBrandedEmailHtml(sanitizedHtml, {
+    title: subject
+  });
+  const sanitizedText = await sanitizeSystemVariables(
+    opts.text || "This is a live transmission from My Money Manager by HackifyPro.",
+    recipientName
+  );
   if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
     return { success: false, error: "Please enter a valid recipient email address." };
   }
@@ -51877,18 +53827,24 @@ async function sendAdminTestEmail(opts) {
     }).catch(() => {
     });
   };
-  if (!APP_CONFIG.smtp.pass || !APP_CONFIG.smtp.user) {
-    const errMsg = "SMTP_PASS is not configured on the server. Add SMTP_USER and SMTP_PASS in Settings > Secrets or Vercel Environment Variables.";
+  const { transporter, cfg } = await getEmailTransporterAndConfig();
+  if (!cfg.enabled) {
+    const errMsg = "SMTP email dispatch is currently disabled in Admin Settings.";
+    await recordLog("failed", errMsg);
+    return { success: false, error: errMsg };
+  }
+  if (!cfg.configured) {
+    const errMsg = "SMTP password is not configured on the server. Enter your Gmail App Password / SMTP credentials in Admin Panel \u2192 Settings \u2192 SMTP Email Configuration (or set SMTP_USER & SMTP_PASS environment variables).";
     await recordLog("failed", errMsg);
     return { success: false, error: errMsg };
   }
   try {
     const info = await transporter.sendMail({
-      from: APP_CONFIG.smtp.from,
+      from: cfg.from,
       to: recipient,
       subject,
-      html: opts.html,
-      text: opts.text || "This is a live test transmission from My Money Manager Admin Control Center."
+      html: brandedHtml,
+      text: sanitizedText
     });
     await recordLog("sent", null);
     console.log(`[Admin Email Sent] MessageId: ${info.messageId} to ${recipient}`);
@@ -51960,7 +53916,19 @@ ${resetLink}
 If you did not request this, please ignore this email.
 
 ${APP_CONFIG.appName} Security Team`;
-  return sendEmail({ to: email, subject, html, text });
+  const custom = await getRenderedCustomTemplateIfActive("password-reset", {
+    user_name: name2 || "User",
+    user_email: email,
+    reset_link: resetLink
+  });
+  return sendEmail({
+    to: email,
+    subject: custom?.subject || subject,
+    html: custom?.html || html,
+    text: custom?.text || text,
+    emailType: "password_reset",
+    recipientName: name2 || "User"
+  });
 }
 async function sendPasswordChangedEmail(email, name2, ipAddress) {
   const subject = `[Security Alert] Your Password Was Successfully Changed - ${APP_CONFIG.appName}`;
@@ -52012,64 +53980,94 @@ Your account password for ${APP_CONFIG.appName} (${email}) was updated on ${now}
 If you did not perform this action, please contact support immediately.
 
 ${APP_CONFIG.appName} Security`;
-  return sendEmail({ to: email, subject, html, text });
+  const custom = await getRenderedCustomTemplateIfActive("password-changed", {
+    user_name: name2 || "User",
+    user_email: email,
+    date: `${now} IST`,
+    ip_address: ipAddress || "Unknown"
+  });
+  return sendEmail({
+    to: email,
+    subject: custom?.subject || subject,
+    html: custom?.html || html,
+    text: custom?.text || text,
+    emailType: "password_changed",
+    recipientName: name2 || "User"
+  });
 }
 async function executeEmailDispatch(logId, email, subject, html, text, attachments, currentAttempt, maxAttempts = 3, userId) {
   try {
-    const success = await sendEmail({
+    const res = await sendEmailDetailed({
       to: email,
       subject,
       html,
       text,
       attachments
     });
-    if (success) {
-      try {
-        await query(
-          `UPDATE public.email_dispatch_logs 
-           SET status = 'sent', attempts = $1, sent_at = NOW(), last_error = NULL, updated_at = NOW() 
-           WHERE id = $2`,
-          [currentAttempt, logId]
-        );
-      } catch (dbErr) {
-        console.warn("[Welcome Email DB Update Warn]:", dbErr);
+    if (res.success) {
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.email_dispatch_logs 
+             SET status = 'sent', attempts = $1, sent_at = NOW(), last_error = NULL, updated_at = NOW() 
+             WHERE id = $2`,
+            [currentAttempt, logId]
+          );
+        } catch (dbErr) {
+          console.warn("[Email Dispatch DB Update Warn]:", dbErr);
+        }
       }
-      await logSecurityEvent("WELCOME_EMAIL_DELIVERED", {
+      await updateEmailLogFallback(logId, {
+        status: "sent",
+        attempts: currentAttempt,
+        sent_at: (/* @__PURE__ */ new Date()).toISOString(),
+        last_error: null
+      }).catch(() => {
+      });
+      await logSecurityEvent("EMAIL_DELIVERED", {
         userId,
         userEmail: email,
-        details: { logId, attempts: currentAttempt }
+        details: { logId, subject, attempts: currentAttempt }
       }).catch(() => {
       });
       return true;
     } else {
-      throw new Error("SMTP transport returned false");
+      throw new Error(res.error || "SMTP transport failed");
     }
   } catch (err) {
     const safeErr = sanitizeErrorMessage(err);
-    const isFinalAttempt = currentAttempt >= maxAttempts;
+    const isFinalAttempt = currentAttempt >= maxAttempts || safeErr.includes("not configured") || safeErr.includes("disabled");
     const nextStatus = isFinalAttempt ? "failed" : "retrying";
-    try {
-      await query(
-        `UPDATE public.email_dispatch_logs 
-         SET status = $1, attempts = $2, last_error = $3, updated_at = NOW() 
-         WHERE id = $4`,
-        [nextStatus, currentAttempt, safeErr, logId]
-      );
-    } catch (dbErr) {
-      console.warn("[Welcome Email DB Error Warn]:", dbErr);
+    if (isDatabaseAvailable()) {
+      try {
+        await query(
+          `UPDATE public.email_dispatch_logs 
+           SET status = $1, attempts = $2, last_error = $3, updated_at = NOW() 
+           WHERE id = $4`,
+          [nextStatus, currentAttempt, safeErr, logId]
+        );
+      } catch (dbErr) {
+        console.warn("[Email Dispatch DB Error Warn]:", dbErr);
+      }
     }
+    await updateEmailLogFallback(logId, {
+      status: nextStatus,
+      attempts: currentAttempt,
+      last_error: safeErr
+    }).catch(() => {
+    });
     if (isFinalAttempt) {
-      console.error(`[Welcome Email Failed Permanently] Recipient: ${email}, attempts: ${currentAttempt}, error: ${safeErr}`);
-      await logSecurityEvent("WELCOME_EMAIL_FAILED_PERMANENTLY", {
+      console.error(`[Email Failed Permanently] Recipient: ${email}, attempts: ${currentAttempt}, error: ${safeErr}`);
+      await logSecurityEvent("EMAIL_FAILED_PERMANENTLY", {
         userId,
         userEmail: email,
-        details: { logId, attempts: currentAttempt, error: safeErr }
+        details: { logId, subject, attempts: currentAttempt, error: safeErr }
       }).catch(() => {
       });
       return false;
     } else {
       const backoffMs = Math.min(1e3 * Math.pow(2, currentAttempt), 3e4);
-      console.warn(`[Welcome Email Scheduling Retry] Recipient: ${email}, next attempt: ${currentAttempt + 1} in ${backoffMs}ms`);
+      console.warn(`[Email Scheduling Retry] Recipient: ${email}, next attempt: ${currentAttempt + 1} in ${backoffMs}ms`);
       setTimeout(() => {
         executeEmailDispatch(
           logId,
@@ -52082,7 +54080,7 @@ async function executeEmailDispatch(logId, email, subject, html, text, attachmen
           maxAttempts,
           userId
         ).catch((retryErr) => {
-          console.error("[Welcome Email Background Retry Uncaught]:", sanitizeErrorMessage(retryErr));
+          console.error("[Email Background Retry Uncaught]:", sanitizeErrorMessage(retryErr));
         });
       }, backoffMs);
       return false;
@@ -52097,24 +54095,13 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
   try {
     let trustedName = (providedName || "").trim();
     let resolvedUserId = userId;
-    try {
-      if (resolvedUserId) {
-        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [resolvedUserId]);
-        if (uRes.rows.length > 0) {
-          trustedName = uRes.rows[0].full_name || trustedName;
-        }
-      } else {
-        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [normalizedEmail]);
-        if (uRes.rows.length > 0) {
-          trustedName = uRes.rows[0].full_name || trustedName;
-          resolvedUserId = uRes.rows[0].id;
-        }
-      }
-    } catch (dbErr) {
-      console.warn("[Welcome Email DB User Fetch Warn]:", dbErr);
+    const uMatch = await lookupRegisteredUser({ userId: resolvedUserId, email: normalizedEmail });
+    if (uMatch) {
+      trustedName = uMatch.full_name || trustedName;
+      resolvedUserId = uMatch.id || resolvedUserId;
     }
     const idempotencyKey = `welcome:${resolvedUserId || normalizedEmail}`;
-    if (!forceResend) {
+    if (!forceResend && isDatabaseAvailable()) {
       try {
         const existingLog = await query(
           "SELECT id, status, attempts FROM public.email_dispatch_logs WHERE idempotency_key = $1",
@@ -52148,11 +54135,11 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
       }
     }
     const attachments = [];
-    const logoFilePath = path6.resolve(process.cwd(), "public", "logo.jpg");
+    const logoFilePath = path7.resolve(process.cwd(), "public", "logo.jpg");
     let logoSrc = "cid:app_logo";
     if (APP_CONFIG.appLogoUrl && APP_CONFIG.appLogoUrl.startsWith("http") && !APP_CONFIG.appLogoUrl.includes("localhost")) {
       logoSrc = APP_CONFIG.appLogoUrl;
-    } else if (fs7.existsSync(logoFilePath)) {
+    } else if (fs8.existsSync(logoFilePath)) {
       attachments.push({
         filename: "logo.jpg",
         path: logoFilePath,
@@ -52161,7 +54148,7 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
       });
       logoSrc = "cid:app_logo";
     }
-    const emailData = generateWelcomeEmail({
+    const defaultWelcome = generateWelcomeEmail({
       userName: trustedName,
       userEmail: normalizedEmail,
       logoSrc,
@@ -52169,24 +54156,21 @@ async function sendWelcomeEmail(email, providedName, userId, forceResend = false
       supportEmail: APP_CONFIG.supportEmail,
       supportPhone: APP_CONFIG.supportPhone
     });
-    let logId = "";
-    try {
-      const insertRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts
-        ) VALUES ($1, $2, 'welcome_email', $3, $4, $5, 'pending', 0, 3)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id`,
-        [resolvedUserId || null, normalizedEmail, idempotencyKey, trustedName || null, emailData.subject]
-      );
-      if (insertRes.rows.length > 0) {
-        logId = insertRes.rows[0].id;
-      }
-    } catch (insertErr) {
-      console.warn("[Welcome Email Log Insert Warn]:", insertErr);
-      logId = `fallback_${Date.now()}`;
-    }
+    const customWelcome = await getRenderedCustomTemplateIfActive("welcome-email", {
+      user_name: trustedName,
+      user_email: normalizedEmail
+    });
+    const emailData = customWelcome || defaultWelcome;
+    const logId = await createDispatchLogRecord({
+      userId: resolvedUserId || null,
+      email: normalizedEmail,
+      emailType: "welcome_email",
+      idempotencyKey,
+      recipientName: trustedName || null,
+      subject: emailData.subject,
+      triggerEvent: "user_registration",
+      upsertIdempotency: true
+    });
     const success = await executeEmailDispatch(
       logId,
       normalizedEmail,
@@ -52439,8 +54423,8 @@ HackifyPro Team`;
 }
 function getBrandLogoAttachments() {
   const attachments = [];
-  const logoPath = path6.resolve(process.cwd(), "public", "logo.jpg");
-  if (fs7.existsSync(logoPath)) {
+  const logoPath = path7.resolve(process.cwd(), "public", "logo.jpg");
+  if (fs8.existsSync(logoPath)) {
     attachments.push({
       filename: "logo.jpg",
       path: logoPath,
@@ -52450,40 +54434,16 @@ function getBrandLogoAttachments() {
   }
   return attachments;
 }
-async function sendComplaintConfirmationEmail(opts) {
-  const recipient = opts.email || opts.userEmail || "";
-  const template = generateComplaintReceivedEmail(opts);
-  return sendEmail({
-    to: recipient,
-    subject: template.subject,
-    html: template.html,
-    text: template.text,
-    attachments: getBrandLogoAttachments()
-  });
-}
-async function sendSupportTicketConfirmationEmail(opts) {
-  const recipient = opts.email || opts.userEmail || "";
-  const template = generateSupportTicketReceivedEmail(opts);
-  return sendEmail({
-    to: recipient,
-    subject: template.subject,
-    html: template.html,
-    text: template.text,
-    attachments: getBrandLogoAttachments()
-  });
-}
 async function sendAdminReplyToTicketEmail(opts) {
-  const recipient = opts.email || opts.userEmail || "";
+  const recipient = (opts.email || opts.userEmail || "").trim();
   const ticketNum = opts.ticketNumber || opts.ticketId || "N/A";
   try {
     let trustedName = opts.userName;
     if (opts.userId) {
-      const u = await query("SELECT full_name FROM public.app_users WHERE id = $1", [opts.userId]);
-      if (u.rows.length > 0 && u.rows[0].full_name) {
-        trustedName = u.rows[0].full_name;
-      }
+      const found = await lookupRegisteredUser({ userId: opts.userId });
+      if (found?.full_name) trustedName = found.full_name;
     }
-    const template = generateAdminReplyEmail({
+    const defaultReplyTmpl = generateAdminReplyEmail({
       userName: trustedName,
       ticketNumber: ticketNum,
       ticketType: opts.ticketType || "support",
@@ -52492,14 +54452,49 @@ async function sendAdminReplyToTicketEmail(opts) {
       adminName: opts.adminName,
       status: opts.status
     });
-    const success = await sendEmail({
+    const customReplyTmpl = await getRenderedCustomTemplateIfActive("admin-ticket-reply", {
+      user_name: trustedName || "Valued User",
+      ticket_number: ticketNum,
+      ticket_type: opts.ticketType || "support",
+      original_subject: opts.originalSubject,
+      admin_reply: opts.adminReply,
+      admin_name: opts.adminName || "HackifyPro Support",
+      status: opts.status || "in_progress"
+    });
+    const template = customReplyTmpl || defaultReplyTmpl;
+    const logId = await createDispatchLogRecord({
+      userId: opts.userId || null,
+      email: recipient,
+      emailType: "admin_ticket_reply",
+      idempotencyKey: `admin_reply:${ticketNum}:${Date.now()}`,
+      recipientName: trustedName || "Valued User",
+      subject: template.subject,
+      referenceId: ticketNum,
+      triggerEvent: "admin_ticket_reply",
+      metadata: { ticketNumber: ticketNum, ticketType: opts.ticketType }
+    });
+    const detailRes = await sendEmailDetailed({
       to: recipient,
       subject: template.subject,
       html: template.html,
       text: template.text,
       attachments: getBrandLogoAttachments()
     });
-    return { success };
+    if (isDatabaseAvailable()) {
+      await query(
+        `UPDATE public.email_dispatch_logs SET status = $1, attempts = 1, last_error = $2, sent_at = ${detailRes.success ? "NOW()" : "NULL"}, updated_at = NOW() WHERE id = $3`,
+        [detailRes.success ? "sent" : "failed", detailRes.error || null, logId]
+      ).catch(() => {
+      });
+    }
+    await updateEmailLogFallback(logId, {
+      status: detailRes.success ? "sent" : "failed",
+      attempts: 1,
+      last_error: detailRes.error || null,
+      sent_at: detailRes.success ? (/* @__PURE__ */ new Date()).toISOString() : null
+    }).catch(() => {
+    });
+    return { success: detailRes.success, error: detailRes.error };
   } catch (err) {
     const safeMsg = sanitizeErrorMessage(err);
     console.error(`[Admin Reply Email Failed] Ticket: #${ticketNum} to ${recipient}:`, safeMsg);
@@ -52511,13 +54506,13 @@ async function sendFeedbackSubmissionEmails(opts) {
   const cleanSubmittedAt = opts.submittedAt || (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
   const trustedUserName = (opts.userName || "").trim() || "Valued User";
   const cleanFeedbackId = opts.feedbackId || `FB-${Date.now().toString(36).toUpperCase()}`;
-  const adminEmail = "hackifypro@gmail.com";
+  const adminEmail = await getEffectiveSupportAlertEmail();
   let userEmailSent = false;
   let adminEmailSent = false;
   let userLogId = "";
   let adminLogId = "";
   if (normalizedUserEmail) {
-    const userTemplate = generateFeedbackReceivedEmail({
+    const defaultUserTmpl = generateFeedbackReceivedEmail({
       userName: trustedUserName,
       feedbackId: cleanFeedbackId,
       rating: opts.rating,
@@ -52525,27 +54520,28 @@ async function sendFeedbackSubmissionEmails(opts) {
       feedbackMessage: opts.feedbackMessage,
       userEmail: normalizedUserEmail
     });
-    const userKey = `feedback_user:${cleanFeedbackId}`;
+    const customUserTmpl = await getRenderedCustomTemplateIfActive("feedback-confirmation", {
+      user_name: trustedUserName,
+      user_email: normalizedUserEmail,
+      feedback_id: cleanFeedbackId,
+      rating: opts.rating,
+      category: opts.category || "General",
+      message: opts.feedbackMessage
+    });
+    const userTemplate = customUserTmpl || defaultUserTmpl;
     try {
-      const logRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'feedback_user_confirmation', $3, $4, $5, 'pending', 0, 3, $6, 'feedback_submission', $7)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id, status`,
-        [
-          opts.userId || null,
-          normalizedUserEmail,
-          userKey,
-          trustedUserName,
-          userTemplate.subject,
-          cleanFeedbackId,
-          JSON.stringify({ feedbackId: cleanFeedbackId, rating: opts.rating, category: opts.category })
-        ]
-      );
-      userLogId = logRes.rows[0]?.id || `fb_u_${Date.now()}`;
+      userLogId = await createDispatchLogRecord({
+        userId: opts.userId || null,
+        email: normalizedUserEmail,
+        emailType: "feedback_user_confirmation",
+        idempotencyKey: `feedback_user:${cleanFeedbackId}`,
+        recipientName: trustedUserName,
+        subject: userTemplate.subject,
+        referenceId: cleanFeedbackId,
+        triggerEvent: "feedback_submission",
+        metadata: { feedbackId: cleanFeedbackId, rating: opts.rating, category: opts.category },
+        upsertIdempotency: true
+      });
       userEmailSent = await executeEmailDispatch(
         userLogId,
         normalizedUserEmail,
@@ -52561,7 +54557,7 @@ async function sendFeedbackSubmissionEmails(opts) {
       console.error("[Feedback User Confirmation Email Error]:", sanitizeErrorMessage(uErr));
     }
   }
-  const adminTemplate = generateFeedbackAdminNotificationEmail({
+  const defaultAdminTmpl = generateFeedbackAdminNotificationEmail({
     userName: trustedUserName,
     userEmail: normalizedUserEmail,
     userId: opts.userId || "N/A",
@@ -52570,25 +54566,29 @@ async function sendFeedbackSubmissionEmails(opts) {
     message: opts.feedbackMessage,
     submittedAt: cleanSubmittedAt
   });
-  const adminKey = `feedback_admin:${cleanFeedbackId}`;
+  const customAdminTmpl = await getRenderedCustomTemplateIfActive("feedback-admin-alert", {
+    user_name: trustedUserName,
+    user_email: normalizedUserEmail,
+    user_id: opts.userId || "N/A",
+    feedback_id: cleanFeedbackId,
+    rating: opts.rating,
+    message: opts.feedbackMessage,
+    submitted_at: cleanSubmittedAt
+  });
+  const adminTemplate = customAdminTmpl || defaultAdminTmpl;
   try {
-    const adminLogRes = await query(
-      `INSERT INTO public.email_dispatch_logs (
-        user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-        reference_id, trigger_event, metadata
-      ) VALUES (NULL, $1, 'feedback_admin_notification', $2, 'HackifyPro Admin', $3, 'pending', 0, 3, $4, 'feedback_submission', $5)
-      ON CONFLICT (idempotency_key) DO UPDATE 
-      SET status = 'pending', updated_at = NOW()
-      RETURNING id, status`,
-      [
-        adminEmail,
-        adminKey,
-        adminTemplate.subject,
-        cleanFeedbackId,
-        JSON.stringify({ feedbackId: cleanFeedbackId, rating: opts.rating, submitterEmail: normalizedUserEmail })
-      ]
-    );
-    adminLogId = adminLogRes.rows[0]?.id || `fb_a_${Date.now()}`;
+    adminLogId = await createDispatchLogRecord({
+      userId: null,
+      email: adminEmail,
+      emailType: "feedback_admin_notification",
+      idempotencyKey: `feedback_admin:${cleanFeedbackId}`,
+      recipientName: "HackifyPro Admin",
+      subject: adminTemplate.subject,
+      referenceId: cleanFeedbackId,
+      triggerEvent: "feedback_submission",
+      metadata: { feedbackId: cleanFeedbackId, rating: opts.rating, submitterEmail: normalizedUserEmail },
+      upsertIdempotency: true
+    });
     adminEmailSent = await executeEmailDispatch(
       adminLogId,
       adminEmail,
@@ -52604,6 +54604,210 @@ async function sendFeedbackSubmissionEmails(opts) {
   }
   return { userEmailSent, adminEmailSent, userLogId, adminLogId };
 }
+async function sendComplaintSubmissionEmails(opts) {
+  const normalizedUserEmail = (opts.userEmail || "").trim().toLowerCase();
+  const cleanSubmittedAt = opts.submittedAt || (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
+  const trustedUserName = (opts.userName || "").trim() || "Valued User";
+  const adminEmail = await getEffectiveSupportAlertEmail();
+  let userEmailSent = false;
+  let adminEmailSent = false;
+  let userLogId = "";
+  let adminLogId = "";
+  if (normalizedUserEmail) {
+    const defaultUserTmpl = generateComplaintReceivedEmail({
+      userName: trustedUserName,
+      ticketNumber: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description
+    });
+    const customUserTmpl = await getRenderedCustomTemplateIfActive("complaint-confirmation", {
+      user_name: trustedUserName,
+      user_email: normalizedUserEmail,
+      ticket_number: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description
+    });
+    const userTemplate = customUserTmpl || defaultUserTmpl;
+    try {
+      userLogId = await createDispatchLogRecord({
+        userId: opts.userId || null,
+        email: normalizedUserEmail,
+        emailType: "complaint_user_confirmation",
+        idempotencyKey: `complaint_user:${opts.ticketNumber}`,
+        recipientName: trustedUserName,
+        subject: userTemplate.subject,
+        referenceId: opts.ticketId,
+        triggerEvent: "complaint_submission",
+        metadata: { ticketNumber: opts.ticketNumber, category: opts.category },
+        upsertIdempotency: true
+      });
+      userEmailSent = await executeEmailDispatch(
+        userLogId,
+        normalizedUserEmail,
+        userTemplate.subject,
+        userTemplate.html,
+        userTemplate.text,
+        getBrandLogoAttachments(),
+        1,
+        3,
+        opts.userId || void 0
+      );
+    } catch (err) {
+      console.error("[Complaint User Email Error]:", sanitizeErrorMessage(err));
+    }
+  }
+  const defaultAdminTmpl = generateComplaintAdminNotificationEmail({
+    userName: trustedUserName,
+    userEmail: normalizedUserEmail,
+    userPhone: opts.userPhone,
+    ticketNumber: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submittedAt: cleanSubmittedAt
+  });
+  const customAdminTmpl = await getRenderedCustomTemplateIfActive("complaint-admin-alert", {
+    user_name: trustedUserName,
+    user_email: normalizedUserEmail,
+    user_phone: opts.userPhone || "Not provided",
+    ticket_number: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submitted_at: cleanSubmittedAt
+  });
+  const adminTemplate = customAdminTmpl || defaultAdminTmpl;
+  try {
+    adminLogId = await createDispatchLogRecord({
+      userId: null,
+      email: adminEmail,
+      emailType: "complaint_admin_notification",
+      idempotencyKey: `complaint_admin:${opts.ticketNumber}`,
+      recipientName: "HackifyPro Admin",
+      subject: adminTemplate.subject,
+      referenceId: opts.ticketId,
+      triggerEvent: "complaint_submission",
+      metadata: { ticketNumber: opts.ticketNumber, submitterEmail: normalizedUserEmail },
+      upsertIdempotency: true
+    });
+    adminEmailSent = await executeEmailDispatch(
+      adminLogId,
+      adminEmail,
+      adminTemplate.subject,
+      adminTemplate.html,
+      adminTemplate.text,
+      getBrandLogoAttachments(),
+      1,
+      3
+    );
+  } catch (err) {
+    console.error("[Complaint Admin Email Error]:", sanitizeErrorMessage(err));
+  }
+  return { userEmailSent, adminEmailSent, userLogId, adminLogId };
+}
+async function sendSupportTicketSubmissionEmails(opts) {
+  const normalizedUserEmail = (opts.userEmail || "").trim().toLowerCase();
+  const cleanSubmittedAt = opts.submittedAt || (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
+  const trustedUserName = (opts.userName || "").trim() || "Valued User";
+  const adminEmail = await getEffectiveSupportAlertEmail();
+  let userEmailSent = false;
+  let adminEmailSent = false;
+  let userLogId = "";
+  let adminLogId = "";
+  if (normalizedUserEmail) {
+    const defaultUserTmpl = generateSupportTicketReceivedEmail({
+      userName: trustedUserName,
+      ticketNumber: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description
+    });
+    const customUserTmpl = await getRenderedCustomTemplateIfActive("support-confirmation", {
+      user_name: trustedUserName,
+      user_email: normalizedUserEmail,
+      ticket_number: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description
+    });
+    const userTemplate = customUserTmpl || defaultUserTmpl;
+    try {
+      userLogId = await createDispatchLogRecord({
+        userId: opts.userId || null,
+        email: normalizedUserEmail,
+        emailType: "support_user_confirmation",
+        idempotencyKey: `support_user:${opts.ticketNumber}`,
+        recipientName: trustedUserName,
+        subject: userTemplate.subject,
+        referenceId: opts.ticketId,
+        triggerEvent: "support_ticket_submission",
+        metadata: { ticketNumber: opts.ticketNumber, category: opts.category },
+        upsertIdempotency: true
+      });
+      userEmailSent = await executeEmailDispatch(
+        userLogId,
+        normalizedUserEmail,
+        userTemplate.subject,
+        userTemplate.html,
+        userTemplate.text,
+        getBrandLogoAttachments(),
+        1,
+        3,
+        opts.userId || void 0
+      );
+    } catch (err) {
+      console.error("[Support User Email Error]:", sanitizeErrorMessage(err));
+    }
+  }
+  const defaultAdminTmpl = generateSupportTicketAdminNotificationEmail({
+    userName: trustedUserName,
+    userEmail: normalizedUserEmail,
+    ticketNumber: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submittedAt: cleanSubmittedAt
+  });
+  const customAdminTmpl = await getRenderedCustomTemplateIfActive("support-admin-alert", {
+    user_name: trustedUserName,
+    user_email: normalizedUserEmail,
+    ticket_number: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submitted_at: cleanSubmittedAt
+  });
+  const adminTemplate = customAdminTmpl || defaultAdminTmpl;
+  try {
+    adminLogId = await createDispatchLogRecord({
+      userId: null,
+      email: adminEmail,
+      emailType: "support_admin_notification",
+      idempotencyKey: `support_admin:${opts.ticketNumber}`,
+      recipientName: "HackifyPro Admin",
+      subject: adminTemplate.subject,
+      referenceId: opts.ticketId,
+      triggerEvent: "support_ticket_submission",
+      metadata: { ticketNumber: opts.ticketNumber, submitterEmail: normalizedUserEmail },
+      upsertIdempotency: true
+    });
+    adminEmailSent = await executeEmailDispatch(
+      adminLogId,
+      adminEmail,
+      adminTemplate.subject,
+      adminTemplate.html,
+      adminTemplate.text,
+      getBrandLogoAttachments(),
+      1,
+      3
+    );
+  } catch (err) {
+    console.error("[Support Admin Email Error]:", sanitizeErrorMessage(err));
+  }
+  return { userEmailSent, adminEmailSent, userLogId, adminLogId };
+}
 async function sendUdharCreatedEmails(opts) {
   let initiatorSent = false;
   let counterpartStatus = "skipped_not_registered";
@@ -52611,7 +54815,7 @@ async function sendUdharCreatedEmails(opts) {
   const initiatorEmail = (opts.initiatorEmail || "").trim().toLowerCase();
   const initiatorTypeStr = opts.direction === "gave" ? "Money Given (You Lent)" : "Money Taken (You Borrowed)";
   if (initiatorEmail) {
-    const initTmpl = generateUdharCreatedEmailForInitiator({
+    const defaultInitTmpl = generateUdharCreatedEmailForInitiator({
       userName: opts.initiatorName,
       transactionId: txIdStr,
       otherPersonName: opts.counterpartName,
@@ -52621,27 +54825,31 @@ async function sendUdharCreatedEmails(opts) {
       transactionDate: opts.transactionDate,
       status: opts.status
     });
+    const customInitTmpl = await getRenderedCustomTemplateIfActive("udhar-created", {
+      user_name: opts.initiatorName,
+      other_person_name: opts.counterpartName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: initiatorTypeStr,
+      description: opts.description || "None",
+      transaction_date: opts.transactionDate,
+      status: opts.status
+    });
+    const initTmpl = customInitTmpl || defaultInitTmpl;
     const initKey = `udhar_create_init:${txIdStr}`;
     try {
-      const initLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_created_initiator', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_created', $7)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id`,
-        [
-          opts.initiatorUserId,
-          initiatorEmail,
-          initKey,
-          opts.initiatorName,
-          initTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount, direction: opts.direction })
-        ]
-      );
-      const logId = initLogRes.rows[0]?.id || `init_${Date.now()}`;
+      const logId = await createDispatchLogRecord({
+        userId: opts.initiatorUserId,
+        email: initiatorEmail,
+        emailType: "udhar_created_initiator",
+        idempotencyKey: initKey,
+        recipientName: opts.initiatorName,
+        subject: initTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_created",
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount, direction: opts.direction },
+        upsertIdempotency: true
+      });
       initiatorSent = await executeEmailDispatch(
         logId,
         initiatorEmail,
@@ -52661,18 +54869,12 @@ async function sendUdharCreatedEmails(opts) {
   let unverifiedEmailProvided = false;
   try {
     if (opts.counterpartUserId && opts.counterpartUserId !== opts.initiatorUserId) {
-      const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [opts.counterpartUserId]);
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        verifiedCounterpart = uRes.rows[0];
-      }
+      verifiedCounterpart = await lookupRegisteredUser({ userId: opts.counterpartUserId });
     } else if (opts.counterpartEmail) {
       const cleanCpEmail = opts.counterpartEmail.trim().toLowerCase();
       if (cleanCpEmail) {
         unverifiedEmailProvided = true;
-        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [cleanCpEmail]);
-        if (uRes.rows.length > 0 && uRes.rows[0].email) {
-          verifiedCounterpart = uRes.rows[0];
-        }
+        verifiedCounterpart = await lookupRegisteredUser({ email: cleanCpEmail });
       }
     }
   } catch (vErr) {
@@ -52681,7 +54883,7 @@ async function sendUdharCreatedEmails(opts) {
   const cpKey = `udhar_create_cp:${txIdStr}`;
   if (verifiedCounterpart && verifiedCounterpart.email) {
     const recipientPerspectiveType = opts.direction === "gave" ? "Money Received (You Borrowed)" : "Money Given (You Lent)";
-    const cpTmpl = generateUdharCreatedEmailForRecipient({
+    const defaultCpTmpl = generateUdharCreatedEmailForRecipient({
       recipientName: verifiedCounterpart.full_name,
       senderName: opts.initiatorName,
       transactionId: txIdStr,
@@ -52691,26 +54893,30 @@ async function sendUdharCreatedEmails(opts) {
       transactionDate: opts.transactionDate,
       status: opts.status
     });
+    const customCpTmpl = await getRenderedCustomTemplateIfActive("udhar-created", {
+      user_name: verifiedCounterpart.full_name,
+      other_person_name: opts.initiatorName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: recipientPerspectiveType,
+      description: opts.description || "None",
+      transaction_date: opts.transactionDate,
+      status: opts.status
+    });
+    const cpTmpl = customCpTmpl || defaultCpTmpl;
     try {
-      const cpLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_created_counterpart', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_created', $7)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id`,
-        [
-          verifiedCounterpart.id,
-          verifiedCounterpart.email.toLowerCase(),
-          cpKey,
-          verifiedCounterpart.full_name,
-          cpTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount, recipientType: recipientPerspectiveType })
-        ]
-      );
-      const cpLogId = cpLogRes.rows[0]?.id || `cp_${Date.now()}`;
+      const cpLogId = await createDispatchLogRecord({
+        userId: verifiedCounterpart.id,
+        email: verifiedCounterpart.email.toLowerCase(),
+        emailType: "udhar_created_counterpart",
+        idempotencyKey: cpKey,
+        recipientName: verifiedCounterpart.full_name,
+        subject: cpTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_created",
+        metadata: { linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount, recipientType: recipientPerspectiveType },
+        upsertIdempotency: true
+      });
       const sent = await executeEmailDispatch(
         cpLogId,
         verifiedCounterpart.email.toLowerCase(),
@@ -52731,24 +54937,21 @@ async function sendUdharCreatedEmails(opts) {
     const skipStatus = unverifiedEmailProvided ? "skipped_unverified" : "skipped_not_registered";
     const reasonText = unverifiedEmailProvided ? "Skipped: Counterpart email is not verified or registered in My Money Manager" : "Skipped: Counterpart is not a registered My Money Manager user";
     try {
-      await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          last_error, reference_id, trigger_event, metadata
-        ) VALUES (NULL, $1, 'udhar_created_counterpart', $2, $3, $4, $5, 0, 0, $6, $7, 'udhar_created', $8)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = $5, last_error = $6, updated_at = NOW()`,
-        [
-          opts.counterpartEmail || null,
-          `udhar_skip_cp:${txIdStr}`,
-          opts.counterpartName,
-          `[Skipped] New Udhar Transaction Recorded \u2013 ${APP_CONFIG.appName}`,
-          skipStatus,
-          reasonText,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, reason: "unregistered_counterpart" })
-        ]
-      );
+      await createDispatchLogRecord({
+        userId: null,
+        email: opts.counterpartEmail || null,
+        emailType: "udhar_created_counterpart",
+        idempotencyKey: `udhar_skip_cp:${txIdStr}`,
+        recipientName: opts.counterpartName,
+        subject: `[Skipped] New Udhar Transaction Recorded \u2013 ${APP_CONFIG.appName}`,
+        status: skipStatus,
+        maxAttempts: 0,
+        lastError: reasonText,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_created",
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, reason: "unregistered_counterpart" },
+        upsertIdempotency: true
+      });
       counterpartStatus = skipStatus;
     } catch (skipErr) {
       console.warn("[Udhar Skip Log Insert Warn]:", skipErr);
@@ -52763,7 +54966,7 @@ async function sendUdharSettledEmails(opts) {
   const txIdStr = opts.transactionId;
   const initiatorEmail = (opts.initiatorEmail || "").trim().toLowerCase();
   if (initiatorEmail) {
-    const initTmpl = generateUdharSettledEmail({
+    const defaultInitTmpl = generateUdharSettledEmail({
       userName: opts.initiatorName,
       counterpartName: opts.counterpartName,
       transactionId: txIdStr,
@@ -52772,25 +54975,28 @@ async function sendUdharSettledEmails(opts) {
       updatedBalance: opts.updatedBalance,
       isLenderPerspective: opts.direction === "gave"
     });
+    const customInitTmpl = await getRenderedCustomTemplateIfActive("udhar-settled", {
+      user_name: opts.initiatorName,
+      other_person_name: opts.counterpartName,
+      transaction_id: txIdStr,
+      amount_settled: opts.amountSettled,
+      updated_balance: opts.updatedBalance,
+      settlement_date: opts.settlementDate
+    });
+    const initTmpl = customInitTmpl || defaultInitTmpl;
     const initKey = `udhar_settle_init:${txIdStr}_${Date.now()}`;
     try {
-      const initLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_settled_initiator', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_settled', $7)
-        RETURNING id`,
-        [
-          opts.initiatorUserId,
-          initiatorEmail,
-          initKey,
-          opts.initiatorName,
-          initTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance })
-        ]
-      );
-      const logId = initLogRes.rows[0]?.id || `settle_init_${Date.now()}`;
+      const logId = await createDispatchLogRecord({
+        userId: opts.initiatorUserId,
+        email: initiatorEmail,
+        emailType: "udhar_settled_initiator",
+        idempotencyKey: initKey,
+        recipientName: opts.initiatorName,
+        subject: initTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_settled",
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance }
+      });
       initiatorSent = await executeEmailDispatch(
         logId,
         initiatorEmail,
@@ -52810,18 +55016,12 @@ async function sendUdharSettledEmails(opts) {
   let unverifiedEmailProvided = false;
   try {
     if (opts.counterpartUserId && opts.counterpartUserId !== opts.initiatorUserId) {
-      const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [opts.counterpartUserId]);
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        verifiedCounterpart = uRes.rows[0];
-      }
+      verifiedCounterpart = await lookupRegisteredUser({ userId: opts.counterpartUserId });
     } else if (opts.counterpartEmail) {
       const cleanCpEmail = opts.counterpartEmail.trim().toLowerCase();
       if (cleanCpEmail) {
         unverifiedEmailProvided = true;
-        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [cleanCpEmail]);
-        if (uRes.rows.length > 0 && uRes.rows[0].email) {
-          verifiedCounterpart = uRes.rows[0];
-        }
+        verifiedCounterpart = await lookupRegisteredUser({ email: cleanCpEmail });
       }
     }
   } catch (vErr) {
@@ -52829,7 +55029,7 @@ async function sendUdharSettledEmails(opts) {
   }
   const cpKey = `udhar_settle_cp:${txIdStr}_${Date.now()}`;
   if (verifiedCounterpart && verifiedCounterpart.email) {
-    const cpTmpl = generateUdharSettledEmail({
+    const defaultCpTmpl = generateUdharSettledEmail({
       userName: verifiedCounterpart.full_name,
       counterpartName: opts.initiatorName,
       transactionId: txIdStr,
@@ -52838,24 +55038,27 @@ async function sendUdharSettledEmails(opts) {
       updatedBalance: opts.updatedBalance,
       isLenderPerspective: opts.direction !== "gave"
     });
+    const customCpTmpl = await getRenderedCustomTemplateIfActive("udhar-settled", {
+      user_name: verifiedCounterpart.full_name,
+      other_person_name: opts.initiatorName,
+      transaction_id: txIdStr,
+      amount_settled: opts.amountSettled,
+      updated_balance: opts.updatedBalance,
+      settlement_date: opts.settlementDate
+    });
+    const cpTmpl = customCpTmpl || defaultCpTmpl;
     try {
-      const cpLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_settled_counterpart', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_settled', $7)
-        RETURNING id`,
-        [
-          verifiedCounterpart.id,
-          verifiedCounterpart.email.toLowerCase(),
-          cpKey,
-          verifiedCounterpart.full_name,
-          cpTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, initiatorName: opts.initiatorName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance })
-        ]
-      );
-      const cpLogId = cpLogRes.rows[0]?.id || `settle_cp_${Date.now()}`;
+      const cpLogId = await createDispatchLogRecord({
+        userId: verifiedCounterpart.id,
+        email: verifiedCounterpart.email.toLowerCase(),
+        emailType: "udhar_settled_counterpart",
+        idempotencyKey: cpKey,
+        recipientName: verifiedCounterpart.full_name,
+        subject: cpTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_settled",
+        metadata: { linkId: opts.linkId, initiatorName: opts.initiatorName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance }
+      });
       const sent = await executeEmailDispatch(
         cpLogId,
         verifiedCounterpart.email.toLowerCase(),
@@ -52876,22 +55079,20 @@ async function sendUdharSettledEmails(opts) {
     const skipStatus = unverifiedEmailProvided ? "skipped_unverified" : "skipped_not_registered";
     const reasonText = unverifiedEmailProvided ? "Skipped: Counterpart email is not verified or registered in My Money Manager" : "Skipped: Counterpart is not a registered My Money Manager user";
     try {
-      await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          last_error, reference_id, trigger_event, metadata
-        ) VALUES (NULL, $1, 'udhar_settled_counterpart', $2, $3, $4, $5, 0, 0, $6, $7, 'udhar_settled', $8)`,
-        [
-          opts.counterpartEmail || null,
-          `udhar_skip_settle_cp:${txIdStr}_${Date.now()}`,
-          opts.counterpartName,
-          `[Skipped] Udhar Transaction Settled \u2013 ${APP_CONFIG.appName}`,
-          skipStatus,
-          reasonText,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, reason: "unregistered_counterpart" })
-        ]
-      );
+      await createDispatchLogRecord({
+        userId: null,
+        email: opts.counterpartEmail || null,
+        emailType: "udhar_settled_counterpart",
+        idempotencyKey: `udhar_skip_settle_cp:${txIdStr}_${Date.now()}`,
+        recipientName: opts.counterpartName,
+        subject: `[Skipped] Udhar Transaction Settled \u2013 ${APP_CONFIG.appName}`,
+        status: skipStatus,
+        maxAttempts: 0,
+        lastError: reasonText,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_settled",
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, reason: "unregistered_counterpart" }
+      });
       counterpartStatus = skipStatus;
     } catch (skipErr) {
       console.warn("[Udhar Settle Skip Log Insert Warn]:", skipErr);
@@ -52907,7 +55108,7 @@ async function sendUdharUpdatedEmails(opts) {
   const initiatorEmail = (opts.initiatorEmail || "").trim().toLowerCase();
   const initiatorTypeStr = opts.direction === "gave" ? "Money Given (You Lent)" : "Money Taken (You Borrowed)";
   if (initiatorEmail) {
-    const initTmpl = generateUdharUpdatedEmail({
+    const defaultInitTmpl = generateUdharUpdatedEmail({
       userName: opts.initiatorName,
       counterpartName: opts.counterpartName,
       transactionId: txIdStr,
@@ -52918,25 +55119,30 @@ async function sendUdharUpdatedEmails(opts) {
       status: opts.status,
       isRecipientView: false
     });
+    const customInitTmpl = await getRenderedCustomTemplateIfActive("udhar-updated", {
+      user_name: opts.initiatorName,
+      other_person_name: opts.counterpartName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: initiatorTypeStr,
+      description: opts.description || "None",
+      transaction_date: opts.transactionDate,
+      status: opts.status
+    });
+    const initTmpl = customInitTmpl || defaultInitTmpl;
     const initKey = `udhar_update_init:${txIdStr}_${Date.now()}`;
     try {
-      const initLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_updated_initiator', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_updated', $7)
-        RETURNING id`,
-        [
-          opts.initiatorUserId,
-          initiatorEmail,
-          initKey,
-          opts.initiatorName,
-          initTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount })
-        ]
-      );
-      const logId = initLogRes.rows[0]?.id || `update_init_${Date.now()}`;
+      const logId = await createDispatchLogRecord({
+        userId: opts.initiatorUserId,
+        email: initiatorEmail,
+        emailType: "udhar_updated_initiator",
+        idempotencyKey: initKey,
+        recipientName: opts.initiatorName,
+        subject: initTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_updated",
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount }
+      });
       initiatorSent = await executeEmailDispatch(
         logId,
         initiatorEmail,
@@ -52956,18 +55162,12 @@ async function sendUdharUpdatedEmails(opts) {
   let unverifiedEmailProvided = false;
   try {
     if (opts.counterpartUserId && opts.counterpartUserId !== opts.initiatorUserId) {
-      const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE id = $1", [opts.counterpartUserId]);
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        verifiedCounterpart = uRes.rows[0];
-      }
+      verifiedCounterpart = await lookupRegisteredUser({ userId: opts.counterpartUserId });
     } else if (opts.counterpartEmail) {
       const cleanCpEmail = opts.counterpartEmail.trim().toLowerCase();
       if (cleanCpEmail) {
         unverifiedEmailProvided = true;
-        const uRes = await query("SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1", [cleanCpEmail]);
-        if (uRes.rows.length > 0 && uRes.rows[0].email) {
-          verifiedCounterpart = uRes.rows[0];
-        }
+        verifiedCounterpart = await lookupRegisteredUser({ email: cleanCpEmail });
       }
     }
   } catch (vErr) {
@@ -52976,7 +55176,7 @@ async function sendUdharUpdatedEmails(opts) {
   const cpKey = `udhar_update_cp:${txIdStr}_${Date.now()}`;
   if (verifiedCounterpart && verifiedCounterpart.email) {
     const recipientPerspectiveType = opts.direction === "gave" ? "Money Received (You Borrowed)" : "Money Given (You Lent)";
-    const cpTmpl = generateUdharUpdatedEmail({
+    const defaultCpTmpl = generateUdharUpdatedEmail({
       userName: verifiedCounterpart.full_name,
       counterpartName: opts.initiatorName,
       transactionId: txIdStr,
@@ -52987,24 +55187,29 @@ async function sendUdharUpdatedEmails(opts) {
       status: opts.status,
       isRecipientView: true
     });
+    const customCpTmpl = await getRenderedCustomTemplateIfActive("udhar-updated", {
+      user_name: verifiedCounterpart.full_name,
+      other_person_name: opts.initiatorName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: recipientPerspectiveType,
+      description: opts.description || "None",
+      transaction_date: opts.transactionDate,
+      status: opts.status
+    });
+    const cpTmpl = customCpTmpl || defaultCpTmpl;
     try {
-      const cpLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_updated_counterpart', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_updated', $7)
-        RETURNING id`,
-        [
-          verifiedCounterpart.id,
-          verifiedCounterpart.email.toLowerCase(),
-          cpKey,
-          verifiedCounterpart.full_name,
-          cpTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount })
-        ]
-      );
-      const cpLogId = cpLogRes.rows[0]?.id || `update_cp_${Date.now()}`;
+      const cpLogId = await createDispatchLogRecord({
+        userId: verifiedCounterpart.id,
+        email: verifiedCounterpart.email.toLowerCase(),
+        emailType: "udhar_updated_counterpart",
+        idempotencyKey: cpKey,
+        recipientName: verifiedCounterpart.full_name,
+        subject: cpTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_updated",
+        metadata: { linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount }
+      });
       const sent = await executeEmailDispatch(
         cpLogId,
         verifiedCounterpart.email.toLowerCase(),
@@ -53025,22 +55230,20 @@ async function sendUdharUpdatedEmails(opts) {
     const skipStatus = unverifiedEmailProvided ? "skipped_unverified" : "skipped_not_registered";
     const reasonText = unverifiedEmailProvided ? "Skipped: Counterpart email is not verified or registered in My Money Manager" : "Skipped: Counterpart is not a registered My Money Manager user";
     try {
-      await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          last_error, reference_id, trigger_event, metadata
-        ) VALUES (NULL, $1, 'udhar_updated_counterpart', $2, $3, $4, $5, 0, 0, $6, $7, 'udhar_updated', $8)`,
-        [
-          opts.counterpartEmail || null,
-          `udhar_skip_update_cp:${txIdStr}_${Date.now()}`,
-          opts.counterpartName,
-          `[Skipped] Udhar Transaction Updated \u2013 ${APP_CONFIG.appName}`,
-          skipStatus,
-          reasonText,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, reason: "unregistered_counterpart" })
-        ]
-      );
+      await createDispatchLogRecord({
+        userId: null,
+        email: opts.counterpartEmail || null,
+        emailType: "udhar_updated_counterpart",
+        idempotencyKey: `udhar_skip_update_cp:${txIdStr}_${Date.now()}`,
+        recipientName: opts.counterpartName,
+        subject: `[Skipped] Udhar Transaction Updated \u2013 ${APP_CONFIG.appName}`,
+        status: skipStatus,
+        maxAttempts: 0,
+        lastError: reasonText,
+        referenceId: txIdStr,
+        triggerEvent: "udhar_updated",
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, reason: "unregistered_counterpart" }
+      });
       counterpartStatus = skipStatus;
     } catch (skipErr) {
       console.warn("[Udhar Update Skip Log Insert Warn]:", skipErr);
@@ -53120,28 +55323,32 @@ ${opts.inviteLink}
 
 ${APP_CONFIG.appName} by ${APP_CONFIG.companyName}`;
   try {
-    const logRes = await query(
-      `INSERT INTO public.email_dispatch_logs (
-        email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-        reference_id, trigger_event, metadata
-      ) VALUES ($1, 'contact_invitation', $2, $3, $4, 'pending', 0, 3, $5, 'contact_invitation', $6)
-      RETURNING id`,
-      [
-        opts.recipientEmail.toLowerCase().trim(),
-        `invite:${opts.recipientEmail.toLowerCase().trim()}_${Date.now()}`,
-        opts.recipientName,
-        subject,
-        opts.inviteToken || null,
-        JSON.stringify({ inviterName: opts.inviterName, inviterEmail: opts.inviterEmail })
-      ]
-    );
-    const logId = logRes.rows[0]?.id || `invite_${Date.now()}`;
+    const customInvite = await getRenderedCustomTemplateIfActive("contact-invitation", {
+      user_name: opts.recipientName || "Friend",
+      inviter_name: opts.inviterName,
+      invite_link: opts.inviteLink
+    });
+    const finalSubject = customInvite?.subject || subject;
+    const finalHtml = customInvite?.html || html;
+    const finalText = customInvite?.text || text;
+    const cleanEmail = opts.recipientEmail.toLowerCase().trim();
+    const logId = await createDispatchLogRecord({
+      userId: null,
+      email: cleanEmail,
+      emailType: "contact_invitation",
+      idempotencyKey: `invite:${cleanEmail}_${Date.now()}`,
+      recipientName: opts.recipientName,
+      subject: finalSubject,
+      referenceId: opts.inviteToken || null,
+      triggerEvent: "contact_invitation",
+      metadata: { inviterName: opts.inviterName, inviterEmail: opts.inviterEmail }
+    });
     return await executeEmailDispatch(
       logId,
-      opts.recipientEmail.toLowerCase().trim(),
-      subject,
-      html,
-      text,
+      cleanEmail,
+      finalSubject,
+      finalHtml,
+      finalText,
       getBrandLogoAttachments(),
       1,
       3
@@ -53159,7 +55366,7 @@ import { parse as parseUrl } from "url";
 var import_p_retry = __toESM(require_p_retry(), 1);
 var import_google_auth_library = __toESM(require_src5(), 1);
 import { createWriteStream } from "fs";
-import * as fs9 from "fs/promises";
+import * as fs10 from "fs/promises";
 import { writeFile } from "fs/promises";
 import { Readable } from "node:stream";
 import { finished as finished3 } from "node:stream/promises";
@@ -53175,7 +55382,7 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 
 // node_modules/@google/genai/dist/node/index.mjs
-import * as path7 from "path";
+import * as path8 from "path";
 var _defaultBaseGeminiUrl = void 0;
 var _defaultBaseVertexUrl = void 0;
 function getDefaultBaseUrls() {
@@ -53298,7 +55505,7 @@ function __await(v) {
 }
 function __asyncGenerator(thisArg, _arguments, generator) {
   if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-  var g = generator.apply(thisArg, _arguments || []), i2, q = [];
+  var g2 = generator.apply(thisArg, _arguments || []), i2, q = [];
   return i2 = Object.create((typeof AsyncIterator === "function" ? AsyncIterator : Object).prototype), verb("next"), verb("throw"), verb("return", awaitReturn), i2[Symbol.asyncIterator] = function() {
     return this;
   }, i2;
@@ -53308,7 +55515,7 @@ function __asyncGenerator(thisArg, _arguments, generator) {
     };
   }
   function verb(n, f3) {
-    if (g[n]) {
+    if (g2[n]) {
       i2[n] = function(v) {
         return new Promise(function(a, b) {
           q.push([n, v, a, b]) > 1 || resume2(n, v);
@@ -53319,7 +55526,7 @@ function __asyncGenerator(thisArg, _arguments, generator) {
   }
   function resume2(n, v) {
     try {
-      step(g[n](v));
+      step(g2[n](v));
     } catch (e2) {
       settle(q[0][3], e2);
     }
@@ -53968,9 +56175,9 @@ async function buildWebRTCSignalingHeaders(parentClient, url, extraHeaders) {
   return headers;
 }
 function resolveDefaultPeerConnectionFactory() {
-  const g = globalThis;
-  if (typeof g.RTCPeerConnection === "function") {
-    const Ctor = g.RTCPeerConnection;
+  const g2 = globalThis;
+  if (typeof g2.RTCPeerConnection === "function") {
+    const Ctor = g2.RTCPeerConnection;
     return (configuration) => new Ctor(configuration);
   }
   return void 0;
@@ -54059,9 +56266,9 @@ var InteractionWebRTCTransport = class {
     return this._audioElement;
   }
   createStreamFromTracks(tracks) {
-    const g = globalThis;
-    if (typeof g.MediaStream === "function") {
-      return new g.MediaStream(tracks);
+    const g2 = globalThis;
+    if (typeof g2.MediaStream === "function") {
+      return new g2.MediaStream(tracks);
     }
     const copy = [...tracks];
     return {
@@ -58392,7 +60599,7 @@ var Batches = class extends BaseModule {
       params
     );
     const urlParams = body["_url"];
-    const path10 = formatMap("{model}:batchGenerateContent", urlParams);
+    const path11 = formatMap("{model}:batchGenerateContent", urlParams);
     const batch = body["batch"];
     const inputConfig = batch["inputConfig"];
     const requestsWrapper = inputConfig["requests"];
@@ -58413,7 +60620,7 @@ var Batches = class extends BaseModule {
     delete body["config"];
     delete body["_url"];
     delete body["_query"];
-    return { path: path10, body };
+    return { path: path11, body };
   }
   // Helper function to get the first GCS URI
   getGcsUri(src) {
@@ -58469,16 +60676,16 @@ var Batches = class extends BaseModule {
   async createInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = createBatchJobParametersToVertex(this.apiClient, params);
-      path10 = formatMap("batchPredictionJobs", body["_url"]);
+      path11 = formatMap("batchPredictionJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -58493,12 +60700,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = createBatchJobParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{model}:batchGenerateContent", body["_url"]);
+      path11 = formatMap("{model}:batchGenerateContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -58523,18 +60730,18 @@ var Batches = class extends BaseModule {
   async createEmbeddingsInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createEmbeddingsBatchJobParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{model}:asyncBatchEmbedContent", body["_url"]);
+      path11 = formatMap("{model}:asyncBatchEmbedContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -58563,16 +60770,16 @@ var Batches = class extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getBatchJobParametersToVertex(this.apiClient, params);
-      path10 = formatMap("batchPredictionJobs/{name}", body["_url"]);
+      path11 = formatMap("batchPredictionJobs/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -58587,12 +60794,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = getBatchJobParametersToMldev(this.apiClient, params);
-      path10 = formatMap("batches/{name}", body["_url"]);
+      path11 = formatMap("batches/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -58620,16 +60827,16 @@ var Batches = class extends BaseModule {
    */
   async cancel(params) {
     var _a2, _b, _c, _d;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = cancelBatchJobParametersToVertex(this.apiClient, params);
-      path10 = formatMap("batchPredictionJobs/{name}:cancel", body["_url"]);
+      path11 = formatMap("batchPredictionJobs/{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -58638,12 +60845,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = cancelBatchJobParametersToMldev(this.apiClient, params);
-      path10 = formatMap("batches/{name}:cancel", body["_url"]);
+      path11 = formatMap("batches/{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -58655,16 +60862,16 @@ var Batches = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listBatchJobsParametersToVertex(params);
-      path10 = formatMap("batchPredictionJobs", body["_url"]);
+      path11 = formatMap("batchPredictionJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -58687,12 +60894,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = listBatchJobsParametersToMldev(params);
-      path10 = formatMap("batches", body["_url"]);
+      path11 = formatMap("batches", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -58729,16 +60936,16 @@ var Batches = class extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteBatchJobParametersToVertex(this.apiClient, params);
-      path10 = formatMap("batchPredictionJobs/{name}", body["_url"]);
+      path11 = formatMap("batchPredictionJobs/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -58759,12 +60966,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = deleteBatchJobParametersToMldev(this.apiClient, params);
-      path10 = formatMap("batches/{name}", body["_url"]);
+      path11 = formatMap("batches/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -59765,16 +61972,16 @@ var Caches = class extends BaseModule {
   async create(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = createCachedContentParametersToVertex(this.apiClient, params);
-      path10 = formatMap("cachedContents", body["_url"]);
+      path11 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -59788,12 +61995,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = createCachedContentParametersToMldev(this.apiClient, params);
-      path10 = formatMap("cachedContents", body["_url"]);
+      path11 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -59821,16 +62028,16 @@ var Caches = class extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getCachedContentParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -59844,12 +62051,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = getCachedContentParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -59877,16 +62084,16 @@ var Caches = class extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteCachedContentParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -59909,12 +62116,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = deleteCachedContentParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -59954,16 +62161,16 @@ var Caches = class extends BaseModule {
   async update(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = updateCachedContentParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -59977,12 +62184,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = updateCachedContentParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -59999,16 +62206,16 @@ var Caches = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listCachedContentsParametersToVertex(params);
-      path10 = formatMap("cachedContents", body["_url"]);
+      path11 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -60031,12 +62238,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = listCachedContentsParametersToMldev(params);
-      path10 = formatMap("cachedContents", body["_url"]);
+      path11 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -60576,18 +62783,18 @@ var Files$1 = class Files extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listFilesParametersToMldev(params);
-      path10 = formatMap("files", body["_url"]);
+      path11 = formatMap("files", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -60613,18 +62820,18 @@ var Files$1 = class Files extends BaseModule {
   async createInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createFileParametersToMldev(params);
-      path10 = formatMap("upload/{api_version}/files", body["_url"]);
+      path11 = formatMap("upload/{api_version}/files", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -60659,18 +62866,18 @@ var Files$1 = class Files extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getFileParametersToMldev(params);
-      path10 = formatMap("files/{file}", body["_url"]);
+      path11 = formatMap("files/{file}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -60700,18 +62907,18 @@ var Files$1 = class Files extends BaseModule {
   async delete(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteFileParametersToMldev(params);
-      path10 = formatMap("files/{file}", body["_url"]);
+      path11 = formatMap("files/{file}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -60737,18 +62944,18 @@ var Files$1 = class Files extends BaseModule {
   async registerFilesInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = internalRegisterFilesParametersToMldev(params);
-      path10 = formatMap("files:register", body["_url"]);
+      path11 = formatMap("files:register", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -62690,16 +64897,16 @@ var ClientSDK = class {
   }
   _createRequest(context, conf, options) {
     var _a2, _b, _c, _d, _e;
-    const { method, path: path10, query: query2, headers: opHeaders, security } = conf;
+    const { method, path: path11, query: query2, headers: opHeaders, security } = conf;
     const base2 = (_a2 = conf.baseURL) !== null && _a2 !== void 0 ? _a2 : this._baseURL;
     if (!base2) {
       return ERR(new InvalidRequestError("No base URL provided for operation"));
     }
     const baseURL = new URL(base2);
     let reqURL;
-    if (path10) {
+    if (path11) {
       baseURL.pathname = baseURL.pathname.replace(/\/+$/, "") + "/";
-      reqURL = new URL(path10, baseURL);
+      reqURL = new URL(path11, baseURL);
       if (!reqURL.search && baseURL.search) {
         reqURL.search = baseURL.search;
       }
@@ -63319,7 +65526,7 @@ async function $do$D(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/agents")(pathParams);
+  const path11 = pathToFunc("/{api_version}/agents")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -63350,7 +65557,7 @@ async function $do$D(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -63394,7 +65601,7 @@ async function $do$C(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -63424,7 +65631,7 @@ async function $do$C(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -63468,7 +65675,7 @@ async function $do$B(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -63498,7 +65705,7 @@ async function $do$B(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -63540,7 +65747,7 @@ async function $do$A(client, api_version, page_size, page_token, parent, options
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/agents")(pathParams);
+  const path11 = pathToFunc("/{api_version}/agents")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token,
@@ -63575,7 +65782,7 @@ async function $do$A(client, api_version, page_size, page_token, parent, options
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -63643,7 +65850,7 @@ async function $do$z(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/credentials")(pathParams);
+  const path11 = pathToFunc("/{api_version}/credentials")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -63674,7 +65881,7 @@ async function $do$z(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -63718,7 +65925,7 @@ async function $do$y(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -63748,7 +65955,7 @@ async function $do$y(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -63792,7 +65999,7 @@ async function $do$x(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -63822,7 +66029,7 @@ async function $do$x(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -63863,7 +66070,7 @@ async function $do$w(client, api_version, page_size, page_token, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/credentials")(pathParams);
+  const path11 = pathToFunc("/{api_version}/credentials")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token
@@ -63897,7 +66104,7 @@ async function $do$w(client, api_version, page_size, page_token, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -63944,7 +66151,7 @@ async function $do$v(client, id, body, api_version, update_mask, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const query2 = encodeFormQuery({
     "update_mask": payload.update_mask
   });
@@ -63978,7 +66185,7 @@ async function $do$v(client, id, body, api_version, update_mask, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body: body$,
@@ -64053,7 +66260,7 @@ async function $do$u(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/decisions")(pathParams);
+  const path11 = pathToFunc("/{api_version}/decisions")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -64084,7 +66291,7 @@ async function $do$u(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -64133,7 +66340,7 @@ async function $do$t(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/environments")(pathParams);
+  const path11 = pathToFunc("/{api_version}/environments")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -64164,7 +66371,7 @@ async function $do$t(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -64208,7 +66415,7 @@ async function $do$s(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -64238,7 +66445,7 @@ async function $do$s(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -64282,7 +66489,7 @@ async function $do$r(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -64312,7 +66519,7 @@ async function $do$r(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -64354,7 +66561,7 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/environments")(pathParams);
+  const path11 = pathToFunc("/{api_version}/environments")(pathParams);
   const query2 = encodeFormQuery({
     "mode": payload === null || payload === void 0 ? void 0 : payload.mode,
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
@@ -64389,7 +66596,7 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -64416,14 +66623,14 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
   }
   return [result, { status: "complete", request: req, response }];
 }
-function environmentsFilesList(client, environment, path10, api_version, page_size, page_token, recursive, options) {
-  return new APIPromise($do$p(client, environment, path10, api_version, page_size, page_token, recursive, options));
+function environmentsFilesList(client, environment, path11, api_version, page_size, page_token, recursive, options) {
+  return new APIPromise($do$p(client, environment, path11, api_version, page_size, page_token, recursive, options));
 }
-async function $do$p(client, environment, path10, api_version, page_size, page_token, recursive, options) {
+async function $do$p(client, environment, path11, api_version, page_size, page_token, recursive, options) {
   var _a2, _b, _c;
   const input = {
     environment,
-    path: path10,
+    path: path11,
     api_version,
     page_size,
     page_token,
@@ -64508,18 +66715,18 @@ var Files2 = class extends ClientSDK {
   /**
    * Retrieves file metadata or directory contents from an environment's snapshot. To download file content, use the download URL returned in the response.
    */
-  list(environment, path10, params, options) {
-    return unwrapAsAPIPromise(environmentsFilesList(this, environment, path10, params === null || params === void 0 ? void 0 : params.api_version, params === null || params === void 0 ? void 0 : params.page_size, params === null || params === void 0 ? void 0 : params.page_token, params === null || params === void 0 ? void 0 : params.recursive, options));
+  list(environment, path11, params, options) {
+    return unwrapAsAPIPromise(environmentsFilesList(this, environment, path11, params === null || params === void 0 ? void 0 : params.api_version, params === null || params === void 0 ? void 0 : params.page_size, params === null || params === void 0 ? void 0 : params.page_token, params === null || params === void 0 ? void 0 : params.recursive, options));
   }
 };
-function environmentsInternalStartUpload(client, environment, path10, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
-  return new APIPromise($do$o(client, environment, path10, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options));
+function environmentsInternalStartUpload(client, environment, path11, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
+  return new APIPromise($do$o(client, environment, path11, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options));
 }
-async function $do$o(client, environment, path10, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
+async function $do$o(client, environment, path11, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
   var _a2, _b, _c;
   const input = {
     environment,
-    path: path10,
+    path: path11,
     "X-Goog-Upload-Command": x_goog_upload_command,
     "X-Goog-Upload-Header-Content-Length": x_goog_upload_header_content_length,
     "X-Goog-Upload-Header-Content-Type": x_goog_upload_header_content_type,
@@ -64620,8 +66827,8 @@ var Internal = class extends ClientSDK {
    * Upload the file bytes to the URL returned in the `X-Goog-Upload-URL`
    * response header, using the resumable upload protocol.
    */
-  startUpload(environment, path10, params, options) {
-    return unwrapAsAPIPromise(environmentsInternalStartUpload(this, environment, path10, params["X-Goog-Upload-Command"], params["X-Goog-Upload-Header-Content-Length"], params["X-Goog-Upload-Header-Content-Type"], params["X-Goog-Upload-Protocol"], params.api_version, params.extract, params.overwrite, options));
+  startUpload(environment, path11, params, options) {
+    return unwrapAsAPIPromise(environmentsInternalStartUpload(this, environment, path11, params["X-Goog-Upload-Command"], params["X-Goog-Upload-Header-Content-Length"], params["X-Goog-Upload-Header-Content-Type"], params["X-Goog-Upload-Protocol"], params.api_version, params.extract, params.overwrite, options));
   }
 };
 var Environments = class extends ClientSDK {
@@ -64756,7 +66963,7 @@ async function $do$n(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/interactions/{interactionsId}/cancel")(pathParams);
+  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}/cancel")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -64786,7 +66993,7 @@ async function $do$n(client, id, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -64829,7 +67036,7 @@ async function $do$m(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/interactions")(pathParams);
+  const path11 = pathToFunc("/{api_version}/interactions")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: ((_b = input === null || input === void 0 ? void 0 : input.body) === null || _b === void 0 ? void 0 : _b.stream) ? "text/event-stream" : "application/json"
@@ -64860,7 +67067,7 @@ async function $do$m(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -64910,7 +67117,7 @@ async function $do$l(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -64940,7 +67147,7 @@ async function $do$l(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -64990,7 +67197,7 @@ async function $do$k(client, id, api_version, include_input, last_event_id, stre
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
   const query2 = encodeFormQuery({
     "include_input": payload.include_input,
     "last_event_id": payload.last_event_id,
@@ -65025,7 +67232,7 @@ async function $do$k(client, id, api_version, include_input, last_event_id, stre
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -65077,7 +67284,7 @@ async function $do$j(client, interaction_id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens")(pathParams);
+  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -65108,7 +67315,7 @@ async function $do$j(client, interaction_id, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -65157,7 +67364,7 @@ async function $do$i(client, interaction_id, auth_token, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens/{auth_tokensId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens/{auth_tokensId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -65187,7 +67394,7 @@ async function $do$i(client, interaction_id, auth_token, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -65268,7 +67475,7 @@ async function $do$h(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/triggers")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -65299,7 +67506,7 @@ async function $do$h(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -65343,7 +67550,7 @@ async function $do$g(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -65373,7 +67580,7 @@ async function $do$g(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -65417,7 +67624,7 @@ async function $do$f(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -65447,7 +67654,7 @@ async function $do$f(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -65493,7 +67700,7 @@ async function $do$e(client, trigger_id, api_version, page_size, page_token, opt
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload.page_size,
     "page_token": payload.page_token
@@ -65527,7 +67734,7 @@ async function $do$e(client, trigger_id, api_version, page_size, page_token, opt
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -65570,7 +67777,7 @@ async function $do$d(client, api_version, filter, page_size, page_token, options
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/triggers")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers")(pathParams);
   const query2 = encodeFormQuery({
     "filter": payload === null || payload === void 0 ? void 0 : payload.filter,
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
@@ -65605,7 +67812,7 @@ async function $do$d(client, api_version, filter, page_size, page_token, options
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -65650,7 +67857,7 @@ async function $do$c(client, trigger_id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -65680,7 +67887,7 @@ async function $do$c(client, trigger_id, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -65725,7 +67932,7 @@ async function $do$b(client, id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -65756,7 +67963,7 @@ async function $do$b(client, id, body, api_version, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -65843,7 +68050,7 @@ async function $do$a(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/voices")(pathParams);
+  const path11 = pathToFunc("/{api_version}/voices")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -65874,7 +68081,7 @@ async function $do$a(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -65918,7 +68125,7 @@ async function $do$9(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -65948,7 +68155,7 @@ async function $do$9(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -65992,7 +68199,7 @@ async function $do$8(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66022,7 +68229,7 @@ async function $do$8(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66072,7 +68279,7 @@ async function $do$7(client, api_version, accent, contexts, gender, language_cod
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/voices")(pathParams);
+  const path11 = pathToFunc("/{api_version}/voices")(pathParams);
   const query2 = encodeFormQuery({
     "accent": payload === null || payload === void 0 ? void 0 : payload.accent,
     "context": payload === null || payload === void 0 ? void 0 : payload.contexts,
@@ -66115,7 +68322,7 @@ async function $do$7(client, api_version, accent, contexts, gender, language_cod
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -66188,7 +68395,7 @@ async function $do$6(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -66219,7 +68426,7 @@ async function $do$6(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -66263,7 +68470,7 @@ async function $do$5(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66293,7 +68500,7 @@ async function $do$5(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66337,7 +68544,7 @@ async function $do$4(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66367,7 +68574,7 @@ async function $do$4(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66408,7 +68615,7 @@ async function $do$3(client, api_version, page_size, page_token, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token
@@ -66442,7 +68649,7 @@ async function $do$3(client, api_version, page_size, page_token, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body,
@@ -66488,7 +68695,7 @@ async function $do$2(client, id, api_version, body, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks/{id}:ping")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks/{id}:ping")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -66519,7 +68726,7 @@ async function $do$2(client, id, api_version, body, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -66564,7 +68771,7 @@ async function $do$1(client, id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks/{id}:rotateSigningSecret")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks/{id}:rotateSigningSecret")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -66595,7 +68802,7 @@ async function $do$1(client, id, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -66641,7 +68848,7 @@ async function $do(client, id, body, api_version, update_mask, options) {
       charEncoding: "percent"
     })
   };
-  const path10 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path11 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const query2 = encodeFormQuery({
     "update_mask": payload.update_mask
   });
@@ -66675,7 +68882,7 @@ async function $do(client, id, body, api_version, update_mask, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path10,
+    path: path11,
     headers,
     query: query2,
     body: body$,
@@ -67389,8 +69596,8 @@ var GeminiNextGenEnvironmentFiles = class {
       try {
         const req = globalThis.require;
         if (req) {
-          const fs12 = req("fs");
-          buffer = fs12.readFileSync(params.file);
+          const fs13 = req("fs");
+          buffer = fs13.readFileSync(params.file);
         }
       } catch (_j) {
       }
@@ -67398,8 +69605,8 @@ var GeminiNextGenEnvironmentFiles = class {
         try {
           const mod = (_b = (_a2 = globalThis.process.mainModule) === null || _a2 === void 0 ? void 0 : _a2.require) !== null && _b !== void 0 ? _b : globalThis.require;
           if (mod) {
-            const fs12 = mod("fs");
-            buffer = fs12.readFileSync(params.file);
+            const fs13 = mod("fs");
+            buffer = fs13.readFileSync(params.file);
           }
         } catch (_k) {
         }
@@ -73102,15 +75309,15 @@ var ApiClient = class {
       throw new Error("HTTP options are not correctly set.");
     }
   }
-  resolveApiVersionInPath(path10, apiVersion) {
+  resolveApiVersionInPath(path11, apiVersion) {
     const placeholder = "{api_version}";
     if (apiVersion !== "") {
-      return path10.replaceAll(placeholder, apiVersion);
+      return path11.replaceAll(placeholder, apiVersion);
     }
-    return path10.replaceAll(`${placeholder}/`, "").replaceAll(`/${placeholder}`, "").replaceAll(placeholder, "");
+    return path11.replaceAll(`${placeholder}/`, "").replaceAll(`/${placeholder}`, "").replaceAll(placeholder, "");
   }
-  constructUrl(path10, httpOptions, prependProjectLocation) {
-    if (path10.includes("{api_version}")) {
+  constructUrl(path11, httpOptions, prependProjectLocation) {
+    if (path11.includes("{api_version}")) {
       if (!httpOptions || httpOptions.baseUrl === void 0 || httpOptions.apiVersion === void 0) {
         throw new Error("HTTP options are not correctly set.");
       }
@@ -73119,7 +75326,7 @@ var ApiClient = class {
       if (prependProjectLocation) {
         urlElement2.push(this.getBaseResourcePath());
       }
-      const resolvedPath = this.resolveApiVersionInPath(path10, httpOptions.apiVersion);
+      const resolvedPath = this.resolveApiVersionInPath(path11, httpOptions.apiVersion);
       if (resolvedPath !== "") {
         urlElement2.push(resolvedPath);
       }
@@ -73129,8 +75336,8 @@ var ApiClient = class {
     if (prependProjectLocation) {
       urlElement.push(this.getBaseResourcePath());
     }
-    if (path10 !== "") {
-      urlElement.push(path10);
+    if (path11 !== "") {
+      urlElement.push(path11);
     }
     const url = new URL(`${urlElement.join("/")}`);
     return url;
@@ -73432,13 +75639,13 @@ var ApiClient = class {
     if (mimeType === void 0 || mimeType === "") {
       throw new Error("Can not determine mimeType. Please provide mimeType in the config.");
     }
-    const path10 = `upload/{api_version}/${fileSearchStoreName}:uploadToFileSearchStore`;
+    const path11 = `upload/{api_version}/${fileSearchStoreName}:uploadToFileSearchStore`;
     const fileName = this.getFileName(file);
     const body = {};
     if (config != null) {
       uploadToFileSearchStoreConfigToMldev(config, body);
     }
-    const uploadUrl = await this.fetchUploadUrl(path10, sizeBytes, mimeType, fileName, body, config === null || config === void 0 ? void 0 : config.httpOptions);
+    const uploadUrl = await this.fetchUploadUrl(path11, sizeBytes, mimeType, fileName, body, config === null || config === void 0 ? void 0 : config.httpOptions);
     return uploader.uploadToFileSearchStore(file, uploadUrl, this);
   }
   /**
@@ -73451,11 +75658,11 @@ var ApiClient = class {
     const downloader = this.clientOptions.downloader;
     await downloader.download(params, this);
   }
-  async fetchUploadUrl(path10, sizeBytes, mimeType, fileName, body, configHttpOptions) {
+  async fetchUploadUrl(path11, sizeBytes, mimeType, fileName, body, configHttpOptions) {
     var _a2;
     const httpOptions = Object.assign(Object.assign({}, configHttpOptions), { headers: Object.assign(Object.assign(Object.assign({}, configHttpOptions === null || configHttpOptions === void 0 ? void 0 : configHttpOptions.headers), { "Content-Type": "application/json", "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start", "X-Goog-Upload-Header-Content-Length": `${sizeBytes}`, "X-Goog-Upload-Header-Content-Type": `${mimeType}` }), fileName ? { "X-Goog-Upload-File-Name": fileName } : {}) });
     const httpResponse = await this.request({
-      path: path10,
+      path: path11,
       body: JSON.stringify(body),
       httpMethod: "POST",
       httpOptions
@@ -75248,16 +77455,16 @@ var Models = class _Models extends BaseModule {
   async generateContentInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateContentParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:generateContent", body["_url"]);
+      path11 = formatMap("{model}:generateContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75280,12 +77487,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = generateContentParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{model}:generateContent", body["_url"]);
+      path11 = formatMap("{model}:generateContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75311,17 +77518,17 @@ var Models = class _Models extends BaseModule {
   async generateContentStreamInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateContentParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
+      path11 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       const apiClient = this.apiClient;
       response = apiClient.requestStream({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75357,13 +77564,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = generateContentParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
+      path11 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       const apiClient = this.apiClient;
       response = apiClient.requestStream({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75423,7 +77630,7 @@ var Models = class _Models extends BaseModule {
   async embedContentInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = embedContentParametersPrivateToVertex(this.apiClient, params, params);
@@ -75433,12 +77640,12 @@ var Models = class _Models extends BaseModule {
       } else if (params.embeddingApiType === EmbeddingApiType.EMBED_CONTENT) {
         endpointUrl = "{model}:embedContent";
       }
-      path10 = formatMap(endpointUrl, body["_url"]);
+      path11 = formatMap(endpointUrl, body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75461,12 +77668,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = embedContentParametersPrivateToMldev(this.apiClient, params);
-      path10 = formatMap("{model}:batchEmbedContents", body["_url"]);
+      path11 = formatMap("{model}:batchEmbedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75495,16 +77702,16 @@ var Models = class _Models extends BaseModule {
   async generateImagesInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateImagesParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:predict", body["_url"]);
+      path11 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75535,16 +77742,16 @@ var Models = class _Models extends BaseModule {
   async editImageInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = editImageParametersInternalToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:predict", body["_url"]);
+      path11 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75575,16 +77782,16 @@ var Models = class _Models extends BaseModule {
   async upscaleImageInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = upscaleImageAPIParametersInternalToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:predict", body["_url"]);
+      path11 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75636,16 +77843,16 @@ var Models = class _Models extends BaseModule {
   async recontextImage(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = recontextImageParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:predict", body["_url"]);
+      path11 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75687,16 +77894,16 @@ var Models = class _Models extends BaseModule {
   async segmentImage(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = segmentImageParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:predict", body["_url"]);
+      path11 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -75726,16 +77933,16 @@ var Models = class _Models extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getModelParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -75750,12 +77957,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = getModelParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -75773,16 +77980,16 @@ var Models = class _Models extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listModelsParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{models_url}", body["_url"]);
+      path11 = formatMap("{models_url}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -75805,12 +78012,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = listModelsParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{models_url}", body["_url"]);
+      path11 = formatMap("{models_url}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -75853,16 +78060,16 @@ var Models = class _Models extends BaseModule {
   async update(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = updateModelParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}", body["_url"]);
+      path11 = formatMap("{model}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -75877,12 +78084,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = updateModelParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -75911,16 +78118,16 @@ var Models = class _Models extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteModelParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -75943,12 +78150,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = deleteModelParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -75990,16 +78197,16 @@ var Models = class _Models extends BaseModule {
   async countTokens(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = countTokensParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:countTokens", body["_url"]);
+      path11 = formatMap("{model}:countTokens", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -76022,12 +78229,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = countTokensParametersToMldev(this.apiClient, params);
-      path10 = formatMap("{model}:countTokens", body["_url"]);
+      path11 = formatMap("{model}:countTokens", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -76071,16 +78278,16 @@ var Models = class _Models extends BaseModule {
   async computeTokens(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = computeTokensParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:computeTokens", body["_url"]);
+      path11 = formatMap("{model}:computeTokens", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -76111,16 +78318,16 @@ var Models = class _Models extends BaseModule {
   async generateVideosInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateVideosParametersToVertex(this.apiClient, params);
-      path10 = formatMap("{model}:predictLongRunning", body["_url"]);
+      path11 = formatMap("{model}:predictLongRunning", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -76227,16 +78434,16 @@ var Operations = class extends BaseModule {
   async getVideosOperationInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getOperationParametersToVertex(params);
-      path10 = formatMap("{operationName}", body["_url"]);
+      path11 = formatMap("{operationName}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -76248,12 +78455,12 @@ var Operations = class extends BaseModule {
       return response;
     } else {
       const body = getOperationParametersToMldev(params);
-      path10 = formatMap("{operationName}", body["_url"]);
+      path11 = formatMap("{operationName}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -76268,16 +78475,16 @@ var Operations = class extends BaseModule {
   async fetchPredictVideosOperationInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = fetchPredictOperationParametersToVertex(params);
-      path10 = formatMap("{resourceName}:fetchPredictOperation", body["_url"]);
+      path11 = formatMap("{resourceName}:fetchPredictOperation", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -76958,20 +79165,20 @@ var Tokens = class extends BaseModule {
   async create(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("The client.tokens.create method is only supported by the Gemini Developer API.");
     } else {
       const body = createAuthTokenParametersToMldev(this.apiClient, params);
-      path10 = formatMap("auth_tokens", body["_url"]);
+      path11 = formatMap("auth_tokens", body["_url"]);
       queryParams = body["_query"];
       delete body["config"];
       delete body["_url"];
       delete body["_query"];
       const transformedBody = convertBidiSetupToTokenSetup(body, params.config);
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(transformedBody),
         httpMethod: "POST",
@@ -77081,18 +79288,18 @@ var Documents = class extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getDocumentParametersToMldev(params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -77113,18 +79320,18 @@ var Documents = class extends BaseModule {
    */
   async delete(params) {
     var _a2, _b;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteDocumentParametersToMldev(params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -77136,18 +79343,18 @@ var Documents = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listDocumentsParametersToMldev(params);
-      path10 = formatMap("{parent}/documents", body["_url"]);
+      path11 = formatMap("{parent}/documents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -77264,18 +79471,18 @@ var FileSearchStores = class extends BaseModule {
   async create(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createFileSearchStoreParametersToMldev(this.apiClient, params);
-      path10 = formatMap("fileSearchStores", body["_url"]);
+      path11 = formatMap("fileSearchStores", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -77298,18 +79505,18 @@ var FileSearchStores = class extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getFileSearchStoreParametersToMldev(params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -77330,18 +79537,18 @@ var FileSearchStores = class extends BaseModule {
    */
   async delete(params) {
     var _a2, _b;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteFileSearchStoreParametersToMldev(params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -77353,18 +79560,18 @@ var FileSearchStores = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listFileSearchStoresParametersToMldev(params);
-      path10 = formatMap("fileSearchStores", body["_url"]);
+      path11 = formatMap("fileSearchStores", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -77384,18 +79591,18 @@ var FileSearchStores = class extends BaseModule {
   async uploadToFileSearchStoreInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = uploadToFileSearchStoreParametersToMldev(params);
-      path10 = formatMap("upload/{api_version}/{file_search_store_name}:uploadToFileSearchStore", body["_url"]);
+      path11 = formatMap("upload/{api_version}/{file_search_store_name}:uploadToFileSearchStore", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -77423,18 +79630,18 @@ var FileSearchStores = class extends BaseModule {
   async importFile(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = importFileParametersToMldev(params);
-      path10 = formatMap("{file_search_store_name}:importFile", body["_url"]);
+      path11 = formatMap("{file_search_store_name}:importFile", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79241,16 +81448,16 @@ var Tunings = class extends BaseModule {
   async getInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getTuningJobParametersToVertex(params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -79271,12 +81478,12 @@ var Tunings = class extends BaseModule {
       });
     } else {
       const body = getTuningJobParametersToMldev(params);
-      path10 = formatMap("{name}", body["_url"]);
+      path11 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -79300,16 +81507,16 @@ var Tunings = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listTuningJobsParametersToVertex(params);
-      path10 = formatMap("tuningJobs", body["_url"]);
+      path11 = formatMap("tuningJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -79348,16 +81555,16 @@ var Tunings = class extends BaseModule {
   async cancel(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = cancelTuningJobParametersToVertex(params);
-      path10 = formatMap("{name}:cancel", body["_url"]);
+      path11 = formatMap("{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79380,12 +81587,12 @@ var Tunings = class extends BaseModule {
       });
     } else {
       const body = cancelTuningJobParametersToMldev(params);
-      path10 = formatMap("{name}:cancel", body["_url"]);
+      path11 = formatMap("{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79411,16 +81618,16 @@ var Tunings = class extends BaseModule {
   async tuneInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = createTuningJobParametersPrivateToVertex(params, params);
-      path10 = formatMap("tuningJobs", body["_url"]);
+      path11 = formatMap("tuningJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79446,18 +81653,18 @@ var Tunings = class extends BaseModule {
   async tuneMldevInternal(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createTuningJobParametersPrivateToMldev(params);
-      path10 = formatMap("tunedModels", body["_url"]);
+      path11 = formatMap("tunedModels", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79481,16 +81688,16 @@ var Tunings = class extends BaseModule {
   async validateReward(params) {
     var _a2, _b;
     let response;
-    let path10 = "";
+    let path11 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = validateRewardParametersToVertex(params);
-      path10 = formatMap("{parent}/tuningJobs:validateReinforcementTuningReward", body["_url"]);
+      path11 = formatMap("{parent}/tuningJobs:validateReinforcementTuningReward", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path10,
+        path: path11,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79603,7 +81810,7 @@ var NodeUploader = class {
   async stat(file) {
     const fileStat = { size: 0, type: void 0 };
     if (typeof file === "string") {
-      const originalStat = await fs9.stat(file);
+      const originalStat = await fs10.stat(file);
       fileStat.size = originalStat.size;
       fileStat.type = this.inferMimeType(file);
       return fileStat;
@@ -79749,9 +81956,9 @@ var NodeUploader = class {
     let response = new HttpResponse(new Response());
     let uploadCommand = "upload";
     let fileHandle;
-    const fileName = path7.basename(file);
+    const fileName = path8.basename(file);
     try {
-      fileHandle = await fs9.open(file, "r");
+      fileHandle = await fs10.open(file, "r");
       if (!fileHandle) {
         throw new Error(`Failed to open file`);
       }
@@ -80078,11 +82285,12 @@ var AiProviderError = class extends Error {
     this.statusCode = statusCode;
   }
 };
-function getApiKey() {
-  return (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "").trim();
+async function getApiKey() {
+  const effective = await getEffectiveGeminiApiKey();
+  return effective.apiKey;
 }
-function getAiProviderStatus() {
-  const configured = getApiKey().length > 10;
+async function getAiProviderStatus() {
+  const configured = (await getApiKey()).length > 10;
   return {
     configured,
     enabled: runtimeAiEnabled,
@@ -80091,19 +82299,24 @@ function getAiProviderStatus() {
     ocrSupported: configured && runtimeAiEnabled
   };
 }
-function createClient() {
-  if (!runtimeAiEnabled) {
+function isInvalidApiKeyError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  const status = Number(err?.status || err?.statusCode || 0);
+  return msg.includes("api_key_invalid") || msg.includes("api key not valid") || msg.includes("invalid api key") || msg.includes("api key is invalid") || msg.includes("permission_denied") || status === 401 || status === 403;
+}
+async function createClient(overrideKey) {
+  if (!overrideKey && !runtimeAiEnabled) {
     throw new AiProviderError(
       "AI_PROVIDER_NOT_CONFIGURED",
       "External AI processing is currently paused by the administrator.",
       503
     );
   }
-  const apiKey = getApiKey();
+  const apiKey = (overrideKey ?? await getApiKey()).trim();
   if (!apiKey || apiKey.length <= 10) {
     throw new AiProviderError(
       "AI_PROVIDER_NOT_CONFIGURED",
-      "AI service is not configured on this server yet. Please contact the administrator to configure GEMINI_API_KEY.",
+      "AI API key is not configured yet. Please configure it in Admin Panel \u2192 Settings \u2192 API Settings.",
       503
     );
   }
@@ -80115,6 +82328,55 @@ function createClient() {
       }
     }
   });
+}
+async function validateGeminiApiKey(candidateKey) {
+  const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const isTestingSaved = !candidateKey;
+  const keyToTest = (candidateKey ?? await getApiKey()).trim();
+  if (!keyToTest || keyToTest.length < 20) {
+    const res = {
+      valid: false,
+      message: "API key is missing or too short (minimum 20 characters).",
+      checkedAt
+    };
+    if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+    return res;
+  }
+  try {
+    const ai = await createClient(keyToTest);
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: runtimePreferredModel,
+        contents: "Reply with OK"
+      }),
+      12e3
+    );
+    if (response && (response.text || response.candidates?.length)) {
+      const res2 = {
+        valid: true,
+        message: `Verified successfully with ${runtimePreferredModel}.`,
+        checkedAt
+      };
+      if (isTestingSaved) await updateGeminiKeyValidationStatus(res2);
+      return res2;
+    }
+    const res = {
+      valid: false,
+      message: "API key returned an empty response during verification.",
+      checkedAt
+    };
+    if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+    return res;
+  } catch (err) {
+    const invalidKey = isInvalidApiKeyError(err);
+    const res = {
+      valid: false,
+      message: invalidKey ? "API key is invalid, revoked, or unauthorized for Gemini API." : String(err?.message || "Unable to verify API key right now.").slice(0, 220),
+      checkedAt
+    };
+    if (isTestingSaved) await updateGeminiKeyValidationStatus(res);
+    return res;
+  }
 }
 async function withTimeout(promise, timeoutMs = REQUEST_TIMEOUT_MS) {
   let timer;
@@ -80138,7 +82400,7 @@ async function withTimeout(promise, timeoutMs = REQUEST_TIMEOUT_MS) {
   }
 }
 async function askFinancialAssistant(params) {
-  const ai = createClient();
+  const ai = await createClient();
   const isVoiceMode = params.mode === "voice";
   const systemInstruction = `You are the AI Money Assistant inside My Money Manager by HackifyPro.
 You are strictly READ-ONLY. You cannot modify, create, delete, or transfer money or transactions.
@@ -80193,6 +82455,13 @@ ${JSON.stringify(params.context)}`;
   }
   console.error("[AI Assistant Final Error]:", lastError);
   if (lastError instanceof AiProviderError) throw lastError;
+  if (isInvalidApiKeyError(lastError)) {
+    throw new AiProviderError(
+      "AI_PROVIDER_ERROR",
+      "The configured Gemini API key is invalid or unauthorized. Please ask an administrator to update it in Admin Settings.",
+      502
+    );
+  }
   throw new AiProviderError(
     "AI_PROVIDER_ERROR",
     lastError?.message || "Unable to reach the AI assistant right now. Please retry in a moment.",
@@ -80200,7 +82469,7 @@ ${JSON.stringify(params.context)}`;
   );
 }
 async function classifyTransactionWithAi(input) {
-  const ai = createClient();
+  const ai = await createClient();
   const prompt = `Classify this personal finance transaction for an Indian user into one of the exact app categories and subcategories.
 Input:
 - Title: ${input.title || ""}
@@ -80251,11 +82520,18 @@ Valid category/subcategory pairs:
     };
   } catch (err) {
     if (err instanceof AiProviderError) throw err;
+    if (isInvalidApiKeyError(err)) {
+      throw new AiProviderError(
+        "AI_PROVIDER_ERROR",
+        "The configured Gemini API key is invalid or unauthorized. Please ask an administrator to update it in Admin Settings.",
+        502
+      );
+    }
     throw new AiProviderError("AI_PROVIDER_ERROR", "Smart AI categorization temporarily unavailable.", 502);
   }
 }
 async function extractReceiptWithOcr(params) {
-  const ai = createClient();
+  const ai = await createClient();
   const prompt = `Extract structured receipt / invoice data from this image.
 RULES:
 - Extract ONLY values that are actually visible on the receipt.
@@ -80342,6 +82618,13 @@ RULES:
     };
   } catch (err) {
     if (err instanceof AiProviderError) throw err;
+    if (isInvalidApiKeyError(err)) {
+      throw new AiProviderError(
+        "AI_PROVIDER_ERROR",
+        "Receipt OCR could not authenticate because the Gemini API key is invalid or unauthorized. Please ask an administrator to update it in Admin Settings.",
+        502
+      );
+    }
     throw new AiProviderError(
       "AI_PROVIDER_ERROR",
       "Receipt OCR extraction failed. Please try a clearer image or enter the details manually.",
@@ -80351,10 +82634,10 @@ RULES:
 }
 
 // server/notificationService.ts
-import fs10 from "fs";
-import os4 from "os";
-import path8 from "path";
-import crypto13 from "crypto";
+import fs11 from "fs";
+import os6 from "os";
+import path9 from "path";
+import crypto15 from "crypto";
 
 // server/notificationEmailTemplates.ts
 function generateCampaignEmail(data) {
@@ -80625,6 +82908,7 @@ var DEFAULT_PREFERENCES = {
   in_app_enabled: true,
   push_enabled: true,
   email_enabled: true,
+  sound_enabled: true,
   notify_income: true,
   notify_expense: true,
   notify_budget: true,
@@ -80641,20 +82925,20 @@ var DEFAULT_PREFERENCES = {
   quiet_hours_end: "07:00",
   privacy_hide_amounts: true
 };
-var PRIMARY_PUSH_FALLBACK_DIR = path8.resolve(process.cwd(), ".data", "push-notifications");
-var TMP_PUSH_FALLBACK_DIR = path8.resolve(os4.tmpdir(), "mymoney-push-notifications");
+var PRIMARY_PUSH_FALLBACK_DIR = path9.resolve(process.cwd(), ".data", "push-notifications");
+var TMP_PUSH_FALLBACK_DIR = path9.resolve(os6.tmpdir(), "mymoney-push-notifications");
 var memoryPushStore = /* @__PURE__ */ new Map();
 function resolveWritablePushDir() {
   try {
-    if (!fs10.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
-      fs10.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
+    if (!fs11.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
+      fs11.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
     }
-    fs10.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs10.constants.W_OK);
+    fs11.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs11.constants.W_OK);
     return PRIMARY_PUSH_FALLBACK_DIR;
   } catch {
     try {
-      if (!fs10.existsSync(TMP_PUSH_FALLBACK_DIR)) {
-        fs10.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
+      if (!fs11.existsSync(TMP_PUSH_FALLBACK_DIR)) {
+        fs11.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
       }
       return TMP_PUSH_FALLBACK_DIR;
     } catch {
@@ -80663,9 +82947,9 @@ function resolveWritablePushDir() {
   }
 }
 function safeUserPushFile(baseDir, userId) {
-  const safeId = crypto13.createHash("sha256").update(String(userId || "unknown")).digest("hex");
-  const resolved = path8.resolve(baseDir, `${safeId}.json`);
-  if (!resolved.startsWith(baseDir + path8.sep)) {
+  const safeId = crypto15.createHash("sha256").update(String(userId || "unknown")).digest("hex");
+  const resolved = path9.resolve(baseDir, `${safeId}.json`);
+  if (!resolved.startsWith(baseDir + path9.sep)) {
     throw new Error("Invalid storage path");
   }
   return resolved;
@@ -80674,8 +82958,8 @@ function readLocalStore(userId) {
   for (const dir of [PRIMARY_PUSH_FALLBACK_DIR, TMP_PUSH_FALLBACK_DIR]) {
     try {
       const file = safeUserPushFile(dir, userId);
-      if (fs10.existsSync(file)) {
-        const parsed = JSON.parse(fs10.readFileSync(file, "utf8"));
+      if (fs11.existsSync(file)) {
+        const parsed = JSON.parse(fs11.readFileSync(file, "utf8"));
         const store = {
           preferences: { ...DEFAULT_PREFERENCES, ...parsed.preferences || {} },
           subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
@@ -80718,13 +83002,13 @@ function writeLocalStore(userId, store) {
   try {
     const baseDir = resolveWritablePushDir();
     const file = safeUserPushFile(baseDir, userId);
-    fs10.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
+    fs11.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
     console.warn("[Push] Local fallback write notice:", err?.message || err);
   }
 }
 function hashEndpoint(endpoint) {
-  return crypto13.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
+  return crypto15.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
 }
 function formatEndpointPreview(endpoint) {
   try {
@@ -80792,26 +83076,45 @@ function buildSafeDeepLinkUrl(deepLink) {
   return `/#${clean}`;
 }
 async function getUserNotificationPreferences(userId) {
-  try {
-    const res = await query(
-      `SELECT * FROM public.user_notification_preferences WHERE user_id = $1`,
-      [userId]
-    );
-    if (res.rows.length > 0) {
-      return { ...DEFAULT_PREFERENCES, ...res.rows[0] };
+  const local = readLocalStore(userId);
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT * FROM public.user_notification_preferences WHERE user_id = $1`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          ...DEFAULT_PREFERENCES,
+          ...row,
+          sound_enabled: typeof row.sound_enabled === "boolean" ? row.sound_enabled : local.preferences.sound_enabled ?? DEFAULT_PREFERENCES.sound_enabled
+        };
+      }
+      await query(
+        `INSERT INTO public.user_notification_preferences (user_id, privacy_hide_amounts)
+         VALUES ($1, TRUE)
+         ON CONFLICT (user_id) DO NOTHING`,
+        [userId]
+      ).catch(() => {
+      });
+      return { ...DEFAULT_PREFERENCES, ...local.preferences };
+    } catch {
     }
-    await query(
-      `INSERT INTO public.user_notification_preferences (user_id, privacy_hide_amounts)
-       VALUES ($1, TRUE)
-       ON CONFLICT (user_id) DO NOTHING`,
-      [userId]
-    ).catch(() => {
-    });
-    return { ...DEFAULT_PREFERENCES };
-  } catch {
-    const local = readLocalStore(userId);
-    return { ...DEFAULT_PREFERENCES, ...local.preferences };
+  } else {
+    const sbRes = await sbRestRequest(
+      `user_notification_preferences?user_id=eq.${encodeURIComponent(userId)}&select=*&limit=1`
+    );
+    if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+      const row = sbRes.data[0];
+      return {
+        ...DEFAULT_PREFERENCES,
+        ...row,
+        sound_enabled: typeof row.sound_enabled === "boolean" ? row.sound_enabled : local.preferences.sound_enabled ?? DEFAULT_PREFERENCES.sound_enabled
+      };
+    }
   }
+  return { ...DEFAULT_PREFERENCES, ...local.preferences };
 }
 async function updateUserNotificationPreferences(userId, patch) {
   const current = await getUserNotificationPreferences(userId);
@@ -80819,6 +83122,7 @@ async function updateUserNotificationPreferences(userId, patch) {
     in_app_enabled: patch.in_app_enabled !== void 0 ? Boolean(patch.in_app_enabled) : current.in_app_enabled,
     push_enabled: patch.push_enabled !== void 0 ? Boolean(patch.push_enabled) : current.push_enabled,
     email_enabled: patch.email_enabled !== void 0 ? Boolean(patch.email_enabled) : current.email_enabled,
+    sound_enabled: patch.sound_enabled !== void 0 ? Boolean(patch.sound_enabled) : current.sound_enabled,
     notify_income: patch.notify_income !== void 0 ? Boolean(patch.notify_income) : current.notify_income,
     notify_expense: patch.notify_expense !== void 0 ? Boolean(patch.notify_expense) : current.notify_expense,
     notify_budget: patch.notify_budget !== void 0 ? Boolean(patch.notify_budget) : current.notify_budget,
@@ -80835,81 +83139,34 @@ async function updateUserNotificationPreferences(userId, patch) {
     quiet_hours_end: typeof patch.quiet_hours_end === "string" && /^\d{2}:\d{2}$/.test(patch.quiet_hours_end.trim()) ? patch.quiet_hours_end.trim() : current.quiet_hours_end,
     privacy_hide_amounts: patch.privacy_hide_amounts !== void 0 ? Boolean(patch.privacy_hide_amounts) : current.privacy_hide_amounts
   };
-  try {
-    const upRes = await query(
-      `INSERT INTO public.user_notification_preferences (
-        user_id, in_app_enabled, push_enabled, email_enabled,
-        notify_income, notify_expense, notify_budget, notify_bills,
-        notify_udhar, notify_savings, notify_receipts, notify_security,
-        notify_support, notify_announcements, notify_offers,
-        quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
-        updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW()
-      )
-      ON CONFLICT (user_id) DO UPDATE SET
-        in_app_enabled = EXCLUDED.in_app_enabled,
-        push_enabled = EXCLUDED.push_enabled,
-        email_enabled = EXCLUDED.email_enabled,
-        notify_income = EXCLUDED.notify_income,
-        notify_expense = EXCLUDED.notify_expense,
-        notify_budget = EXCLUDED.notify_budget,
-        notify_bills = EXCLUDED.notify_bills,
-        notify_udhar = EXCLUDED.notify_udhar,
-        notify_savings = EXCLUDED.notify_savings,
-        notify_receipts = EXCLUDED.notify_receipts,
-        notify_security = EXCLUDED.notify_security,
-        notify_support = EXCLUDED.notify_support,
-        notify_announcements = EXCLUDED.notify_announcements,
-        notify_offers = EXCLUDED.notify_offers,
-        quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
-        quiet_hours_start = EXCLUDED.quiet_hours_start,
-        quiet_hours_end = EXCLUDED.quiet_hours_end,
-        privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
-        updated_at = NOW()
-      RETURNING *`,
-      [
-        userId,
-        next.in_app_enabled,
-        next.push_enabled,
-        next.email_enabled,
-        next.notify_income,
-        next.notify_expense,
-        next.notify_budget,
-        next.notify_bills,
-        next.notify_udhar,
-        next.notify_savings,
-        next.notify_receipts,
-        next.notify_security,
-        next.notify_support,
-        next.notify_announcements,
-        next.notify_offers,
-        next.quiet_hours_enabled,
-        next.quiet_hours_start,
-        next.quiet_hours_end,
-        next.privacy_hide_amounts
-      ]
-    );
-    if (upRes.rows.length > 0) {
-      return { ...next, ...upRes.rows[0] };
-    }
-  } catch {
+  const local = readLocalStore(userId);
+  local.preferences = next;
+  writeLocalStore(userId, local);
+  if (isDatabaseAvailable()) {
     try {
-      await query(
+      const upRes = await query(
         `INSERT INTO public.user_notification_preferences (
           user_id, in_app_enabled, push_enabled, email_enabled,
-          notify_income, notify_expense, notify_udhar, notify_support,
-          notify_announcements, notify_offers,
+          notify_income, notify_expense, notify_budget, notify_bills,
+          notify_udhar, notify_savings, notify_receipts, notify_security,
+          notify_support, notify_announcements, notify_offers,
           quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
           updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW()
+        )
         ON CONFLICT (user_id) DO UPDATE SET
           in_app_enabled = EXCLUDED.in_app_enabled,
           push_enabled = EXCLUDED.push_enabled,
           email_enabled = EXCLUDED.email_enabled,
           notify_income = EXCLUDED.notify_income,
           notify_expense = EXCLUDED.notify_expense,
+          notify_budget = EXCLUDED.notify_budget,
+          notify_bills = EXCLUDED.notify_bills,
           notify_udhar = EXCLUDED.notify_udhar,
+          notify_savings = EXCLUDED.notify_savings,
+          notify_receipts = EXCLUDED.notify_receipts,
+          notify_security = EXCLUDED.notify_security,
           notify_support = EXCLUDED.notify_support,
           notify_announcements = EXCLUDED.notify_announcements,
           notify_offers = EXCLUDED.notify_offers,
@@ -80917,7 +83174,8 @@ async function updateUserNotificationPreferences(userId, patch) {
           quiet_hours_start = EXCLUDED.quiet_hours_start,
           quiet_hours_end = EXCLUDED.quiet_hours_end,
           privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
-          updated_at = NOW()`,
+          updated_at = NOW()
+        RETURNING *`,
         [
           userId,
           next.in_app_enabled,
@@ -80925,7 +83183,12 @@ async function updateUserNotificationPreferences(userId, patch) {
           next.email_enabled,
           next.notify_income,
           next.notify_expense,
+          next.notify_budget,
+          next.notify_bills,
           next.notify_udhar,
+          next.notify_savings,
+          next.notify_receipts,
+          next.notify_security,
           next.notify_support,
           next.notify_announcements,
           next.notify_offers,
@@ -80935,12 +83198,78 @@ async function updateUserNotificationPreferences(userId, patch) {
           next.privacy_hide_amounts
         ]
       );
+      if (upRes.rows.length > 0) {
+        return { ...next, ...upRes.rows[0], sound_enabled: next.sound_enabled };
+      }
     } catch {
+      try {
+        await query(
+          `INSERT INTO public.user_notification_preferences (
+            user_id, in_app_enabled, push_enabled, email_enabled,
+            notify_income, notify_expense, notify_udhar, notify_support,
+            notify_announcements, notify_offers,
+            quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
+            updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            in_app_enabled = EXCLUDED.in_app_enabled,
+            push_enabled = EXCLUDED.push_enabled,
+            email_enabled = EXCLUDED.email_enabled,
+            notify_income = EXCLUDED.notify_income,
+            notify_expense = EXCLUDED.notify_expense,
+            notify_udhar = EXCLUDED.notify_udhar,
+            notify_support = EXCLUDED.notify_support,
+            notify_announcements = EXCLUDED.notify_announcements,
+            notify_offers = EXCLUDED.notify_offers,
+            quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
+            quiet_hours_start = EXCLUDED.quiet_hours_start,
+            quiet_hours_end = EXCLUDED.quiet_hours_end,
+            privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
+            updated_at = NOW()`,
+          [
+            userId,
+            next.in_app_enabled,
+            next.push_enabled,
+            next.email_enabled,
+            next.notify_income,
+            next.notify_expense,
+            next.notify_udhar,
+            next.notify_support,
+            next.notify_announcements,
+            next.notify_offers,
+            next.quiet_hours_enabled,
+            next.quiet_hours_start,
+            next.quiet_hours_end,
+            next.privacy_hide_amounts
+          ]
+        );
+      } catch {
+      }
     }
+  } else {
+    await sbRestRequest("user_notification_preferences?on_conflict=user_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        user_id: userId,
+        in_app_enabled: next.in_app_enabled,
+        push_enabled: next.push_enabled,
+        email_enabled: next.email_enabled,
+        notify_income: next.notify_income,
+        notify_expense: next.notify_expense,
+        notify_udhar: next.notify_udhar,
+        notify_support: next.notify_support,
+        notify_announcements: next.notify_announcements,
+        notify_offers: next.notify_offers,
+        quiet_hours_enabled: next.quiet_hours_enabled,
+        quiet_hours_start: next.quiet_hours_start,
+        quiet_hours_end: next.quiet_hours_end,
+        privacy_hide_amounts: next.privacy_hide_amounts,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    }).catch(() => {
+    });
   }
-  const local = readLocalStore(userId);
-  local.preferences = next;
-  writeLocalStore(userId, local);
   return next;
 }
 async function registerPushSubscription(params) {
@@ -80957,65 +83286,80 @@ async function registerPushSubscription(params) {
   const compat = detectPlatformCompatibility(ua);
   const deviceName = (params.deviceName || compat.deviceLabel || "Web Device").trim().slice(0, 120);
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  try {
-    const res = await query(
-      `INSERT INTO public.push_subscriptions
-         (user_id, endpoint, p256dh, auth, user_agent, device_name, browser, os, is_active, failure_count, last_used_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 0, NOW(), NOW())
-       ON CONFLICT (endpoint) DO UPDATE SET
-         user_id = EXCLUDED.user_id,
-         p256dh = EXCLUDED.p256dh,
-         auth = EXCLUDED.auth,
-         user_agent = EXCLUDED.user_agent,
-         device_name = EXCLUDED.device_name,
-         browser = EXCLUDED.browser,
-         os = EXCLUDED.os,
-         is_active = TRUE,
-         failure_count = 0,
-         last_used_at = NOW(),
-         updated_at = NOW()
-       RETURNING *`,
-      [params.userId, endpoint, p256dh, auth, ua || null, deviceName, compat.browserLabel, compat.osLabel]
-    );
-    if (res.rows.length > 0) {
-      return { success: true, subscription: toSafeSubscriptionView(res.rows[0]) };
-    }
-  } catch {
+  if (isDatabaseAvailable()) {
     try {
-      const legacy = await query(
-        `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+      const res = await query(
+        `INSERT INTO public.push_subscriptions
+           (user_id, endpoint, p256dh, auth, user_agent, device_name, browser, os, is_active, failure_count, last_used_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 0, NOW(), NOW())
          ON CONFLICT (endpoint) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            p256dh = EXCLUDED.p256dh,
            auth = EXCLUDED.auth,
            user_agent = EXCLUDED.user_agent,
+           device_name = EXCLUDED.device_name,
+           browser = EXCLUDED.browser,
+           os = EXCLUDED.os,
+           is_active = TRUE,
+           failure_count = 0,
+           last_used_at = NOW(),
            updated_at = NOW()
          RETURNING *`,
-        [params.userId, endpoint, p256dh, auth, ua || null]
+        [params.userId, endpoint, p256dh, auth, ua || null, deviceName, compat.browserLabel, compat.osLabel]
       );
-      if (legacy.rows.length > 0) {
-        const row = legacy.rows[0];
-        return {
-          success: true,
-          subscription: toSafeSubscriptionView({
-            ...row,
-            device_name: deviceName,
-            browser: compat.browserLabel,
-            os: compat.osLabel,
-            is_active: true,
-            failure_count: 0,
-            last_used_at: nowIso
-          })
-        };
+      if (res.rows.length > 0) {
+        return { success: true, subscription: toSafeSubscriptionView(res.rows[0]) };
       }
     } catch {
+      try {
+        const legacy = await query(
+          `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT (endpoint) DO UPDATE SET
+             user_id = EXCLUDED.user_id,
+             p256dh = EXCLUDED.p256dh,
+             auth = EXCLUDED.auth,
+             user_agent = EXCLUDED.user_agent,
+             updated_at = NOW()
+           RETURNING *`,
+          [params.userId, endpoint, p256dh, auth, ua || null]
+        );
+        if (legacy.rows.length > 0) {
+          const row = legacy.rows[0];
+          return {
+            success: true,
+            subscription: toSafeSubscriptionView({
+              ...row,
+              device_name: deviceName,
+              browser: compat.browserLabel,
+              os: compat.osLabel,
+              is_active: true,
+              failure_count: 0,
+              last_used_at: nowIso
+            })
+          };
+        }
+      } catch {
+      }
     }
   }
+  const sbUpsert = await sbRestRequest("push_subscriptions?on_conflict=endpoint", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: {
+      user_id: params.userId,
+      endpoint,
+      p256dh,
+      auth,
+      user_agent: ua || null,
+      updated_at: nowIso
+    }
+  }).catch(() => ({ ok: false, data: null }));
+  const sbRow = sbUpsert.ok && Array.isArray(sbUpsert.data) ? sbUpsert.data[0] : null;
   const local = readLocalStore(params.userId);
   const existingIdx = local.subscriptions.findIndex((s2) => s2.endpoint === endpoint);
   const record = {
-    id: existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto13.randomUUID(),
+    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto15.randomUUID()),
     user_id: params.userId,
     endpoint,
     p256dh,
@@ -81027,7 +83371,7 @@ async function registerPushSubscription(params) {
     is_active: true,
     failure_count: 0,
     last_used_at: nowIso,
-    created_at: existingIdx >= 0 ? local.subscriptions[existingIdx].created_at : nowIso,
+    created_at: sbRow?.created_at || (existingIdx >= 0 ? local.subscriptions[existingIdx].created_at : nowIso),
     updated_at: nowIso
   };
   if (existingIdx >= 0) {
@@ -81043,45 +83387,90 @@ async function listUserPushSubscriptions(userId) {
   return raw.map(toSafeSubscriptionView);
 }
 async function getRawUserPushSubscriptions(userId) {
-  try {
-    const res = await query(
-      `SELECT * FROM public.push_subscriptions WHERE user_id = $1 ORDER BY updated_at DESC`,
-      [userId]
-    );
-    return res.rows.map((row) => {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT * FROM public.push_subscriptions WHERE user_id = $1 ORDER BY updated_at DESC`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        return res.rows.map((row) => {
+          const compat = detectPlatformCompatibility(row.user_agent || "");
+          return {
+            id: String(row.id),
+            user_id: String(row.user_id),
+            endpoint: String(row.endpoint),
+            p256dh: String(row.p256dh),
+            auth: String(row.auth),
+            user_agent: row.user_agent || null,
+            device_name: row.device_name || compat.deviceLabel,
+            browser: row.browser || compat.browserLabel,
+            os: row.os || compat.osLabel,
+            is_active: row.is_active !== false,
+            failure_count: Number(row.failure_count) || 0,
+            last_used_at: row.last_used_at || null,
+            created_at: row.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+            updated_at: row.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+          };
+        });
+      }
+    } catch {
+    }
+  }
+  const byEndpoint = /* @__PURE__ */ new Map();
+  const localSubs = readLocalStore(userId).subscriptions.filter(
+    (s2) => s2.user_id === userId && s2.is_active !== false
+  );
+  for (const s2 of localSubs) {
+    byEndpoint.set(s2.endpoint, s2);
+  }
+  const sbRes = await sbRestRequest(
+    `push_subscriptions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id,endpoint,p256dh,auth,user_agent,created_at,updated_at&order=updated_at.desc`
+  ).catch(() => ({ ok: false, data: null }));
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (!row?.endpoint) continue;
       const compat = detectPlatformCompatibility(row.user_agent || "");
-      return {
+      const existing = byEndpoint.get(String(row.endpoint));
+      byEndpoint.set(String(row.endpoint), {
         id: String(row.id),
         user_id: String(row.user_id),
         endpoint: String(row.endpoint),
         p256dh: String(row.p256dh),
         auth: String(row.auth),
-        user_agent: row.user_agent || null,
-        device_name: row.device_name || compat.deviceLabel,
-        browser: row.browser || compat.browserLabel,
-        os: row.os || compat.osLabel,
-        is_active: row.is_active !== false,
-        failure_count: Number(row.failure_count) || 0,
-        last_used_at: row.last_used_at || null,
-        created_at: row.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: row.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-      };
-    });
-  } catch {
-    return readLocalStore(userId).subscriptions.filter((s2) => s2.user_id === userId && s2.is_active !== false);
+        user_agent: row.user_agent || existing?.user_agent || null,
+        device_name: existing?.device_name || compat.deviceLabel,
+        browser: existing?.browser || compat.browserLabel,
+        os: existing?.os || compat.osLabel,
+        is_active: true,
+        failure_count: existing?.failure_count || 0,
+        last_used_at: existing?.last_used_at || null,
+        created_at: row.created_at || existing?.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: row.updated_at || existing?.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
   }
+  return Array.from(byEndpoint.values());
 }
 async function removePushSubscriptionByEndpoint(userId, endpoint) {
   const cleanEndpoint = (endpoint || "").trim();
   if (!cleanEndpoint) return { deleted: false };
   let deletedFromDb = false;
-  try {
-    const res = await query(
-      `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2 RETURNING id`,
-      [userId, cleanEndpoint]
-    );
-    deletedFromDb = res.rows.length > 0;
-  } catch {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2 RETURNING id`,
+        [userId, cleanEndpoint]
+      );
+      deletedFromDb = res.rows.length > 0;
+    } catch {
+    }
+  } else {
+    const sbDel = await sbRestRequest(
+      `push_subscriptions?user_id=eq.${encodeURIComponent(userId)}&endpoint=eq.${encodeURIComponent(cleanEndpoint)}`,
+      { method: "DELETE" }
+    ).catch(() => ({ ok: false }));
+    if (sbDel.ok) deletedFromDb = true;
   }
   const local = readLocalStore(userId);
   const before = local.subscriptions.length;
@@ -81096,13 +83485,21 @@ async function removePushSubscriptionById(userId, subscriptionId) {
   const cleanId = (subscriptionId || "").trim();
   if (!cleanId) return { deleted: false };
   let deletedFromDb = false;
-  try {
-    const res = await query(
-      `DELETE FROM public.push_subscriptions WHERE id = $1 AND user_id = $2 RETURNING id`,
-      [cleanId, userId]
-    );
-    deletedFromDb = res.rows.length > 0;
-  } catch {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `DELETE FROM public.push_subscriptions WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [cleanId, userId]
+      );
+      deletedFromDb = res.rows.length > 0;
+    } catch {
+    }
+  } else {
+    const sbDel = await sbRestRequest(
+      `push_subscriptions?id=eq.${encodeURIComponent(cleanId)}&user_id=eq.${encodeURIComponent(userId)}`,
+      { method: "DELETE" }
+    ).catch(() => ({ ok: false }));
+    if (sbDel.ok) deletedFromDb = true;
   }
   const local = readLocalStore(userId);
   const before = local.subscriptions.length;
@@ -81118,17 +83515,21 @@ async function removePushSubscriptionById(userId, subscriptionId) {
 async function getPushDeliveryStatus(userId) {
   const devices = await listUserPushSubscriptions(userId);
   let logs = [];
-  try {
-    const res = await query(
-      `SELECT id, notification_id, channel, status, error_message, created_at
-       FROM public.notification_delivery_logs
-       WHERE user_id = $1 AND channel = 'push'
-       ORDER BY created_at DESC
-       LIMIT 10`,
-      [userId]
-    );
-    logs = res.rows;
-  } catch {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT id, notification_id, channel, status, error_message, created_at
+         FROM public.notification_delivery_logs
+         WHERE user_id = $1 AND channel = 'push'
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [userId]
+      );
+      logs = res.rows;
+    } catch {
+      logs = readLocalStore(userId).deliveryLogs.filter((l) => l.channel === "push").slice(0, 10);
+    }
+  } else {
     logs = readLocalStore(userId).deliveryLogs.filter((l) => l.channel === "push").slice(0, 10);
   }
   return {
@@ -81198,7 +83599,7 @@ function recordLocalDedupeKey(userId, dedupeKey) {
 function appendLocalDeliveryLog(userId, log) {
   const local = readLocalStore(userId);
   local.deliveryLogs.unshift({
-    id: crypto13.randomUUID(),
+    id: crypto15.randomUUID(),
     ...log,
     created_at: (/* @__PURE__ */ new Date()).toISOString()
   });
@@ -81358,8 +83759,9 @@ async function createNotification(params) {
       const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title) : title;
       const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message) : message;
       const targetUrl = buildSafeDeepLinkUrl(deepLink);
-      const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}`);
       const timestamp = Date.now();
+      const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}-${notificationId || timestamp}`);
+      const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
       const pushPayload = JSON.stringify({
         title: pushTitle,
         body: pushBody,
@@ -81367,14 +83769,21 @@ async function createNotification(params) {
         badge: "/icon-192.png",
         tag: notifTag,
         category,
+        type,
         timestamp,
+        renotify: true,
+        silent: soundMuted,
+        vibrate: soundMuted ? void 0 : [200, 80, 200],
+        soundEnabled: !soundMuted,
         requireInteraction: category === "security" || type === "error",
         data: {
           url: targetUrl,
           notificationId: notificationId || null,
           category,
+          type,
           dedupeKey: dedupeKey || null,
-          timestamp
+          timestamp,
+          soundEnabled: !soundMuted
         }
       });
       for (const sub of subs) {
@@ -81392,50 +83801,68 @@ async function createNotification(params) {
             // 12 hours TTL
           );
           pushDelivered++;
-          await query(
-            `UPDATE public.push_subscriptions SET last_used_at = NOW(), failure_count = 0 WHERE id = $1`,
-            [sub.id]
-          ).catch(() => {
-          });
-          await query(
-            `INSERT INTO public.notification_delivery_logs
-             (campaign_id, notification_id, user_id, channel, status)
-             VALUES ($1, $2, $3, 'push', 'sent')`,
-            [campaignId || null, notificationId || null, userId]
-          ).catch(() => {
+          if (isDatabaseAvailable()) {
+            await query(
+              `UPDATE public.push_subscriptions SET last_used_at = NOW(), failure_count = 0 WHERE id = $1`,
+              [sub.id]
+            ).catch(() => {
+            });
+            await query(
+              `INSERT INTO public.notification_delivery_logs
+               (campaign_id, notification_id, user_id, channel, status)
+               VALUES ($1, $2, $3, 'push', 'sent')`,
+              [campaignId || null, notificationId || null, userId]
+            ).catch(() => {
+              appendLocalDeliveryLog(userId, {
+                notification_id: notificationId || null,
+                channel: "push",
+                status: "sent",
+                error_message: null
+              });
+            });
+          } else {
             appendLocalDeliveryLog(userId, {
               notification_id: notificationId || null,
               channel: "push",
               status: "sent",
               error_message: null
             });
-          });
+          }
         } catch (pushErr) {
           pushFailed++;
           const statusCode = Number(pushErr?.statusCode) || 0;
           const safeError = statusCode ? `Web Push HTTP ${statusCode}` : "Web Push delivery error";
           if (statusCode === 404 || statusCode === 410) {
             await removePushSubscriptionById(userId, sub.id);
-          } else {
+          } else if (isDatabaseAvailable()) {
             await query(
               `UPDATE public.push_subscriptions SET failure_count = COALESCE(failure_count, 0) + 1 WHERE id = $1`,
               [sub.id]
             ).catch(() => {
             });
           }
-          await query(
-            `INSERT INTO public.notification_delivery_logs
-             (campaign_id, notification_id, user_id, channel, status, error_message)
-             VALUES ($1, $2, $3, 'push', 'failed', $4)`,
-            [campaignId || null, notificationId || null, userId, safeError]
-          ).catch(() => {
+          if (isDatabaseAvailable()) {
+            await query(
+              `INSERT INTO public.notification_delivery_logs
+               (campaign_id, notification_id, user_id, channel, status, error_message)
+               VALUES ($1, $2, $3, 'push', 'failed', $4)`,
+              [campaignId || null, notificationId || null, userId, safeError]
+            ).catch(() => {
+              appendLocalDeliveryLog(userId, {
+                notification_id: notificationId || null,
+                channel: "push",
+                status: "failed",
+                error_message: safeError
+              });
+            });
+          } else {
             appendLocalDeliveryLog(userId, {
               notification_id: notificationId || null,
               channel: "push",
               status: "failed",
               error_message: safeError
             });
-          });
+          }
         }
       }
     }
@@ -81453,6 +83880,14 @@ async function createNotification(params) {
         }
       }
       if (!recipientUser) {
+        const sbUserRes = await sbRestRequest(
+          `app_users?id=eq.${encodeURIComponent(userId)}&select=email,full_name&limit=1`
+        );
+        if (sbUserRes.ok && Array.isArray(sbUserRes.data) && sbUserRes.data[0]?.email) {
+          recipientUser = sbUserRes.data[0];
+        }
+      }
+      if (!recipientUser) {
         const fallbackUsers = await listAllAppUsersFallback();
         const found = fallbackUsers.find((u) => u.id === userId && u.email);
         if (found?.email) {
@@ -81461,36 +83896,73 @@ async function createNotification(params) {
       }
       if (recipientUser && recipientUser.email) {
         const u = recipientUser;
-        const subject = emailOptions?.subject || title;
+        let subject = emailOptions?.subject || title;
         let htmlContent = emailOptions?.html;
         let textContent = emailOptions?.text;
         if (!htmlContent) {
-          const generated = generateCampaignEmail({
-            userName: u.full_name || "My Money User",
-            userEmail: u.email,
+          const tmplSlug = campaignId ? "campaign-announcement" : "notification-alert";
+          const safeActionPath = buildSafeDeepLinkUrl(deepLink);
+          const fullActionUrl = `${(APP_CONFIG.appBaseUrl || "").replace(/\/$/, "")}${safeActionPath}`;
+          const customNotifTmpl = await getRenderedCustomTemplateIfActive(tmplSlug, {
+            user_name: u.full_name || "My Money User",
+            user_email: u.email,
             title,
             message,
             category,
-            deepLink,
-            actionText: emailOptions?.actionText || "View in App"
+            action_url: fullActionUrl,
+            action_text: emailOptions?.actionText || "View in App"
           });
-          htmlContent = generated.html;
-          textContent = generated.text;
+          if (customNotifTmpl) {
+            subject = emailOptions?.subject || customNotifTmpl.subject || title;
+            htmlContent = customNotifTmpl.html;
+            textContent = customNotifTmpl.text;
+          } else {
+            const generated = generateCampaignEmail({
+              userName: u.full_name || "My Money User",
+              userEmail: u.email,
+              title,
+              message,
+              category,
+              deepLink,
+              actionText: emailOptions?.actionText || "View in App"
+            });
+            htmlContent = generated.html;
+            textContent = generated.text;
+          }
         }
         const sent = await sendEmail({
           to: u.email,
           subject,
           html: htmlContent,
-          text: textContent || message
+          text: textContent || message,
+          emailType: `notification_${category}`,
+          recipientName: u.full_name || "My Money User",
+          userId
         });
         if (sent) {
           emailDelivered = true;
-          await query(
-            `INSERT INTO public.notification_delivery_logs
-             (campaign_id, notification_id, user_id, channel, status)
-             VALUES ($1, $2, $3, 'email', 'sent')`,
-            [campaignId || null, notificationId || null, userId]
-          ).catch(() => {
+          if (isDatabaseAvailable()) {
+            await query(
+              `INSERT INTO public.notification_delivery_logs
+               (campaign_id, notification_id, user_id, channel, status)
+               VALUES ($1, $2, $3, 'email', 'sent')`,
+              [campaignId || null, notificationId || null, userId]
+            ).catch(() => {
+            });
+          } else {
+            appendLocalDeliveryLog(userId, {
+              notification_id: notificationId || null,
+              channel: "email",
+              status: "sent",
+              error_message: null
+            });
+          }
+        } else {
+          appendLocalDeliveryLog(userId, {
+            notification_id: notificationId || null,
+            channel: "email",
+            status: "failed",
+            error_message: "Email dispatch failed or SMTP password not configured"
           });
         }
       }
@@ -81529,7 +84001,7 @@ async function notifyTransactionCreated(userId, tx) {
     deepLink,
     dedupeKey: `tx:${tx.id}`,
     tag: `tx-${tx.id}`,
-    channels: ["in_app", "push"],
+    channels: ["in_app", "push", "email"],
     metadata: { type: tx.type, section: tx.section }
   });
 }
@@ -81561,13 +84033,14 @@ async function notifyFinancialAlert(params) {
     deepLink: params.deepLink || defaultDeepLinks[params.category] || "/smart-alerts",
     dedupeKey: params.dedupeKey,
     tag: `alert-${params.dedupeKey.slice(0, 70)}`,
-    channels: ["in_app", "push"]
+    channels: ["in_app", "push", "email"]
   });
 }
 async function notifyUdharCreated(params) {
   const formattedAmount = `\u20B9${Number(params.amount).toLocaleString("en-IN")}`;
   const isGiven = params.direction === "given" || params.direction === "gave";
   const initiatorDisplayName = params.initiatorName || "Friend";
+  const initChannels = params.skipEmail ? ["in_app", "push"] : ["in_app", "push", "email"];
   await createNotification({
     userId: params.initiatorUserId,
     title: isGiven ? `Udhar Given: ${formattedAmount}` : `Udhar Taken: ${formattedAmount}`,
@@ -81578,7 +84051,7 @@ async function notifyUdharCreated(params) {
     relatedEntityId: params.transactionId,
     deepLink: "people",
     dedupeKey: `udhar-init:${params.transactionId}`,
-    channels: ["in_app", "push"]
+    channels: initChannels
   });
   if (params.recipientUserId) {
     await createNotification({
@@ -81591,7 +84064,7 @@ async function notifyUdharCreated(params) {
       relatedEntityId: params.transactionId,
       deepLink: "people",
       dedupeKey: `udhar-recip:${params.transactionId}`,
-      channels: ["in_app", "push", "email"]
+      channels: initChannels
     });
   }
 }
@@ -81603,7 +84076,7 @@ async function notifyQrConnected(params) {
     category: "udhar",
     type: "success",
     deepLink: "people",
-    channels: ["in_app", "push"]
+    channels: ["in_app", "push", "email"]
   });
   await createNotification({
     userId: params.userBId,
@@ -81668,7 +84141,7 @@ async function notifyUdharRepayment(params) {
       relatedEntityId: params.repaymentId,
       deepLink: "people",
       dedupeKey: `udhar-repay-init:${params.repaymentId}`,
-      channels: ["in_app", "push"]
+      channels: ["in_app", "push", "email"]
     });
     if (params.recipientUserId) {
       await createNotification({
@@ -81681,7 +84154,7 @@ async function notifyUdharRepayment(params) {
         relatedEntityId: params.repaymentId,
         deepLink: "people",
         dedupeKey: `udhar-repay-recip:${params.repaymentId}`,
-        channels: ["in_app", "push"]
+        channels: ["in_app", "push", "email"]
       });
     }
   }
@@ -81741,17 +84214,57 @@ async function notifyAdminNewFeedback(opts) {
 }
 async function notifyComplaintSubmitted(userId, ticket) {
   const shortId = ticket.id.slice(0, 8);
+  const isSupport = ticket.ticketType === "support";
   await createNotification({
     userId,
-    title: `Ticket Raised #${shortId}`,
-    message: `Your complaint "${ticket.subject}" has been received. Our team will review and reply within 24-48 hours.`,
-    category: "complaint",
+    title: isSupport ? `Support Request #${shortId}` : `Ticket Raised #${shortId}`,
+    message: isSupport ? `Your support request "${ticket.subject}" has been received. Our team will review and reply shortly.` : `Your complaint "${ticket.subject}" has been received. Our team will review and reply within 24-48 hours.`,
+    category: isSupport ? "support" : "complaint",
     type: "info",
     relatedEntityType: "support_ticket",
     relatedEntityId: ticket.id,
     deepLink: `help:ticket:${ticket.id}`,
-    channels: ["in_app", "email"]
+    channels: ["in_app", "push"]
   });
+}
+async function notifyAdminNewSupportTicket(opts) {
+  try {
+    let adminRows = [];
+    if (isDatabaseAvailable()) {
+      try {
+        const adminsRes = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
+        );
+        adminRows = adminsRes.rows || [];
+      } catch {
+        adminRows = [];
+      }
+    }
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers.filter((u) => ["admin", "superadmin"].includes(String(u.role || "").toLowerCase())).map((u) => ({ id: u.id }));
+    }
+    if (adminRows.length === 0) return;
+    const label = opts.ticketType === "complaint" ? "Complaint" : "Support Ticket";
+    for (const admin of adminRows) {
+      await createNotification({
+        userId: admin.id,
+        title: `New ${label} #${opts.ticketNumber}`,
+        message: `${opts.submitterName} (${opts.submitterEmail}): "${opts.subject}" [${opts.category || "General"}]`,
+        category: opts.ticketType,
+        type: opts.ticketType === "complaint" ? "warning" : "info",
+        relatedEntityType: "support_ticket",
+        relatedEntityId: opts.ticketId,
+        deepLink: "admin:support",
+        channels: ["in_app", "push"],
+        skipPreferenceCheck: true
+      }).catch(
+        (e2) => console.warn(`[notifyAdminNewSupportTicket] Failed for admin ${admin.id}:`, e2?.message)
+      );
+    }
+  } catch (e2) {
+    console.warn("[notifyAdminNewSupportTicket] Error:", e2?.message);
+  }
 }
 async function notifyAdminTicketReply(userId, ticket) {
   const shortId = ticket.id.slice(0, 8);
@@ -81831,6 +84344,15 @@ async function dispatchCampaign(campaignId) {
       }
     }
     if (userIds.length === 0) {
+      const sbSubs = await sbRestRequest("push_subscriptions?select=user_id").catch(() => ({
+        ok: false,
+        data: null
+      }));
+      if (sbSubs.ok && Array.isArray(sbSubs.data)) {
+        for (const r2 of sbSubs.data) {
+          if (r2?.user_id) userIds.push(String(r2.user_id));
+        }
+      }
       for (const dev of localInstalledDevices.values()) {
         if (dev?.is_installed && dev?.user_id) userIds.push(dev.user_id);
       }
@@ -81855,6 +84377,15 @@ async function dispatchCampaign(campaignId) {
       }
     }
     if (userIds.length === 0) {
+      const sbSubs = await sbRestRequest("push_subscriptions?select=user_id").catch(() => ({
+        ok: false,
+        data: null
+      }));
+      if (sbSubs.ok && Array.isArray(sbSubs.data)) {
+        for (const r2 of sbSubs.data) {
+          if (r2?.user_id) userIds.push(String(r2.user_id));
+        }
+      }
       for (const [uid, store] of memoryPushStore.entries()) {
         if (store.subscriptions.some((s2) => s2.is_active !== false)) {
           userIds.push(uid);
@@ -82013,7 +84544,7 @@ async function recordDeviceInstallation(params) {
     userId,
     deviceType = "desktop",
     browser = "Chrome",
-    os: os5 = "Unknown OS",
+    os: os7 = "Unknown OS",
     userAgent = "",
     isInstalled = false,
     installationStatus = isInstalled ? "installed_pwa" : "browser",
@@ -82032,7 +84563,7 @@ async function recordDeviceInstallation(params) {
       const existing = await query(
         `SELECT id, is_installed, installed_at FROM public.installed_devices
          WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
-        [userId, browser, os5, deviceType]
+        [userId, browser, os7, deviceType]
       );
       if (existing.rows.length > 0) {
         const prev2 = existing.rows[0];
@@ -82070,9 +84601,9 @@ async function recordDeviceInstallation(params) {
             recordAdminNotification({
               eventType: "pwa_install",
               title: "PWA Installed by User",
-              message: `User has installed My Money Manager on ${browser} (${os5}, ${deviceType}).`,
+              message: `User has installed My Money Manager on ${browser} (${os7}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os5, installedAt }
+              metadata: { deviceType, browser, os: os7, installedAt }
             }).catch(() => {
             });
           }
@@ -82091,7 +84622,7 @@ async function recordDeviceInstallation(params) {
             userId,
             deviceType,
             browser,
-            os5,
+            os7,
             userAgent,
             installationStatus,
             isInstalled,
@@ -82107,9 +84638,9 @@ async function recordDeviceInstallation(params) {
             recordAdminNotification({
               eventType: "pwa_install",
               title: "PWA Installed by User",
-              message: `User has installed My Money Manager on ${browser} (${os5}, ${deviceType}).`,
+              message: `User has installed My Money Manager on ${browser} (${os7}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os5, installedAt }
+              metadata: { deviceType, browser, os: os7, installedAt }
             }).catch(() => {
             });
           }
@@ -82119,7 +84650,7 @@ async function recordDeviceInstallation(params) {
     } catch {
     }
   }
-  const key = `${userId}:${browser}:${os5}:${deviceType}`;
+  const key = `${userId}:${browser}:${os7}:${deviceType}`;
   const prev = localInstalledDevices.get(key);
   if (!prev?.is_installed && isInstalled) {
     isNewInstall = true;
@@ -82129,7 +84660,7 @@ async function recordDeviceInstallation(params) {
     user_id: userId,
     device_type: deviceType,
     browser,
-    os: os5,
+    os: os7,
     user_agent: userAgent,
     installation_status: installationStatus,
     is_installed: isInstalled,
@@ -82569,7 +85100,7 @@ async function handleAdminApiRequest(req, res, pathname, method) {
               activeSessions: parseInt(activeSessionsRes.rows[0]?.count || "0"),
               openIncidents: parseInt(incidentsRes.rows[0]?.count || "0"),
               dbHealth: "Healthy (PostgreSQL Connected)",
-              emailServiceStatus: APP_CONFIG.smtp.pass ? "Operational (SMTP Configured)" : "SMTP_PASS Required"
+              emailServiceStatus: (await getEffectiveSmtpConfig()).configured ? "Operational (SMTP Configured)" : "SMTP Setup Required"
             },
             charts: {
               registrations: chartRegistrationsRes.rows,
@@ -82583,6 +85114,8 @@ async function handleAdminApiRequest(req, res, pathname, method) {
         }
       }
       const fallbackStats = await getAdminDashboardStatsFallback();
+      const smtpCfg = await getEffectiveSmtpConfig();
+      fallbackStats.stats.emailServiceStatus = smtpCfg.configured ? "Operational (SMTP Configured)" : "SMTP Setup Required";
       sendJson(res, 200, { success: true, ...fallbackStats });
       return true;
     }
@@ -82974,18 +85507,306 @@ async function handleAdminApiRequest(req, res, pathname, method) {
     if (pathname === "/api/admin/emails/templates" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
       if (!auth) return true;
-      let templates = [];
+      const templates = await listEmailTemplates();
+      sendJson(res, 200, { success: true, templates });
+      return true;
+    }
+    if (pathname === "/api/admin/emails/templates" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
+      if (!auth) return true;
+      try {
+        const body = await parseJsonBody(req);
+        const created = await createCustomEmailTemplate({
+          name: body.name,
+          slug: body.slug,
+          category: body.category || "custom",
+          subject: body.subject,
+          html_content: body.html_content,
+          text_content: body.text_content,
+          variables: Array.isArray(body.variables) ? body.variables : void 0,
+          is_active: body.is_active !== false
+        });
+        await logSecurityEvent("EMAIL_TEMPLATE_CREATED", {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { tmplId: created.id, slug: created.slug, name: created.name }
+        }).catch(() => {
+        });
+        sendJson(res, 201, {
+          success: true,
+          template: created,
+          message: "Custom email template created successfully."
+        });
+      } catch (err) {
+        sendJson(res, 400, { success: false, message: err?.message || "Failed to create template." });
+      }
+      return true;
+    }
+    const previewTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)\/preview$/);
+    if (previewTmplMatch && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const existing = await getEmailTemplateByIdOrSlug(previewTmplMatch[1]);
+      if (!existing && !body.html_content) {
+        sendJson(res, 404, { success: false, message: "Email template not found." });
+        return true;
+      }
+      const targetTemplate = {
+        subject: typeof body.subject === "string" ? body.subject : existing?.subject || "",
+        html_content: typeof body.html_content === "string" ? body.html_content : existing?.html_content || "",
+        text_content: typeof body.text_content === "string" ? body.text_content : existing?.text_content || ""
+      };
+      const sampleVars = {
+        user_name: auth.authUser.full_name || "Aarav Sharma",
+        user_email: auth.authUser.email || "user@example.com",
+        user_id: auth.authUser.id || "usr_demo_01",
+        user_phone: "+91 98765 43210",
+        feedback_id: "FB-DEMO-101",
+        ticket_number: "TKT-DEMO-101",
+        rating: "5",
+        category: "Feature Request",
+        subject: "Sample Subject Line",
+        original_subject: "Sample Ticket Subject",
+        ticket_type: "support",
+        admin_name: auth.authUser.full_name || "HackifyPro Admin",
+        admin_reply: "Thank you for reaching out. Your request has been verified and resolved.",
+        status: "resolved",
+        description: "This is a live preview of how your customized template renders with variables.",
+        message: "This is a live preview of how your customized template renders with variables.",
+        title: "Important Announcement",
+        action_text: "Open My Money Manager",
+        other_person_name: "Rohan Verma",
+        inviter_name: auth.authUser.full_name || "Aarav Sharma",
+        transaction_id: "TXN-DEMO-88",
+        amount: "2,500",
+        amount_settled: "1,250",
+        updated_balance: "1,250",
+        direction_label: "Money Given (You Lent)",
+        transaction_date: (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN"),
+        settlement_date: (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN"),
+        reset_link: `${APP_CONFIG.appBaseUrl || ""}/#reset-password`,
+        invite_link: `${APP_CONFIG.appBaseUrl || ""}/#signup`,
+        ip_address: clientIp || "127.0.0.1",
+        scheduled_date: new Date(Date.now() + 864e5).toLocaleString("en-IN"),
+        ...body.variables && typeof body.variables === "object" ? body.variables : {}
+      };
+      const rendered = await renderEmailTemplate(targetTemplate, sampleVars);
+      sendJson(res, 200, { success: true, rendered });
+      return true;
+    }
+    const resetTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)\/reset$/);
+    if (resetTmplMatch && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
+      if (!auth) return true;
+      const restored = await resetEmailTemplate(resetTmplMatch[1]);
+      if (!restored) {
+        sendJson(res, 404, { success: false, message: "Built-in template not found to reset." });
+        return true;
+      }
+      await logSecurityEvent("EMAIL_TEMPLATE_RESET", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { tmplId: restored.id, slug: restored.slug }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        template: restored,
+        message: "Template restored to HackifyPro default."
+      });
+      return true;
+    }
+    const sendTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)\/send$/);
+    if (sendTmplMatch && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
+      if (!auth) return true;
+      const tmpl = await getEmailTemplateByIdOrSlug(sendTmplMatch[1]);
+      if (!tmpl) {
+        sendJson(res, 404, { success: false, message: "Email template not found." });
+        return true;
+      }
+      const body = await parseJsonBody(req);
+      const targetMode = String(body.targetMode || "custom_email");
+      const alsoNotifyInAppAndPush = Boolean(body.alsoNotifyInAppAndPush);
+      const customVars = body.variables && typeof body.variables === "object" ? body.variables : {};
+      const targets = [];
+      let allKnownUsers = [];
       if (isDatabaseAvailable()) {
         try {
-          const tmplRes = await query("SELECT * FROM public.email_templates ORDER BY category, name ASC");
-          templates = tmplRes.rows || [];
+          const uRes = await query(
+            `SELECT id, email, full_name, status FROM public.app_users WHERE email IS NOT NULL`
+          );
+          allKnownUsers = uRes.rows || [];
         } catch {
+          allKnownUsers = [];
         }
       }
-      if (templates.length === 0) {
-        templates = await listEmailTemplatesFallback();
+      if (allKnownUsers.length === 0) {
+        allKnownUsers = await listAllAppUsersFallback();
       }
-      sendJson(res, 200, { success: true, templates });
+      const usersByEmail = /* @__PURE__ */ new Map();
+      for (const u of allKnownUsers) {
+        if (u?.email) {
+          usersByEmail.set(String(u.email).trim().toLowerCase(), u);
+        }
+      }
+      if (targetMode === "custom_email") {
+        const rawList = Array.isArray(body.emails) ? body.emails : String(body.emails || body.recipient || "").split(/[\n,;]+/).map((s2) => s2.trim()).filter(Boolean);
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const seen = /* @__PURE__ */ new Set();
+        for (const em of rawList) {
+          const clean = String(em).trim().toLowerCase();
+          if (emailRegex.test(clean) && !seen.has(clean)) {
+            seen.add(clean);
+            const matchedUser = usersByEmail.get(clean);
+            targets.push({
+              userId: matchedUser ? String(matchedUser.id) : null,
+              email: clean,
+              name: customVars.user_name || matchedUser?.full_name || clean.split("@")[0] || "Valued User"
+            });
+          }
+        }
+      } else if (targetMode === "selected_users" || targetMode === "all_active_users") {
+        const selectedIds = new Set(
+          Array.isArray(body.userIds) ? body.userIds.map((x2) => String(x2)) : []
+        );
+        const seen = /* @__PURE__ */ new Set();
+        for (const u of allKnownUsers) {
+          if (!u?.email) continue;
+          if (u.status && ["deleted", "suspended", "banned", "inactive"].includes(String(u.status).toLowerCase())) {
+            continue;
+          }
+          if (targetMode === "selected_users" && !selectedIds.has(String(u.id))) {
+            continue;
+          }
+          const cleanEmail = String(u.email).trim().toLowerCase();
+          if (seen.has(cleanEmail)) continue;
+          seen.add(cleanEmail);
+          targets.push({
+            userId: String(u.id),
+            email: cleanEmail,
+            name: String(u.full_name || cleanEmail.split("@")[0] || "User")
+          });
+        }
+      } else {
+        sendJson(res, 400, { success: false, message: "Invalid targetMode. Use custom_email, selected_users, or all_active_users." });
+        return true;
+      }
+      if (targets.length === 0) {
+        sendJson(res, 400, { success: false, message: "No valid recipient emails or users matched your selection." });
+        return true;
+      }
+      if (targets.length > 500) {
+        sendJson(res, 400, { success: false, message: "Maximum 500 recipients per template dispatch batch." });
+        return true;
+      }
+      let sentCount = 0;
+      let failedCount = 0;
+      let pushNotifiedCount = 0;
+      const errors2 = [];
+      const sanitizedCustomVars = {};
+      for (const [k, v] of Object.entries(customVars)) {
+        if (v !== void 0 && v !== null && String(v).trim() !== "") {
+          sanitizedCustomVars[k] = String(v);
+        }
+      }
+      for (const target of targets) {
+        const rendered = await renderEmailTemplate(
+          tmpl,
+          {
+            user_name: target.name,
+            user_email: target.email,
+            user_id: target.userId || "external",
+            user_phone: APP_CONFIG.supportPhone || "+91 74149 35405",
+            feedback_id: "FB-ADMIN",
+            ticket_number: "TKT-ADMIN",
+            rating: "5",
+            category: tmpl.category || "Announcement",
+            subject: tmpl.name,
+            original_subject: tmpl.name,
+            ticket_type: "support",
+            admin_name: auth.authUser.full_name || "HackifyPro Admin",
+            admin_reply: "Update from the My Money Manager team.",
+            status: "active",
+            description: tmpl.name,
+            message: tmpl.subject,
+            title: tmpl.name,
+            action_text: "Open My Money Manager",
+            other_person_name: "Contact",
+            inviter_name: auth.authUser.full_name || "My Money Manager",
+            transaction_id: "TXN-REF",
+            amount: "0",
+            amount_settled: "0",
+            updated_balance: "0",
+            direction_label: "Ledger Update",
+            transaction_date: (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN"),
+            settlement_date: (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN"),
+            reset_link: `${APP_CONFIG.appBaseUrl || ""}/#login`,
+            invite_link: `${APP_CONFIG.appBaseUrl || ""}/#signup`,
+            ip_address: clientIp || "Verified Session",
+            scheduled_date: new Date(Date.now() + 864e5).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST",
+            ...sanitizedCustomVars
+          },
+          { ensureBranded: true, brandTitle: tmpl.name }
+        );
+        const dispatchRes = await sendAdminTestEmail({
+          to: target.email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+          emailType: `template_${tmpl.slug.replace(/-/g, "_")}`,
+          recipientName: target.name
+        });
+        if (dispatchRes.success) {
+          sentCount++;
+        } else {
+          failedCount++;
+          if (dispatchRes.error && errors2.length < 3 && !errors2.includes(dispatchRes.error)) {
+            errors2.push(dispatchRes.error);
+          }
+        }
+        if (alsoNotifyInAppAndPush && target.userId) {
+          const summaryMsg = (rendered.text || "").replace(/\s+/g, " ").trim().slice(0, 220) || rendered.subject;
+          const notifRes = await createNotification({
+            userId: target.userId,
+            title: rendered.subject.slice(0, 120),
+            message: summaryMsg,
+            category: "announcement",
+            type: "announcement",
+            deepLink: "notifications",
+            channels: ["in_app", "push"],
+            skipPreferenceCheck: true
+          }).catch(() => null);
+          if (notifRes?.success) pushNotifiedCount++;
+        }
+      }
+      await logSecurityEvent("EMAIL_TEMPLATE_SENT", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: {
+          tmplId: tmpl.id,
+          slug: tmpl.slug,
+          targetMode,
+          totalTargets: targets.length,
+          sentCount,
+          failedCount,
+          pushNotifiedCount
+        }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: sentCount > 0,
+        sentCount,
+        failedCount,
+        totalTargets: targets.length,
+        pushNotifiedCount,
+        errors: errors2,
+        message: sentCount > 0 ? `Template dispatched to ${sentCount}/${targets.length} recipient(s)${pushNotifiedCount > 0 ? ` + ${pushNotifiedCount} push/in-app alert(s)` : ""}.` : errors2[0] || "Failed to send template email. Check Admin Panel \u2192 Settings \u2192 SMTP Email Service."
+      });
       return true;
     }
     const updateTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)$/);
@@ -82994,32 +85815,53 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       if (!auth) return true;
       const tmplId = updateTmplMatch[1];
       const body = await parseJsonBody(req);
-      const { subject, html_content, text_content, is_active } = body;
-      if (isDatabaseAvailable()) {
-        try {
-          await query(
-            `UPDATE public.email_templates 
-             SET subject = COALESCE($1, subject),
-                 html_content = COALESCE($2, html_content),
-                 text_content = COALESCE($3, text_content),
-                 is_active = COALESCE($4, is_active),
-                 version = version + 1,
-                 updated_at = NOW()
-             WHERE id = $5`,
-            [subject, html_content, text_content, is_active, tmplId]
-          );
-          await logSecurityEvent("EMAIL_TEMPLATE_UPDATED", {
-            userEmail: auth.authUser.email,
-            actorRole: auth.role,
-            ipAddress: clientIp,
-            details: { tmplId, subject }
-          }).catch(() => {
-          });
-        } catch {
-        }
+      const { name: name2, category, subject, html_content, text_content, variables, is_active } = body;
+      const updated = await saveEmailTemplate(tmplId, {
+        name: name2,
+        category,
+        subject,
+        html_content,
+        text_content,
+        variables,
+        is_active
+      });
+      if (!updated) {
+        sendJson(res, 404, { success: false, message: "Email template not found." });
+        return true;
       }
-      await updateEmailTemplateFallback(tmplId, { subject, html_content, text_content, is_active });
-      sendJson(res, 200, { success: true, message: "Email template updated successfully." });
+      await logSecurityEvent("EMAIL_TEMPLATE_UPDATED", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { tmplId: updated.id, slug: updated.slug, subject: updated.subject }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        template: updated,
+        message: "Email template saved and activated for live dispatch."
+      });
+      return true;
+    }
+    if (updateTmplMatch && method === "DELETE") {
+      const auth = await verifyAdminAuth(req, res, "emails.templates.manage");
+      if (!auth) return true;
+      const deleted = await deleteCustomEmailTemplate(updateTmplMatch[1]);
+      if (!deleted) {
+        sendJson(res, 400, {
+          success: false,
+          message: "Built-in system templates cannot be deleted (you can edit or disable them instead)."
+        });
+        return true;
+      }
+      await logSecurityEvent("EMAIL_TEMPLATE_DELETED", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { tmplId: updateTmplMatch[1] }
+      }).catch(() => {
+      });
+      sendJson(res, 200, { success: true, message: "Custom template deleted." });
       return true;
     }
     if (pathname === "/api/admin/emails/test" && method === "POST") {
@@ -83027,15 +85869,75 @@ async function handleAdminApiRequest(req, res, pathname, method) {
       if (!auth) return true;
       const body = await parseJsonBody(req);
       const recipient = (body.recipient || auth.authUser.email || "").trim();
-      const subject = (body.subject || "Test Email from My Money Manager Admin").trim();
-      const html = body.html_content || "<p>This is a live test transmission from the Admin Control Center.</p>";
+      const rawSubject = (body.subject || "Test Email from My Money Manager Admin").trim();
+      const rawHtml = body.html_content || "<p>This is a live test transmission from the HackifyPro Admin Control Center.</p>";
+      const rawText = body.text_content || rawHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      let matchedUser = null;
+      const cleanRecipient = recipient.toLowerCase();
+      if (isDatabaseAvailable()) {
+        try {
+          const uRes = await query(
+            "SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1",
+            [cleanRecipient]
+          );
+          matchedUser = uRes.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!matchedUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        matchedUser = fbUsers.find((u) => String(u.email || "").trim().toLowerCase() === cleanRecipient) || null;
+      }
+      const recipientName = String(body.recipientName || matchedUser?.full_name || cleanRecipient.split("@")[0] || "Valued User").trim();
+      const rendered = await renderEmailTemplate(
+        {
+          subject: rawSubject,
+          html_content: rawHtml,
+          text_content: rawText
+        },
+        {
+          user_name: recipientName,
+          user_email: recipient,
+          user_id: matchedUser?.id || auth.authUser.id || "user",
+          user_phone: APP_CONFIG.supportPhone || "+91 74149 35405",
+          feedback_id: "FB-TEST-101",
+          ticket_number: "TKT-TEST-101",
+          rating: "5",
+          category: "Announcement",
+          subject: "Account Notification",
+          original_subject: "Support Inquiry",
+          ticket_type: "support",
+          admin_name: auth.authUser.full_name || "HackifyPro Admin",
+          admin_reply: "Your request has been verified by the HackifyPro Support team.",
+          status: "active",
+          description: "This is a live test email dispatched from My Money Manager by HackifyPro.",
+          message: "This is a live test email dispatched from My Money Manager by HackifyPro.",
+          title: "My Money Manager Update",
+          action_text: "Open My Money Manager",
+          other_person_name: "Rohan Verma",
+          inviter_name: auth.authUser.full_name || "My Money Manager",
+          transaction_id: "TXN-TEST-88",
+          amount: "2,500",
+          amount_settled: "1,250",
+          updated_balance: "1,250",
+          direction_label: "Money Given (You Lent)",
+          transaction_date: (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN"),
+          settlement_date: (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN"),
+          reset_link: `${APP_CONFIG.appBaseUrl || ""}/#login`,
+          invite_link: `${APP_CONFIG.appBaseUrl || ""}/#signup`,
+          ip_address: clientIp || "Verified Session",
+          scheduled_date: new Date(Date.now() + 864e5).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST",
+          ...body.variables && typeof body.variables === "object" ? body.variables : {}
+        },
+        { ensureBranded: true, brandTitle: rawSubject }
+      );
       const emailResult = await sendAdminTestEmail({
         to: recipient,
-        subject,
-        html,
-        text: "This is a live test transmission from the Admin Control Center.",
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
         emailType: "admin_test",
-        recipientName: auth.authUser.full_name || "Administrator"
+        recipientName
       });
       sendJson(res, 200, {
         success: emailResult.success,
@@ -83356,8 +86258,7 @@ ${noteLine}` : noteLine;
         } catch {
         }
       }
-      const sbRes = await sbRestRequest("support_tickets?select=*&order=created_at.desc&limit=150");
-      let tickets = sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+      let tickets = await listSupportTicketsFallback();
       if (typeFilter && typeFilter !== "all") tickets = tickets.filter((t2) => t2.ticket_type === typeFilter);
       if (categoryFilter && categoryFilter !== "all") tickets = tickets.filter((t2) => t2.category === categoryFilter);
       if (statusFilter && statusFilter !== "all") tickets = tickets.filter((t2) => t2.status === statusFilter);
@@ -83409,12 +86310,11 @@ ${noteLine}` : noteLine;
         } catch {
         }
       }
-      const [tRes, rRes, hRes] = await Promise.all([
-        sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`),
-        sbRestRequest(`support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`),
+      const [ticket, replies, hRes] = await Promise.all([
+        getSupportTicketByIdFallback(ticketId),
+        getSupportTicketRepliesFallback(ticketId, true),
         sbRestRequest(`ticket_status_history?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.desc`)
       ]);
-      const ticket = tRes.ok && Array.isArray(tRes.data) ? tRes.data[0] : null;
       if (!ticket) {
         sendJson(res, 404, { success: false, message: "Ticket not found." });
         return true;
@@ -83422,7 +86322,7 @@ ${noteLine}` : noteLine;
       sendJson(res, 200, {
         success: true,
         ticket,
-        replies: rRes.ok && Array.isArray(rRes.data) ? rRes.data : [],
+        replies,
         statusHistory: hRes.ok && Array.isArray(hRes.data) ? hRes.data : []
       });
       return true;
@@ -83449,8 +86349,7 @@ ${noteLine}` : noteLine;
         }
       }
       if (!ticket) {
-        const sbT = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`);
-        ticket = sbT.ok && Array.isArray(sbT.data) ? sbT.data[0] || null : null;
+        ticket = await getSupportTicketByIdFallback(ticketId);
       }
       if (!ticket) {
         sendJson(res, 404, { success: false, message: "Ticket not found." });
@@ -83519,39 +86418,19 @@ ${noteLine}` : noteLine;
         }
       }
       if (!savedReply) {
-        const replyInsert = await sbRestRequest("support_ticket_replies", {
-          method: "POST",
-          headers: { Prefer: "return=representation" },
-          body: {
-            ticket_id: ticketId,
-            sender_id: auth.authUser.id,
-            sender_name: auth.authUser.full_name || "Support Staff",
-            sender_role: auth.role,
-            sender_type: "admin",
-            message,
-            message_type: isInternal ? "internal_note" : "admin_reply",
-            is_internal: isInternal,
-            email_status: emailStatus,
-            delivery_error: emailError || null
-          }
-        });
-        savedReply = replyInsert.ok && Array.isArray(replyInsert.data) ? replyInsert.data[0] : {
-          id: `reply_${Date.now()}`,
+        savedReply = await insertSupportTicketReplyFallback({
           ticket_id: ticketId,
+          sender_id: auth.authUser.id,
           sender_name: auth.authUser.full_name || "Support Staff",
+          sender_role: auth.role,
+          sender_type: "admin",
           message,
+          message_type: isInternal ? "internal_note" : "admin_reply",
           is_internal: isInternal,
           email_status: emailStatus,
-          created_at: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
-          method: "PATCH",
-          body: {
-            status: targetStatus,
-            updated_at: (/* @__PURE__ */ new Date()).toISOString(),
-            ...targetStatus === "resolved" || targetStatus === "closed" ? { resolved_at: (/* @__PURE__ */ new Date()).toISOString() } : {}
-          }
+          delivery_error: emailError || null
         });
+        await updateSupportTicketStatusFallback(ticketId, targetStatus);
       }
       if (!isInternal && ticket.user_id) {
         notifyAdminTicketReply(ticket.user_id, {
@@ -83695,8 +86574,7 @@ ${noteLine}` : noteLine;
         }
       }
       if (!updatedTicket) {
-        const sbCur = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`);
-        const current = sbCur.ok && Array.isArray(sbCur.data) ? sbCur.data[0] : null;
+        const current = await getSupportTicketByIdFallback(ticketId);
         if (!current) {
           sendJson(res, 404, { success: false, message: "Ticket not found." });
           return true;
@@ -83709,12 +86587,8 @@ ${noteLine}` : noteLine;
         if (assigned_to !== void 0) patchBody.assigned_to = assigned_to;
         if (internal_notes !== void 0) patchBody.internal_notes = internal_notes;
         if (isResolved) patchBody.resolved_at = (/* @__PURE__ */ new Date()).toISOString();
-        const sbPatch = await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
-          method: "PATCH",
-          headers: { Prefer: "return=representation" },
-          body: patchBody
-        });
-        updatedTicket = (sbPatch.ok && Array.isArray(sbPatch.data) ? sbPatch.data[0] : null) || { ...current, ...patchBody };
+        await updateSupportTicketStatusFallback(ticketId, newStatus);
+        updatedTicket = { ...current, ...patchBody };
       }
       sendJson(res, 200, { success: true, message: "Ticket updated successfully.", ticket: updatedTicket });
       return true;
@@ -83823,6 +86697,7 @@ ${noteLine}` : noteLine;
           dbStatus = "fallback";
         }
       }
+      const smtpCfg = await getEffectiveSmtpConfig();
       const memoryUsage = process.memoryUsage();
       sendJson(res, 200, {
         success: true,
@@ -83835,9 +86710,9 @@ ${noteLine}` : noteLine;
             connectionPool: dbStatus === "healthy" ? "Active (SSL Enabled)" : "HTTPS REST Fallback Active"
           },
           emailTransporter: {
-            status: APP_CONFIG.smtp.pass ? "operational" : "unconfigured",
-            provider: "Google Mail SMTP (SSL)",
-            authIdentity: APP_CONFIG.smtp.user || "hackifypro@gmail.com"
+            status: smtpCfg.configured ? "operational" : "unconfigured",
+            provider: `${smtpCfg.host}:${smtpCfg.port} (${smtpCfg.secure ? "SSL" : "TLS"})`,
+            authIdentity: smtpCfg.user || "hackifypro@gmail.com"
           },
           nodeServer: {
             uptimeSeconds: Math.floor(process.uptime()),
@@ -84147,7 +87022,7 @@ ${noteLine}` : noteLine;
             category: "announcement",
             type,
             deepLink: "dashboard",
-            channels: ["in_app", "push"],
+            channels: ["in_app", "push", "email"],
             metadata: { broadcastId: notificationRow?.id },
             skipPreferenceCheck: targetUserId === "all"
           }).catch(() => {
@@ -84385,15 +87260,22 @@ ${noteLine}` : noteLine;
         } catch {
         }
       }
-      const fbUsers = await listAllAppUsersFallback();
-      const fbCampaigns = await listCampaignsFallback();
-      const totalInApp = fbCampaigns.reduce((s2, c) => s2 + Number(c.delivered_count || 0), 0);
+      const [fbUsers, fbCampaigns, sbSubsRes, sbNotifsRes] = await Promise.all([
+        listAllAppUsersFallback(),
+        listCampaignsFallback(),
+        sbRestRequest("push_subscriptions?select=id&is_active=eq.true"),
+        sbRestRequest("user_notifications?select=id,is_read&is_deleted=eq.false")
+      ]);
+      const activePushSubscribers = sbSubsRes.ok && Array.isArray(sbSubsRes.data) ? sbSubsRes.data.length : 0;
+      const inAppRows = sbNotifsRes.ok && Array.isArray(sbNotifsRes.data) ? sbNotifsRes.data : [];
+      const totalInApp = inAppRows.length > 0 ? inAppRows.length : fbCampaigns.reduce((s2, c) => s2 + Number(c.delivered_count || 0), 0);
+      const readInApp = inAppRows.filter((r2) => Boolean(r2?.is_read)).length;
       sendJson(res, 200, {
         success: true,
         deliveryLogs: [],
-        activePushSubscribers: 0,
+        activePushSubscribers,
         inAppTotal: totalInApp,
-        inAppRead: 0,
+        inAppRead: readInApp,
         totalUsers: fbUsers.length
       });
       return true;
@@ -85324,9 +88206,8 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "ai.manage");
       if (!auth) return true;
       const runtimeAi = getRuntimeAiConfig();
-      const geminiConfigured = Boolean(
-        (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim().length > 10
-      );
+      const aiProviderStatus = await getAiProviderStatus();
+      const geminiConfigured = aiProviderStatus.configured;
       const aiModules = [
         { key: "ai_money_assistant", name: "AI Money Assistant", status: runtimeAi.enabled ? "operational" : "paused", provider: "Google Gemini Pro / Flash", requests24h: 124, avgLatencyMs: 380, errorRate: 0 },
         { key: "smart_categorization", name: "Smart Transaction Categorization", status: "operational", provider: "Rule Engine & NLP ML", requests24h: 412, avgLatencyMs: 45, errorRate: 0 },
@@ -85360,6 +88241,10 @@ ${noteLine}` : noteLine;
         } catch {
         }
       }
+      const [maintenance, appPopup] = await Promise.all([
+        getMaintenanceSettings(),
+        getAppPopupSettings()
+      ]);
       sendJson(res, 200, {
         success: true,
         settings: {
@@ -85368,7 +88253,8 @@ ${noteLine}` : noteLine;
           privacyPolicyUrl: settingsMap.privacy_url || "/#privacy-policy",
           termsUrl: settingsMap.terms_url || "/#legal=terms_of_service",
           announcementBanner: settingsMap.announcement_banner || { enabled: false, message: "" },
-          maintenanceMode: settingsMap.maintenance_mode || { enabled: false, reason: "" },
+          maintenanceMode: maintenance,
+          appDownloadPopup: appPopup,
           minAppVersion: settingsMap.min_app_version || "2.5.0"
         }
       });
@@ -85378,12 +88264,28 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "settings.manage");
       if (!auth) return true;
       const body = await parseJsonBody(req);
-      const { appName, brandOwner, announcementBanner, maintenanceMode, minAppVersion } = body;
+      const { appName, brandOwner, announcementBanner, maintenanceMode, appDownloadPopup, minAppVersion } = body;
+      if (maintenanceMode && typeof maintenanceMode === "object") {
+        await saveMaintenanceSettings(
+          {
+            isEnabled: Boolean(maintenanceMode.isEnabled ?? maintenanceMode.enabled),
+            title: maintenanceMode.title,
+            message: maintenanceMode.message ?? maintenanceMode.reason,
+            expectedRestoration: maintenanceMode.expectedRestoration
+          },
+          { id: auth.authUser.id, email: auth.authUser.email }
+        );
+      }
+      if (appDownloadPopup && typeof appDownloadPopup === "object") {
+        await saveAppPopupSettings(appDownloadPopup, {
+          id: auth.authUser.id,
+          email: auth.authUser.email
+        });
+      }
       const upserts = [
         ["app_name", JSON.stringify(appName || "My Money Manager")],
         ["brand_owner", JSON.stringify(brandOwner || "HackifyPro")],
         ["announcement_banner", JSON.stringify(announcementBanner || { enabled: false, message: "" })],
-        ["maintenance_mode", JSON.stringify(maintenanceMode || { enabled: false, reason: "" })],
         ["min_app_version", JSON.stringify(minAppVersion || "2.5.0")]
       ];
       if (isDatabaseAvailable()) {
@@ -85408,6 +88310,326 @@ ${noteLine}` : noteLine;
       sendJson(res, 200, { success: true, message: "Application settings saved successfully." });
       return true;
     }
+    if (pathname === "/api/admin/maintenance" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const maintenance = await getMaintenanceSettings();
+      sendJson(res, 200, { success: true, maintenance });
+      return true;
+    }
+    if (pathname === "/api/admin/maintenance" && (method === "PUT" || method === "POST")) {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const isEnabled = Boolean(body.isEnabled);
+      const title = String(body.title || "").trim();
+      const message = String(body.message || "").trim();
+      const expectedRestoration = String(body.expectedRestoration || "").trim();
+      if (!title || title.length < 3) {
+        sendJson(res, 400, { success: false, message: "Maintenance splash title must be at least 3 characters." });
+        return true;
+      }
+      if (!message || message.length < 10) {
+        sendJson(res, 400, { success: false, message: "Maintenance user notice message must be at least 10 characters." });
+        return true;
+      }
+      const maintenance = await saveMaintenanceSettings(
+        {
+          isEnabled,
+          title,
+          message,
+          expectedRestoration: expectedRestoration || "Within 2 hours"
+        },
+        { id: auth.authUser.id, email: auth.authUser.email }
+      );
+      await logSecurityEvent("MAINTENANCE_MODE_UPDATED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { isEnabled: maintenance.isEnabled, title: maintenance.title }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: maintenance.isEnabled ? "Maintenance mode is now ON. Normal user access is locked." : "Maintenance mode is now OFF. Website access is restored.",
+        maintenance
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/app-popup" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const appPopup = await getAppPopupSettings();
+      sendJson(res, 200, { success: true, appPopup });
+      return true;
+    }
+    if (pathname === "/api/admin/app-popup" && (method === "PUT" || method === "POST")) {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
+      const urlCheck = validateAppDownloadUrl(String(body.downloadUrl || ""));
+      if (!urlCheck.valid) {
+        sendJson(res, 400, { success: false, message: urlCheck.error || "Invalid App Download URL." });
+        return true;
+      }
+      const title = String(body.title || "Get My Money Manager App").trim();
+      const description = String(body.description || "Track expenses, Udhar & smart insights faster with our mobile app.").trim();
+      const buttonLabel = String(body.buttonLabel || "Download App").trim();
+      if (title.length < 3) {
+        sendJson(res, 400, { success: false, message: "Popup title must be at least 3 characters." });
+        return true;
+      }
+      const appPopup = await saveAppPopupSettings(
+        {
+          enabled,
+          downloadUrl: urlCheck.normalized,
+          title,
+          description,
+          buttonLabel: buttonLabel || "Download App"
+        },
+        { id: auth.authUser.id, email: auth.authUser.email }
+      );
+      await logSecurityEvent("APP_POPUP_SETTINGS_UPDATED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { enabled: appPopup.enabled, downloadUrl: appPopup.downloadUrl }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: "App Download Popup settings saved successfully.",
+        appPopup
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/api-settings" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const [keyInfo, aiStatus] = await Promise.all([
+        getMaskedGeminiApiKeyInfo(),
+        getAiProviderStatus()
+      ]);
+      sendJson(res, 200, {
+        success: true,
+        apiSettings: {
+          ...keyInfo,
+          aiModel: aiStatus.model,
+          aiEnabled: aiStatus.enabled,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS]
+        }
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/api-settings" && (method === "PUT" || method === "POST")) {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const rawApiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+      const verifyBeforeSave = Boolean(body.verifyKey);
+      const requestedModel = typeof body.aiModel === "string" ? body.aiModel.trim() : void 0;
+      const requestedAiEnabled = typeof body.aiEnabled === "boolean" ? body.aiEnabled : void 0;
+      if (requestedModel && !ALLOWED_GEMINI_MODELS.includes(requestedModel)) {
+        sendJson(res, 400, {
+          success: false,
+          message: `Unsupported AI model. Allowed models: ${ALLOWED_GEMINI_MODELS.join(", ")}`
+        });
+        return true;
+      }
+      if (requestedModel !== void 0 || requestedAiEnabled !== void 0) {
+        setRuntimeAiConfig({ model: requestedModel, enabled: requestedAiEnabled });
+        const existingCfg = loadIntegrationsConfigFallback();
+        saveIntegrationsConfigFallback({
+          ...existingCfg,
+          aiModel: requestedModel ?? existingCfg.aiModel,
+          aiEnabled: requestedAiEnabled ?? existingCfg.aiEnabled,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          updatedBy: auth.authUser.email
+        });
+      }
+      let validationResult = null;
+      if (rawApiKey) {
+        if (rawApiKey.length < 20 || rawApiKey.length > 256 || /\s/.test(rawApiKey)) {
+          sendJson(res, 400, {
+            success: false,
+            message: "Invalid API key format. Key must be 20\u2013256 non-whitespace characters."
+          });
+          return true;
+        }
+        if (verifyBeforeSave) {
+          validationResult = await validateGeminiApiKey(rawApiKey);
+          if (!validationResult.valid) {
+            sendJson(res, 400, {
+              success: false,
+              message: validationResult.message || "API key verification failed.",
+              validation: validationResult
+            });
+            return true;
+          }
+        }
+        await saveGeminiApiKey(rawApiKey, auth.authUser.email, validationResult);
+        await logSecurityEvent("ADMIN_API_KEY_UPDATED", {
+          userId: auth.authUser.id,
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { verified: Boolean(validationResult?.valid) }
+        }).catch(() => {
+        });
+      }
+      const [keyInfo, aiStatus] = await Promise.all([
+        getMaskedGeminiApiKeyInfo(),
+        getAiProviderStatus()
+      ]);
+      sendJson(res, 200, {
+        success: true,
+        message: rawApiKey ? validationResult?.valid ? "API key verified and saved securely on the server." : "API key encrypted and saved securely on the server." : "AI API configuration updated successfully.",
+        validation: validationResult,
+        apiSettings: {
+          ...keyInfo,
+          aiModel: aiStatus.model,
+          aiEnabled: aiStatus.enabled,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS]
+        }
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/api-settings/test" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const candidateKey = typeof body.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : void 0;
+      const validation = await validateGeminiApiKey(candidateKey);
+      const keyInfo = await getMaskedGeminiApiKeyInfo();
+      sendJson(res, 200, {
+        success: true,
+        validation,
+        apiSettings: keyInfo
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/api-settings/key" && method === "DELETE") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const keyInfo = await removeGeminiApiKey();
+      const aiStatus = await getAiProviderStatus();
+      await logSecurityEvent("ADMIN_API_KEY_REMOVED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: keyInfo.source === "env" ? "Saved admin key removed. Server will fall back to environment GEMINI_API_KEY." : "Saved admin API key removed.",
+        apiSettings: {
+          ...keyInfo,
+          aiModel: aiStatus.model,
+          aiEnabled: aiStatus.enabled,
+          allowedAiModels: [...ALLOWED_GEMINI_MODELS]
+        }
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/smtp-settings" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const smtpSettings = await getMaskedSmtpSettings();
+      sendJson(res, 200, { success: true, smtpSettings });
+      return true;
+    }
+    if (pathname === "/api/admin/smtp-settings" && method === "PUT") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      let smtpSettings;
+      try {
+        smtpSettings = await saveSmtpSettings(
+          {
+            host: body.host,
+            port: body.port !== void 0 ? Number(body.port) : void 0,
+            secure: typeof body.secure === "boolean" ? body.secure : void 0,
+            user: body.user,
+            pass: typeof body.pass === "string" && body.pass.trim().length > 0 ? body.pass.trim() : void 0,
+            fromEmail: body.fromEmail,
+            fromName: body.fromName,
+            enabled: typeof body.enabled === "boolean" ? body.enabled : void 0
+          },
+          { id: auth.authUser.id, email: auth.authUser.email }
+        );
+      } catch (err) {
+        sendJson(res, 400, { success: false, message: err?.message || "Invalid SMTP configuration." });
+        return true;
+      }
+      await logSecurityEvent("ADMIN_SMTP_SETTINGS_UPDATED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { host: smtpSettings.host, port: smtpSettings.port, user: smtpSettings.user, enabled: smtpSettings.enabled }
+      }).catch(() => {
+      });
+      let testResult = null;
+      if (body.verifyAndSendTest) {
+        const testRecipient = typeof body.testRecipient === "string" && body.testRecipient.trim() || auth.authUser.email || smtpSettings.user;
+        testResult = await sendAdminTestEmail({
+          to: testRecipient,
+          subject: "SMTP Verification Success \u2013 My Money Manager by HackifyPro",
+          html: `<div style="font-family: sans-serif; padding: 20px;"><h2>SMTP Email Service Active</h2><p>Your transactional email server for <strong>My Money Manager (HackifyPro)</strong> is configured and delivering emails.</p><p><strong>Host:</strong> ${smtpSettings.host}:${smtpSettings.port}<br/><strong>Sender:</strong> ${smtpSettings.fromName} &lt;${smtpSettings.fromEmail}&gt;</p></div>`,
+          recipientName: auth.authUser.full_name || "Admin",
+          emailType: "smtp_verification_test"
+        });
+      }
+      sendJson(res, 200, {
+        success: true,
+        message: body.verifyAndSendTest ? testResult?.success ? `SMTP saved and live verification email sent to ${body.testRecipient || auth.authUser.email || smtpSettings.user}!` : `SMTP settings saved, but test email failed: ${testResult?.error || "Check credentials"}` : "SMTP email settings saved securely.",
+        smtpSettings,
+        testResult
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/smtp-settings/test" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const current = await getMaskedSmtpSettings();
+      const recipient = typeof body.to === "string" && body.to.trim() || auth.authUser.email || current.user;
+      const result = await sendAdminTestEmail({
+        to: recipient,
+        subject: "Live Email Dispatch Test \u2013 My Money Manager by HackifyPro",
+        html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;"><h2 style="color: #065f46;">HackifyPro SMTP Test Passed</h2><p>Feedback, complaint, support, transaction, Udhar, and broadcast emails will now be delivered automatically from <strong>${current.fromName}</strong>.</p><p style="font-size: 12px; color: #64748b;">Sent at ${(/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</p></div>`,
+        recipientName: auth.authUser.full_name || "Administrator",
+        emailType: "admin_smtp_test"
+      });
+      sendJson(res, result.success ? 200 : 400, {
+        success: result.success,
+        message: result.success ? `Test email delivered to ${recipient}!` : result.error || "Failed to send test email.",
+        result
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/smtp-settings/password" && method === "DELETE") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const smtpSettings = await removeSavedSmtpPassword();
+      await logSecurityEvent("ADMIN_SMTP_PASSWORD_REMOVED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: "Saved SMTP password removed.",
+        smtpSettings
+      });
+      return true;
+    }
     if (pathname === "/api/admin/integrations-config" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "settings.manage");
       if (!auth) return true;
@@ -85429,16 +88651,14 @@ ${noteLine}` : noteLine;
         enabled: typeof storedConfig.aiEnabled === "boolean" ? storedConfig.aiEnabled : void 0
       });
       const runtimeAi = getRuntimeAiConfig();
-      const geminiConfigured = Boolean(
-        (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "").trim().length > 10
-      );
+      const aiProviderStatus = await getAiProviderStatus();
+      const geminiConfigured = aiProviderStatus.configured;
       const supabaseConfigured = Boolean(
         (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://frgrfajnrzqwnevhlrio.supabase.co").trim() && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim()
       );
       const databaseConfigured = isDatabaseAvailable();
-      const smtpConfigured = Boolean(
-        APP_CONFIG.smtp.host.trim() && APP_CONFIG.smtp.user.trim() && APP_CONFIG.smtp.pass.trim()
-      );
+      const effectiveSmtp = await getEffectiveSmtpConfig();
+      const smtpConfigured = effectiveSmtp.configured;
       const webPushConfigured = Boolean(
         (process.env.VAPID_PUBLIC_KEY || "").trim() && (process.env.VAPID_PRIVATE_KEY || "").trim()
       );
@@ -85575,15 +88795,15 @@ ${noteLine}` : noteLine;
 }
 
 // server/aiFinanceApi.ts
-import crypto16 from "crypto";
-import fs11 from "fs";
-import path9 from "path";
+import crypto18 from "crypto";
+import fs12 from "fs";
+import path10 from "path";
 
 // server/privacyConsentApi.ts
-import crypto15 from "crypto";
+import crypto17 from "crypto";
 
 // server/supabaseRestUdhar.ts
-import crypto14 from "crypto";
+import crypto16 from "crypto";
 
 // src/lib/sharedUdharEngine.ts
 function roundMoney(value) {
@@ -85996,7 +89216,7 @@ function getRestConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY2;
   return { url, key };
 }
-async function sbRest(path10, options = {}) {
+async function sbRest(path11, options = {}) {
   const { url, key } = getRestConfig();
   const headers = {
     apikey: key,
@@ -86009,7 +89229,7 @@ async function sbRest(path10, options = {}) {
   if (options.prefer) {
     headers["Prefer"] = options.prefer;
   }
-  const response = await fetch(`${url}/rest/v1/${path10}`, {
+  const response = await fetch(`${url}/rest/v1/${path11}`, {
     method: options.method || "GET",
     headers,
     body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
@@ -87104,8 +90324,8 @@ async function getMyQrRest(authUser) {
     pairingCode = existing.data[0].pairing_code;
     expiresAt = existing.data[0].expires_at || expiresAt;
   } else {
-    pairingToken = crypto14.randomBytes(32).toString("hex");
-    pairingCode = `MM-${crypto14.randomBytes(3).toString("hex").toUpperCase()}`;
+    pairingToken = crypto16.randomBytes(32).toString("hex");
+    pairingCode = `MM-${crypto16.randomBytes(3).toString("hex").toUpperCase()}`;
     const ins = await sbRest("qr_pairing_tokens", {
       method: "POST",
       prefer: "return=representation",
@@ -87151,8 +90371,8 @@ async function regenerateQrRest(authUser) {
     method: "PATCH",
     body: { used: true }
   });
-  const pairingToken = crypto14.randomBytes(32).toString("hex");
-  const pairingCode = `MM-${crypto14.randomBytes(3).toString("hex").toUpperCase()}`;
+  const pairingToken = crypto16.randomBytes(32).toString("hex");
+  const pairingCode = `MM-${crypto16.randomBytes(3).toString("hex").toUpperCase()}`;
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
   const ins = await sbRest("qr_pairing_tokens", {
     method: "POST",
@@ -87462,7 +90682,7 @@ async function createUdharTransactionRest(authUser, body) {
     description: description || void 0,
     attachment_url: attachmentUrl || void 0
   });
-  const linkId = crypto14.randomUUID();
+  const linkId = crypto16.randomUUID();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   if (registeredUser) {
     const counterpartDirection = direction === "gave" ? "took" : "gave";
@@ -88619,7 +91839,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source);
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto15.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto17.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, batch_id: batchId },
       language
@@ -88748,7 +91968,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source || "settings_manage_consent");
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto15.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto17.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, via_withdraw_all: true, batch_id: batchId },
       language
@@ -89282,11 +92502,11 @@ function defaultUserStore() {
     receiptRecords: []
   };
 }
-var DATA_DIR = path9.resolve(process.cwd(), ".data", "ai-finance");
+var DATA_DIR = path10.resolve(process.cwd(), ".data", "ai-finance");
 function safeUserFilePath(userId) {
-  const hash2 = crypto16.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
-  const resolved = path9.resolve(DATA_DIR, `u_${hash2}.json`);
-  if (!resolved.startsWith(DATA_DIR + path9.sep)) {
+  const hash2 = crypto18.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
+  const resolved = path10.resolve(DATA_DIR, `u_${hash2}.json`);
+  if (!resolved.startsWith(DATA_DIR + path10.sep)) {
     throw new Error("PATH_CONFINEMENT_VIOLATION");
   }
   return resolved;
@@ -89294,8 +92514,8 @@ function safeUserFilePath(userId) {
 function readUserStore(userId) {
   try {
     const filePath = safeUserFilePath(userId);
-    if (!fs11.existsSync(filePath)) return defaultUserStore();
-    const raw = fs11.readFileSync(filePath, "utf8");
+    if (!fs12.existsSync(filePath)) return defaultUserStore();
+    const raw = fs12.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return {
       ...defaultUserStore(),
@@ -89323,11 +92543,11 @@ function readUserStore(userId) {
 }
 function writeUserStore(userId, store) {
   try {
-    if (!fs11.existsSync(DATA_DIR)) {
-      fs11.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs12.existsSync(DATA_DIR)) {
+      fs12.mkdirSync(DATA_DIR, { recursive: true });
     }
     const filePath = safeUserFilePath(userId);
-    fs11.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf8");
+    fs12.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
     console.warn("[AI Finance Store] Persistence warning:", err?.message);
   }
@@ -89377,7 +92597,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
     return false;
   }
   if (pathname === "/api/ai/status" && method === "GET") {
-    sendJson3(res, 200, { success: true, status: getAiProviderStatus() });
+    sendJson3(res, 200, { success: true, status: await getAiProviderStatus() });
     return true;
   }
   const authUser = await authenticateRequest(req);
@@ -89409,7 +92629,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
             ...c,
             messages: byConv.get(c.id) || []
           }));
-          sendJson3(res, 200, { success: true, conversations, status: getAiProviderStatus() });
+          sendJson3(res, 200, { success: true, conversations, status: await getAiProviderStatus() });
           return true;
         } catch {
         }
@@ -89418,7 +92638,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       sendJson3(res, 200, {
         success: true,
         conversations: store.conversations.sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
-        status: getAiProviderStatus()
+        status: await getAiProviderStatus()
       });
       return true;
     }
@@ -89427,7 +92647,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const title = String(body.title || "New Financial Chat").trim().slice(0, 120) || "New Financial Chat";
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const conv = {
-        id: `conv_${Date.now()}_${crypto16.randomBytes(4).toString("hex")}`,
+        id: `conv_${Date.now()}_${crypto18.randomBytes(4).toString("hex")}`,
         user_id: userId,
         title,
         created_at: now,
@@ -89585,7 +92805,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       if (!conv) {
         conv = {
-          id: convId || `conv_${Date.now()}_${crypto16.randomBytes(4).toString("hex")}`,
+          id: convId || `conv_${Date.now()}_${crypto18.randomBytes(4).toString("hex")}`,
           user_id: userId,
           title: question.slice(0, 64),
           created_at: now,
@@ -89732,7 +92952,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         sendJson3(res, 200, { success: true, suggestion: det });
         return true;
       }
-      if (!getAiProviderStatus().configured) {
+      if (!(await getAiProviderStatus()).configured) {
         sendJson3(res, 200, { success: true, suggestion: det, aiFallbackSkipped: true });
         return true;
       }
@@ -89819,7 +93039,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         sendJson3(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
         return true;
       }
-      const fileHash = crypto16.createHash("sha256").update(base64Data).digest("hex");
+      const fileHash = crypto18.createHash("sha256").update(base64Data).digest("hex");
       try {
         const extraction = await extractReceiptWithOcr({ base64Image: base64Data, mimeType });
         const store = readUserStore(userId);
@@ -89861,7 +93081,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const body = await parseJsonBody3(req);
       const store = readUserStore(userId);
       const record = {
-        id: `rcpt_${Date.now()}_${crypto16.randomBytes(3).toString("hex")}`,
+        id: `rcpt_${Date.now()}_${crypto18.randomBytes(3).toString("hex")}`,
         user_id: userId,
         transaction_id: body.transaction_id || null,
         file_hash: String(body.file_hash || ""),
@@ -89909,7 +93129,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const asset = {
-        id: body.id || `asset_${Date.now()}_${crypto16.randomBytes(3).toString("hex")}`,
+        id: body.id || `asset_${Date.now()}_${crypto18.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_value: Math.round(currentValue * 100) / 100,
@@ -89965,7 +93185,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const liability = {
-        id: body.id || `liab_${Date.now()}_${crypto16.randomBytes(3).toString("hex")}`,
+        id: body.id || `liab_${Date.now()}_${crypto18.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_balance: Math.round(currentBalance * 100) / 100,
@@ -90185,7 +93405,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
 }
 
 // server/upiDetectionApi.ts
-import crypto17 from "crypto";
+import crypto19 from "crypto";
 
 // src/lib/upiDetectionEngine.ts
 var PARSER_VERSION = "1.0.0";
@@ -90943,7 +94163,7 @@ async function listUserDetected(userId) {
 async function appendDetectionEvent(userId, event) {
   const fullEvent = {
     ...event,
-    id: `upi_evt_${crypto17.randomBytes(6).toString("hex")}`,
+    id: `upi_evt_${crypto19.randomBytes(6).toString("hex")}`,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   if (!isDatabaseAvailable()) {
@@ -91569,13 +94789,6 @@ async function handleApiRequest(req, res) {
   if (!pathname.startsWith("/api/")) {
     return false;
   }
-  if (!isDatabaseAvailable() && (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/profile"))) {
-    sendJson5(res, 503, {
-      success: false,
-      message: "PostgreSQL database is not connected in this preview environment."
-    });
-    return true;
-  }
   const clientIp = getClientIp2(req);
   const userAgent = req.headers["user-agent"] || "";
   const requestOrigin = req.headers["origin"] || "";
@@ -91622,6 +94835,26 @@ async function handleApiRequest(req, res) {
     });
     return true;
   }
+  if (pathname === "/api/public/site-config" && method === "GET") {
+    try {
+      const [maintenance, appPopup] = await Promise.all([
+        getMaintenanceSettings(),
+        getAppPopupSettings()
+      ]);
+      sendJson5(res, 200, {
+        success: true,
+        maintenance,
+        appPopup
+      });
+    } catch {
+      sendJson5(res, 200, {
+        success: true,
+        maintenance: { isEnabled: false },
+        appPopup: { enabled: true, downloadUrl: "/#install" }
+      });
+    }
+    return true;
+  }
   try {
     let maskEmail = function(em) {
       if (!em || !em.includes("@")) return "***@***";
@@ -91634,9 +94867,162 @@ async function handleApiRequest(req, res) {
       if (clean.length < 6) return "****";
       return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
     };
+    if (pathname === "/api/admin/auth/login" && method === "POST") {
+      const body = await parseJsonBody5(req);
+      const email = normalizeEmail(body.email || "");
+      const password = String(body.password || "");
+      const rememberMe = Boolean(body.rememberMe);
+      const rate = checkRateLimit(`admin_login_ip:${clientIp}`, 15, 5 * 60 * 1e3);
+      if (!rate.allowed) {
+        sendJson5(res, 429, {
+          success: false,
+          message: `Too many admin login attempts. Try again in ${rate.retryAfterSec} seconds.`
+        });
+        return true;
+      }
+      if (!email || !password) {
+        sendJson5(res, 400, { success: false, message: "Admin email and password are required." });
+        return true;
+      }
+      const ADMIN_ROLES = /* @__PURE__ */ new Set(["superadmin", "admin", "support", "analyst"]);
+      const isMasterAdminEmail = (addr) => addr === "hackifypro@gmail.com" || addr === "admin@mymoney.com";
+      let userRecord = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT * FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1", [email]);
+          if (userRes.rows.length > 0) userRecord = userRes.rows[0];
+        } catch {
+        }
+      }
+      if (!userRecord) {
+        const sbRes = await sbRestRequest(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+          userRecord = sbRes.data[0];
+        }
+      }
+      if (!userRecord) {
+        await logSecurityEvent("ADMIN_LOGIN_FAILED_UNKNOWN", { userEmail: email, ipAddress: clientIp }).catch(() => {
+        });
+        sendJson5(res, 401, { success: false, message: "Invalid administrator credentials." });
+        return true;
+      }
+      if (userRecord.locked_until && new Date(userRecord.locked_until) > /* @__PURE__ */ new Date()) {
+        const remainingMin = Math.ceil((new Date(userRecord.locked_until).getTime() - Date.now()) / 6e4);
+        sendJson5(res, 429, {
+          success: false,
+          message: `Administrator account is temporarily locked. Try again in ${remainingMin} minute(s).`
+        });
+        return true;
+      }
+      if (userRecord.status === "suspended" || userRecord.status === "deactivated") {
+        sendJson5(res, 403, {
+          success: false,
+          message: `This account is ${userRecord.status}. Administrative sign-in blocked.`
+        });
+        return true;
+      }
+      const isValid = await verifyPassword(password, userRecord.password_hash);
+      if (!isValid) {
+        if (isDatabaseAvailable()) {
+          const attempts = (userRecord.failed_login_attempts || 0) + 1;
+          const lockSql = attempts >= 5 ? "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2" : "UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2";
+          await query(lockSql, [attempts, userRecord.id]).catch(() => {
+          });
+        }
+        await logSecurityEvent("ADMIN_LOGIN_FAILED_PASSWORD", {
+          userId: userRecord.id,
+          userEmail: email,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson5(res, 401, { success: false, message: "Invalid administrator credentials." });
+        return true;
+      }
+      const effectiveRole = isMasterAdminEmail(email) ? "superadmin" : String(userRecord.role || "user").toLowerCase().trim();
+      if (!ADMIN_ROLES.has(effectiveRole)) {
+        await logSecurityEvent("ADMIN_LOGIN_DENIED_NON_ADMIN", {
+          userId: userRecord.id,
+          userEmail: email,
+          actorRole: effectiveRole,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson5(res, 403, {
+          success: false,
+          code: "ADMIN_ROLE_REQUIRED",
+          message: "Access Denied: This login portal is restricted to authorized administrators only."
+        });
+        return true;
+      }
+      let sessionToken = `direct_${userRecord.id}_${Date.now()}`;
+      let expiresAt = new Date(Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1e3);
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.app_users
+             SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1
+             WHERE id = $2`,
+            [clientIp, userRecord.id]
+          );
+          const session = await createSession(userRecord.id, { rememberMe, userAgent, ipAddress: clientIp });
+          sessionToken = session.sessionToken;
+          expiresAt = session.expiresAt;
+        } catch {
+        }
+      }
+      setSessionCookie(res, sessionToken, expiresAt);
+      resetRateLimit(`admin_login_ip:${clientIp}`);
+      const sanitizedUser = sanitizeUserOutput({
+        ...userRecord,
+        role: effectiveRole
+      });
+      await logSecurityEvent("ADMIN_LOGIN_SUCCESS", {
+        userId: userRecord.id,
+        userEmail: email,
+        actorRole: effectiveRole,
+        ipAddress: clientIp
+      }).catch(() => {
+      });
+      sendJson5(res, 200, {
+        success: true,
+        message: "Administrator authenticated successfully.",
+        user: sanitizedUser,
+        sessionToken
+      });
+      return true;
+    }
     if (pathname.startsWith("/api/admin/")) {
       const handled = await handleAdminApiRequest(req, res, pathname, method);
       if (handled) return true;
+    }
+    const isMaintenanceExemptPath = pathname === "/api/health" || pathname === "/api/public/site-config" || pathname.startsWith("/api/admin/") || pathname === "/api/auth/me" || pathname === "/api/auth/logout" || pathname === "/api/auth/logout-all-devices";
+    if (!isMaintenanceExemptPath && await isMaintenanceModeEnabled()) {
+      const reqUser = await authenticateRequest(req);
+      const reqEmail = (reqUser?.email || "").toLowerCase().trim();
+      const reqRole = (reqUser?.role || "").toLowerCase().trim();
+      const isReqAdmin = Boolean(
+        reqUser && (reqEmail === "hackifypro@gmail.com" || reqEmail === "admin@mymoney.com" || ["superadmin", "admin", "support", "analyst"].includes(reqRole))
+      );
+      if (!isReqAdmin) {
+        const maint = await getMaintenanceSettings();
+        sendJson5(res, 503, {
+          success: false,
+          code: "MAINTENANCE_MODE",
+          maintenance: true,
+          message: maint.message || "Platform is currently undergoing scheduled maintenance. Please check back shortly.",
+          expectedRestoration: maint.expectedRestoration
+        });
+        return true;
+      }
+    }
+    if (!isDatabaseAvailable() && (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/profile"))) {
+      sendJson5(res, 503, {
+        success: false,
+        message: "PostgreSQL database is not connected in this preview environment."
+      });
+      return true;
     }
     if (pathname.startsWith("/api/ai/") || pathname.startsWith("/api/finance/")) {
       const handled = await handleAiFinanceRequest(req, res, pathname, method);
@@ -93761,7 +97147,7 @@ async function handleApiRequest(req, res) {
         });
         return true;
       }
-      const tokenHash = crypto18.randomBytes(32).toString("hex");
+      const tokenHash = crypto20.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1e3);
       const appBaseUrl = process.env.APP_URL || "http://localhost:3000";
       const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
@@ -93943,8 +97329,8 @@ async function handleApiRequest(req, res) {
           if (tokenRes.rows[0].expires_at) expiresAt = tokenRes.rows[0].expires_at;
         }
         if (!pairingToken) {
-          pairingToken = crypto18.randomBytes(32).toString("hex");
-          pairingCode = `MM-${crypto18.randomBytes(3).toString("hex").toUpperCase()}`;
+          pairingToken = crypto20.randomBytes(32).toString("hex");
+          pairingCode = `MM-${crypto20.randomBytes(3).toString("hex").toUpperCase()}`;
           await query(
             `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
              VALUES ($1, $2, $3, FALSE, $4)`,
@@ -94129,8 +97515,8 @@ async function handleApiRequest(req, res) {
       }
       try {
         await query("UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1", [authUser.id]);
-        const pairingToken = crypto18.randomBytes(32).toString("hex");
-        const pairingCode = `MM-${crypto18.randomBytes(3).toString("hex").toUpperCase()}`;
+        const pairingToken = crypto20.randomBytes(32).toString("hex");
+        const pairingCode = `MM-${crypto20.randomBytes(3).toString("hex").toUpperCase()}`;
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
         await query(
           `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
@@ -94535,7 +97921,7 @@ async function handleApiRequest(req, res) {
         description: description || void 0,
         attachment_url: attachmentUrl || void 0
       });
-      const linkId = crypto18.randomUUID();
+      const linkId = crypto20.randomUUID();
       let isRegisteredCounterpart = false;
       let registeredUser = null;
       if (counterpartUserId && counterpartUserId !== authUser.id) {
@@ -94626,7 +98012,8 @@ async function handleApiRequest(req, res) {
             contactName: registeredUser.full_name || "Friend",
             amount,
             direction,
-            dueDate
+            dueDate,
+            skipEmail: true
           }).catch((e2) => console.warn("[Notify Udhar Created Error]:", e2));
           sendUdharCreatedEmails({
             transactionId: userARes.rows[0].id,
@@ -95834,53 +99221,117 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 400, { success: false, message: "Detailed description is required (min 5 characters)." });
         return true;
       }
-      const uRes = await query("SELECT full_name, email, phone FROM public.app_users WHERE id = $1", [authUser.id]);
-      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || "Valued User";
-      const trustedEmail = uRes.rows[0]?.email || authUser.email;
-      const userPhone = phone || uRes.rows[0]?.phone || null;
-      const dupCheck = await query(
-        `SELECT id FROM public.support_tickets 
-         WHERE user_id = $1 AND subject = $2 AND description = $3 AND created_at > NOW() - INTERVAL '15 seconds'`,
-        [authUser.id, subject, description]
-      );
-      if (dupCheck.rows.length > 0) {
-        sendJson5(res, 409, {
-          success: false,
-          message: "Duplicate complaint detected. Your previous submission was already received!"
-        });
-        return true;
+      const useDb = isDatabaseAvailable();
+      let trustedName = authUser.full_name || "Valued User";
+      let trustedEmail = authUser.email;
+      let userPhone = phone;
+      if (useDb) {
+        const uRes = await query("SELECT full_name, email, phone FROM public.app_users WHERE id = $1", [authUser.id]);
+        trustedName = uRes.rows[0]?.full_name || trustedName;
+        trustedEmail = uRes.rows[0]?.email || trustedEmail;
+        userPhone = userPhone || uRes.rows[0]?.phone || null;
+        const dupCheck = await query(
+          `SELECT id FROM public.support_tickets 
+           WHERE user_id = $1 AND subject = $2 AND description = $3 AND created_at > NOW() - INTERVAL '15 seconds'`,
+          [authUser.id, subject, description]
+        );
+        if (dupCheck.rows.length > 0) {
+          sendJson5(res, 409, {
+            success: false,
+            message: "Duplicate complaint detected. Your previous submission was already received!"
+          });
+          return true;
+        }
+      } else {
+        const recentTickets = await listSupportTicketsFallback(authUser.id);
+        const nowMs = Date.now();
+        const isDup = recentTickets.some(
+          (t2) => t2.subject === subject && t2.description === description && t2.created_at && nowMs - new Date(t2.created_at).getTime() < 15e3
+        );
+        if (isDup) {
+          sendJson5(res, 409, {
+            success: false,
+            message: "Duplicate complaint detected. Your previous submission was already received!"
+          });
+          return true;
+        }
       }
       const ticketNumber = `CMP-${Math.floor(1e3 + Math.random() * 9e3)}`;
-      const insertRes = await query(
-        `INSERT INTO public.support_tickets (
-          ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'complaint', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
-        RETURNING *`,
-        [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, description, attachmentUrl]
-      );
-      const ticket = insertRes.rows[0];
-      sendComplaintConfirmationEmail({
-        email: trustedEmail,
-        userName: trustedName,
-        ticketNumber: ticket.ticket_number,
-        category: ticket.category,
-        subject: ticket.subject,
-        description: ticket.description
-      }).catch((e2) => console.warn("[Complaint Ack Email Error]:", e2));
-      notifyComplaintSubmitted(authUser.id, {
-        id: ticket.id,
-        subject: ticket.subject,
-        category: ticket.category
-      }).catch((e2) => console.warn("[Notify Complaint Error]:", e2));
-      await logSecurityEvent("USER_SUBMITTED_COMPLAINT", {
-        userId: authUser.id,
-        userEmail: trustedEmail,
-        details: { ticketNumber: ticket.ticket_number }
-      });
+      let ticket = null;
+      if (useDb) {
+        const insertRes = await query(
+          `INSERT INTO public.support_tickets (
+            ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 'complaint', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
+          RETURNING *`,
+          [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, description, attachmentUrl]
+        );
+        ticket = insertRes.rows[0] || null;
+      }
+      if (!ticket) {
+        ticket = await insertSupportTicketFallback({
+          ticket_number: ticketNumber,
+          user_id: authUser.id,
+          user_name: trustedName,
+          user_email: trustedEmail,
+          ticket_type: "complaint",
+          category,
+          subject,
+          description,
+          priority: "normal",
+          status: "open",
+          attachment_url: attachmentUrl
+        });
+      }
+      let userEmailSent = false;
+      try {
+        const [emailResult] = await Promise.allSettled([
+          sendComplaintSubmissionEmails({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            userId: authUser.id,
+            userName: trustedName,
+            userEmail: trustedEmail,
+            userPhone,
+            category: ticket.category,
+            subject: ticket.subject,
+            description: ticket.description,
+            submittedAt: ticket.created_at ? new Date(ticket.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST" : void 0
+          }),
+          notifyComplaintSubmitted(authUser.id, {
+            id: ticket.id,
+            subject: ticket.subject,
+            category: ticket.category,
+            ticketType: "complaint"
+          }),
+          notifyAdminNewSupportTicket({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            ticketType: "complaint",
+            submitterName: trustedName,
+            submitterEmail: trustedEmail,
+            category: ticket.category,
+            subject: ticket.subject
+          })
+        ]);
+        if (emailResult.status === "fulfilled") {
+          userEmailSent = Boolean(emailResult.value?.userEmailSent);
+        }
+      } catch (e2) {
+        console.warn("[Complaint Notification/Email Error]:", e2);
+      }
+      if (useDb) {
+        await logSecurityEvent("USER_SUBMITTED_COMPLAINT", {
+          userId: authUser.id,
+          userEmail: trustedEmail,
+          details: { ticketNumber: ticket.ticket_number, userEmailSent }
+        });
+      }
       sendJson5(res, 201, {
         success: true,
-        message: "Your complaint has been submitted successfully. Our support team will review it and get back to you.",
+        message: userEmailSent ? "Your complaint has been submitted and a confirmation email has been sent to you." : "Your complaint has been submitted successfully. Our support team will review it and get back to you.",
         ticket_number: ticket.ticket_number,
+        emailDispatched: userEmailSent,
         ticket: {
           id: ticket.id,
           ticket_number: ticket.ticket_number,
@@ -95911,34 +99362,88 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 400, { success: false, message: "Support message is required." });
         return true;
       }
-      const uRes = await query("SELECT full_name, email FROM public.app_users WHERE id = $1", [authUser.id]);
-      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || "Valued User";
-      const trustedEmail = uRes.rows[0]?.email || authUser.email;
+      const useDb = isDatabaseAvailable();
+      let trustedName = authUser.full_name || "Valued User";
+      let trustedEmail = authUser.email;
+      if (useDb) {
+        const uRes = await query("SELECT full_name, email FROM public.app_users WHERE id = $1", [authUser.id]);
+        trustedName = uRes.rows[0]?.full_name || trustedName;
+        trustedEmail = uRes.rows[0]?.email || trustedEmail;
+      }
       const ticketNumber = `SUP-${Math.floor(1e3 + Math.random() * 9e3)}`;
-      const insertRes = await query(
-        `INSERT INTO public.support_tickets (
-          ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'support', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
-        RETURNING *`,
-        [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, message, attachmentUrl]
-      );
-      const ticket = insertRes.rows[0];
-      sendSupportTicketConfirmationEmail({
-        email: trustedEmail,
-        userName: trustedName,
-        ticketNumber: ticket.ticket_number,
-        category: ticket.category,
-        subject: ticket.subject,
-        description: ticket.description
-      }).catch((e2) => console.warn("[Support Ticket Ack Email Error]:", e2));
-      await logSecurityEvent("USER_SUBMITTED_SUPPORT_TICKET", {
-        userId: authUser.id,
-        userEmail: trustedEmail,
-        details: { ticketNumber: ticket.ticket_number, category: ticket.category }
-      });
+      let ticket = null;
+      if (useDb) {
+        const insertRes = await query(
+          `INSERT INTO public.support_tickets (
+            ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 'support', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
+          RETURNING *`,
+          [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, message, attachmentUrl]
+        );
+        ticket = insertRes.rows[0] || null;
+      }
+      if (!ticket) {
+        ticket = await insertSupportTicketFallback({
+          ticket_number: ticketNumber,
+          user_id: authUser.id,
+          user_name: trustedName,
+          user_email: trustedEmail,
+          ticket_type: "support",
+          category,
+          subject,
+          description: message,
+          priority: "normal",
+          status: "open",
+          attachment_url: attachmentUrl
+        });
+      }
+      let userEmailSent = false;
+      try {
+        const [emailResult] = await Promise.allSettled([
+          sendSupportTicketSubmissionEmails({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            userId: authUser.id,
+            userName: trustedName,
+            userEmail: trustedEmail,
+            category: ticket.category,
+            subject: ticket.subject,
+            description: ticket.description,
+            submittedAt: ticket.created_at ? new Date(ticket.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST" : void 0
+          }),
+          notifyComplaintSubmitted(authUser.id, {
+            id: ticket.id,
+            subject: ticket.subject,
+            category: ticket.category,
+            ticketType: "support"
+          }),
+          notifyAdminNewSupportTicket({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            ticketType: "support",
+            submitterName: trustedName,
+            submitterEmail: trustedEmail,
+            category: ticket.category,
+            subject: ticket.subject
+          })
+        ]);
+        if (emailResult.status === "fulfilled") {
+          userEmailSent = Boolean(emailResult.value?.userEmailSent);
+        }
+      } catch (e2) {
+        console.warn("[Support Ticket Notification/Email Error]:", e2);
+      }
+      if (useDb) {
+        await logSecurityEvent("USER_SUBMITTED_SUPPORT_TICKET", {
+          userId: authUser.id,
+          userEmail: trustedEmail,
+          details: { ticketNumber: ticket.ticket_number, category: ticket.category, userEmailSent }
+        });
+      }
       sendJson5(res, 201, {
         success: true,
-        message: "Your support request has been submitted successfully.",
+        message: userEmailSent ? "Your support request has been submitted and a confirmation email has been sent to you." : "Your support request has been submitted successfully.",
+        emailDispatched: userEmailSent,
         ticket: {
           id: ticket.id,
           ticket_number: ticket.ticket_number,
@@ -95957,11 +99462,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
       if (!isDatabaseAvailable()) {
-        const fbRes = await listFeedbacksFallback({ userId: authUser.id });
+        const [fbRes, tickets] = await Promise.all([
+          listFeedbacksFallback({ userId: authUser.id }),
+          listSupportTicketsFallback(authUser.id)
+        ]);
         sendJson5(res, 200, {
           success: true,
           feedbacks: fbRes.feedbacks,
-          tickets: []
+          tickets
         });
         return true;
       }
@@ -95996,6 +99504,16 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const ticketId = userTicketDetailMatch[1];
+      if (!isDatabaseAvailable()) {
+        const ticket = await getSupportTicketByIdFallback(ticketId, authUser.id);
+        if (!ticket) {
+          sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+          return true;
+        }
+        const replies = await getSupportTicketRepliesFallback(ticketId, false);
+        sendJson5(res, 200, { success: true, ticket, replies });
+        return true;
+      }
       const ticketRes = await query(
         `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
         [ticketId, authUser.id]
@@ -96032,6 +99550,43 @@ async function handleApiRequest(req, res) {
         sendJson5(res, 400, { success: false, message: "Reply message cannot be empty." });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        const ticket2 = await getSupportTicketByIdFallback(ticketId, authUser.id);
+        if (!ticket2) {
+          sendJson5(res, 404, { success: false, message: "Ticket not found or unauthorized." });
+          return true;
+        }
+        if (ticket2.status === "closed") {
+          sendJson5(res, 400, { success: false, message: "This ticket is closed. Please submit a new ticket for further assistance." });
+          return true;
+        }
+        const senderName2 = authUser.full_name || "User";
+        const reply = await insertSupportTicketReplyFallback({
+          ticket_id: ticketId,
+          sender_id: authUser.id,
+          sender_name: senderName2,
+          sender_role: "user",
+          sender_type: "user",
+          message,
+          message_type: "user_message",
+          is_internal: false,
+          email_status: "none"
+        });
+        const newStatus2 = ticket2.status === "waiting_user" ? "in_progress" : ticket2.status;
+        await updateSupportTicketStatusFallback(ticketId, newStatus2);
+        notifyAdminNewSupportTicket({
+          ticketId: ticket2.id,
+          ticketNumber: ticket2.ticket_number,
+          ticketType: ticket2.ticket_type === "complaint" ? "complaint" : "support",
+          submitterName: senderName2,
+          submitterEmail: authUser.email,
+          category: "User Follow-Up Reply",
+          subject: `Reply on #${ticket2.ticket_number}: ${ticket2.subject}`
+        }).catch(() => {
+        });
+        sendJson5(res, 201, { success: true, message: "Reply sent successfully.", reply });
+        return true;
+      }
       const ticketRes = await query(
         `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
         [ticketId, authUser.id]
@@ -96061,6 +99616,16 @@ async function handleApiRequest(req, res) {
          WHERE id = $2`,
         [newStatus, ticketId]
       );
+      notifyAdminNewSupportTicket({
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticket_number,
+        ticketType: ticket.ticket_type === "complaint" ? "complaint" : "support",
+        submitterName: senderName,
+        submitterEmail: authUser.email,
+        category: "User Follow-Up Reply",
+        subject: `Reply on #${ticket.ticket_number}: ${ticket.subject}`
+      }).catch(() => {
+      });
       await logSecurityEvent("USER_REPLIED_TO_TICKET", {
         userId: authUser.id,
         userEmail: authUser.email,
@@ -96360,6 +99925,7 @@ async function handleApiRequest(req, res) {
         in_app_enabled: body.in_app_enabled,
         push_enabled: body.push_enabled,
         email_enabled: body.email_enabled,
+        sound_enabled: body.sound_enabled,
         notify_income: body.notify_income,
         notify_expense: body.notify_expense,
         notify_budget: body.notify_budget,
