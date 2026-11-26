@@ -17,18 +17,31 @@ import {
 } from './aiProvider.js';
 import {
   getAppPopupSettings,
+  getEffectiveSmtpConfig,
   getMaintenanceSettings,
   getMaskedGeminiApiKeyInfo,
+  getMaskedSmtpSettings,
   removeGeminiApiKey,
+  removeSavedSmtpPassword,
   saveAppPopupSettings,
   saveGeminiApiKey,
   saveMaintenanceSettings,
+  saveSmtpSettings,
   validateAppDownloadUrl,
 } from './adminSettingsStore.js';
 import {
   sendAdminReplyToTicketEmail,
   sendAdminTestEmail,
 } from './email.js';
+import {
+  listEmailTemplates,
+  getEmailTemplateByIdOrSlug,
+  saveEmailTemplate,
+  createCustomEmailTemplate,
+  resetEmailTemplate,
+  deleteCustomEmailTemplate,
+  renderEmailTemplate,
+} from './emailTemplateService.js';
 import {
   notifyAdminTicketReply,
   dispatchCampaign,
@@ -55,8 +68,6 @@ import {
   createBroadcastBannerFallback,
   listBroadcastBannersFallback,
   deactivateBroadcastBannerFallback,
-  listEmailTemplatesFallback,
-  updateEmailTemplateFallback,
   listEmailLogsFallback,
   getEmailLogByIdFallback,
   updateEmailLogFallback,
@@ -72,6 +83,11 @@ import {
   listSecurityIncidentsFallback,
   createSecurityIncidentFallback,
   getAdminDashboardStatsFallback,
+  listSupportTicketsFallback,
+  getSupportTicketByIdFallback,
+  insertSupportTicketReplyFallback,
+  getSupportTicketRepliesFallback,
+  updateSupportTicketStatusFallback,
 } from './supabaseRestFallback.js';
 
 // Helper to send JSON responses
@@ -306,7 +322,9 @@ export async function handleAdminApiRequest(
               activeSessions: parseInt(activeSessionsRes.rows[0]?.count || '0'),
               openIncidents: parseInt(incidentsRes.rows[0]?.count || '0'),
               dbHealth: 'Healthy (PostgreSQL Connected)',
-              emailServiceStatus: APP_CONFIG.smtp.pass ? 'Operational (SMTP Configured)' : 'SMTP_PASS Required',
+              emailServiceStatus: (await getEffectiveSmtpConfig()).configured
+                ? 'Operational (SMTP Configured)'
+                : 'SMTP Setup Required',
             },
             charts: {
               registrations: chartRegistrationsRes.rows,
@@ -321,6 +339,10 @@ export async function handleAdminApiRequest(
       }
 
       const fallbackStats = await getAdminDashboardStatsFallback();
+      const smtpCfg = await getEffectiveSmtpConfig();
+      fallbackStats.stats.emailServiceStatus = smtpCfg.configured
+        ? 'Operational (SMTP Configured)'
+        : 'SMTP Setup Required';
       sendJson(res, 200, { success: true, ...fallbackStats });
       return true;
     }
@@ -777,19 +799,313 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'emails.templates.manage');
       if (!auth) return true;
 
-      let templates: any[] = [];
-      if (isDatabaseAvailable()) {
-        try {
-          const tmplRes = await query('SELECT * FROM public.email_templates ORDER BY category, name ASC');
-          templates = tmplRes.rows || [];
-        } catch {}
-      }
-
-      if (templates.length === 0) {
-        templates = await listEmailTemplatesFallback();
-      }
-
+      const templates = await listEmailTemplates();
       sendJson(res, 200, { success: true, templates });
+      return true;
+    }
+
+    // Create custom template: POST /api/admin/emails/templates
+    if (pathname === '/api/admin/emails/templates' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'emails.templates.manage');
+      if (!auth) return true;
+
+      try {
+        const body = await parseJsonBody(req);
+        const created = await createCustomEmailTemplate({
+          name: body.name,
+          slug: body.slug,
+          category: body.category || 'custom',
+          subject: body.subject,
+          html_content: body.html_content,
+          text_content: body.text_content,
+          variables: Array.isArray(body.variables) ? body.variables : undefined,
+          is_active: body.is_active !== false,
+        });
+
+        await logSecurityEvent('EMAIL_TEMPLATE_CREATED', {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { tmplId: created.id, slug: created.slug, name: created.name },
+        }).catch(() => {});
+
+        sendJson(res, 201, {
+          success: true,
+          template: created,
+          message: 'Custom email template created successfully.',
+        });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, message: err?.message || 'Failed to create template.' });
+      }
+      return true;
+    }
+
+    // Preview template: POST /api/admin/emails/templates/:id/preview
+    const previewTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)\/preview$/);
+    if (previewTmplMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'emails.templates.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const existing = await getEmailTemplateByIdOrSlug(previewTmplMatch[1]);
+      if (!existing && !body.html_content) {
+        sendJson(res, 404, { success: false, message: 'Email template not found.' });
+        return true;
+      }
+
+      const targetTemplate = {
+        subject: typeof body.subject === 'string' ? body.subject : (existing?.subject || ''),
+        html_content: typeof body.html_content === 'string' ? body.html_content : (existing?.html_content || ''),
+        text_content: typeof body.text_content === 'string' ? body.text_content : (existing?.text_content || ''),
+      };
+
+      const sampleVars: Record<string, string> = {
+        user_name: auth.authUser.full_name || 'Aarav Sharma',
+        user_email: auth.authUser.email || 'user@example.com',
+        user_id: auth.authUser.id || 'usr_demo_01',
+        user_phone: '+91 98765 43210',
+        feedback_id: 'FB-DEMO-101',
+        ticket_number: 'TKT-DEMO-101',
+        rating: '5',
+        category: 'Feature Request',
+        subject: 'Sample Subject Line',
+        original_subject: 'Sample Ticket Subject',
+        ticket_type: 'support',
+        admin_name: auth.authUser.full_name || 'HackifyPro Admin',
+        admin_reply: 'Thank you for reaching out. Your request has been verified and resolved.',
+        status: 'resolved',
+        description: 'This is a live preview of how your customized template renders with variables.',
+        message: 'This is a live preview of how your customized template renders with variables.',
+        title: 'Important Announcement',
+        action_text: 'Open My Money Manager',
+        other_person_name: 'Rohan Verma',
+        inviter_name: auth.authUser.full_name || 'Aarav Sharma',
+        transaction_id: 'TXN-DEMO-88',
+        amount: '2,500',
+        amount_settled: '1,250',
+        updated_balance: '1,250',
+        direction_label: 'Money Given (You Lent)',
+        transaction_date: new Date().toLocaleDateString('en-IN'),
+        settlement_date: new Date().toLocaleDateString('en-IN'),
+        reset_link: `${APP_CONFIG.appBaseUrl || ''}/#reset-password`,
+        invite_link: `${APP_CONFIG.appBaseUrl || ''}/#signup`,
+        ip_address: clientIp || '127.0.0.1',
+        scheduled_date: new Date(Date.now() + 86400000).toLocaleString('en-IN'),
+        ...(body.variables && typeof body.variables === 'object' ? body.variables : {}),
+      };
+
+      const rendered = await renderEmailTemplate(targetTemplate, sampleVars);
+      sendJson(res, 200, { success: true, rendered });
+      return true;
+    }
+
+    // Reset built-in template: POST /api/admin/emails/templates/:id/reset
+    const resetTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)\/reset$/);
+    if (resetTmplMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'emails.templates.manage');
+      if (!auth) return true;
+
+      const restored = await resetEmailTemplate(resetTmplMatch[1]);
+      if (!restored) {
+        sendJson(res, 404, { success: false, message: 'Built-in template not found to reset.' });
+        return true;
+      }
+
+      await logSecurityEvent('EMAIL_TEMPLATE_RESET', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { tmplId: restored.id, slug: restored.slug },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        template: restored,
+        message: 'Template restored to HackifyPro default.',
+      });
+      return true;
+    }
+
+    // Send template to email(s), selected users, or all active users: POST /api/admin/emails/templates/:id/send
+    const sendTmplMatch = pathname.match(/^\/api\/admin\/emails\/templates\/([a-zA-Z0-9_-]+)\/send$/);
+    if (sendTmplMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'emails.templates.manage');
+      if (!auth) return true;
+
+      const tmpl = await getEmailTemplateByIdOrSlug(sendTmplMatch[1]);
+      if (!tmpl) {
+        sendJson(res, 404, { success: false, message: 'Email template not found.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const targetMode = String(body.targetMode || 'custom_email');
+      const alsoNotifyInAppAndPush = Boolean(body.alsoNotifyInAppAndPush);
+      const customVars: Record<string, string> =
+        body.variables && typeof body.variables === 'object' ? body.variables : {};
+
+      interface SendTarget {
+        userId?: string | null;
+        email: string;
+        name: string;
+      }
+
+      const targets: SendTarget[] = [];
+
+      if (targetMode === 'custom_email') {
+        const rawList = Array.isArray(body.emails)
+          ? body.emails
+          : String(body.emails || body.recipient || '')
+              .split(/[\n,;]+/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const seen = new Set<string>();
+        for (const em of rawList) {
+          const clean = String(em).trim().toLowerCase();
+          if (emailRegex.test(clean) && !seen.has(clean)) {
+            seen.add(clean);
+            targets.push({
+              userId: null,
+              email: clean,
+              name: customVars.user_name || clean.split('@')[0] || 'Valued User',
+            });
+          }
+        }
+      } else if (targetMode === 'selected_users' || targetMode === 'all_active_users') {
+        const selectedIds = new Set<string>(
+          Array.isArray(body.userIds) ? body.userIds.map((x: any) => String(x)) : []
+        );
+
+        let allUsers: Array<{ id: string; email: string; full_name?: string; status?: string }> = [];
+        if (isDatabaseAvailable()) {
+          try {
+            const uRes = await query(
+              `SELECT id, email, full_name, status FROM public.app_users WHERE email IS NOT NULL`
+            );
+            allUsers = uRes.rows || [];
+          } catch {
+            allUsers = [];
+          }
+        }
+        if (allUsers.length === 0) {
+          allUsers = await listAllAppUsersFallback();
+        }
+
+        const seen = new Set<string>();
+        for (const u of allUsers) {
+          if (!u?.email) continue;
+          if (u.status && ['deleted', 'suspended', 'banned', 'inactive'].includes(String(u.status).toLowerCase())) {
+            continue;
+          }
+          if (targetMode === 'selected_users' && !selectedIds.has(String(u.id))) {
+            continue;
+          }
+          const cleanEmail = String(u.email).trim().toLowerCase();
+          if (seen.has(cleanEmail)) continue;
+          seen.add(cleanEmail);
+          targets.push({
+            userId: String(u.id),
+            email: cleanEmail,
+            name: String(u.full_name || cleanEmail.split('@')[0] || 'User'),
+          });
+        }
+      } else {
+        sendJson(res, 400, { success: false, message: 'Invalid targetMode. Use custom_email, selected_users, or all_active_users.' });
+        return true;
+      }
+
+      if (targets.length === 0) {
+        sendJson(res, 400, { success: false, message: 'No valid recipient emails or users matched your selection.' });
+        return true;
+      }
+
+      if (targets.length > 500) {
+        sendJson(res, 400, { success: false, message: 'Maximum 500 recipients per template dispatch batch.' });
+        return true;
+      }
+
+      let sentCount = 0;
+      let failedCount = 0;
+      let pushNotifiedCount = 0;
+      const errors: string[] = [];
+
+      for (const target of targets) {
+        const rendered = await renderEmailTemplate(tmpl, {
+          user_name: target.name,
+          user_email: target.email,
+          user_id: target.userId || 'external',
+          title: customVars.title || tmpl.name,
+          message: customVars.message || tmpl.subject,
+          admin_name: auth.authUser.full_name || 'HackifyPro Admin',
+          ...customVars,
+        });
+
+        const dispatchRes = await sendAdminTestEmail({
+          to: target.email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+          emailType: `template_${tmpl.slug.replace(/-/g, '_')}`,
+          recipientName: target.name,
+        });
+
+        if (dispatchRes.success) {
+          sentCount++;
+        } else {
+          failedCount++;
+          if (dispatchRes.error && errors.length < 3 && !errors.includes(dispatchRes.error)) {
+            errors.push(dispatchRes.error);
+          }
+        }
+
+        if (alsoNotifyInAppAndPush && target.userId) {
+          const summaryMsg =
+            (rendered.text || '').replace(/\s+/g, ' ').trim().slice(0, 220) || rendered.subject;
+          const notifRes = await createNotification({
+            userId: target.userId,
+            title: rendered.subject.slice(0, 120),
+            message: summaryMsg,
+            category: 'announcement',
+            type: 'announcement',
+            deepLink: 'notifications',
+            channels: ['in_app', 'push'],
+            skipPreferenceCheck: true,
+          }).catch(() => null);
+          if (notifRes?.success) pushNotifiedCount++;
+        }
+      }
+
+      await logSecurityEvent('EMAIL_TEMPLATE_SENT', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: {
+          tmplId: tmpl.id,
+          slug: tmpl.slug,
+          targetMode,
+          totalTargets: targets.length,
+          sentCount,
+          failedCount,
+          pushNotifiedCount,
+        },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: sentCount > 0,
+        sentCount,
+        failedCount,
+        totalTargets: targets.length,
+        pushNotifiedCount,
+        errors,
+        message:
+          sentCount > 0
+            ? `Template dispatched to ${sentCount}/${targets.length} recipient(s)${
+                pushNotifiedCount > 0 ? ` + ${pushNotifiedCount} push/in-app alert(s)` : ''
+              }.`
+            : errors[0] || 'Failed to send template email. Check Admin Panel → Settings → SMTP Email Service.',
+      });
       return true;
     }
 
@@ -801,33 +1117,60 @@ export async function handleAdminApiRequest(
 
       const tmplId = updateTmplMatch[1];
       const body = await parseJsonBody(req);
-      const { subject, html_content, text_content, is_active } = body;
+      const { name, category, subject, html_content, text_content, variables, is_active } = body;
 
-      if (isDatabaseAvailable()) {
-        try {
-          await query(
-            `UPDATE public.email_templates 
-             SET subject = COALESCE($1, subject),
-                 html_content = COALESCE($2, html_content),
-                 text_content = COALESCE($3, text_content),
-                 is_active = COALESCE($4, is_active),
-                 version = version + 1,
-                 updated_at = NOW()
-             WHERE id = $5`,
-            [subject, html_content, text_content, is_active, tmplId]
-          );
-          await logSecurityEvent('EMAIL_TEMPLATE_UPDATED', {
-            userEmail: auth.authUser.email,
-            actorRole: auth.role,
-            ipAddress: clientIp,
-            details: { tmplId, subject },
-          }).catch(() => {});
-        } catch {}
+      const updated = await saveEmailTemplate(tmplId, {
+        name,
+        category,
+        subject,
+        html_content,
+        text_content,
+        variables,
+        is_active,
+      });
+
+      if (!updated) {
+        sendJson(res, 404, { success: false, message: 'Email template not found.' });
+        return true;
       }
 
-      await updateEmailTemplateFallback(tmplId, { subject, html_content, text_content, is_active });
+      await logSecurityEvent('EMAIL_TEMPLATE_UPDATED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { tmplId: updated.id, slug: updated.slug, subject: updated.subject },
+      }).catch(() => {});
 
-      sendJson(res, 200, { success: true, message: 'Email template updated successfully.' });
+      sendJson(res, 200, {
+        success: true,
+        template: updated,
+        message: 'Email template saved and activated for live dispatch.',
+      });
+      return true;
+    }
+
+    // Delete custom template: DELETE /api/admin/emails/templates/:id
+    if (updateTmplMatch && method === 'DELETE') {
+      const auth = await verifyAdminAuth(req, res, 'emails.templates.manage');
+      if (!auth) return true;
+
+      const deleted = await deleteCustomEmailTemplate(updateTmplMatch[1]);
+      if (!deleted) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Built-in system templates cannot be deleted (you can edit or disable them instead).',
+        });
+        return true;
+      }
+
+      await logSecurityEvent('EMAIL_TEMPLATE_DELETED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { tmplId: updateTmplMatch[1] },
+      }).catch(() => {});
+
+      sendJson(res, 200, { success: true, message: 'Custom template deleted.' });
       return true;
     }
 
@@ -845,7 +1188,7 @@ export async function handleAdminApiRequest(
         to: recipient,
         subject,
         html,
-        text: 'This is a live test transmission from the Admin Control Center.',
+        text: body.text_content || 'This is a live test transmission from the Admin Control Center.',
         emailType: 'admin_test',
         recipientName: auth.authUser.full_name || 'Administrator',
       });
@@ -1218,8 +1561,7 @@ export async function handleAdminApiRequest(
         } catch {}
       }
 
-      const sbRes = await sbRestRequest<any[]>('support_tickets?select=*&order=created_at.desc&limit=150');
-      let tickets = sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+      let tickets = await listSupportTicketsFallback();
       if (typeFilter && typeFilter !== 'all') tickets = tickets.filter((t) => t.ticket_type === typeFilter);
       if (categoryFilter && categoryFilter !== 'all') tickets = tickets.filter((t) => t.category === categoryFilter);
       if (statusFilter && statusFilter !== 'all') tickets = tickets.filter((t) => t.status === statusFilter);
@@ -1277,12 +1619,11 @@ export async function handleAdminApiRequest(
         } catch {}
       }
 
-      const [tRes, rRes, hRes] = await Promise.all([
-        sbRestRequest<any[]>(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`),
-        sbRestRequest<any[]>(`support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`),
+      const [ticket, replies, hRes] = await Promise.all([
+        getSupportTicketByIdFallback(ticketId),
+        getSupportTicketRepliesFallback(ticketId, true),
         sbRestRequest<any[]>(`ticket_status_history?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.desc`),
       ]);
-      const ticket = tRes.ok && Array.isArray(tRes.data) ? tRes.data[0] : null;
       if (!ticket) {
         sendJson(res, 404, { success: false, message: 'Ticket not found.' });
         return true;
@@ -1291,7 +1632,7 @@ export async function handleAdminApiRequest(
       sendJson(res, 200, {
         success: true,
         ticket,
-        replies: rRes.ok && Array.isArray(rRes.data) ? rRes.data : [],
+        replies,
         statusHistory: hRes.ok && Array.isArray(hRes.data) ? hRes.data : [],
       });
       return true;
@@ -1322,8 +1663,7 @@ export async function handleAdminApiRequest(
         } catch {}
       }
       if (!ticket) {
-        const sbT = await sbRestRequest<any[]>(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`);
-        ticket = sbT.ok && Array.isArray(sbT.data) ? sbT.data[0] || null : null;
+        ticket = await getSupportTicketByIdFallback(ticketId);
       }
       if (!ticket) {
         sendJson(res, 404, { success: false, message: 'Ticket not found.' });
@@ -1401,39 +1741,19 @@ export async function handleAdminApiRequest(
       }
 
       if (!savedReply) {
-        const replyInsert = await sbRestRequest<any[]>('support_ticket_replies', {
-          method: 'POST',
-          headers: { Prefer: 'return=representation' },
-          body: {
-            ticket_id: ticketId,
-            sender_id: auth.authUser.id,
-            sender_name: auth.authUser.full_name || 'Support Staff',
-            sender_role: auth.role,
-            sender_type: 'admin',
-            message,
-            message_type: isInternal ? 'internal_note' : 'admin_reply',
-            is_internal: isInternal,
-            email_status: emailStatus,
-            delivery_error: emailError || null,
-          },
-        });
-        savedReply = replyInsert.ok && Array.isArray(replyInsert.data) ? replyInsert.data[0] : {
-          id: `reply_${Date.now()}`,
+        savedReply = await insertSupportTicketReplyFallback({
           ticket_id: ticketId,
+          sender_id: auth.authUser.id,
           sender_name: auth.authUser.full_name || 'Support Staff',
+          sender_role: auth.role,
+          sender_type: 'admin',
           message,
+          message_type: isInternal ? 'internal_note' : 'admin_reply',
           is_internal: isInternal,
           email_status: emailStatus,
-          created_at: new Date().toISOString(),
-        };
-        await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
-          method: 'PATCH',
-          body: {
-            status: targetStatus,
-            updated_at: new Date().toISOString(),
-            ...(targetStatus === 'resolved' || targetStatus === 'closed' ? { resolved_at: new Date().toISOString() } : {}),
-          },
+          delivery_error: emailError || null,
         });
+        await updateSupportTicketStatusFallback(ticketId, targetStatus);
       }
 
       if (!isInternal && ticket.user_id) {
@@ -1593,8 +1913,7 @@ export async function handleAdminApiRequest(
       }
 
       if (!updatedTicket) {
-        const sbCur = await sbRestRequest<any[]>(`support_tickets?id=eq.${encodeURIComponent(ticketId)}&select=*&limit=1`);
-        const current = sbCur.ok && Array.isArray(sbCur.data) ? sbCur.data[0] : null;
+        const current = await getSupportTicketByIdFallback(ticketId);
         if (!current) {
           sendJson(res, 404, { success: false, message: 'Ticket not found.' });
           return true;
@@ -1608,12 +1927,8 @@ export async function handleAdminApiRequest(
         if (internal_notes !== undefined) patchBody.internal_notes = internal_notes;
         if (isResolved) patchBody.resolved_at = new Date().toISOString();
 
-        const sbPatch = await sbRestRequest<any[]>(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=representation' },
-          body: patchBody,
-        });
-        updatedTicket = (sbPatch.ok && Array.isArray(sbPatch.data) ? sbPatch.data[0] : null) || { ...current, ...patchBody };
+        await updateSupportTicketStatusFallback(ticketId, newStatus);
+        updatedTicket = { ...current, ...patchBody };
       }
 
       sendJson(res, 200, { success: true, message: 'Ticket updated successfully.', ticket: updatedTicket });
@@ -1744,6 +2059,7 @@ export async function handleAdminApiRequest(
         }
       }
 
+      const smtpCfg = await getEffectiveSmtpConfig();
       const memoryUsage = process.memoryUsage();
       sendJson(res, 200, {
         success: true,
@@ -1756,9 +2072,9 @@ export async function handleAdminApiRequest(
             connectionPool: dbStatus === 'healthy' ? 'Active (SSL Enabled)' : 'HTTPS REST Fallback Active',
           },
           emailTransporter: {
-            status: APP_CONFIG.smtp.pass ? 'operational' : 'unconfigured',
-            provider: 'Google Mail SMTP (SSL)',
-            authIdentity: APP_CONFIG.smtp.user || 'hackifypro@gmail.com',
+            status: smtpCfg.configured ? 'operational' : 'unconfigured',
+            provider: `${smtpCfg.host}:${smtpCfg.port} (${smtpCfg.secure ? 'SSL' : 'TLS'})`,
+            authIdentity: smtpCfg.user || 'hackifypro@gmail.com',
           },
           nodeServer: {
             uptimeSeconds: Math.floor(process.uptime()),
@@ -2118,7 +2434,7 @@ export async function handleAdminApiRequest(
             category: 'announcement',
             type: type as any,
             deepLink: 'dashboard',
-            channels: ['in_app', 'push'],
+            channels: ['in_app', 'push', 'email'],
             metadata: { broadcastId: notificationRow?.id },
             skipPreferenceCheck: targetUserId === 'all',
           }).catch(() => {});
@@ -3892,6 +4208,122 @@ export async function handleAdminApiRequest(
     }
 
     // =========================================================
+    // 18c-2. ADMIN ENCRYPTED SMTP EMAIL CONFIGURATION
+    // =========================================================
+    if (pathname === '/api/admin/smtp-settings' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const smtpSettings = await getMaskedSmtpSettings();
+      sendJson(res, 200, { success: true, smtpSettings });
+      return true;
+    }
+
+    if (pathname === '/api/admin/smtp-settings' && method === 'PUT') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      let smtpSettings;
+      try {
+        smtpSettings = await saveSmtpSettings(
+          {
+            host: body.host,
+            port: body.port !== undefined ? Number(body.port) : undefined,
+            secure: typeof body.secure === 'boolean' ? body.secure : undefined,
+            user: body.user,
+            pass: typeof body.pass === 'string' && body.pass.trim().length > 0 ? body.pass.trim() : undefined,
+            fromEmail: body.fromEmail,
+            fromName: body.fromName,
+            enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
+          },
+          { id: auth.authUser.id, email: auth.authUser.email }
+        );
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, message: err?.message || 'Invalid SMTP configuration.' });
+        return true;
+      }
+
+      await logSecurityEvent('ADMIN_SMTP_SETTINGS_UPDATED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { host: smtpSettings.host, port: smtpSettings.port, user: smtpSettings.user, enabled: smtpSettings.enabled },
+      }).catch(() => {});
+
+      let testResult: { success: boolean; error?: string; messageId?: string } | null = null;
+      if (body.verifyAndSendTest) {
+        const testRecipient = (typeof body.testRecipient === 'string' && body.testRecipient.trim()) || auth.authUser.email || smtpSettings.user;
+        testResult = await sendAdminTestEmail({
+          to: testRecipient,
+          subject: 'SMTP Verification Success – My Money Manager by HackifyPro',
+          html: `<div style="font-family: sans-serif; padding: 20px;"><h2>SMTP Email Service Active</h2><p>Your transactional email server for <strong>My Money Manager (HackifyPro)</strong> is configured and delivering emails.</p><p><strong>Host:</strong> ${smtpSettings.host}:${smtpSettings.port}<br/><strong>Sender:</strong> ${smtpSettings.fromName} &lt;${smtpSettings.fromEmail}&gt;</p></div>`,
+          recipientName: auth.authUser.full_name || 'Admin',
+          emailType: 'smtp_verification_test',
+        });
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: body.verifyAndSendTest
+          ? testResult?.success
+            ? `SMTP saved and live verification email sent to ${body.testRecipient || auth.authUser.email || smtpSettings.user}!`
+            : `SMTP settings saved, but test email failed: ${testResult?.error || 'Check credentials'}`
+          : 'SMTP email settings saved securely.',
+        smtpSettings,
+        testResult,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/smtp-settings/test' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const current = await getMaskedSmtpSettings();
+      const recipient = (typeof body.to === 'string' && body.to.trim()) || auth.authUser.email || current.user;
+
+      const result = await sendAdminTestEmail({
+        to: recipient,
+        subject: 'Live Email Dispatch Test – My Money Manager by HackifyPro',
+        html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;"><h2 style="color: #065f46;">HackifyPro SMTP Test Passed</h2><p>Feedback, complaint, support, transaction, Udhar, and broadcast emails will now be delivered automatically from <strong>${current.fromName}</strong>.</p><p style="font-size: 12px; color: #64748b;">Sent at ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p></div>`,
+        recipientName: auth.authUser.full_name || 'Administrator',
+        emailType: 'admin_smtp_test',
+      });
+
+      sendJson(res, result.success ? 200 : 400, {
+        success: result.success,
+        message: result.success
+          ? `Test email delivered to ${recipient}!`
+          : result.error || 'Failed to send test email.',
+        result,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/smtp-settings/password' && method === 'DELETE') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const smtpSettings = await removeSavedSmtpPassword();
+      await logSecurityEvent('ADMIN_SMTP_PASSWORD_REMOVED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Saved SMTP password removed.',
+        smtpSettings,
+      });
+      return true;
+    }
+
+    // =========================================================
     // 18d. SERVER-SIDE API & INTEGRATIONS CONFIG (NON-SECRET)
     // =========================================================
     if (pathname === '/api/admin/integrations-config' && method === 'GET') {
@@ -3932,11 +4364,8 @@ export async function handleAdminApiRequest(
         ).trim()
       );
       const databaseConfigured = isDatabaseAvailable();
-      const smtpConfigured = Boolean(
-        APP_CONFIG.smtp.host.trim() &&
-        APP_CONFIG.smtp.user.trim() &&
-        APP_CONFIG.smtp.pass.trim()
-      );
+      const effectiveSmtp = await getEffectiveSmtpConfig();
+      const smtpConfigured = effectiveSmtp.configured;
       const webPushConfigured = Boolean(
         (process.env.VAPID_PUBLIC_KEY || '').trim() &&
         (process.env.VAPID_PRIVATE_KEY || '').trim()

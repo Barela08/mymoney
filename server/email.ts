@@ -4,13 +4,24 @@ import path from 'path';
 import { APP_CONFIG } from './config.js';
 import { query, isDatabaseAvailable } from './db.js';
 import { logSecurityEvent } from './security.js';
-import { recordEmailLogFallback } from './supabaseRestFallback.js';
+import {
+  recordEmailLogFallback,
+  updateEmailLogFallback,
+  listAllAppUsersFallback,
+} from './supabaseRestFallback.js';
+import {
+  getEffectiveSmtpConfig,
+  getEffectiveSupportAlertEmail,
+} from './adminSettingsStore.js';
+import { getRenderedCustomTemplateIfActive } from './emailTemplateService.js';
 import { generateWelcomeEmail } from './welcomeEmailTemplate.js';
 import {
   generateFeedbackReceivedEmail,
   generateFeedbackAdminNotificationEmail,
   generateComplaintReceivedEmail,
+  generateComplaintAdminNotificationEmail,
   generateSupportTicketReceivedEmail,
+  generateSupportTicketAdminNotificationEmail,
   generateAdminReplyEmail,
 } from './supportEmailTemplates.js';
 import {
@@ -20,15 +31,19 @@ import {
   generateUdharUpdatedEmail,
 } from './udharEmailTemplates.js';
 
-const transporter = nodemailer.createTransport({
-  host: APP_CONFIG.smtp.host,
-  port: APP_CONFIG.smtp.port,
-  secure: APP_CONFIG.smtp.secure,
-  auth: {
-    user: APP_CONFIG.smtp.user,
-    pass: APP_CONFIG.smtp.pass,
-  },
-});
+async function getEmailTransporterAndConfig() {
+  const cfg = await getEffectiveSmtpConfig();
+  const transporter = nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: {
+      user: cfg.user,
+      pass: cfg.pass,
+    },
+  });
+  return { transporter, cfg };
+}
 
 interface EmailOptions {
   to: string;
@@ -38,6 +53,7 @@ interface EmailOptions {
   attachments?: any[];
   emailType?: string;
   recipientName?: string;
+  userId?: string;
 }
 
 /**
@@ -52,25 +68,190 @@ function sanitizeErrorMessage(err: any): string {
     .slice(0, 500);
 }
 
+async function createDispatchLogRecord(params: {
+  userId?: string | null;
+  email: string | null;
+  emailType: string;
+  idempotencyKey: string;
+  recipientName?: string | null;
+  subject: string;
+  referenceId?: string | null;
+  triggerEvent: string;
+  metadata?: Record<string, any>;
+  status?: 'pending' | 'sent' | 'failed' | 'skipped_not_registered' | 'skipped_unverified';
+  maxAttempts?: number;
+  lastError?: string | null;
+  upsertIdempotency?: boolean;
+}): Promise<string> {
+  if (isDatabaseAvailable()) {
+    try {
+      const conflictClause = params.upsertIdempotency
+        ? `ON CONFLICT (idempotency_key) DO UPDATE SET status = EXCLUDED.status, last_error = EXCLUDED.last_error, updated_at = NOW()`
+        : '';
+      const res = await query(
+        `INSERT INTO public.email_dispatch_logs (
+          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
+          last_error, reference_id, trigger_event, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, $12)
+        ${conflictClause}
+        RETURNING id`,
+        [
+          params.userId || null,
+          params.email,
+          params.emailType,
+          params.idempotencyKey,
+          params.recipientName || null,
+          params.subject,
+          params.status || 'pending',
+          params.maxAttempts ?? 3,
+          params.lastError || null,
+          params.referenceId || null,
+          params.triggerEvent,
+          JSON.stringify(params.metadata || {}),
+        ]
+      );
+      if (res.rows[0]?.id) {
+        return res.rows[0].id;
+      }
+    } catch (dbErr) {
+      console.warn(`[Email Dispatch Log Insert Warn - ${params.emailType}]:`, sanitizeErrorMessage(dbErr));
+    }
+  }
+
+  const fbRow = await recordEmailLogFallback({
+    user_id: params.userId || null,
+    email: params.email || '(none)',
+    email_type: params.emailType,
+    recipient_name: params.recipientName || '',
+    subject: params.subject,
+    status: params.status || 'pending',
+    attempts: 0,
+    last_error: params.lastError || null,
+    trigger_event: params.triggerEvent,
+  }).catch(() => null);
+
+  return fbRow?.id || `fb_${params.emailType}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+async function lookupRegisteredUser(opts: { userId?: string | null; email?: string | null }): Promise<{
+  id: string;
+  full_name: string;
+  email: string;
+} | null> {
+  if (isDatabaseAvailable()) {
+    try {
+      if (opts.userId) {
+        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [opts.userId]);
+        if (uRes.rows.length > 0 && uRes.rows[0].email) return uRes.rows[0];
+      } else if (opts.email) {
+        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1', [
+          opts.email.trim().toLowerCase(),
+        ]);
+        if (uRes.rows.length > 0 && uRes.rows[0].email) return uRes.rows[0];
+      }
+    } catch {
+      // fall through to REST fallback
+    }
+  }
+
+  try {
+    const users = await listAllAppUsersFallback();
+    if (opts.userId) {
+      const found = users.find((u) => u.id === opts.userId && u.email);
+      if (found) return { id: found.id, full_name: found.full_name || 'User', email: found.email };
+    } else if (opts.email) {
+      const clean = opts.email.trim().toLowerCase();
+      const found = users.find((u) => String(u.email || '').trim().toLowerCase() === clean);
+      if (found) return { id: found.id, full_name: found.full_name || 'User', email: found.email };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 /**
- * Low-level email sender via Nodemailer
+ * Low-level email sender returning full diagnostics
  */
-export async function sendEmail(opts: EmailOptions): Promise<boolean> {
+export async function sendEmailDetailed(
+  opts: EmailOptions
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  const to = (opts.to || '').trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return { success: false, error: 'Invalid recipient email address.' };
+  }
+
+  const { transporter, cfg } = await getEmailTransporterAndConfig();
+  if (!cfg.enabled) {
+    return { success: false, error: 'SMTP Email Dispatch is disabled in Admin Settings.' };
+  }
+  if (!cfg.configured) {
+    return {
+      success: false,
+      error:
+        'SMTP credentials are not configured. Set SMTP password in Admin Panel → Settings → SMTP Email Configuration (or SMTP_PASS env var).',
+    };
+  }
+
   try {
     const info = await transporter.sendMail({
-      from: APP_CONFIG.smtp.from,
-      to: opts.to,
+      from: cfg.from,
+      to,
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
       attachments: opts.attachments,
     });
-    console.log(`[Email Sent] MessageId: ${info.messageId} to ${opts.to} - Subject: "${opts.subject}"`);
-    return true;
+    console.log(`[Email Sent] MessageId: ${info.messageId} to ${to} - Subject: "${opts.subject}"`);
+    return { success: true, messageId: info.messageId };
   } catch (err: any) {
-    console.error(`[Email Failed] To: ${opts.to} - Error:`, sanitizeErrorMessage(err));
-    return false;
+    const safeErr = sanitizeErrorMessage(err);
+    console.error(`[Email Failed] To: ${to} - Error:`, safeErr);
+    return { success: false, error: safeErr };
   }
+}
+
+/**
+ * Low-level email sender via Nodemailer
+ */
+export async function sendEmail(opts: EmailOptions): Promise<boolean> {
+  const result = await sendEmailDetailed(opts);
+
+  if (opts.emailType) {
+    const logStatus = result.success ? 'sent' : 'failed';
+    if (isDatabaseAvailable()) {
+      await query(
+        `INSERT INTO public.email_dispatch_logs (
+          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, trigger_event, sent_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, 3, $8, $9, ${result.success ? 'NOW()' : 'NULL'})`,
+        [
+          opts.userId || null,
+          opts.to,
+          opts.emailType,
+          `${opts.emailType}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+          opts.recipientName || null,
+          opts.subject,
+          logStatus,
+          result.error || null,
+          opts.emailType,
+        ]
+      ).catch(() => {});
+    } else {
+      await recordEmailLogFallback({
+        user_id: opts.userId || null,
+        email: opts.to,
+        email_type: opts.emailType,
+        recipient_name: opts.recipientName || '',
+        subject: opts.subject,
+        status: logStatus,
+        attempts: 1,
+        last_error: result.error || null,
+        trigger_event: opts.emailType,
+      }).catch(() => {});
+    }
+  }
+
+  return result.success;
 }
 
 /**
@@ -127,16 +308,22 @@ export async function sendAdminTestEmail(opts: {
     }).catch(() => {});
   };
 
-  if (!APP_CONFIG.smtp.pass || !APP_CONFIG.smtp.user) {
+  const { transporter, cfg } = await getEmailTransporterAndConfig();
+  if (!cfg.enabled) {
+    const errMsg = 'SMTP email dispatch is currently disabled in Admin Settings.';
+    await recordLog('failed', errMsg);
+    return { success: false, error: errMsg };
+  }
+  if (!cfg.configured) {
     const errMsg =
-      'SMTP_PASS is not configured on the server. Add SMTP_USER and SMTP_PASS in Settings > Secrets or Vercel Environment Variables.';
+      'SMTP password is not configured on the server. Enter your Gmail App Password / SMTP credentials in Admin Panel → Settings → SMTP Email Configuration (or set SMTP_USER & SMTP_PASS environment variables).';
     await recordLog('failed', errMsg);
     return { success: false, error: errMsg };
   }
 
   try {
     const info = await transporter.sendMail({
-      from: APP_CONFIG.smtp.from,
+      from: cfg.from,
       to: recipient,
       subject,
       html: opts.html,
@@ -207,7 +394,19 @@ export async function sendPasswordResetEmail(email: string, name: string, resetL
     </html>
   `;
   const text = `Hello ${name || 'User'},\n\nWe received a request to reset your password for ${APP_CONFIG.appName} (${email}).\n\nReset your password using this link (expires in 15 minutes):\n${resetLink}\n\nIf you did not request this, please ignore this email.\n\n${APP_CONFIG.appName} Security Team`;
-  return sendEmail({ to: email, subject, html, text });
+  const custom = await getRenderedCustomTemplateIfActive('password-reset', {
+    user_name: name || 'User',
+    user_email: email,
+    reset_link: resetLink,
+  });
+  return sendEmail({
+    to: email,
+    subject: custom?.subject || subject,
+    html: custom?.html || html,
+    text: custom?.text || text,
+    emailType: 'password_reset',
+    recipientName: name || 'User',
+  });
 }
 
 // -------------------------------------------------------------
@@ -257,7 +456,20 @@ export async function sendPasswordChangedEmail(email: string, name: string, ipAd
     </html>
   `;
   const text = `Hello ${name || 'User'},\n\nYour account password for ${APP_CONFIG.appName} (${email}) was updated on ${now} IST.\n\nIf you did not perform this action, please contact support immediately.\n\n${APP_CONFIG.appName} Security`;
-  return sendEmail({ to: email, subject, html, text });
+  const custom = await getRenderedCustomTemplateIfActive('password-changed', {
+    user_name: name || 'User',
+    user_email: email,
+    date: `${now} IST`,
+    ip_address: ipAddress || 'Unknown',
+  });
+  return sendEmail({
+    to: email,
+    subject: custom?.subject || subject,
+    html: custom?.html || html,
+    text: custom?.text || text,
+    emailType: 'password_changed',
+    recipientName: name || 'User',
+  });
 }
 
 // -------------------------------------------------------------
@@ -288,7 +500,7 @@ async function executeEmailDispatch(
   userId?: string
 ): Promise<boolean> {
   try {
-    const success = await sendEmail({
+    const res = await sendEmailDetailed({
       to: email,
       subject,
       html,
@@ -296,58 +508,71 @@ async function executeEmailDispatch(
       attachments,
     });
 
-    if (success) {
-      // Update delivery record: SENT
-      try {
-        await query(
-          `UPDATE public.email_dispatch_logs 
-           SET status = 'sent', attempts = $1, sent_at = NOW(), last_error = NULL, updated_at = NOW() 
-           WHERE id = $2`,
-          [currentAttempt, logId]
-        );
-      } catch (dbErr) {
-        console.warn('[Welcome Email DB Update Warn]:', dbErr);
+    if (res.success) {
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.email_dispatch_logs 
+             SET status = 'sent', attempts = $1, sent_at = NOW(), last_error = NULL, updated_at = NOW() 
+             WHERE id = $2`,
+            [currentAttempt, logId]
+          );
+        } catch (dbErr) {
+          console.warn('[Email Dispatch DB Update Warn]:', dbErr);
+        }
       }
+      await updateEmailLogFallback(logId, {
+        status: 'sent',
+        attempts: currentAttempt,
+        sent_at: new Date().toISOString(),
+        last_error: null,
+      }).catch(() => {});
 
-      await logSecurityEvent('WELCOME_EMAIL_DELIVERED', {
+      await logSecurityEvent('EMAIL_DELIVERED', {
         userId,
         userEmail: email,
-        details: { logId, attempts: currentAttempt },
+        details: { logId, subject, attempts: currentAttempt },
       }).catch(() => {});
 
       return true;
     } else {
-      throw new Error('SMTP transport returned false');
+      throw new Error(res.error || 'SMTP transport failed');
     }
   } catch (err: any) {
     const safeErr = sanitizeErrorMessage(err);
-    const isFinalAttempt = currentAttempt >= maxAttempts;
+    const isFinalAttempt = currentAttempt >= maxAttempts || safeErr.includes('not configured') || safeErr.includes('disabled');
     const nextStatus = isFinalAttempt ? 'failed' : 'retrying';
 
-    try {
-      await query(
-        `UPDATE public.email_dispatch_logs 
-         SET status = $1, attempts = $2, last_error = $3, updated_at = NOW() 
-         WHERE id = $4`,
-        [nextStatus, currentAttempt, safeErr, logId]
-      );
-    } catch (dbErr) {
-      console.warn('[Welcome Email DB Error Warn]:', dbErr);
+    if (isDatabaseAvailable()) {
+      try {
+        await query(
+          `UPDATE public.email_dispatch_logs 
+           SET status = $1, attempts = $2, last_error = $3, updated_at = NOW() 
+           WHERE id = $4`,
+          [nextStatus, currentAttempt, safeErr, logId]
+        );
+      } catch (dbErr) {
+        console.warn('[Email Dispatch DB Error Warn]:', dbErr);
+      }
     }
+    await updateEmailLogFallback(logId, {
+      status: nextStatus,
+      attempts: currentAttempt,
+      last_error: safeErr,
+    }).catch(() => {});
 
     if (isFinalAttempt) {
-      console.error(`[Welcome Email Failed Permanently] Recipient: ${email}, attempts: ${currentAttempt}, error: ${safeErr}`);
-      await logSecurityEvent('WELCOME_EMAIL_FAILED_PERMANENTLY', {
+      console.error(`[Email Failed Permanently] Recipient: ${email}, attempts: ${currentAttempt}, error: ${safeErr}`);
+      await logSecurityEvent('EMAIL_FAILED_PERMANENTLY', {
         userId,
         userEmail: email,
-        details: { logId, attempts: currentAttempt, error: safeErr },
+        details: { logId, subject, attempts: currentAttempt, error: safeErr },
       }).catch(() => {});
       return false;
     } else {
-      // Schedule exponential/backoff retry safely in the background
-      const backoffMs = Math.min(1000 * Math.pow(2, currentAttempt), 30000); // 2s, 4s, etc.
-      console.warn(`[Welcome Email Scheduling Retry] Recipient: ${email}, next attempt: ${currentAttempt + 1} in ${backoffMs}ms`);
-      
+      const backoffMs = Math.min(1000 * Math.pow(2, currentAttempt), 30000);
+      console.warn(`[Email Scheduling Retry] Recipient: ${email}, next attempt: ${currentAttempt + 1} in ${backoffMs}ms`);
+
       setTimeout(() => {
         executeEmailDispatch(
           logId,
@@ -360,7 +585,7 @@ async function executeEmailDispatch(
           maxAttempts,
           userId
         ).catch((retryErr) => {
-          console.error('[Welcome Email Background Retry Uncaught]:', sanitizeErrorMessage(retryErr));
+          console.error('[Email Background Retry Uncaught]:', sanitizeErrorMessage(retryErr));
         });
       }, backoffMs);
 
@@ -396,27 +621,16 @@ export async function sendWelcomeEmail(
     let trustedName = (providedName || '').trim();
     let resolvedUserId = userId;
 
-    try {
-      if (resolvedUserId) {
-        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [resolvedUserId]);
-        if (uRes.rows.length > 0) {
-          trustedName = uRes.rows[0].full_name || trustedName;
-        }
-      } else {
-        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1', [normalizedEmail]);
-        if (uRes.rows.length > 0) {
-          trustedName = uRes.rows[0].full_name || trustedName;
-          resolvedUserId = uRes.rows[0].id;
-        }
-      }
-    } catch (dbErr) {
-      console.warn('[Welcome Email DB User Fetch Warn]:', dbErr);
+    const uMatch = await lookupRegisteredUser({ userId: resolvedUserId, email: normalizedEmail });
+    if (uMatch) {
+      trustedName = uMatch.full_name || trustedName;
+      resolvedUserId = uMatch.id || resolvedUserId;
     }
 
     // 2. Idempotency Check: Prevent duplicate welcome emails
     const idempotencyKey = `welcome:${resolvedUserId || normalizedEmail}`;
 
-    if (!forceResend) {
+    if (!forceResend && isDatabaseAvailable()) {
       try {
         const existingLog = await query(
           'SELECT id, status, attempts FROM public.email_dispatch_logs WHERE idempotency_key = $1',
@@ -452,8 +666,6 @@ export async function sendWelcomeEmail(
     }
 
     // 3. Prepare Logo Attachment
-    // If APP_LOGO_URL is a public web URL (starts with http and not localhost), use that.
-    // Otherwise, embed the official public/logo.jpg with CID 'app_logo' for 100% email client support.
     const attachments: any[] = [];
     const logoFilePath = path.resolve(process.cwd(), 'public', 'logo.jpg');
     let logoSrc = 'cid:app_logo';
@@ -470,8 +682,8 @@ export async function sendWelcomeEmail(
       logoSrc = 'cid:app_logo';
     }
 
-    // 4. Generate Email Content
-    const emailData = generateWelcomeEmail({
+    // 4. Generate Email Content (respects Admin customized template if saved)
+    const defaultWelcome = generateWelcomeEmail({
       userName: trustedName,
       userEmail: normalizedEmail,
       logoSrc,
@@ -479,26 +691,23 @@ export async function sendWelcomeEmail(
       supportEmail: APP_CONFIG.supportEmail,
       supportPhone: APP_CONFIG.supportPhone,
     });
+    const customWelcome = await getRenderedCustomTemplateIfActive('welcome-email', {
+      user_name: trustedName,
+      user_email: normalizedEmail,
+    });
+    const emailData = customWelcome || defaultWelcome;
 
-    // 5. Create or Update Dispatch Record in public.email_dispatch_logs
-    let logId: string = '';
-    try {
-      const insertRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts
-        ) VALUES ($1, $2, 'welcome_email', $3, $4, $5, 'pending', 0, 3)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id`,
-        [resolvedUserId || null, normalizedEmail, idempotencyKey, trustedName || null, emailData.subject]
-      );
-      if (insertRes.rows.length > 0) {
-        logId = insertRes.rows[0].id;
-      }
-    } catch (insertErr) {
-      console.warn('[Welcome Email Log Insert Warn]:', insertErr);
-      logId = `fallback_${Date.now()}`;
-    }
+    // 5. Create or Update Dispatch Record
+    const logId = await createDispatchLogRecord({
+      userId: resolvedUserId || null,
+      email: normalizedEmail,
+      emailType: 'welcome_email',
+      idempotencyKey,
+      recipientName: trustedName || null,
+      subject: emailData.subject,
+      triggerEvent: 'user_registration',
+      upsertIdempotency: true,
+    });
 
     // 6. Execute Dispatch (Attempt 1)
     const success = await executeEmailDispatch(
@@ -849,19 +1058,16 @@ export async function sendAdminReplyToTicketEmail(opts: {
   userId?: string;
   status?: string;
 }): Promise<{ success: boolean; error?: string }> {
-  const recipient = opts.email || opts.userEmail || '';
+  const recipient = (opts.email || opts.userEmail || '').trim();
   const ticketNum = opts.ticketNumber || opts.ticketId || 'N/A';
   try {
-    // If userId supplied, verify/fetch trusted registered name from app_users
     let trustedName = opts.userName;
     if (opts.userId) {
-      const u = await query('SELECT full_name FROM public.app_users WHERE id = $1', [opts.userId]);
-      if (u.rows.length > 0 && u.rows[0].full_name) {
-        trustedName = u.rows[0].full_name;
-      }
+      const found = await lookupRegisteredUser({ userId: opts.userId });
+      if (found?.full_name) trustedName = found.full_name;
     }
 
-    const template = generateAdminReplyEmail({
+    const defaultReplyTmpl = generateAdminReplyEmail({
       userName: trustedName,
       ticketNumber: ticketNum,
       ticketType: opts.ticketType || 'support',
@@ -870,8 +1076,30 @@ export async function sendAdminReplyToTicketEmail(opts: {
       adminName: opts.adminName,
       status: opts.status,
     });
+    const customReplyTmpl = await getRenderedCustomTemplateIfActive('admin-ticket-reply', {
+      user_name: trustedName || 'Valued User',
+      ticket_number: ticketNum,
+      ticket_type: opts.ticketType || 'support',
+      original_subject: opts.originalSubject,
+      admin_reply: opts.adminReply,
+      admin_name: opts.adminName || 'HackifyPro Support',
+      status: opts.status || 'in_progress',
+    });
+    const template = customReplyTmpl || defaultReplyTmpl;
 
-    const success = await sendEmail({
+    const logId = await createDispatchLogRecord({
+      userId: opts.userId || null,
+      email: recipient,
+      emailType: 'admin_ticket_reply',
+      idempotencyKey: `admin_reply:${ticketNum}:${Date.now()}`,
+      recipientName: trustedName || 'Valued User',
+      subject: template.subject,
+      referenceId: ticketNum,
+      triggerEvent: 'admin_ticket_reply',
+      metadata: { ticketNumber: ticketNum, ticketType: opts.ticketType },
+    });
+
+    const detailRes = await sendEmailDetailed({
       to: recipient,
       subject: template.subject,
       html: template.html,
@@ -879,7 +1107,22 @@ export async function sendAdminReplyToTicketEmail(opts: {
       attachments: getBrandLogoAttachments(),
     });
 
-    return { success };
+    if (isDatabaseAvailable()) {
+      await query(
+        `UPDATE public.email_dispatch_logs SET status = $1, attempts = 1, last_error = $2, sent_at = ${
+          detailRes.success ? 'NOW()' : 'NULL'
+        }, updated_at = NOW() WHERE id = $3`,
+        [detailRes.success ? 'sent' : 'failed', detailRes.error || null, logId]
+      ).catch(() => {});
+    }
+    await updateEmailLogFallback(logId, {
+      status: detailRes.success ? 'sent' : 'failed',
+      attempts: 1,
+      last_error: detailRes.error || null,
+      sent_at: detailRes.success ? new Date().toISOString() : null,
+    }).catch(() => {});
+
+    return { success: detailRes.success, error: detailRes.error };
   } catch (err: any) {
     const safeMsg = sanitizeErrorMessage(err);
     console.error(`[Admin Reply Email Failed] Ticket: #${ticketNum} to ${recipient}:`, safeMsg);
@@ -888,7 +1131,7 @@ export async function sendAdminReplyToTicketEmail(opts: {
 }
 
 // -------------------------------------------------------------
-// 11. AUTOMATED FEEDBACK NOTIFICATIONS (USER + ADMIN)
+// 11. AUTOMATED FEEDBACK, COMPLAINT & SUPPORT EMAILS (USER + ADMIN)
 // -------------------------------------------------------------
 
 export interface FeedbackSubmissionEmailsParams {
@@ -912,7 +1155,7 @@ export async function sendFeedbackSubmissionEmails(opts: FeedbackSubmissionEmail
   const cleanSubmittedAt = opts.submittedAt || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
   const trustedUserName = (opts.userName || '').trim() || 'Valued User';
   const cleanFeedbackId = opts.feedbackId || `FB-${Date.now().toString(36).toUpperCase()}`;
-  const adminEmail = 'hackifypro@gmail.com';
+  const adminEmail = await getEffectiveSupportAlertEmail();
 
   let userEmailSent = false;
   let adminEmailSent = false;
@@ -921,7 +1164,7 @@ export async function sendFeedbackSubmissionEmails(opts: FeedbackSubmissionEmail
 
   // 1. Send User Confirmation Email
   if (normalizedUserEmail) {
-    const userTemplate = generateFeedbackReceivedEmail({
+    const defaultUserTmpl = generateFeedbackReceivedEmail({
       userName: trustedUserName,
       feedbackId: cleanFeedbackId,
       rating: opts.rating,
@@ -929,31 +1172,30 @@ export async function sendFeedbackSubmissionEmails(opts: FeedbackSubmissionEmail
       feedbackMessage: opts.feedbackMessage,
       userEmail: normalizedUserEmail,
     });
-
-    const userKey = `feedback_user:${cleanFeedbackId}`;
+    const customUserTmpl = await getRenderedCustomTemplateIfActive('feedback-confirmation', {
+      user_name: trustedUserName,
+      user_email: normalizedUserEmail,
+      feedback_id: cleanFeedbackId,
+      rating: opts.rating,
+      category: opts.category || 'General',
+      message: opts.feedbackMessage,
+    });
+    const userTemplate = customUserTmpl || defaultUserTmpl;
 
     try {
-      const logRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'feedback_user_confirmation', $3, $4, $5, 'pending', 0, 3, $6, 'feedback_submission', $7)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id, status`,
-        [
-          opts.userId || null,
-          normalizedUserEmail,
-          userKey,
-          trustedUserName,
-          userTemplate.subject,
-          cleanFeedbackId,
-          JSON.stringify({ feedbackId: cleanFeedbackId, rating: opts.rating, category: opts.category })
-        ]
-      );
-      userLogId = logRes.rows[0]?.id || `fb_u_${Date.now()}`;
+      userLogId = await createDispatchLogRecord({
+        userId: opts.userId || null,
+        email: normalizedUserEmail,
+        emailType: 'feedback_user_confirmation',
+        idempotencyKey: `feedback_user:${cleanFeedbackId}`,
+        recipientName: trustedUserName,
+        subject: userTemplate.subject,
+        referenceId: cleanFeedbackId,
+        triggerEvent: 'feedback_submission',
+        metadata: { feedbackId: cleanFeedbackId, rating: opts.rating, category: opts.category },
+        upsertIdempotency: true,
+      });
 
-      // Execute dispatch (attempt 1)
       userEmailSent = await executeEmailDispatch(
         userLogId,
         normalizedUserEmail,
@@ -970,8 +1212,8 @@ export async function sendFeedbackSubmissionEmails(opts: FeedbackSubmissionEmail
     }
   }
 
-  // 2. Send Admin Notification Email to hackifypro@gmail.com
-  const adminTemplate = generateFeedbackAdminNotificationEmail({
+  // 2. Send Admin Notification Email to HackifyPro / configured support email
+  const defaultAdminTmpl = generateFeedbackAdminNotificationEmail({
     userName: trustedUserName,
     userEmail: normalizedUserEmail,
     userId: opts.userId || 'N/A',
@@ -980,27 +1222,30 @@ export async function sendFeedbackSubmissionEmails(opts: FeedbackSubmissionEmail
     message: opts.feedbackMessage,
     submittedAt: cleanSubmittedAt,
   });
-
-  const adminKey = `feedback_admin:${cleanFeedbackId}`;
+  const customAdminTmpl = await getRenderedCustomTemplateIfActive('feedback-admin-alert', {
+    user_name: trustedUserName,
+    user_email: normalizedUserEmail,
+    user_id: opts.userId || 'N/A',
+    feedback_id: cleanFeedbackId,
+    rating: opts.rating,
+    message: opts.feedbackMessage,
+    submitted_at: cleanSubmittedAt,
+  });
+  const adminTemplate = customAdminTmpl || defaultAdminTmpl;
 
   try {
-    const adminLogRes = await query(
-      `INSERT INTO public.email_dispatch_logs (
-        user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-        reference_id, trigger_event, metadata
-      ) VALUES (NULL, $1, 'feedback_admin_notification', $2, 'HackifyPro Admin', $3, 'pending', 0, 3, $4, 'feedback_submission', $5)
-      ON CONFLICT (idempotency_key) DO UPDATE 
-      SET status = 'pending', updated_at = NOW()
-      RETURNING id, status`,
-      [
-        adminEmail,
-        adminKey,
-        adminTemplate.subject,
-        cleanFeedbackId,
-        JSON.stringify({ feedbackId: cleanFeedbackId, rating: opts.rating, submitterEmail: normalizedUserEmail })
-      ]
-    );
-    adminLogId = adminLogRes.rows[0]?.id || `fb_a_${Date.now()}`;
+    adminLogId = await createDispatchLogRecord({
+      userId: null,
+      email: adminEmail,
+      emailType: 'feedback_admin_notification',
+      idempotencyKey: `feedback_admin:${cleanFeedbackId}`,
+      recipientName: 'HackifyPro Admin',
+      subject: adminTemplate.subject,
+      referenceId: cleanFeedbackId,
+      triggerEvent: 'feedback_submission',
+      metadata: { feedbackId: cleanFeedbackId, rating: opts.rating, submitterEmail: normalizedUserEmail },
+      upsertIdempotency: true,
+    });
 
     adminEmailSent = await executeEmailDispatch(
       adminLogId,
@@ -1014,6 +1259,249 @@ export async function sendFeedbackSubmissionEmails(opts: FeedbackSubmissionEmail
     );
   } catch (aErr: any) {
     console.error('[Feedback Admin Notification Email Error]:', sanitizeErrorMessage(aErr));
+  }
+
+  return { userEmailSent, adminEmailSent, userLogId, adminLogId };
+}
+
+export async function sendComplaintSubmissionEmails(opts: {
+  ticketId: string;
+  ticketNumber: string;
+  userId?: string | null;
+  userName?: string | null;
+  userEmail: string;
+  userPhone?: string | null;
+  category: string;
+  subject: string;
+  description: string;
+  submittedAt?: string;
+}): Promise<{ userEmailSent: boolean; adminEmailSent: boolean; userLogId?: string; adminLogId?: string }> {
+  const normalizedUserEmail = (opts.userEmail || '').trim().toLowerCase();
+  const cleanSubmittedAt = opts.submittedAt || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+  const trustedUserName = (opts.userName || '').trim() || 'Valued User';
+  const adminEmail = await getEffectiveSupportAlertEmail();
+
+  let userEmailSent = false;
+  let adminEmailSent = false;
+  let userLogId = '';
+  let adminLogId = '';
+
+  if (normalizedUserEmail) {
+    const defaultUserTmpl = generateComplaintReceivedEmail({
+      userName: trustedUserName,
+      ticketNumber: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description,
+    });
+    const customUserTmpl = await getRenderedCustomTemplateIfActive('complaint-confirmation', {
+      user_name: trustedUserName,
+      user_email: normalizedUserEmail,
+      ticket_number: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description,
+    });
+    const userTemplate = customUserTmpl || defaultUserTmpl;
+
+    try {
+      userLogId = await createDispatchLogRecord({
+        userId: opts.userId || null,
+        email: normalizedUserEmail,
+        emailType: 'complaint_user_confirmation',
+        idempotencyKey: `complaint_user:${opts.ticketNumber}`,
+        recipientName: trustedUserName,
+        subject: userTemplate.subject,
+        referenceId: opts.ticketId,
+        triggerEvent: 'complaint_submission',
+        metadata: { ticketNumber: opts.ticketNumber, category: opts.category },
+        upsertIdempotency: true,
+      });
+
+      userEmailSent = await executeEmailDispatch(
+        userLogId,
+        normalizedUserEmail,
+        userTemplate.subject,
+        userTemplate.html,
+        userTemplate.text,
+        getBrandLogoAttachments(),
+        1,
+        3,
+        opts.userId || undefined
+      );
+    } catch (err: any) {
+      console.error('[Complaint User Email Error]:', sanitizeErrorMessage(err));
+    }
+  }
+
+  const defaultAdminTmpl = generateComplaintAdminNotificationEmail({
+    userName: trustedUserName,
+    userEmail: normalizedUserEmail,
+    userPhone: opts.userPhone,
+    ticketNumber: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submittedAt: cleanSubmittedAt,
+  });
+  const customAdminTmpl = await getRenderedCustomTemplateIfActive('complaint-admin-alert', {
+    user_name: trustedUserName,
+    user_email: normalizedUserEmail,
+    user_phone: opts.userPhone || 'Not provided',
+    ticket_number: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submitted_at: cleanSubmittedAt,
+  });
+  const adminTemplate = customAdminTmpl || defaultAdminTmpl;
+
+  try {
+    adminLogId = await createDispatchLogRecord({
+      userId: null,
+      email: adminEmail,
+      emailType: 'complaint_admin_notification',
+      idempotencyKey: `complaint_admin:${opts.ticketNumber}`,
+      recipientName: 'HackifyPro Admin',
+      subject: adminTemplate.subject,
+      referenceId: opts.ticketId,
+      triggerEvent: 'complaint_submission',
+      metadata: { ticketNumber: opts.ticketNumber, submitterEmail: normalizedUserEmail },
+      upsertIdempotency: true,
+    });
+
+    adminEmailSent = await executeEmailDispatch(
+      adminLogId,
+      adminEmail,
+      adminTemplate.subject,
+      adminTemplate.html,
+      adminTemplate.text,
+      getBrandLogoAttachments(),
+      1,
+      3
+    );
+  } catch (err: any) {
+    console.error('[Complaint Admin Email Error]:', sanitizeErrorMessage(err));
+  }
+
+  return { userEmailSent, adminEmailSent, userLogId, adminLogId };
+}
+
+export async function sendSupportTicketSubmissionEmails(opts: {
+  ticketId: string;
+  ticketNumber: string;
+  userId?: string | null;
+  userName?: string | null;
+  userEmail: string;
+  category: string;
+  subject: string;
+  description: string;
+  submittedAt?: string;
+}): Promise<{ userEmailSent: boolean; adminEmailSent: boolean; userLogId?: string; adminLogId?: string }> {
+  const normalizedUserEmail = (opts.userEmail || '').trim().toLowerCase();
+  const cleanSubmittedAt = opts.submittedAt || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+  const trustedUserName = (opts.userName || '').trim() || 'Valued User';
+  const adminEmail = await getEffectiveSupportAlertEmail();
+
+  let userEmailSent = false;
+  let adminEmailSent = false;
+  let userLogId = '';
+  let adminLogId = '';
+
+  if (normalizedUserEmail) {
+    const defaultUserTmpl = generateSupportTicketReceivedEmail({
+      userName: trustedUserName,
+      ticketNumber: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description,
+    });
+    const customUserTmpl = await getRenderedCustomTemplateIfActive('support-confirmation', {
+      user_name: trustedUserName,
+      user_email: normalizedUserEmail,
+      ticket_number: opts.ticketNumber,
+      category: opts.category,
+      subject: opts.subject,
+      description: opts.description,
+    });
+    const userTemplate = customUserTmpl || defaultUserTmpl;
+
+    try {
+      userLogId = await createDispatchLogRecord({
+        userId: opts.userId || null,
+        email: normalizedUserEmail,
+        emailType: 'support_user_confirmation',
+        idempotencyKey: `support_user:${opts.ticketNumber}`,
+        recipientName: trustedUserName,
+        subject: userTemplate.subject,
+        referenceId: opts.ticketId,
+        triggerEvent: 'support_ticket_submission',
+        metadata: { ticketNumber: opts.ticketNumber, category: opts.category },
+        upsertIdempotency: true,
+      });
+
+      userEmailSent = await executeEmailDispatch(
+        userLogId,
+        normalizedUserEmail,
+        userTemplate.subject,
+        userTemplate.html,
+        userTemplate.text,
+        getBrandLogoAttachments(),
+        1,
+        3,
+        opts.userId || undefined
+      );
+    } catch (err: any) {
+      console.error('[Support User Email Error]:', sanitizeErrorMessage(err));
+    }
+  }
+
+  const defaultAdminTmpl = generateSupportTicketAdminNotificationEmail({
+    userName: trustedUserName,
+    userEmail: normalizedUserEmail,
+    ticketNumber: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submittedAt: cleanSubmittedAt,
+  });
+  const customAdminTmpl = await getRenderedCustomTemplateIfActive('support-admin-alert', {
+    user_name: trustedUserName,
+    user_email: normalizedUserEmail,
+    ticket_number: opts.ticketNumber,
+    category: opts.category,
+    subject: opts.subject,
+    description: opts.description,
+    submitted_at: cleanSubmittedAt,
+  });
+  const adminTemplate = customAdminTmpl || defaultAdminTmpl;
+
+  try {
+    adminLogId = await createDispatchLogRecord({
+      userId: null,
+      email: adminEmail,
+      emailType: 'support_admin_notification',
+      idempotencyKey: `support_admin:${opts.ticketNumber}`,
+      recipientName: 'HackifyPro Admin',
+      subject: adminTemplate.subject,
+      referenceId: opts.ticketId,
+      triggerEvent: 'support_ticket_submission',
+      metadata: { ticketNumber: opts.ticketNumber, submitterEmail: normalizedUserEmail },
+      upsertIdempotency: true,
+    });
+
+    adminEmailSent = await executeEmailDispatch(
+      adminLogId,
+      adminEmail,
+      adminTemplate.subject,
+      adminTemplate.html,
+      adminTemplate.text,
+      getBrandLogoAttachments(),
+      1,
+      3
+    );
+  } catch (err: any) {
+    console.error('[Support Admin Email Error]:', sanitizeErrorMessage(err));
   }
 
   return { userEmailSent, adminEmailSent, userLogId, adminLogId };
@@ -1052,7 +1540,7 @@ export async function sendUdharCreatedEmails(opts: UdharCreatedEmailOpts): Promi
 
   // 1. Send confirmation to Initiator (Person A)
   if (initiatorEmail) {
-    const initTmpl = generateUdharCreatedEmailForInitiator({
+    const defaultInitTmpl = generateUdharCreatedEmailForInitiator({
       userName: opts.initiatorName,
       transactionId: txIdStr,
       otherPersonName: opts.counterpartName,
@@ -1062,28 +1550,32 @@ export async function sendUdharCreatedEmails(opts: UdharCreatedEmailOpts): Promi
       transactionDate: opts.transactionDate,
       status: opts.status,
     });
+    const customInitTmpl = await getRenderedCustomTemplateIfActive('udhar-created', {
+      user_name: opts.initiatorName,
+      other_person_name: opts.counterpartName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: initiatorTypeStr,
+      description: opts.description || 'None',
+      transaction_date: opts.transactionDate,
+      status: opts.status,
+    });
+    const initTmpl = customInitTmpl || defaultInitTmpl;
 
     const initKey = `udhar_create_init:${txIdStr}`;
     try {
-      const initLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_created_initiator', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_created', $7)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id`,
-        [
-          opts.initiatorUserId,
-          initiatorEmail,
-          initKey,
-          opts.initiatorName,
-          initTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount, direction: opts.direction })
-        ]
-      );
-      const logId = initLogRes.rows[0]?.id || `init_${Date.now()}`;
+      const logId = await createDispatchLogRecord({
+        userId: opts.initiatorUserId,
+        email: initiatorEmail,
+        emailType: 'udhar_created_initiator',
+        idempotencyKey: initKey,
+        recipientName: opts.initiatorName,
+        subject: initTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_created',
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount, direction: opts.direction },
+        upsertIdempotency: true,
+      });
       initiatorSent = await executeEmailDispatch(
         logId,
         initiatorEmail,
@@ -1101,24 +1593,17 @@ export async function sendUdharCreatedEmails(opts: UdharCreatedEmailOpts): Promi
   }
 
   // 2. Identify if counterpart is a REGISTERED My Money Manager user
-  // STRICT RULE: Match counterpart ONLY through verified identifier (authenticated user ID or registered email in public.app_users)
   let verifiedCounterpart: { id: string; full_name: string; email: string } | null = null;
   let unverifiedEmailProvided = false;
 
   try {
     if (opts.counterpartUserId && opts.counterpartUserId !== opts.initiatorUserId) {
-      const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [opts.counterpartUserId]);
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        verifiedCounterpart = uRes.rows[0];
-      }
+      verifiedCounterpart = await lookupRegisteredUser({ userId: opts.counterpartUserId });
     } else if (opts.counterpartEmail) {
       const cleanCpEmail = opts.counterpartEmail.trim().toLowerCase();
       if (cleanCpEmail) {
         unverifiedEmailProvided = true;
-        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1', [cleanCpEmail]);
-        if (uRes.rows.length > 0 && uRes.rows[0].email) {
-          verifiedCounterpart = uRes.rows[0];
-        }
+        verifiedCounterpart = await lookupRegisteredUser({ email: cleanCpEmail });
       }
     }
   } catch (vErr) {
@@ -1129,15 +1614,11 @@ export async function sendUdharCreatedEmails(opts: UdharCreatedEmailOpts): Promi
   const cpKey = `udhar_create_cp:${txIdStr}`;
 
   if (verifiedCounterpart && verifiedCounterpart.email) {
-    // Both are registered users!
-    // Counterpart recipient perspective:
-    // If Person A gave (lent), Person B received (borrowed).
-    // If Person A took (borrowed), Person B gave (lent).
     const recipientPerspectiveType = opts.direction === 'gave'
       ? 'Money Received (You Borrowed)'
       : 'Money Given (You Lent)';
 
-    const cpTmpl = generateUdharCreatedEmailForRecipient({
+    const defaultCpTmpl = generateUdharCreatedEmailForRecipient({
       recipientName: verifiedCounterpart.full_name,
       senderName: opts.initiatorName,
       transactionId: txIdStr,
@@ -1147,27 +1628,31 @@ export async function sendUdharCreatedEmails(opts: UdharCreatedEmailOpts): Promi
       transactionDate: opts.transactionDate,
       status: opts.status,
     });
+    const customCpTmpl = await getRenderedCustomTemplateIfActive('udhar-created', {
+      user_name: verifiedCounterpart.full_name,
+      other_person_name: opts.initiatorName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: recipientPerspectiveType,
+      description: opts.description || 'None',
+      transaction_date: opts.transactionDate,
+      status: opts.status,
+    });
+    const cpTmpl = customCpTmpl || defaultCpTmpl;
 
     try {
-      const cpLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_created_counterpart', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_created', $7)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = 'pending', updated_at = NOW()
-        RETURNING id`,
-        [
-          verifiedCounterpart.id,
-          verifiedCounterpart.email.toLowerCase(),
-          cpKey,
-          verifiedCounterpart.full_name,
-          cpTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount, recipientType: recipientPerspectiveType })
-        ]
-      );
-      const cpLogId = cpLogRes.rows[0]?.id || `cp_${Date.now()}`;
+      const cpLogId = await createDispatchLogRecord({
+        userId: verifiedCounterpart.id,
+        email: verifiedCounterpart.email.toLowerCase(),
+        emailType: 'udhar_created_counterpart',
+        idempotencyKey: cpKey,
+        recipientName: verifiedCounterpart.full_name,
+        subject: cpTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_created',
+        metadata: { linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount, recipientType: recipientPerspectiveType },
+        upsertIdempotency: true,
+      });
       const sent = await executeEmailDispatch(
         cpLogId,
         verifiedCounterpart.email.toLowerCase(),
@@ -1185,32 +1670,27 @@ export async function sendUdharCreatedEmails(opts: UdharCreatedEmailOpts): Promi
       counterpartStatus = 'failed';
     }
   } else {
-    // Counterpart is NOT registered or identity unverified!
-    // MUST NOT EMAIL NON-USERS. Log as skipped!
     const skipStatus = unverifiedEmailProvided ? 'skipped_unverified' : 'skipped_not_registered';
     const reasonText = unverifiedEmailProvided
       ? 'Skipped: Counterpart email is not verified or registered in My Money Manager'
       : 'Skipped: Counterpart is not a registered My Money Manager user';
 
     try {
-      await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          last_error, reference_id, trigger_event, metadata
-        ) VALUES (NULL, $1, 'udhar_created_counterpart', $2, $3, $4, $5, 0, 0, $6, $7, 'udhar_created', $8)
-        ON CONFLICT (idempotency_key) DO UPDATE 
-        SET status = $5, last_error = $6, updated_at = NOW()`,
-        [
-          opts.counterpartEmail || null,
-          `udhar_skip_cp:${txIdStr}`,
-          opts.counterpartName,
-          `[Skipped] New Udhar Transaction Recorded – ${APP_CONFIG.appName}`,
-          skipStatus,
-          reasonText,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, reason: 'unregistered_counterpart' })
-        ]
-      );
+      await createDispatchLogRecord({
+        userId: null,
+        email: opts.counterpartEmail || null,
+        emailType: 'udhar_created_counterpart',
+        idempotencyKey: `udhar_skip_cp:${txIdStr}`,
+        recipientName: opts.counterpartName,
+        subject: `[Skipped] New Udhar Transaction Recorded – ${APP_CONFIG.appName}`,
+        status: skipStatus,
+        maxAttempts: 0,
+        lastError: reasonText,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_created',
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, reason: 'unregistered_counterpart' },
+        upsertIdempotency: true,
+      });
       counterpartStatus = skipStatus;
     } catch (skipErr) {
       console.warn('[Udhar Skip Log Insert Warn]:', skipErr);
@@ -1252,7 +1732,7 @@ export async function sendUdharSettledEmails(opts: UdharSettledEmailOpts): Promi
 
   // 1. Send confirmation to Initiator
   if (initiatorEmail) {
-    const initTmpl = generateUdharSettledEmail({
+    const defaultInitTmpl = generateUdharSettledEmail({
       userName: opts.initiatorName,
       counterpartName: opts.counterpartName,
       transactionId: txIdStr,
@@ -1261,26 +1741,29 @@ export async function sendUdharSettledEmails(opts: UdharSettledEmailOpts): Promi
       updatedBalance: opts.updatedBalance,
       isLenderPerspective: opts.direction === 'gave',
     });
+    const customInitTmpl = await getRenderedCustomTemplateIfActive('udhar-settled', {
+      user_name: opts.initiatorName,
+      other_person_name: opts.counterpartName,
+      transaction_id: txIdStr,
+      amount_settled: opts.amountSettled,
+      updated_balance: opts.updatedBalance,
+      settlement_date: opts.settlementDate,
+    });
+    const initTmpl = customInitTmpl || defaultInitTmpl;
 
     const initKey = `udhar_settle_init:${txIdStr}_${Date.now()}`;
     try {
-      const initLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_settled_initiator', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_settled', $7)
-        RETURNING id`,
-        [
-          opts.initiatorUserId,
-          initiatorEmail,
-          initKey,
-          opts.initiatorName,
-          initTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance })
-        ]
-      );
-      const logId = initLogRes.rows[0]?.id || `settle_init_${Date.now()}`;
+      const logId = await createDispatchLogRecord({
+        userId: opts.initiatorUserId,
+        email: initiatorEmail,
+        emailType: 'udhar_settled_initiator',
+        idempotencyKey: initKey,
+        recipientName: opts.initiatorName,
+        subject: initTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_settled',
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance },
+      });
       initiatorSent = await executeEmailDispatch(
         logId,
         initiatorEmail,
@@ -1303,18 +1786,12 @@ export async function sendUdharSettledEmails(opts: UdharSettledEmailOpts): Promi
 
   try {
     if (opts.counterpartUserId && opts.counterpartUserId !== opts.initiatorUserId) {
-      const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [opts.counterpartUserId]);
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        verifiedCounterpart = uRes.rows[0];
-      }
+      verifiedCounterpart = await lookupRegisteredUser({ userId: opts.counterpartUserId });
     } else if (opts.counterpartEmail) {
       const cleanCpEmail = opts.counterpartEmail.trim().toLowerCase();
       if (cleanCpEmail) {
         unverifiedEmailProvided = true;
-        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1', [cleanCpEmail]);
-        if (uRes.rows.length > 0 && uRes.rows[0].email) {
-          verifiedCounterpart = uRes.rows[0];
-        }
+        verifiedCounterpart = await lookupRegisteredUser({ email: cleanCpEmail });
       }
     }
   } catch (vErr) {
@@ -1325,7 +1802,7 @@ export async function sendUdharSettledEmails(opts: UdharSettledEmailOpts): Promi
   const cpKey = `udhar_settle_cp:${txIdStr}_${Date.now()}`;
 
   if (verifiedCounterpart && verifiedCounterpart.email) {
-    const cpTmpl = generateUdharSettledEmail({
+    const defaultCpTmpl = generateUdharSettledEmail({
       userName: verifiedCounterpart.full_name,
       counterpartName: opts.initiatorName,
       transactionId: txIdStr,
@@ -1334,25 +1811,28 @@ export async function sendUdharSettledEmails(opts: UdharSettledEmailOpts): Promi
       updatedBalance: opts.updatedBalance,
       isLenderPerspective: opts.direction !== 'gave',
     });
+    const customCpTmpl = await getRenderedCustomTemplateIfActive('udhar-settled', {
+      user_name: verifiedCounterpart.full_name,
+      other_person_name: opts.initiatorName,
+      transaction_id: txIdStr,
+      amount_settled: opts.amountSettled,
+      updated_balance: opts.updatedBalance,
+      settlement_date: opts.settlementDate,
+    });
+    const cpTmpl = customCpTmpl || defaultCpTmpl;
 
     try {
-      const cpLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_settled_counterpart', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_settled', $7)
-        RETURNING id`,
-        [
-          verifiedCounterpart.id,
-          verifiedCounterpart.email.toLowerCase(),
-          cpKey,
-          verifiedCounterpart.full_name,
-          cpTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, initiatorName: opts.initiatorName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance })
-        ]
-      );
-      const cpLogId = cpLogRes.rows[0]?.id || `settle_cp_${Date.now()}`;
+      const cpLogId = await createDispatchLogRecord({
+        userId: verifiedCounterpart.id,
+        email: verifiedCounterpart.email.toLowerCase(),
+        emailType: 'udhar_settled_counterpart',
+        idempotencyKey: cpKey,
+        recipientName: verifiedCounterpart.full_name,
+        subject: cpTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_settled',
+        metadata: { linkId: opts.linkId, initiatorName: opts.initiatorName, amountSettled: opts.amountSettled, updatedBalance: opts.updatedBalance },
+      });
       const sent = await executeEmailDispatch(
         cpLogId,
         verifiedCounterpart.email.toLowerCase(),
@@ -1376,22 +1856,20 @@ export async function sendUdharSettledEmails(opts: UdharSettledEmailOpts): Promi
       : 'Skipped: Counterpart is not a registered My Money Manager user';
 
     try {
-      await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          last_error, reference_id, trigger_event, metadata
-        ) VALUES (NULL, $1, 'udhar_settled_counterpart', $2, $3, $4, $5, 0, 0, $6, $7, 'udhar_settled', $8)`,
-        [
-          opts.counterpartEmail || null,
-          `udhar_skip_settle_cp:${txIdStr}_${Date.now()}`,
-          opts.counterpartName,
-          `[Skipped] Udhar Transaction Settled – ${APP_CONFIG.appName}`,
-          skipStatus,
-          reasonText,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, reason: 'unregistered_counterpart' })
-        ]
-      );
+      await createDispatchLogRecord({
+        userId: null,
+        email: opts.counterpartEmail || null,
+        emailType: 'udhar_settled_counterpart',
+        idempotencyKey: `udhar_skip_settle_cp:${txIdStr}_${Date.now()}`,
+        recipientName: opts.counterpartName,
+        subject: `[Skipped] Udhar Transaction Settled – ${APP_CONFIG.appName}`,
+        status: skipStatus,
+        maxAttempts: 0,
+        lastError: reasonText,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_settled',
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, reason: 'unregistered_counterpart' },
+      });
       counterpartStatus = skipStatus;
     } catch (skipErr) {
       console.warn('[Udhar Settle Skip Log Insert Warn]:', skipErr);
@@ -1435,7 +1913,7 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
 
   // 1. Send update notice to Initiator
   if (initiatorEmail) {
-    const initTmpl = generateUdharUpdatedEmail({
+    const defaultInitTmpl = generateUdharUpdatedEmail({
       userName: opts.initiatorName,
       counterpartName: opts.counterpartName,
       transactionId: txIdStr,
@@ -1446,26 +1924,31 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
       status: opts.status,
       isRecipientView: false,
     });
+    const customInitTmpl = await getRenderedCustomTemplateIfActive('udhar-updated', {
+      user_name: opts.initiatorName,
+      other_person_name: opts.counterpartName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: initiatorTypeStr,
+      description: opts.description || 'None',
+      transaction_date: opts.transactionDate,
+      status: opts.status,
+    });
+    const initTmpl = customInitTmpl || defaultInitTmpl;
 
     const initKey = `udhar_update_init:${txIdStr}_${Date.now()}`;
     try {
-      const initLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_updated_initiator', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_updated', $7)
-        RETURNING id`,
-        [
-          opts.initiatorUserId,
-          initiatorEmail,
-          initKey,
-          opts.initiatorName,
-          initTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount })
-        ]
-      );
-      const logId = initLogRes.rows[0]?.id || `update_init_${Date.now()}`;
+      const logId = await createDispatchLogRecord({
+        userId: opts.initiatorUserId,
+        email: initiatorEmail,
+        emailType: 'udhar_updated_initiator',
+        idempotencyKey: initKey,
+        recipientName: opts.initiatorName,
+        subject: initTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_updated',
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, amount: opts.amount },
+      });
       initiatorSent = await executeEmailDispatch(
         logId,
         initiatorEmail,
@@ -1488,18 +1971,12 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
 
   try {
     if (opts.counterpartUserId && opts.counterpartUserId !== opts.initiatorUserId) {
-      const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE id = $1', [opts.counterpartUserId]);
-      if (uRes.rows.length > 0 && uRes.rows[0].email) {
-        verifiedCounterpart = uRes.rows[0];
-      }
+      verifiedCounterpart = await lookupRegisteredUser({ userId: opts.counterpartUserId });
     } else if (opts.counterpartEmail) {
       const cleanCpEmail = opts.counterpartEmail.trim().toLowerCase();
       if (cleanCpEmail) {
         unverifiedEmailProvided = true;
-        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1', [cleanCpEmail]);
-        if (uRes.rows.length > 0 && uRes.rows[0].email) {
-          verifiedCounterpart = uRes.rows[0];
-        }
+        verifiedCounterpart = await lookupRegisteredUser({ email: cleanCpEmail });
       }
     }
   } catch (vErr) {
@@ -1514,7 +1991,7 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
       ? 'Money Received (You Borrowed)'
       : 'Money Given (You Lent)';
 
-    const cpTmpl = generateUdharUpdatedEmail({
+    const defaultCpTmpl = generateUdharUpdatedEmail({
       userName: verifiedCounterpart.full_name,
       counterpartName: opts.initiatorName,
       transactionId: txIdStr,
@@ -1525,25 +2002,30 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
       status: opts.status,
       isRecipientView: true,
     });
+    const customCpTmpl = await getRenderedCustomTemplateIfActive('udhar-updated', {
+      user_name: verifiedCounterpart.full_name,
+      other_person_name: opts.initiatorName,
+      transaction_id: txIdStr,
+      amount: opts.amount,
+      direction_label: recipientPerspectiveType,
+      description: opts.description || 'None',
+      transaction_date: opts.transactionDate,
+      status: opts.status,
+    });
+    const cpTmpl = customCpTmpl || defaultCpTmpl;
 
     try {
-      const cpLogRes = await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          reference_id, trigger_event, metadata
-        ) VALUES ($1, $2, 'udhar_updated_counterpart', $3, $4, $5, 'pending', 0, 3, $6, 'udhar_updated', $7)
-        RETURNING id`,
-        [
-          verifiedCounterpart.id,
-          verifiedCounterpart.email.toLowerCase(),
-          cpKey,
-          verifiedCounterpart.full_name,
-          cpTmpl.subject,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount })
-        ]
-      );
-      const cpLogId = cpLogRes.rows[0]?.id || `update_cp_${Date.now()}`;
+      const cpLogId = await createDispatchLogRecord({
+        userId: verifiedCounterpart.id,
+        email: verifiedCounterpart.email.toLowerCase(),
+        emailType: 'udhar_updated_counterpart',
+        idempotencyKey: cpKey,
+        recipientName: verifiedCounterpart.full_name,
+        subject: cpTmpl.subject,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_updated',
+        metadata: { linkId: opts.linkId, initiatorName: opts.initiatorName, amount: opts.amount },
+      });
       const sent = await executeEmailDispatch(
         cpLogId,
         verifiedCounterpart.email.toLowerCase(),
@@ -1567,22 +2049,20 @@ export async function sendUdharUpdatedEmails(opts: UdharUpdatedEmailOpts): Promi
       : 'Skipped: Counterpart is not a registered My Money Manager user';
 
     try {
-      await query(
-        `INSERT INTO public.email_dispatch_logs (
-          user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-          last_error, reference_id, trigger_event, metadata
-        ) VALUES (NULL, $1, 'udhar_updated_counterpart', $2, $3, $4, $5, 0, 0, $6, $7, 'udhar_updated', $8)`,
-        [
-          opts.counterpartEmail || null,
-          `udhar_skip_update_cp:${txIdStr}_${Date.now()}`,
-          opts.counterpartName,
-          `[Skipped] Udhar Transaction Updated – ${APP_CONFIG.appName}`,
-          skipStatus,
-          reasonText,
-          txIdStr,
-          JSON.stringify({ linkId: opts.linkId, counterpartName: opts.counterpartName, reason: 'unregistered_counterpart' })
-        ]
-      );
+      await createDispatchLogRecord({
+        userId: null,
+        email: opts.counterpartEmail || null,
+        emailType: 'udhar_updated_counterpart',
+        idempotencyKey: `udhar_skip_update_cp:${txIdStr}_${Date.now()}`,
+        recipientName: opts.counterpartName,
+        subject: `[Skipped] Udhar Transaction Updated – ${APP_CONFIG.appName}`,
+        status: skipStatus,
+        maxAttempts: 0,
+        lastError: reasonText,
+        referenceId: txIdStr,
+        triggerEvent: 'udhar_updated',
+        metadata: { linkId: opts.linkId, counterpartName: opts.counterpartName, reason: 'unregistered_counterpart' },
+      });
       counterpartStatus = skipStatus;
     } catch (skipErr) {
       console.warn('[Udhar Update Skip Log Insert Warn]:', skipErr);
@@ -1662,28 +2142,33 @@ export async function sendContactInvitationEmail(opts: {
   const text = `Hi ${opts.recipientName || 'Friend'},\n\n${opts.inviterName} has added you as a contact in ${APP_CONFIG.appName} to help manage money lending, borrowing, and repayment records digitally.\n\nWith ${APP_CONFIG.appName}, you can:\n- Track money given and received.\n- Manage borrowing and repayment records.\n- Maintain transparent transaction history.\n- Keep track of outstanding balances.\n\nCreate your account to join and manage your financial records:\n${opts.inviteLink}\n\n${APP_CONFIG.appName} by ${APP_CONFIG.companyName}`;
 
   try {
-    const logRes = await query(
-      `INSERT INTO public.email_dispatch_logs (
-        email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts,
-        reference_id, trigger_event, metadata
-      ) VALUES ($1, 'contact_invitation', $2, $3, $4, 'pending', 0, 3, $5, 'contact_invitation', $6)
-      RETURNING id`,
-      [
-        opts.recipientEmail.toLowerCase().trim(),
-        `invite:${opts.recipientEmail.toLowerCase().trim()}_${Date.now()}`,
-        opts.recipientName,
-        subject,
-        opts.inviteToken || null,
-        JSON.stringify({ inviterName: opts.inviterName, inviterEmail: opts.inviterEmail })
-      ]
-    );
-    const logId = logRes.rows[0]?.id || `invite_${Date.now()}`;
+    const customInvite = await getRenderedCustomTemplateIfActive('contact-invitation', {
+      user_name: opts.recipientName || 'Friend',
+      inviter_name: opts.inviterName,
+      invite_link: opts.inviteLink,
+    });
+    const finalSubject = customInvite?.subject || subject;
+    const finalHtml = customInvite?.html || html;
+    const finalText = customInvite?.text || text;
+
+    const cleanEmail = opts.recipientEmail.toLowerCase().trim();
+    const logId = await createDispatchLogRecord({
+      userId: null,
+      email: cleanEmail,
+      emailType: 'contact_invitation',
+      idempotencyKey: `invite:${cleanEmail}_${Date.now()}`,
+      recipientName: opts.recipientName,
+      subject: finalSubject,
+      referenceId: opts.inviteToken || null,
+      triggerEvent: 'contact_invitation',
+      metadata: { inviterName: opts.inviterName, inviterEmail: opts.inviterEmail },
+    });
     return await executeEmailDispatch(
       logId,
-      opts.recipientEmail.toLowerCase().trim(),
-      subject,
-      html,
-      text,
+      cleanEmail,
+      finalSubject,
+      finalHtml,
+      finalText,
       getBrandLogoAttachments(),
       1,
       3

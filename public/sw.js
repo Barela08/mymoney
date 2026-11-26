@@ -227,13 +227,63 @@ self.addEventListener('push', (event) => {
     timestamp: payload.timestamp,
     renotify: true,
     silent: Boolean(payload.silent),
-    vibrate: payload.silent ? undefined : [150, 50, 150],
+    vibrate: payload.silent ? undefined : [200, 80, 200],
     data: payload.data,
     actions: payload.actions || [],
     requireInteraction: Boolean(payload.requireInteraction),
   };
 
-  event.waitUntil(self.registration.showNotification(payload.title, options));
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(payload.title, options),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((windowClients) => {
+          for (const client of windowClients) {
+            try {
+              if (new URL(client.url).origin === self.location.origin && typeof client.postMessage === 'function') {
+                client.postMessage({
+                  type: 'PUSH_RECEIVED',
+                  payload,
+                });
+              }
+            } catch {
+              // ignore individual client postMessage errors
+            }
+          }
+        })
+        .catch(() => {}),
+    ])
+  );
+});
+
+// Handle external notification display requests forwarded from open app tabs
+self.addEventListener('message', (event) => {
+  const data = event?.data;
+  if (!data || data.type !== 'SHOW_EXTERNAL_NOTIFICATION' || !data.payload) return;
+
+  const p = data.payload;
+  const title = typeof p.title === 'string' && p.title.trim() ? p.title.trim().slice(0, 140) : 'My Money Manager';
+  const body = typeof p.body === 'string' && p.body.trim() ? p.body.trim().slice(0, 320) : 'You have a new notification.';
+  const isSilent = Boolean(p.silent);
+  const safeUrl = sanitizeDeepLink(p.data?.url || p.url || '/');
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: typeof p.tag === 'string' && p.tag.trim() ? p.tag.trim().slice(0, 120) : `mm-ext-${Date.now()}`,
+      renotify: true,
+      silent: isSilent,
+      vibrate: isSilent ? undefined : [200, 80, 200],
+      requireInteraction: Boolean(p.requireInteraction),
+      data: {
+        ...(p.data && typeof p.data === 'object' ? p.data : {}),
+        url: safeUrl,
+      },
+    })
+  );
 });
 
 // Push Notification Click: Focus existing window & navigate cleanly, or open a new window if none open

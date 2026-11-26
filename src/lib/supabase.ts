@@ -274,12 +274,18 @@ export async function saveTransactionToSupabase(tx: Transaction): Promise<Transa
     throw error;
   }
 
-  // Trigger automated in-app & push transaction notification
+  // Trigger automated in-app, external push & email transaction notification
   if (!tx.is_deleted) {
     try {
+      const { getStoredSessionToken } = await import('./authApi');
+      const token = getStoredSessionToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       fetch('/api/notifications/events/transaction-created', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers,
         body: JSON.stringify({
           id: data?.id || tx.id,
           title: tx.title,
@@ -288,7 +294,13 @@ export async function saveTransactionToSupabase(tx: Transaction): Promise<Transa
           category: tx.subcategory,
           section: tx.category,
         }),
-      }).catch(() => {});
+      })
+        .then(() => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('mymoney:notifications-refresh'));
+          }
+        })
+        .catch(() => {});
     } catch {}
   }
 

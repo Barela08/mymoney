@@ -87,7 +87,7 @@ const SectionFallback: React.FC = () => (
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
-  const { maintenanceSettings, dynamicSections, refreshTransactions, appBranding } = useExpense();
+  const { maintenanceSettings, refreshSiteConfig, dynamicSections, refreshTransactions, appBranding } = useExpense();
   const toast = useToast();
 
   const [routeLocation, setRouteLocation] = useState<{ pathname: string; hash: string }>(() => {
@@ -349,7 +349,7 @@ const MainContent: React.FC = () => {
     return (
       <MaintenanceScreen
         settings={maintenanceSettings}
-        onRefresh={refreshTransactions}
+        onRefresh={refreshSiteConfig}
       />
     );
   }

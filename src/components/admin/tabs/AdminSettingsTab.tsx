@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useExpense, sanitizeLogoUrl } from '../../../context/ExpenseContext';
 import { useToast } from '../../../context/ToastContext';
-import { adminClient, AdminApiSettings } from '../../../lib/adminApi';
+import { adminClient, AdminApiSettings, AdminSmtpSettings } from '../../../lib/adminApi';
 import { MaintenanceSettings, AppDownloadPopupSettings } from '../../../types';
 import { MaintenanceScreen } from '../../maintenance/MaintenanceScreen';
 import { SUPPORT_CONTACT } from '../../../config/contact';
@@ -144,6 +144,22 @@ export const AdminSettingsTab: React.FC = () => {
   const [isLoadingIntegrations, setIsLoadingIntegrations] = useState(false);
   const [isSavingIntegrations, setIsSavingIntegrations] = useState(false);
 
+  // Encrypted SMTP Email Service Form
+  const [smtpSettings, setSmtpSettings] = useState<AdminSmtpSettings | null>(null);
+  const [smtpHost, setSmtpHost] = useState('smtp.gmail.com');
+  const [smtpPort, setSmtpPort] = useState('465');
+  const [smtpSecure, setSmtpSecure] = useState(true);
+  const [smtpUser, setSmtpUser] = useState('hackifypro@gmail.com');
+  const [smtpPassInput, setSmtpPassInput] = useState('');
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
+  const [smtpFromEmail, setSmtpFromEmail] = useState('hackifypro@gmail.com');
+  const [smtpFromName, setSmtpFromName] = useState('My Money Manager by HackifyPro');
+  const [smtpEnabled, setSmtpEnabled] = useState(true);
+  const [smtpTestRecipient, setSmtpTestRecipient] = useState('');
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [isRemovingSmtpPass, setIsRemovingSmtpPass] = useState(false);
+
   // Admin Notification Preferences Form
   const [alertNewUser, setAlertNewUser] = useState(true);
   const [alertAppInstall, setAlertAppInstall] = useState(true);
@@ -162,9 +178,10 @@ export const AdminSettingsTab: React.FC = () => {
   const loadIntegrationsConfig = async () => {
     setIsLoadingIntegrations(true);
     try {
-      const [res, apiRes]: [any, any] = await Promise.all([
+      const [res, apiRes, smtpRes]: [any, any, any] = await Promise.all([
         adminClient.getIntegrationsConfig().catch(() => null),
         adminClient.getApiSettings().catch(() => null),
+        adminClient.getSmtpSettings().catch(() => null),
       ]);
       if (res?.success) {
         if (res.status) setIntegrationStatus(res.status);
@@ -182,6 +199,17 @@ export const AdminSettingsTab: React.FC = () => {
         setApiSettings(apiRes.apiSettings);
         if (apiRes.apiSettings.aiModel) setAiModel(apiRes.apiSettings.aiModel);
         if (typeof apiRes.apiSettings.aiEnabled === 'boolean') setAiEnabled(apiRes.apiSettings.aiEnabled);
+      }
+      if (smtpRes?.success && smtpRes.smtpSettings) {
+        const s: AdminSmtpSettings = smtpRes.smtpSettings;
+        setSmtpSettings(s);
+        setSmtpHost(s.host || 'smtp.gmail.com');
+        setSmtpPort(String(s.port || 465));
+        setSmtpSecure(Boolean(s.secure));
+        setSmtpUser(s.user || 'hackifypro@gmail.com');
+        setSmtpFromEmail(s.fromEmail || s.user || 'hackifypro@gmail.com');
+        setSmtpFromName(s.fromName || 'My Money Manager by HackifyPro');
+        setSmtpEnabled(Boolean(s.enabled));
       }
     } catch {
       // Keep graceful defaults when backend is unavailable
@@ -388,6 +416,75 @@ export const AdminSettingsTab: React.FC = () => {
     }
   };
 
+  const handleSaveSmtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedPort = Number(smtpPort);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      toast.error('Invalid Port', 'SMTP Port must be between 1 and 65535 (e.g., 465 or 587).');
+      return;
+    }
+    setIsSavingSmtp(true);
+    try {
+      const res = await adminClient.saveSmtpSettings({
+        host: smtpHost.trim(),
+        port: parsedPort,
+        secure: smtpSecure,
+        user: smtpUser.trim(),
+        pass: smtpPassInput.trim() || undefined,
+        fromEmail: smtpFromEmail.trim() || smtpUser.trim(),
+        fromName: smtpFromName.trim() || 'My Money Manager by HackifyPro',
+        enabled: smtpEnabled,
+      });
+      if (res?.smtpSettings) {
+        setSmtpSettings(res.smtpSettings);
+      }
+      setSmtpPassInput('');
+      setShowSmtpPass(false);
+      toast.success(
+        'SMTP Configuration Saved',
+        res?.message || 'Email server settings encrypted and saved on the server.'
+      );
+      await loadIntegrationsConfig();
+    } catch (err: any) {
+      toast.error('SMTP Save Failed', err?.message || 'Could not save SMTP settings.');
+    } finally {
+      setIsSavingSmtp(false);
+    }
+  };
+
+  const handleTestSmtp = async () => {
+    setIsTestingSmtp(true);
+    try {
+      const res = await adminClient.testSmtpSettings(smtpTestRecipient.trim() || undefined);
+      if (res?.success) {
+        toast.success('Test Email Sent!', res.message || 'Check your inbox for the live test email.');
+      } else {
+        toast.error('Email Dispatch Failed', res?.message || 'SMTP test email failed.');
+      }
+    } catch (err: any) {
+      toast.error('Email Test Failed', err?.message || 'SMTP server rejected the test email.');
+    } finally {
+      setIsTestingSmtp(false);
+    }
+  };
+
+  const handleRemoveSmtpPassword = async () => {
+    setIsRemovingSmtpPass(true);
+    try {
+      const res = await adminClient.deleteSmtpPassword();
+      if (res?.smtpSettings) {
+        setSmtpSettings(res.smtpSettings);
+      }
+      setSmtpPassInput('');
+      toast.info('Saved SMTP Password Removed', res?.message || 'Custom SMTP password deleted.');
+      await loadIntegrationsConfig();
+    } catch (err: any) {
+      toast.error('Remove Failed', err?.message || 'Could not remove saved SMTP password.');
+    } finally {
+      setIsRemovingSmtpPass(false);
+    }
+  };
+
   const handleSaveMaintenance = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingMaint(true);
@@ -507,7 +604,7 @@ export const AdminSettingsTab: React.FC = () => {
     },
     {
       label: 'SMTP Transactional Email',
-      envHint: 'SMTP_HOST, SMTP_USER, SMTP_PASS',
+      envHint: 'Admin SMTP Settings or SMTP_PASS',
       ok: integrationStatus?.smtpConfigured ?? false,
       icon: Mail,
     },
@@ -731,8 +828,7 @@ export const AdminSettingsTab: React.FC = () => {
         <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
           <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           <p className="leading-relaxed">
-            Gemini API keys entered below are encrypted with AES-256-GCM on the server before database storage and are never sent back to browsers or normal users. Other infrastructure secrets (<code className="font-mono text-[11px]">SMTP_PASS</code>,{' '}
-            <code className="font-mono text-[11px]">SUPABASE_SERVICE_ROLE_KEY</code>,{' '}
+            Gemini API keys and SMTP App Passwords entered below are encrypted with AES-256-GCM on the server before storage and are never sent back to browsers or normal users. Infrastructure secrets (<code className="font-mono text-[11px]">SUPABASE_SERVICE_ROLE_KEY</code>,{' '}
             <code className="font-mono text-[11px]">VAPID_PRIVATE_KEY</code>) remain exclusively in server environment variables.
           </p>
         </div>
@@ -880,6 +976,238 @@ export const AdminSettingsTab: React.FC = () => {
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{isRemovingApiKey ? 'Removing...' : 'Remove Saved Key'}</span>
+              </button>
+            )}
+          </div>
+        </form>
+
+        {/* Encrypted SMTP Email Service Management Panel */}
+        <form
+          onSubmit={handleSaveSmtp}
+          className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-600 flex items-center justify-center">
+                <Mail className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                  SMTP Email Service (Feedback, Support, Udhar &amp; All-Event Emails)
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Configure Gmail App Password or custom SMTP so feedback, complaint, transaction, Udhar &amp; admin reply emails deliver reliably
+                </p>
+              </div>
+            </div>
+
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold self-start sm:self-auto ${
+                smtpSettings?.configured
+                  ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+              }`}
+            >
+              {smtpSettings?.configured ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>
+                    Active ({smtpSettings.source === 'admin_settings' ? 'Admin Saved' : 'Server Env'})
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>Password Required</span>
+                </>
+              )}
+            </span>
+          </div>
+
+          {smtpSettings?.maskedPassword && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+              <div className="text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-semibold mr-2">Current Stored Password:</span>
+                <code className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                  {smtpSettings.maskedPassword}
+                </code>
+              </div>
+              {smtpSettings.updatedAt && (
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Updated {new Date(smtpSettings.updatedAt).toLocaleString()}
+                  {smtpSettings.updatedBy ? ` by ${smtpSettings.updatedBy}` : ''}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                SMTP Host
+              </label>
+              <input
+                type="text"
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+                placeholder="smtp.gmail.com"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                SMTP Port
+              </label>
+              <input
+                type="number"
+                value={smtpPort}
+                onChange={(e) => {
+                  setSmtpPort(e.target.value);
+                  if (e.target.value === '465') setSmtpSecure(true);
+                  if (e.target.value === '587') setSmtpSecure(false);
+                }}
+                placeholder="465"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono"
+              />
+            </div>
+
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={smtpSecure}
+                  onChange={(e) => setSmtpSecure(e.target.checked)}
+                  className="w-4 h-4 rounded text-emerald-600"
+                />
+                <span>Use SSL/TLS (Port 465)</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                SMTP Username / Email
+              </label>
+              <input
+                type="email"
+                value={smtpUser}
+                onChange={(e) => setSmtpUser(e.target.value)}
+                placeholder="hackifypro@gmail.com"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="admin-smtp-password"
+                className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1"
+              >
+                {smtpSettings?.hasSavedPassword ? 'Update SMTP / Gmail App Password' : 'Enter SMTP / Gmail App Password'}
+              </label>
+              <div className="relative">
+                <input
+                  id="admin-smtp-password"
+                  type={showSmtpPass ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  value={smtpPassInput}
+                  onChange={(e) => setSmtpPassInput(e.target.value)}
+                  placeholder={smtpSettings?.hasSavedPassword ? 'Leave blank to keep saved password' : '16-char Google App Password'}
+                  className="w-full pl-3.5 pr-10 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSmtpPass((prev) => !prev)}
+                  aria-label={showSmtpPass ? 'Hide SMTP password' : 'Show SMTP password'}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  {showSmtpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                Sender From Email
+              </label>
+              <input
+                type="email"
+                value={smtpFromEmail}
+                onChange={(e) => setSmtpFromEmail(e.target.value)}
+                placeholder="hackifypro@gmail.com"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                Sender From Display Name
+              </label>
+              <input
+                type="text"
+                value={smtpFromName}
+                onChange={(e) => setSmtpFromName(e.target.value)}
+                placeholder="My Money Manager by HackifyPro"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={smtpEnabled}
+                onChange={(e) => setSmtpEnabled(e.target.checked)}
+                className="w-4 h-4 rounded text-emerald-600"
+              />
+              <span>Enable automated email delivery across all events</span>
+            </label>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="email"
+                value={smtpTestRecipient}
+                onChange={(e) => setSmtpTestRecipient(e.target.value)}
+                placeholder="Test email recipient (optional)"
+                className="px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono w-56"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="submit"
+              disabled={isSavingSmtp}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSavingSmtp ? 'Saving SMTP...' : 'Save SMTP Settings'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTestSmtp}
+              disabled={isTestingSmtp}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>{isTestingSmtp ? 'Sending Test Email...' : 'Send Test Email'}</span>
+            </button>
+
+            {smtpSettings?.hasSavedPassword && (
+              <button
+                type="button"
+                onClick={handleRemoveSmtpPassword}
+                disabled={isRemovingSmtpPass}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 text-xs font-bold cursor-pointer disabled:opacity-50 ml-auto"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isRemovingSmtpPass ? 'Removing...' : 'Remove Saved Password'}</span>
               </button>
             )}
           </div>

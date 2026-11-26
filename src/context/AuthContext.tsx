@@ -311,7 +311,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true, message: res.message };
       }
     } catch (err: any) {
-      // If API failed or is not ready, try direct Supabase sign up
+      if (
+        err?.data?.code === 'MAINTENANCE_MODE' ||
+        err?.status === 503 ||
+        err?.status === 400 ||
+        err?.status === 409
+      ) {
+        const errors = err?.data?.errors;
+        return {
+          success: false,
+          message: err.message || 'Registration failed.',
+          errors,
+        };
+      }
+
+      // If API failed or is unreachable, try direct Supabase sign up
       if (supabase) {
         try {
           const { data, error } = await supabase.auth.signUp({

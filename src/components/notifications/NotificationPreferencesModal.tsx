@@ -10,6 +10,7 @@ import {
   Send,
   Loader2,
   Info,
+  Volume2,
 } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
@@ -41,6 +42,7 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
   const [inApp, setInApp] = useState(preferences?.in_app_enabled ?? true);
   const [push, setPush] = useState(preferences?.push_enabled ?? true);
   const [email, setEmail] = useState(preferences?.email_enabled ?? true);
+  const [soundEnabled, setSoundEnabled] = useState(preferences?.sound_enabled ?? true);
 
   const [income, setIncome] = useState(preferences?.notify_income ?? true);
   const [expense, setExpense] = useState(preferences?.notify_expense ?? true);
@@ -64,6 +66,7 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
     setInApp(preferences.in_app_enabled ?? true);
     setPush(preferences.push_enabled ?? true);
     setEmail(preferences.email_enabled ?? true);
+    setSoundEnabled(preferences.sound_enabled ?? true);
     setIncome(preferences.notify_income ?? true);
     setExpense(preferences.notify_expense ?? true);
     setUdhar(preferences.notify_udhar ?? true);
@@ -97,6 +100,7 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
         in_app_enabled: inApp,
         push_enabled: push,
         email_enabled: email,
+        sound_enabled: soundEnabled,
         notify_income: income,
         notify_expense: expense,
         notify_udhar: udhar,
@@ -312,7 +316,7 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
                       Email Notifications
                     </p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Major announcements, settlements & tickets
+                      Feedback, complaints, Udhar, alerts &amp; broadcasts
                     </p>
                   </div>
                 </div>
@@ -321,6 +325,32 @@ export const NotificationPreferencesModal: React.FC<Props> = ({ isOpen, onClose 
                     type="checkbox"
                     checked={email}
                     onChange={(e) => setEmail(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Notification Sound Alerts */}
+              <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <Volume2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                      Notification Sound Alerts
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Play audible chime for desktop &amp; mobile alerts
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={soundEnabled}
+                    onChange={(e) => setSoundEnabled(e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600"></div>

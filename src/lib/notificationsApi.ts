@@ -14,6 +14,12 @@ export interface UserNotification {
     | 'general'
     | 'income'
     | 'expense'
+    | 'budget'
+    | 'bill'
+    | 'anomaly'
+    | 'low_balance'
+    | 'savings'
+    | 'receipt'
     | 'udhar'
     | 'repay'
     | 'settlement'
@@ -38,6 +44,7 @@ export interface NotificationPreferences {
   in_app_enabled: boolean;
   push_enabled: boolean;
   email_enabled: boolean;
+  sound_enabled?: boolean;
   notify_income: boolean;
   notify_expense: boolean;
   notify_udhar: boolean;

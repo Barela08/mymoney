@@ -186,6 +186,22 @@ export const adminClient = {
     return adminRequest('/api/admin/emails/templates', { method: 'GET' });
   },
 
+  async createEmailTemplate(data: {
+    name: string;
+    slug?: string;
+    category?: string;
+    subject: string;
+    html_content: string;
+    text_content?: string;
+    variables?: string[];
+    is_active?: boolean;
+  }) {
+    return adminRequest('/api/admin/emails/templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async updateEmailTemplate(id: string, data: any) {
     return adminRequest(`/api/admin/emails/templates/${encodeURIComponent(id)}`, {
       method: 'PUT',
@@ -193,7 +209,45 @@ export const adminClient = {
     });
   },
 
-  async sendTestEmail(data: { recipient?: string; subject?: string; html_content?: string }) {
+  async resetEmailTemplate(id: string) {
+    return adminRequest(`/api/admin/emails/templates/${encodeURIComponent(id)}/reset`, {
+      method: 'POST',
+    });
+  },
+
+  async deleteEmailTemplate(id: string) {
+    return adminRequest(`/api/admin/emails/templates/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async previewEmailTemplate(
+    id: string,
+    data?: { subject?: string; html_content?: string; text_content?: string; variables?: Record<string, string> }
+  ) {
+    return adminRequest(`/api/admin/emails/templates/${encodeURIComponent(id)}/preview`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
+  async sendEmailTemplate(
+    id: string,
+    data: {
+      targetMode: 'custom_email' | 'selected_users' | 'all_active_users';
+      emails?: string;
+      userIds?: string[];
+      variables?: Record<string, string>;
+      alsoNotifyInAppAndPush?: boolean;
+    }
+  ) {
+    return adminRequest(`/api/admin/emails/templates/${encodeURIComponent(id)}/send`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async sendTestEmail(data: { recipient?: string; subject?: string; html_content?: string; text_content?: string }) {
     return adminRequest('/api/admin/emails/test', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -612,6 +666,52 @@ export const adminClient = {
     return adminRequest('/api/admin/api-settings/key', { method: 'DELETE' });
   },
 
+  async getSmtpSettings(): Promise<{ success: boolean; smtpSettings: AdminSmtpSettings }> {
+    return adminRequest('/api/admin/smtp-settings', { method: 'GET' });
+  },
+
+  async saveSmtpSettings(data: {
+    host?: string;
+    port?: number;
+    secure?: boolean;
+    user?: string;
+    pass?: string;
+    fromEmail?: string;
+    fromName?: string;
+    enabled?: boolean;
+    verifyAndSendTest?: boolean;
+    testRecipient?: string;
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    smtpSettings?: AdminSmtpSettings;
+    testResult?: { success: boolean; error?: string; messageId?: string } | null;
+  }> {
+    return adminRequest('/api/admin/smtp-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async testSmtpSettings(to?: string): Promise<{
+    success: boolean;
+    message?: string;
+    result?: { success: boolean; error?: string; messageId?: string };
+  }> {
+    return adminRequest('/api/admin/smtp-settings/test', {
+      method: 'POST',
+      body: JSON.stringify(to ? { to } : {}),
+    });
+  },
+
+  async deleteSmtpPassword(): Promise<{
+    success: boolean;
+    message?: string;
+    smtpSettings?: AdminSmtpSettings;
+  }> {
+    return adminRequest('/api/admin/smtp-settings/password', { method: 'DELETE' });
+  },
+
   // 17. Database Diagnostics (PART N)
   async getDatabaseDiagnostics() {
     return adminRequest('/api/admin/system/database', { method: 'GET' });
@@ -633,4 +733,20 @@ export interface AdminApiSettings {
   aiModel?: string;
   aiEnabled?: boolean;
   allowedAiModels?: string[];
+}
+
+export interface AdminSmtpSettings {
+  configured: boolean;
+  enabled: boolean;
+  hasSavedPassword: boolean;
+  maskedPassword: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  fromEmail: string;
+  fromName: string;
+  source: 'admin_settings' | 'env' | 'none';
+  updatedAt: string | null;
+  updatedBy: string | null;
 }

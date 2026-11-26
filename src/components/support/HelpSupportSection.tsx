@@ -227,6 +227,7 @@ export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({ initialT
         setFeedbackSubmittedSuccess(true);
         toast.success('Thank You!', res.message);
         setFeedbackMessage('');
+        window.dispatchEvent(new CustomEvent('mymoney:notifications-refresh'));
       }
     } catch (err: any) {
       toast.error('Submission Failed', err.message);
@@ -262,6 +263,7 @@ export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({ initialT
         setComplaintSubject('');
         setComplaintDescription('');
         setComplaintAttachment('');
+        window.dispatchEvent(new CustomEvent('mymoney:notifications-refresh'));
       }
     } catch (err: any) {
       toast.error('Submission Failed', err.message);
@@ -295,6 +297,7 @@ export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({ initialT
         toast.success('Support Request Sent', res.message);
         setSupportSubject('');
         setSupportMessage('');
+        window.dispatchEvent(new CustomEvent('mymoney:notifications-refresh'));
       }
     } catch (err: any) {
       toast.error('Submission Failed', err.message);

@@ -36,8 +36,8 @@ import {
   sendUdharSettledEmails,
   sendUdharUpdatedEmails,
   sendContactInvitationEmail,
-  sendComplaintConfirmationEmail,
-  sendSupportTicketConfirmationEmail,
+  sendComplaintSubmissionEmails,
+  sendSupportTicketSubmissionEmails,
 } from './email.js';
 import { APP_CONFIG } from './config.js';
 import {
@@ -66,6 +66,7 @@ import {
   notifyFeedbackSubmitted,
   notifyAdminNewFeedback,
   notifyComplaintSubmitted,
+  notifyAdminNewSupportTicket,
   processScheduledCampaigns,
   recordDeviceInstallation,
   recordAdminNotification,
@@ -80,6 +81,12 @@ import {
   clearAllUserNotificationsFallback,
   sbRestRequest,
   listAllAppUsersFallback,
+  insertSupportTicketFallback,
+  listSupportTicketsFallback,
+  getSupportTicketByIdFallback,
+  insertSupportTicketReplyFallback,
+  getSupportTicketRepliesFallback,
+  updateSupportTicketStatusFallback,
 } from './supabaseRestFallback.js';
 import {
   normalizeSearchQuery,
@@ -4193,6 +4200,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             amount,
             direction,
             dueDate,
+            skipEmail: true,
           }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
 
           sendUdharCreatedEmails({
@@ -5586,66 +5594,133 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Fetch trusted user name and email from app_users
-      const uRes = await query('SELECT full_name, email, phone FROM public.app_users WHERE id = $1', [authUser.id]);
-      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
-      const trustedEmail = uRes.rows[0]?.email || authUser.email;
-      const userPhone = phone || uRes.rows[0]?.phone || null;
+      const useDb = isDatabaseAvailable();
+      let trustedName = authUser.full_name || 'Valued User';
+      let trustedEmail = authUser.email;
+      let userPhone = phone;
 
-      // Duplicate prevention: check identical complaint within 15 seconds
-      const dupCheck = await query(
-        `SELECT id FROM public.support_tickets 
-         WHERE user_id = $1 AND subject = $2 AND description = $3 AND created_at > NOW() - INTERVAL '15 seconds'`,
-        [authUser.id, subject, description]
-      );
-      if (dupCheck.rows.length > 0) {
-        sendJson(res, 409, {
-          success: false,
-          message: 'Duplicate complaint detected. Your previous submission was already received!',
-        });
-        return true;
+      if (useDb) {
+        const uRes = await query('SELECT full_name, email, phone FROM public.app_users WHERE id = $1', [authUser.id]);
+        trustedName = uRes.rows[0]?.full_name || trustedName;
+        trustedEmail = uRes.rows[0]?.email || trustedEmail;
+        userPhone = userPhone || uRes.rows[0]?.phone || null;
+
+        const dupCheck = await query(
+          `SELECT id FROM public.support_tickets 
+           WHERE user_id = $1 AND subject = $2 AND description = $3 AND created_at > NOW() - INTERVAL '15 seconds'`,
+          [authUser.id, subject, description]
+        );
+        if (dupCheck.rows.length > 0) {
+          sendJson(res, 409, {
+            success: false,
+            message: 'Duplicate complaint detected. Your previous submission was already received!',
+          });
+          return true;
+        }
+      } else {
+        const recentTickets = await listSupportTicketsFallback(authUser.id);
+        const nowMs = Date.now();
+        const isDup = recentTickets.some(
+          (t: any) =>
+            t.subject === subject &&
+            t.description === description &&
+            t.created_at &&
+            nowMs - new Date(t.created_at).getTime() < 15000
+        );
+        if (isDup) {
+          sendJson(res, 409, {
+            success: false,
+            message: 'Duplicate complaint detected. Your previous submission was already received!',
+          });
+          return true;
+        }
       }
 
-      // Generate unique ticket number: CMP-XXXX
       const ticketNumber = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
+      let ticket: any = null;
 
-      const insertRes = await query(
-        `INSERT INTO public.support_tickets (
-          ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'complaint', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
-        RETURNING *`,
-        [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, description, attachmentUrl]
-      );
+      if (useDb) {
+        const insertRes = await query(
+          `INSERT INTO public.support_tickets (
+            ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 'complaint', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
+          RETURNING *`,
+          [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, description, attachmentUrl]
+        );
+        ticket = insertRes.rows[0] || null;
+      }
 
-      const ticket = insertRes.rows[0];
+      if (!ticket) {
+        ticket = await insertSupportTicketFallback({
+          ticket_number: ticketNumber,
+          user_id: authUser.id,
+          user_name: trustedName,
+          user_email: trustedEmail,
+          ticket_type: 'complaint',
+          category,
+          subject,
+          description,
+          priority: 'normal',
+          status: 'open',
+          attachment_url: attachmentUrl,
+        });
+      }
 
-      // Async send confirmation email
-      sendComplaintConfirmationEmail({
-        email: trustedEmail,
-        userName: trustedName,
-        ticketNumber: ticket.ticket_number,
-        category: ticket.category,
-        subject: ticket.subject,
-        description: ticket.description,
-      }).catch((e) => console.warn('[Complaint Ack Email Error]:', e));
+      let userEmailSent = false;
+      try {
+        const [emailResult] = await Promise.allSettled([
+          sendComplaintSubmissionEmails({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            userId: authUser.id,
+            userName: trustedName,
+            userEmail: trustedEmail,
+            userPhone,
+            category: ticket.category,
+            subject: ticket.subject,
+            description: ticket.description,
+            submittedAt: ticket.created_at
+              ? new Date(ticket.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST'
+              : undefined,
+          }),
+          notifyComplaintSubmitted(authUser.id, {
+            id: ticket.id,
+            subject: ticket.subject,
+            category: ticket.category,
+            ticketType: 'complaint',
+          }),
+          notifyAdminNewSupportTicket({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            ticketType: 'complaint',
+            submitterName: trustedName,
+            submitterEmail: trustedEmail,
+            category: ticket.category,
+            subject: ticket.subject,
+          }),
+        ]);
+        if (emailResult.status === 'fulfilled') {
+          userEmailSent = Boolean(emailResult.value?.userEmailSent);
+        }
+      } catch (e) {
+        console.warn('[Complaint Notification/Email Error]:', e);
+      }
 
-      // In-app complaint confirmation notification
-      notifyComplaintSubmitted(authUser.id, {
-        id: ticket.id,
-        subject: ticket.subject,
-        category: ticket.category,
-      }).catch((e) => console.warn('[Notify Complaint Error]:', e));
-
-      await logSecurityEvent('USER_SUBMITTED_COMPLAINT', {
-        userId: authUser.id,
-        userEmail: trustedEmail,
-        details: { ticketNumber: ticket.ticket_number },
-      });
+      if (useDb) {
+        await logSecurityEvent('USER_SUBMITTED_COMPLAINT', {
+          userId: authUser.id,
+          userEmail: trustedEmail,
+          details: { ticketNumber: ticket.ticket_number, userEmailSent },
+        });
+      }
 
       sendJson(res, 201, {
         success: true,
-        message: 'Your complaint has been submitted successfully. Our support team will review it and get back to you.',
+        message: userEmailSent
+          ? 'Your complaint has been submitted and a confirmation email has been sent to you.'
+          : 'Your complaint has been submitted successfully. Our support team will review it and get back to you.',
         ticket_number: ticket.ticket_number,
+        emailDispatched: userEmailSent,
         ticket: {
           id: ticket.id,
           ticket_number: ticket.ticket_number,
@@ -5681,43 +5756,99 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Fetch trusted user name and email from app_users
-      const uRes = await query('SELECT full_name, email FROM public.app_users WHERE id = $1', [authUser.id]);
-      const trustedName = uRes.rows[0]?.full_name || authUser.full_name || 'Valued User';
-      const trustedEmail = uRes.rows[0]?.email || authUser.email;
+      const useDb = isDatabaseAvailable();
+      let trustedName = authUser.full_name || 'Valued User';
+      let trustedEmail = authUser.email;
 
-      // Generate unique ticket number: SUP-XXXX
+      if (useDb) {
+        const uRes = await query('SELECT full_name, email FROM public.app_users WHERE id = $1', [authUser.id]);
+        trustedName = uRes.rows[0]?.full_name || trustedName;
+        trustedEmail = uRes.rows[0]?.email || trustedEmail;
+      }
+
       const ticketNumber = `SUP-${Math.floor(1000 + Math.random() * 9000)}`;
+      let ticket: any = null;
 
-      const insertRes = await query(
-        `INSERT INTO public.support_tickets (
-          ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'support', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
-        RETURNING *`,
-        [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, message, attachmentUrl]
-      );
+      if (useDb) {
+        const insertRes = await query(
+          `INSERT INTO public.support_tickets (
+            ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 'support', $5, $6, $7, 'normal', 'open', $8, NOW(), NOW())
+          RETURNING *`,
+          [ticketNumber, authUser.id, trustedName, trustedEmail, category, subject, message, attachmentUrl]
+        );
+        ticket = insertRes.rows[0] || null;
+      }
 
-      const ticket = insertRes.rows[0];
+      if (!ticket) {
+        ticket = await insertSupportTicketFallback({
+          ticket_number: ticketNumber,
+          user_id: authUser.id,
+          user_name: trustedName,
+          user_email: trustedEmail,
+          ticket_type: 'support',
+          category,
+          subject,
+          description: message,
+          priority: 'normal',
+          status: 'open',
+          attachment_url: attachmentUrl,
+        });
+      }
 
-      // Async send confirmation email
-      sendSupportTicketConfirmationEmail({
-        email: trustedEmail,
-        userName: trustedName,
-        ticketNumber: ticket.ticket_number,
-        category: ticket.category,
-        subject: ticket.subject,
-        description: ticket.description,
-      }).catch((e) => console.warn('[Support Ticket Ack Email Error]:', e));
+      let userEmailSent = false;
+      try {
+        const [emailResult] = await Promise.allSettled([
+          sendSupportTicketSubmissionEmails({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            userId: authUser.id,
+            userName: trustedName,
+            userEmail: trustedEmail,
+            category: ticket.category,
+            subject: ticket.subject,
+            description: ticket.description,
+            submittedAt: ticket.created_at
+              ? new Date(ticket.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST'
+              : undefined,
+          }),
+          notifyComplaintSubmitted(authUser.id, {
+            id: ticket.id,
+            subject: ticket.subject,
+            category: ticket.category,
+            ticketType: 'support',
+          }),
+          notifyAdminNewSupportTicket({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            ticketType: 'support',
+            submitterName: trustedName,
+            submitterEmail: trustedEmail,
+            category: ticket.category,
+            subject: ticket.subject,
+          }),
+        ]);
+        if (emailResult.status === 'fulfilled') {
+          userEmailSent = Boolean(emailResult.value?.userEmailSent);
+        }
+      } catch (e) {
+        console.warn('[Support Ticket Notification/Email Error]:', e);
+      }
 
-      await logSecurityEvent('USER_SUBMITTED_SUPPORT_TICKET', {
-        userId: authUser.id,
-        userEmail: trustedEmail,
-        details: { ticketNumber: ticket.ticket_number, category: ticket.category },
-      });
+      if (useDb) {
+        await logSecurityEvent('USER_SUBMITTED_SUPPORT_TICKET', {
+          userId: authUser.id,
+          userEmail: trustedEmail,
+          details: { ticketNumber: ticket.ticket_number, category: ticket.category, userEmailSent },
+        });
+      }
 
       sendJson(res, 201, {
         success: true,
-        message: 'Your support request has been submitted successfully.',
+        message: userEmailSent
+          ? 'Your support request has been submitted and a confirmation email has been sent to you.'
+          : 'Your support request has been submitted successfully.',
+        emailDispatched: userEmailSent,
         ticket: {
           id: ticket.id,
           ticket_number: ticket.ticket_number,
@@ -5739,11 +5870,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       if (!isDatabaseAvailable()) {
-        const fbRes = await listFeedbacksFallback({ userId: authUser.id });
+        const [fbRes, tickets] = await Promise.all([
+          listFeedbacksFallback({ userId: authUser.id }),
+          listSupportTicketsFallback(authUser.id),
+        ]);
         sendJson(res, 200, {
           success: true,
           feedbacks: fbRes.feedbacks,
-          tickets: [],
+          tickets,
         });
         return true;
       }
@@ -5783,6 +5917,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const ticketId = userTicketDetailMatch[1];
+      if (!isDatabaseAvailable()) {
+        const ticket = await getSupportTicketByIdFallback(ticketId, authUser.id);
+        if (!ticket) {
+          sendJson(res, 404, { success: false, message: 'Ticket not found or unauthorized.' });
+          return true;
+        }
+        const replies = await getSupportTicketRepliesFallback(ticketId, false);
+        sendJson(res, 200, { success: true, ticket, replies });
+        return true;
+      }
+
       const ticketRes = await query(
         `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
         [ticketId, authUser.id]
@@ -5828,6 +5973,45 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      if (!isDatabaseAvailable()) {
+        const ticket = await getSupportTicketByIdFallback(ticketId, authUser.id);
+        if (!ticket) {
+          sendJson(res, 404, { success: false, message: 'Ticket not found or unauthorized.' });
+          return true;
+        }
+        if (ticket.status === 'closed') {
+          sendJson(res, 400, { success: false, message: 'This ticket is closed. Please submit a new ticket for further assistance.' });
+          return true;
+        }
+        const senderName = authUser.full_name || 'User';
+        const reply = await insertSupportTicketReplyFallback({
+          ticket_id: ticketId,
+          sender_id: authUser.id,
+          sender_name: senderName,
+          sender_role: 'user',
+          sender_type: 'user',
+          message,
+          message_type: 'user_message',
+          is_internal: false,
+          email_status: 'none',
+        });
+        const newStatus = ticket.status === 'waiting_user' ? 'in_progress' : ticket.status;
+        await updateSupportTicketStatusFallback(ticketId, newStatus);
+
+        notifyAdminNewSupportTicket({
+          ticketId: ticket.id,
+          ticketNumber: ticket.ticket_number,
+          ticketType: ticket.ticket_type === 'complaint' ? 'complaint' : 'support',
+          submitterName: senderName,
+          submitterEmail: authUser.email,
+          category: 'User Follow-Up Reply',
+          subject: `Reply on #${ticket.ticket_number}: ${ticket.subject}`,
+        }).catch(() => {});
+
+        sendJson(res, 201, { success: true, message: 'Reply sent successfully.', reply });
+        return true;
+      }
+
       // Verify ticket ownership
       const ticketRes = await query(
         `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
@@ -5865,6 +6049,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
          WHERE id = $2`,
         [newStatus, ticketId]
       );
+
+      notifyAdminNewSupportTicket({
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticket_number,
+        ticketType: ticket.ticket_type === 'complaint' ? 'complaint' : 'support',
+        submitterName: senderName,
+        submitterEmail: authUser.email,
+        category: 'User Follow-Up Reply',
+        subject: `Reply on #${ticket.ticket_number}: ${ticket.subject}`,
+      }).catch(() => {});
 
       await logSecurityEvent('USER_REPLIED_TO_TICKET', {
         userId: authUser.id,
@@ -6240,6 +6434,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         in_app_enabled: body.in_app_enabled,
         push_enabled: body.push_enabled,
         email_enabled: body.email_enabled,
+        sound_enabled: body.sound_enabled,
         notify_income: body.notify_income,
         notify_expense: body.notify_expense,
         notify_budget: body.notify_budget,

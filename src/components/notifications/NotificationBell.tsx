@@ -36,6 +36,9 @@ export const NotificationBell: React.FC<Props> = ({
   const {
     notifications,
     unreadCount,
+    isPushSupported,
+    pushPermission,
+    enablePush,
     markAsRead,
     markAllAsRead,
     deleteNotification,
@@ -205,6 +208,22 @@ export const NotificationBell: React.FC<Props> = ({
               </button>
             </div>
           </div>
+
+          {/* Quick Enable External OS Alerts + Sound Prompt */}
+          {isPushSupported && pushPermission === 'default' && (
+            <div className="px-3.5 py-2.5 bg-emerald-50/90 dark:bg-emerald-950/40 border-b border-emerald-100 dark:border-emerald-900/50 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-emerald-900 dark:text-emerald-200 leading-snug">
+                Enable desktop/mobile alerts with sound outside the app
+              </p>
+              <button
+                type="button"
+                onClick={() => void enablePush()}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shrink-0 cursor-pointer"
+              >
+                Enable
+              </button>
+            </div>
+          )}
 
           {/* List */}
           <div className="max-h-[60vh] sm:max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">

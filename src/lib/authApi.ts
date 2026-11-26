@@ -98,6 +98,16 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   }
 
   if (!res.ok) {
+    if (data?.code === 'MAINTENANCE_MODE' && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('mymoney:maintenance-detected', {
+          detail: {
+            message: data?.message,
+            expectedRestoration: data?.expectedRestoration,
+          },
+        })
+      );
+    }
     const errorMsg = data?.message || data?.error || `Request failed with status ${res.status}`;
     const err = new Error(errorMsg);
     (err as any).status = res.status;
@@ -140,34 +150,48 @@ function mapRawUserToAuthUser(u: any): AuthUser {
 }
 
 async function checkMaintenanceActiveClient(): Promise<{ isEnabled: boolean; message?: string }> {
-  try {
-    const res = await fetch('/api/public/site-config', { credentials: 'include' });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.maintenance?.isEnabled) {
-        return { isEnabled: true, message: data.maintenance.message };
+  const [serverMaint, supaMaint] = await Promise.all([
+    fetch('/api/public/site-config', { credentials: 'include', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.maintenance || null)
+      .catch(() => null),
+    (async () => {
+      try {
+        const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/app_settings?key=eq.maintenance_mode&select=value,updated_at&limit=1`,
+          {
+            headers: {
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              Accept: 'application/json',
+            },
+          }
+        );
+        if (!res.ok) return null;
+        const rows = await res.json();
+        const row = Array.isArray(rows) ? rows[0] : null;
+        if (!row?.value) return null;
+        return {
+          ...row.value,
+          updatedAt: row.value.updatedAt || row.updated_at,
+        };
+      } catch {
+        return null;
       }
-    }
-  } catch {}
-  try {
-    const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/app_settings?key=eq.maintenance_mode&select=value&limit=1`,
-      {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Accept: 'application/json',
-        },
-      }
-    );
-    if (res.ok) {
-      const rows = await res.json();
-      if (Array.isArray(rows) && rows[0]?.value?.isEnabled) {
-        return { isEnabled: true, message: rows[0].value.message };
-      }
-    }
-  } catch {}
+    })(),
+  ]);
+
+  let resolved = serverMaint || supaMaint;
+  if (serverMaint && supaMaint) {
+    const sTs = serverMaint.updatedAt ? Date.parse(serverMaint.updatedAt) : 0;
+    const dTs = supaMaint.updatedAt ? Date.parse(supaMaint.updatedAt) : 0;
+    resolved = sTs >= dTs ? serverMaint : supaMaint;
+  }
+
+  if (resolved?.isEnabled) {
+    return { isEnabled: true, message: resolved.message };
+  }
   return { isEnabled: false };
 }
 

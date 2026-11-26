@@ -500,3 +500,115 @@ ${escapeHtml(data.adminReply)}
   const text = `${APP_CONFIG.appName} Support Update\nA product of ${APP_CONFIG.companyName}\n--------------------------------------------------\n\nUpdate regarding your ${ticketLabel} #${ticketNum}\n\n${greeting}\n\nOur support team has reviewed your ${ticketLabel} regarding "${data.originalSubject}".\n\nMessage from ${data.adminName || 'Support Team'}:\n${data.adminReply}\n\nIf you need any further assistance, you can reply in the app or contact our support team at ${APP_CONFIG.supportEmail}.\n\nRegards,\nMy Money Manager Support\nA product of ${APP_CONFIG.companyName}\n`;
   return { subject, html, text };
 }
+
+// -----------------------------------------------------------------------------
+// 5. COMPLAINT RECEIVED — ADMIN NOTIFICATION EMAIL
+// -----------------------------------------------------------------------------
+export function generateComplaintAdminNotificationEmail(data: {
+  userName: string;
+  userEmail: string;
+  userPhone?: string | null;
+  ticketNumber: string;
+  category: string;
+  subject: string;
+  description: string;
+  submittedAt: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `[Complaint #${data.ticketNumber}] ${data.subject} – ${APP_CONFIG.appName}`;
+
+  const bodyContent = `
+    <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #991b1b;">
+      New User Complaint Registered
+    </h2>
+    <p style="margin: 0 0 14px 0; font-size: 14px; color: #334155; line-height: 1.6;">
+      Hello Admin, a new complaint ticket requires review in ${escapeHtml(APP_CONFIG.appName)}.
+    </p>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 16px 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>User:</strong> ${escapeHtml(data.userName)}</p>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>Email:</strong> ${escapeHtml(data.userEmail)}</p>
+          ${data.userPhone ? `<p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>Phone:</strong> ${escapeHtml(data.userPhone)}</p>` : ''}
+          <p style="margin: 0; font-size: 13px; color: #334155;"><strong>Submitted At:</strong> ${escapeHtml(data.submittedAt)}</p>
+        </td>
+      </tr>
+    </table>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #9f1239;"><strong>Ticket ID:</strong> #${escapeHtml(data.ticketNumber)}</p>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #9f1239;"><strong>Category:</strong> ${escapeHtml(data.category)}</p>
+          <p style="margin: 0 0 8px 0; font-size: 13px; color: #9f1239;"><strong>Subject:</strong> ${escapeHtml(data.subject)}</p>
+          <p style="margin: 0; font-size: 13px; color: #334155; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
+            ${escapeHtml(data.description)}
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0; font-size: 13px; font-weight: 700; color: #065f46;">
+      ${escapeHtml(APP_CONFIG.appName)} · ${escapeHtml(APP_CONFIG.companyName)}
+    </p>
+  `;
+
+  const html = wrapEmailHtml(subject, bodyContent);
+  const text = `New Complaint #${data.ticketNumber}\nUser: ${data.userName} (${data.userEmail})\nCategory: ${data.category}\nSubject: ${data.subject}\nSubmitted At: ${data.submittedAt}\n\nDetails:\n${data.description}\n`;
+  return { subject, html, text };
+}
+
+// -----------------------------------------------------------------------------
+// 6. SUPPORT TICKET RECEIVED — ADMIN NOTIFICATION EMAIL
+// -----------------------------------------------------------------------------
+export function generateSupportTicketAdminNotificationEmail(data: {
+  userName: string;
+  userEmail: string;
+  ticketNumber: string;
+  category: string;
+  subject: string;
+  description: string;
+  submittedAt: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `[Support #${data.ticketNumber}] ${data.subject} – ${APP_CONFIG.appName}`;
+
+  const bodyContent = `
+    <h2 style="margin: 0 0 16px 0; font-size: 19px; font-weight: 700; color: #0f172a;">
+      New Support Request Received
+    </h2>
+    <p style="margin: 0 0 14px 0; font-size: 14px; color: #334155; line-height: 1.6;">
+      Hello Admin, a user has submitted a new support request in ${escapeHtml(APP_CONFIG.appName)}.
+    </p>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 16px 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>User:</strong> ${escapeHtml(data.userName)}</p>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #334155;"><strong>Email:</strong> ${escapeHtml(data.userEmail)}</p>
+          <p style="margin: 0; font-size: 13px; color: #334155;"><strong>Submitted At:</strong> ${escapeHtml(data.submittedAt)}</p>
+        </td>
+      </tr>
+    </table>
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px;">
+      <tr>
+        <td>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #166534;"><strong>Ticket ID:</strong> #${escapeHtml(data.ticketNumber)}</p>
+          <p style="margin: 0 0 6px 0; font-size: 13px; color: #166534;"><strong>Category:</strong> ${escapeHtml(data.category)}</p>
+          <p style="margin: 0 0 8px 0; font-size: 13px; color: #166534;"><strong>Subject:</strong> ${escapeHtml(data.subject)}</p>
+          <p style="margin: 0; font-size: 13px; color: #334155; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.5;">
+            ${escapeHtml(data.description)}
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0; font-size: 13px; font-weight: 700; color: #065f46;">
+      ${escapeHtml(APP_CONFIG.appName)} · ${escapeHtml(APP_CONFIG.companyName)}
+    </p>
+  `;
+
+  const html = wrapEmailHtml(subject, bodyContent);
+  const text = `New Support Ticket #${data.ticketNumber}\nUser: ${data.userName} (${data.userEmail})\nCategory: ${data.category}\nSubject: ${data.subject}\nSubmitted At: ${data.submittedAt}\n\nDetails:\n${data.description}\n`;
+  return { subject, html, text };
+}

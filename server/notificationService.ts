@@ -6,6 +6,7 @@ import * as webpush from 'web-push';
 import { query, isDatabaseConfigured, isDatabaseAvailable } from './db.js';
 import { APP_CONFIG } from './config.js';
 import { sendEmail } from './email.js';
+import { getRenderedCustomTemplateIfActive } from './emailTemplateService.js';
 import { generateCampaignEmail } from './notificationEmailTemplates.js';
 import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils.js';
 import {
@@ -14,6 +15,7 @@ import {
   createBroadcastBannerFallback,
   updateCampaignFallback,
   listCampaignsFallback,
+  sbRestRequest,
 } from './supabaseRestFallback.js';
 
 // Initialize web-push VAPID details (private key stays strictly server-side)
@@ -86,6 +88,7 @@ export interface UserPreferences {
   in_app_enabled: boolean;
   push_enabled: boolean;
   email_enabled: boolean;
+  sound_enabled: boolean;
   notify_income: boolean;
   notify_expense: boolean;
   notify_budget: boolean;
@@ -154,6 +157,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   in_app_enabled: true,
   push_enabled: true,
   email_enabled: true,
+  sound_enabled: true,
   notify_income: true,
   notify_expense: true,
   notify_budget: true,
@@ -356,25 +360,36 @@ export function buildSafeDeepLinkUrl(deepLink?: string): string {
  * Fetches user notification preferences or returns safe privacy-first defaults
  */
 export async function getUserNotificationPreferences(userId: string): Promise<UserPreferences> {
-  try {
-    const res = await query(
-      `SELECT * FROM public.user_notification_preferences WHERE user_id = $1`,
-      [userId]
-    );
-    if (res.rows.length > 0) {
-      return { ...DEFAULT_PREFERENCES, ...res.rows[0] };
+  const local = readLocalStore(userId);
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT * FROM public.user_notification_preferences WHERE user_id = $1`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          ...DEFAULT_PREFERENCES,
+          ...row,
+          sound_enabled:
+            typeof row.sound_enabled === 'boolean'
+              ? row.sound_enabled
+              : local.preferences.sound_enabled ?? DEFAULT_PREFERENCES.sound_enabled,
+        };
+      }
+      await query(
+        `INSERT INTO public.user_notification_preferences (user_id, privacy_hide_amounts)
+         VALUES ($1, TRUE)
+         ON CONFLICT (user_id) DO NOTHING`,
+        [userId]
+      ).catch(() => {});
+      return { ...DEFAULT_PREFERENCES, ...local.preferences };
+    } catch {
+      // fall through to local store
     }
-    await query(
-      `INSERT INTO public.user_notification_preferences (user_id, privacy_hide_amounts)
-       VALUES ($1, TRUE)
-       ON CONFLICT (user_id) DO NOTHING`,
-      [userId]
-    ).catch(() => {});
-    return { ...DEFAULT_PREFERENCES };
-  } catch {
-    const local = readLocalStore(userId);
-    return { ...DEFAULT_PREFERENCES, ...local.preferences };
   }
+  return { ...DEFAULT_PREFERENCES, ...local.preferences };
 }
 
 /**
@@ -389,6 +404,7 @@ export async function updateUserNotificationPreferences(
     in_app_enabled: patch.in_app_enabled !== undefined ? Boolean(patch.in_app_enabled) : current.in_app_enabled,
     push_enabled: patch.push_enabled !== undefined ? Boolean(patch.push_enabled) : current.push_enabled,
     email_enabled: patch.email_enabled !== undefined ? Boolean(patch.email_enabled) : current.email_enabled,
+    sound_enabled: patch.sound_enabled !== undefined ? Boolean(patch.sound_enabled) : current.sound_enabled,
     notify_income: patch.notify_income !== undefined ? Boolean(patch.notify_income) : current.notify_income,
     notify_expense: patch.notify_expense !== undefined ? Boolean(patch.notify_expense) : current.notify_expense,
     notify_budget: patch.notify_budget !== undefined ? Boolean(patch.notify_budget) : current.notify_budget,
@@ -415,83 +431,35 @@ export async function updateUserNotificationPreferences(
       patch.privacy_hide_amounts !== undefined ? Boolean(patch.privacy_hide_amounts) : current.privacy_hide_amounts,
   };
 
-  // Persist to PostgreSQL (try extended columns first, gracefully fall back to legacy columns if migration not run yet)
-  try {
-    const upRes = await query(
-      `INSERT INTO public.user_notification_preferences (
-        user_id, in_app_enabled, push_enabled, email_enabled,
-        notify_income, notify_expense, notify_budget, notify_bills,
-        notify_udhar, notify_savings, notify_receipts, notify_security,
-        notify_support, notify_announcements, notify_offers,
-        quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
-        updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW()
-      )
-      ON CONFLICT (user_id) DO UPDATE SET
-        in_app_enabled = EXCLUDED.in_app_enabled,
-        push_enabled = EXCLUDED.push_enabled,
-        email_enabled = EXCLUDED.email_enabled,
-        notify_income = EXCLUDED.notify_income,
-        notify_expense = EXCLUDED.notify_expense,
-        notify_budget = EXCLUDED.notify_budget,
-        notify_bills = EXCLUDED.notify_bills,
-        notify_udhar = EXCLUDED.notify_udhar,
-        notify_savings = EXCLUDED.notify_savings,
-        notify_receipts = EXCLUDED.notify_receipts,
-        notify_security = EXCLUDED.notify_security,
-        notify_support = EXCLUDED.notify_support,
-        notify_announcements = EXCLUDED.notify_announcements,
-        notify_offers = EXCLUDED.notify_offers,
-        quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
-        quiet_hours_start = EXCLUDED.quiet_hours_start,
-        quiet_hours_end = EXCLUDED.quiet_hours_end,
-        privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
-        updated_at = NOW()
-      RETURNING *`,
-      [
-        userId,
-        next.in_app_enabled,
-        next.push_enabled,
-        next.email_enabled,
-        next.notify_income,
-        next.notify_expense,
-        next.notify_budget,
-        next.notify_bills,
-        next.notify_udhar,
-        next.notify_savings,
-        next.notify_receipts,
-        next.notify_security,
-        next.notify_support,
-        next.notify_announcements,
-        next.notify_offers,
-        next.quiet_hours_enabled,
-        next.quiet_hours_start,
-        next.quiet_hours_end,
-        next.privacy_hide_amounts,
-      ]
-    );
-    if (upRes.rows.length > 0) {
-      return { ...next, ...upRes.rows[0] };
-    }
-  } catch {
-    // Fallback to legacy schema columns if extended columns are not yet migrated, else local store
+  const local = readLocalStore(userId);
+  local.preferences = next;
+  writeLocalStore(userId, local);
+
+  if (isDatabaseAvailable()) {
     try {
-      await query(
+      const upRes = await query(
         `INSERT INTO public.user_notification_preferences (
           user_id, in_app_enabled, push_enabled, email_enabled,
-          notify_income, notify_expense, notify_udhar, notify_support,
-          notify_announcements, notify_offers,
+          notify_income, notify_expense, notify_budget, notify_bills,
+          notify_udhar, notify_savings, notify_receipts, notify_security,
+          notify_support, notify_announcements, notify_offers,
           quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
           updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW()
+        )
         ON CONFLICT (user_id) DO UPDATE SET
           in_app_enabled = EXCLUDED.in_app_enabled,
           push_enabled = EXCLUDED.push_enabled,
           email_enabled = EXCLUDED.email_enabled,
           notify_income = EXCLUDED.notify_income,
           notify_expense = EXCLUDED.notify_expense,
+          notify_budget = EXCLUDED.notify_budget,
+          notify_bills = EXCLUDED.notify_bills,
           notify_udhar = EXCLUDED.notify_udhar,
+          notify_savings = EXCLUDED.notify_savings,
+          notify_receipts = EXCLUDED.notify_receipts,
+          notify_security = EXCLUDED.notify_security,
           notify_support = EXCLUDED.notify_support,
           notify_announcements = EXCLUDED.notify_announcements,
           notify_offers = EXCLUDED.notify_offers,
@@ -499,7 +467,8 @@ export async function updateUserNotificationPreferences(
           quiet_hours_start = EXCLUDED.quiet_hours_start,
           quiet_hours_end = EXCLUDED.quiet_hours_end,
           privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
-          updated_at = NOW()`,
+          updated_at = NOW()
+        RETURNING *`,
         [
           userId,
           next.in_app_enabled,
@@ -507,7 +476,12 @@ export async function updateUserNotificationPreferences(
           next.email_enabled,
           next.notify_income,
           next.notify_expense,
+          next.notify_budget,
+          next.notify_bills,
           next.notify_udhar,
+          next.notify_savings,
+          next.notify_receipts,
+          next.notify_security,
           next.notify_support,
           next.notify_announcements,
           next.notify_offers,
@@ -517,14 +491,57 @@ export async function updateUserNotificationPreferences(
           next.privacy_hide_amounts,
         ]
       );
+      if (upRes.rows.length > 0) {
+        return { ...next, ...upRes.rows[0], sound_enabled: next.sound_enabled };
+      }
     } catch {
-      // Persist to local store below
+      try {
+        await query(
+          `INSERT INTO public.user_notification_preferences (
+            user_id, in_app_enabled, push_enabled, email_enabled,
+            notify_income, notify_expense, notify_udhar, notify_support,
+            notify_announcements, notify_offers,
+            quiet_hours_enabled, quiet_hours_start, quiet_hours_end, privacy_hide_amounts,
+            updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            in_app_enabled = EXCLUDED.in_app_enabled,
+            push_enabled = EXCLUDED.push_enabled,
+            email_enabled = EXCLUDED.email_enabled,
+            notify_income = EXCLUDED.notify_income,
+            notify_expense = EXCLUDED.notify_expense,
+            notify_udhar = EXCLUDED.notify_udhar,
+            notify_support = EXCLUDED.notify_support,
+            notify_announcements = EXCLUDED.notify_announcements,
+            notify_offers = EXCLUDED.notify_offers,
+            quiet_hours_enabled = EXCLUDED.quiet_hours_enabled,
+            quiet_hours_start = EXCLUDED.quiet_hours_start,
+            quiet_hours_end = EXCLUDED.quiet_hours_end,
+            privacy_hide_amounts = EXCLUDED.privacy_hide_amounts,
+            updated_at = NOW()`,
+          [
+            userId,
+            next.in_app_enabled,
+            next.push_enabled,
+            next.email_enabled,
+            next.notify_income,
+            next.notify_expense,
+            next.notify_udhar,
+            next.notify_support,
+            next.notify_announcements,
+            next.notify_offers,
+            next.quiet_hours_enabled,
+            next.quiet_hours_start,
+            next.quiet_hours_end,
+            next.privacy_hide_amounts,
+          ]
+        );
+      } catch {
+        // Local store already persisted above
+      }
     }
   }
 
-  const local = readLocalStore(userId);
-  local.preferences = next;
-  writeLocalStore(userId, local);
   return next;
 }
 
@@ -1045,6 +1062,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
       const targetUrl = buildSafeDeepLinkUrl(deepLink);
       const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}`);
       const timestamp = Date.now();
+      const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
 
       const pushPayload = JSON.stringify({
         title: pushTitle,
@@ -1053,14 +1071,21 @@ export async function createNotification(params: CreateNotificationParams): Prom
         badge: '/icon-192.png',
         tag: notifTag,
         category,
+        type,
         timestamp,
+        renotify: true,
+        silent: soundMuted,
+        vibrate: soundMuted ? undefined : [200, 80, 200],
+        soundEnabled: !soundMuted,
         requireInteraction: category === 'security' || type === 'error',
         data: {
           url: targetUrl,
           notificationId: notificationId || null,
           category,
+          type,
           dedupeKey: dedupeKey || null,
           timestamp,
+          soundEnabled: !soundMuted,
         },
       });
 
@@ -1147,6 +1172,14 @@ export async function createNotification(params: CreateNotificationParams): Prom
         }
       }
       if (!recipientUser) {
+        const sbUserRes = await sbRestRequest<Array<{ email: string; full_name?: string }>>(
+          `app_users?id=eq.${encodeURIComponent(userId)}&select=email,full_name&limit=1`
+        );
+        if (sbUserRes.ok && Array.isArray(sbUserRes.data) && sbUserRes.data[0]?.email) {
+          recipientUser = sbUserRes.data[0];
+        }
+      }
+      if (!recipientUser) {
         const fallbackUsers = await listAllAppUsersFallback();
         const found = fallbackUsers.find((u) => u.id === userId && u.email);
         if (found?.email) {
@@ -1155,22 +1188,41 @@ export async function createNotification(params: CreateNotificationParams): Prom
       }
       if (recipientUser && recipientUser.email) {
         const u = recipientUser;
-        const subject = emailOptions?.subject || title;
+        let subject = emailOptions?.subject || title;
         let htmlContent = emailOptions?.html;
         let textContent = emailOptions?.text;
 
         if (!htmlContent) {
-          const generated = generateCampaignEmail({
-            userName: u.full_name || 'My Money User',
-            userEmail: u.email,
+          const tmplSlug = campaignId ? 'campaign-announcement' : 'notification-alert';
+          const safeActionPath = buildSafeDeepLinkUrl(deepLink);
+          const fullActionUrl = `${(APP_CONFIG.appBaseUrl || '').replace(/\/$/, '')}${safeActionPath}`;
+          const customNotifTmpl = await getRenderedCustomTemplateIfActive(tmplSlug, {
+            user_name: u.full_name || 'My Money User',
+            user_email: u.email,
             title,
             message,
             category,
-            deepLink,
-            actionText: emailOptions?.actionText || 'View in App',
+            action_url: fullActionUrl,
+            action_text: emailOptions?.actionText || 'View in App',
           });
-          htmlContent = generated.html;
-          textContent = generated.text;
+
+          if (customNotifTmpl) {
+            subject = emailOptions?.subject || customNotifTmpl.subject || title;
+            htmlContent = customNotifTmpl.html;
+            textContent = customNotifTmpl.text;
+          } else {
+            const generated = generateCampaignEmail({
+              userName: u.full_name || 'My Money User',
+              userEmail: u.email,
+              title,
+              message,
+              category,
+              deepLink,
+              actionText: emailOptions?.actionText || 'View in App',
+            });
+            htmlContent = generated.html;
+            textContent = generated.text;
+          }
         }
 
         const sent = await sendEmail({
@@ -1178,16 +1230,35 @@ export async function createNotification(params: CreateNotificationParams): Prom
           subject,
           html: htmlContent,
           text: textContent || message,
+          emailType: `notification_${category}`,
+          recipientName: u.full_name || 'My Money User',
+          userId,
         });
 
         if (sent) {
           emailDelivered = true;
-          await query(
-            `INSERT INTO public.notification_delivery_logs
-             (campaign_id, notification_id, user_id, channel, status)
-             VALUES ($1, $2, $3, 'email', 'sent')`,
-            [campaignId || null, notificationId || null, userId]
-          ).catch(() => {});
+          if (isDatabaseAvailable()) {
+            await query(
+              `INSERT INTO public.notification_delivery_logs
+               (campaign_id, notification_id, user_id, channel, status)
+               VALUES ($1, $2, $3, 'email', 'sent')`,
+              [campaignId || null, notificationId || null, userId]
+            ).catch(() => {});
+          } else {
+            appendLocalDeliveryLog(userId, {
+              notification_id: notificationId || null,
+              channel: 'email',
+              status: 'sent',
+              error_message: null,
+            });
+          }
+        } else {
+          appendLocalDeliveryLog(userId, {
+            notification_id: notificationId || null,
+            channel: 'email',
+            status: 'failed',
+            error_message: 'Email dispatch failed or SMTP password not configured',
+          });
         }
       }
     } catch {
@@ -1251,7 +1322,7 @@ export async function notifyTransactionCreated(
     deepLink,
     dedupeKey: `tx:${tx.id}`,
     tag: `tx-${tx.id}`,
-    channels: ['in_app', 'push'],
+    channels: ['in_app', 'push', 'email'],
     metadata: { type: tx.type, section: tx.section },
   });
 }
@@ -1307,7 +1378,7 @@ export async function notifyFinancialAlert(params: {
     deepLink: params.deepLink || defaultDeepLinks[params.category] || '/smart-alerts',
     dedupeKey: params.dedupeKey,
     tag: `alert-${params.dedupeKey.slice(0, 70)}`,
-    channels: ['in_app', 'push'],
+    channels: ['in_app', 'push', 'email'],
   });
 }
 
@@ -1329,7 +1400,7 @@ export async function notifySecurityAlert(params: {
     deepLink: 'settings',
     dedupeKey: params.dedupeKey,
     tag: `security-${Date.now()}`,
-    channels: ['in_app', 'push'],
+    channels: ['in_app', 'push', 'email'],
   });
 }
 
@@ -1345,10 +1416,14 @@ export async function notifyUdharCreated(params: {
   amount: number;
   direction: 'given' | 'taken' | 'gave' | 'took';
   dueDate?: string | null;
+  skipEmail?: boolean;
 }) {
   const formattedAmount = `₹${Number(params.amount).toLocaleString('en-IN')}`;
   const isGiven = params.direction === 'given' || params.direction === 'gave';
   const initiatorDisplayName = params.initiatorName || 'Friend';
+  const initChannels: Array<'in_app' | 'push' | 'email'> = params.skipEmail
+    ? ['in_app', 'push']
+    : ['in_app', 'push', 'email'];
 
   await createNotification({
     userId: params.initiatorUserId,
@@ -1362,7 +1437,7 @@ export async function notifyUdharCreated(params: {
     relatedEntityId: params.transactionId,
     deepLink: 'people',
     dedupeKey: `udhar-init:${params.transactionId}`,
-    channels: ['in_app', 'push'],
+    channels: initChannels,
   });
 
   if (params.recipientUserId) {
@@ -1378,7 +1453,7 @@ export async function notifyUdharCreated(params: {
       relatedEntityId: params.transactionId,
       deepLink: 'people',
       dedupeKey: `udhar-recip:${params.transactionId}`,
-      channels: ['in_app', 'push', 'email'],
+      channels: initChannels,
     });
   }
 }
@@ -1399,7 +1474,7 @@ export async function notifyQrConnected(params: {
     category: 'udhar',
     type: 'success',
     deepLink: 'people',
-    channels: ['in_app', 'push'],
+    channels: ['in_app', 'push', 'email'],
   });
 
   await createNotification({
@@ -1482,7 +1557,7 @@ export async function notifyUdharRepayment(params: {
       relatedEntityId: params.repaymentId,
       deepLink: 'people',
       dedupeKey: `udhar-repay-init:${params.repaymentId}`,
-      channels: ['in_app', 'push'],
+      channels: ['in_app', 'push', 'email'],
     });
 
     if (params.recipientUserId) {
@@ -1496,7 +1571,7 @@ export async function notifyUdharRepayment(params: {
         relatedEntityId: params.repaymentId,
         deepLink: 'people',
         dedupeKey: `udhar-repay-recip:${params.repaymentId}`,
-        channels: ['in_app', 'push'],
+        channels: ['in_app', 'push', 'email'],
       });
     }
   }
@@ -1504,7 +1579,7 @@ export async function notifyUdharRepayment(params: {
 
 /**
  * Triggered when a user submits feedback.
- * Sends in-app + push notification to the submitting user.
+ * Sends in-app + external push notification to the submitting user (rich confirmation email is dispatched via sendFeedbackSubmissionEmails).
  */
 export async function notifyFeedbackSubmitted(
   userId: string,
@@ -1584,23 +1659,83 @@ export async function notifyAdminNewFeedback(opts: {
 
 /**
  * Triggered when a complaint / support ticket is submitted
+ * (Rich confirmation email is dispatched via sendComplaintSubmissionEmails / sendSupportTicketSubmissionEmails)
  */
 export async function notifyComplaintSubmitted(
   userId: string,
-  ticket: { id: string; subject: string; category?: string }
+  ticket: { id: string; subject: string; category?: string; ticketType?: 'complaint' | 'support' }
 ) {
   const shortId = ticket.id.slice(0, 8);
+  const isSupport = ticket.ticketType === 'support';
   await createNotification({
     userId,
-    title: `Ticket Raised #${shortId}`,
-    message: `Your complaint "${ticket.subject}" has been received. Our team will review and reply within 24-48 hours.`,
-    category: 'complaint',
+    title: isSupport ? `Support Request #${shortId}` : `Ticket Raised #${shortId}`,
+    message: isSupport
+      ? `Your support request "${ticket.subject}" has been received. Our team will review and reply shortly.`
+      : `Your complaint "${ticket.subject}" has been received. Our team will review and reply within 24-48 hours.`,
+    category: isSupport ? 'support' : 'complaint',
     type: 'info',
     relatedEntityType: 'support_ticket',
     relatedEntityId: ticket.id,
     deepLink: `help:ticket:${ticket.id}`,
-    channels: ['in_app', 'email'],
+    channels: ['in_app', 'push'],
   });
+}
+
+/**
+ * Triggered when any user raises a complaint or support ticket — notifies ALL admin users via in-app + external push.
+ */
+export async function notifyAdminNewSupportTicket(opts: {
+  ticketId: string;
+  ticketNumber: string;
+  ticketType: 'complaint' | 'support';
+  submitterName: string;
+  submitterEmail: string;
+  category?: string;
+  subject: string;
+}): Promise<void> {
+  try {
+    let adminRows: Array<{ id: string }> = [];
+    if (isDatabaseAvailable()) {
+      try {
+        const adminsRes = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
+        );
+        adminRows = adminsRes.rows || [];
+      } catch {
+        adminRows = [];
+      }
+    }
+
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers
+        .filter((u) => ['admin', 'superadmin'].includes(String(u.role || '').toLowerCase()))
+        .map((u) => ({ id: u.id }));
+    }
+
+    if (adminRows.length === 0) return;
+
+    const label = opts.ticketType === 'complaint' ? 'Complaint' : 'Support Ticket';
+    for (const admin of adminRows) {
+      await createNotification({
+        userId: admin.id,
+        title: `New ${label} #${opts.ticketNumber}`,
+        message: `${opts.submitterName} (${opts.submitterEmail}): "${opts.subject}" [${opts.category || 'General'}]`,
+        category: opts.ticketType,
+        type: opts.ticketType === 'complaint' ? 'warning' : 'info',
+        relatedEntityType: 'support_ticket',
+        relatedEntityId: opts.ticketId,
+        deepLink: 'admin:support',
+        channels: ['in_app', 'push'],
+        skipPreferenceCheck: true,
+      }).catch((e) =>
+        console.warn(`[notifyAdminNewSupportTicket] Failed for admin ${admin.id}:`, e?.message)
+      );
+    }
+  } catch (e: any) {
+    console.warn('[notifyAdminNewSupportTicket] Error:', e?.message);
+  }
 }
 
 export async function notifyAdminTicketReply(

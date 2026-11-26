@@ -861,19 +861,21 @@ export async function clearAllUserNotificationsFallback(userId: string): Promise
 // 4. EMAIL LOGS & TEMPLATES FALLBACK
 // ============================================================================
 
-const DEFAULT_EMAIL_TEMPLATES = [
+export const DEFAULT_EMAIL_TEMPLATES = [
   {
     id: 'tmpl_welcome_email',
     slug: 'welcome-email',
     name: 'Welcome & Account Verification',
     category: 'authentication',
     subject: 'Welcome to {{app_name}}! Your Account is Active',
-    variables: ['user_name', 'app_name', 'support_email', 'date'],
+    variables: ['user_name', 'user_email', 'app_name', 'company_name', 'login_url', 'support_email', 'support_phone', 'date'],
     text_content:
-      'Hi {{user_name}},\n\nWelcome to {{app_name}}! Your account has been created successfully on {{date}}.\n\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team',
+      'Hi {{user_name}},\n\nWelcome to {{app_name}} by {{company_name}}! Your account ({{user_email}}) has been created successfully on {{date}}.\n\nLogin here: {{login_url}}\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team',
     html_content:
-      '<div style="font-family: sans-serif; padding: 20px;"><h2>Welcome, {{user_name}}!</h2><p>Your account on <strong>{{app_name}}</strong> is now active.</p><p>Registration Date: {{date}}</p><p>If you have any questions, reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div>',
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Welcome to {{app_name}}!</h2><p style="margin: 6px 0 0; font-size: 12px; color: #a7f3d0;">by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account (<strong>{{user_email}}</strong>) is now active as of {{date}}.</p><p style="text-align: center; margin: 24px 0;"><a href="{{login_url}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Open {{app_name}}</a></p><p style="font-size: 12px; color: #64748b;">Need help? Reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>',
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: '2026-11-25T00:00:00.000Z',
   },
@@ -882,13 +884,15 @@ const DEFAULT_EMAIL_TEMPLATES = [
     slug: 'password-reset',
     name: 'Password Reset Request',
     category: 'security',
-    subject: 'Reset Your My Money Manager Password',
-    variables: ['user_name', 'app_name', 'reset_link', 'support_email'],
+    subject: 'Reset Your {{app_name}} Password',
+    variables: ['user_name', 'user_email', 'app_name', 'company_name', 'reset_link', 'support_email'],
     text_content:
-      'Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account.\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes.\n\nIf you did not request this, please contact {{support_email}} immediately.',
+      'Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account ({{user_email}}).\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes. If you did not request this, contact {{support_email}}.',
     html_content:
-      '<div style="font-family: sans-serif; padding: 20px;"><h2>Password Reset Request</h2><p>Hi {{user_name}}, click the button below to reset your password:</p><p><a href="{{reset_link}}" style="background: #059669; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 6px;">Reset Password</a></p><p>Link expires in 15 minutes.</p></div>',
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Password Reset Request</h2><p>Hi <strong>{{user_name}}</strong>, click below to reset the password for {{user_email}}:</p><p style="text-align: center; margin: 22px 0;"><a href="{{reset_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Reset Password</a></p><p style="font-size: 12px; color: #64748b;">Link expires in 15 minutes. Support: {{support_email}}</p></div>',
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: '2026-11-25T00:00:00.000Z',
   },
@@ -897,28 +901,236 @@ const DEFAULT_EMAIL_TEMPLATES = [
     slug: 'password-changed',
     name: 'Security Alert: Password Changed',
     category: 'security',
-    subject: '[Security Alert] Your Password Was Successfully Changed — {{app_name}}',
-    variables: ['user_name', 'app_name', 'date', 'support_email'],
+    subject: '[Security Alert] Your Password Was Changed — {{app_name}}',
+    variables: ['user_name', 'user_email', 'app_name', 'company_name', 'date', 'ip_address', 'support_email'],
     text_content:
-      'Hi {{user_name}},\n\nYour password for {{app_name}} was successfully updated on {{date}}.\nAll other device sessions have been revoked.\n\nIf you did not make this change, please contact {{support_email}} immediately.',
+      'Hi {{user_name}},\n\nYour password for {{app_name}} ({{user_email}}) was updated on {{date}} (IP: {{ip_address}}).\nAll previous sessions were revoked.\n\nIf you did not make this change, contact {{support_email}} immediately.',
     html_content:
-      '<div style="font-family: sans-serif; padding: 20px;"><h2>Security Alert: Password Changed</h2><p>Hi {{user_name}}, your password was updated on {{date}}.</p><p>All other device sessions were revoked for your safety.</p></div>',
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Security Alert: Password Changed</h2><p>Hi <strong>{{user_name}}</strong>, your password for {{user_email}} was updated on <strong>{{date}}</strong> (IP: {{ip_address}}).</p><p>All previous device sessions have been revoked for your protection.</p><p style="color: #b91c1c; font-weight: 600;">Not you? Contact {{support_email}} immediately.</p></div>',
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: '2026-11-25T00:00:00.000Z',
   },
   {
     id: 'tmpl_feedback_confirmation',
     slug: 'feedback-confirmation',
-    name: 'User Feedback Confirmation & Admin Alert',
+    name: 'Feedback Received (User Confirmation)',
     category: 'support',
-    subject: 'Thank You for Your Feedback — {{app_name}}',
-    variables: ['user_name', 'app_name', 'rating', 'category', 'support_email'],
+    subject: 'Thank You for Your Feedback (#{{feedback_id}}) — {{app_name}}',
+    variables: ['user_name', 'user_email', 'feedback_id', 'rating', 'category', 'message', 'app_name', 'company_name', 'support_email'],
     text_content:
-      'Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback with {{app_name}} by HackifyPro. Our team reviews every submission carefully.',
+      'Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback (#{{feedback_id}}) with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nMessage: {{message}}\n\nOur product team reviews every submission carefully.',
     html_content:
-      '<div style="font-family: sans-serif; padding: 20px;"><h2>Thank You for Your Feedback</h2><p>Hi {{user_name}}, we appreciate your {{rating}}-star feedback for <strong>{{app_name}}</strong>.</p></div>',
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Thank You for Your Feedback!</h2><p style="margin: 4px 0 0; font-size: 12px; color: #a7f3d0;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>We received your <strong>{{rating}}/5</strong> rating (Ref: <code>#{{feedback_id}}</code>, Category: {{category}}):</p><blockquote style="background: #f8fafc; border-left: 4px solid #059669; margin: 14px 0; padding: 12px 16px;">{{message}}</blockquote><p style="font-size: 12px; color: #64748b;">Support: {{support_email}}</p></div></div>',
     is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_feedback_admin',
+    slug: 'feedback-admin-alert',
+    name: 'New User Feedback Alert (To Admin)',
+    category: 'support',
+    subject: '[Admin Alert] New {{rating}}★ Feedback (#{{feedback_id}}) from {{user_name}}',
+    variables: ['user_name', 'user_email', 'user_id', 'feedback_id', 'rating', 'message', 'submitted_at', 'app_name', 'company_name'],
+    text_content:
+      'New User Feedback Received — {{app_name}} ({{company_name}})\n\nRef: #{{feedback_id}}\nFrom: {{user_name}} ({{user_email}})\nRating: {{rating}}/5\nSubmitted At: {{submitted_at}}\n\nMessage:\n{{message}}',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">New User Feedback (#{{feedback_id}})</h2><p><strong>User:</strong> {{user_name}} ({{user_email}})</p><p><strong>Rating:</strong> {{rating}}/5 · <strong>Submitted:</strong> {{submitted_at}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 12px;">{{message}}</div></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_complaint_confirmation',
+    slug: 'complaint-confirmation',
+    name: 'Complaint Registered (User Confirmation)',
+    category: 'support',
+    subject: 'Complaint Registered (#{{ticket_number}}) — {{app_name}}',
+    variables: ['user_name', 'user_email', 'ticket_number', 'category', 'subject', 'description', 'app_name', 'company_name', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\nYour complaint #{{ticket_number}} has been registered with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nSubject: {{subject}}\nDetails: {{description}}\n\nOur support team will respond shortly.',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Complaint Registered (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, we have logged your complaint under <strong>{{category}}</strong>.</p><p><strong>Subject:</strong> {{subject}}</p><div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need urgent help? Contact {{support_email}}.</p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_complaint_admin',
+    slug: 'complaint-admin-alert',
+    name: 'New User Complaint Alert (To Admin)',
+    category: 'support',
+    subject: '[Complaint Alert] #{{ticket_number}}: {{subject}}',
+    variables: ['user_name', 'user_email', 'user_phone', 'ticket_number', 'category', 'subject', 'description', 'submitted_at', 'app_name'],
+    text_content:
+      'New Complaint Alert — {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}}, Phone: {{user_phone}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #fecaca; border-radius: 16px; padding: 24px;"><h2 style="color: #b91c1c; margin-top: 0;">New Complaint Alert (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}} · {{user_phone}})</p><p><strong>Category:</strong> {{category}} · <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_support_confirmation',
+    slug: 'support-confirmation',
+    name: 'Support Ticket Received (User Confirmation)',
+    category: 'support',
+    subject: 'Support Ticket Created (#{{ticket_number}}) — {{app_name}}',
+    variables: ['user_name', 'user_email', 'ticket_number', 'category', 'subject', 'description', 'app_name', 'company_name', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\nYour support request #{{ticket_number}} has been received by {{app_name}} ({{company_name}}).\n\nSubject: {{subject}}\nCategory: {{category}}\nMessage: {{description}}\n\nWe will notify you by email and push alert when our team replies.',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Support Ticket Created (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, thank you for contacting {{app_name}} Support.</p><p><strong>Subject:</strong> {{subject}} ({{category}})</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 14px;">Support: {{support_email}}</p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_support_admin',
+    slug: 'support-admin-alert',
+    name: 'New Support Request Alert (To Admin)',
+    category: 'support',
+    subject: '[Support Request] #{{ticket_number}}: {{subject}}',
+    variables: ['user_name', 'user_email', 'ticket_number', 'category', 'subject', 'description', 'submitted_at', 'app_name'],
+    text_content:
+      'New Support Ticket — {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #0f766e; margin-top: 0;">New Support Request (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}})</p><p><strong>Category:</strong> {{category}} · <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_admin_ticket_reply',
+    slug: 'admin-ticket-reply',
+    name: 'Admin Reply to User Support Ticket',
+    category: 'support',
+    subject: 'Re: [Ticket #{{ticket_number}}] {{original_subject}} — {{app_name}}',
+    variables: ['user_name', 'ticket_number', 'ticket_type', 'original_subject', 'admin_reply', 'admin_name', 'status', 'app_name', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\n{{admin_name}} replied to your ticket #{{ticket_number}} ({{original_subject}}) [Status: {{status}}]:\n\n{{admin_reply}}\n\nBest regards,\n{{app_name}} Support',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Update on Ticket #{{ticket_number}}</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>{{admin_name}}</strong> posted a reply (Status: <strong>{{status}}</strong>):</p><div style="background: #f0fdf4; border-left: 4px solid #059669; padding: 14px; border-radius: 8px; margin: 14px 0;">{{admin_reply}}</div><p style="font-size: 12px; color: #64748b;">Subject: {{original_subject}} · Support: {{support_email}}</p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_udhar_created',
+    slug: 'udhar-created',
+    name: 'Udhar Transaction Recorded',
+    category: 'udhar',
+    subject: 'Udhar Recorded: ₹{{amount}} with {{other_person_name}} — {{app_name}}',
+    variables: ['user_name', 'other_person_name', 'transaction_id', 'amount', 'direction_label', 'description', 'transaction_date', 'status', 'app_name'],
+    text_content:
+      'Hi {{user_name}},\n\nA new Udhar entry (#{{transaction_id}}) of ₹{{amount}} ({{direction_label}}) with {{other_person_name}} was recorded on {{transaction_date}}.\n\nNotes: {{description}}\nStatus: {{status}}',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Transaction Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Amount:</strong> ₹{{amount}} ({{direction_label}})<br/><strong>With:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{transaction_date}}<br/><strong>Status:</strong> {{status}}</p><p>{{description}}</p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_udhar_updated',
+    slug: 'udhar-updated',
+    name: 'Udhar Transaction Updated',
+    category: 'udhar',
+    subject: 'Udhar Updated: ₹{{amount}} with {{other_person_name}} — {{app_name}}',
+    variables: ['user_name', 'other_person_name', 'transaction_id', 'amount', 'direction_label', 'description', 'transaction_date', 'status', 'app_name'],
+    text_content:
+      'Hi {{user_name}},\n\nUdhar entry #{{transaction_id}} with {{other_person_name}} was updated to ₹{{amount}} ({{direction_label}}) · Status: {{status}}.',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Record Updated</h2><p>Hi <strong>{{user_name}}</strong>,</p><p>Record #{{transaction_id}} with <strong>{{other_person_name}}</strong> is now <strong>₹{{amount}}</strong> ({{direction_label}} · {{status}}).</p><p>{{description}}</p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_udhar_settled',
+    slug: 'udhar-settled',
+    name: 'Udhar Repayment / Settlement Notice',
+    category: 'udhar',
+    subject: 'Udhar Settlement: ₹{{amount_settled}} with {{other_person_name}} — {{app_name}}',
+    variables: ['user_name', 'other_person_name', 'transaction_id', 'amount_settled', 'updated_balance', 'settlement_date', 'app_name'],
+    text_content:
+      'Hi {{user_name}},\n\nA settlement of ₹{{amount_settled}} with {{other_person_name}} (Ref #{{transaction_id}}) was recorded on {{settlement_date}}.\nRemaining Balance: ₹{{updated_balance}}.',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Settlement Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Settled Amount:</strong> ₹{{amount_settled}}<br/><strong>Party:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{settlement_date}}<br/><strong>Remaining Balance:</strong> ₹{{updated_balance}}</p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_contact_invitation',
+    slug: 'contact-invitation',
+    name: 'Contact Invitation to Join App',
+    category: 'udhar',
+    subject: '{{inviter_name}} invited you to {{app_name}}',
+    variables: ['user_name', 'inviter_name', 'invite_link', 'app_name', 'company_name'],
+    text_content:
+      'Hi {{user_name}},\n\n{{inviter_name}} invited you to track shared Udhar and finances on {{app_name}} by {{company_name}}.\nJoin here: {{invite_link}}',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">You are Invited to {{app_name}}!</h2><p>Hi <strong>{{user_name}}</strong>, <strong>{{inviter_name}}</strong> added you as a contact to track lending & repayments digitally.</p><p style="text-align: center; margin: 22px 0;"><a href="{{invite_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Accept Invitation</a></p></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_notification_alert',
+    slug: 'notification-alert',
+    name: 'Transaction, Budget & Security Alert Email',
+    category: 'notifications',
+    subject: '{{title}} — {{app_name}}',
+    variables: ['user_name', 'user_email', 'title', 'message', 'category', 'action_url', 'action_text', 'app_name', 'company_name'],
+    text_content:
+      'Hi {{user_name}},\n\n[{{category}}] {{title}}\n\n{{message}}\n\nOpen: {{action_url}}\n\n{{app_name}} by {{company_name}}',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 4px 0 0; font-size: 11px; color: #a7f3d0; text-transform: uppercase;">{{category}} · {{app_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 22px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 11px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p></div></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: '2026-11-25T00:00:00.000Z',
+  },
+  {
+    id: 'tmpl_campaign_announcement',
+    slug: 'campaign-announcement',
+    name: 'Admin Broadcast & Campaign Announcement',
+    category: 'broadcast',
+    subject: '{{title}} — {{app_name}} by {{company_name}}',
+    variables: ['user_name', 'user_email', 'title', 'message', 'category', 'action_url', 'action_text', 'app_name', 'company_name', 'support_email'],
+    text_content:
+      'Hi {{user_name}},\n\n{{title}}\n\n{{message}}\n\nOpen in App: {{action_url}}\n\nRegards,\n{{app_name}} ({{company_name}})',
+    html_content:
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden;"><div style="background: linear-gradient(135deg, #065f46, #047857); padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 6px 0 0; font-size: 12px; color: #d1fae5;">Official Announcement · {{company_name}}</p></div><div style="padding: 26px; color: #1e293b; font-size: 14px; line-height: 1.65;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 24px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p><p style="font-size: 12px; color: #64748b;">Questions? Contact {{support_email}}</p></div></div>',
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: '2026-11-25T00:00:00.000Z',
   },
@@ -934,6 +1146,8 @@ const DEFAULT_EMAIL_TEMPLATES = [
     html_content:
       '<div style="font-family: sans-serif; padding: 20px;"><h2>Account Deletion Scheduled</h2><p>Hi {{user_name}}, your account is scheduled for deletion on {{scheduled_date}}.</p><p>You may cancel by logging into your account anytime before this window ends.</p></div>',
     is_active: true,
+    is_custom: false,
+    is_customized: false,
     version: 1,
     updated_at: '2026-11-25T00:00:00.000Z',
   },
@@ -949,11 +1163,22 @@ export async function listEmailTemplatesFallback(): Promise<any[]> {
   }
   if (sbRes.ok && Array.isArray(sbRes.data)) {
     for (const row of sbRes.data) {
-      if (row?.id) map.set(String(row.id), row);
+      if (row?.id) {
+        const def = map.get(String(row.id));
+        map.set(String(row.id), {
+          ...def,
+          ...row,
+          is_custom: def ? false : Boolean(row.is_custom ?? !String(row.id).startsWith('tmpl_')),
+          is_customized: Boolean(row.is_customized ?? Number(row.version || 1) > 1),
+        });
+      }
     }
   }
   for (const row of stored.templates) {
-    if (row?.id) map.set(String(row.id), row);
+    if (row?.id) {
+      const def = map.get(String(row.id));
+      map.set(String(row.id), { ...def, ...row });
+    }
   }
   return Array.from(map.values()).sort((a, b) =>
     `${a.category || ''}:${a.name || ''}`.localeCompare(`${b.category || ''}:${b.name || ''}`)
@@ -962,7 +1187,15 @@ export async function listEmailTemplatesFallback(): Promise<any[]> {
 
 export async function updateEmailTemplateFallback(
   id: string,
-  updates: { subject?: string; html_content?: string; text_content?: string; is_active?: boolean }
+  updates: {
+    name?: string;
+    category?: string;
+    subject?: string;
+    html_content?: string;
+    text_content?: string;
+    variables?: string[];
+    is_active?: boolean;
+  }
 ): Promise<any | null> {
   const all = await listEmailTemplatesFallback();
   const existing = all.find((t) => t.id === id);
@@ -970,10 +1203,14 @@ export async function updateEmailTemplateFallback(
 
   const updated = {
     ...existing,
+    name: updates.name !== undefined ? updates.name : existing.name,
+    category: updates.category !== undefined ? updates.category : existing.category,
     subject: updates.subject !== undefined ? updates.subject : existing.subject,
     html_content: updates.html_content !== undefined ? updates.html_content : existing.html_content,
     text_content: updates.text_content !== undefined ? updates.text_content : existing.text_content,
+    variables: Array.isArray(updates.variables) ? updates.variables : existing.variables,
     is_active: updates.is_active !== undefined ? updates.is_active : existing.is_active,
+    is_customized: true,
     version: Number(existing.version || 1) + 1,
     updated_at: new Date().toISOString(),
   };
@@ -981,9 +1218,12 @@ export async function updateEmailTemplateFallback(
   await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: {
+      name: updated.name,
+      category: updated.category,
       subject: updated.subject,
       html_content: updated.html_content,
       text_content: updated.text_content,
+      variables: updated.variables,
       is_active: updated.is_active,
       version: updated.version,
       updated_at: updated.updated_at,
@@ -994,6 +1234,102 @@ export async function updateEmailTemplateFallback(
   stored.templates = [updated, ...stored.templates.filter((t) => t.id !== id)];
   writeJsonStore('email-templates.json', stored);
   return updated;
+}
+
+export async function createEmailTemplateFallback(input: {
+  id?: string;
+  slug: string;
+  name: string;
+  category: string;
+  subject: string;
+  html_content: string;
+  text_content: string;
+  variables?: string[];
+  is_active?: boolean;
+}): Promise<any> {
+  const now = new Date().toISOString();
+  const record = {
+    id: input.id || `custom_${crypto.randomUUID().slice(0, 12)}`,
+    slug: input.slug,
+    name: input.name,
+    category: input.category || 'custom',
+    subject: input.subject,
+    html_content: input.html_content,
+    text_content: input.text_content,
+    variables: Array.isArray(input.variables) ? input.variables : [],
+    is_active: input.is_active !== false,
+    is_custom: true,
+    is_customized: true,
+    version: 1,
+    created_at: now,
+    updated_at: now,
+  };
+
+  await sbRestRequest('email_templates', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: {
+      slug: record.slug,
+      name: record.name,
+      category: record.category,
+      subject: record.subject,
+      html_content: record.html_content,
+      text_content: record.text_content,
+      variables: record.variables,
+      is_active: record.is_active,
+      version: 1,
+      created_at: now,
+      updated_at: now,
+    },
+  });
+
+  const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
+  stored.templates = [record, ...stored.templates.filter((t) => t.id !== record.id && t.slug !== record.slug)];
+  writeJsonStore('email-templates.json', stored);
+  return record;
+}
+
+export async function resetEmailTemplateFallback(id: string): Promise<any | null> {
+  const def = DEFAULT_EMAIL_TEMPLATES.find((t) => t.id === id);
+  if (!def) return null;
+
+  const restored = {
+    ...def,
+    is_customized: false,
+    updated_at: new Date().toISOString(),
+  };
+
+  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: {
+      name: restored.name,
+      category: restored.category,
+      subject: restored.subject,
+      html_content: restored.html_content,
+      text_content: restored.text_content,
+      variables: restored.variables,
+      is_active: true,
+      version: 1,
+      updated_at: restored.updated_at,
+    },
+  });
+
+  const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
+  stored.templates = stored.templates.filter((t) => t.id !== id);
+  writeJsonStore('email-templates.json', stored);
+  return restored;
+}
+
+export async function deleteEmailTemplateFallback(id: string): Promise<boolean> {
+  if (DEFAULT_EMAIL_TEMPLATES.some((t) => t.id === id)) {
+    return false;
+  }
+  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
+  const before = stored.templates.length;
+  stored.templates = stored.templates.filter((t) => t.id !== id);
+  writeJsonStore('email-templates.json', stored);
+  return stored.templates.length < before;
 }
 
 export async function recordEmailLogFallback(entry: {
@@ -1466,4 +1802,179 @@ export async function getAdminDashboardStatsFallback(): Promise<{
     recentActivity,
   };
 }
+
+// ============================================================================
+// 8. SUPPORT TICKETS & REPLIES FALLBACK
+// ============================================================================
+
+export async function insertSupportTicketFallback(entry: {
+  ticket_number: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  ticket_type: 'complaint' | 'support';
+  category: string;
+  subject: string;
+  description: string;
+  priority?: string;
+  status?: string;
+  attachment_url?: string | null;
+}): Promise<any> {
+  const now = new Date().toISOString();
+  const payload = {
+    ticket_number: entry.ticket_number,
+    user_id: entry.user_id,
+    user_name: entry.user_name,
+    user_email: entry.user_email,
+    ticket_type: entry.ticket_type,
+    category: entry.category || 'General',
+    subject: entry.subject,
+    description: entry.description,
+    priority: entry.priority || 'normal',
+    status: entry.status || 'open',
+    attachment_url: entry.attachment_url || null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  const sbRes = await sbRestRequest<any[]>('support_tickets', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: payload,
+  });
+
+  const savedRow =
+    sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]
+      ? sbRes.data[0]
+      : { id: crypto.randomUUID(), ...payload };
+
+  const store = readJsonStore<{ tickets: any[]; replies: any[] }>('support-tickets.json', { tickets: [], replies: [] });
+  store.tickets = [savedRow, ...store.tickets.filter((t) => t.id !== savedRow.id)].slice(0, 200);
+  writeJsonStore('support-tickets.json', store);
+
+  return savedRow;
+}
+
+export async function listSupportTicketsFallback(userId?: string): Promise<any[]> {
+  const pathSuffix = userId
+    ? `support_tickets?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=100`
+    : 'support_tickets?select=*&order=created_at.desc&limit=150';
+  const sbRes = await sbRestRequest<any[]>(pathSuffix);
+  const store = readJsonStore<{ tickets: any[]; replies: any[] }>('support-tickets.json', { tickets: [], replies: [] });
+
+  const map = new Map<string, any>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map.set(String(row.id), row);
+    }
+  }
+  for (const row of store.tickets) {
+    if (row?.id && !map.has(String(row.id))) {
+      if (!userId || row.user_id === userId) {
+        map.set(String(row.id), row);
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+
+export async function getSupportTicketByIdFallback(ticketId: string, userId?: string): Promise<any | null> {
+  const all = await listSupportTicketsFallback(userId);
+  return all.find((t) => t.id === ticketId && (!userId || t.user_id === userId)) || null;
+}
+
+export async function insertSupportTicketReplyFallback(entry: {
+  ticket_id: string;
+  sender_id?: string | null;
+  sender_name: string;
+  sender_role: string;
+  sender_type: 'user' | 'admin';
+  message: string;
+  message_type?: string;
+  is_internal?: boolean;
+  email_status?: string;
+  delivery_error?: string | null;
+}): Promise<any> {
+  const now = new Date().toISOString();
+  const payload = {
+    ticket_id: entry.ticket_id,
+    sender_id: entry.sender_id || null,
+    sender_name: entry.sender_name,
+    sender_role: entry.sender_role,
+    sender_type: entry.sender_type,
+    message: entry.message,
+    message_type: entry.message_type || (entry.sender_type === 'user' ? 'user_message' : 'admin_reply'),
+    is_internal: Boolean(entry.is_internal),
+    email_status: entry.email_status || 'none',
+    delivery_error: entry.delivery_error || null,
+    created_at: now,
+  };
+
+  const sbRes = await sbRestRequest<any[]>('support_ticket_replies', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: payload,
+  });
+
+  const savedRow =
+    sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]
+      ? sbRes.data[0]
+      : { id: crypto.randomUUID(), ...payload };
+
+  const store = readJsonStore<{ tickets: any[]; replies: any[] }>('support-tickets.json', { tickets: [], replies: [] });
+  store.replies = [...store.replies.filter((r) => r.id !== savedRow.id), savedRow].slice(-500);
+  writeJsonStore('support-tickets.json', store);
+
+  return savedRow;
+}
+
+export async function getSupportTicketRepliesFallback(ticketId: string, includeInternal: boolean = false): Promise<any[]> {
+  const sbRes = await sbRestRequest<any[]>(
+    `support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`
+  );
+  const store = readJsonStore<{ tickets: any[]; replies: any[] }>('support-tickets.json', { tickets: [], replies: [] });
+
+  const map = new Map<string, any>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map.set(String(row.id), row);
+    }
+  }
+  for (const row of store.replies) {
+    if (row?.id && row.ticket_id === ticketId && !map.has(String(row.id))) {
+      map.set(String(row.id), row);
+    }
+  }
+
+  return Array.from(map.values())
+    .filter((r) => includeInternal || !r.is_internal)
+    .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+}
+
+export async function updateSupportTicketStatusFallback(ticketId: string, status: string): Promise<void> {
+  const now = new Date().toISOString();
+  const patch: Record<string, any> = {
+    status,
+    updated_at: now,
+  };
+  if (status === 'resolved' || status === 'closed') {
+    patch.resolved_at = now;
+  }
+
+  await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+    method: 'PATCH',
+    body: patch,
+  });
+
+  const store = readJsonStore<{ tickets: any[]; replies: any[] }>('support-tickets.json', { tickets: [], replies: [] });
+  const idx = store.tickets.findIndex((t) => t.id === ticketId);
+  if (idx >= 0) {
+    store.tickets[idx] = { ...store.tickets[idx], ...patch };
+    writeJsonStore('support-tickets.json', store);
+  }
+}
+
 

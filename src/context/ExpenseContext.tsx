@@ -91,6 +91,7 @@ interface ExpenseContextType {
 
   // App Settings, Maintenance Mode & App Download Popup
   maintenanceSettings: MaintenanceSettings;
+  refreshSiteConfig: () => Promise<void>;
   updateMaintenanceSettings: (settings: Partial<MaintenanceSettings>) => Promise<boolean>;
   appPopupSettings: AppDownloadPopupSettings;
   updateAppPopupSettings: (settings: Partial<AppDownloadPopupSettings>) => Promise<boolean>;
@@ -572,8 +573,26 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         fetchPublicSiteConfig();
       }
     };
+    const handleMaintenanceDetected = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ message?: string; expectedRestoration?: string }>).detail || {};
+      setMaintenanceSettings((prev) => {
+        const next: MaintenanceSettings = {
+          ...prev,
+          isEnabled: true,
+          message: detail.message || prev.message,
+          expectedRestoration: detail.expectedRestoration || prev.expectedRestoration,
+          updatedAt: new Date().toISOString(),
+        };
+        try {
+          localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      fetchPublicSiteConfig();
+    };
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('mymoney:maintenance-detected', handleMaintenanceDetected);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchPublicSiteConfig();
@@ -582,6 +601,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('mymoney:maintenance-detected', handleMaintenanceDetected);
       clearInterval(interval);
     };
   }, [fetchPublicSiteConfig]);
@@ -1498,6 +1518,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateSection,
         deleteSection,
         maintenanceSettings,
+        refreshSiteConfig: fetchPublicSiteConfig,
         updateMaintenanceSettings,
         appPopupSettings,
         updateAppPopupSettings,

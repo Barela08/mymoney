@@ -5,6 +5,8 @@ import {
   NotificationPreferences,
 } from '../lib/notificationsApi';
 import { pushNotifications, type PushSubscribeResult } from '../lib/pushNotifications';
+import { initNotificationAudioUnlock, playNotificationSound } from '../lib/notificationSound';
+import { showExternalNotification } from '../lib/externalNotifications';
 import { useAuth } from './AuthContext';
 
 interface NotificationContextType {
@@ -24,6 +26,7 @@ interface NotificationContextType {
   enablePush: () => Promise<PushSubscribeResult>;
   disablePush: () => Promise<boolean>;
   sendTestPush: () => Promise<boolean>;
+  testSoundAndExternalAlert: () => Promise<{ soundPlayed: boolean; osNotificationShown: boolean }>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -39,16 +42,34 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
   const pushRequestInFlightRef = useRef<boolean>(false);
 
-  // Check push support and passively listen for browser permission changes (never prompts)
+  // Track seen notifications per user so reloads never replay historical alerts
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const initialSeedDoneRef = useRef<boolean>(false);
+  const lastUserIdRef = useRef<string | null>(null);
+  const preferencesRef = useRef<NotificationPreferences | null>(null);
+  const recentPushAtRef = useRef<number>(0);
+
   useEffect(() => {
+    preferencesRef.current = preferences;
+  }, [preferences]);
+
+  // Unlock browser audio on first gesture + listen for browser notification permission changes
+  useEffect(() => {
+    initNotificationAudioUnlock();
+
     const supported = pushNotifications.isSupported();
     setIsPushSupported(supported);
     if (!supported) return;
 
-    setPushPermission(pushNotifications.getPermission());
-    pushNotifications.getExistingSubscription().then((sub) => {
-      setIsPushSubscribed(!!sub);
-    });
+    const syncPermState = () => {
+      const perm = pushNotifications.getPermission();
+      setPushPermission(perm);
+      pushNotifications.getExistingSubscription().then((sub) => {
+        setIsPushSubscribed(!!sub || perm === 'granted');
+      });
+    };
+
+    syncPermState();
 
     let permStatusObj: PermissionStatus | null = null;
     if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
@@ -56,12 +77,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         .query({ name: 'notifications' as PermissionName })
         .then((status) => {
           permStatusObj = status;
-          status.onchange = () => {
-            setPushPermission(pushNotifications.getPermission());
-            pushNotifications.getExistingSubscription().then((sub) => {
-              setIsPushSubscribed(!!sub);
-            });
-          };
+          status.onchange = syncPermState;
         })
         .catch(() => {});
     }
@@ -73,7 +89,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, []);
 
-  // Fetch notifications
+  // Reset seen tracker when user changes
+  useEffect(() => {
+    const uid = user?.id || null;
+    if (lastUserIdRef.current !== uid) {
+      seenNotificationIdsRef.current = new Set();
+      initialSeedDoneRef.current = false;
+      lastUserIdRef.current = uid;
+    }
+  }, [user]);
+
+  // Fetch notifications & trigger external OS alert + chime for newly arrived unread items
   const refreshNotifications = useCallback(async () => {
     if (!user) {
       setNotifications([]);
@@ -84,8 +110,45 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setIsLoading(true);
       const res = await notificationsApi.getNotifications({ limit: 30 });
       if (res.success) {
-        setNotifications(res.notifications || []);
+        const list = res.notifications || [];
+        setNotifications(list);
         setUnreadCount(res.unreadCount || 0);
+
+        if (!initialSeedDoneRef.current) {
+          for (const n of list) {
+            seenNotificationIdsRef.current.add(n.id);
+          }
+          initialSeedDoneRef.current = true;
+        } else {
+          const freshUnread = list.filter((n) => !n.is_read && !seenNotificationIdsRef.current.has(n.id));
+          for (const n of list) {
+            seenNotificationIdsRef.current.add(n.id);
+          }
+
+          if (freshUnread.length > 0) {
+            const prefs = preferencesRef.current;
+            const soundEnabled = prefs?.sound_enabled !== false;
+            const skipExternalBecauseRecentPush = Date.now() - recentPushAtRef.current < 4000;
+
+            for (const notif of freshUnread.slice(0, 2)) {
+              if (!skipExternalBecauseRecentPush) {
+                void showExternalNotification({
+                  title: notif.title,
+                  body: notif.message,
+                  url: notif.deep_link || 'notifications',
+                  tag: `mm-notif-${notif.id}`,
+                  category: notif.category,
+                  type: notif.type,
+                  notificationId: notif.id,
+                  soundEnabled,
+                  quietHoursEnabled: prefs?.quiet_hours_enabled,
+                  quietHoursStart: prefs?.quiet_hours_start,
+                  quietHoursEnd: prefs?.quiet_hours_end,
+                });
+              }
+            }
+          }
+        }
       }
     } catch (e) {
       console.warn('[NotificationContext] Refresh failed:', e);
@@ -105,20 +168,75 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [user]);
 
+  // Service Worker message listener (PLAY SOUND on PUSH_RECEIVED + refresh + deep-link navigation)
   useEffect(() => {
-    if (user) {
-      refreshNotifications();
-      loadPreferences();
+    if (!user || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
 
-      // Poll periodically (every 45 seconds) for background updates
-      const interval = setInterval(refreshNotifications, 45000);
-      return () => clearInterval(interval);
-    }
+    const handleSwMessage = (event: MessageEvent) => {
+      const data = event?.data;
+      if (!data) return;
+
+      if (data.type === 'PUSH_RECEIVED') {
+        recentPushAtRef.current = Date.now();
+        const payload = data.payload || {};
+        const prefs = preferencesRef.current;
+        void playNotificationSound(payload.category, payload.type, {
+          soundEnabled: prefs?.sound_enabled !== false,
+          quietHoursEnabled: prefs?.quiet_hours_enabled,
+          quietHoursStart: prefs?.quiet_hours_start,
+          quietHoursEnd: prefs?.quiet_hours_end,
+        });
+        void refreshNotifications();
+      } else if (data.type === 'NOTIFICATION_NAVIGATE' && typeof data.url === 'string') {
+        const cleanUrl = data.url.trim();
+        if (cleanUrl.startsWith('/#')) {
+          window.location.hash = cleanUrl.slice(1);
+        } else if (cleanUrl.startsWith('#')) {
+          window.location.hash = cleanUrl;
+        }
+        void refreshNotifications();
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    };
+  }, [user, refreshNotifications]);
+
+  // Immediate refresh events, tab focus sync, and 15s polling
+  useEffect(() => {
+    if (!user) return;
+
+    refreshNotifications();
+    loadPreferences();
+
+    const interval = setInterval(refreshNotifications, 15000);
+    const onRefreshEvent = () => {
+      setTimeout(() => {
+        void refreshNotifications();
+      }, 450);
+    };
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshNotifications();
+      }
+    };
+
+    window.addEventListener('mymoney:notifications-refresh', onRefreshEvent);
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('mymoney:notifications-refresh', onRefreshEvent);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
   }, [user, refreshNotifications, loadPreferences]);
 
   const markAsRead = async (id: string) => {
     try {
-      // Optimistic update
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
@@ -181,13 +299,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       };
     }
 
-    // Check if already subscribed
-    if (isPushSubscribed) {
+    if (isPushSubscribed && pushNotifications.getPermission() === 'granted') {
       setPushPermission('granted');
       return { success: true, permission: 'granted' };
     }
 
-    // Prevent overlapping permission requests
     if (pushRequestInFlightRef.current) {
       return {
         success: false,
@@ -196,7 +312,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       };
     }
 
-    // Check current permission state before requesting
     const currentPermission = pushNotifications.getPermission();
     setPushPermission(currentPermission);
 
@@ -205,7 +320,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         success: false,
         permission: 'denied',
         error:
-          'Notification permission is blocked in your browser. Allow notifications in site settings and click Enable Push to retry.',
+          'Notification permission is blocked in your browser. Allow notifications in site settings and click Enable Notifications to retry.',
       };
     }
 
@@ -215,12 +330,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const updatedPerm = pushNotifications.getPermission();
       setPushPermission(updatedPerm);
 
-      if (res.success) {
+      if (res.success || updatedPerm === 'granted') {
         setIsPushSubscribed(true);
         setPushPermission('granted');
         if (preferences) {
-          await updatePreferences({ push_enabled: true }).catch(() => {});
+          await updatePreferences({ push_enabled: true, sound_enabled: true }).catch(() => {});
         }
+        // Play gentle confirmation chime when enabled
+        void playNotificationSound('general', 'success', { force: true });
       } else {
         setIsPushSubscribed(false);
       }
@@ -229,7 +346,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       pushRequestInFlightRef.current = false;
     }
   }, [isPushSubscribed, preferences]);
-
 
   const disablePush = async () => {
     const ok = await pushNotifications.unsubscribe();
@@ -242,12 +358,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return ok;
   };
 
+  const testSoundAndExternalAlert = useCallback(async () => {
+    const prefs = preferencesRef.current;
+    return showExternalNotification({
+      title: 'My Money Manager · Alert Active',
+      body: 'External notifications with sound are working! You will receive alerts outside the app too.',
+      url: 'notifications',
+      tag: `mm-sound-test-${Date.now()}`,
+      category: 'general',
+      type: 'success',
+      soundEnabled: prefs?.sound_enabled !== false,
+      forceSound: true,
+    });
+  }, []);
+
   const sendTestPush = async () => {
-    const ok = await notificationsApi.sendTestPush();
+    const extRes = await testSoundAndExternalAlert();
+    const ok = await notificationsApi.sendTestPush().catch(() => false);
     if (ok) {
-      setTimeout(refreshNotifications, 1000);
+      setTimeout(refreshNotifications, 900);
     }
-    return ok;
+    return ok || extRes.osNotificationShown || extRes.soundPlayed;
   };
 
   return (
@@ -269,6 +400,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         enablePush,
         disablePush,
         sendTestPush,
+        testSoundAndExternalAlert,
       }}
     >
       {children}

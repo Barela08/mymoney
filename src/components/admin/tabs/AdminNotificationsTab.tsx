@@ -39,7 +39,7 @@ export const AdminNotificationsTab: React.FC = () => {
   const [type, setType] = useState<'info' | 'warning' | 'maintenance' | 'announcement' | 'offer' | 'reminder'>('announcement');
   const [channelInApp, setChannelInApp] = useState(true);
   const [channelPush, setChannelPush] = useState(true);
-  const [channelEmail, setChannelEmail] = useState(false);
+  const [channelEmail, setChannelEmail] = useState(true);
   const [targetType, setTargetType] = useState<'all' | 'installed' | 'push_subscribed' | 'active' | 'selected' | 'specific' | 'admins'>('all');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [specificUserId, setSpecificUserId] = useState('');

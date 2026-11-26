@@ -669,20 +669,6 @@ export const AuthPage: React.FC = () => {
                       </div>
                     </div>
                   )}
-
-                  {/* Prominent Forgot Password Link directly below password input on Login */}
-                  {mode === 'login' && (
-                    <div className="mt-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => navigateToMode('forgot_password')}
-                        className="text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>Forgot Password? Recover Account</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
 
