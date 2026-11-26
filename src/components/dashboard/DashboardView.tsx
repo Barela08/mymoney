@@ -22,10 +22,13 @@ import {
   TrendingUp,
   BarChart3,
   Sparkles,
+  BellRing,
+  X,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EmptyState } from '../common/EmptyState';
@@ -49,12 +52,45 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal, onOpenScanQr, onAskAiPrompt }) => {
   const { transactions, summary, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const { user, isAdmin } = useAuth();
+  const { isPushSupported, pushPermission, enablePush } = useNotifications();
   const toast = useToast();
 
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isEnablingPush, setIsEnablingPush] = useState(false);
+  const [pushBannerDismissed, setPushBannerDismissed] = useState(() => {
+    try {
+      const raw = localStorage.getItem('mm_push_banner_dismissed_at');
+      if (!raw) return false;
+      const ts = Number(raw);
+      return Number.isFinite(ts) && Date.now() - ts < 7 * 24 * 60 * 60 * 1000;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleDismissPushBanner = () => {
+    setPushBannerDismissed(true);
+    try {
+      localStorage.setItem('mm_push_banner_dismissed_at', String(Date.now()));
+    } catch {}
+  };
+
+  const handleEnableMobileAlerts = async () => {
+    setIsEnablingPush(true);
+    try {
+      const res = await enablePush();
+      if (res.success || res.permission === 'granted') {
+        toast.success('Mobile Alerts Enabled', 'Notifications will now appear in your device notification bar with sound.');
+      } else {
+        toast.warning('Permission Needed', res.error || 'Please allow notifications in browser settings.');
+      }
+    } finally {
+      setIsEnablingPush(false);
+    }
+  };
 
   // Time-of-day greeting
   const currentHour = new Date().getHours();
@@ -169,6 +205,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
+
+      {/* 1A. Mobile Notification Bar Opt-in Banner (only when permission === 'default' & not dismissed) */}
+      {isPushSupported && pushPermission === 'default' && !pushBannerDismissed && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600/15 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <BellRing className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                Turn on Mobile Notification Bar Alerts
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Receive instant transaction, Udhar &amp; support alerts in your phone&apos;s notification bar with sound.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={() => void handleEnableMobileAlerts()}
+              disabled={isEnablingPush}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-60"
+            >
+              {isEnablingPush ? 'Enabling...' : 'Enable Mobile Bar Alerts'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDismissPushBanner}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer"
+              aria-label="Dismiss notification prompt"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 1B. Pending Automatic UPI Expense Detections Banner */}
       <PendingDetectedExpensesBanner

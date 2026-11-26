@@ -13,7 +13,7 @@ import {
   getEffectiveSmtpConfig,
   getEffectiveSupportAlertEmail,
 } from './adminSettingsStore.js';
-import { getRenderedCustomTemplateIfActive } from './emailTemplateService.js';
+import { getRenderedCustomTemplateIfActive, ensureBrandedEmailHtml } from './emailTemplateService.js';
 import { generateWelcomeEmail } from './welcomeEmailTemplate.js';
 import {
   generateFeedbackReceivedEmail,
@@ -54,6 +54,32 @@ interface EmailOptions {
   emailType?: string;
   recipientName?: string;
   userId?: string;
+}
+
+/**
+ * Last-mile safety replacement so system variables never leak unrendered in outgoing emails.
+ */
+async function sanitizeSystemVariables(input: string, recipientName?: string): Promise<string> {
+  if (!input || !input.includes('{{')) return input;
+  const supportEmail = await getEffectiveSupportAlertEmail().catch(() => APP_CONFIG.supportEmail);
+  const nowStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+  const replacements: Record<string, string> = {
+    app_name: APP_CONFIG.appName || 'My Money Manager',
+    company_name: APP_CONFIG.companyName || 'HackifyPro',
+    support_email: supportEmail || APP_CONFIG.supportEmail || 'hackifypro@gmail.com',
+    support_phone: APP_CONFIG.supportPhone || '+91 74149 35405',
+    login_url: APP_CONFIG.appLoginUrl || APP_CONFIG.appBaseUrl || '/',
+    app_url: APP_CONFIG.appBaseUrl || '/',
+    action_url: APP_CONFIG.appBaseUrl || '/',
+    action_text: 'Open My Money Manager',
+    date: nowStr,
+    submitted_at: nowStr,
+    year: String(new Date().getFullYear()),
+    user_name: recipientName || 'Valued User',
+  };
+  return input.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (full, key: string) =>
+    key in replacements ? replacements[key] : full
+  );
 }
 
 /**
@@ -193,16 +219,20 @@ export async function sendEmailDetailed(
     };
   }
 
+  const safeSubject = await sanitizeSystemVariables(opts.subject, opts.recipientName);
+  const safeHtml = await sanitizeSystemVariables(opts.html, opts.recipientName);
+  const safeText = await sanitizeSystemVariables(opts.text, opts.recipientName);
+
   try {
     const info = await transporter.sendMail({
       from: cfg.from,
       to,
-      subject: opts.subject,
-      html: opts.html,
-      text: opts.text,
+      subject: safeSubject,
+      html: safeHtml,
+      text: safeText,
       attachments: opts.attachments,
     });
-    console.log(`[Email Sent] MessageId: ${info.messageId} to ${to} - Subject: "${opts.subject}"`);
+    console.log(`[Email Sent] MessageId: ${info.messageId} to ${to} - Subject: "${safeSubject}"`);
     return { success: true, messageId: info.messageId };
   } catch (err: any) {
     const safeErr = sanitizeErrorMessage(err);
@@ -266,9 +296,20 @@ export async function sendAdminTestEmail(opts: {
   emailType?: string;
 }): Promise<{ success: boolean; error?: string; messageId?: string }> {
   const recipient = (opts.to || '').trim();
-  const subject = (opts.subject || 'Test Email from My Money Manager Admin').trim();
   const emailType = opts.emailType || 'admin_test';
-  const recipientName = opts.recipientName || 'Administrator';
+  const recipientName = opts.recipientName || 'Valued User';
+  const subject = await sanitizeSystemVariables(
+    (opts.subject || 'Test Email from My Money Manager Admin').trim(),
+    recipientName
+  );
+  const sanitizedHtml = await sanitizeSystemVariables(opts.html || '', recipientName);
+  const brandedHtml = ensureBrandedEmailHtml(sanitizedHtml, {
+    title: subject,
+  });
+  const sanitizedText = await sanitizeSystemVariables(
+    opts.text || 'This is a live transmission from My Money Manager by HackifyPro.',
+    recipientName
+  );
 
   if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
     return { success: false, error: 'Please enter a valid recipient email address.' };
@@ -326,8 +367,8 @@ export async function sendAdminTestEmail(opts: {
       from: cfg.from,
       to: recipient,
       subject,
-      html: opts.html,
-      text: opts.text || 'This is a live test transmission from My Money Manager Admin Control Center.',
+      html: brandedHtml,
+      text: sanitizedText,
     });
     await recordLog('sent', null);
     console.log(`[Admin Email Sent] MessageId: ${info.messageId} to ${recipient}`);

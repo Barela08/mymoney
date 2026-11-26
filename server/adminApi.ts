@@ -952,6 +952,27 @@ export async function handleAdminApiRequest(
 
       const targets: SendTarget[] = [];
 
+      let allKnownUsers: Array<{ id: string; email: string; full_name?: string; status?: string }> = [];
+      if (isDatabaseAvailable()) {
+        try {
+          const uRes = await query(
+            `SELECT id, email, full_name, status FROM public.app_users WHERE email IS NOT NULL`
+          );
+          allKnownUsers = uRes.rows || [];
+        } catch {
+          allKnownUsers = [];
+        }
+      }
+      if (allKnownUsers.length === 0) {
+        allKnownUsers = await listAllAppUsersFallback();
+      }
+      const usersByEmail = new Map<string, { id: string; email: string; full_name?: string; status?: string }>();
+      for (const u of allKnownUsers) {
+        if (u?.email) {
+          usersByEmail.set(String(u.email).trim().toLowerCase(), u);
+        }
+      }
+
       if (targetMode === 'custom_email') {
         const rawList = Array.isArray(body.emails)
           ? body.emails
@@ -966,10 +987,11 @@ export async function handleAdminApiRequest(
           const clean = String(em).trim().toLowerCase();
           if (emailRegex.test(clean) && !seen.has(clean)) {
             seen.add(clean);
+            const matchedUser = usersByEmail.get(clean);
             targets.push({
-              userId: null,
+              userId: matchedUser ? String(matchedUser.id) : null,
               email: clean,
-              name: customVars.user_name || clean.split('@')[0] || 'Valued User',
+              name: customVars.user_name || matchedUser?.full_name || clean.split('@')[0] || 'Valued User',
             });
           }
         }
@@ -978,23 +1000,8 @@ export async function handleAdminApiRequest(
           Array.isArray(body.userIds) ? body.userIds.map((x: any) => String(x)) : []
         );
 
-        let allUsers: Array<{ id: string; email: string; full_name?: string; status?: string }> = [];
-        if (isDatabaseAvailable()) {
-          try {
-            const uRes = await query(
-              `SELECT id, email, full_name, status FROM public.app_users WHERE email IS NOT NULL`
-            );
-            allUsers = uRes.rows || [];
-          } catch {
-            allUsers = [];
-          }
-        }
-        if (allUsers.length === 0) {
-          allUsers = await listAllAppUsersFallback();
-        }
-
         const seen = new Set<string>();
-        for (const u of allUsers) {
+        for (const u of allKnownUsers) {
           if (!u?.email) continue;
           if (u.status && ['deleted', 'suspended', 'banned', 'inactive'].includes(String(u.status).toLowerCase())) {
             continue;
@@ -1031,16 +1038,52 @@ export async function handleAdminApiRequest(
       let pushNotifiedCount = 0;
       const errors: string[] = [];
 
+      const sanitizedCustomVars: Record<string, string> = {};
+      for (const [k, v] of Object.entries(customVars)) {
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          sanitizedCustomVars[k] = String(v);
+        }
+      }
+
       for (const target of targets) {
-        const rendered = await renderEmailTemplate(tmpl, {
-          user_name: target.name,
-          user_email: target.email,
-          user_id: target.userId || 'external',
-          title: customVars.title || tmpl.name,
-          message: customVars.message || tmpl.subject,
-          admin_name: auth.authUser.full_name || 'HackifyPro Admin',
-          ...customVars,
-        });
+        const rendered = await renderEmailTemplate(
+          tmpl,
+          {
+            user_name: target.name,
+            user_email: target.email,
+            user_id: target.userId || 'external',
+            user_phone: APP_CONFIG.supportPhone || '+91 74149 35405',
+            feedback_id: 'FB-ADMIN',
+            ticket_number: 'TKT-ADMIN',
+            rating: '5',
+            category: tmpl.category || 'Announcement',
+            subject: tmpl.name,
+            original_subject: tmpl.name,
+            ticket_type: 'support',
+            admin_name: auth.authUser.full_name || 'HackifyPro Admin',
+            admin_reply: 'Update from the My Money Manager team.',
+            status: 'active',
+            description: tmpl.name,
+            message: tmpl.subject,
+            title: tmpl.name,
+            action_text: 'Open My Money Manager',
+            other_person_name: 'Contact',
+            inviter_name: auth.authUser.full_name || 'My Money Manager',
+            transaction_id: 'TXN-REF',
+            amount: '0',
+            amount_settled: '0',
+            updated_balance: '0',
+            direction_label: 'Ledger Update',
+            transaction_date: new Date().toLocaleDateString('en-IN'),
+            settlement_date: new Date().toLocaleDateString('en-IN'),
+            reset_link: `${APP_CONFIG.appBaseUrl || ''}/#login`,
+            invite_link: `${APP_CONFIG.appBaseUrl || ''}/#signup`,
+            ip_address: clientIp || 'Verified Session',
+            scheduled_date: new Date(Date.now() + 86400000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST',
+            ...sanitizedCustomVars,
+          },
+          { ensureBranded: true, brandTitle: tmpl.name }
+        );
 
         const dispatchRes = await sendAdminTestEmail({
           to: target.email,
@@ -1181,16 +1224,79 @@ export async function handleAdminApiRequest(
 
       const body = await parseJsonBody(req);
       const recipient = (body.recipient || auth.authUser.email || '').trim();
-      const subject = (body.subject || 'Test Email from My Money Manager Admin').trim();
-      const html = body.html_content || '<p>This is a live test transmission from the Admin Control Center.</p>';
+      const rawSubject = (body.subject || 'Test Email from My Money Manager Admin').trim();
+      const rawHtml = body.html_content || '<p>This is a live test transmission from the HackifyPro Admin Control Center.</p>';
+      const rawText = body.text_content || rawHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+      let matchedUser: { id?: string; full_name?: string; email?: string } | null = null;
+      const cleanRecipient = recipient.toLowerCase();
+      if (isDatabaseAvailable()) {
+        try {
+          const uRes = await query(
+            'SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1',
+            [cleanRecipient]
+          );
+          matchedUser = uRes.rows[0] || null;
+        } catch {}
+      }
+      if (!matchedUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        matchedUser = fbUsers.find((u) => String(u.email || '').trim().toLowerCase() === cleanRecipient) || null;
+      }
+
+      const recipientName =
+        String(body.recipientName || matchedUser?.full_name || cleanRecipient.split('@')[0] || 'Valued User').trim();
+
+      const rendered = await renderEmailTemplate(
+        {
+          subject: rawSubject,
+          html_content: rawHtml,
+          text_content: rawText,
+        },
+        {
+          user_name: recipientName,
+          user_email: recipient,
+          user_id: matchedUser?.id || auth.authUser.id || 'user',
+          user_phone: APP_CONFIG.supportPhone || '+91 74149 35405',
+          feedback_id: 'FB-TEST-101',
+          ticket_number: 'TKT-TEST-101',
+          rating: '5',
+          category: 'Announcement',
+          subject: 'Account Notification',
+          original_subject: 'Support Inquiry',
+          ticket_type: 'support',
+          admin_name: auth.authUser.full_name || 'HackifyPro Admin',
+          admin_reply: 'Your request has been verified by the HackifyPro Support team.',
+          status: 'active',
+          description: 'This is a live test email dispatched from My Money Manager by HackifyPro.',
+          message: 'This is a live test email dispatched from My Money Manager by HackifyPro.',
+          title: 'My Money Manager Update',
+          action_text: 'Open My Money Manager',
+          other_person_name: 'Rohan Verma',
+          inviter_name: auth.authUser.full_name || 'My Money Manager',
+          transaction_id: 'TXN-TEST-88',
+          amount: '2,500',
+          amount_settled: '1,250',
+          updated_balance: '1,250',
+          direction_label: 'Money Given (You Lent)',
+          transaction_date: new Date().toLocaleDateString('en-IN'),
+          settlement_date: new Date().toLocaleDateString('en-IN'),
+          reset_link: `${APP_CONFIG.appBaseUrl || ''}/#login`,
+          invite_link: `${APP_CONFIG.appBaseUrl || ''}/#signup`,
+          ip_address: clientIp || 'Verified Session',
+          scheduled_date: new Date(Date.now() + 86400000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST',
+          ...(body.variables && typeof body.variables === 'object' ? body.variables : {}),
+        },
+        { ensureBranded: true, brandTitle: rawSubject }
+      );
 
       const emailResult = await sendAdminTestEmail({
         to: recipient,
-        subject,
-        html,
-        text: body.text_content || 'This is a live test transmission from the Admin Control Center.',
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
         emailType: 'admin_test',
-        recipientName: auth.authUser.full_name || 'Administrator',
+        recipientName,
       });
 
       sendJson(res, 200, {
@@ -2708,15 +2814,26 @@ export async function handleAdminApiRequest(
         } catch {}
       }
 
-      const fbUsers = await listAllAppUsersFallback();
-      const fbCampaigns = await listCampaignsFallback();
-      const totalInApp = fbCampaigns.reduce((s, c) => s + Number(c.delivered_count || 0), 0);
+      const [fbUsers, fbCampaigns, sbSubsRes, sbNotifsRes] = await Promise.all([
+        listAllAppUsersFallback(),
+        listCampaignsFallback(),
+        sbRestRequest<any[]>('push_subscriptions?select=id&is_active=eq.true'),
+        sbRestRequest<any[]>('user_notifications?select=id,is_read&is_deleted=eq.false'),
+      ]);
+      const activePushSubscribers =
+        sbSubsRes.ok && Array.isArray(sbSubsRes.data) ? sbSubsRes.data.length : 0;
+      const inAppRows = sbNotifsRes.ok && Array.isArray(sbNotifsRes.data) ? sbNotifsRes.data : [];
+      const totalInApp =
+        inAppRows.length > 0
+          ? inAppRows.length
+          : fbCampaigns.reduce((s, c) => s + Number(c.delivered_count || 0), 0);
+      const readInApp = inAppRows.filter((r) => Boolean(r?.is_read)).length;
       sendJson(res, 200, {
         success: true,
         deliveryLogs: [],
-        activePushSubscribers: 0,
+        activePushSubscribers,
         inAppTotal: totalInApp,
-        inAppRead: 0,
+        inAppRead: readInApp,
         totalUsers: fbUsers.length,
       });
       return true;

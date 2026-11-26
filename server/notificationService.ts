@@ -386,7 +386,22 @@ export async function getUserNotificationPreferences(userId: string): Promise<Us
       ).catch(() => {});
       return { ...DEFAULT_PREFERENCES, ...local.preferences };
     } catch {
-      // fall through to local store
+      // fall through to Supabase REST / local store
+    }
+  } else {
+    const sbRes = await sbRestRequest<any[]>(
+      `user_notification_preferences?user_id=eq.${encodeURIComponent(userId)}&select=*&limit=1`
+    );
+    if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+      const row = sbRes.data[0];
+      return {
+        ...DEFAULT_PREFERENCES,
+        ...row,
+        sound_enabled:
+          typeof row.sound_enabled === 'boolean'
+            ? row.sound_enabled
+            : local.preferences.sound_enabled ?? DEFAULT_PREFERENCES.sound_enabled,
+      };
     }
   }
   return { ...DEFAULT_PREFERENCES, ...local.preferences };
@@ -540,6 +555,28 @@ export async function updateUserNotificationPreferences(
         // Local store already persisted above
       }
     }
+  } else {
+    await sbRestRequest('user_notification_preferences?on_conflict=user_id', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=minimal',
+      body: {
+        user_id: userId,
+        in_app_enabled: next.in_app_enabled,
+        push_enabled: next.push_enabled,
+        email_enabled: next.email_enabled,
+        notify_income: next.notify_income,
+        notify_expense: next.notify_expense,
+        notify_udhar: next.notify_udhar,
+        notify_support: next.notify_support,
+        notify_announcements: next.notify_announcements,
+        notify_offers: next.notify_offers,
+        quiet_hours_enabled: next.quiet_hours_enabled,
+        quiet_hours_start: next.quiet_hours_start,
+        quiet_hours_end: next.quiet_hours_end,
+        privacy_hide_amounts: next.privacy_hide_amounts,
+        updated_at: new Date().toISOString(),
+      },
+    }).catch(() => {});
   }
 
   return next;
@@ -572,68 +609,84 @@ export async function registerPushSubscription(params: {
   const deviceName = (params.deviceName || compat.deviceLabel || 'Web Device').trim().slice(0, 120);
   const nowIso = new Date().toISOString();
 
-  try {
-    const res = await query(
-      `INSERT INTO public.push_subscriptions
-         (user_id, endpoint, p256dh, auth, user_agent, device_name, browser, os, is_active, failure_count, last_used_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 0, NOW(), NOW())
-       ON CONFLICT (endpoint) DO UPDATE SET
-         user_id = EXCLUDED.user_id,
-         p256dh = EXCLUDED.p256dh,
-         auth = EXCLUDED.auth,
-         user_agent = EXCLUDED.user_agent,
-         device_name = EXCLUDED.device_name,
-         browser = EXCLUDED.browser,
-         os = EXCLUDED.os,
-         is_active = TRUE,
-         failure_count = 0,
-         last_used_at = NOW(),
-         updated_at = NOW()
-       RETURNING *`,
-      [params.userId, endpoint, p256dh, auth, ua || null, deviceName, compat.browserLabel, compat.osLabel]
-    );
-    if (res.rows.length > 0) {
-      return { success: true, subscription: toSafeSubscriptionView(res.rows[0]) };
-    }
-  } catch {
-    // Try legacy table columns if migration hasn't added device_name/browser/os yet
+  if (isDatabaseAvailable()) {
     try {
-      const legacy = await query(
-        `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+      const res = await query(
+        `INSERT INTO public.push_subscriptions
+           (user_id, endpoint, p256dh, auth, user_agent, device_name, browser, os, is_active, failure_count, last_used_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, 0, NOW(), NOW())
          ON CONFLICT (endpoint) DO UPDATE SET
            user_id = EXCLUDED.user_id,
            p256dh = EXCLUDED.p256dh,
            auth = EXCLUDED.auth,
            user_agent = EXCLUDED.user_agent,
+           device_name = EXCLUDED.device_name,
+           browser = EXCLUDED.browser,
+           os = EXCLUDED.os,
+           is_active = TRUE,
+           failure_count = 0,
+           last_used_at = NOW(),
            updated_at = NOW()
          RETURNING *`,
-        [params.userId, endpoint, p256dh, auth, ua || null]
+        [params.userId, endpoint, p256dh, auth, ua || null, deviceName, compat.browserLabel, compat.osLabel]
       );
-      if (legacy.rows.length > 0) {
-        const row = legacy.rows[0];
-        return {
-          success: true,
-          subscription: toSafeSubscriptionView({
-            ...row,
-            device_name: deviceName,
-            browser: compat.browserLabel,
-            os: compat.osLabel,
-            is_active: true,
-            failure_count: 0,
-            last_used_at: nowIso,
-          }),
-        };
+      if (res.rows.length > 0) {
+        return { success: true, subscription: toSafeSubscriptionView(res.rows[0]) };
       }
     } catch {
-      // Fallback to local per-user storage in sandbox/offline-DB environments
+      try {
+        const legacy = await query(
+          `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, updated_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT (endpoint) DO UPDATE SET
+             user_id = EXCLUDED.user_id,
+             p256dh = EXCLUDED.p256dh,
+             auth = EXCLUDED.auth,
+             user_agent = EXCLUDED.user_agent,
+             updated_at = NOW()
+           RETURNING *`,
+          [params.userId, endpoint, p256dh, auth, ua || null]
+        );
+        if (legacy.rows.length > 0) {
+          const row = legacy.rows[0];
+          return {
+            success: true,
+            subscription: toSafeSubscriptionView({
+              ...row,
+              device_name: deviceName,
+              browser: compat.browserLabel,
+              os: compat.osLabel,
+              is_active: true,
+              failure_count: 0,
+              last_used_at: nowIso,
+            }),
+          };
+        }
+      } catch {
+        // Fallback to Supabase REST + local storage below
+      }
     }
   }
 
+  // Persist to Supabase REST push_subscriptions table when direct PG is unavailable
+  const sbUpsert = await sbRestRequest<any[]>('push_subscriptions?on_conflict=endpoint', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=representation',
+    body: {
+      user_id: params.userId,
+      endpoint,
+      p256dh,
+      auth,
+      user_agent: ua || null,
+      updated_at: nowIso,
+    },
+  }).catch(() => ({ ok: false, data: null as any }));
+
+  const sbRow = sbUpsert.ok && Array.isArray(sbUpsert.data) ? sbUpsert.data[0] : null;
   const local = readLocalStore(params.userId);
   const existingIdx = local.subscriptions.findIndex((s) => s.endpoint === endpoint);
   const record: StoredPushSubscription = {
-    id: existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto.randomUUID(),
+    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto.randomUUID()),
     user_id: params.userId,
     endpoint,
     p256dh,
@@ -645,7 +698,7 @@ export async function registerPushSubscription(params: {
     is_active: true,
     failure_count: 0,
     last_used_at: nowIso,
-    created_at: existingIdx >= 0 ? local.subscriptions[existingIdx].created_at : nowIso,
+    created_at: sbRow?.created_at || (existingIdx >= 0 ? local.subscriptions[existingIdx].created_at : nowIso),
     updated_at: nowIso,
   };
 
@@ -668,33 +721,75 @@ export async function listUserPushSubscriptions(userId: string): Promise<SafePus
 }
 
 async function getRawUserPushSubscriptions(userId: string): Promise<StoredPushSubscription[]> {
-  try {
-    const res = await query(
-      `SELECT * FROM public.push_subscriptions WHERE user_id = $1 ORDER BY updated_at DESC`,
-      [userId]
-    );
-    return res.rows.map((row: any) => {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT * FROM public.push_subscriptions WHERE user_id = $1 ORDER BY updated_at DESC`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        return res.rows.map((row: any) => {
+          const compat = detectPlatformCompatibility(row.user_agent || '');
+          return {
+            id: String(row.id),
+            user_id: String(row.user_id),
+            endpoint: String(row.endpoint),
+            p256dh: String(row.p256dh),
+            auth: String(row.auth),
+            user_agent: row.user_agent || null,
+            device_name: row.device_name || compat.deviceLabel,
+            browser: row.browser || compat.browserLabel,
+            os: row.os || compat.osLabel,
+            is_active: row.is_active !== false,
+            failure_count: Number(row.failure_count) || 0,
+            last_used_at: row.last_used_at || null,
+            created_at: row.created_at || new Date().toISOString(),
+            updated_at: row.updated_at || new Date().toISOString(),
+          };
+        });
+      }
+    } catch {
+      // Fall through to Supabase REST & local store
+    }
+  }
+
+  const byEndpoint = new Map<string, StoredPushSubscription>();
+  const localSubs = readLocalStore(userId).subscriptions.filter(
+    (s) => s.user_id === userId && s.is_active !== false
+  );
+  for (const s of localSubs) {
+    byEndpoint.set(s.endpoint, s);
+  }
+
+  const sbRes = await sbRestRequest<any[]>(
+    `push_subscriptions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id,endpoint,p256dh,auth,user_agent,created_at,updated_at&order=updated_at.desc`
+  ).catch(() => ({ ok: false, data: null as any }));
+
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (!row?.endpoint) continue;
       const compat = detectPlatformCompatibility(row.user_agent || '');
-      return {
+      const existing = byEndpoint.get(String(row.endpoint));
+      byEndpoint.set(String(row.endpoint), {
         id: String(row.id),
         user_id: String(row.user_id),
         endpoint: String(row.endpoint),
         p256dh: String(row.p256dh),
         auth: String(row.auth),
-        user_agent: row.user_agent || null,
-        device_name: row.device_name || compat.deviceLabel,
-        browser: row.browser || compat.browserLabel,
-        os: row.os || compat.osLabel,
-        is_active: row.is_active !== false,
-        failure_count: Number(row.failure_count) || 0,
-        last_used_at: row.last_used_at || null,
-        created_at: row.created_at || new Date().toISOString(),
-        updated_at: row.updated_at || new Date().toISOString(),
-      };
-    });
-  } catch {
-    return readLocalStore(userId).subscriptions.filter((s) => s.user_id === userId && s.is_active !== false);
+        user_agent: row.user_agent || existing?.user_agent || null,
+        device_name: existing?.device_name || compat.deviceLabel,
+        browser: existing?.browser || compat.browserLabel,
+        os: existing?.os || compat.osLabel,
+        is_active: true,
+        failure_count: existing?.failure_count || 0,
+        last_used_at: existing?.last_used_at || null,
+        created_at: row.created_at || existing?.created_at || new Date().toISOString(),
+        updated_at: row.updated_at || existing?.updated_at || new Date().toISOString(),
+      });
+    }
   }
+
+  return Array.from(byEndpoint.values());
 }
 
 /**
@@ -708,14 +803,22 @@ export async function removePushSubscriptionByEndpoint(
   if (!cleanEndpoint) return { deleted: false };
 
   let deletedFromDb = false;
-  try {
-    const res = await query(
-      `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2 RETURNING id`,
-      [userId, cleanEndpoint]
-    );
-    deletedFromDb = res.rows.length > 0;
-  } catch {
-    // Fallback below
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2 RETURNING id`,
+        [userId, cleanEndpoint]
+      );
+      deletedFromDb = res.rows.length > 0;
+    } catch {
+      // Fallback below
+    }
+  } else {
+    const sbDel = await sbRestRequest(
+      `push_subscriptions?user_id=eq.${encodeURIComponent(userId)}&endpoint=eq.${encodeURIComponent(cleanEndpoint)}`,
+      { method: 'DELETE' }
+    ).catch(() => ({ ok: false }));
+    if (sbDel.ok) deletedFromDb = true;
   }
 
   const local = readLocalStore(userId);
@@ -740,14 +843,22 @@ export async function removePushSubscriptionById(
   if (!cleanId) return { deleted: false };
 
   let deletedFromDb = false;
-  try {
-    const res = await query(
-      `DELETE FROM public.push_subscriptions WHERE id = $1 AND user_id = $2 RETURNING id`,
-      [cleanId, userId]
-    );
-    deletedFromDb = res.rows.length > 0;
-  } catch {
-    // Fallback below
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `DELETE FROM public.push_subscriptions WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [cleanId, userId]
+      );
+      deletedFromDb = res.rows.length > 0;
+    } catch {
+      // Fallback below
+    }
+  } else {
+    const sbDel = await sbRestRequest(
+      `push_subscriptions?id=eq.${encodeURIComponent(cleanId)}&user_id=eq.${encodeURIComponent(userId)}`,
+      { method: 'DELETE' }
+    ).catch(() => ({ ok: false }));
+    if (sbDel.ok) deletedFromDb = true;
   }
 
   const local = readLocalStore(userId);
@@ -774,17 +885,21 @@ export async function getPushDeliveryStatus(userId: string): Promise<{
 }> {
   const devices = await listUserPushSubscriptions(userId);
   let logs: DeliveryLogRecord[] = [];
-  try {
-    const res = await query(
-      `SELECT id, notification_id, channel, status, error_message, created_at
-       FROM public.notification_delivery_logs
-       WHERE user_id = $1 AND channel = 'push'
-       ORDER BY created_at DESC
-       LIMIT 10`,
-      [userId]
-    );
-    logs = res.rows;
-  } catch {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT id, notification_id, channel, status, error_message, created_at
+         FROM public.notification_delivery_logs
+         WHERE user_id = $1 AND channel = 'push'
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [userId]
+      );
+      logs = res.rows;
+    } catch {
+      logs = readLocalStore(userId).deliveryLogs.filter((l) => l.channel === 'push').slice(0, 10);
+    }
+  } else {
     logs = readLocalStore(userId).deliveryLogs.filter((l) => l.channel === 'push').slice(0, 10);
   }
 
@@ -1060,8 +1175,12 @@ export async function createNotification(params: CreateNotificationParams): Prom
       const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title) : title;
       const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message) : message;
       const targetUrl = buildSafeDeepLinkUrl(deepLink);
-      const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}`);
       const timestamp = Date.now();
+      const notifTag =
+        tag ||
+        (dedupeKey
+          ? `mm-${dedupeKey.slice(0, 80)}`
+          : `mm-${category}-${notificationId || timestamp}`);
       const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
 
       const pushPayload = JSON.stringify({
@@ -1104,24 +1223,33 @@ export async function createNotification(params: CreateNotificationParams): Prom
           );
           pushDelivered++;
 
-          await query(
-            `UPDATE public.push_subscriptions SET last_used_at = NOW(), failure_count = 0 WHERE id = $1`,
-            [sub.id]
-          ).catch(() => {});
+          if (isDatabaseAvailable()) {
+            await query(
+              `UPDATE public.push_subscriptions SET last_used_at = NOW(), failure_count = 0 WHERE id = $1`,
+              [sub.id]
+            ).catch(() => {});
 
-          await query(
-            `INSERT INTO public.notification_delivery_logs
-             (campaign_id, notification_id, user_id, channel, status)
-             VALUES ($1, $2, $3, 'push', 'sent')`,
-            [campaignId || null, notificationId || null, userId]
-          ).catch(() => {
+            await query(
+              `INSERT INTO public.notification_delivery_logs
+               (campaign_id, notification_id, user_id, channel, status)
+               VALUES ($1, $2, $3, 'push', 'sent')`,
+              [campaignId || null, notificationId || null, userId]
+            ).catch(() => {
+              appendLocalDeliveryLog(userId, {
+                notification_id: notificationId || null,
+                channel: 'push',
+                status: 'sent',
+                error_message: null,
+              });
+            });
+          } else {
             appendLocalDeliveryLog(userId, {
               notification_id: notificationId || null,
               channel: 'push',
               status: 'sent',
               error_message: null,
             });
-          });
+          }
         } catch (pushErr: any) {
           pushFailed++;
           const statusCode = Number(pushErr?.statusCode) || 0;
@@ -1130,26 +1258,35 @@ export async function createNotification(params: CreateNotificationParams): Prom
           // Automatically clean up expired or invalid subscriptions (404 Not Found / 410 Gone)
           if (statusCode === 404 || statusCode === 410) {
             await removePushSubscriptionById(userId, sub.id);
-          } else {
+          } else if (isDatabaseAvailable()) {
             await query(
               `UPDATE public.push_subscriptions SET failure_count = COALESCE(failure_count, 0) + 1 WHERE id = $1`,
               [sub.id]
             ).catch(() => {});
           }
 
-          await query(
-            `INSERT INTO public.notification_delivery_logs
-             (campaign_id, notification_id, user_id, channel, status, error_message)
-             VALUES ($1, $2, $3, 'push', 'failed', $4)`,
-            [campaignId || null, notificationId || null, userId, safeError]
-          ).catch(() => {
+          if (isDatabaseAvailable()) {
+            await query(
+              `INSERT INTO public.notification_delivery_logs
+               (campaign_id, notification_id, user_id, channel, status, error_message)
+               VALUES ($1, $2, $3, 'push', 'failed', $4)`,
+              [campaignId || null, notificationId || null, userId, safeError]
+            ).catch(() => {
+              appendLocalDeliveryLog(userId, {
+                notification_id: notificationId || null,
+                channel: 'push',
+                status: 'failed',
+                error_message: safeError,
+              });
+            });
+          } else {
             appendLocalDeliveryLog(userId, {
               notification_id: notificationId || null,
               channel: 'push',
               status: 'failed',
               error_message: safeError,
             });
-          });
+          }
         }
       }
     }
@@ -1832,6 +1969,15 @@ export async function dispatchCampaign(campaignId: string): Promise<{
       } catch {}
     }
     if (userIds.length === 0) {
+      const sbSubs = await sbRestRequest<any[]>('push_subscriptions?select=user_id').catch(() => ({
+        ok: false,
+        data: null as any,
+      }));
+      if (sbSubs.ok && Array.isArray(sbSubs.data)) {
+        for (const r of sbSubs.data) {
+          if (r?.user_id) userIds.push(String(r.user_id));
+        }
+      }
       for (const dev of localInstalledDevices.values()) {
         if (dev?.is_installed && dev?.user_id) userIds.push(dev.user_id);
       }
@@ -1855,6 +2001,15 @@ export async function dispatchCampaign(campaignId: string): Promise<{
       } catch {}
     }
     if (userIds.length === 0) {
+      const sbSubs = await sbRestRequest<any[]>('push_subscriptions?select=user_id').catch(() => ({
+        ok: false,
+        data: null as any,
+      }));
+      if (sbSubs.ok && Array.isArray(sbSubs.data)) {
+        for (const r of sbSubs.data) {
+          if (r?.user_id) userIds.push(String(r.user_id));
+        }
+      }
       for (const [uid, store] of memoryPushStore.entries()) {
         if (store.subscriptions.some((s) => s.is_active !== false)) {
           userIds.push(uid);

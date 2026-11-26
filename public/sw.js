@@ -170,12 +170,13 @@ self.addEventListener('fetch', (event) => {
 
 // Push Notifications: Safely parse Web Push payload and display native OS notification
 self.addEventListener('push', (event) => {
+  const uniquePushTag = `mm-push-${Date.now()}`;
   const defaults = {
     title: 'My Money Manager',
     body: 'You have a new financial update.',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    tag: 'my-money-alert',
+    tag: uniquePushTag,
     category: 'general',
     timestamp: Date.now(),
     data: { url: '/' },
@@ -193,7 +194,7 @@ self.addEventListener('push', (event) => {
           body: typeof parsed.body === 'string' && parsed.body.trim() ? parsed.body.trim().slice(0, 320) : defaults.body,
           icon: typeof parsed.icon === 'string' && parsed.icon.startsWith('/') ? parsed.icon : defaults.icon,
           badge: typeof parsed.badge === 'string' && parsed.badge.startsWith('/') ? parsed.badge : defaults.badge,
-          tag: typeof parsed.tag === 'string' && parsed.tag.trim() ? parsed.tag.trim().slice(0, 120) : defaults.tag,
+          tag: typeof parsed.tag === 'string' && parsed.tag.trim() ? parsed.tag.trim().slice(0, 120) : uniquePushTag,
           category: typeof parsed.category === 'string' ? parsed.category : defaults.category,
           timestamp: typeof parsed.timestamp === 'number' && Number.isFinite(parsed.timestamp) ? parsed.timestamp : Date.now(),
           requireInteraction: Boolean(parsed.requireInteraction),
@@ -203,6 +204,7 @@ self.addEventListener('push', (event) => {
             ...(parsed.data && typeof parsed.data === 'object' ? parsed.data : {}),
             url: sanitizeDeepLink(parsed.data?.url || parsed.url || '/'),
             category: parsed.data?.category || parsed.category || 'general',
+            notificationId: parsed.data?.notificationId || parsed.notificationId || null,
             timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now(),
           },
         };

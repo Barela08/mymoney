@@ -512,7 +512,7 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ initialSubView =
         emails: sendCustomEmails,
         userIds: sendSelectedUserIds,
         variables: sendVariables,
-        alsoNotifyInAppAndPush: sendTargetMode !== 'custom_email' && sendAlsoPush,
+        alsoNotifyInAppAndPush: sendAlsoPush,
       });
 
       if (res.success) {
@@ -1014,6 +1014,9 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ initialSubView =
                 onChange={(e) => setTestHtml(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono"
               />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Variables like <code className="font-mono">{'{{user_name}}'}</code>, <code className="font-mono">{'{{app_name}}'}</code>, <code className="font-mono">{'{{date}}'}</code>, and <code className="font-mono">{'{{support_email}}'}</code> are automatically filled with HackifyPro branding on send.
+              </p>
             </div>
 
             <button
@@ -1417,20 +1420,18 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ initialSubView =
                 </div>
               )}
 
-              {sendTargetMode !== 'custom_email' && (
-                <label className="flex items-center gap-2 p-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sendAlsoPush}
-                    onChange={(e) => setSendAlsoPush(e.target.checked)}
-                    className="rounded text-emerald-600"
-                  />
-                  <Bell className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Also send External Push & In-App Notification (with sound) to selected user(s)
-                  </span>
-                </label>
-              )}
+              <label className="flex items-center gap-2 p-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sendAlsoPush}
+                  onChange={(e) => setSendAlsoPush(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                <Bell className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  Also send Mobile Push Bar &amp; In-App Notification (with sound) for registered users
+                </span>
+              </label>
 
               {/* Variable Inputs */}
               {Object.keys(sendVariables).length > 0 && (

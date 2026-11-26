@@ -48,6 +48,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const lastUserIdRef = useRef<string | null>(null);
   const preferencesRef = useRef<NotificationPreferences | null>(null);
   const recentPushAtRef = useRef<number>(0);
+  const recentPushIdsRef = useRef<Set<string>>(new Set());
+  const syncedPushUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     preferencesRef.current = preferences;
@@ -89,12 +91,30 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, []);
 
+  // Automatically keep Web Push subscription synced with current server VAPID key when permission is granted
+  useEffect(() => {
+    if (!user?.id || !isPushSupported) return;
+    if (pushNotifications.getPermission() !== 'granted') return;
+    if (syncedPushUserRef.current === user.id) return;
+
+    syncedPushUserRef.current = user.id;
+    pushNotifications
+      .syncIfPermitted()
+      .then((ok) => {
+        setPushPermission('granted');
+        if (ok) setIsPushSubscribed(true);
+      })
+      .catch(() => {});
+  }, [user?.id, isPushSupported]);
+
   // Reset seen tracker when user changes
   useEffect(() => {
     const uid = user?.id || null;
     if (lastUserIdRef.current !== uid) {
       seenNotificationIdsRef.current = new Set();
+      recentPushIdsRef.current = new Set();
       initialSeedDoneRef.current = false;
+      syncedPushUserRef.current = null;
       lastUserIdRef.current = uid;
     }
   }, [user]);
@@ -128,10 +148,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           if (freshUnread.length > 0) {
             const prefs = preferencesRef.current;
             const soundEnabled = prefs?.sound_enabled !== false;
-            const skipExternalBecauseRecentPush = Date.now() - recentPushAtRef.current < 4000;
 
-            for (const notif of freshUnread.slice(0, 2)) {
-              if (!skipExternalBecauseRecentPush) {
+            for (const notif of freshUnread.slice(0, 3)) {
+              const alreadyShownViaPush =
+                recentPushIdsRef.current.has(notif.id) ||
+                Date.now() - recentPushAtRef.current < 2000;
+              if (!alreadyShownViaPush) {
                 void showExternalNotification({
                   title: notif.title,
                   body: notif.message,
@@ -179,6 +201,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (data.type === 'PUSH_RECEIVED') {
         recentPushAtRef.current = Date.now();
         const payload = data.payload || {};
+        const pushedNotifId = payload?.data?.notificationId || payload?.notificationId;
+        if (typeof pushedNotifId === 'string' && pushedNotifId) {
+          recentPushIdsRef.current.add(pushedNotifId);
+        }
         const prefs = preferencesRef.current;
         void playNotificationSound(payload.category, payload.type, {
           soundEnabled: prefs?.sound_enabled !== false,
@@ -336,8 +362,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (preferences) {
           await updatePreferences({ push_enabled: true, sound_enabled: true }).catch(() => {});
         }
-        // Play gentle confirmation chime when enabled
-        void playNotificationSound('general', 'success', { force: true });
+        // Immediately show confirmation in device/mobile notification bar with audible chime
+        void showExternalNotification({
+          title: 'My Money Manager · Mobile Alerts Enabled',
+          body: 'You will now receive instant alerts in your device notification bar with sound.',
+          url: 'notifications',
+          tag: `mm-enabled-${Date.now()}`,
+          category: 'general',
+          type: 'success',
+          soundEnabled: true,
+          forceSound: true,
+        });
       } else {
         setIsPushSubscribed(false);
       }

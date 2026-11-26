@@ -67,9 +67,48 @@ export function extractTemplateVariables(subject: string, html: string, text: st
   return Array.from(found);
 }
 
+export function ensureBrandedEmailHtml(
+  rawHtml: string,
+  opts?: {
+    title?: string;
+    appName?: string;
+    companyName?: string;
+    supportEmail?: string;
+    actionUrl?: string;
+  }
+): string {
+  const html = String(rawHtml || '').trim();
+  const appName = escapeHtml(opts?.appName || APP_CONFIG.appName || 'My Money Manager');
+  const companyName = escapeHtml(opts?.companyName || APP_CONFIG.companyName || 'HackifyPro');
+  const supportEmail = escapeHtml(opts?.supportEmail || APP_CONFIG.supportEmail || 'hackifypro@gmail.com');
+  const actionUrl = sanitizeHrefUrl(opts?.actionUrl || APP_CONFIG.appBaseUrl || '/');
+
+  if (!html) {
+    return ensureBrandedEmailHtml('<p>You have a new message from My Money Manager.</p>', opts);
+  }
+
+  // Already a styled card/full email layout
+  const hasStyledWrapper =
+    /max-width\s*:/i.test(html) ||
+    /#065f46|#047857|#991b1b|linear-gradient/i.test(html) ||
+    /<table[\s>]/i.test(html);
+
+  if (hasStyledWrapper) {
+    return html;
+  }
+
+  // Strip bare legacy wrapper `<div style="font-family: sans-serif; padding: 20px;">...</div>`
+  const bareMatch = html.match(/^<div\s+style=["']font-family:\s*sans-serif;\s*padding:\s*20px;?["'][^>]*>([\s\S]*)<\/div>$/i);
+  const innerHtml = bareMatch ? bareMatch[1].trim() : /<[a-z][\s\S]*>/i.test(html) ? html : `<p>${escapeHtml(html).replace(/\r?\n/g, '<br/>')}</p>`;
+  const heading = escapeHtml(opts?.title || `${appName} Notification`);
+
+  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: linear-gradient(135deg, #065f46, #047857); padding: 22px 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0; font-size: 20px; font-weight: 700;">${heading}</h2><p style="margin: 6px 0 0; font-size: 12px; color: #d1fae5;">${appName} · A product of ${companyName}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.65;">${innerHtml}<p style="text-align: center; margin: 24px 0 8px;"><a href="${actionUrl}" style="background: #059669; color: #ffffff; padding: 11px 24px; text-decoration: none; border-radius: 10px; font-weight: 700; display: inline-block;">Open ${appName}</a></p></div><div style="background: #f8fafc; padding: 14px 24px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center;">© ${new Date().getFullYear()} ${appName} · Product of ${companyName} · Support: <a href="mailto:${supportEmail}" style="color: #059669;">${supportEmail}</a></div></div>`;
+}
+
 export async function renderEmailTemplate(
   template: Pick<EmailTemplateRecord, 'subject' | 'html_content' | 'text_content'>,
-  variables: Record<string, string | number | boolean | null | undefined> = {}
+  variables: Record<string, string | number | boolean | null | undefined> = {},
+  options?: { ensureBranded?: boolean; brandTitle?: string }
 ): Promise<{ subject: string; html: string; text: string }> {
   const supportEmail = await getEffectiveSupportAlertEmail().catch(() => APP_CONFIG.supportEmail);
   const nowStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
@@ -94,6 +133,10 @@ export async function renderEmailTemplate(
     }
   }
 
+  if (!baseVars.user_name || !baseVars.user_name.trim()) {
+    baseVars.user_name = 'Valued User';
+  }
+
   const replacePlaceholders = (input: string, isHtml: boolean): string => {
     return String(input || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_full, key: string) => {
       if (!(key in baseVars)) {
@@ -108,9 +151,22 @@ export async function renderEmailTemplate(
     });
   };
 
+  const renderedSubject = replacePlaceholders(template.subject, false).replace(/[\r\n]/g, ' ').trim();
+  const rawRenderedHtml = replacePlaceholders(template.html_content, true);
+  const finalHtml =
+    options?.ensureBranded === false
+      ? rawRenderedHtml
+      : ensureBrandedEmailHtml(rawRenderedHtml, {
+          title: options?.brandTitle || renderedSubject || baseVars.title || baseVars.app_name,
+          appName: baseVars.app_name,
+          companyName: baseVars.company_name,
+          supportEmail: baseVars.support_email,
+          actionUrl: baseVars.action_url,
+        });
+
   return {
-    subject: replacePlaceholders(template.subject, false).replace(/[\r\n]/g, ' ').trim(),
-    html: replacePlaceholders(template.html_content, true),
+    subject: renderedSubject,
+    html: finalHtml,
     text: replacePlaceholders(template.text_content || '', false),
   };
 }
@@ -127,13 +183,24 @@ export async function listEmailTemplates(): Promise<EmailTemplateRecord[]> {
   for (const row of fbRows) {
     if (!row?.slug) continue;
     const def = map.get(row.slug);
-    map.set(row.slug, {
-      ...def,
-      ...row,
-      variables: Array.isArray(row.variables) ? row.variables : (def?.variables || []),
-      is_custom: !defaultSlugs.has(row.slug),
-      is_customized: Boolean(row.is_customized ?? Number(row.version || 1) > 1),
-    });
+    const isCustomized = def ? Boolean(row.is_customized ?? Number(row.version || 1) > 1) : true;
+    if (def && !isCustomized && Number(row.version || 1) <= 1) {
+      map.set(row.slug, {
+        ...def,
+        is_active: row.is_active !== undefined ? Boolean(row.is_active) : def.is_active,
+        is_custom: false,
+        is_customized: false,
+      });
+    } else {
+      map.set(row.slug, {
+        ...def,
+        ...row,
+        id: def?.id || String(row.id),
+        variables: Array.isArray(row.variables) ? row.variables : (def?.variables || []),
+        is_custom: !defaultSlugs.has(row.slug),
+        is_customized: isCustomized,
+      });
+    }
   }
 
   if (isDatabaseAvailable()) {
@@ -142,13 +209,24 @@ export async function listEmailTemplates(): Promise<EmailTemplateRecord[]> {
       for (const row of res.rows || []) {
         if (!row?.slug) continue;
         const def = map.get(row.slug);
-        map.set(row.slug, {
-          ...def,
-          ...row,
-          variables: Array.isArray(row.variables) ? row.variables : (def?.variables || []),
-          is_custom: !defaultSlugs.has(row.slug),
-          is_customized: Boolean(def ? Number(row.version || 1) > 1 : true),
-        });
+        const isCustomized = def ? Number(row.version || 1) > 1 : true;
+        if (def && !isCustomized && Number(row.version || 1) <= 1) {
+          map.set(row.slug, {
+            ...def,
+            is_active: row.is_active !== undefined ? Boolean(row.is_active) : def.is_active,
+            is_custom: false,
+            is_customized: false,
+          });
+        } else {
+          map.set(row.slug, {
+            ...def,
+            ...row,
+            id: def?.id || String(row.id),
+            variables: Array.isArray(row.variables) ? row.variables : (def?.variables || []),
+            is_custom: !defaultSlugs.has(row.slug),
+            is_customized: isCustomized,
+          });
+        }
       }
     } catch {
       // Fallback already populated

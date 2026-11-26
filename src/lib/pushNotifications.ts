@@ -1,4 +1,5 @@
 import { notificationsApi } from './notificationsApi';
+import { uint8ArrayToBase64Url } from './pwaUtils';
 
 /**
  * Converts a base64 string to a Uint8Array for VAPID applicationServerKey
@@ -12,6 +13,62 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+async function getSwRegistration(): Promise<ServiceWorkerRegistration> {
+  let reg = await navigator.serviceWorker.getRegistration('/');
+  if (!reg) {
+    const isSecureContext =
+      window.isSecureContext ||
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+    if (isSecureContext) {
+      reg = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none',
+      });
+    }
+  }
+  const ready = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+  ]);
+  if (ready) return ready;
+  if (reg) return reg;
+  throw new Error('Service Worker is not ready yet.');
+}
+
+async function ensureSubscribedWithServerKey(
+  registration: ServiceWorkerRegistration,
+  vapidPublicKey: string
+): Promise<PushSubscription> {
+  const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+  let subscription = await registration.pushManager.getSubscription();
+
+  if (subscription) {
+    const currentKeyBuffer = subscription.options?.applicationServerKey;
+    if (currentKeyBuffer) {
+      const currentKeyB64 = uint8ArrayToBase64Url(new Uint8Array(currentKeyBuffer));
+      if (currentKeyB64 && currentKeyB64 !== vapidPublicKey) {
+        try {
+          await subscription.unsubscribe();
+        } catch {
+          // Best-effort cleanup of stale key subscription
+        }
+        subscription = null;
+      }
+    }
+  }
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: convertedVapidKey as BufferSource,
+    });
+  }
+
+  await notificationsApi.subscribePush(subscription);
+  return subscription;
 }
 
 export type PushSubscribeResult = {
@@ -51,10 +108,30 @@ export const pushNotifications = {
   async getExistingSubscription(): Promise<PushSubscription | null> {
     if (!this.isSupported()) return null;
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await getSwRegistration();
       return await registration.pushManager.getSubscription();
     } catch {
       return null;
+    }
+  },
+
+  /**
+   * Silently syncs Web Push subscription with the backend when permission is already granted.
+   * Never shows a browser permission prompt.
+   */
+  async syncIfPermitted(): Promise<boolean> {
+    if (!this.isSupported() || Notification.permission !== 'granted') {
+      return false;
+    }
+    try {
+      const [vapidPublicKey, registration] = await Promise.all([
+        notificationsApi.getVapidPublicKey(),
+        getSwRegistration(),
+      ]);
+      await ensureSubscribedWithServerKey(registration, vapidPublicKey);
+      return true;
+    } catch {
+      return false;
     }
   },
 
@@ -86,7 +163,7 @@ export const pushNotifications = {
             permission: 'denied',
             error: isEmbedded
               ? 'Browser notifications are blocked in embedded preview or site settings. Open the app in a full tab and allow Notifications in site settings.'
-              : 'Notifications are blocked for this site. Click the lock icon in your browser address bar and set Notifications to Allow.',
+              : 'Notifications are blocked for this site. Tap the lock icon in your browser address bar and set Notifications to Allow.',
           };
         }
 
@@ -102,26 +179,19 @@ export const pushNotifications = {
               permission === 'denied'
                 ? isEmbedded
                   ? 'Browser notifications are blocked in embedded preview or site settings. Open the app in a full tab and allow Notifications in site settings.'
-                  : 'Notifications are blocked for this site. Click the lock icon in your browser address bar and set Notifications to Allow.'
-                : 'Notification permission was dismissed. Click Enable Push to try again when ready.',
+                  : 'Notifications are blocked for this site. Tap the lock icon in your browser address bar and set Notifications to Allow.'
+                : 'Notification permission was dismissed. Tap Enable to try again when ready.',
           };
         }
 
-        // 2. Try full Web Push VAPID registration; if PushManager is unavailable in preview/sandbox, still succeed with native OS notifications
+        // 2. Register Web Push with current server VAPID key (and automatically rotate if server key changed)
         try {
-          const vapidPublicKey = await notificationsApi.getVapidPublicKey();
-          const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-          const registration = await navigator.serviceWorker.ready;
+          const [vapidPublicKey, registration] = await Promise.all([
+            notificationsApi.getVapidPublicKey(),
+            getSwRegistration(),
+          ]);
 
-          let subscription = await registration.pushManager.getSubscription();
-          if (!subscription) {
-            subscription = await registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: convertedVapidKey as BufferSource,
-            });
-          }
-
-          await notificationsApi.subscribePush(subscription);
+          await ensureSubscribedWithServerKey(registration, vapidPublicKey);
           return { success: true, permission: 'granted' };
         } catch (pushRegErr: any) {
           console.warn('[Push VAPID registration fallback to browser OS notifications]:', pushRegErr?.message);
@@ -151,7 +221,7 @@ export const pushNotifications = {
   async unsubscribe(): Promise<boolean> {
     if (!this.isSupported()) return false;
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await getSwRegistration();
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         await notificationsApi.unsubscribePush(subscription.endpoint);

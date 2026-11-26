@@ -209,11 +209,11 @@ export const NotificationBell: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Quick Enable External OS Alerts + Sound Prompt */}
+          {/* Quick Enable Mobile Notification Bar & Sound Prompt */}
           {isPushSupported && pushPermission === 'default' && (
             <div className="px-3.5 py-2.5 bg-emerald-50/90 dark:bg-emerald-950/40 border-b border-emerald-100 dark:border-emerald-900/50 flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold text-emerald-900 dark:text-emerald-200 leading-snug">
-                Enable desktop/mobile alerts with sound outside the app
+                Enable Mobile Notification Bar &amp; sound alerts outside the app
               </p>
               <button
                 type="button"

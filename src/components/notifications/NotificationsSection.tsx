@@ -189,7 +189,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
         </div>
       </div>
 
-      {/* External OS Notification + Sound Activation Banner */}
+      {/* Mobile Notification Bar + Desktop OS Notification & Sound Banner */}
       {isPushSupported && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60">
           <div className="flex items-start sm:items-center gap-3">
@@ -199,15 +199,15 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
             <div>
               <p className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
                 {pushPermission === 'granted'
-                  ? 'External Desktop & Mobile Notifications with Sound Active'
-                  : 'Get Notifications Outside the App with Sound'}
+                  ? 'Mobile Notification Bar & Sound Alerts Active'
+                  : 'Get Alerts in Your Mobile Notification Bar with Sound'}
               </p>
               <p className="text-[11px] text-slate-600 dark:text-slate-400">
                 {pushPermission === 'granted'
-                  ? 'Alerts appear on your device screen with an audible chime even outside the bell menu.'
+                  ? 'Alerts appear in your mobile status bar & device notification tray with sound, even when the app is closed.'
                   : pushPermission === 'denied'
-                    ? 'Notifications are blocked in browser settings. Enable them in your site settings to get external alerts.'
-                    : 'Allow browser notifications so transaction, Udhar, and support alerts pop up outside the app with sound.'}
+                    ? 'Notifications are blocked in browser settings. Enable them in your site settings to get mobile notification bar alerts.'
+                    : 'Allow notifications so transaction, Udhar, and support alerts appear in your phone notification bar with sound.'}
               </p>
             </div>
           </div>
@@ -219,7 +219,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
                 disabled={isEnablingExternal}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50"
               >
-                {isEnablingExternal ? 'Enabling...' : 'Enable Sound & Alerts'}
+                {isEnablingExternal ? 'Enabling...' : 'Enable Mobile Bar Alerts'}
               </button>
             ) : (
               <button
@@ -227,7 +227,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
                 onClick={() => void testSoundAndExternalAlert()}
                 className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs font-bold transition-all cursor-pointer"
               >
-                Test Sound &amp; Alert
+                Test Mobile Bar &amp; Sound
               </button>
             )}
           </div>

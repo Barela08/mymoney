@@ -1,32 +1,9 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import * as webpush from 'web-push';
 
-function isValidVapidKeyPair(publicKey?: string, privateKey?: string): boolean {
-  if (!publicKey || !privateKey) return false;
-  try {
-    const pubBytes = Buffer.from(publicKey.trim(), 'base64url');
-    const privBytes = Buffer.from(privateKey.trim(), 'base64url');
-    return pubBytes.length === 65 && privBytes.length === 32;
-  } catch {
-    return false;
-  }
-}
-
-function resolveVapidKeys(): { publicKey: string; privateKey: string; isPersistent: boolean } {
-  const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
-  const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
-  if (isValidVapidKeyPair(envPublic, envPrivate)) {
-    return { publicKey: envPublic!, privateKey: envPrivate!, isPersistent: true };
-  }
-  const g = globalThis as { __myMoneyVapidKeys?: { publicKey: string; privateKey: string } };
-  if (!g.__myMoneyVapidKeys) {
-    g.__myMoneyVapidKeys = webpush.generateVAPIDKeys();
-  }
-  return { ...g.__myMoneyVapidKeys, isPersistent: false };
-}
-
-// Parse .env if not loaded
+// Parse .env before resolving configuration & VAPID keys
 try {
   const envPath = path.resolve(process.cwd(), '.env');
   if (fs.existsSync(envPath)) {
@@ -49,6 +26,85 @@ try {
   }
 } catch (e) {
   console.warn('Notice loading .env in config.ts:', e);
+}
+
+function isValidVapidKeyPair(publicKey?: string, privateKey?: string): boolean {
+  if (!publicKey || !privateKey) return false;
+  try {
+    const pubBytes = Buffer.from(publicKey.trim(), 'base64url');
+    const privBytes = Buffer.from(privateKey.trim(), 'base64url');
+    return pubBytes.length === 65 && privBytes.length === 32;
+  } catch {
+    return false;
+  }
+}
+
+function resolveVapidKeys(): { publicKey: string; privateKey: string; isPersistent: boolean } {
+  const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
+  const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
+  if (isValidVapidKeyPair(envPublic, envPrivate)) {
+    return { publicKey: envPublic!, privateKey: envPrivate!, isPersistent: true };
+  }
+
+  const g = globalThis as { __myMoneyVapidKeys?: { publicKey: string; privateKey: string; isPersistent: boolean } };
+  if (g.__myMoneyVapidKeys && isValidVapidKeyPair(g.__myMoneyVapidKeys.publicKey, g.__myMoneyVapidKeys.privateKey)) {
+    return g.__myMoneyVapidKeys;
+  }
+
+  const candidatePaths = [
+    path.resolve(process.cwd(), '.data', 'runtime-store', 'vapid-keys.json'),
+    path.resolve(os.tmpdir(), 'mymoney-vapid-keys.json'),
+  ];
+
+  for (const filePath of candidatePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (isValidVapidKeyPair(parsed?.publicKey, parsed?.privateKey)) {
+          g.__myMoneyVapidKeys = {
+            publicKey: String(parsed.publicKey).trim(),
+            privateKey: String(parsed.privateKey).trim(),
+            isPersistent: true,
+          };
+          return g.__myMoneyVapidKeys;
+        }
+      }
+    } catch {
+      // Try next location
+    }
+  }
+
+  const generated = webpush.generateVAPIDKeys();
+  let persisted = false;
+  for (const filePath of candidatePaths) {
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify(
+          {
+            publicKey: generated.publicKey,
+            privateKey: generated.privateKey,
+            createdAt: new Date().toISOString(),
+          },
+          null,
+          2
+        ),
+        { encoding: 'utf8', mode: 0o600 }
+      );
+      persisted = true;
+      break;
+    } catch {
+      // Try next location
+    }
+  }
+
+  g.__myMoneyVapidKeys = {
+    publicKey: generated.publicKey,
+    privateKey: generated.privateKey,
+    isPersistent: persisted,
+  };
+  return g.__myMoneyVapidKeys;
 }
 
 /**

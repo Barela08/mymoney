@@ -1140,11 +1140,11 @@ export const DEFAULT_EMAIL_TEMPLATES = [
     name: 'Account Deletion Scheduled Notice',
     category: 'lifecycle',
     subject: '[Notice] Account Deletion Scheduled (24-Hour Grace Period) — {{app_name}}',
-    variables: ['user_name', 'app_name', 'scheduled_date', 'support_email'],
+    variables: ['user_name', 'app_name', 'company_name', 'scheduled_date', 'support_email'],
     text_content:
-      'Hi {{user_name}},\n\nYou requested deletion of your account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.',
+      'Hi {{user_name}},\n\nYou requested deletion of your {{app_name}} account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.\n\nSupport: {{support_email}}',
     html_content:
-      '<div style="font-family: sans-serif; padding: 20px;"><h2>Account Deletion Scheduled</h2><p>Hi {{user_name}}, your account is scheduled for deletion on {{scheduled_date}}.</p><p>You may cancel by logging into your account anytime before this window ends.</p></div>',
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #991b1b; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Account Deletion Scheduled</h2><p style="margin: 4px 0 0; font-size: 12px; color: #fecaca;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account deletion request has been scheduled for permanent purge on <strong>{{scheduled_date}}</strong> (24-hour statutory grace period).</p><p>If you changed your mind, log back into <strong>{{app_name}}</strong> anytime before that window ends to cancel deletion immediately.</p><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need help? Contact <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>',
     is_active: true,
     is_custom: false,
     is_customized: false,
@@ -1153,32 +1153,59 @@ export const DEFAULT_EMAIL_TEMPLATES = [
   },
 ];
 
+function mergeTemplateRow(def: any | undefined, row: any, defaultSlugs: Set<string>): any {
+  const slug = String(row.slug || def?.slug || '').trim();
+  const version = Number(row.version || 1);
+  const isCustom = !defaultSlugs.has(slug);
+  const isCustomized = isCustom ? true : Boolean(row.is_customized ?? version > 1);
+
+  if (def && !isCustomized && version <= 1) {
+    return {
+      ...def,
+      id: def.id,
+      slug: def.slug,
+      is_active: row.is_active !== undefined ? Boolean(row.is_active) : def.is_active,
+      is_custom: false,
+      is_customized: false,
+      version: 1,
+      updated_at: def.updated_at || row.updated_at,
+    };
+  }
+
+  return {
+    ...def,
+    ...row,
+    id: def?.id || String(row.id),
+    slug,
+    variables: Array.isArray(row.variables) ? row.variables : (def?.variables || []),
+    is_custom: isCustom,
+    is_customized: isCustomized,
+    version,
+  };
+}
+
 export async function listEmailTemplatesFallback(): Promise<any[]> {
   const sbRes = await sbRestRequest<any[]>('email_templates?select=*&order=category.asc,name.asc');
   const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
+  const defaultSlugs = new Set(DEFAULT_EMAIL_TEMPLATES.map((t) => t.slug));
   const map = new Map<string, any>();
 
   for (const t of DEFAULT_EMAIL_TEMPLATES) {
-    map.set(t.id, { ...t });
+    map.set(t.slug, { ...t });
   }
   if (sbRes.ok && Array.isArray(sbRes.data)) {
     for (const row of sbRes.data) {
-      if (row?.id) {
-        const def = map.get(String(row.id));
-        map.set(String(row.id), {
-          ...def,
-          ...row,
-          is_custom: def ? false : Boolean(row.is_custom ?? !String(row.id).startsWith('tmpl_')),
-          is_customized: Boolean(row.is_customized ?? Number(row.version || 1) > 1),
-        });
-      }
+      const slug = String(row?.slug || '').trim();
+      if (!slug) continue;
+      const def = map.get(slug);
+      map.set(slug, mergeTemplateRow(def, row, defaultSlugs));
     }
   }
   for (const row of stored.templates) {
-    if (row?.id) {
-      const def = map.get(String(row.id));
-      map.set(String(row.id), { ...def, ...row });
-    }
+    const slug = String(row?.slug || '').trim();
+    if (!slug) continue;
+    const def = map.get(slug);
+    map.set(slug, mergeTemplateRow(def, row, defaultSlugs));
   }
   return Array.from(map.values()).sort((a, b) =>
     `${a.category || ''}:${a.name || ''}`.localeCompare(`${b.category || ''}:${b.name || ''}`)
@@ -1198,7 +1225,7 @@ export async function updateEmailTemplateFallback(
   }
 ): Promise<any | null> {
   const all = await listEmailTemplatesFallback();
-  const existing = all.find((t) => t.id === id);
+  const existing = all.find((t) => t.id === id || t.slug === id);
   if (!existing) return null;
 
   const updated = {
@@ -1211,11 +1238,11 @@ export async function updateEmailTemplateFallback(
     variables: Array.isArray(updates.variables) ? updates.variables : existing.variables,
     is_active: updates.is_active !== undefined ? updates.is_active : existing.is_active,
     is_customized: true,
-    version: Number(existing.version || 1) + 1,
+    version: Math.max(2, Number(existing.version || 1) + 1),
     updated_at: new Date().toISOString(),
   };
 
-  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
+  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(existing.slug)}`, {
     method: 'PATCH',
     body: {
       name: updated.name,
@@ -1231,7 +1258,10 @@ export async function updateEmailTemplateFallback(
   });
 
   const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
-  stored.templates = [updated, ...stored.templates.filter((t) => t.id !== id)];
+  stored.templates = [
+    updated,
+    ...stored.templates.filter((t) => t.id !== existing.id && t.slug !== existing.slug),
+  ];
   writeJsonStore('email-templates.json', stored);
   return updated;
 }
@@ -1290,7 +1320,7 @@ export async function createEmailTemplateFallback(input: {
 }
 
 export async function resetEmailTemplateFallback(id: string): Promise<any | null> {
-  const def = DEFAULT_EMAIL_TEMPLATES.find((t) => t.id === id);
+  const def = DEFAULT_EMAIL_TEMPLATES.find((t) => t.id === id || t.slug === id);
   if (!def) return null;
 
   const restored = {
@@ -1299,7 +1329,7 @@ export async function resetEmailTemplateFallback(id: string): Promise<any | null
     updated_at: new Date().toISOString(),
   };
 
-  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, {
+  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(def.slug)}`, {
     method: 'PATCH',
     body: {
       name: restored.name,
@@ -1315,19 +1345,19 @@ export async function resetEmailTemplateFallback(id: string): Promise<any | null
   });
 
   const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
-  stored.templates = stored.templates.filter((t) => t.id !== id);
+  stored.templates = stored.templates.filter((t) => t.id !== def.id && t.slug !== def.slug);
   writeJsonStore('email-templates.json', stored);
   return restored;
 }
 
 export async function deleteEmailTemplateFallback(id: string): Promise<boolean> {
-  if (DEFAULT_EMAIL_TEMPLATES.some((t) => t.id === id)) {
+  if (DEFAULT_EMAIL_TEMPLATES.some((t) => t.id === id || t.slug === id)) {
     return false;
   }
-  await sbRestRequest(`email_templates?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+  await sbRestRequest(`email_templates?or=(id.eq.${encodeURIComponent(id)},slug.eq.${encodeURIComponent(id)})`, { method: 'DELETE' });
   const stored = readJsonStore<{ templates: any[] }>('email-templates.json', { templates: [] });
   const before = stored.templates.length;
-  stored.templates = stored.templates.filter((t) => t.id !== id);
+  stored.templates = stored.templates.filter((t) => t.id !== id && t.slug !== id);
   writeJsonStore('email-templates.json', stored);
   return stored.templates.length < before;
 }
