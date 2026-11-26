@@ -39,6 +39,7 @@ import {
   Calendar,
   Landmark,
   Receipt,
+  QrCode,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
@@ -477,7 +478,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         <button
           onClick={() => setIsMoreSheetOpen(!isMoreSheetOpen)}
           className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            isMoreSheetOpen || ['ai_assistant', 'expense_calendar', 'smart_alerts', 'receipt_scanner', 'net_worth', 'safe_to_spend', 'budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support'].includes(currentTab)
+            isMoreSheetOpen || ['ai_assistant', 'expense_calendar', 'smart_alerts', 'receipt_scanner', 'net_worth', 'safe_to_spend', 'budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'upi_qr'].includes(currentTab)
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
@@ -633,6 +634,18 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               >
                 <Calculator className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
                 <span className="text-xs font-medium">Calc</span>
+              </button>
+
+              {/* UPI QR Generator */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('upi_qr');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <QrCode className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">UPI QR</span>
               </button>
 
               {/* Notifications */}
