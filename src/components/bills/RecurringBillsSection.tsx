@@ -20,6 +20,7 @@ import {
 import { useToast } from '../../context/ToastContext';
 import { recurringBillsApi, RecurringBill } from '../../lib/financialFeaturesApi';
 import { formatINR, formatDisplayDate, getCurrentISTDate } from '../../lib/dateUtils';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 const BILL_CATEGORY_ICONS: Record<string, any> = {
   rent: Home,
@@ -46,6 +47,8 @@ export const RecurringBillsSection: React.FC = () => {
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [isActive, setIsActive] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingDeleteBill, setPendingDeleteBill] = useState<{ id: string; title: string } | null>(null);
+  const [isDeletingBill, setIsDeletingBill] = useState(false);
 
   const loadBills = async () => {
     try {
@@ -159,14 +162,22 @@ export const RecurringBillsSection: React.FC = () => {
     }
   };
 
-  const handleDeleteBill = async (id: string, billTitle: string) => {
-    if (!confirm(`Are you sure you want to delete recurring bill "${billTitle}"?`)) return;
+  const handleDeleteBill = (id: string, billTitle: string) => {
+    setPendingDeleteBill({ id, title: billTitle });
+  };
+
+  const confirmDeleteBill = async () => {
+    if (!pendingDeleteBill || isDeletingBill) return;
     try {
-      await recurringBillsApi.deleteBill(id);
-      toast.success('Bill Removed', `"${billTitle}" deleted.`);
+      setIsDeletingBill(true);
+      await recurringBillsApi.deleteBill(pendingDeleteBill.id);
+      toast.success('Bill Removed', `"${pendingDeleteBill.title}" deleted.`);
+      setPendingDeleteBill(null);
       loadBills();
     } catch (err: any) {
       toast.error('Failed to delete', err.message);
+    } finally {
+      setIsDeletingBill(false);
     }
   };
 
@@ -494,6 +505,18 @@ export const RecurringBillsSection: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!pendingDeleteBill}
+        title="Delete Recurring Bill?"
+        subtitle="You can re-create this scheduled bill anytime."
+        message={`Are you sure you want to delete recurring bill "${pendingDeleteBill?.title || ''}"?`}
+        confirmLabel="Delete Bill"
+        isDestructive={true}
+        isLoading={isDeletingBill}
+        onConfirm={confirmDeleteBill}
+        onCancel={() => !isDeletingBill && setPendingDeleteBill(null)}
+      />
     </div>
   );
 };

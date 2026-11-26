@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { query, isDatabaseAvailable } from './db.js';
 import { generateCryptoToken, hashToken } from './security.js';
 import type { IncomingMessage } from 'http';
@@ -24,49 +25,289 @@ export interface SessionInfo {
   expiresAt: Date;
 }
 
+const MASTER_ADMIN_EMAILS = new Set(['hackifypro@gmail.com', 'admin@mymoney.com']);
+const NON_DISCOVERABLE_ROLES = new Set(['admin', 'superadmin', 'support', 'analyst']);
+
+export function isMasterAdminAccountEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return MASTER_ADMIN_EMAILS.has(String(email).toLowerCase().trim());
+}
+
+/**
+ * Determines whether an account is eligible to appear in Udhar People Search / QR discovery.
+ * Admin, superadmin, support, analyst, and master admin accounts are STRICTLY excluded.
+ */
+export function isDiscoverableNormalUser(user: {
+  role?: string | null;
+  email?: string | null;
+  status?: string | null;
+  deletion_status?: string | null;
+}): boolean {
+  if (!user) return false;
+  if (user.status && String(user.status).toLowerCase().trim() !== 'active') return false;
+  if (user.deletion_status && String(user.deletion_status).toLowerCase().trim() !== 'none') return false;
+  if (isMasterAdminAccountEmail(user.email)) return false;
+  const normalizedRole = String(user.role || 'user').toLowerCase().trim();
+  if (NON_DISCOVERABLE_ROLES.has(normalizedRole) || normalizedRole !== 'user') return false;
+  return true;
+}
+
+// Per-process ephemeral fallback secret if SESSION_SECRET is unset (never guessable by clients)
+const EPHEMERAL_FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
+
+function getFallbackTokenSecret(): string {
+  return (
+    process.env.SESSION_SECRET ||
+    process.env.API_KEY_ENCRYPTION_SECRET ||
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    EPHEMERAL_FALLBACK_SECRET
+  );
+}
+
+function getAuthSupabaseRestConfig(): { url: string; key: string } {
+  const url = (
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    'https://frgrfajnrzqwnevhlrio.supabase.co'
+  ).replace(/\/+$/, '');
+  const key =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+  return { url, key };
+}
+
+/**
+ * Issues a cryptographically signed HMAC-SHA256 stateless token ONLY when the database
+ * session store is temporarily unreachable during a verified server-side login.
+ */
+export function signFallbackSessionToken(
+  user: { id: string; role: string; email: string },
+  expiresAtMs: number
+): string {
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: user.id,
+      role: user.role,
+      email: String(user.email || '').toLowerCase().trim(),
+      exp: expiresAtMs,
+    }),
+    'utf8'
+  ).toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', getFallbackTokenSecret())
+    .update(`mmf1.${payload}`)
+    .digest('base64url');
+  return `mmf1.${payload}.${sig}`;
+}
+
+export function verifyFallbackSessionToken(
+  token: string
+): { userId: string; role: string; email: string; exp: number } | null {
+  if (!token || !token.startsWith('mmf1.')) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [, payloadB64, providedSig] = parts;
+  if (!payloadB64 || !providedSig) return null;
+
+  const expectedSig = crypto
+    .createHmac('sha256', getFallbackTokenSecret())
+    .update(`mmf1.${payloadB64}`)
+    .digest('base64url');
+
+  const providedBuf = Buffer.from(providedSig, 'utf8');
+  const expectedBuf = Buffer.from(expectedSig, 'utf8');
+  if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    if (!parsed?.sub || typeof parsed.exp !== 'number' || parsed.exp <= Date.now()) {
+      return null;
+    }
+    return {
+      userId: String(parsed.sub),
+      role: String(parsed.role || 'user'),
+      email: String(parsed.email || ''),
+      exp: parsed.exp,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Session Lifetime: 7 days default, 30 days for remember me
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const REMEMBER_ME_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function createSession(
   userId: string,
-  opts: { rememberMe?: boolean; userAgent?: string; ipAddress?: string } = {}
+  opts: {
+    rememberMe?: boolean;
+    userAgent?: string;
+    ipAddress?: string;
+    user?: { role?: string; email?: string };
+  } = {}
 ): Promise<SessionInfo> {
   const sessionToken = generateCryptoToken(32);
   const sessionTokenHash = hashToken(sessionToken);
   const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
   const expiresAt = new Date(Date.now() + duration);
 
-  const res = await query(
-    `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id`,
-    [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
-  );
+  // 1. Primary path: direct PostgreSQL session persistence
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
+      );
 
+      if (res.rows[0]?.id) {
+        return {
+          sessionId: res.rows[0].id,
+          sessionToken,
+          userId,
+          expiresAt,
+        };
+      }
+    } catch (err: any) {
+      console.warn('createSession PG insert failed, attempting Supabase REST:', err?.message);
+    }
+  }
+
+  // 2. Secondary path: Supabase HTTPS REST persistence into user_sessions
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        session_token_hash: sessionTokenHash,
+        user_agent: opts.userAgent || null,
+        ip_address: opts.ipAddress || null,
+        expires_at: expiresAt.toISOString(),
+        is_revoked: false,
+      }),
+    });
+
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      const createdId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : sessionTokenHash.slice(0, 16);
+      return {
+        sessionId: createdId,
+        sessionToken,
+        userId,
+        expiresAt,
+      };
+    }
+  } catch (err: any) {
+    console.warn('createSession Supabase REST insert notice:', err?.message);
+  }
+
+  // 3. Cryptographic fallback: server-signed HMAC-SHA256 stateless token (never unsigned)
+  const signedToken = signFallbackSessionToken(
+    {
+      id: userId,
+      role: opts.user?.role || 'user',
+      email: opts.user?.email || '',
+    },
+    expiresAt.getTime()
+  );
   return {
-    sessionId: res.rows[0].id,
-    sessionToken,
+    sessionId: `hmac_${sessionTokenHash.slice(0, 16)}`,
+    sessionToken: signedToken,
     userId,
     expiresAt,
   };
 }
 
 export async function revokeSession(sessionToken: string): Promise<boolean> {
+  if (!sessionToken || sessionToken.startsWith('direct_') || sessionToken.startsWith('mmf1.')) {
+    return false;
+  }
   const tokenHash = hashToken(sessionToken);
-  const res = await query(
-    `UPDATE public.user_sessions SET is_revoked = TRUE WHERE session_token_hash = $1`,
-    [tokenHash]
-  );
-  return (res.rowCount ?? 0) > 0;
+
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE WHERE session_token_hash = $1`,
+        [tokenHash]
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch (err: any) {
+      console.warn('revokeSession PG update failed, attempting Supabase REST:', err?.message);
+    }
+  }
+
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ is_revoked: true }),
+      }
+    );
+    return restRes.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function revokeAllUserSessions(userId: string): Promise<number> {
-  const res = await query(
-    `UPDATE public.user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE`,
-    [userId]
-  );
-  return res.rowCount ?? 0;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE`,
+        [userId]
+      );
+      return res.rowCount ?? 0;
+    } catch (err: any) {
+      console.warn('revokeAllUserSessions PG update failed, attempting Supabase REST:', err?.message);
+    }
+  }
+
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ is_revoked: true }),
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      return Array.isArray(rows) ? rows.length : 1;
+    }
+  } catch {}
+  return 0;
 }
 
 // Extract session token from Authorization header or Cookie header
@@ -89,14 +330,28 @@ export function extractSessionToken(req: IncomingMessage): string | null {
   return null;
 }
 
-// Helper: fallback to Supabase REST for user resolution
+function mapRowToAuthenticatedUser(row: any): AuthenticatedUser {
+  const isMasterAdmin = isMasterAdminAccountEmail(row.email);
+  return {
+    id: row.id,
+    full_name: row.full_name,
+    email: row.email,
+    phone: row.phone,
+    role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
+    status: row.status,
+    email_verified: row.email_verified,
+    avatar_url: row.avatar_url,
+    force_password_reset: row.force_password_reset,
+    created_at: row.created_at,
+    last_login_at: row.last_login_at,
+    password_changed_at: row.password_changed_at,
+  };
+}
+
+// Helper: fallback to Supabase REST for user resolution (called ONLY after cryptographic token verification)
 async function resolveUserViaSupabaseRest(userId: string): Promise<AuthenticatedUser | null> {
   try {
-    const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
-    const supabaseKey =
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_PUBLISHABLE_KEY ||
-      'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+    const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
     const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}&select=*`, {
       headers: {
         apikey: supabaseKey,
@@ -107,26 +362,7 @@ async function resolveUserViaSupabaseRest(userId: string): Promise<Authenticated
     if (res.ok) {
       const rows = await res.json();
       if (Array.isArray(rows) && rows.length > 0 && rows[0].status === 'active') {
-        const row = rows[0];
-        const isMasterAdmin = Boolean(
-          row.email &&
-          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-           row.email.toLowerCase().trim() === 'admin@mymoney.com')
-        );
-        return {
-          id: row.id,
-          full_name: row.full_name,
-          email: row.email,
-          phone: row.phone,
-          role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-          status: row.status,
-          email_verified: row.email_verified,
-          avatar_url: row.avatar_url,
-          force_password_reset: row.force_password_reset,
-          created_at: row.created_at,
-          last_login_at: row.last_login_at,
-          password_changed_at: row.password_changed_at,
-        };
+        return mapRowToAuthenticatedUser(rows[0]);
       }
     }
   } catch (err) {
@@ -135,106 +371,130 @@ async function resolveUserViaSupabaseRest(userId: string): Promise<Authenticated
   return null;
 }
 
+// Helper: verify a Supabase Auth JWT by validating it directly with Supabase Auth /auth/v1/user
+async function verifySupabaseAccessToken(jwtToken: string): Promise<{ id: string; email?: string } | null> {
+  try {
+    const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseKey) {
+      return null;
+    }
+
+    const verifyRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${jwtToken}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!verifyRes.ok) {
+      return null;
+    }
+    const authUser = await verifyRes.json();
+    if (!authUser || typeof authUser.id !== 'string' || !authUser.id.trim()) {
+      return null;
+    }
+    return {
+      id: authUser.id.trim(),
+      email: typeof authUser.email === 'string' ? authUser.email.toLowerCase().trim() : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveUserByEmailViaSupabaseRest(email: string): Promise<AuthenticatedUser | null> {
+  try {
+    const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].status === 'active') {
+        return mapRowToAuthenticatedUser(rows[0]);
+      }
+    }
+  } catch (err) {
+    console.warn('resolveUserByEmailViaSupabaseRest error:', err);
+  }
+  return null;
+}
+
+async function resolveActiveUserById(userId: string): Promise<AuthenticatedUser | null> {
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+         FROM public.app_users WHERE id = $1`,
+        [userId]
+      );
+      if (res.rows.length > 0 && res.rows[0].status === 'active') {
+        return mapRowToAuthenticatedUser(res.rows[0]);
+      }
+      return null;
+    } catch (err) {
+      console.warn('resolveActiveUserById DB query failed, attempting Supabase REST fallback:', err);
+    }
+  }
+  return await resolveUserViaSupabaseRest(userId);
+}
+
 // Authenticate current request
 export async function authenticateRequest(req: IncomingMessage): Promise<AuthenticatedUser | null> {
   const token = extractSessionToken(req);
   if (!token) return null;
 
-  // Direct Supabase fallback token support (format: direct_<userId>_<timestamp>)
+  // Explicitly reject legacy unsigned direct_ tokens (security hardening)
   if (token.startsWith('direct_')) {
-    const parts = token.split('_');
-    const directUserId = parts[1];
-    if (directUserId) {
-      try {
-        const directRes = await query(
-          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
-           FROM public.app_users WHERE id = $1`,
-          [directUserId]
-        );
-        if (directRes.rows.length > 0 && directRes.rows[0].status === 'active') {
-          const row = directRes.rows[0];
-          const isMasterAdmin = Boolean(
-          row.email &&
-          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-           row.email.toLowerCase().trim() === 'admin@mymoney.com')
-        );
-          return {
-            id: row.id,
-            full_name: row.full_name,
-            email: row.email,
-            phone: row.phone,
-            role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-            status: row.status,
-            email_verified: row.email_verified,
-            avatar_url: row.avatar_url,
-            force_password_reset: row.force_password_reset,
-            created_at: row.created_at,
-            last_login_at: row.last_login_at,
-            password_changed_at: row.password_changed_at,
-          };
-        }
-      } catch (err) {
-        console.warn('Direct token DB query failed, attempting Supabase REST fallback:', err);
-      }
-      // If query failed or returned no row, try Supabase REST
-      const restUser = await resolveUserViaSupabaseRest(directUserId);
-      if (restUser) return restUser;
-    }
+    return null;
   }
 
-  // Supabase JWT Access Token support (format: header.payload.signature)
+  // Server-issued HMAC-SHA256 signed fallback token (issued only on verified server login when DB is unreachable)
+  if (token.startsWith('mmf1.')) {
+    const verified = verifyFallbackSessionToken(token);
+    if (!verified) return null;
+    const resolved = await resolveActiveUserById(verified.userId);
+    if (resolved) return resolved;
+    return null;
+  }
+
+  // Supabase JWT Access Token: MUST be verified against Supabase Auth API (never trust unsigned base64 payloads)
   if (token.includes('.') && token.split('.').length === 3) {
-    try {
-      const payloadBase64 = token.split('.')[1];
-      const normalizedBase64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
-      const decodedJson = Buffer.from(normalizedBase64, 'base64').toString('utf8');
-      const jwtPayload = JSON.parse(decodedJson);
-      const jwtUserId = jwtPayload.sub;
-      if (jwtUserId) {
-        const jwtRes = await query(
-          `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
-           FROM public.app_users WHERE id = $1`,
-          [jwtUserId]
-        );
-        if (jwtRes.rows.length > 0 && jwtRes.rows[0].status === 'active') {
-          const row = jwtRes.rows[0];
-          const isMasterAdmin = Boolean(
-          row.email &&
-          (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-           row.email.toLowerCase().trim() === 'admin@mymoney.com')
-        );
-          return {
-            id: row.id,
-            full_name: row.full_name,
-            email: row.email,
-            phone: row.phone,
-            role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-            status: row.status,
-            email_verified: row.email_verified,
-            avatar_url: row.avatar_url,
-            force_password_reset: row.force_password_reset,
-            created_at: row.created_at,
-            last_login_at: row.last_login_at,
-            password_changed_at: row.password_changed_at,
-          };
-        }
-        const restUser = await resolveUserViaSupabaseRest(jwtUserId);
-        if (restUser) return restUser;
+    const verified = await verifySupabaseAccessToken(token);
+    if (!verified) return null;
+    const byId = await resolveActiveUserById(verified.id);
+    if (byId) return byId;
+    if (verified.email) {
+      if (isDatabaseAvailable()) {
+        try {
+          const byEmailRes = await query(
+            `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+             FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1`,
+            [verified.email]
+          );
+          if (byEmailRes.rows.length > 0 && byEmailRes.rows[0].status === 'active') {
+            return mapRowToAuthenticatedUser(byEmailRes.rows[0]);
+          }
+        } catch {}
       }
-    } catch (jwtErr) {
-      console.warn('Supabase JWT token decode notice:', jwtErr);
+      return await resolveUserByEmailViaSupabaseRest(verified.email);
     }
+    return null;
   }
 
   const tokenHash = hashToken(token);
 
   async function resolveSessionViaSupabaseRest(): Promise<AuthenticatedUser | null> {
     try {
-      const supabaseUrl = process.env.SUPABASE_URL || 'https://frgrfajnrzqwnevhlrio.supabase.co';
-      const supabaseKey =
-        process.env.SUPABASE_SECRET_KEY ||
-        process.env.SUPABASE_PUBLISHABLE_KEY ||
-        'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+      const { url: supabaseUrl, key: supabaseKey } = getAuthSupabaseRestConfig();
       const sessRes = await fetch(
         `${supabaseUrl}/rest/v1/user_sessions?session_token_hash=eq.${encodeURIComponent(tokenHash)}&is_revoked=eq.false&select=id,user_id,expires_at`,
         {

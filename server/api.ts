@@ -518,9 +518,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      let sessionToken = `direct_${userRecord.id}_${Date.now()}`;
-      let expiresAt = new Date(Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000);
-
       if (isDatabaseAvailable()) {
         try {
           await query(
@@ -529,13 +526,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
              WHERE id = $2`,
             [clientIp, userRecord.id]
           );
-          const session = await createSession(userRecord.id, { rememberMe, userAgent, ipAddress: clientIp });
-          sessionToken = session.sessionToken;
-          expiresAt = session.expiresAt;
-        } catch {
-          // Keep fallback token
-        }
+        } catch {}
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(userRecord.id)}`, {
+          method: 'PATCH',
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: new Date().toISOString(),
+            last_login_ip: clientIp,
+          },
+        }).catch(() => {});
       }
+
+      const session = await createSession(userRecord.id, {
+        rememberMe,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: effectiveRole, email },
+      });
+      const sessionToken = session.sessionToken;
+      const expiresAt = session.expiresAt;
 
       setSessionCookie(res, sessionToken, expiresAt);
       await resetRateLimitAsync(`admin_login:ip:${clientIp}`);
@@ -608,19 +619,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile routes
-    // so the client's built-in Supabase HTTPS fallback activates immediately instead of returning false 401s.
-    if (
-      !isDatabaseAvailable() &&
-      (pathname.startsWith('/api/auth/') ||
-        pathname.startsWith('/api/profile'))
-    ) {
-      sendJson(res, 503, {
-        success: false,
-        message: 'PostgreSQL database is not connected in this preview environment.',
-      });
-      return true;
-    }
+    // All /api/auth/* and /api/profile* routes support direct PostgreSQL with native Supabase HTTPS REST fallback.
 
     // ---------------------------------------------------------
     // 0B. AI & FINANCIAL INTELLIGENCE DISPATCH (Auth Protected)
@@ -673,9 +672,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const email = normalizeEmail(rawEmail);
 
-      // Duplicate email check
-      const dup = await query('SELECT id FROM public.app_users WHERE LOWER(email) = $1', [email]);
-      if (dup.rows.length > 0) {
+      // Duplicate email check (PostgreSQL primary with Supabase REST fallback)
+      let emailExists = false;
+      if (isDatabaseAvailable()) {
+        try {
+          const dup = await query('SELECT id FROM public.app_users WHERE LOWER(email) = $1', [email]);
+          emailExists = dup.rows.length > 0;
+        } catch (err: any) {
+          console.warn('[Register] PG duplicate check failed, falling back to Supabase REST:', err?.message);
+          const dupRest = await sbRestRequest<any[]>(
+            `app_users?email=ilike.${encodeURIComponent(email)}&select=id&limit=1`
+          );
+          emailExists = Boolean(dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0);
+        }
+      } else {
+        const dupRest = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=id&limit=1`
+        );
+        emailExists = Boolean(dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0);
+      }
+
+      if (emailExists) {
         sendJson(res, 409, {
           success: false,
           message: 'An account with this email address already exists. Please log in or reset your password.',
@@ -687,18 +704,56 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const passwordHash = await hashPassword(password);
 
       // Default role is strictly 'user' from backend authority
-      const userRes = await query(
-        `INSERT INTO public.app_users (
-          full_name, email, phone, password_hash, role, status, email_verified
-        ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE)
-        RETURNING *`,
-        [fullName, email, phone || null, passwordHash]
-      );
+      let newUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query(
+            `INSERT INTO public.app_users (
+              full_name, email, phone, password_hash, role, status, email_verified
+            ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE)
+            RETURNING *`,
+            [fullName, email, phone || null, passwordHash]
+          );
+          newUser = userRes.rows[0] || null;
+        } catch (err: any) {
+          console.warn('[Register] PG insert failed, attempting Supabase REST:', err?.message);
+        }
+      }
 
-      const newUser = userRes.rows[0];
+      if (!newUser) {
+        const insertRest = await sbRestRequest<any[]>('app_users', {
+          method: 'POST',
+          prefer: 'return=representation',
+          body: {
+            full_name: fullName,
+            email,
+            phone: phone || null,
+            password_hash: passwordHash,
+            role: 'user',
+            status: 'active',
+            email_verified: false,
+          },
+        });
+        if (!insertRest.ok || !Array.isArray(insertRest.data) || !insertRest.data[0]) {
+          const errMsg = insertRest.error || 'Could not create your account right now. Please try again.';
+          const isDup = String(errMsg).toLowerCase().includes('duplicate') || insertRest.status === 409;
+          sendJson(res, isDup ? 409 : 503, {
+            success: false,
+            message: isDup
+              ? 'An account with this email address already exists. Please log in or reset your password.'
+              : errMsg,
+          });
+          return true;
+        }
+        newUser = insertRest.data[0];
+      }
 
-      // Create session
-      const session = await createSession(newUser.id, { userAgent, ipAddress: clientIp });
+      // Create server-verified session (PG -> Supabase REST user_sessions -> HMAC-SHA256 fallback)
+      const session = await createSession(newUser.id, {
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: 'user', email },
+      });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
       // Async send welcome email (non-blocking, trusted user record from DB, idempotent)
@@ -721,7 +776,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userEmail: email,
         actorRole: 'user',
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 201, {
         success: true,
@@ -761,15 +816,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Query user
-      const userRes = await query('SELECT * FROM public.app_users WHERE LOWER(email) = $1', [email]);
-      if (userRes.rows.length === 0) {
-        await logSecurityEvent('LOGIN_FAILED_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp });
+      // Query user (PostgreSQL primary with Supabase REST fallback)
+      let user: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT * FROM public.app_users WHERE LOWER(email) = $1', [email]);
+          if (userRes.rows.length > 0) user = userRes.rows[0];
+        } catch (err: any) {
+          console.warn('[Login] PG lookup failed, attempting Supabase REST:', err?.message);
+        }
+      }
+
+      if (!user) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (restUser.ok && Array.isArray(restUser.data) && restUser.data.length > 0) {
+          user = restUser.data[0];
+        }
+      }
+
+      if (!user) {
+        await logSecurityEvent('LOGIN_FAILED_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 401, { success: false, message: 'Invalid email or password.' });
         return true;
       }
-
-      const user = userRes.rows[0];
 
       // Check account lockout
       if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -783,7 +854,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Check account status
       if (user.status === 'suspended') {
-        await logSecurityEvent('LOGIN_BLOCKED_SUSPENDED', { userId: user.id, userEmail: email, ipAddress: clientIp });
+        await logSecurityEvent('LOGIN_BLOCKED_SUSPENDED', { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 403, {
           success: false,
           message: 'Your account has been suspended by an administrator. Please contact security support.',
@@ -803,30 +874,54 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const isValid = await verifyPassword(password, user.password_hash);
       if (!isValid) {
         const attempts = (user.failed_login_attempts || 0) + 1;
-        let lockSql = 'UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2';
-        let lockParams: any[] = [attempts, user.id];
-
-        if (attempts >= 5) {
-          // Lock account for 15 minutes
-          lockSql = "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2";
+        const lockUntilIso = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
+        if (isDatabaseAvailable()) {
+          let lockSql = 'UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2';
+          if (attempts >= 5) {
+            lockSql = "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2";
+          }
+          await query(lockSql, [attempts, user.id]).catch(() => {});
+        } else {
+          await sbRestRequest(`app_users?id=eq.${encodeURIComponent(user.id)}`, {
+            method: 'PATCH',
+            body: lockUntilIso
+              ? { failed_login_attempts: attempts, locked_until: lockUntilIso }
+              : { failed_login_attempts: attempts },
+          }).catch(() => {});
         }
-        await query(lockSql, lockParams);
 
-        await logSecurityEvent('LOGIN_FAILED_BAD_PASSWORD', { userId: user.id, userEmail: email, ipAddress: clientIp });
+        await logSecurityEvent('LOGIN_FAILED_BAD_PASSWORD', { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 401, { success: false, message: 'Invalid email or password.' });
         return true;
       }
 
       // Reset failed login attempts and update last login
-      await query(
-        `UPDATE public.app_users 
-         SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1 
-         WHERE id = $2`,
-        [clientIp, user.id]
-      );
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.app_users 
+           SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1 
+           WHERE id = $2`,
+          [clientIp, user.id]
+        ).catch(() => {});
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(user.id)}`, {
+          method: 'PATCH',
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: new Date().toISOString(),
+            last_login_ip: clientIp,
+          },
+        }).catch(() => {});
+      }
 
-      // Create session
-      const session = await createSession(user.id, { rememberMe, userAgent, ipAddress: clientIp });
+      // Create server-verified session (PG -> Supabase REST user_sessions -> HMAC-SHA256 fallback)
+      const session = await createSession(user.id, {
+        rememberMe,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: user.role, email },
+      });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
       await resetRateLimitAsync(`login:ip:${clientIp}`);
@@ -837,7 +932,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userEmail: email,
         actorRole: user.role,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
@@ -971,24 +1066,50 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const updatedRes = await query(
-        `UPDATE public.app_users 
-         SET full_name = $1, phone = $2, avatar_url = $3, updated_at = NOW() 
-         WHERE id = $4 
-         RETURNING *`,
-        [fullName, phone || null, avatarUrl || null, authUser.id]
-      );
+      let updatedUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const updatedRes = await query(
+            `UPDATE public.app_users 
+             SET full_name = $1, phone = $2, avatar_url = $3, updated_at = NOW() 
+             WHERE id = $4 
+             RETURNING *`,
+            [fullName, phone || null, avatarUrl || null, authUser.id]
+          );
+          updatedUser = updatedRes.rows[0] || null;
+        } catch (err: any) {
+          console.warn('[Profile PUT] PG update failed, attempting Supabase REST:', err?.message);
+        }
+      }
+
+      if (!updatedUser) {
+        const restUpd = await sbRestRequest<any[]>(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: {
+            full_name: fullName,
+            phone: phone || null,
+            avatar_url: avatarUrl || null,
+            updated_at: new Date().toISOString(),
+          },
+        });
+        if (!restUpd.ok || !Array.isArray(restUpd.data) || !restUpd.data[0]) {
+          sendJson(res, 503, { success: false, message: restUpd.error || 'Failed to update profile.' });
+          return true;
+        }
+        updatedUser = restUpd.data[0];
+      }
 
       await logSecurityEvent('PROFILE_UPDATED', {
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
         message: 'Profile updated successfully.',
-        user: sanitizeUserOutput(updatedRes.rows[0]),
+        user: sanitizeUserOutput(updatedUser),
       });
       return true;
     }
@@ -1014,16 +1135,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       // Fetch user's current password hash
-      const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
-      const currentHash = userRes.rows[0]?.password_hash;
+      let currentHash: string | null = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
+          currentHash = userRes.rows[0]?.password_hash || null;
+        } catch {}
+      }
+      if (!currentHash) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?id=eq.${encodeURIComponent(authUser.id)}&select=password_hash&limit=1`
+        );
+        currentHash = restUser.ok && Array.isArray(restUser.data) ? restUser.data[0]?.password_hash || null : null;
+      }
 
-      const isCurrentValid = await verifyPassword(currentPassword, currentHash);
+      const isCurrentValid = currentHash ? await verifyPassword(currentPassword, currentHash) : false;
       if (!isCurrentValid) {
         await logSecurityEvent('PASSWORD_CHANGE_FAILED_WRONG_CURRENT', {
           userId: authUser.id,
           userEmail: authUser.email,
           ipAddress: clientIp,
-        });
+        }).catch(() => {});
         sendJson(res, 400, { success: false, message: 'Current password is incorrect.' });
         return true;
       }
@@ -1047,25 +1179,52 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Hash new password
       const newHash = await hashPassword(newPassword);
+      const nowIso = new Date().toISOString();
 
-      // Update password in DB
-      await query(
-        `UPDATE public.app_users 
-         SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, updated_at = NOW() 
-         WHERE id = $2`,
-        [newHash, authUser.id]
-      );
+      // Update password in DB or Supabase REST
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.app_users 
+           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, updated_at = NOW() 
+           WHERE id = $2`,
+          [newHash, authUser.id]
+        );
+      } else {
+        const updRest = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+          method: 'PATCH',
+          body: {
+            password_hash: newHash,
+            password_changed_at: nowIso,
+            force_password_reset: false,
+            updated_at: nowIso,
+          },
+        });
+        if (!updRest.ok) {
+          sendJson(res, 503, { success: false, message: updRest.error || 'Failed to update password.' });
+          return true;
+        }
+      }
 
       // Revoke all other sessions (keep current session active)
       const currentToken = (req.headers['authorization']?.slice(7) || '').trim();
-      if (currentToken) {
+      if (currentToken && !currentToken.startsWith('mmf1.')) {
         const curHash = hashToken(currentToken);
-        await query(
-          `UPDATE public.user_sessions 
-           SET is_revoked = TRUE 
-           WHERE user_id = $1 AND session_token_hash <> $2`,
-          [authUser.id, curHash]
-        );
+        if (isDatabaseAvailable()) {
+          await query(
+            `UPDATE public.user_sessions 
+             SET is_revoked = TRUE 
+             WHERE user_id = $1 AND session_token_hash <> $2`,
+            [authUser.id, curHash]
+          ).catch(() => {});
+        } else {
+          await sbRestRequest(
+            `user_sessions?user_id=eq.${encodeURIComponent(authUser.id)}&session_token_hash=neq.${encodeURIComponent(curHash)}`,
+            {
+              method: 'PATCH',
+              body: { is_revoked: true },
+            }
+          ).catch(() => {});
+        }
       }
 
       // Async send password changed email
@@ -1075,7 +1234,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
@@ -1102,20 +1261,38 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
-      const currentHash = userRes.rows[0]?.password_hash;
+      let currentHash: string | null = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
+          currentHash = userRes.rows[0]?.password_hash || null;
+        } catch {}
+      }
+      if (!currentHash) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?id=eq.${encodeURIComponent(authUser.id)}&select=password_hash&limit=1`
+        );
+        currentHash = restUser.ok && Array.isArray(restUser.data) ? restUser.data[0]?.password_hash || null : null;
+      }
 
-      const isCurrentValid = await verifyPassword(password, currentHash);
+      const isCurrentValid = currentHash ? await verifyPassword(password, currentHash) : false;
       if (!isCurrentValid) {
         sendJson(res, 400, { success: false, message: 'Incorrect password. Account deletion aborted.' });
         return true;
       }
 
       // Delete transactions, sessions, user
-      await query('DELETE FROM public.transactions WHERE user_id = $1', [authUser.id]).catch(() => {});
-      await query('DELETE FROM public.user_sessions WHERE user_id = $1', [authUser.id]);
-      await query('DELETE FROM public.password_resets WHERE user_id = $1', [authUser.id]);
-      await query('DELETE FROM public.app_users WHERE id = $1', [authUser.id]);
+      if (isDatabaseAvailable()) {
+        await query('DELETE FROM public.transactions WHERE user_id = $1', [authUser.id]).catch(() => {});
+        await query('DELETE FROM public.user_sessions WHERE user_id = $1', [authUser.id]).catch(() => {});
+        await query('DELETE FROM public.password_resets WHERE user_id = $1', [authUser.id]).catch(() => {});
+        await query('DELETE FROM public.app_users WHERE id = $1', [authUser.id]);
+      } else {
+        await sbRestRequest(`transactions?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' }).catch(() => {});
+        await sbRestRequest(`user_sessions?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' }).catch(() => {});
+        await sbRestRequest(`password_resets?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' }).catch(() => {});
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' });
+      }
 
       clearSessionCookie(res);
 
@@ -1123,7 +1300,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, { success: true, message: 'Your account and all associated data have been permanently deleted.' });
       return true;
@@ -1153,21 +1330,34 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const userRes = await query('SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1', [email]);
-      
+      let user: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1', [email]);
+          if (userRes.rows.length > 0) user = userRes.rows[0];
+        } catch {}
+      }
+      if (!user) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=id,full_name,email,status&limit=1`
+        );
+        if (restUser.ok && Array.isArray(restUser.data) && restUser.data.length > 0) {
+          user = restUser.data[0];
+        }
+      }
+
       // Prevent Email Enumeration: Always return identical success response
       const standardResponse = {
         success: true,
         message: 'If an account exists with this email, a password reset link has been sent.',
       };
 
-      if (userRes.rows.length === 0) {
-        await logSecurityEvent('FORGOT_PASSWORD_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp });
+      if (!user) {
+        await logSecurityEvent('FORGOT_PASSWORD_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 200, standardResponse);
         return true;
       }
 
-      const user = userRes.rows[0];
       if (user.status !== 'active') {
         sendJson(res, 200, standardResponse);
         return true;
@@ -1177,17 +1367,34 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const rawToken = generateCryptoToken(32);
       const tokenHash = hashToken(rawToken);
 
-      // Invalidate any previous unused reset tokens for this user
-      await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [user.id]);
-
       // Set 15-minute expiration
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-      await query(
-        `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, tokenHash, expiresAt, clientIp, userAgent]
-      );
+      if (isDatabaseAvailable()) {
+        // Invalidate any previous unused reset tokens for this user
+        await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [user.id]);
+        await query(
+          `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [user.id, tokenHash, expiresAt, clientIp, userAgent]
+        );
+      } else {
+        await sbRestRequest(
+          `password_resets?user_id=eq.${encodeURIComponent(user.id)}&used=eq.false`,
+          { method: 'PATCH', body: { used: true } }
+        ).catch(() => {});
+        await sbRestRequest('password_resets', {
+          method: 'POST',
+          body: {
+            user_id: user.id,
+            token_hash: tokenHash,
+            expires_at: expiresAt.toISOString(),
+            ip_address: clientIp,
+            user_agent: userAgent,
+            used: false,
+          },
+        });
+      }
 
       const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
@@ -1199,7 +1406,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userId: user.id,
         userEmail: user.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       // Strict security: Never return raw recovery URL or token in API responses
       sendJson(res, 200, standardResponse);
@@ -1225,20 +1432,40 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tokenHash = hashToken(rawToken);
-      const resDb = await query(
-        `SELECT pr.id, pr.expires_at, pr.used, u.email, u.full_name
-         FROM public.password_resets pr
-         JOIN public.app_users u ON pr.user_id = u.id
-         WHERE pr.token_hash = $1`,
-        [tokenHash]
-      );
+      let record: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const resDb = await query(
+            `SELECT pr.id, pr.expires_at, pr.used, u.email, u.full_name
+             FROM public.password_resets pr
+             JOIN public.app_users u ON pr.user_id = u.id
+             WHERE pr.token_hash = $1`,
+            [tokenHash]
+          );
+          if (resDb.rows.length > 0) record = resDb.rows[0];
+        } catch {}
+      }
+      if (!record) {
+        const restPr = await sbRestRequest<any[]>(
+          `password_resets?token_hash=eq.${encodeURIComponent(tokenHash)}&select=id,user_id,expires_at,used&limit=1`
+        );
+        if (restPr.ok && Array.isArray(restPr.data) && restPr.data[0]) {
+          const prRow = restPr.data[0];
+          const restU = await sbRestRequest<any[]>(
+            `app_users?id=eq.${encodeURIComponent(prRow.user_id)}&select=email,full_name&limit=1`
+          );
+          const uRow = restU.ok && Array.isArray(restU.data) ? restU.data[0] : null;
+          if (uRow) {
+            record = { ...prRow, email: uRow.email, full_name: uRow.full_name };
+          }
+        }
+      }
 
-      if (resDb.rows.length === 0) {
+      if (!record) {
         sendJson(res, 200, { valid: false, message: 'Invalid reset token.' });
         return true;
       }
 
-      const record = resDb.rows[0];
       if (record.used) {
         sendJson(res, 200, { valid: false, message: 'This reset token has already been used.' });
         return true;
@@ -1284,23 +1511,43 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendRateLimitExceeded(res, rateSession);
         return true;
       }
-      const resDb = await query(
-        `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
-         FROM public.password_resets pr
-         JOIN public.app_users u ON pr.user_id = u.id
-         WHERE pr.token_hash = $1`,
-        [tokenHash]
-      );
 
-      if (resDb.rows.length === 0 || resDb.rows[0].used || new Date(resDb.rows[0].expires_at) < new Date()) {
+      let record: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const resDb = await query(
+            `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
+             FROM public.password_resets pr
+             JOIN public.app_users u ON pr.user_id = u.id
+             WHERE pr.token_hash = $1`,
+            [tokenHash]
+          );
+          if (resDb.rows.length > 0) record = resDb.rows[0];
+        } catch {}
+      }
+      if (!record) {
+        const restPr = await sbRestRequest<any[]>(
+          `password_resets?token_hash=eq.${encodeURIComponent(tokenHash)}&select=id,user_id,expires_at,used&limit=1`
+        );
+        if (restPr.ok && Array.isArray(restPr.data) && restPr.data[0]) {
+          const prRow = restPr.data[0];
+          const restU = await sbRestRequest<any[]>(
+            `app_users?id=eq.${encodeURIComponent(prRow.user_id)}&select=email,full_name&limit=1`
+          );
+          const uRow = restU.ok && Array.isArray(restU.data) ? restU.data[0] : null;
+          if (uRow) {
+            record = { ...prRow, email: uRow.email, full_name: uRow.full_name };
+          }
+        }
+      }
+
+      if (!record || record.used || new Date(record.expires_at) < new Date()) {
         sendJson(res, 400, {
           success: false,
           message: 'This reset link is invalid, expired, or has already been used. Please request a new one.',
         });
         return true;
       }
-
-      const record = resDb.rows[0];
 
       // Validate new password policy
       const passVal = validatePasswordPolicy(newPassword);
@@ -1316,22 +1563,45 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Hash with bcrypt
       const passwordHash = await hashPassword(newPassword);
+      const nowIso = new Date().toISOString();
 
-      // Update user password and clear force_password_reset
-      await query(
-        `UPDATE public.app_users 
-         SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
-         WHERE id = $2`,
-        [passwordHash, record.user_id]
-      );
+      if (isDatabaseAvailable()) {
+        // Update user password and clear force_password_reset
+        await query(
+          `UPDATE public.app_users 
+           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
+           WHERE id = $2`,
+          [passwordHash, record.user_id]
+        );
 
-      // Mark token permanently used
-      await query(
-        `UPDATE public.password_resets 
-         SET used = TRUE, used_at = NOW() 
-         WHERE id = $1`,
-        [record.id]
-      );
+        // Mark token permanently used
+        await query(
+          `UPDATE public.password_resets 
+           SET used = TRUE, used_at = NOW() 
+           WHERE id = $1`,
+          [record.id]
+        );
+      } else {
+        const updUser = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(record.user_id)}`, {
+          method: 'PATCH',
+          body: {
+            password_hash: passwordHash,
+            password_changed_at: nowIso,
+            force_password_reset: false,
+            failed_login_attempts: 0,
+            locked_until: null,
+            updated_at: nowIso,
+          },
+        });
+        if (!updUser.ok) {
+          sendJson(res, 503, { success: false, message: 'Failed to update password right now. Please retry.' });
+          return true;
+        }
+        await sbRestRequest(`password_resets?id=eq.${encodeURIComponent(record.id)}`, {
+          method: 'PATCH',
+          body: { used: true, used_at: nowIso },
+        }).catch(() => {});
+      }
 
       // Invalidate all existing sessions
       await revokeAllUserSessions(record.user_id);
@@ -1347,7 +1617,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userId: record.user_id,
         userEmail: record.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
@@ -2246,8 +2516,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // 5. TRIGGER EXPIRED DELETIONS: POST /api/account/deletion/process-expired
+    // 5. TRIGGER EXPIRED DELETIONS: POST /api/account/deletion/process-expired (Admin or CRON_SECRET only)
     if (pathname === '/api/account/deletion/process-expired' && method === 'POST') {
+      const cronSecret = process.env.CRON_SECRET || '';
+      const providedCron = String(req.headers['x-cron-secret'] || '').trim();
+      const validCron =
+        cronSecret.length >= 16 &&
+        providedCron.length === cronSecret.length &&
+        crypto.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
+      if (!validCron) {
+        const authUser = await authenticateRequest(req);
+        if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
+          sendJson(res, 403, { success: false, message: 'Access Denied: Administrator or cron secret required.' });
+          return true;
+        }
+      }
       const processed = await processExpiredAccountDeletions();
       sendJson(res, 200, { success: true, processedCount: processed });
       return true;
@@ -7257,13 +7540,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // Legacy alias: POST /api/send-reset-email
+    // Legacy alias: POST /api/send-reset-email (strictly restricted to authenticated admins)
     if (pathname === '/api/send-reset-email' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
+        sendJson(res, 403, { success: false, message: 'Access Denied: Administrator authentication required.' });
+        return true;
+      }
       const body = await parseJsonBody(req);
       const email = normalizeEmail(body.email || '');
-      const rawToken = body.token || body.otp || generateCryptoToken(32);
-      const resetLink = body.resetLink || `${origin}/#reset-password&token=${rawToken}&email=${encodeURIComponent(email)}`;
-      const sent = await sendPasswordResetEmail(email, body.name || 'User', resetLink);
+      if (!validateEmail(email)) {
+        sendJson(res, 400, { success: false, message: 'Valid email address is required.' });
+        return true;
+      }
+      const rawToken = generateCryptoToken(32);
+      const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
+      const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+      const sent = await sendPasswordResetEmail(email, String(body.name || 'User').slice(0, 80), resetLink);
       sendJson(res, 200, { success: sent, message: sent ? 'Reset email dispatched' : 'Failed to dispatch email' });
       return true;
     }

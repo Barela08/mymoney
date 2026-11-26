@@ -45,6 +45,25 @@ async function getEmailTransporterAndConfig() {
   return { transporter, cfg };
 }
 
+function escapeEmailHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeEmailHref(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return escapeEmailHtml(parsed.toString());
+    }
+  } catch {}
+  return escapeEmailHtml(APP_CONFIG.appBaseUrl);
+}
+
 interface EmailOptions {
   to: string;
   subject: string;
@@ -411,18 +430,18 @@ export async function sendPasswordResetEmail(email: string, name: string, resetL
           <p>by ${APP_CONFIG.companyName} · Security Dispatch</p>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hello ${name || 'User'},</p>
+          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hello ${escapeEmailHtml(name || 'User')},</p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
-            We received a request to reset the password for your account (<strong>${email}</strong>).
+            We received a request to reset the password for your account (<strong>${escapeEmailHtml(email)}</strong>).
           </p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             Click the secure button below to set your new password. This single-use link is valid for <strong>15 minutes</strong>.
           </p>
           <div style="text-align: center;">
-            <a href="${resetLink}" class="btn" target="_blank">Reset Password Now</a>
+            <a href="${sanitizeEmailHref(resetLink)}" class="btn" target="_blank">Reset Password Now</a>
           </div>
           <p style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Or copy and paste this link into your browser:</p>
-          <div class="url-box">${resetLink}</div>
+          <div class="url-box">${escapeEmailHtml(resetLink)}</div>
           <div class="alert">
             <strong>Security Notice:</strong> If you did not request a password reset, please ignore this email. Your current password remains secure.
           </div>
@@ -477,10 +496,10 @@ export async function sendPasswordChangedEmail(email: string, name: string, ipAd
           <h1>${APP_CONFIG.appName}</h1>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600;">Hello ${name || 'User'},</p>
+          <p style="font-size: 15px; font-weight: 600;">Hello ${escapeEmailHtml(name || 'User')},</p>
           <div class="info-box">
             <strong>✓ Password Updated Successfully</strong><br/>
-            Your account password was updated on <strong>${now} IST</strong>${ipAddress ? ` from IP <code>${ipAddress}</code>` : ''}.
+            Your account password was updated on <strong>${escapeEmailHtml(now)} IST</strong>${ipAddress ? ` from IP <code>${escapeEmailHtml(ipAddress)}</code>` : ''}.
           </div>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             All previous active sessions on other devices have been securely invalidated to protect your account.

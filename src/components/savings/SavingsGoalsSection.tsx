@@ -17,6 +17,7 @@ import {
 import { useToast } from '../../context/ToastContext';
 import { savingsGoalsApi, SavingsGoal } from '../../lib/financialFeaturesApi';
 import { formatINR, formatDisplayDate, getCurrentISTDate } from '../../lib/dateUtils';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 export const SavingsGoalsSection: React.FC = () => {
   const toast = useToast();
@@ -43,6 +44,8 @@ export const SavingsGoalsSection: React.FC = () => {
 
   // Celebration Modal
   const [celebrationGoal, setCelebrationGoal] = useState<SavingsGoal | null>(null);
+  const [pendingDeleteGoal, setPendingDeleteGoal] = useState<{ id: string; title: string } | null>(null);
+  const [isDeletingGoal, setIsDeletingGoal] = useState(false);
 
   const loadGoals = async () => {
     try {
@@ -171,14 +174,22 @@ export const SavingsGoalsSection: React.FC = () => {
     }
   };
 
-  const handleDeleteGoal = async (id: string, goalTitle: string) => {
-    if (!confirm(`Are you sure you want to delete savings goal "${goalTitle}"?`)) return;
+  const handleDeleteGoal = (id: string, goalTitle: string) => {
+    setPendingDeleteGoal({ id, title: goalTitle });
+  };
+
+  const confirmDeleteGoal = async () => {
+    if (!pendingDeleteGoal || isDeletingGoal) return;
     try {
-      await savingsGoalsApi.deleteGoal(id);
-      toast.success('Goal Deleted', `Goal "${goalTitle}" was removed.`);
+      setIsDeletingGoal(true);
+      await savingsGoalsApi.deleteGoal(pendingDeleteGoal.id);
+      toast.success('Goal Deleted', `Goal "${pendingDeleteGoal.title}" was removed.`);
+      setPendingDeleteGoal(null);
       loadGoals();
     } catch (err: any) {
       toast.error('Failed to delete', err.message);
+    } finally {
+      setIsDeletingGoal(false);
     }
   };
 
@@ -610,6 +621,18 @@ export const SavingsGoalsSection: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!pendingDeleteGoal}
+        title="Delete Savings Goal?"
+        subtitle="This target and its progress entry will be removed."
+        message={`Are you sure you want to delete savings goal "${pendingDeleteGoal?.title || ''}"?`}
+        confirmLabel="Delete Goal"
+        isDestructive={true}
+        isLoading={isDeletingGoal}
+        onConfirm={confirmDeleteGoal}
+        onCancel={() => !isDeletingGoal && setPendingDeleteGoal(null)}
+      />
     </div>
   );
 };

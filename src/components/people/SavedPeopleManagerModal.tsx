@@ -21,6 +21,7 @@ import {
   UdharContact,
   SearchUserResult,
 } from '../../lib/udharDeletionApi';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 interface SavedPeopleManagerModalProps {
   isOpen: boolean;
@@ -143,6 +144,9 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [pendingDisconnectContact, setPendingDisconnectContact] = useState<UdharContact | null>(null);
+  const [pendingDeleteContact, setPendingDeleteContact] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingContact, setIsDeletingContact] = useState<boolean>(false);
   const liveAbortRef = useRef<AbortController | null>(null);
   const lastQueryRef = useRef<string>('');
 
@@ -252,16 +256,19 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     }
   };
 
-  const handleDisconnect = async (contact: UdharContact) => {
+  const handleDisconnect = (contact: UdharContact) => {
     if (!contact.linked_user_id || disconnectingId) return;
-    const confirmed = window.confirm(
-      `Disconnect from ${contact.name}? You will both stop seeing 2-way Udhar sync. Existing Udhar records are kept.`
-    );
-    if (!confirmed) return;
+    setPendingDisconnectContact(contact);
+  };
+
+  const confirmDisconnect = async () => {
+    const contact = pendingDisconnectContact;
+    if (!contact || !contact.linked_user_id || disconnectingId) return;
     try {
       setDisconnectingId(contact.id);
       const res = await udharDeletionApi.disconnectConnection(contact.linked_user_id);
       toast.success('Disconnected', res.message || 'The Udhar connection was removed.');
+      setPendingDisconnectContact(null);
       await fetchContacts();
       if (onContactsUpdated) onContactsUpdated();
     } catch (err: any) {
@@ -367,20 +374,26 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     }
   };
 
-  const handleDeleteContact = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove "${name}" from your saved contacts? Previous transactions with this person will remain intact.`)) {
-      return;
-    }
+  const handleDeleteContact = (id: string, name: string) => {
+    setPendingDeleteContact({ id, name });
+  };
 
+  const confirmDeleteContact = async () => {
+    if (!pendingDeleteContact || isDeletingContact) return;
+    const { id, name } = pendingDeleteContact;
     try {
+      setIsDeletingContact(true);
       const res = await udharDeletionApi.deleteContact(id);
       if (res.success) {
         toast.info('Removed', `${name} removed from saved contacts.`);
+        setPendingDeleteContact(null);
         await fetchContacts();
         if (onContactsUpdated) onContactsUpdated();
       }
     } catch (err: any) {
       toast.error('Error', err.message);
+    } finally {
+      setIsDeletingContact(false);
     }
   };
 
@@ -934,6 +947,30 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
         )}
 
       </div>
+
+      <ConfirmModal
+        isOpen={!!pendingDisconnectContact}
+        title="Disconnect Udhar Sync?"
+        subtitle="Existing Udhar records are preserved."
+        message={`Disconnect from ${pendingDisconnectContact?.name || 'this person'}? You will both stop seeing 2-way Udhar sync. Existing Udhar records are kept.`}
+        confirmLabel="Disconnect"
+        isDestructive={true}
+        isLoading={!!disconnectingId}
+        onConfirm={confirmDisconnect}
+        onCancel={() => !disconnectingId && setPendingDisconnectContact(null)}
+      />
+
+      <ConfirmModal
+        isOpen={!!pendingDeleteContact}
+        title="Remove Saved Contact?"
+        subtitle="Previous Udhar transactions remain intact."
+        message={`Are you sure you want to remove "${pendingDeleteContact?.name || 'this contact'}" from your saved contacts? Previous transactions with this person will remain intact.`}
+        confirmLabel="Remove Contact"
+        isDestructive={true}
+        isLoading={isDeletingContact}
+        onConfirm={confirmDeleteContact}
+        onCancel={() => !isDeletingContact && setPendingDeleteContact(null)}
+      />
     </div>
   );
 };

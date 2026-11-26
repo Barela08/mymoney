@@ -26,7 +26,14 @@ const USER_KEY = 'my_money_auth_user';
 
 export function getStoredSessionToken(): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
+    // Automatically purge legacy unsigned direct_ tokens that are rejected by backend APIs
+    if (token && token.startsWith('direct_')) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
+    return token;
   } catch {
     return null;
   }
@@ -36,7 +43,7 @@ export const getStoredAuthToken = getStoredSessionToken;
 
 export function setStoredSessionToken(token: string | null) {
   try {
-    if (token) {
+    if (token && !token.startsWith('direct_')) {
       localStorage.setItem(TOKEN_KEY, token);
     } else {
       localStorage.removeItem(TOKEN_KEY);
@@ -147,241 +154,6 @@ function mapRawUserToAuthUser(u: any): AuthUser {
     createdAt: u.created_at || new Date().toISOString(),
     created_at: u.created_at || new Date().toISOString(),
   };
-}
-
-async function checkMaintenanceActiveClient(): Promise<{ isEnabled: boolean; message?: string }> {
-  const [serverMaint, supaMaint] = await Promise.all([
-    fetch('/api/public/site-config', { credentials: 'include', cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.maintenance || null)
-      .catch(() => null),
-    (async () => {
-      try {
-        const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-        const res = await fetch(
-          `${supabaseUrl}/rest/v1/app_settings?key=eq.maintenance_mode&select=value,updated_at&limit=1`,
-          {
-            headers: {
-              apikey: supabaseKey,
-              Authorization: `Bearer ${supabaseKey}`,
-              Accept: 'application/json',
-            },
-          }
-        );
-        if (!res.ok) return null;
-        const rows = await res.json();
-        const row = Array.isArray(rows) ? rows[0] : null;
-        if (!row?.value) return null;
-        return {
-          ...row.value,
-          updatedAt: row.value.updatedAt || row.updated_at,
-        };
-      } catch {
-        return null;
-      }
-    })(),
-  ]);
-
-  let resolved = serverMaint || supaMaint;
-  if (serverMaint && supaMaint) {
-    const sTs = serverMaint.updatedAt ? Date.parse(serverMaint.updatedAt) : 0;
-    const dTs = supaMaint.updatedAt ? Date.parse(supaMaint.updatedAt) : 0;
-    resolved = sTs >= dTs ? serverMaint : supaMaint;
-  }
-
-  if (resolved?.isEnabled) {
-    return { isEnabled: true, message: resolved.message };
-  }
-  return { isEnabled: false };
-}
-
-function isAdminAccountRecord(userRow: any): boolean {
-  const email = String(userRow?.email || '').toLowerCase().trim();
-  const role = String(userRow?.role || '').toLowerCase().trim();
-  return (
-    email === 'hackifypro@gmail.com' ||
-    email === 'admin@mymoney.com' ||
-    ['superadmin', 'admin', 'support', 'analyst'].includes(role)
-  );
-}
-
-async function directSupabaseLogin(payload: { email: string; password: string; rememberMe?: boolean }) {
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-  const normEmail = payload.email.toLowerCase().trim();
-
-  const queryUrl = `${supabaseUrl}/rest/v1/app_users?email=ilike.${encodeURIComponent(normEmail)}&select=*`;
-  const res = await fetch(queryUrl, {
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Accept: 'application/json',
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error('Unable to verify credentials with database.');
-  }
-
-  const users = await res.json();
-  if (!Array.isArray(users) || users.length === 0) {
-    throw new Error('Invalid email or password.');
-  }
-
-  const user = users[0];
-  if (user.status === 'suspended') {
-    throw new Error('Your account has been suspended by an administrator. Please contact support.');
-  }
-  if (user.status === 'deactivated') {
-    throw new Error('This account has been deactivated. Please contact support.');
-  }
-
-  // Compare bcrypt password
-  const isMatch = await bcrypt.compare(payload.password, user.password_hash);
-  if (!isMatch) {
-    throw new Error('Invalid email or password.');
-  }
-
-  const sessionToken = `direct_${user.id}_${Date.now()}`;
-  const authUser = mapRawUserToAuthUser(user);
-
-  const maint = await checkMaintenanceActiveClient();
-  if (maint.isEnabled && !isAdminAccountRecord(authUser)) {
-    const err = new Error(
-      maint.message || 'Platform is currently under scheduled maintenance. Please check back shortly.'
-    );
-    (err as any).status = 503;
-    (err as any).data = { code: 'MAINTENANCE_MODE', maintenance: true };
-    throw err;
-  }
-
-  setStoredSessionToken(sessionToken);
-  setStoredAuthUser(authUser);
-
-  return {
-    success: true,
-    message: 'Signed in successfully!',
-    user: authUser,
-    sessionToken,
-  };
-}
-
-async function directSupabaseRegister(payload: {
-  fullName: string;
-  email: string;
-  phone?: string;
-  password: string;
-  confirmPassword: string;
-}) {
-  const maint = await checkMaintenanceActiveClient();
-  if (maint.isEnabled) {
-    const err = new Error(
-      maint.message || 'Registration is paused during scheduled maintenance.'
-    );
-    (err as any).status = 503;
-    (err as any).data = { code: 'MAINTENANCE_MODE', maintenance: true };
-    throw err;
-  }
-
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-  const normEmail = payload.email.toLowerCase().trim();
-
-  // 1. Check duplicate email
-  const checkRes = await fetch(
-    `${supabaseUrl}/rest/v1/app_users?email=ilike.${encodeURIComponent(normEmail)}&select=id`,
-    {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        Accept: 'application/json',
-      },
-    }
-  );
-  if (checkRes.ok) {
-    const existing = await checkRes.json();
-    if (Array.isArray(existing) && existing.length > 0) {
-      throw new Error('An account with this email address already exists. Please log in.');
-    }
-  }
-
-  // 2. Hash password
-  const passwordHash = await bcrypt.hash(payload.password, 12);
-
-  // 3. Insert user
-  const insertRes = await fetch(`${supabaseUrl}/rest/v1/app_users`, {
-    method: 'POST',
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-    },
-    body: JSON.stringify({
-      full_name: payload.fullName.trim(),
-      email: normEmail,
-      phone: payload.phone?.trim() || null,
-      password_hash: passwordHash,
-      role: 'user',
-      status: 'active',
-      email_verified: false,
-    }),
-  });
-
-  if (!insertRes.ok) {
-    const errText = await insertRes.text();
-    throw new Error(`Failed to create account: ${errText}`);
-  }
-
-  const createdUsers = await insertRes.json();
-  const newUser = createdUsers[0];
-  const sessionToken = `direct_${newUser.id}_${Date.now()}`;
-  const authUser = mapRawUserToAuthUser(newUser);
-
-  setStoredSessionToken(sessionToken);
-  setStoredAuthUser(authUser);
-
-  return {
-    success: true,
-    message: 'Account created successfully!',
-    user: authUser,
-    sessionToken,
-  };
-}
-
-async function directSupabaseGetMe(): Promise<{ success: boolean; user: AuthUser }> {
-  const cachedUser = getStoredAuthUser();
-  const token = getStoredSessionToken();
-
-  if (!token) {
-    throw new Error('No active session.');
-  }
-
-  // If token is direct or we have cached user, verify fresh status from Supabase
-  if (cachedUser?.uid) {
-    try {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(
-        `${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(cachedUser.uid)}&select=*`,
-        {
-          headers: {
-            apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-            Accept: 'application/json',
-          },
-        }
-      );
-      if (res.ok) {
-        const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          const freshUser = mapRawUserToAuthUser(rows[0]);
-          setStoredAuthUser(freshUser);
-          return { success: true, user: freshUser };
-        }
-      }
-    } catch {}
-    return { success: true, user: cachedUser };
-  }
-
-  throw new Error('Session not found');
 }
 
 async function directSupabaseGetProfile(): Promise<{ success: boolean; profile: UserProfileData }> {
@@ -789,23 +561,15 @@ export const authApi = {
     password: string;
     confirmPassword: string;
   }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
-    try {
-      const data = await request('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (data.sessionToken) {
-        setStoredSessionToken(data.sessionToken);
-        if (data.user) setStoredAuthUser(data.user);
-      }
-      return data;
-    } catch (err: any) {
-      if (err.status === 400 || err.status === 409 || err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS' || err?.data?.code === 'MAINTENANCE_MODE') {
-        throw err;
-      }
-      console.warn('Backend register API unreachable, attempting direct registration:', err.message);
-      return await directSupabaseRegister(payload);
+    const data = await request('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.sessionToken) {
+      setStoredSessionToken(data.sessionToken);
+      if (data.user) setStoredAuthUser(data.user);
     }
+    return data;
   },
 
   async login(payload: {
@@ -813,29 +577,15 @@ export const authApi = {
     password: string;
     rememberMe?: boolean;
   }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
-    try {
-      const data = await request('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (data.sessionToken) {
-        setStoredSessionToken(data.sessionToken);
-        if (data.user) setStoredAuthUser(data.user);
-      }
-      return data;
-    } catch (err: any) {
-      // If server explicitly returned 401/403/429 or 503 Maintenance Mode, respect that
-      if (
-        err.status === 401 ||
-        err.status === 403 ||
-        err.status === 429 ||
-        err?.data?.code === 'MAINTENANCE_MODE'
-      ) {
-        throw err;
-      }
-      console.warn('Backend login API unreachable, falling back to direct Supabase authentication:', err.message);
-      return await directSupabaseLogin(payload);
+    const data = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.sessionToken) {
+      setStoredSessionToken(data.sessionToken);
+      if (data.user) setStoredAuthUser(data.user);
     }
+    return data;
   },
 
   async adminLogin(payload: {
@@ -843,29 +593,15 @@ export const authApi = {
     password: string;
     rememberMe?: boolean;
   }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
-    try {
-      const data = await request('/api/admin/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (data.sessionToken) {
-        setStoredSessionToken(data.sessionToken);
-        if (data.user) setStoredAuthUser(data.user);
-      }
-      return data;
-    } catch (err: any) {
-      if (err.status === 400 || err.status === 401 || err.status === 403 || err.status === 429) {
-        throw err;
-      }
-      // Fallback only if backend route itself is unreachable (e.g. non-JSON/network), still enforcing admin role
-      const fallbackRes = await directSupabaseLogin(payload);
-      if (!isAdminAccountRecord(fallbackRes.user)) {
-        setStoredSessionToken(null);
-        setStoredAuthUser(null);
-        throw new Error('Access Denied: This login portal is restricted to authorized administrators only.');
-      }
-      return fallbackRes;
+    const data = await request('/api/admin/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.sessionToken) {
+      setStoredSessionToken(data.sessionToken);
+      if (data.user) setStoredAuthUser(data.user);
     }
+    return data;
   },
 
   async logout(): Promise<void> {
@@ -890,7 +626,11 @@ export const authApi = {
       if (res?.user) setStoredAuthUser(res.user);
       return res;
     } catch (err: any) {
-      return await directSupabaseGetMe();
+      if (err?.status === 401 || err?.status === 403) {
+        setStoredSessionToken(null);
+        setStoredAuthUser(null);
+      }
+      throw err;
     }
   },
 

@@ -17,6 +17,7 @@ import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { budgetApi, UserBudget } from '../../lib/financialFeaturesApi';
 import { formatINR, getCurrentMonthName, getCurrentISTDate } from '../../lib/dateUtils';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 const DEFAULT_BUDGET_CATEGORIES = [
   { id: 'food', name: 'Food & Dining', icon: Utensils, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-900/50' },
@@ -39,6 +40,8 @@ export const BudgetSection: React.FC = () => {
   const [limitAmount, setLimitAmount] = useState<string>('');
   const [alertThreshold, setAlertThreshold] = useState<number>(85);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingDeleteBudget, setPendingDeleteBudget] = useState<{ id: string; catName: string } | null>(null);
+  const [isDeletingBudget, setIsDeletingBudget] = useState(false);
 
   // Load budgets from API
   const loadBudgets = async () => {
@@ -147,14 +150,22 @@ export const BudgetSection: React.FC = () => {
   };
 
   // Delete budget
-  const handleDeleteBudget = async (id: string, catName: string) => {
-    if (!confirm(`Are you sure you want to remove the budget for ${catName}?`)) return;
+  const handleDeleteBudget = (id: string, catName: string) => {
+    setPendingDeleteBudget({ id, catName });
+  };
+
+  const confirmDeleteBudget = async () => {
+    if (!pendingDeleteBudget || isDeletingBudget) return;
     try {
-      await budgetApi.deleteBudget(id);
-      toast.success('Budget Removed', `Budget for ${catName} deleted.`);
+      setIsDeletingBudget(true);
+      await budgetApi.deleteBudget(pendingDeleteBudget.id);
+      toast.success('Budget Removed', `Budget for ${pendingDeleteBudget.catName} deleted.`);
+      setPendingDeleteBudget(null);
       loadBudgets();
     } catch (err: any) {
       toast.error('Failed to delete', err.message);
+    } finally {
+      setIsDeletingBudget(false);
     }
   };
 
@@ -453,6 +464,18 @@ export const BudgetSection: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!pendingDeleteBudget}
+        title="Remove Category Budget?"
+        subtitle="Your expense history will not be affected."
+        message={`Are you sure you want to remove the budget for ${pendingDeleteBudget?.catName || ''}?`}
+        confirmLabel="Remove Budget"
+        isDestructive={true}
+        isLoading={isDeletingBudget}
+        onConfirm={confirmDeleteBudget}
+        onCancel={() => !isDeletingBudget && setPendingDeleteBudget(null)}
+      />
     </div>
   );
 };

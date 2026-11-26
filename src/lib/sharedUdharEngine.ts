@@ -522,6 +522,12 @@ export function canCancelUdhar(udhar: {
       reason: 'Settled Udhar records cannot be deleted or cancelled. Keep settled history for audit integrity.',
     };
   }
+  if (udhar.status === 'disputed') {
+    return {
+      allowed: false,
+      reason: 'Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history.',
+    };
+  }
 
   const paidAmt = parseFloat(String(udhar.paid_amount ?? 0)) || 0;
   const activeRepayments = (udhar.repayments || []).filter(

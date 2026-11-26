@@ -177,8 +177,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           setUser(authUser);
           setStoredAuthUser(authUser);
-          if (!getStoredSessionToken()) {
-            setStoredSessionToken(session.access_token || `direct_${session.user.id}_${Date.now()}`);
+          if (!getStoredSessionToken() && session.access_token) {
+            setStoredSessionToken(session.access_token);
           }
           setIsLoading(false);
           return;
@@ -242,10 +242,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email_verified: true,
             created_at: new Date().toISOString(),
           };
-          if (!apiSuccess) {
+          if (!apiSuccess && supaData.session?.access_token) {
             setUser(authUser);
             setStoredAuthUser(authUser);
-            setStoredSessionToken(supaData.session?.access_token || `direct_${supaData.user.id}_${Date.now()}`);
+            setStoredSessionToken(supaData.session.access_token);
             syncDeviceRegistration();
             return { success: true, message: 'Logged in successfully.' };
           }
@@ -381,6 +381,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email_verified: false,
               created_at: new Date().toISOString(),
             };
+            if (data.session?.access_token) {
+              setStoredSessionToken(data.session.access_token);
+            }
+            setStoredAuthUser(newUser);
             setUser(newUser);
             return { success: true, message: 'Account registered successfully!' };
           }
@@ -543,39 +547,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Admin: Toggle status
   const toggleUserStatus = async (targetUserId: string, newStatus: 'active' | 'suspended' | 'deactivated') => {
-    let apiMsg = '';
     try {
       const res = await authApi.adminUpdateUserStatus(targetUserId, newStatus);
-      apiMsg = res.message;
-    } catch {}
-
-    // Also update Supabase profiles
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        await supabase.from('profiles').update({ status: newStatus }).eq('id', targetUserId);
-      }
-    } catch {}
-
-    return { success: true, message: apiMsg || `Account status updated to ${newStatus}.` };
+      return { success: true, message: res.message || `Account status updated to ${newStatus}.` };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to update account status.' };
+    }
   };
 
   // Admin: Change role
   const adminUpdateUserRole = async (targetUserId: string, newRole: 'user' | 'admin') => {
-    let apiMsg = '';
     try {
       const res = await authApi.adminUpdateUserRole(targetUserId, newRole);
-      apiMsg = res.message;
-    } catch {}
-
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        await supabase.from('profiles').update({ role: newRole }).eq('id', targetUserId);
-      }
-    } catch {}
-
-    return { success: true, message: apiMsg || `User role updated to ${newRole}.` };
+      return { success: true, message: res.message || `User role updated to ${newRole}.` };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to update user role.' };
+    }
   };
 
   // Admin: Send reset email
@@ -610,23 +597,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Admin: Delete user
   const adminDeleteUser = async (targetUserId: string) => {
-    let apiMsg = '';
     try {
       const res = await authApi.adminDeleteUser(targetUserId);
-      if (res.success) {
-        apiMsg = res.message;
-      }
-    } catch {}
-
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        await supabase.from('profiles').delete().eq('id', targetUserId);
-        await supabase.from('transactions').delete().eq('user_id', targetUserId);
-      }
-    } catch {}
-
-    return { success: true, message: apiMsg || 'User deleted successfully.' };
+      return { success: Boolean(res.success), message: res.message || 'User deleted successfully.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to delete user.' };
+    }
   };
 
   // Admin: Audit logs

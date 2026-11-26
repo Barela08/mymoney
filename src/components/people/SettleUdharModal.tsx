@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { formatINR } from '../../lib/dateUtils';
 
@@ -9,7 +9,7 @@ interface SettleUdharModalProps {
   balance?: number;
   outstandingBalance?: number;
   isLoading?: boolean;
-  onConfirm?: () => void;
+  onConfirm?: (notes?: string) => void | Promise<void>;
   onSuccess?: () => void | Promise<void>;
 }
 
@@ -23,22 +23,42 @@ export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
   onConfirm,
   onSuccess,
 }) => {
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setNotes('');
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isLoading, onClose]);
+
   if (!isOpen) return null;
 
   const effectiveBal = balance !== undefined ? balance : (outstandingBalance ?? 0);
   const isPositive = effectiveBal > 0;
   const absBal = Math.abs(effectiveBal);
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
+    const cleanNotes = notes.trim() || undefined;
     if (onConfirm) {
-      onConfirm();
+      await onConfirm(cleanNotes);
     } else if (onSuccess) {
-      onSuccess();
+      await onSuccess();
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settle-udhar-title"
+    >
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
@@ -47,8 +67,8 @@ export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
               <CheckCircle2 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
-                Settle Balance
+              <h3 id="settle-udhar-title" className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                Confirm Settlement
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {personName}
@@ -56,8 +76,11 @@ export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            disabled={isLoading}
+            aria-label="Close modal"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -66,19 +89,35 @@ export const SettleUdharModal: React.FC<SettleUdharModalProps> = ({
         {/* Content */}
         <div className="p-5 space-y-4 text-xs">
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-center space-y-1">
-            <p className="text-slate-500 dark:text-slate-400 font-medium">Outstanding Amount</p>
+            <p className="text-slate-500 dark:text-slate-400 font-medium">Exact Settlement Amount</p>
             <p className={`text-2xl font-black ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
               {formatINR(absBal)}
             </p>
             <p className="text-[11px] font-semibold text-slate-500">
-              {isPositive ? `You will receive ${formatINR(absBal)}` : `You owe ${formatINR(absBal)}`}
+              {isPositive ? `You will receive ${formatINR(absBal)}` : `Outstanding balance ${formatINR(absBal)}`}
             </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="settle-note" className="block text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              Settlement Note (Optional)
+            </label>
+            <input
+              id="settle-note"
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={isLoading}
+              maxLength={180}
+              placeholder="e.g. Received in full via UPI"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+            />
           </div>
 
           <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-start gap-2.5 text-amber-800 dark:text-amber-200">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <p className="leading-relaxed text-[11px]">
-              Settling will record a balancing transaction to bring the outstanding amount with {personName} to ₹0. All past records remain permanently in your history.
+              Settling will mark this Udhar entry as settled (₹0 remaining) and preserve the full transaction &amp; settlement audit history for both participants.
             </p>
           </div>
 

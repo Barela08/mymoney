@@ -17,6 +17,7 @@ import {
   History,
   ShieldCheck,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -26,6 +27,8 @@ import {
   UdharEditHistoryItem,
 } from '../../lib/udharDeletionApi';
 import { formatINR, formatDisplayDate } from '../../lib/dateUtils';
+import { canCancelUdhar } from '../../lib/sharedUdharEngine';
+import { ConfirmModal } from '../common/ConfirmModal';
 import { EditUdharModal } from './EditUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
 import { SettleUdharModal } from './SettleUdharModal';
@@ -54,6 +57,8 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [isSettlingTx, setIsSettlingTx] = useState(false);
 
   // Reject dialog state
   const [rejectingRepaymentId, setRejectingRepaymentId] = useState<string | null>(null);
@@ -89,12 +94,55 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
 
   const isLender = transaction.direction === 'gave';
   const isTwoSided = Boolean(transaction.counterpart_user_id);
+  const canManageAsLender = !isTwoSided || isLender;
   const currentBal = parseFloat(String(transaction.current_balance)) || 0;
   const originalAmt = parseFloat(String(transaction.original_amount)) || 0;
   const paidAmt = Math.max(0, originalAmt - currentBal);
   const isSettled = transaction.status === 'settled' || currentBal <= 0.01;
+  const isCancelled = transaction.status === 'cancelled';
+  const cancelGuard = canCancelUdhar({
+    status: transaction.status,
+    paid_amount: paidAmt,
+    repayments: repaymentsList,
+  });
   const todayStr = new Date().toISOString().split('T')[0];
-  const isOverdue = transaction.due_date && transaction.due_date < todayStr && !isSettled && currentBal > 0;
+  const isOverdue = transaction.due_date && transaction.due_date < todayStr && !isSettled && !isCancelled && currentBal > 0;
+
+  const handleSettleTransaction = async (notes?: string) => {
+    try {
+      setIsSettlingTx(true);
+      const res = await udharDeletionApi.settleUdharTransaction(transaction.id, {
+        notes: notes || 'Settled in full',
+      });
+      if (res.success) {
+        toast.success('Udhar Settled', res.message || 'Transaction marked as settled.');
+        setIsSettleModalOpen(false);
+        await fetchDetails();
+        if (onRefreshUdhar) onRefreshUdhar();
+      }
+    } catch (err: any) {
+      toast.error('Settlement Failed', err.message || 'Could not settle this transaction.');
+    } finally {
+      setIsSettlingTx(false);
+    }
+  };
+
+  const handleCancelTransaction = async () => {
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.cancelUdharTransaction(transaction.id);
+      if (res.success) {
+        toast.success('Udhar Cancelled', res.message || 'Transaction cancelled.');
+        setIsCancelConfirmOpen(false);
+        if (onRefreshUdhar) onRefreshUdhar();
+        onClose();
+      }
+    } catch (err: any) {
+      toast.error('Cancellation Failed', err.message || 'Could not cancel this transaction.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
 
   const handleConfirmRepayment = async (repaymentId: string) => {
     try {
@@ -472,7 +520,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            {!isSettled && (
+            {!isSettled && !isCancelled && (
               <button
                 type="button"
                 onClick={() => setIsRepayModalOpen(true)}
@@ -483,7 +531,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && (
+            {!isSettled && !isCancelled && canManageAsLender && (
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(true)}
@@ -494,7 +542,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && isLender && (
+            {!isSettled && !isCancelled && canManageAsLender && transaction.status !== 'disputed' && (
               <button
                 type="button"
                 onClick={() => setIsSettleModalOpen(true)}
@@ -502,6 +550,17 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Settle Full</span>
+              </button>
+            )}
+
+            {!isSettled && !isCancelled && canManageAsLender && cancelGuard.allowed && (
+              <button
+                type="button"
+                onClick={() => setIsCancelConfirmOpen(true)}
+                className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Cancel</span>
               </button>
             )}
           </div>
@@ -540,14 +599,22 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
           isOpen={isSettleModalOpen}
           personName={transaction.counterpart_name}
           outstandingBalance={currentBal}
+          isLoading={isSettlingTx}
           onClose={() => setIsSettleModalOpen(false)}
-          onSuccess={async () => {
-            setIsSettleModalOpen(false);
-            await fetchDetails();
-            if (onRefreshUdhar) onRefreshUdhar();
-          }}
+          onConfirm={handleSettleTransaction}
         />
       )}
+
+      <ConfirmModal
+        isOpen={isCancelConfirmOpen}
+        title="Cancel Udhar Transaction?"
+        subtitle="Audit history is preserved; only this entry is cancelled."
+        message={`Cancel this individual Udhar entry of ${formatINR(originalAmt)} with ${transaction.counterpart_name}? Only this entry will be marked cancelled; all other entries and audit history remain preserved.`}
+        confirmLabel="Cancel Entry"
+        isDestructive={true}
+        onConfirm={handleCancelTransaction}
+        onCancel={() => setIsCancelConfirmOpen(false)}
+      />
     </>
   );
 };

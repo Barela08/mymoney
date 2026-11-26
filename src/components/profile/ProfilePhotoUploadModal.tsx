@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 interface ProfilePhotoUploadModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
   const [previewUrl, setPreviewUrl] = useState<string | null>(currentAvatarUrl || user?.avatarUrl || null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -124,15 +126,19 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
     }
   };
 
-  const handleRemovePhoto = async () => {
-    if (!confirm('Are you sure you want to remove your profile photo? Default avatar will be used.')) return;
+  const handleRemovePhoto = () => {
+    setIsRemoveConfirmOpen(true);
+  };
 
+  const confirmRemovePhoto = async () => {
+    if (isProcessing) return;
     try {
       setIsProcessing(true);
       const res = await updateUserProfile({ avatarUrl: '' });
       if (res.success) {
         toast.success('Photo Removed', 'Your profile photo was removed.');
         setPreviewUrl(null);
+        setIsRemoveConfirmOpen(false);
         if (onPhotoUpdated) onPhotoUpdated(null);
         onClose();
       } else {
@@ -237,6 +243,18 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={isRemoveConfirmOpen}
+        title="Remove Profile Photo?"
+        subtitle="Your default avatar initials will be shown instead."
+        message="Are you sure you want to remove your profile photo? Default avatar will be used."
+        confirmLabel="Remove Photo"
+        isDestructive={true}
+        isLoading={isProcessing}
+        onConfirm={confirmRemovePhoto}
+        onCancel={() => !isProcessing && setIsRemoveConfirmOpen(false)}
+      />
     </div>
   );
 };
