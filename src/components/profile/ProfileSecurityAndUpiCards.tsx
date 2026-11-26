@@ -17,18 +17,20 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { authApi, type SecurityMethodsData } from '../../lib/authApi';
-import { upiProfileApi } from '../../lib/upiProfileApi';
-import type { UpiProfileRecord } from '../../lib/upiQrUtils';
+import { upiProfileApi, type UpiProfileChangedDetail } from '../../lib/upiProfileApi';
+import { doesUpiProfileBelongToUser, type UpiProfileRecord } from '../../lib/upiQrUtils';
 import { UpiSetupModal } from '../upi/UpiSetupModal';
 import { isPasskeySupported, registerPasskeyOnDevice } from '../../lib/webauthnClient';
 import { isFirebaseGoogleConfigured, signInWithFirebaseGoogle } from '../../lib/firebaseClient';
 
 export const ProfileSecurityAndUpiCards: React.FC = () => {
   const { user } = useAuth();
+  const currentUserId = user?.id || user?.uid || null;
 
   // Saved UPI QR state
   const [upiProfile, setUpiProfile] = useState<UpiProfileRecord | null>(null);
   const [upiConsentStatus, setUpiConsentStatus] = useState<'granted' | 'withdrawn' | 'not_granted'>('not_granted');
+  const [upiConsentVersion, setUpiConsentVersion] = useState<string | null>(null);
   const [upiLoading, setUpiLoading] = useState(true);
   const [upiModalOpen, setUpiModalOpen] = useState(false);
   const [removeUpiOpen, setRemoveUpiOpen] = useState(false);
@@ -43,18 +45,31 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
   const [removingPasskeyId, setRemovingPasskeyId] = useState<string | null>(null);
   const [googleActionLoading, setGoogleActionLoading] = useState(false);
 
-  const loadAll = useCallback(async () => {
-    if (!user) return;
+  const loadAll = useCallback(async (forceUpiRefresh = false) => {
+    if (!currentUserId) {
+      setUpiProfile(null);
+      setUpiConsentStatus('not_granted');
+      setUpiConsentVersion(null);
+      setUpiLoading(false);
+      setSecLoading(false);
+      return;
+    }
     setUpiLoading(true);
     setSecLoading(true);
     try {
       const [upiRes, secRes] = await Promise.allSettled([
-        upiProfileApi.getProfile(),
+        upiProfileApi.getProfile({ forceRefresh: forceUpiRefresh }),
         authApi.getSecurityMethods(),
       ]);
       if (upiRes.status === 'fulfilled' && upiRes.value.success) {
-        setUpiProfile(upiRes.value.profile || null);
+        const owned =
+          upiRes.value.consentStatus !== 'withdrawn' &&
+          doesUpiProfileBelongToUser(upiRes.value.profile, currentUserId)
+            ? upiRes.value.profile
+            : null;
+        setUpiProfile(owned);
         setUpiConsentStatus(upiRes.value.consentStatus || 'not_granted');
+        setUpiConsentVersion(upiRes.value.consentVersion ?? null);
       }
       if (secRes.status === 'fulfilled' && secRes.value.success) {
         setSecurity(secRes.value.security);
@@ -63,11 +78,29 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
       setUpiLoading(false);
       setSecLoading(false);
     }
-  }, [user]);
+  }, [currentUserId]);
 
   useEffect(() => {
     loadAll();
-  }, [loadAll]);
+    const onUpiChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<UpiProfileChangedDetail | undefined>).detail;
+      if (detail) {
+        if (detail.userId && currentUserId && detail.userId !== currentUserId) return;
+        const owned =
+          detail.consentStatus !== 'withdrawn' &&
+          doesUpiProfileBelongToUser(detail.profile, currentUserId)
+            ? detail.profile
+            : null;
+        setUpiProfile(owned);
+        setUpiConsentStatus(detail.consentStatus || 'not_granted');
+        if (detail.consentVersion !== undefined) setUpiConsentVersion(detail.consentVersion);
+        return;
+      }
+      void loadAll(true);
+    };
+    window.addEventListener('my-money-upi-profile-changed', onUpiChanged);
+    return () => window.removeEventListener('my-money-upi-profile-changed', onUpiChanged);
+  }, [loadAll, currentUserId]);
 
   const handleRemoveUpi = async () => {
     setRemovingUpi(true);
@@ -414,6 +447,8 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
         onClose={() => setUpiModalOpen(false)}
         defaultPayeeName={defaultPayeeName}
         existingProfile={upiProfile}
+        consentStatus={upiConsentStatus}
+        consentVersion={upiConsentVersion}
         source="settings_upi_qr"
         onSaved={(saved) => {
           setUpiProfile(saved);

@@ -8,6 +8,7 @@ import {
 } from '../lib/authApi';
 import { getSupabaseClient } from '../lib/supabase';
 import { syncDeviceRegistration } from './PwaInstallContext';
+import { clearUpiProfileCache } from '../lib/upiProfileApi';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -191,6 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    clearUpiProfileCache();
     setUser(null);
     setIsLoading(false);
   }, []);
@@ -411,6 +413,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authApi.logout();
     } finally {
+      clearUpiProfileCache();
       setUser(null);
       setStoredSessionToken(null);
       setStoredAuthUser(null);
@@ -422,6 +425,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authApi.logoutAllDevices();
     } finally {
+      clearUpiProfileCache();
       setUser(null);
       setStoredSessionToken(null);
       setStoredAuthUser(null);

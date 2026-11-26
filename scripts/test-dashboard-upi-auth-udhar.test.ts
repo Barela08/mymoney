@@ -5,11 +5,14 @@ import {
   validateUpiId,
   validateAmountForUpiQr,
   canSaveUpiProfile,
+  shouldRequireUpiConsent,
+  doesUpiProfileBelongToUser,
   buildNormalUpiUri,
   buildAmountUpiUri,
   UPI_CONSENT_WORDING,
   UPI_PRIVACY_NOTICE,
   UPI_CONSENT_PURPOSE,
+  UPI_CONSENT_POLICY_VERSION,
 } from '../src/lib/upiQrUtils';
 import {
   issueWebAuthnChallenge,
@@ -350,4 +353,94 @@ test('validateAmountForUpiQr and buildAmountUpiUri enforce INR precision and upp
   const uri = buildAmountUpiUri({ upiId: 'demo@okaxis', amount: '100.5' });
   assert.equal(uri, 'upi://pay?pa=demo%40okaxis&am=100.50&cu=INR');
 });
+
+test('shouldRequireUpiConsent avoids repeated consent when valid active consent matches current version', () => {
+  // First-time user always requires explicit consent
+  assert.equal(
+    shouldRequireUpiConsent({
+      hasSavedProfile: false,
+      consentStatus: 'granted',
+      consentVersion: UPI_CONSENT_POLICY_VERSION,
+    }),
+    true
+  );
+
+  // Saved profile with matching granted version does NOT require repeated consent
+  assert.equal(
+    shouldRequireUpiConsent({
+      hasSavedProfile: true,
+      consentStatus: 'granted',
+      consentVersion: UPI_CONSENT_POLICY_VERSION,
+    }),
+    false
+  );
+
+  // Saved profile with withdrawn or not_granted consent DOES require consent
+  assert.equal(
+    shouldRequireUpiConsent({
+      hasSavedProfile: true,
+      consentStatus: 'withdrawn',
+      consentVersion: UPI_CONSENT_POLICY_VERSION,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRequireUpiConsent({
+      hasSavedProfile: true,
+      consentStatus: 'not_granted',
+      consentVersion: null,
+    }),
+    true
+  );
+
+  // Outdated policy version requires fresh consent
+  assert.equal(
+    shouldRequireUpiConsent({
+      hasSavedProfile: true,
+      consentStatus: 'granted',
+      consentVersion: 'v1.0 — legacy',
+    }),
+    true
+  );
+
+  // Editing an already-consented profile works when hasExistingValidConsent is true
+  assert.equal(
+    canSaveUpiProfile({
+      upiId: 'updated.name@ybl',
+      consentAccepted: false,
+      hasExistingValidConsent: true,
+    }).allowed,
+    true
+  );
+  assert.equal(
+    canSaveUpiProfile({
+      upiId: 'invalid@gmail.com',
+      consentAccepted: false,
+      hasExistingValidConsent: true,
+    }).allowed,
+    false
+  );
+});
+
+test('doesUpiProfileBelongToUser enforces strict per-user UPI ownership isolation', () => {
+  const userA = '11111111-1111-4111-8111-111111111111';
+  const userB = '22222222-2222-4222-8222-222222222222';
+  const profileA = {
+    id: 'upi-1',
+    userId: userA,
+    upiId: 'usera@okaxis',
+    payeeName: 'User A',
+    paymentNote: '',
+  };
+
+  assert.equal(doesUpiProfileBelongToUser(profileA, userA), true);
+  assert.equal(doesUpiProfileBelongToUser(profileA, userB), false);
+  assert.equal(doesUpiProfileBelongToUser(profileA, null), false);
+  assert.equal(doesUpiProfileBelongToUser(null, userA), false);
+  assert.equal(
+    doesUpiProfileBelongToUser({ ...profileA, upiId: '' }, userA),
+    false
+  );
+});
+
 

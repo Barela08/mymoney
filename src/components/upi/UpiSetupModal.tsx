@@ -14,8 +14,10 @@ import {
 import {
   UPI_CONSENT_WORDING,
   UPI_PRIVACY_NOTICE,
+  UPI_CONSENT_POLICY_VERSION,
   validateUpiId,
   canSaveUpiProfile,
+  shouldRequireUpiConsent,
   type UpiProfileRecord,
 } from '../../lib/upiQrUtils';
 import { upiProfileApi } from '../../lib/upiProfileApi';
@@ -25,6 +27,8 @@ interface UpiSetupModalProps {
   onClose: () => void;
   defaultPayeeName: string;
   existingProfile?: UpiProfileRecord | null;
+  consentStatus?: 'granted' | 'withdrawn' | 'not_granted';
+  consentVersion?: string | null;
   source?: 'upi_qr_setup' | 'settings_upi_qr';
   onSaved: (profile: UpiProfileRecord) => void;
 }
@@ -34,25 +38,34 @@ export const UpiSetupModal: React.FC<UpiSetupModalProps> = ({
   onClose,
   defaultPayeeName,
   existingProfile,
+  consentStatus = 'not_granted',
+  consentVersion = null,
   source = 'upi_qr_setup',
   onSaved,
 }) => {
   const [upiId, setUpiId] = useState('');
   const [payeeName, setPayeeName] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
-  // CRITICAL DPDP RULE: Always unchecked by default!
+  // CRITICAL DPDP RULE: Always unchecked by default whenever consent is required!
   const [consentChecked, setConsentChecked] = useState(false);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touchedUpi, setTouchedUpi] = useState(false);
 
+  const isEditing = Boolean(existingProfile?.upiId);
+  const requiresConsent = shouldRequireUpiConsent({
+    hasSavedProfile: isEditing,
+    consentStatus,
+    consentVersion,
+  });
+
   useEffect(() => {
     if (isOpen) {
       setUpiId(existingProfile?.upiId || '');
       setPayeeName(existingProfile?.payeeName || defaultPayeeName || '');
       setPaymentNote(existingProfile?.paymentNote || '');
-      // Always start unchecked so explicit affirmative consent is required on every setup/save
+      // Always start unchecked whenever explicit consent is required
       setConsentChecked(false);
       setShowPrivacyNotice(false);
       setError(null);
@@ -63,8 +76,11 @@ export const UpiSetupModal: React.FC<UpiSetupModalProps> = ({
   if (!isOpen) return null;
 
   const upiCheck = validateUpiId(upiId);
-  const saveGate = canSaveUpiProfile({ upiId, consentAccepted: consentChecked });
-  const isEditing = Boolean(existingProfile?.upiId);
+  const saveGate = canSaveUpiProfile({
+    upiId,
+    consentAccepted: consentChecked,
+    hasExistingValidConsent: !requiresConsent,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +99,7 @@ export const UpiSetupModal: React.FC<UpiSetupModalProps> = ({
             upiId: upiCheck.normalized,
             payeeName: payeeName.trim(),
             paymentNote: paymentNote.trim(),
-            consentAccepted: true,
+            ...(requiresConsent ? { consentAccepted: true } : {}),
             source,
           })
         : await upiProfileApi.saveProfile({
@@ -240,20 +256,32 @@ export const UpiSetupModal: React.FC<UpiSetupModalProps> = ({
             </span>
           </div>
 
-          {/* Mandatory DPDP Consent Gate (Unchecked by Default) */}
+          {/* Mandatory DPDP Consent Gate (Unchecked by Default for First-Time / Withdrawn) */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-emerald-50/40 dark:bg-emerald-950/20 p-3.5 space-y-2.5">
-            <label className="flex items-start gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={consentChecked}
-                onChange={(e) => setConsentChecked(e.target.checked)}
-                data-testid="upi-consent-checkbox"
-                className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 shrink-0"
-              />
-              <span className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-                {UPI_CONSENT_WORDING}
-              </span>
-            </label>
+            {requiresConsent ? (
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  data-testid="upi-consent-checkbox"
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                />
+                <span className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+                  {UPI_CONSENT_WORDING}
+                </span>
+              </label>
+            ) : (
+              <div
+                data-testid="upi-consent-already-granted"
+                className="flex items-start gap-2.5 text-xs text-emerald-800 dark:text-emerald-300"
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  DPDP consent is already active for your saved UPI QR ({consentVersion || UPI_CONSENT_POLICY_VERSION}). You can update your UPI details without re-consenting.
+                </span>
+              </div>
+            )}
 
             <div className="pl-6">
               <button

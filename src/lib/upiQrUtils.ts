@@ -135,11 +135,37 @@ export function validateAmountForUpiQr(raw: string | number): AmountValidationRe
   return { isValid: true, amount: num, formatted };
 }
 
-export function canSaveUpiProfile(input: { upiId: string; consentAccepted: boolean }): {
+export function shouldRequireUpiConsent(params: {
+  hasSavedProfile: boolean;
+  consentStatus?: 'granted' | 'withdrawn' | 'not_granted' | string | null;
+  consentVersion?: string | null;
+}): boolean {
+  if (!params.hasSavedProfile) return true;
+  if (params.consentStatus !== 'granted') return true;
+  if (params.consentVersion && params.consentVersion !== UPI_CONSENT_POLICY_VERSION) {
+    return true;
+  }
+  return false;
+}
+
+export function doesUpiProfileBelongToUser(
+  profile: UpiProfileRecord | null | undefined,
+  authenticatedUserId: string | null | undefined
+): boolean {
+  if (!profile || !profile.upiId || !authenticatedUserId) return false;
+  if (profile.userId && profile.userId !== authenticatedUserId) return false;
+  return true;
+}
+
+export function canSaveUpiProfile(input: {
+  upiId: string;
+  consentAccepted: boolean;
+  hasExistingValidConsent?: boolean;
+}): {
   allowed: boolean;
   reason?: string;
 } {
-  if (!input.consentAccepted) {
+  if (!input.consentAccepted && !input.hasExistingValidConsent) {
     return {
       allowed: false,
       reason: 'Please check the consent box before saving your UPI ID.',
@@ -207,3 +233,35 @@ export function buildAmountUpiUri(params: {
 
   return `upi://pay?${pairs.join('&')}`;
 }
+
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to execCommand fallback (e.g., post-async user gesture or restricted clipboard permissions)
+    }
+  }
+  if (typeof document !== 'undefined') {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return copied;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+

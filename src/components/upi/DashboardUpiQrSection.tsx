@@ -20,11 +20,13 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { upiProfileApi } from '../../lib/upiProfileApi';
+import { upiProfileApi, type UpiProfileChangedDetail } from '../../lib/upiProfileApi';
 import {
   buildNormalUpiUri,
   buildAmountUpiUri,
+  copyTextToClipboard,
   validateAmountForUpiQr,
+  doesUpiProfileBelongToUser,
   type UpiProfileRecord,
 } from '../../lib/upiQrUtils';
 import { UpiSetupModal } from './UpiSetupModal';
@@ -62,7 +64,10 @@ const QrCanvas: React.FC<{ value: string; size: number; level?: 'L' | 'M' | 'Q' 
 
 export const DashboardUpiQrSection: React.FC = () => {
   const { user } = useAuth();
+  const currentUserId = user?.id || user?.uid || null;
   const [profile, setProfile] = useState<UpiProfileRecord | null>(null);
+  const [consentStatus, setConsentStatus] = useState<'granted' | 'withdrawn' | 'not_granted'>('not_granted');
+  const [consentVersion, setConsentVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [pendingModeAfterSetup, setPendingModeAfterSetup] = useState<QrMode>('normal');
@@ -84,29 +89,57 @@ export const DashboardUpiQrSection: React.FC = () => {
   const defaultPayeeName =
     user?.full_name || user?.displayName || user?.email?.split('@')[0] || '';
 
-  const loadUpiProfile = useCallback(async () => {
-    if (!user) return;
+  const loadUpiProfile = useCallback(async (forceRefresh = false) => {
+    if (!currentUserId) {
+      setProfile(null);
+      setConsentStatus('not_granted');
+      setConsentVersion(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await upiProfileApi.getProfile();
+      const res = await upiProfileApi.getProfile({ forceRefresh });
       if (res.success) {
-        setProfile(res.profile || null);
+        const validOwned =
+          res.consentStatus !== 'withdrawn' && doesUpiProfileBelongToUser(res.profile, currentUserId)
+            ? res.profile
+            : null;
+        setProfile(validOwned);
+        setConsentStatus(res.consentStatus || 'not_granted');
+        setConsentVersion(res.consentVersion ?? null);
       }
     } catch {
       // Keep UI usable even if transient network error occurs
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [currentUserId]);
 
   useEffect(() => {
-    loadUpiProfile();
-    const onChanged = () => {
-      void loadUpiProfile();
+    setProfile(null);
+    setGeneratedAmount(null);
+    setQrModalOpen(false);
+    void loadUpiProfile();
+    const onChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<UpiProfileChangedDetail | undefined>).detail;
+      if (detail) {
+        if (detail.userId && currentUserId && detail.userId !== currentUserId) return;
+        const owned =
+          detail.consentStatus !== 'withdrawn' && doesUpiProfileBelongToUser(detail.profile, currentUserId)
+            ? detail.profile
+            : null;
+        setProfile(owned);
+        setConsentStatus(detail.consentStatus || 'not_granted');
+        if (detail.consentVersion !== undefined) setConsentVersion(detail.consentVersion);
+        setQrVersion((v) => v + 1);
+        return;
+      }
+      void loadUpiProfile(true);
     };
     window.addEventListener('my-money-upi-profile-changed', onChanged);
     return () => window.removeEventListener('my-money-upi-profile-changed', onChanged);
-  }, [loadUpiProfile]);
+  }, [loadUpiProfile, currentUserId]);
 
   const handleOpenMyQr = (mode: QrMode = 'normal') => {
     if (!profile?.upiId) {
@@ -125,6 +158,7 @@ export const DashboardUpiQrSection: React.FC = () => {
 
   const handleUpiSaved = (saved: UpiProfileRecord) => {
     setProfile(saved);
+    setConsentStatus('granted');
     setQrMode(pendingModeAfterSetup);
     setQrVersion((v) => v + 1);
     setQrModalOpen(true);
@@ -173,20 +207,20 @@ export const DashboardUpiQrSection: React.FC = () => {
 
   const handleCopyUpi = async () => {
     if (!profile?.upiId) return;
-    try {
-      await navigator.clipboard.writeText(profile.upiId);
+    const ok = await copyTextToClipboard(profile.upiId);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
-    } catch {}
+    }
   };
 
   const handleCopyPaymentLink = async () => {
     if (!activeQrUri) return;
-    try {
-      await navigator.clipboard.writeText(activeQrUri);
+    const ok = await copyTextToClipboard(activeQrUri);
+    if (ok) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 1800);
-    } catch {}
+    }
   };
 
   const buildStyledQrPngBlob = async (): Promise<Blob | null> => {
@@ -272,15 +306,21 @@ export const DashboardUpiQrSection: React.FC = () => {
           return;
         }
       }
-      if (nav.share) {
+      if (typeof nav.share === 'function') {
         await nav.share({ title: shareTitle, text: shareText, url: activeQrUri });
         return;
       }
-      await navigator.clipboard.writeText(`${shareText} (${activeQrUri})`);
-      setShareFeedback('UPI payment link copied to clipboard.');
-      setTimeout(() => setShareFeedback(null), 2200);
+      const ok = await copyTextToClipboard(`${shareText} (${activeQrUri})`);
+      if (ok) {
+        setShareFeedback('UPI payment link copied to clipboard.');
+        setTimeout(() => setShareFeedback(null), 2200);
+      }
     } catch {
-      // User dismissed share sheet
+      const ok = await copyTextToClipboard(`${shareText} (${activeQrUri})`);
+      if (ok) {
+        setShareFeedback('UPI payment link copied to clipboard.');
+        setTimeout(() => setShareFeedback(null), 2200);
+      }
     }
   };
 
@@ -480,6 +520,8 @@ export const DashboardUpiQrSection: React.FC = () => {
         onClose={() => setSetupModalOpen(false)}
         defaultPayeeName={defaultPayeeName}
         existingProfile={profile}
+        consentStatus={consentStatus}
+        consentVersion={consentVersion}
         source="upi_qr_setup"
         onSaved={handleUpiSaved}
       />

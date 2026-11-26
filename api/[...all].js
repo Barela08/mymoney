@@ -92711,16 +92711,28 @@ async function recordUpiConsentEvent(authUser, status, source, clientIp, userAge
   }).catch(() => {
   });
 }
-async function getLatestUpiConsentStatus(authUser) {
+async function getLatestUpiConsentInfo(authUser) {
   if (isDatabaseAvailable()) {
     try {
       const r2 = await query(
-        `SELECT COALESCE(consent_status, status) AS st FROM public.user_consents
-         WHERE user_id = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT COALESCE(consent_status, status) AS st, policy_version
+         FROM public.user_consents
+         WHERE user_id = $1 AND purpose = $2
+         ORDER BY created_at DESC LIMIT 1`,
         [authUser.id, UPI_CONSENT_PURPOSE]
       );
-      const st = r2.rows[0]?.st;
-      if (st === "granted" || st === "withdrawn") return st;
+      const row = r2.rows[0];
+      const st = row?.st;
+      const pv = row?.policy_version ? String(row.policy_version) : null;
+      if (st === "withdrawn") {
+        return { status: "withdrawn", policyVersion: pv };
+      }
+      if (st === "granted") {
+        if (pv && pv !== UPI_CONSENT_POLICY_VERSION) {
+          return { status: "not_granted", policyVersion: pv };
+        }
+        return { status: "granted", policyVersion: pv || UPI_CONSENT_POLICY_VERSION };
+      }
     } catch {
     }
   }
@@ -92729,9 +92741,22 @@ async function getLatestUpiConsentStatus(authUser) {
   const latest = rows.find((r2) => r2.purpose === UPI_CONSENT_PURPOSE);
   if (latest) {
     const st = latest.consent_status || latest.status;
-    if (st === "granted" || st === "withdrawn") return st;
+    const pv = latest.policy_version ? String(latest.policy_version) : null;
+    if (st === "withdrawn") {
+      return { status: "withdrawn", policyVersion: pv };
+    }
+    if (st === "granted") {
+      if (pv && pv !== UPI_CONSENT_POLICY_VERSION) {
+        return { status: "not_granted", policyVersion: pv };
+      }
+      return { status: "granted", policyVersion: pv || UPI_CONSENT_POLICY_VERSION };
+    }
   }
-  return "not_granted";
+  return { status: "not_granted", policyVersion: null };
+}
+async function getLatestUpiConsentStatus(authUser) {
+  const info = await getLatestUpiConsentInfo(authUser);
+  return info.status;
 }
 async function findIdentityByProviderUid(provider, providerUid) {
   if (isDatabaseAvailable()) {
@@ -93165,14 +93190,17 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       sendJson2(res, 401, { success: false, message: "Authentication required." });
       return true;
     }
-    const [profile, consentStatus] = await Promise.all([
+    const [rawProfile, consentInfo] = await Promise.all([
       getSavedUpiProfileForUser(authUser.id),
-      getLatestUpiConsentStatus(authUser)
+      getLatestUpiConsentInfo(authUser)
     ]);
+    const ownedProfile = rawProfile && (!rawProfile.userId || rawProfile.userId === authUser.id) ? rawProfile : null;
+    const profile = consentInfo.status === "withdrawn" ? null : ownedProfile;
     sendJson2(res, 200, {
       success: true,
       profile,
-      consentStatus
+      consentStatus: consentInfo.status,
+      consentVersion: consentInfo.policyVersion
     });
     return true;
   }
@@ -93195,7 +93223,8 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       return true;
     }
     const consentAccepted = body.consentAccepted === true;
-    const existingConsent = await getLatestUpiConsentStatus(authUser);
+    const consentInfo = await getLatestUpiConsentInfo(authUser);
+    const existingConsent = consentInfo.status;
     const existingProfile = await getSavedUpiProfileForUser(authUser.id);
     if (!consentAccepted && (existingConsent !== "granted" || !existingProfile || body.consentAccepted === false)) {
       sendJson2(res, 400, {
@@ -93227,7 +93256,8 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       success: true,
       message: "Your UPI QR details have been securely saved.",
       profile: saved,
-      consentStatus: "granted"
+      consentStatus: "granted",
+      consentVersion: UPI_CONSENT_POLICY_VERSION
     });
     return true;
   }

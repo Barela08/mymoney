@@ -397,16 +397,33 @@ async function recordUpiConsentEvent(
   }).catch(() => {});
 }
 
-async function getLatestUpiConsentStatus(authUser: AuthenticatedUser): Promise<'granted' | 'withdrawn' | 'not_granted'> {
+interface UpiConsentInfo {
+  status: 'granted' | 'withdrawn' | 'not_granted';
+  policyVersion: string | null;
+}
+
+async function getLatestUpiConsentInfo(authUser: AuthenticatedUser): Promise<UpiConsentInfo> {
   if (isDatabaseAvailable()) {
     try {
       const r = await query(
-        `SELECT COALESCE(consent_status, status) AS st FROM public.user_consents
-         WHERE user_id = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT COALESCE(consent_status, status) AS st, policy_version
+         FROM public.user_consents
+         WHERE user_id = $1 AND purpose = $2
+         ORDER BY created_at DESC LIMIT 1`,
         [authUser.id, UPI_CONSENT_PURPOSE]
       );
-      const st = r.rows[0]?.st;
-      if (st === 'granted' || st === 'withdrawn') return st;
+      const row = r.rows[0];
+      const st = row?.st;
+      const pv = row?.policy_version ? String(row.policy_version) : null;
+      if (st === 'withdrawn') {
+        return { status: 'withdrawn', policyVersion: pv };
+      }
+      if (st === 'granted') {
+        if (pv && pv !== UPI_CONSENT_POLICY_VERSION) {
+          return { status: 'not_granted', policyVersion: pv };
+        }
+        return { status: 'granted', policyVersion: pv || UPI_CONSENT_POLICY_VERSION };
+      }
     } catch {}
   }
   const restRes = await getPrivacyConsentsRest(authUser);
@@ -414,9 +431,23 @@ async function getLatestUpiConsentStatus(authUser: AuthenticatedUser): Promise<'
   const latest = rows.find((r) => r.purpose === UPI_CONSENT_PURPOSE);
   if (latest) {
     const st = latest.consent_status || latest.status;
-    if (st === 'granted' || st === 'withdrawn') return st;
+    const pv = latest.policy_version ? String(latest.policy_version) : null;
+    if (st === 'withdrawn') {
+      return { status: 'withdrawn', policyVersion: pv };
+    }
+    if (st === 'granted') {
+      if (pv && pv !== UPI_CONSENT_POLICY_VERSION) {
+        return { status: 'not_granted', policyVersion: pv };
+      }
+      return { status: 'granted', policyVersion: pv || UPI_CONSENT_POLICY_VERSION };
+    }
   }
-  return 'not_granted';
+  return { status: 'not_granted', policyVersion: null };
+}
+
+async function getLatestUpiConsentStatus(authUser: AuthenticatedUser): Promise<'granted' | 'withdrawn' | 'not_granted'> {
+  const info = await getLatestUpiConsentInfo(authUser);
+  return info.status;
 }
 
 // ============================================================================
@@ -917,14 +948,21 @@ export async function handleUserAccountExtensions(
       sendJson(res, 401, { success: false, message: 'Authentication required.' });
       return true;
     }
-    const [profile, consentStatus] = await Promise.all([
+    const [rawProfile, consentInfo] = await Promise.all([
       getSavedUpiProfileForUser(authUser.id),
-      getLatestUpiConsentStatus(authUser),
+      getLatestUpiConsentInfo(authUser),
     ]);
+    // Strict ownership & consent withdrawal enforcement
+    const ownedProfile =
+      rawProfile && (!rawProfile.userId || rawProfile.userId === authUser.id)
+        ? rawProfile
+        : null;
+    const profile = consentInfo.status === 'withdrawn' ? null : ownedProfile;
     sendJson(res, 200, {
       success: true,
       profile,
-      consentStatus,
+      consentStatus: consentInfo.status,
+      consentVersion: consentInfo.policyVersion,
     });
     return true;
   }
@@ -950,10 +988,11 @@ export async function handleUserAccountExtensions(
     }
 
     const consentAccepted = body.consentAccepted === true;
-    const existingConsent = await getLatestUpiConsentStatus(authUser);
+    const consentInfo = await getLatestUpiConsentInfo(authUser);
+    const existingConsent = consentInfo.status;
     const existingProfile = await getSavedUpiProfileForUser(authUser.id);
 
-    // Require explicit consent checkbox acceptance on first save, when consent was previously withdrawn/not granted, or whenever caller provides consentAccepted: false
+    // Require explicit consent checkbox acceptance on first save, when consent was previously withdrawn/not granted/outdated version, or whenever caller provides consentAccepted: false
     if (!consentAccepted && (existingConsent !== 'granted' || !existingProfile || body.consentAccepted === false)) {
       sendJson(res, 400, {
         success: false,
@@ -989,6 +1028,7 @@ export async function handleUserAccountExtensions(
       message: 'Your UPI QR details have been securely saved.',
       profile: saved,
       consentStatus: 'granted',
+      consentVersion: UPI_CONSENT_POLICY_VERSION,
     });
     return true;
   }
