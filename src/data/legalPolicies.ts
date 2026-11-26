@@ -262,7 +262,7 @@ export const LEGAL_POLICIES: LegalPolicyItem[] = [
       {
         title: '1. Password Policy Requirements',
         content: [
-          'Passwords must be at least 12 characters in length and no longer than 128 characters.',
+          'Passwords must be at least 8 characters in length and no longer than 128 characters.',
           'Commonly breached and easily guessed sequences (e.g., "password1234") are rejected automatically.',
           'Passwords must demonstrate character diversity including letters, numbers, and symbols.',
         ],

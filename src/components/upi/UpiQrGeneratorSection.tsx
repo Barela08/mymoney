@@ -267,39 +267,73 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
             </button>
           </div>
 
-          {/* Mode Selector: Normal vs Fixed Amount */}
-          <div className="space-y-1.5">
+          {/* QR Type Options & Explicit Generation Buttons */}
+          <div className="space-y-3">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              QR Type / Mode
+              QR Generation Options
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
-                onClick={() => setMode('normal')}
-                className={`p-3 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                id="btn-generate-normal-qr"
+                onClick={() => {
+                  setMode('normal');
+                  if (!vpaTrimmed) {
+                    toast.error('UPI ID Required', 'Please enter your UPI ID first.');
+                  } else if (!isVpaValid) {
+                    toast.error('Invalid UPI ID', 'Please enter a valid UPI format (e.g. name@bank).');
+                  } else {
+                    toast.success('Normal UPI QR Active', 'Payer will enter an open amount in their UPI app.');
+                  }
+                }}
+                className={`p-3.5 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
                   mode === 'normal'
-                    ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                    ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 shadow-sm ring-1 ring-indigo-500/30'
                     : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                 }`}
               >
-                <div className="font-bold">Normal QR (Open Amount)</div>
-                <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
-                  Payer enters any amount in their UPI app
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-sm">Option A: Normal UPI QR</span>
+                  {mode === 'normal' && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                </div>
+                <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1">
+                  Generate a QR without a fixed amount. The payer can enter an amount in their UPI app.
                 </div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setMode('fixed')}
-                className={`p-3 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                id="btn-generate-amount-qr"
+                onClick={() => {
+                  setMode('fixed');
+                  if (!vpaTrimmed) {
+                    toast.error('UPI ID Required', 'Please enter your UPI ID first.');
+                    return;
+                  }
+                  if (!isVpaValid) {
+                    toast.error('Invalid UPI ID', 'Please enter a valid UPI format.');
+                    return;
+                  }
+                  if (!amount || isNaN(numAmount) || numAmount <= 0) {
+                    toast.error('Amount Required', 'Please enter an amount greater than zero.');
+                    const el = document.getElementById('upi-qr-amount-input');
+                    if (el) el.focus();
+                    return;
+                  }
+                  toast.success('Amount QR Generated', `Fixed amount of ₹${numAmount.toFixed(2)} encoded into QR.`);
+                }}
+                className={`p-3.5 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer ${
                   mode === 'fixed'
-                    ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                    ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 shadow-sm ring-1 ring-emerald-500/30'
                     : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                 }`}
               >
-                <div className="font-bold">Fixed Amount QR</div>
-                <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
-                  Pre-fills exact rupee amount for instant payment
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-sm">Option B: Amount QR</span>
+                  {mode === 'fixed' && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
+                </div>
+                <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1">
+                  Click <strong>Generate Amount QR</strong> to validate &amp; encode the exact amount.
                 </div>
               </button>
             </div>
@@ -359,46 +393,49 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
               </p>
             </div>
 
-            {/* Amount (Only if Fixed mode) */}
-            {mode === 'fixed' && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Exact Amount (INR ₹) <span className="text-rose-500">*</span>
-                  </label>
-                  {amount && (
-                    <span
-                      className={`text-[11px] font-bold ${
-                        isAmountValid ? 'text-emerald-600' : 'text-rose-500'
-                      }`}
-                    >
-                      {isAmountValid
-                        ? formatINR(numAmount)
-                        : 'Enter a valid amount > ₹0'}
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold">
-                    ₹
-                  </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="1"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="e.g. 500"
-                    className="block w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-indigo-500"
-                  />
-                </div>
+            {/* Amount Field (Optional for Normal QR, Required for Amount QR) */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Enter Amount (INR ₹)</span>
+                  <span className={mode === 'fixed' ? 'text-rose-500 font-black' : 'text-slate-400 font-normal'}>
+                    {mode === 'fixed' ? '* Required' : '(Optional for Normal QR)'}
+                  </span>
+                </label>
+                {amount && (
+                  <span
+                    className={`text-[11px] font-bold ${
+                      isAmountValid ? 'text-emerald-600' : 'text-rose-500'
+                    }`}
+                  >
+                    {isAmountValid
+                      ? formatINR(numAmount)
+                      : 'Enter a valid amount > ₹0'}
+                  </span>
+                )}
               </div>
-            )}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold">
+                  ₹
+                </div>
+                <input
+                  id="upi-qr-amount-input"
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="e.g. 250"
+                  className="block w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-indigo-500"
+                />
+              </div>
+            </div>
 
             {/* Transaction Note */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Transaction Note / Remarks (Optional)
+                Payment Note / Remarks (Optional)
               </label>
               <input
                 type="text"
@@ -412,23 +449,72 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
           </div>
 
           {/* Quick preset amount chips */}
-          {mode === 'fixed' && (
-            <div className="space-y-1.5 pt-2">
-              <span className="text-[11px] font-bold text-slate-500">Quick Amounts:</span>
-              <div className="flex items-center gap-2 flex-wrap">
-                {[100, 200, 500, 1000, 2000, 5000].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setAmount(String(preset))}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
-                  >
-                    ₹{preset}
-                  </button>
-                ))}
-              </div>
+          <div className="space-y-1.5 pt-2">
+            <span className="text-[11px] font-bold text-slate-500">Quick Amounts:</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {[100, 200, 250, 500, 1000, 2000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => {
+                    setAmount(String(preset));
+                    setMode('fixed');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  ₹{preset}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+
+          {/* Dedicated Action Buttons */}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('normal');
+                if (!vpaTrimmed) {
+                  toast.error('UPI ID Required', 'Please enter your UPI ID first.');
+                } else if (!isVpaValid) {
+                  toast.error('Invalid UPI ID', 'Please enter a valid UPI format (e.g. name@bank).');
+                } else {
+                  toast.success('Normal UPI QR Generated', 'Open amount QR ready. Payer enters amount.');
+                }
+              }}
+              className="py-3 px-4 rounded-xl border border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center gap-2 hover:bg-indigo-100 transition-all cursor-pointer"
+            >
+              <QrCode className="w-4 h-4" />
+              <span>Generate Normal QR</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!vpaTrimmed) {
+                  toast.error('UPI ID Required', 'Please enter your UPI ID first.');
+                  return;
+                }
+                if (!isVpaValid) {
+                  toast.error('Invalid UPI ID', 'Please enter a valid UPI format.');
+                  return;
+                }
+                if (!amount || isNaN(numAmount) || numAmount <= 0) {
+                  setMode('fixed');
+                  toast.error('Amount Required', 'Please enter an amount greater than zero.');
+                  const el = document.getElementById('upi-qr-amount-input');
+                  if (el) el.focus();
+                  return;
+                }
+                setMode('fixed');
+                toast.success('Amount QR Generated', `Fixed amount of ₹${numAmount.toFixed(2)} encoded into QR.`);
+              }}
+              className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <IndianRupee className="w-4 h-4" />
+              <span>Generate Amount QR</span>
+            </button>
+          </div>
         </div>
 
         {/* Right Preview & Action Column */}
@@ -449,6 +535,18 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
                   {mode === 'fixed' && numAmount ? `Fixed ₹${numAmount}` : 'Universal QR'}
                 </span>
               </div>
+
+              {/* Prominent Amount Display Above QR (Option B) */}
+              {mode === 'fixed' && numAmount > 0 && (
+                <div className="w-full bg-emerald-50 dark:bg-emerald-950/70 border-2 border-emerald-500/50 rounded-xl py-2 px-3 text-center animate-in fade-in zoom-in-95 duration-200 shadow-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                    Amount to Pay (देय राशि)
+                  </span>
+                  <span className="text-2xl font-black text-emerald-700 dark:text-emerald-300 font-mono tracking-tight">
+                    ₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
 
               {/* QR Image Container */}
               <div className="bg-white p-3 rounded-xl shadow-inner flex items-center justify-center min-h-[220px]">
@@ -535,6 +633,41 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
                     <span>{isCopiedUri ? 'Copied' : 'Copy Pay Link'}</span>
                   </button>
                 </div>
+
+                {/* Regenerate QR Button */}
+                <button
+                  type="button"
+                  id="btn-regenerate-qr"
+                  onClick={() => {
+                    if (!vpaTrimmed || !isVpaValid) {
+                      toast.error('Invalid UPI ID', 'Please enter a valid UPI ID first.');
+                      return;
+                    }
+                    if (mode === 'fixed' && (!amount || isNaN(numAmount) || numAmount <= 0)) {
+                      toast.error('Amount Required', 'Please enter an amount greater than zero.');
+                      return;
+                    }
+                    const uri = generateUpiUri();
+                    setPaymentUri(uri);
+                    setIsGenerating(true);
+                    QRCode.toDataURL(uri, {
+                      width: 512,
+                      margin: 2,
+                      errorCorrectionLevel: 'H',
+                      color: { dark: '#0f172a', light: '#ffffff' },
+                    })
+                      .then((url) => {
+                        setQrDataUrl(url);
+                        setIsGenerating(false);
+                        toast.success('QR Code Regenerated', 'Updated with latest payment parameters.');
+                      })
+                      .catch(() => setIsGenerating(false));
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+                  <span>Regenerate QR Code</span>
+                </button>
 
                 <button
                   type="button"

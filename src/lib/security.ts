@@ -190,9 +190,9 @@ export function validateTransactionPayload(payload: unknown, currentUserId?: str
   return { isValid: true, sanitizedPayload, errors: [] };
 }
 
-// ==========================================
-// 3. STRONG PASSWORD POLICY (12+ CHARACTERS)
-// ==========================================
+// =========================================
+// 3. STRONG PASSWORD POLICY (8+ CHARACTERS)
+// =========================================
 
 export interface PasswordStrengthResult {
   isValid: boolean;

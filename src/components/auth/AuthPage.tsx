@@ -186,7 +186,7 @@ export const AuthPage: React.FC = () => {
     };
   }, [isRecoveryMode, recoveryToken]);
 
-  // Live password strength calculation (12 to 128 characters, character diversity)
+  // Live password strength calculation (8 to 128 characters, character diversity)
   const passwordStrength = useMemo(() => {
     if (!password) return null;
     const len = password.length;
@@ -196,25 +196,29 @@ export const AuthPage: React.FC = () => {
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     const score = [hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
 
-    const meetsLength = len >= 12 && len <= 128;
-    const isValid = meetsLength && (len >= 16 || score >= 2);
+    const meetsLength = len >= 8 && len <= 128;
+    const isValid = meetsLength && (len >= 10 || score >= 2);
 
     let label = 'Very Weak';
     let color = 'bg-rose-500';
     let width = '20%';
 
-    if (len >= 12 && score >= 3) {
+    if (len >= 8 && score >= 3) {
       label = 'Strong';
       color = 'bg-emerald-500';
       width = '100%';
-    } else if (len >= 12 && score >= 2) {
+    } else if (len >= 8 && score >= 2) {
       label = 'Moderate';
       color = 'bg-amber-500';
       width = '70%';
     } else if (len >= 8) {
-      label = 'Weak (Needs 12+ chars)';
+      label = 'Fair (Add numbers/symbols)';
+      color = 'bg-yellow-500';
+      width = '50%';
+    } else {
+      label = 'Weak (Needs 8+ chars)';
       color = 'bg-orange-500';
-      width = '40%';
+      width = '30%';
     }
 
     return { isValid, label, color, width, meetsLength };
@@ -232,8 +236,8 @@ export const AuthPage: React.FC = () => {
         setErrorMessage('Reset token is missing or invalid. Please request a new reset link.');
         return;
       }
-      if (!password || password.length < 12) {
-        setErrorMessage('Password must be at least 12 characters long according to enterprise policy.');
+      if (!password || password.length < 8) {
+        setErrorMessage('Password must be at least 8 characters long.');
         return;
       }
       if (password !== confirmPassword) {
@@ -303,8 +307,8 @@ export const AuthPage: React.FC = () => {
         setErrorMessage('Please enter your email address.');
         return;
       }
-      if (password.length < 12) {
-        setErrorMessage('Password must be at least 12 characters long.');
+      if (password.length < 8) {
+        setErrorMessage('Password must be at least 8 characters long.');
         return;
       }
       if (password !== confirmPassword) {
@@ -427,7 +431,7 @@ export const AuthPage: React.FC = () => {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {tokenTargetEmail
                   ? `Setting password for ${tokenTargetEmail}`
-                  : 'Enter your new secure password (min 12 characters).'}
+                  : 'Enter your new secure password (min 8 characters).'}
               </p>
             </div>
           )}
@@ -618,7 +622,7 @@ export const AuthPage: React.FC = () => {
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder={mode === 'login' ? '••••••••••••' : 'Min 12 characters passphrase'}
+                      placeholder={mode === 'login' ? '••••••••••••' : 'Min 8 characters passphrase'}
                       className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 font-mono"
                     />
                     <button
@@ -634,7 +638,7 @@ export const AuthPage: React.FC = () => {
                   {(mode === 'register' || mode === 'reset_password') && passwordStrength && (
                     <div className="mt-2 space-y-1">
                       <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-slate-500">Strength Policy (min 12 chars):</span>
+                        <span className="text-slate-500">Strength Policy (min 8 chars):</span>
                         <span
                           className={`font-bold ${
                             passwordStrength.isValid ? 'text-emerald-600' : 'text-rose-500'

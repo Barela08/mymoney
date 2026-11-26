@@ -60,9 +60,12 @@ async function runSuite() {
   assert(typeof tokenHash === 'string' && tokenHash.length === 64, 'Token hash is deterministic 64-char SHA-256 hex digest');
   assert(tokenHash !== rawToken, 'Raw token is not stored in plaintext');
 
-  // 3. Password policy enforcement (min 12 chars, diversity, common passwords rejected)
-  const shortPass = validatePasswordPolicy('Ab1!');
-  assert(!shortPass.isValid && shortPass.errors.some((e: string) => e.includes('12 characters')), 'Passwords under 12 characters are strictly rejected');
+  // 3. Password policy enforcement (min 8 chars, diversity, common passwords rejected)
+  const shortPass = validatePasswordPolicy('Ab1!xyz'); // 7 characters
+  assert(!shortPass.isValid && shortPass.errors.some((e: string) => e.includes('8 characters')), 'Passwords under 8 characters are strictly rejected');
+
+  const eightCharPass = validatePasswordPolicy('Ab1!xyzz'); // 8 characters
+  assert(eightCharPass.isValid && eightCharPass.errors.length === 0, '8-character passwords with character diversity are accepted');
 
   const commonPass = validatePasswordPolicy('password1234');
   assert(!commonPass.isValid && commonPass.errors.some((e: string) => e.includes('common')), 'Common dictionary passwords are strictly rejected');

@@ -174,11 +174,13 @@ async function runSecuritySuite() {
   const secretTokenHash = hashToken(rawSecretToken);
   assert(rawSecretToken !== secretTokenHash, 'TEST 12: Plaintext tokens are never stored directly in database');
 
-  // Enterprise Password Policy validation (min 12 chars, diversity, no common dictionary passwords)
-  const weakPass = validatePasswordPolicy('short1');
-  assert(!weakPass.isValid, 'Passwords under minimum length are rejected');
-  const validPass = validatePasswordPolicy('SecureP@ssw0rd2026!Enterpr1se');
-  assert(validPass.isValid, 'Strong password meeting enterprise policy is accepted');
+  // Password Policy validation: Exactly minimum 8 characters, diversity, no common dictionary passwords
+  const shortPass7 = validatePasswordPolicy('Abc!123'); // 7 chars
+  assert(!shortPass7.isValid, 'Passwords under minimum 8 characters are rejected');
+  const validPass8 = validatePasswordPolicy('Abc!1234'); // 8 chars with letters & numbers/symbols
+  assert(validPass8.isValid, 'Valid 8-character password meeting minimum policy is accepted');
+  const validPassEnterprise = validatePasswordPolicy('SecureP@ssw0rd2026!');
+  assert(validPassEnterprise.isValid, 'Strong password meeting policy is accepted');
 
   // TEST 13: Password update without a recovery session is rejected
   const emptyToken = '';

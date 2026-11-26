@@ -542,8 +542,8 @@ async function directSupabaseChangePassword(payload: {
     throw new Error('Authentication required.');
   }
 
-  if (payload.newPassword.length < 12) {
-    throw new Error('New password must be at least 12 characters.');
+  if (payload.newPassword.length < 8) {
+    throw new Error('New password must be at least 8 characters.');
   }
 
   if (payload.newPassword !== payload.confirmNewPassword) {
@@ -744,8 +744,8 @@ async function directSupabaseResetPassword(payload: { token: string; newPassword
   if (payload.newPassword !== payload.confirmPassword) {
     throw new Error('Passwords do not match.');
   }
-  if (payload.newPassword.length < 12) {
-    throw new Error('Password must be at least 12 characters.');
+  if (payload.newPassword.length < 8) {
+    throw new Error('Password must be at least 8 characters.');
   }
 
   const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();

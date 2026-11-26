@@ -4,7 +4,7 @@ import { query, isDatabaseAvailable } from './db.js';
 
 // -------------------------------------------------------------
 // PASSWORD POLICY ENFORCEMENT (Mandatory Rules from Section 7)
-// - Min length: 12 characters
+// - Min length: 8 characters
 // - Max length: 128 characters
 // - Reject common compromised passwords
 // - Bcrypt 12 rounds
@@ -35,8 +35,8 @@ export function validatePasswordPolicy(password: string): ValidationResult {
     return { isValid: false, errors: ['Password is required.'] };
   }
 
-  if (password.length < 12) {
-    errors.push('Password must be at least 12 characters long for enterprise security.');
+  if (password.length < 8) {
+    errors.push('Password must be at least 8 characters long.');
   }
 
   if (password.length > 128) {
@@ -54,8 +54,8 @@ export function validatePasswordPolicy(password: string): ValidationResult {
   const hasSpecial = /[^A-Za-z0-9]/.test(password);
 
   const diversityScore = [hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
-  if (password.length < 16 && diversityScore < 2) {
-    errors.push('Short passwords must include at least two types of characters (letters, numbers, symbols) or be 16+ characters long.');
+  if (password.length < 12 && diversityScore < 2) {
+    errors.push('Short passwords must include at least two types of characters (letters, numbers, symbols) or be 12+ characters long.');
   }
 
   return {

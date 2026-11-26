@@ -141,8 +141,8 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
       return;
     }
 
-    if (newPassword.length < 12) {
-      setPasswordError('New password must be at least 12 characters long for security compliance.');
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters long for security compliance.');
       return;
     }
 
@@ -543,7 +543,7 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  New Password (min 12 characters) <span className="text-rose-500">*</span>
+                  New Password (min 8 characters) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input

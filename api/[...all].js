@@ -34603,8 +34603,8 @@ function validatePasswordPolicy(password) {
   if (!password || typeof password !== "string") {
     return { isValid: false, errors: ["Password is required."] };
   }
-  if (password.length < 12) {
-    errors2.push("Password must be at least 12 characters long for enterprise security.");
+  if (password.length < 8) {
+    errors2.push("Password must be at least 8 characters long.");
   }
   if (password.length > 128) {
     errors2.push("Password cannot exceed 128 characters.");
@@ -34617,8 +34617,8 @@ function validatePasswordPolicy(password) {
   const hasNumber = /[0-9]/.test(password);
   const hasSpecial = /[^A-Za-z0-9]/.test(password);
   const diversityScore = [hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
-  if (password.length < 16 && diversityScore < 2) {
-    errors2.push("Short passwords must include at least two types of characters (letters, numbers, symbols) or be 16+ characters long.");
+  if (password.length < 12 && diversityScore < 2) {
+    errors2.push("Short passwords must include at least two types of characters (letters, numbers, symbols) or be 12+ characters long.");
   }
   return {
     isValid: errors2.length === 0,
