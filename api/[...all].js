@@ -34652,7 +34652,62 @@ function hashToken(token) {
 function generateCryptoToken(bytes = 32) {
   return crypto2.randomBytes(bytes).toString("hex");
 }
+var RATE_LIMITS = {
+  // A. Authentication
+  LOGIN_IP: { max: 15, windowMs: 15 * 60 * 1e3, op: "auth.login.ip" },
+  LOGIN_ACCOUNT: { max: 5, windowMs: 15 * 60 * 1e3, op: "auth.login.account" },
+  ADMIN_LOGIN_IP: { max: 10, windowMs: 15 * 60 * 1e3, op: "auth.admin_login.ip" },
+  ADMIN_LOGIN_ACCOUNT: { max: 5, windowMs: 15 * 60 * 1e3, op: "auth.admin_login.account" },
+  FORGOT_PASSWORD_ACCOUNT: { max: 3, windowMs: 60 * 60 * 1e3, op: "auth.forgot_password.account" },
+  FORGOT_PASSWORD_IP: { max: 5, windowMs: 60 * 60 * 1e3, op: "auth.forgot_password.ip" },
+  PASSWORD_RESET_SUBMIT: { max: 5, windowMs: 15 * 60 * 1e3, op: "auth.reset_password.submit" },
+  PASSWORD_RESET_IP: { max: 10, windowMs: 15 * 60 * 1e3, op: "auth.reset_password.ip" },
+  VERIFY_RESET_TOKEN_IP: { max: 15, windowMs: 15 * 60 * 1e3, op: "auth.verify_reset_token.ip" },
+  SIGNUP_IP: { max: 5, windowMs: 60 * 60 * 1e3, op: "auth.signup" },
+  VERIFICATION_RESEND: { max: 3, windowMs: 60 * 60 * 1e3, op: "auth.verification.resend" },
+  SESSION_REFRESH: { max: 120, windowMs: 60 * 1e3, op: "auth.session.refresh" },
+  // B. Udhar
+  PEOPLE_SEARCH: { max: 30, windowMs: 60 * 1e3, op: "udhar.people_search" },
+  QR_GENERATION: { max: 20, windowMs: 15 * 60 * 1e3, op: "udhar.qr_generate" },
+  QR_SCAN_VALIDATE: { max: 30, windowMs: 15 * 60 * 1e3, op: "udhar.qr_validate" },
+  CONNECTION_REQUEST: { max: 10, windowMs: 60 * 60 * 1e3, op: "udhar.connection_request" },
+  UDHAR_CREATE: { max: 30, windowMs: 15 * 60 * 1e3, op: "udhar.entry_create" },
+  UDHAR_SETTLE: { max: 20, windowMs: 15 * 60 * 1e3, op: "udhar.settle" },
+  UDHAR_DELETE: { max: 20, windowMs: 15 * 60 * 1e3, op: "udhar.delete" },
+  TRANSACTION_DETAILS: { max: 60, windowMs: 60 * 1e3, op: "udhar.details" },
+  // C. Financial Operations
+  TX_MUTATE: { max: 30, windowMs: 60 * 1e3, op: "finance.transaction_mutate" },
+  UPI_QR_GENERATE: { max: 20, windowMs: 15 * 60 * 1e3, op: "finance.upi_qr" },
+  FINANCE_EXPORT: { max: 5, windowMs: 15 * 60 * 1e3, op: "finance.export" },
+  BULK_ACTIONS: { max: 10, windowMs: 15 * 60 * 1e3, op: "finance.bulk" },
+  REMINDER_CREATE: { max: 20, windowMs: 15 * 60 * 1e3, op: "finance.reminder" },
+  NOTIFICATION_SEND: { max: 10, windowMs: 15 * 60 * 1e3, op: "finance.notification" },
+  // D. Admin Operations
+  ADMIN_USER_SEARCH: { max: 30, windowMs: 60 * 1e3, op: "admin.user_search" },
+  ADMIN_DATA_EXPORT: { max: 5, windowMs: 15 * 60 * 1e3, op: "admin.export" },
+  ADMIN_ROLE_CHANGE: { max: 10, windowMs: 15 * 60 * 1e3, op: "admin.role_change" },
+  ADMIN_SENSITIVE_ACCOUNT: { max: 10, windowMs: 15 * 60 * 1e3, op: "admin.sensitive_account" },
+  ADMIN_BULK_MODIFY: { max: 10, windowMs: 15 * 60 * 1e3, op: "admin.bulk_modify" }
+};
 var rateLimitStore = /* @__PURE__ */ new Map();
+var rateLimitsTableEnsured = false;
+async function ensureRateLimitsTable() {
+  if (rateLimitsTableEnsured || !isDatabaseAvailable()) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS public.rate_limits (
+        key TEXT PRIMARY KEY,
+        count INT NOT NULL DEFAULT 1,
+        reset_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at ON public.rate_limits(reset_at);
+    `);
+    rateLimitsTableEnsured = true;
+  } catch (err) {
+    console.warn("[Rate Limit Table Init Notice]:", err?.message);
+  }
+}
 function resetRateLimit(key) {
   rateLimitStore.delete(key);
 }
@@ -34664,11 +34719,89 @@ function checkRateLimit(key, maxAttempts, windowMs) {
     return { allowed: true, remaining: maxAttempts - 1 };
   }
   if (record.count >= maxAttempts) {
-    const retryAfterSec = Math.ceil((record.resetAt - now) / 1e3);
+    const retryAfterSec = Math.max(1, Math.ceil((record.resetAt - now) / 1e3));
     return { allowed: false, remaining: 0, retryAfterSec };
   }
   record.count += 1;
   return { allowed: true, remaining: maxAttempts - record.count };
+}
+async function checkRateLimitAsync(key, maxAttempts, windowMs, operation) {
+  if (isDatabaseAvailable()) {
+    try {
+      if (!rateLimitsTableEnsured) {
+        await ensureRateLimitsTable();
+      }
+      const res = await query(
+        `INSERT INTO public.rate_limits (key, count, reset_at, updated_at)
+         VALUES ($1, 1, NOW() + ($2 || ' milliseconds')::interval, NOW())
+         ON CONFLICT (key) DO UPDATE
+         SET 
+           count = CASE 
+             WHEN public.rate_limits.reset_at <= NOW() THEN 1 
+             ELSE public.rate_limits.count + 1 
+           END,
+           reset_at = CASE 
+             WHEN public.rate_limits.reset_at <= NOW() THEN NOW() + ($2 || ' milliseconds')::interval 
+             ELSE public.rate_limits.reset_at 
+           END,
+           updated_at = NOW()
+         RETURNING count, reset_at`,
+        [key, windowMs]
+      );
+      if (res.rows.length > 0) {
+        const count = Number(res.rows[0].count);
+        const resetAt = new Date(res.rows[0].reset_at).getTime();
+        const now = Date.now();
+        const retryAfterSec = Math.max(1, Math.ceil((resetAt - now) / 1e3));
+        const allowed = count <= maxAttempts;
+        const remaining = Math.max(0, maxAttempts - count);
+        rateLimitStore.set(key, { count, resetAt });
+        return { allowed, remaining, retryAfterSec, operation };
+      }
+    } catch (e2) {
+      console.warn("[Rate Limit DB Notice]:", e2?.message);
+    }
+  }
+  const mem = checkRateLimit(key, maxAttempts, windowMs);
+  return { ...mem, operation };
+}
+async function resetRateLimitAsync(key) {
+  resetRateLimit(key);
+  if (isDatabaseAvailable()) {
+    try {
+      await query("DELETE FROM public.rate_limits WHERE key = $1", [key]);
+    } catch {
+    }
+  }
+}
+function sendRateLimitExceeded(res, rateResult, customMessage) {
+  if (res.writableEnded || res.headersSent) return true;
+  const retryAfter = rateResult.retryAfterSec || 60;
+  const payload = {
+    success: false,
+    code: "TOO_MANY_REQUESTS",
+    message: customMessage || "You have made too many attempts. Please try again after some time.",
+    retryAfter,
+    operation: rateResult.operation || "request"
+  };
+  if (typeof res.setHeader === "function") {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Retry-After", String(retryAfter));
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  }
+  if (typeof res.status === "function" && typeof res.json === "function") {
+    res.status(429).json(payload);
+    return true;
+  }
+  res.writeHead(429, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Retry-After": String(retryAfter),
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
+  });
+  res.end(JSON.stringify(payload));
+  return true;
 }
 var cleanupTimer = setInterval(() => {
   const now = Date.now();
@@ -34676,6 +34809,10 @@ var cleanupTimer = setInterval(() => {
     if (now > record.resetAt) {
       rateLimitStore.delete(key);
     }
+  }
+  if (isDatabaseAvailable()) {
+    query("DELETE FROM public.rate_limits WHERE reset_at < NOW() - INTERVAL '30 minutes'").catch(() => {
+    });
   }
 }, 6e4);
 if (typeof cleanupTimer?.unref === "function") {
@@ -94881,13 +95018,17 @@ async function handleApiRequest(req, res) {
       const email = normalizeEmail(body.email || "");
       const password = String(body.password || "");
       const rememberMe = Boolean(body.rememberMe);
-      const rate = checkRateLimit(`admin_login_ip:${clientIp}`, 15, 5 * 60 * 1e3);
-      if (!rate.allowed) {
-        sendJson5(res, 429, {
-          success: false,
-          message: `Too many admin login attempts. Try again in ${rate.retryAfterSec} seconds.`
-        });
+      const rateIp = await checkRateLimitAsync(`admin_login:ip:${clientIp}`, RATE_LIMITS.ADMIN_LOGIN_IP.max, RATE_LIMITS.ADMIN_LOGIN_IP.windowMs, RATE_LIMITS.ADMIN_LOGIN_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
         return true;
+      }
+      if (email) {
+        const rateAcct = await checkRateLimitAsync(`admin_login:account:${email}`, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.max, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.op);
+        if (!rateAcct.allowed) {
+          sendRateLimitExceeded(res, rateAcct);
+          return true;
+        }
       }
       if (!email || !password) {
         sendJson5(res, 400, { success: false, message: "Admin email and password are required." });
@@ -94982,7 +95123,8 @@ async function handleApiRequest(req, res) {
         }
       }
       setSessionCookie(res, sessionToken, expiresAt);
-      resetRateLimit(`admin_login_ip:${clientIp}`);
+      await resetRateLimitAsync(`admin_login:ip:${clientIp}`);
+      await resetRateLimitAsync(`admin_login:account:${email}`);
       const sanitizedUser = sanitizeUserOutput({
         ...userRecord,
         role: effectiveRole
@@ -95042,9 +95184,9 @@ async function handleApiRequest(req, res) {
       if (handled) return true;
     }
     if (pathname === "/api/auth/register" && method === "POST") {
-      const rate = checkRateLimit(`register:${clientIp}`, 10, 60 * 1e3);
+      const rate = await checkRateLimitAsync(`signup:ip:${clientIp}`, RATE_LIMITS.SIGNUP_IP.max, RATE_LIMITS.SIGNUP_IP.windowMs, RATE_LIMITS.SIGNUP_IP.op);
       if (!rate.allowed) {
-        sendJson5(res, 429, { success: false, message: "Too many registration attempts. Please wait." });
+        sendRateLimitExceeded(res, rate);
         return true;
       }
       const body = await parseJsonBody5(req);
@@ -95115,13 +95257,17 @@ async function handleApiRequest(req, res) {
       const email = normalizeEmail(body.email || "");
       const password = body.password || "";
       const rememberMe = Boolean(body.rememberMe);
-      const rate = checkRateLimit(`login_ip:${clientIp}`, 25, 5 * 60 * 1e3);
-      if (!rate.allowed) {
-        sendJson5(res, 429, {
-          success: false,
-          message: `Too many login attempts from this network. Try again in ${rate.retryAfterSec} seconds.`
-        });
+      const rateIp = await checkRateLimitAsync(`login:ip:${clientIp}`, RATE_LIMITS.LOGIN_IP.max, RATE_LIMITS.LOGIN_IP.windowMs, RATE_LIMITS.LOGIN_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
         return true;
+      }
+      if (email) {
+        const rateAcct = await checkRateLimitAsync(`login:account:${email}`, RATE_LIMITS.LOGIN_ACCOUNT.max, RATE_LIMITS.LOGIN_ACCOUNT.windowMs, RATE_LIMITS.LOGIN_ACCOUNT.op);
+        if (!rateAcct.allowed) {
+          sendRateLimitExceeded(res, rateAcct);
+          return true;
+        }
       }
       if (!email || !password) {
         sendJson5(res, 400, { success: false, message: "Email and password are required." });
@@ -95178,7 +95324,8 @@ async function handleApiRequest(req, res) {
       );
       const session = await createSession(user.id, { rememberMe, userAgent, ipAddress: clientIp });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
-      resetRateLimit(`login_ip:${clientIp}`);
+      await resetRateLimitAsync(`login:ip:${clientIp}`);
+      await resetRateLimitAsync(`login:account:${email}`);
       await logSecurityEvent("USER_LOGIN_SUCCESS", {
         userId: user.id,
         userEmail: email,
