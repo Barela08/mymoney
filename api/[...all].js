@@ -89457,13 +89457,13 @@ async function searchUsersRest(authUser, rawQuery) {
   const escaped = classified.normalized.replace(/[%*,()]/g, "");
   let queryPath = "";
   if (classified.mode === "email_exact") {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=5`;
+    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=5`;
   } else if (classified.mode === "phone_exact") {
     const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&limit=15`;
+    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=15`;
   } else {
     const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username&order=full_name.asc&limit=20`;
+    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&order=full_name.asc&limit=20`;
   }
   const usersRes = await sbRest(queryPath);
   if (!usersRes.ok) {
@@ -89477,7 +89477,7 @@ async function searchUsersRest(authUser, rawQuery) {
     };
   }
   let activeUsers = (usersRes.data || []).filter(
-    (u) => !u.deletion_status || u.deletion_status === "none"
+    (u) => (!u.deletion_status || u.deletion_status === "none") && String(u.role || "").toLowerCase() !== "admin" && String(u.email || "").toLowerCase().trim() !== "admin@mymoney.com"
   );
   if (classified.mode === "email_exact") {
     activeUsers = activeUsers.filter(
@@ -91269,6 +91269,15 @@ async function cancelUdharRest(authUser, txId) {
     return { status: 404, body: { success: false, message: "Transaction not found." } };
   }
   const tx = txRes.data[0];
+  if (tx.counterpart_user_id && tx.direction === "took") {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
+      }
+    };
+  }
   const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&select=status`);
   const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data : [];
   const guard = canCancelUdhar({
@@ -97257,8 +97266,10 @@ async function handleApiRequest(req, res) {
              ) AS is_saved_contact
            FROM public.app_users u
            WHERE u.status = 'active'
-             AND COALESCE(u.deletion_status, 'none') = 'none'
-             AND NOT EXISTS (
+           AND COALESCE(u.deletion_status, 'none') = 'none'
+           AND COALESCE(u.role, 'user') != 'admin'
+           AND LOWER(TRIM(COALESCE(u.email, ''))) != 'admin@mymoney.com'
+           AND NOT EXISTS (
                SELECT 1 FROM public.user_connections blk
                WHERE ((blk.user_a_id = $1 AND blk.user_b_id = u.id) OR (blk.user_b_id = $1 AND blk.user_a_id = u.id))
                  AND blk.status = 'blocked'
@@ -98795,6 +98806,13 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const tx = txRes.rows[0];
+      if (tx.counterpart_user_id && tx.direction === "took") {
+        sendJson5(res, 403, {
+          success: false,
+          message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
+        });
+        return true;
+      }
       const repsRes = await query(
         `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
         [tx.link_id]
@@ -98812,11 +98830,19 @@ async function handleApiRequest(req, res) {
         return true;
       }
       await query(
-        `UPDATE public.udhar_transactions 
-         SET status = 'cancelled', current_balance = 0, updated_at = NOW() 
-         WHERE link_id = $1`,
-        [tx.link_id]
-      );
+        `UPDATE public.udhar_transactions
+      SET status = 'cancelled', current_balance = 0, updated_at = NOW(),
+      deleted_at = NOW(), deleted_by = $2
+      WHERE link_id = $1`,
+        [tx.link_id, authUser.id]
+      ).catch(async () => {
+        await query(
+          `UPDATE public.udhar_transactions
+      SET status = 'cancelled', current_balance = 0, updated_at = NOW()
+      WHERE link_id = $1`,
+          [tx.link_id]
+        );
+      });
       if (tx.counterpart_user_id) {
         await query(
           `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)

@@ -133,7 +133,7 @@ export function isRunningStandalone(): boolean {
     window.matchMedia?.('(display-mode: standalone)').matches ||
     window.matchMedia?.('(display-mode: window-controls-overlay)').matches;
   const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-  const androidTwa = typeof document !== 'undefined' && document.referrer.includes('android-app://');
+  const androidTwa = typeof document !== 'undefined' && Boolean(document.referrer?.includes('android-app://'));
   return Boolean(matchStandalone || iosStandalone || androidTwa);
 }
 

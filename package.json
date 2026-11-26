@@ -9,7 +9,7 @@
     "server": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc -b && vite build && node scripts/build-api.mjs",
     "build:api": "node scripts/build-api.mjs",
-    "test": "tsx scripts/run-security-tests.ts && tsx scripts/test-nielsen-usability-heuristics.ts && tsx src/lib/financialIntelligenceEngine.test.ts && tsx src/lib/sharedUdharEngine.test.ts && tsx scripts/test-admin-complete-system.ts && tsx scripts/test-permissions-and-qr-system.ts && tsx scripts/test-password-recovery-push-suite.ts && tsx scripts/test-upi-auto-detection.ts && tsx scripts/test-smart-calculator.ts && tsx scripts/test-privacy-consent-center.ts",
+    "test": "tsx scripts/run-security-tests.ts && tsx scripts/test-nielsen-usability-heuristics.ts && tsx src/lib/financialIntelligenceEngine.test.ts && tsx src/lib/sharedUdharEngine.test.ts && tsx scripts/test-admin-complete-system.ts && tsx scripts/test-permissions-and-qr-system.ts && tsx scripts/test-password-recovery-push-suite.ts && tsx scripts/test-upi-auto-detection.ts && tsx scripts/test-smart-calculator.ts && tsx scripts/test-privacy-consent-center.ts && tsx scripts/test-app-download-popup-lifecycle.ts && tsx scripts/test-udhar-multi-transaction-settlement.ts",
     "test:security": "tsx scripts/run-security-tests.ts",
     "test:nielsen": "tsx scripts/test-nielsen-usability-heuristics.ts",
     "test:admin": "tsx scripts/test-admin-complete-system.ts",
@@ -18,6 +18,7 @@
     "test:upi": "tsx scripts/test-upi-auto-detection.ts",
     "test:calculator": "tsx scripts/test-smart-calculator.ts",
     "test:privacy": "tsx scripts/test-privacy-consent-center.ts",
+    "test:multi-settle": "tsx scripts/test-udhar-multi-transaction-settlement.ts",
     "lint": "oxlint",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "test:pairing": "tsx scripts/test-udhar-pairing-api.ts"

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Download, X, Smartphone } from 'lucide-react';
 import { useExpense, sanitizeLogoUrl } from '../../context/ExpenseContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
+import { useAuth } from '../../context/AuthContext';
 import { isRunningStandalone } from '../../lib/pwaUtils';
 
 interface AppDownloadPopupProps {
@@ -10,10 +11,14 @@ interface AppDownloadPopupProps {
   hasBottomMobileNav: boolean;
 }
 
-const POPUP_STORAGE_KEY = 'my_money_app_popup_action';
-const POPUP_COOKIE_NAME = 'mymoney_app_popup_dismissed';
-const DISMISS_DAYS = 7;
-const DOWNLOADED_DAYS = 30;
+const DOWNLOADED_STORAGE_KEY = 'my_money_app_downloaded_confirmed';
+const DOWNLOADED_COOKIE_NAME = 'mymoney_app_downloaded';
+const AUTH_SESSION_DISMISSED_KEY = 'my_money_popup_auth_dismissed';
+const APP_SESSION_DISMISSED_KEY = 'my_money_popup_app_dismissed';
+
+// Legacy keys to clean up so users are not blocked by old 7-day cookie
+const LEGACY_POPUP_STORAGE_KEY = 'my_money_app_popup_action';
+const LEGACY_POPUP_COOKIE_NAME = 'mymoney_app_popup_dismissed';
 
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -30,48 +35,90 @@ function writeCookie(name: string, value: string, days: number): void {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
 }
 
-function isPopupSuppressedByUser(): boolean {
+/**
+ * Checks whether the user has ALREADY downloaded or installed the app.
+ * If yes, they must NEVER see the download popup again.
+ */
+export function isAppDownloadedOrInstalled(isPwaInstalled?: boolean): boolean {
   if (typeof window === 'undefined') return false;
-  if (isRunningStandalone()) return true;
+  if (isPwaInstalled || isRunningStandalone()) return true;
 
-  // Never suppress if user navigates to #install anchor
-  if (typeof window !== 'undefined' && window.location?.hash === '#install') {
-    return false;
-  }
-
-  const cookieVal = readCookie(POPUP_COOKIE_NAME);
-  if (cookieVal === 'dismissed' || cookieVal === 'downloaded') {
-    return true;
-  }
+  // Check persistent downloaded cookie & localStorage flag
+  if (readCookie(DOWNLOADED_COOKIE_NAME) === 'downloaded') return true;
 
   try {
-    const raw = localStorage.getItem(POPUP_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed?.expiresAt && Number(parsed.expiresAt) > Date.now()) {
-        return true;
-      }
-      localStorage.removeItem(POPUP_STORAGE_KEY);
-    }
-  } catch {
-    // ignore storage errors
-  }
+    const isDownloaded = localStorage.getItem(DOWNLOADED_STORAGE_KEY);
+    if (isDownloaded === 'true' || isDownloaded === '1') return true;
+  } catch {}
 
   return false;
 }
 
-function persistUserPopupPreference(action: 'dismissed' | 'downloaded'): void {
-  const days = action === 'downloaded' ? DOWNLOADED_DAYS : DISMISS_DAYS;
-  const expiresAt = Date.now() + days * 24 * 60 * 60 * 1000;
-  writeCookie(POPUP_COOKIE_NAME, action, days);
+/**
+ * Permanently marks the app as downloaded/installed.
+ */
+export function markAppAsDownloaded(): void {
+  if (typeof window === 'undefined') return;
+  writeCookie(DOWNLOADED_COOKIE_NAME, 'downloaded', 365);
   try {
-    localStorage.setItem(
-      POPUP_STORAGE_KEY,
-      JSON.stringify({ action, timestamp: Date.now(), expiresAt })
-    );
+    localStorage.setItem(DOWNLOADED_STORAGE_KEY, 'true');
+  } catch {}
+}
+
+/**
+ * Temporarily dismisses the popup for the current view/session:
+ * - If cancelled on login/auth view, dismisses ONLY for the auth view.
+ * - When user logs in, auth view dismiss does not affect the authenticated dashboard view!
+ */
+export function dismissPopupForCurrentView(isAuthView: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (isAuthView) {
+      sessionStorage.setItem(AUTH_SESSION_DISMISSED_KEY, 'true');
+    } else {
+      sessionStorage.setItem(APP_SESSION_DISMISSED_KEY, 'true');
+    }
+  } catch {}
+}
+
+/**
+ * Checks if dismissed for the given view in this session.
+ */
+function isDismissedForView(isAuthView: boolean): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location?.hash === '#install') return false;
+
+  try {
+    if (isAuthView) {
+      return sessionStorage.getItem(AUTH_SESSION_DISMISSED_KEY) === 'true';
+    } else {
+      return sessionStorage.getItem(APP_SESSION_DISMISSED_KEY) === 'true';
+    }
   } catch {
-    // ignore storage errors
+    return false;
   }
+}
+
+/**
+ * Cleans up legacy 7-day dismiss cookies so users aren't locked out.
+ */
+function cleanupLegacyDismissals(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const legacyCookie = readCookie(LEGACY_POPUP_COOKIE_NAME);
+    if (legacyCookie === 'dismissed') {
+      document.cookie = `${LEGACY_POPUP_COOKIE_NAME}=; path=/; max-age=0;`;
+    }
+    const legacyStorage = localStorage.getItem(LEGACY_POPUP_STORAGE_KEY);
+    if (legacyStorage) {
+      const parsed = JSON.parse(legacyStorage);
+      if (parsed?.action === 'dismissed') {
+        localStorage.removeItem(LEGACY_POPUP_STORAGE_KEY);
+      } else if (parsed?.action === 'downloaded') {
+        markAppAsDownloaded();
+      }
+    }
+  } catch {}
 }
 
 export function sanitizeDownloadHref(raw?: string | null): string {
@@ -95,14 +142,36 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   hasBottomMobileNav,
 }) => {
   const { appPopupSettings, appBranding } = useExpense();
-  const { triggerInstallPrompt } = usePwaInstall();
+  const { triggerInstallPrompt, isInstalled } = usePwaInstall();
+  const { user } = useAuth();
 
-  const [isHidden, setIsHidden] = useState<boolean>(() => isPopupSuppressedByUser());
+  const isAuthView = !user;
 
+  const computeIsHidden = useCallback(() => {
+    // 1. If user already downloaded or installed, NEVER show
+    if (isAppDownloadedOrInstalled(isInstalled)) {
+      return true;
+    }
+    // 2. If user cancelled on the current view (auth vs dashboard), suppress for this view
+    if (isDismissedForView(isAuthView)) {
+      return true;
+    }
+    return false;
+  }, [isInstalled, isAuthView]);
+
+  const [isHidden, setIsHidden] = useState<boolean>(computeIsHidden);
+
+  // On mount: clean up legacy 7-day dismissals
   useEffect(() => {
-    // Only re-check suppression if user state explicitly changes, do not randomly hide
-    setIsHidden(isPopupSuppressedByUser());
+    cleanupLegacyDismissals();
   }, []);
+
+  // When user logs in or out, or install status changes, re-evaluate!
+  // If user cancelled on login page, then logs in: isAuthView becomes false,
+  // so computeIsHidden() returns false and the popup appears on the dashboard!
+  useEffect(() => {
+    setIsHidden(computeIsHidden());
+  }, [computeIsHidden]);
 
   // Popup is visible by default unless explicitly disabled by admin, suppressed by user, or in standalone app mode
   const isEnabled = appPopupSettings?.enabled !== false;
@@ -116,7 +185,7 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   const isExternal = /^https?:\/\//i.test(safeHref);
 
   const handleDismiss = () => {
-    persistUserPopupPreference('dismissed');
+    dismissPopupForCurrentView(isAuthView);
     setIsHidden(true);
   };
 
@@ -126,7 +195,14 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
       try {
         const result = await triggerInstallPrompt();
         if (result.status === 'accepted' || result.status === 'already_installed') {
-          persistUserPopupPreference('downloaded');
+          markAppAsDownloaded();
+          setIsHidden(true);
+        } else if (result.status === 'manual_guide') {
+          markAppAsDownloaded();
+          setIsHidden(true);
+        } else {
+          // Native prompt was dismissed / cancelled without installing
+          dismissPopupForCurrentView(isAuthView);
           setIsHidden(true);
         }
       } catch (err) {
@@ -134,7 +210,7 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
       }
     } else {
       // External store or download link
-      persistUserPopupPreference('downloaded');
+      markAppAsDownloaded();
       setIsHidden(true);
     }
   };
