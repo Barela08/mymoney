@@ -8,17 +8,40 @@ export interface UserProfileData {
   full_name: string;
   displayName: string;
   email: string;
+  username?: string | null;
   phone?: string | null;
   role: 'user' | 'admin' | 'superadmin';
   status: 'active' | 'suspended' | 'deactivated';
   email_verified: boolean;
   avatar_url?: string | null;
   force_password_reset: boolean;
+  profile_completed?: boolean;
+  profileCompleted?: boolean;
   created_at: string;
   createdAt: string;
   last_login_at?: string | null;
   password_changed_at: string;
   activeSessionsCount?: number;
+}
+
+export interface SecurityMethodsData {
+  email: {
+    address: string;
+    verified: boolean;
+    hasPassword: boolean;
+  };
+  google: {
+    linked: boolean;
+    email: string | null;
+    linkedAt: string | null;
+  };
+  passkeys: Array<{
+    id: string;
+    deviceName: string;
+    transports: string[];
+    createdAt: string;
+    lastUsedAt: string | null;
+  }>;
 }
 
 const TOKEN_KEY = 'my_money_auth_token';
@@ -560,10 +583,30 @@ export const authApi = {
     phone?: string;
     password: string;
     confirmPassword: string;
+    requireProfileCompletion?: boolean;
   }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
     const data = await request('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+    if (data.sessionToken) {
+      setStoredSessionToken(data.sessionToken);
+      if (data.user) setStoredAuthUser(data.user);
+    }
+    return data;
+  },
+
+  async loginWithGoogle(idToken: string): Promise<{
+    success: boolean;
+    message?: string;
+    isNewUser?: boolean;
+    requiresProfileCompletion?: boolean;
+    user: AuthUser;
+    sessionToken: string;
+  }> {
+    const data = await request('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ idToken }),
     });
     if (data.sessionToken) {
       setStoredSessionToken(data.sessionToken);
@@ -647,17 +690,55 @@ export const authApi = {
   async updateProfile(payload: {
     fullName?: string;
     phone?: string;
+    username?: string;
     avatarUrl?: string;
   }): Promise<{ success: boolean; message: string; user: AuthUser }> {
     try {
-      return await request('/api/profile', {
+      const data = await request('/api/profile', {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
+      if (data?.user) setStoredAuthUser(data.user);
+      return data;
     } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 409) {
+        throw err;
+      }
       console.warn('Backend update profile unreachable, using direct Supabase update:', err.message);
       return await directSupabaseUpdateProfile(payload);
     }
+  },
+
+  async completeProfile(payload: {
+    fullName: string;
+    username?: string;
+    phone?: string;
+  }): Promise<{ success: boolean; message: string; user: AuthUser }> {
+    const data = await request('/api/profile/complete', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data?.user) setStoredAuthUser(data.user);
+    return data;
+  },
+
+  async getSecurityMethods(): Promise<{ success: boolean; security: SecurityMethodsData }> {
+    return request('/api/profile/security-methods', { method: 'GET' });
+  },
+
+  async linkGoogleAccount(idToken: string): Promise<{ success: boolean; message: string }> {
+    return request('/api/auth/google/link', {
+      method: 'POST',
+      body: JSON.stringify({ idToken }),
+    });
+  },
+
+  async unlinkGoogleAccount(): Promise<{ success: boolean; message: string }> {
+    return request('/api/auth/google/link', { method: 'DELETE' });
+  },
+
+  async deletePasskey(passkeyId: string): Promise<{ success: boolean; message: string }> {
+    return request(`/api/auth/passkeys/${encodeURIComponent(passkeyId)}`, { method: 'DELETE' });
   },
 
   async changePassword(payload: {

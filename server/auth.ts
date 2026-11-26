@@ -7,12 +7,14 @@ export interface AuthenticatedUser {
   id: string;
   full_name: string;
   email: string;
+  username?: string | null;
   phone?: string | null;
   role: 'user' | 'admin' | 'superadmin';
   status: 'active' | 'suspended' | 'deactivated';
   email_verified: boolean;
   avatar_url?: string | null;
   force_password_reset: boolean;
+  profile_completed?: boolean;
   created_at: string;
   last_login_at?: string | null;
   password_changed_at: string;
@@ -332,16 +334,29 @@ export function extractSessionToken(req: IncomingMessage): string | null {
 
 function mapRowToAuthenticatedUser(row: any): AuthenticatedUser {
   const isMasterAdmin = isMasterAdminAccountEmail(row.email);
+  const metaCompleted =
+    row?.custom_permissions && typeof row.custom_permissions === 'object'
+      ? row.custom_permissions.__profile_completed
+      : undefined;
+  const profileCompleted =
+    typeof row.profile_completed === 'boolean'
+      ? row.profile_completed
+      : typeof metaCompleted === 'boolean'
+      ? metaCompleted
+      : true;
+
   return {
     id: row.id,
     full_name: row.full_name,
     email: row.email,
+    username: row.username || null,
     phone: row.phone,
     role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
     status: row.status,
     email_verified: row.email_verified,
     avatar_url: row.avatar_url,
     force_password_reset: row.force_password_reset,
+    profile_completed: profileCompleted,
     created_at: row.created_at,
     last_login_at: row.last_login_at,
     password_changed_at: row.password_changed_at,
@@ -590,19 +605,33 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
   }
 }
 
-export function sanitizeUserOutput(user: AuthenticatedUser) {
+export function sanitizeUserOutput(user: AuthenticatedUser & { custom_permissions?: any }) {
+  const metaCompleted =
+    user?.custom_permissions && typeof user.custom_permissions === 'object'
+      ? user.custom_permissions.__profile_completed
+      : undefined;
+  const profileCompleted =
+    typeof user.profile_completed === 'boolean'
+      ? user.profile_completed
+      : typeof metaCompleted === 'boolean'
+      ? metaCompleted
+      : true;
+
   return {
     id: user.id,
     uid: user.id, // compatibility alias
     full_name: user.full_name,
     displayName: user.full_name, // compatibility alias
     email: user.email,
+    username: user.username || null,
     phone: user.phone || null,
     role: user.role,
     status: user.status,
     email_verified: user.email_verified,
     avatar_url: user.avatar_url || null,
     force_password_reset: user.force_password_reset,
+    profile_completed: profileCompleted,
+    profileCompleted, // compatibility alias
     created_at: user.created_at,
     createdAt: user.created_at, // compatibility alias
     last_login_at: user.last_login_at || null,

@@ -41,6 +41,8 @@ import { NavTab } from '../common/Sidebar';
 import { AiIntelligenceWidgets } from './AiIntelligenceWidgets';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { PendingDetectedExpensesBanner } from '../upi/PendingDetectedExpensesBanner';
+import { DashboardUpiQrSection } from '../upi/DashboardUpiQrSection';
+import { ProfileDropdown } from '../common/ProfileDropdown';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -176,34 +178,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-20 lg:pb-8">
-      {/* 1. Context Title & Profile Shortcut */}
+      {/* 1. Context Title & Clickable Profile Access Dropdown */}
       <div className="flex items-center justify-between px-1">
-        <div
-          onClick={() => onNavigate('settings')}
-          className="flex items-center gap-3 cursor-pointer group"
-          title="Account profile and settings"
-        >
-          {user?.avatar_url || user?.avatarUrl ? (
-            <img
-              src={user?.avatar_url || user?.avatarUrl || ''}
-              alt={user.displayName}
-              className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-800 transition-opacity group-hover:opacity-90"
-            />
-          ) : (
-            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-base flex items-center justify-center border border-slate-200 dark:border-slate-700">
-              {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-            </div>
-          )}
-
-          <div>
-            <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 transition-colors group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-              {greeting}, {user?.displayName || 'Personal Account'}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Financial Ledger · {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-            </p>
-          </div>
-        </div>
+        <ProfileDropdown
+          variant="dashboard-header"
+          greetingText={greeting}
+          onOpenPrivacySettings={() => {
+            if (typeof window !== 'undefined') {
+              window.location.hash = '#privacy';
+            }
+            onNavigate('settings');
+          }}
+          onOpenFullSettings={() => onNavigate('settings')}
+        />
       </div>
 
       {/* 1A. Mobile Notification Bar Opt-in Banner (only when permission === 'default' & not dismissed) */}
@@ -316,6 +303,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
+
+      {/* 2B. Dedicated UPI QR Section Directly Connected Below Available Balance */}
+      <DashboardUpiQrSection />
 
       {/* 3. Quick Action Buttons Row (Consolidated: No duplicate calculator) */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">

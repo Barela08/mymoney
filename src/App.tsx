@@ -57,9 +57,17 @@ const NetWorthSection = lazy(() => import('./components/net-worth/NetWorthSectio
 const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToSpendSection').then(m => ({ default: m.SafeToSpendSection })));
 const UpiQrGeneratorSection = lazy(() => import('./components/upi/UpiQrGeneratorSection').then(m => ({ default: m.UpiQrGeneratorSection })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
+const CompleteProfileScreen = lazy(() => import('./components/auth/CompleteProfileScreen').then(m => ({ default: m.CompleteProfileScreen })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
   '/admin': 'admin',
+  '/transactions': 'all_transactions',
+  '/people': 'people',
+  '/reports': 'reports',
+  '/settings': 'settings',
+  '/budget': 'budget',
+  '/savings': 'savings_goals',
+  '/bills': 'recurring_bills',
   '/ai-assistant': 'ai_assistant',
   '/expense-calendar': 'expense_calendar',
   '/smart-alerts': 'smart_alerts',
@@ -67,11 +75,18 @@ const PATH_TO_TAB: Record<string, NavTab> = {
   '/net-worth': 'net_worth',
   '/safe-to-spend': 'safe_to_spend',
   '/upi-qr': 'upi_qr',
-  };
+};
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
   admin: '/admin',
+  all_transactions: '/transactions',
+  people: '/people',
+  reports: '/reports',
+  settings: '/settings',
+  budget: '/budget',
+  savings_goals: '/savings',
+  recurring_bills: '/bills',
   ai_assistant: '/ai-assistant',
   expense_calendar: '/expense-calendar',
   smart_alerts: '/smart-alerts',
@@ -79,7 +94,7 @@ const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   net_worth: '/net-worth',
   safe_to_spend: '/safe-to-spend',
   upi_qr: '/upi-qr',
-  };
+};
 
 const SectionFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-20 min-h-[300px] space-y-3 animate-pulse">
@@ -425,6 +440,15 @@ return (
           hasBottomMobileNav={false}
         />
       </>
+    );
+  }
+
+  // Mandatory first-time Complete Your Profile gate after Google, Passkey, or Email registration
+  if (user && !isAdmin && (user.profileCompleted === false || user.profile_completed === false)) {
+    return (
+      <Suspense fallback={<SectionFallback />}>
+        <CompleteProfileScreen />
+      </Suspense>
     );
   }
 

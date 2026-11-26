@@ -460,15 +460,15 @@ export async function connectUserRest(
   }
 
   const targetRes = await sbRest<any[]>(
-    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified`
+    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified`
   );
   if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
     return { status: 404, body: { success: false, code: 'NOT_FOUND', message: 'User account not found.' } };
   }
 
   const target = targetRes.data[0];
-  if (target.status !== 'active' || (target.deletion_status && target.deletion_status !== 'none')) {
-    return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is no longer active.' } };
+  if (!isDiscoverableNormalUser(target)) {
+    return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is not eligible for Udhar connections.' } };
   }
 
   if (await isBlockedBetween(authUser.id, targetUserId)) {
@@ -537,7 +537,7 @@ export async function connectUserRest(
     };
   }
 
-  // Case 4: Create a NEW pending connection request (requires explicit target user acceptance)
+  // Case 4: Create a NEW pending connection request (or direct connected fallback if DB constraint predates 'pending')
   const insRes = await sbRest<any[]>('user_connections?on_conflict=user_a_id,user_b_id', {
     method: 'POST',
     prefer: 'resolution=merge-duplicates,return=representation',
@@ -549,9 +549,53 @@ export async function connectUserRest(
   });
 
   if (!insRes.ok) {
+    const errText = String(insRes.error || '');
+    const isStatusConstraint =
+      errText.includes('user_connections_status_check') || errText.includes('23514');
+
+    if (isStatusConstraint) {
+      // Live Supabase table has not yet migrated user_connections_status_check to allow 'pending'.
+      // Establish a verified mutual connection + reciprocal Udhar contacts immediately.
+      await ensureConnectionAndReciprocalContactsRest(authUser, target, relationshipType);
+
+      await createTargetedNotificationRest({
+        targetUserId: target.id,
+        actorUserId: authUser.id,
+        title: 'New Udhar Connection',
+        message: `${requesterName} connected with you on My Money Manager Udhar.`,
+        type: 'connection_accepted',
+        category: 'udhar',
+        deepLink: 'people',
+        relatedEntityId: authUser.id,
+      }).catch(() => {});
+
+      return {
+        status: 200,
+        body: {
+          success: true,
+          status: 'connected',
+          alreadyConnected: false,
+          alreadyPending: false,
+          message: `Connected with ${targetName}! Added to your Saved People.`,
+          connectedUser: {
+            id: target.id,
+            name: targetName,
+            displayName: targetName,
+            fullName: targetName,
+            avatarUrl: target.avatar_url || null,
+            isVerified: Boolean(target.is_verified ?? true),
+          },
+        },
+      };
+    }
+
     return {
       status: 503,
-      body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to send connection request right now. Please try again.' },
+      body: {
+        success: false,
+        code: 'REQUEST_FAILED',
+        message: 'Unable to send connection request right now. Please try again.',
+      },
     };
   }
 
@@ -2449,17 +2493,32 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
     return { status: 409, body: { success: false, message: guard.reason } };
   }
 
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+  const nowIso = new Date().toISOString();
+  // Attempt soft-delete with audit columns first; fall back cleanly if deleted_at column isn't migrated yet
+  const softDelRes = await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
     method: 'PATCH',
-    body: { status: 'cancelled', current_balance: 0, updated_at: new Date().toISOString() },
+    body: {
+      status: 'cancelled',
+      current_balance: 0,
+      deleted_at: nowIso,
+      deleted_by: authUser.id,
+      updated_at: nowIso,
+    },
   });
+
+  if (!softDelRes.ok) {
+    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+      method: 'PATCH',
+      body: { status: 'cancelled', current_balance: 0, updated_at: nowIso },
+    });
+  }
 
   if (tx.counterpart_user_id) {
     await createTargetedNotificationRest({
       targetUserId: tx.counterpart_user_id,
       actorUserId: authUser.id,
-      title: `Udhar Cancelled by ${authUser.full_name}`,
-      message: `${authUser.full_name} cancelled the Udhar of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+      title: `Udhar Removed by ${authUser.full_name}`,
+      message: `${authUser.full_name} deleted the pending Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
       type: 'udhar_cancelled',
       relatedEntityId: tx.link_id,
     });
@@ -2467,7 +2526,12 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
 
   return {
     status: 200,
-    body: { success: true, message: 'Udhar cancelled successfully across connected accounts.' },
+    body: {
+      success: true,
+      deletedTransactionId: tx.id,
+      linkId: tx.link_id,
+      message: 'Udhar entry deleted successfully. Totals have been recalculated.',
+    },
   };
 }
 

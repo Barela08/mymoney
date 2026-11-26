@@ -83,6 +83,7 @@ export interface AuthUser {
   uid: string;
   id?: string;
   email: string;
+  username?: string | null;
   displayName: string;
   full_name?: string;
   phone?: string | null;
@@ -93,6 +94,8 @@ export interface AuthUser {
   avatar_url?: string | null;
   avatarUrl?: string | null;
   force_password_reset?: boolean;
+  profile_completed?: boolean;
+  profileCompleted?: boolean;
   createdAt?: string;
   created_at?: string;
   last_login_at?: string | null;

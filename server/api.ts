@@ -25,6 +25,7 @@ import {
   revokeAllUserSessions,
   authenticateRequest,
   sanitizeUserOutput,
+  isDiscoverableNormalUser,
 } from './auth.js';
 import {
   sendPasswordResetEmail,
@@ -53,6 +54,7 @@ import { handleAdminApiRequest } from './adminApi.js';
 import { handleAiFinanceRequest } from './aiFinanceApi.js';
 import { handleUpiDetectionRequest } from './upiDetectionApi.js';
 import { handlePrivacyConsentApi } from './privacyConsentApi.js';
+import { handleUserAccountExtensions } from './userAccountExtensions.js';
 import {
   getUserNotificationPreferences,
   updateUserNotificationPreferences,
@@ -638,6 +640,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // ---------------------------------------------------------
+    // 0D. UPI QR PROFILES, UNIFIED AUTH (GOOGLE / PASSKEY), COMPLETE PROFILE
+    // ---------------------------------------------------------
+    if (
+      pathname === '/api/upi/profile' ||
+      pathname === '/api/profile/complete' ||
+      pathname === '/api/profile/security-methods' ||
+      pathname.startsWith('/api/auth/google') ||
+      pathname.startsWith('/api/auth/passkey')
+    ) {
+      const handled = await handleUserAccountExtensions(req, res, pathname, method, clientIp, userAgent);
+      if (handled) return true;
+    }
+
+    // ---------------------------------------------------------
     // 1. REGISTER: POST /api/auth/register
     // ---------------------------------------------------------
     if (pathname === '/api/auth/register' && method === 'POST') {
@@ -703,16 +719,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Hash password with bcrypt (12 rounds)
       const passwordHash = await hashPassword(password);
 
+      const requireProfileCompletion = body.requireProfileCompletion === true;
+      const initialCustomPermissions = requireProfileCompletion ? { __profile_completed: false } : {};
+
       // Default role is strictly 'user' from backend authority
       let newUser: any = null;
       if (isDatabaseAvailable()) {
         try {
           const userRes = await query(
             `INSERT INTO public.app_users (
-              full_name, email, phone, password_hash, role, status, email_verified
-            ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE)
+              full_name, email, phone, password_hash, role, status, email_verified, custom_permissions
+            ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE, $5::jsonb)
             RETURNING *`,
-            [fullName, email, phone || null, passwordHash]
+            [fullName, email, phone || null, passwordHash, JSON.stringify(initialCustomPermissions)]
           );
           newUser = userRes.rows[0] || null;
         } catch (err: any) {
@@ -732,6 +751,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             role: 'user',
             status: 'active',
             email_verified: false,
+            custom_permissions: initialCustomPermissions,
           },
         });
         if (!insertRest.ok || !Array.isArray(insertRest.data) || !insertRest.data[0]) {
@@ -1052,12 +1072,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+      // Security: strictly allow ONLY full_name, phone, username, avatar_url — NEVER role, status, or email_verified
       const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
       const phone = (body.phone !== undefined ? body.phone : authUser.phone || '').trim();
       const avatarUrl = body.avatarUrl !== undefined ? body.avatarUrl : authUser.avatar_url;
+      const rawUsername =
+        body.username !== undefined ? String(body.username || '').trim().toLowerCase() : authUser.username || '';
 
-      if (!fullName || fullName.length < 2) {
-        sendJson(res, 400, { success: false, message: 'Full name must be at least 2 characters.' });
+      if (!fullName || fullName.length < 2 || fullName.length > 80) {
+        sendJson(res, 400, { success: false, message: 'Full name must be between 2 and 80 characters.' });
         return true;
       }
 
@@ -1066,15 +1089,33 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      if (rawUsername && !/^[a-z0-9_]{3,30}$/.test(rawUsername)) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Username must be 3-30 characters using lowercase letters, numbers, or underscores.',
+        });
+        return true;
+      }
+
+      if (rawUsername && rawUsername !== (authUser.username || '').toLowerCase()) {
+        const dupUsername = await sbRestRequest<any[]>(
+          `app_users?username=eq.${encodeURIComponent(rawUsername)}&id=neq.${encodeURIComponent(authUser.id)}&select=id&limit=1`
+        );
+        if (dupUsername.ok && Array.isArray(dupUsername.data) && dupUsername.data.length > 0) {
+          sendJson(res, 409, { success: false, message: 'That username is already taken. Please choose another.' });
+          return true;
+        }
+      }
+
       let updatedUser: any = null;
       if (isDatabaseAvailable()) {
         try {
           const updatedRes = await query(
             `UPDATE public.app_users 
-             SET full_name = $1, phone = $2, avatar_url = $3, updated_at = NOW() 
-             WHERE id = $4 
+             SET full_name = $1, phone = $2, avatar_url = $3, username = $4, updated_at = NOW() 
+             WHERE id = $5 
              RETURNING *`,
-            [fullName, phone || null, avatarUrl || null, authUser.id]
+            [fullName, phone || null, avatarUrl || null, rawUsername || null, authUser.id]
           );
           updatedUser = updatedRes.rows[0] || null;
         } catch (err: any) {
@@ -1090,6 +1131,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             full_name: fullName,
             phone: phone || null,
             avatar_url: avatarUrl || null,
+            username: rawUsername || null,
             updated_at: new Date().toISOString(),
           },
         });
@@ -2993,7 +3035,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const targetRes = await query(
-          `SELECT id, full_name, email, phone, avatar_url, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, phone, avatar_url, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [targetUserId]
         );
@@ -3002,8 +3044,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
         const target = targetRes.rows[0];
-        if (target.status !== 'active' || target.deletion_status !== 'none') {
-          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is deactivated or unavailable.' });
+        if (!isDiscoverableNormalUser(target)) {
+          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is not eligible for Udhar connections.' });
           return true;
         }
 

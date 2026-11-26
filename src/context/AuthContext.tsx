@@ -19,6 +19,8 @@ interface AuthContextType {
   setIsRecoveryMode: React.Dispatch<React.SetStateAction<boolean>>;
   setRecoveryToken: React.Dispatch<React.SetStateAction<string | null>>;
   login: (email: string, pass: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>;
+  loginWithGoogle: () => Promise<{ success: boolean; message?: string; code?: string }>;
+  loginWithPasskey: (email?: string) => Promise<{ success: boolean; message?: string }>;
   adminLogin: (
     email: string,
     pass: string,
@@ -36,7 +38,8 @@ interface AuthContextType {
   requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordReset: (token: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message: string }>;
   changePassword: (currentPassword: string, newPassword: string, confirmNewPassword: string) => Promise<{ success: boolean; message: string }>;
-  updateUserProfile: (payload: { fullName?: string; phone?: string; avatarUrl?: string }) => Promise<{ success: boolean; message: string }>;
+  updateUserProfile: (payload: { fullName?: string; phone?: string; username?: string; avatarUrl?: string }) => Promise<{ success: boolean; message: string }>;
+  completeUserProfile: (payload: { fullName: string; username?: string; phone?: string }) => Promise<{ success: boolean; message: string }>;
   deleteAccount: (password: string) => Promise<{ success: boolean; message: string }>;
   // Secure Admin Functions
   getAdminUsersList: () => Promise<AdminUserListItem[]>;
@@ -319,6 +322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phone,
         password: pass,
         confirmPassword: confirmPass,
+        requireProfileCompletion: true,
       });
 
       if (res.success && res.user) {
@@ -472,16 +476,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Update profile
-  const updateUserProfile = async (payload: { fullName?: string; phone?: string; avatarUrl?: string }) => {
+  const updateUserProfile = async (payload: { fullName?: string; phone?: string; username?: string; avatarUrl?: string }) => {
     try {
       const res = await authApi.updateProfile(payload);
       if (res.success && res.user) {
         setUser(res.user);
+        setStoredAuthUser(res.user);
         return { success: true, message: res.message };
       }
       return { success: false, message: res.message || 'Failed to update profile.' };
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to update profile.' };
+    }
+  };
+
+  // Complete first-time profile
+  const completeUserProfile = async (payload: { fullName: string; username?: string; phone?: string }) => {
+    try {
+      const res = await authApi.completeProfile(payload);
+      if (res.success && res.user) {
+        setUser(res.user);
+        setStoredAuthUser(res.user);
+        return { success: true, message: res.message };
+      }
+      return { success: false, message: res.message || 'Could not save profile.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Could not save profile.' };
+    }
+  };
+
+  // Google Sign-In via Firebase Auth -> server-verified canonical app_users.id
+  const loginWithGoogle = async () => {
+    try {
+      const { signInWithFirebaseGoogle } = await import('../lib/firebaseClient');
+      const { idToken } = await signInWithFirebaseGoogle();
+      const res = await authApi.loginWithGoogle(idToken);
+      if (res.success && res.user) {
+        setUser(res.user);
+        setStoredAuthUser(res.user);
+        syncDeviceRegistration();
+        return { success: true, message: res.message || 'Signed in with Google.' };
+      }
+      return { success: false, message: res.message || 'Google sign-in failed.' };
+    } catch (err: any) {
+      return {
+        success: false,
+        code: err?.data?.code,
+        message: err?.message || 'Google sign-in failed.',
+      };
+    }
+  };
+
+  // Passkey (WebAuthn) Sign-In -> server-verified canonical app_users.id
+  const loginWithPasskey = async (email?: string) => {
+    try {
+      const { loginWithPasskeyOnDevice } = await import('../lib/webauthnClient');
+      const res = await loginWithPasskeyOnDevice(email);
+      if (res.success && res.user && res.sessionToken) {
+        setStoredSessionToken(res.sessionToken);
+        setStoredAuthUser(res.user);
+        setUser(res.user);
+        syncDeviceRegistration();
+        return { success: true, message: res.message || 'Signed in with Passkey.' };
+      }
+      return { success: false, message: res.message || 'Passkey sign-in failed.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Passkey sign-in failed.' };
     }
   };
 
@@ -639,6 +699,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsRecoveryMode,
         setRecoveryToken,
         login,
+        loginWithGoogle,
+        loginWithPasskey,
         adminLogin,
         register,
         logout,
@@ -647,6 +709,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completePasswordReset,
         changePassword,
         updateUserProfile,
+        completeUserProfile,
         deleteAccount,
         getAdminUsersList,
         toggleUserStatus,

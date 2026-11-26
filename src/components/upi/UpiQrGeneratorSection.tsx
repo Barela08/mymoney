@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { formatINR } from '../../lib/dateUtils';
+import { upiProfileApi } from '../../lib/upiProfileApi';
+import { validateUpiId } from '../../lib/upiQrUtils';
 
 interface UpiQrGeneratorSectionProps {
   initialVpa?: string;
@@ -26,8 +28,6 @@ interface UpiQrGeneratorSectionProps {
   initialNote?: string;
   onNavigate?: (tab: any) => void;
 }
-
-const UPI_ID_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 
 export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
   initialVpa = '',
@@ -55,9 +55,27 @@ export const UpiQrGeneratorSection: React.FC<UpiQrGeneratorSectionProps> = ({
   const [isCopiedVpa, setIsCopiedVpa] = useState<boolean>(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
 
+  // Auto-populate from user's saved UPI profile if not explicitly provided via props
+  useEffect(() => {
+    if (initialVpa) return;
+    let active = true;
+    upiProfileApi
+      .getProfile()
+      .then((res) => {
+        if (!active || !res.success || !res.profile) return;
+        setVpa((prev) => prev || res.profile!.upiId);
+        setPayeeName((prev) => prev || res.profile!.payeeName || '');
+        setNote((prev) => prev || res.profile!.paymentNote || '');
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [initialVpa]);
+
   // Validation states
   const vpaTrimmed = vpa.trim();
-  const isVpaValid = UPI_ID_REGEX.test(vpaTrimmed);
+  const isVpaValid = validateUpiId(vpaTrimmed).isValid;
   const numAmount = parseFloat(amount);
   const isAmountValid =
     mode === 'normal' || (!isNaN(numAmount) && numAmount > 0);

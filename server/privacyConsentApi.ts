@@ -20,9 +20,12 @@ import {
   type ConsentStatusValue,
 } from '../src/lib/privacyConsent.js';
 
+import { clearSavedUpiProfileForUser } from './userAccountExtensions.js';
+
 const LEGACY_ALLOWED_PURPOSES = new Set<string>([
   ...OPTIONAL_CONSENT_CATEGORIES,
   'optional_feedback_support',
+  'upi_qr_storage',
 ]);
 
 const ALLOWED_SOURCES = new Set<string>([
@@ -33,6 +36,8 @@ const ALLOWED_SOURCES = new Set<string>([
   'udhar_sharing_prompt',
   'notification_preferences',
   'help_support',
+  'upi_qr_setup',
+  'settings_upi_qr',
 ]);
 
 // Server-side in-memory idempotency guard for rapid repeated clicks (5 min TTL)
@@ -518,6 +523,11 @@ export async function handlePrivacyConsentApi(
     // Keep notification preferences synchronized when marketing_updates changes
     if (purpose === 'marketing_updates') {
       updateUserNotificationPreferences(authUser.id, { notify_offers: status === 'granted' }).catch(() => {});
+    }
+
+    // If user withdraws UPI QR storage consent, remove their saved UPI profile cleanly
+    if (purpose === 'upi_qr_storage' && status === 'withdrawn') {
+      clearSavedUpiProfileForUser(authUser.id).catch(() => {});
     }
 
     logSecurityEvent(status === 'granted' ? 'USER_GRANTED_CONSENT' : 'USER_WITHDREW_CONSENT', {

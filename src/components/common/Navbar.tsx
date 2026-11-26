@@ -18,6 +18,7 @@ import { NavTab } from './Sidebar';
 import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ProfileDropdown } from './ProfileDropdown';
 import { HeaderInstallButton } from './HeaderInstallButton';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 
@@ -198,30 +199,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="tabular-nums font-medium">{istTimeStr} IST</span>
           </div>
 
-          {/* User Badge */}
+          {/* Clickable Profile Access Dropdown */}
           {user && (
-            <div
-              onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
-              className="hidden sm:flex items-center gap-2 h-9 px-2.5 bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-medium cursor-pointer transition-colors border border-slate-200/60 dark:border-slate-700/60"
-              title={isAdmin ? 'Open Admin Control' : 'View Profile Settings'}
-            >
-              {user.avatar_url || user.avatarUrl ? (
-                <img
-                  src={user.avatar_url || user.avatarUrl || ''}
-                  alt={user.displayName}
-                  className="w-5 h-5 rounded-lg object-cover border border-emerald-500/30"
-                />
-              ) : (
-                <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">
-                  {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-                </div>
-              )}
-              <span className="truncate max-w-[100px]">{user.displayName}</span>
-              {isAdmin && (
-                <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-medium">
-                  Admin
-                </span>
-              )}
+            <div className="hidden sm:block">
+              <ProfileDropdown
+                variant="navbar"
+                onOpenPrivacySettings={() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.hash = '#privacy';
+                  }
+                  onSelectTab('settings');
+                }}
+                onOpenFullSettings={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
+              />
             </div>
           )}
 

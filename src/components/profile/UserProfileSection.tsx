@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authApi, UserProfileData } from '../../lib/authApi';
 import { formatDisplayDate } from '../../lib/dateUtils';
+import { ProfileSecurityAndUpiCards } from './ProfileSecurityAndUpiCards';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { AccountDeletionSection } from './AccountDeletionSection';
 import { ProfilePhotoUploadModal } from './ProfilePhotoUploadModal';
@@ -303,6 +304,13 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
               <span className="font-mono text-slate-800 dark:text-slate-200">{displayEmail}</span>
             </div>
 
+            {user?.username && (
+              <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500">Username</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">@{user.username}</span>
+              </div>
+            )}
+
             <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
               <span className="text-slate-500">Phone Number</span>
               <span className="font-bold text-slate-800 dark:text-slate-200">{displayPhone}</span>
@@ -364,6 +372,9 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Personal UPI QR & Unified Login Methods (Google, Passkeys, Email) */}
+      <ProfileSecurityAndUpiCards />
 
       {/* Account Actions & Danger Zone */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">

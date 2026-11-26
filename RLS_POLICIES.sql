@@ -748,9 +748,131 @@ CREATE POLICY "user_consents_insert_own" ON public.user_consents
     FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = user_id);
 
+-- ------------------------------------------------------------------------------
+-- 15. USER CONNECTIONS CONSTRAINT UPDATE (SUPPORTS pending / connected / rejected / blocked)
+-- ------------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_connections') THEN
+    ALTER TABLE public.user_connections DROP CONSTRAINT IF EXISTS user_connections_status_check;
+    ALTER TABLE public.user_connections
+      ADD CONSTRAINT user_connections_status_check
+      CHECK (status IN ('pending', 'connected', 'rejected', 'blocked'));
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------------------------
+-- 16. UDHAR TRANSACTIONS SOFT-DELETE AUDIT COLUMNS & APP_USERS PROFILE COMPLETION
+-- ------------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_transactions') THEN
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deleted_by UUID;
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deletion_reason TEXT;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'app_users') THEN
+    ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS profile_completed BOOLEAN NOT NULL DEFAULT TRUE;
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------------------------
+-- 17. USER UPI PROFILES (STRICT USER-ONLY ISOLATION — NEVER PUBLIC OR SEARCHABLE)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_upi_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL UNIQUE REFERENCES public.app_users(id) ON DELETE CASCADE,
+    upi_id TEXT NOT NULL CHECK (upi_id ~* '^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9]{2,64}$'),
+    payee_name TEXT,
+    payment_note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_upi_profiles_user_id ON public.user_upi_profiles(user_id);
+
+ALTER TABLE public.user_upi_profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_upi_profiles_select_own" ON public.user_upi_profiles;
+CREATE POLICY "user_upi_profiles_select_own" ON public.user_upi_profiles
+    FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "user_upi_profiles_insert_own" ON public.user_upi_profiles;
+CREATE POLICY "user_upi_profiles_insert_own" ON public.user_upi_profiles
+    FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "user_upi_profiles_update_own" ON public.user_upi_profiles;
+CREATE POLICY "user_upi_profiles_update_own" ON public.user_upi_profiles
+    FOR UPDATE TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "user_upi_profiles_delete_own" ON public.user_upi_profiles;
+CREATE POLICY "user_upi_profiles_delete_own" ON public.user_upi_profiles
+    FOR DELETE TO authenticated
+    USING (auth.uid() = user_id);
+
+-- ------------------------------------------------------------------------------
+-- 18. UNIFIED AUTH IDENTITIES (MAPS FIREBASE GOOGLE / PASSKEY / EMAIL -> CANONICAL app_users.id)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_auth_identities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (provider IN ('google_firebase', 'passkey', 'email')),
+    provider_uid TEXT NOT NULL,
+    provider_email TEXT,
+    is_verified BOOLEAN NOT NULL DEFAULT TRUE,
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_user_auth_provider_uid UNIQUE (provider, provider_uid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_auth_identities_user_id ON public.user_auth_identities(user_id);
+
+ALTER TABLE public.user_auth_identities ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_auth_identities_owner_select" ON public.user_auth_identities;
+CREATE POLICY "user_auth_identities_owner_select" ON public.user_auth_identities
+    FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+-- ------------------------------------------------------------------------------
+-- 19. USER PASSKEYS (WEBAUTHN CREDENTIALS — MULTIPLE DEVICES PER USER)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_passkeys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
+    credential_id TEXT NOT NULL UNIQUE,
+    public_key_spki TEXT NOT NULL,
+    algorithm INTEGER NOT NULL DEFAULT -7,
+    counter BIGINT NOT NULL DEFAULT 0,
+    transports TEXT[] NOT NULL DEFAULT '{}'::text[],
+    device_name TEXT NOT NULL DEFAULT 'Passkey Device',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_passkeys_user_id ON public.user_passkeys(user_id);
+
+ALTER TABLE public.user_passkeys ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_passkeys_owner_select" ON public.user_passkeys;
+CREATE POLICY "user_passkeys_owner_select" ON public.user_passkeys
+    FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "user_passkeys_owner_delete" ON public.user_passkeys;
+CREATE POLICY "user_passkeys_owner_delete" ON public.user_passkeys
+    FOR DELETE TO authenticated
+    USING (auth.uid() = user_id);
+
 -- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================
+
 
 
 
