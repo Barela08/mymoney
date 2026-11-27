@@ -37,6 +37,44 @@ export function isPasskeySupported(): boolean {
   );
 }
 
+export function isPasskeyAllowedInContext(action: 'get' | 'create' = 'get'): boolean {
+  if (typeof document === 'undefined') return true;
+  const feature = action === 'create' ? 'publickey-credentials-create' : 'publickey-credentials-get';
+  const docAny = document as any;
+  try {
+    if (typeof docAny.permissionsPolicy?.allowsFeature === 'function') {
+      return Boolean(docAny.permissionsPolicy.allowsFeature(feature));
+    }
+    if (typeof docAny.featurePolicy?.allowsFeature === 'function') {
+      return Boolean(docAny.featurePolicy.allowsFeature(feature));
+    }
+  } catch {
+    // Fallback to runtime check if browser policy inspection throws
+  }
+  return true;
+}
+
+function normalizeWebAuthnError(err: any, action: 'get' | 'create'): Error {
+  const msg = String(err?.message || '');
+  const isPolicyBlocked =
+    /publickey-credentials-|permissions policy|feature policy|cross-origin child frames|not enabled in this document/i.test(
+      msg
+    );
+  if (isPolicyBlocked || !isPasskeyAllowedInContext(action)) {
+    return new Error(
+      'Passkeys cannot run inside an embedded preview frame due to browser security policy. Open this app directly in a full browser tab to use Passkeys, or sign in with Email & Password.'
+    );
+  }
+  if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
+    return new Error(
+      action === 'create'
+        ? 'Passkey registration was cancelled or timed out. Please try again.'
+        : 'Passkey sign-in was cancelled or no matching passkey was found on this device.'
+    );
+  }
+  return err instanceof Error ? err : new Error(msg || 'Passkey operation failed.');
+}
+
 async function postJson(url: string, body: Record<string, any> = {}) {
   const token = getStoredSessionToken();
   const headers: Record<string, string> = {
@@ -66,6 +104,9 @@ export async function registerPasskeyOnDevice(deviceName?: string): Promise<{
   if (!isPasskeySupported()) {
     throw new Error('Passkeys are not supported in this browser or device.');
   }
+  if (!isPasskeyAllowedInContext('create')) {
+    throw normalizeWebAuthnError(null, 'create');
+  }
 
   const start = await postJson('/api/auth/passkey/register/options');
   const opts = start.options;
@@ -89,7 +130,12 @@ export async function registerPasskeyOnDevice(deviceName?: string): Promise<{
     })),
   };
 
-  const credential = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
+  let credential: PublicKeyCredential | null = null;
+  try {
+    credential = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
+  } catch (err: any) {
+    throw normalizeWebAuthnError(err, 'create');
+  }
   if (!credential) {
     throw new Error('Passkey creation was cancelled.');
   }
@@ -131,6 +177,9 @@ export async function loginWithPasskeyOnDevice(email?: string): Promise<{
   if (!isPasskeySupported()) {
     throw new Error('Passkeys are not supported in this browser or device.');
   }
+  if (!isPasskeyAllowedInContext('get')) {
+    throw normalizeWebAuthnError(null, 'get');
+  }
 
   const start = await postJson('/api/auth/passkey/login/options', email ? { email } : {});
   const opts = start.options;
@@ -150,7 +199,12 @@ export async function loginWithPasskeyOnDevice(email?: string): Promise<{
         : undefined,
   };
 
-  const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
+  let credential: PublicKeyCredential | null = null;
+  try {
+    credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
+  } catch (err: any) {
+    throw normalizeWebAuthnError(err, 'get');
+  }
   if (!credential) {
     throw new Error('Passkey sign-in was cancelled.');
   }

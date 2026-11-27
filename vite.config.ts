@@ -36,6 +36,9 @@ function backendApiPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), backendApiPlugin()],
+  optimizeDeps: {
+    include: ['firebase/app', 'firebase/auth'],
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
@@ -55,7 +58,7 @@ export default defineConfig({
       ].join('; '),
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
+      'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=(), publickey-credentials-get=*, publickey-credentials-create=*',
     },
   },
   preview: {
@@ -77,7 +80,7 @@ export default defineConfig({
       ].join('; '),
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
+      'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=(), publickey-credentials-get=*, publickey-credentials-create=*',
     },
   },
   build: {
@@ -102,6 +105,9 @@ export default defineConfig({
             }
             if (id.includes('@supabase')) {
               return 'vendor-supabase';
+            }
+            if (id.includes('firebase')) {
+              return 'vendor-firebase';
             }
             return 'vendor-libs';
           }

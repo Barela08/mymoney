@@ -460,8 +460,19 @@ export const AuthPage: React.FC = () => {
           {errorMessage && (
             <div className="mb-5 p-3.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 rounded-2xl flex items-start gap-3">
               <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-rose-700 dark:text-rose-300">
+              <div className="text-xs text-rose-700 dark:text-rose-300 space-y-2">
                 <p className="font-semibold">{errorMessage}</p>
+                {errorMessage.includes('embedded preview frame') && typeof window !== 'undefined' && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-[11px] font-bold text-rose-700 dark:text-rose-200 hover:bg-rose-100/60 dark:hover:bg-rose-900/40 transition-colors"
+                  >
+                    <span>Open in Full Browser Tab</span>
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                )}
                 {validationErrors.length > 0 && (
                   <ul className="list-disc list-inside mt-1 space-y-0.5 text-[11px] opacity-90">
                     {validationErrors.map((err, i) => (

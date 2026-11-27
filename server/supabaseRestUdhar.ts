@@ -9,6 +9,9 @@ import {
   calculateRepaymentApplication,
   validateUdharEdit,
   canCancelUdhar,
+  canDeleteRepayment,
+  isActiveRepayment,
+  recalculateUdharFromRepayments,
   calculatePeopleDashboardSummary,
   packStructuredNote,
   unpackStructuredNote,
@@ -105,7 +108,7 @@ function enrichTransactionRow(
     clean_notes: note || null,
     notes: note || null,
     attachment_url: row.attachment_url || meta.attachment_url || null,
-    repayments: repayments.map((rep) => {
+    repayments: repayments.filter((rep) => isActiveRepayment(rep)).map((rep) => {
       const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
       const recorder = rep.recorded_by_user_id ? userMap.get(rep.recorded_by_user_id) : null;
       return {
@@ -1291,7 +1294,7 @@ export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
     let pendingCount = 0;
 
     for (const t of matchingTxs) {
-      if (t.status === 'cancelled') continue;
+      if (t.status === 'cancelled' || t.deleted_at) continue;
       const orig = parseFloat(t.original_amount) || 0;
       const cur = parseFloat(t.current_balance) || 0;
       const isSettled = t.status === 'settled' || cur <= 0.01;
@@ -1319,7 +1322,7 @@ export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
       outstanding_payable: roundMoney(payable),
       net_balance: roundMoney(receivable - payable),
       last_transaction_date: lastDate,
-      total_transactions_count: matchingTxs.filter((t) => t.status !== 'cancelled').length,
+      total_transactions_count: matchingTxs.filter((t) => t.status !== 'cancelled' && !t.deleted_at).length,
       pending_transactions_count: pendingCount,
       is_registered: Boolean(c.linked_user_id),
     };
@@ -1349,14 +1352,14 @@ export async function saveContactRest(authUser: AuthenticatedUser, body: any) {
       return { status: 400, body: { success: false, message: 'You cannot add yourself as a contact.' } };
     }
     const targetRes = await sbRest<any[]>(
-      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status`
+      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
     );
     if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
       return { status: 404, body: { success: false, message: 'Selected user account was not found.' } };
     }
     const target = targetRes.data[0];
-    if (target.deletion_status && target.deletion_status !== 'none') {
-      return { status: 403, body: { success: false, message: 'Selected user account is unavailable.' } };
+    if (!isDiscoverableNormalUser(target)) {
+      return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for Udhar connections.' } };
     }
     if (await isBlockedBetween(authUser.id, target.id)) {
       return { status: 403, body: { success: false, message: 'Cannot connect with a blocked account.' } };
@@ -1477,7 +1480,7 @@ export async function linkContactRest(authUser: AuthenticatedUser, contactId: st
 
   const [contactRes, targetRes] = await Promise.all([
     sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
-    sbRest<any[]>(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`),
+    sbRest<any[]>(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`),
   ]);
 
   if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
@@ -1489,8 +1492,8 @@ export async function linkContactRest(authUser: AuthenticatedUser, contactId: st
   const contact = contactRes.data[0];
   const target = targetRes.data[0];
 
-  if (target.deletion_status && target.deletion_status !== 'none') {
-    return { status: 403, body: { success: false, message: 'Target user account is unavailable.' } };
+  if (!isDiscoverableNormalUser(target)) {
+    return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Target user account is not eligible for Udhar connections.' } };
   }
   if (await isBlockedBetween(authUser.id, target.id)) {
     return { status: 403, body: { success: false, message: 'Cannot link with a blocked account.' } };
@@ -1687,13 +1690,13 @@ export async function resolveQrRest(authUser: AuthenticatedUser, body: any) {
   }
 
   const qrRecord = tokRes.data[0];
-  if (qrRecord.used) {
+  if (qrRecord.used || (qrRecord.is_single_use && qrRecord.used_at)) {
     return {
       status: 410,
       body: {
         success: false,
         code: 'QR_REVOKED',
-        message: 'This pairing QR has been revoked. Ask your friend to share their new Udhar Pairing QR.',
+        message: 'This pairing QR has already been used or revoked. Ask your friend to share their new Udhar Pairing QR.',
       },
     };
   }
@@ -1719,7 +1722,7 @@ export async function resolveQrRest(authUser: AuthenticatedUser, body: any) {
   }
 
   const userRes = await sbRest<any[]>(
-    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified&limit=1`
+    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified&limit=1`
   );
   if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
     return {
@@ -1728,10 +1731,10 @@ export async function resolveQrRest(authUser: AuthenticatedUser, body: any) {
     };
   }
   const owner = userRes.data[0];
-  if (owner.status !== 'active' || (owner.deletion_status && owner.deletion_status !== 'none')) {
+  if (!isDiscoverableNormalUser(owner)) {
     return {
       status: 403,
-      body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is deactivated or unavailable.' },
+      body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is unavailable for Udhar connections.' },
     };
   }
   if (await isBlockedBetween(authUser.id, owner.id)) {
@@ -1812,7 +1815,7 @@ export async function getUdharTransactionsRest(authUser: AuthenticatedUser) {
     return { status: 503, body: { success: false, message: 'Unable to load Udhar ledger right now.' } };
   }
 
-  const rawTxs = txRes.data || [];
+  const rawTxs = (txRes.data || []).filter((t) => t.status !== 'cancelled' && !t.deleted_at);
   const linkIds = Array.from(new Set(rawTxs.map((t) => t.link_id).filter(Boolean)));
   const txIds = rawTxs.map((t) => t.id).filter(Boolean);
 
@@ -1829,7 +1832,7 @@ export async function getUdharTransactionsRest(authUser: AuthenticatedUser) {
         `udhar_edit_history?link_id=in.(${encodeURIComponent(inLinks)})&order=created_at.desc`
       ),
     ]);
-    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data;
+    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data.filter((r) => isActiveRepayment(r));
     if (histRes.ok && Array.isArray(histRes.data)) historyRows = histRes.data;
   }
 
@@ -1926,16 +1929,17 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
   let registeredUser: any = null;
   if (counterpartUserId && counterpartUserId !== authUser.id) {
     const uRes = await sbRest<any[]>(
-      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`
+      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
     );
     if (uRes.ok && uRes.data && uRes.data.length > 0) {
       const u = uRes.data[0];
-      if (!u.deletion_status || u.deletion_status === 'none') {
-        if (await isBlockedBetween(authUser.id, u.id)) {
-          return { status: 403, body: { success: false, message: 'Cannot create shared Udhar with a blocked user.' } };
-        }
-        registeredUser = u;
+      if (!isDiscoverableNormalUser(u)) {
+        return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for shared Udhar connections.' } };
       }
+      if (await isBlockedBetween(authUser.id, u.id)) {
+        return { status: 403, body: { success: false, message: 'Cannot create shared Udhar with a blocked user.' } };
+      }
+      registeredUser = u;
     }
   }
 
@@ -2093,6 +2097,12 @@ export async function confirmUdharTransactionRest(authUser: AuthenticatedUser, t
     return { status: 404, body: { success: false, message: 'Transaction not found.' } };
   }
   const tx = txRes.data[0];
+  if (tx.is_initiator) {
+    return {
+      status: 403,
+      body: { success: false, message: 'Only the recipient counterpart can confirm this transaction.' },
+    };
+  }
 
   await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
     method: 'PATCH',
@@ -2179,7 +2189,9 @@ export async function repayUdharRest(authUser: AuthenticatedUser, txId: string, 
   const existingRepsRes = await sbRest<any[]>(
     `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
   );
-  const existingReps = (existingRepsRes.ok && Array.isArray(existingRepsRes.data)) ? existingRepsRes.data : [];
+  const existingReps = (existingRepsRes.ok && Array.isArray(existingRepsRes.data))
+    ? existingRepsRes.data.filter((r) => isActiveRepayment(r))
+    : [];
 
   const confirmedPaid = roundMoney(
     existingReps.filter((r) => r.status === 'confirmed').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
@@ -2292,6 +2304,9 @@ export async function confirmRepaymentRest(authUser: AuthenticatedUser, repaymen
     return { status: 404, body: { success: false, message: 'Repayment record not found.' } };
   }
   const rep = repRes.data[0];
+  if (!isActiveRepayment(rep)) {
+    return { status: 404, body: { success: false, message: 'Repayment record not found.' } };
+  }
   if (rep.status === 'confirmed') {
     return { status: 400, body: { success: false, message: 'This repayment is already confirmed.' } };
   }
@@ -2316,8 +2331,9 @@ export async function confirmRepaymentRest(authUser: AuthenticatedUser, repaymen
   const allRepsRes = await sbRest<any[]>(
     `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
   );
+  const activeConfirmedReps = (allRepsRes.data || []).filter((r) => isActiveRepayment(r));
   const totalConfirmed = roundMoney(
-    (allRepsRes.data || []).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+    activeConfirmedReps.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   );
   const origAmt = parseFloat(tx.original_amount) || 0;
   const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmed));
@@ -2362,6 +2378,9 @@ export async function rejectRepaymentRest(authUser: AuthenticatedUser, repayment
     return { status: 404, body: { success: false, message: 'Repayment record not found.' } };
   }
   const rep = repRes.data[0];
+  if (!isActiveRepayment(rep)) {
+    return { status: 404, body: { success: false, message: 'Repayment record not found.' } };
+  }
 
   const txRes = await sbRest<any[]>(
     `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
@@ -2400,18 +2419,28 @@ export async function rejectRepaymentRest(authUser: AuthenticatedUser, repayment
 
 export async function editUdharRest(authUser: AuthenticatedUser, txId: string, body: any) {
   const txRes = await sbRest<any[]>(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
   if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
     return { status: 404, body: { success: false, message: 'Transaction not found.' } };
   }
   const tx = txRes.data[0];
+  if (tx.counterpart_user_id && tx.direction === 'took') {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: 'Only the lender who gave the money can edit this Udhar transaction.',
+      },
+    };
+  }
 
   const repsRes = await sbRest<any[]>(
     `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
   );
+  const activeConfirmedReps = (repsRes.data || []).filter((r) => isActiveRepayment(r));
   const confirmedPaid = roundMoney(
-    (repsRes.data || []).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+    activeConfirmedReps.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   );
 
   const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
@@ -2545,14 +2574,55 @@ export async function settleUdharRest(authUser: AuthenticatedUser, txId: string,
   if (tx.status === 'settled' || currentBal <= 0.01) {
     return { status: 400, body: { success: false, message: 'This transaction is already settled.' } };
   }
-  if (tx.status === 'cancelled') {
+  if (tx.status === 'cancelled' || tx.deleted_at) {
     return { status: 400, body: { success: false, message: 'Cannot settle a cancelled transaction.' } };
+  }
+  if (tx.status === 'disputed') {
+    return { status: 409, body: { success: false, message: 'Cannot settle a disputed transaction. Resolve the dispute first.' } };
   }
 
   const settleDate = body.settlement_date || body.date || new Date().toISOString().split('T')[0];
   const paymentMethod = (body.payment_method || 'UPI').trim();
   const notes = (body.notes || 'Settled in full').trim();
   const nowIso = new Date().toISOString();
+
+  let patchRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        current_balance: 0,
+        paid_amount: parseFloat(tx.original_amount) || 0,
+        status: 'settled',
+        settled_at: nowIso,
+        settled_by: authUser.id,
+        updated_at: nowIso,
+      },
+    }
+  );
+  if (!patchRes.ok && patchRes.status === 400) {
+    patchRes = await sbRest<any[]>(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+      {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: {
+          current_balance: 0,
+          paid_amount: parseFloat(tx.original_amount) || 0,
+          status: 'settled',
+          settled_at: nowIso,
+          updated_at: nowIso,
+        },
+      }
+    );
+  }
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, message: patchRes.error || 'Failed to settle transaction.' } };
+  }
+  if (!Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return { status: 409, body: { success: false, message: 'This transaction has already been settled or modified.' } };
+  }
 
   await sbRest('udhar_repayments', {
     method: 'POST',
@@ -2568,17 +2638,6 @@ export async function settleUdharRest(authUser: AuthenticatedUser, txId: string,
       status: 'confirmed',
       confirmed_at: nowIso,
       confirmed_by: authUser.id,
-    },
-  });
-
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: 'PATCH',
-    body: {
-      current_balance: 0,
-      paid_amount: parseFloat(tx.original_amount) || 0,
-      status: 'settled',
-      settled_at: nowIso,
-      updated_at: nowIso,
     },
   });
 
@@ -2599,11 +2658,13 @@ export async function settleUdharRest(authUser: AuthenticatedUser, txId: string,
       success: true,
       message: `Udhar with ${tx.counterpart_name} settled in full.`,
       isSettled: true,
+      settledAt: nowIso,
+      settledBy: authUser.id,
     },
   };
 }
 
-export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string) {
+export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string, reason?: string) {
   const txRes = await sbRest<any[]>(
     `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
@@ -2613,20 +2674,23 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
   const tx = txRes.data[0];
 
   if (tx.counterpart_user_id && tx.direction === 'took') {
-  return {
-  status: 403,
-  body: {
-  success: false,
-  message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
-  },
-  };
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
+      },
+    };
   }
 
-  const repsRes = await sbRest<any[]>(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&select=status`);
-  const repayments = (repsRes.ok && Array.isArray(repsRes.data)) ? repsRes.data : [];
+  const repsRes = await sbRest<any[]>(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`);
+  const repayments = (repsRes.ok && Array.isArray(repsRes.data))
+    ? repsRes.data.filter((r) => isActiveRepayment(r))
+    : [];
 
   const guard = canCancelUdhar({
     status: tx.status,
+    deleted_at: tx.deleted_at,
     paid_amount: tx.paid_amount,
     repayments,
   });
@@ -2635,24 +2699,65 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
     return { status: 409, body: { success: false, message: guard.reason } };
   }
 
+  const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : null;
   const nowIso = new Date().toISOString();
-  // Attempt soft-delete with audit columns first; fall back cleanly if deleted_at column isn't migrated yet
-  const softDelRes = await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: 'PATCH',
-    body: {
-      status: 'cancelled',
-      current_balance: 0,
-      deleted_at: nowIso,
-      deleted_by: authUser.id,
-      updated_at: nowIso,
-    },
-  });
+  // Atomic conditional soft-delete (allowed for active, partial, and settled Udhar entries; never disputed/cancelled)
+  let softDelRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        status: 'cancelled',
+        current_balance: 0,
+        paid_amount: 0,
+        deleted_at: nowIso,
+        deleted_by: authUser.id,
+        deletion_reason: cleanReason,
+        updated_at: nowIso,
+      },
+    }
+  );
+
+  if (!softDelRes.ok && softDelRes.status === 400) {
+    softDelRes = await sbRest<any[]>(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+      {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: { status: 'cancelled', current_balance: 0, paid_amount: 0, updated_at: nowIso },
+      }
+    );
+  }
 
   if (!softDelRes.ok) {
-    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-      method: 'PATCH',
-      body: { status: 'cancelled', current_balance: 0, updated_at: nowIso },
-    });
+    return { status: 503, body: { success: false, message: softDelRes.error || 'Failed to delete transaction.' } };
+  }
+  if (!Array.isArray(softDelRes.data) || softDelRes.data.length === 0) {
+    return { status: 409, body: { success: false, message: 'This transaction cannot be deleted in its current state.' } };
+  }
+
+  // Soft-delete all associated repayments for this Udhar (pre-migration fallback deletes rows physically if enum/columns don't exist)
+  if (repayments.length > 0) {
+    const repDelRes = await sbRest<any[]>(
+      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`,
+      {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: {
+          status: 'deleted',
+          deleted_at: nowIso,
+          deleted_by: authUser.id,
+          deletion_reason: cleanReason || 'Parent Udhar deleted',
+        },
+      }
+    );
+    if (!repDelRes.ok && repDelRes.status === 400) {
+      await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+        method: 'DELETE',
+        prefer: 'return=minimal',
+      });
+    }
   }
 
   if (tx.counterpart_user_id) {
@@ -2660,7 +2765,7 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
       targetUserId: tx.counterpart_user_id,
       actorUserId: authUser.id,
       title: `Udhar Removed by ${authUser.full_name}`,
-      message: `${authUser.full_name} deleted the pending Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+      message: `${authUser.full_name} deleted the Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
       type: 'udhar_cancelled',
       relatedEntityId: tx.link_id,
     });
@@ -2672,7 +2777,147 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string)
       success: true,
       deletedTransactionId: tx.id,
       linkId: tx.link_id,
+      deletedAt: nowIso,
+      deletedBy: authUser.id,
       message: 'Udhar entry deleted successfully. Totals have been recalculated.',
+    },
+  };
+}
+
+export async function deleteRepaymentRest(authUser: AuthenticatedUser, repaymentId: string, reason?: string) {
+  const repRes = await sbRest<any[]>(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: 'Repayment record not found.' } };
+  }
+  const rep = repRes.data[0];
+
+  const txRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: 'Associated Udhar transaction not found.' } };
+  }
+  const tx = txRes.data[0];
+
+  if (tx.status === 'cancelled' || tx.deleted_at) {
+    return { status: 409, body: { success: false, message: 'Associated Udhar has already been deleted.' } };
+  }
+  if (tx.status === 'disputed') {
+    return { status: 409, body: { success: false, message: 'Cannot delete repayments on a disputed Udhar. Resolve the dispute first.' } };
+  }
+
+  const guard = canDeleteRepayment({
+    isShared: Boolean(tx.counterpart_user_id),
+    direction: tx.direction,
+    actorUserId: authUser.id,
+    repayment: rep,
+  });
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, message: guard.reason || 'Not authorized to delete this repayment.' } };
+  }
+
+  const nowIso = new Date().toISOString();
+  const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : null;
+
+  let repDelRes = await sbRest<any[]>(
+    `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        status: 'deleted',
+        deleted_at: nowIso,
+        deleted_by: authUser.id,
+        deletion_reason: cleanReason,
+      },
+    }
+  );
+  if (!repDelRes.ok && repDelRes.status === 400) {
+    repDelRes = await sbRest<any[]>(
+      `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
+      {
+        method: 'DELETE',
+        prefer: 'return=representation',
+      }
+    );
+  }
+  if (!repDelRes.ok) {
+    return { status: 503, body: { success: false, message: repDelRes.error || 'Failed to delete repayment.' } };
+  }
+
+  const remainingRepsRes = await sbRest<any[]>(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
+  );
+  const remainingReps = (remainingRepsRes.ok && Array.isArray(remainingRepsRes.data))
+    ? remainingRepsRes.data.filter((r) => r.id !== repaymentId && isActiveRepayment(r))
+    : [];
+
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: tx.original_amount,
+    repayments: remainingReps,
+    currentStatus: tx.status,
+  });
+
+  let parentUpdateRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        paid_amount: recalc.paidAmount,
+        current_balance: recalc.remainingBalance,
+        status: recalc.nextStatus,
+        settled_at: recalc.isSettled ? (tx.settled_at || nowIso) : null,
+        settled_by: recalc.isSettled ? (tx.settled_by || authUser.id) : null,
+        updated_at: nowIso,
+      },
+    }
+  );
+
+  if (!parentUpdateRes.ok && parentUpdateRes.status === 400) {
+    parentUpdateRes = await sbRest<any[]>(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
+      {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: {
+          paid_amount: recalc.paidAmount,
+          current_balance: recalc.remainingBalance,
+          status: recalc.nextStatus,
+          settled_at: recalc.isSettled ? (tx.settled_at || nowIso) : null,
+          updated_at: nowIso,
+        },
+      }
+    );
+  }
+
+  if (!parentUpdateRes.ok) {
+    return { status: 503, body: { success: false, message: parentUpdateRes.error || 'Failed to recalculate Udhar balance.' } };
+  }
+
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Repayment Deleted by ${authUser.full_name}`,
+      message: `${authUser.full_name} deleted a repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}. Updated balance: ₹${recalc.remainingBalance.toLocaleString('en-IN')}.`,
+      type: 'repayment_deleted',
+      relatedEntityId: tx.link_id,
+    });
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      deletedRepaymentId: repaymentId,
+      transactionId: tx.id,
+      linkId: tx.link_id,
+      paidAmount: recalc.paidAmount,
+      remainingBalance: recalc.remainingBalance,
+      udharStatus: recalc.nextStatus,
+      isSettled: recalc.isSettled,
+      message: `Repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')} deleted. Remaining balance: ₹${recalc.remainingBalance.toLocaleString('en-IN')}.`,
     },
   };
 }
@@ -2691,7 +2936,7 @@ export async function getUdharHistoryRest(authUser: AuthenticatedUser, txId: str
     sbRest<any[]>(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`),
   ]);
 
-  const reps = repsRes.data || [];
+  const reps = (repsRes.data || []).filter((r) => isActiveRepayment(r));
   const hist = histRes.data || [];
   const userIds = [
     tx.counterpart_user_id,

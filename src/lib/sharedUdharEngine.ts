@@ -508,19 +508,28 @@ export function validateUdharEdit(
 /**
  * Cancellation guard: explicit cancellation is ONLY allowed when no confirmed or pending repayments exist.
  */
+export function isActiveRepayment(repayment: {
+  status?: string | null;
+  deleted_at?: string | null;
+} | null | undefined): boolean {
+  if (!repayment) return false;
+  if (repayment.deleted_at) return false;
+  return repayment.status !== 'deleted' && repayment.status !== 'cancelled';
+}
+
+/**
+ * Deletion/cancellation guard:
+ * Authorized lender (or manual owner) may delete any active Udhar entry — including
+ * partially repaid or fully settled entries — except already cancelled/deleted or disputed records.
+ */
 export function canCancelUdhar(udhar: {
   status: string;
+  deleted_at?: string | null;
   paid_amount?: number | string;
-  repayments?: Array<{ status: string }>;
+  repayments?: Array<{ status: string; deleted_at?: string | null }>;
 }): { allowed: boolean; reason?: string } {
-  if (udhar.status === 'cancelled') {
-    return { allowed: false, reason: 'This Udhar is already cancelled.' };
-  }
-  if (udhar.status === 'settled') {
-    return {
-      allowed: false,
-      reason: 'Settled Udhar records cannot be deleted or cancelled. Keep settled history for audit integrity.',
-    };
+  if (udhar.status === 'cancelled' || Boolean(udhar.deleted_at)) {
+    return { allowed: false, reason: 'This Udhar is already deleted.' };
   }
   if (udhar.status === 'disputed') {
     return {
@@ -529,20 +538,110 @@ export function canCancelUdhar(udhar: {
     };
   }
 
-  const paidAmt = parseFloat(String(udhar.paid_amount ?? 0)) || 0;
-  const activeRepayments = (udhar.repayments || []).filter(
-    (r) => r.status === 'confirmed' || r.status === 'pending_confirmation'
-  );
+  return { allowed: true };
+}
 
-  if (paidAmt > 0.01 || activeRepayments.length > 0) {
+/**
+ * Authorization guard for deleting an individual repayment entry.
+ * - Manual owner or shared lender (`gave`) may delete any active (non-disputed) repayment.
+ * - Borrower (`took` on a shared Udhar) receives 403 for confirmed or lender-recorded repayments,
+ *   and may only withdraw their own unconfirmed `pending_confirmation` claim.
+ */
+export function canDeleteRepayment(params: {
+  isShared: boolean;
+  direction: 'gave' | 'took';
+  actorUserId?: string | null;
+  repayment: {
+    status: string;
+    deleted_at?: string | null;
+    recorded_by_user_id?: string | null;
+  };
+}): { allowed: boolean; httpStatus?: number; reason?: string } {
+  const { isShared, direction, actorUserId, repayment } = params;
+  if (!isActiveRepayment(repayment)) {
+    return { allowed: false, httpStatus: 404, reason: 'This repayment has already been deleted.' };
+  }
+  if (repayment.status === 'disputed') {
     return {
       allowed: false,
-      reason:
-        'Cannot cancel an Udhar that already has repayments recorded. Use Edit or record a balancing adjustment instead to preserve audit history.',
+      httpStatus: 409,
+      reason: 'Disputed repayments cannot be deleted directly. Resolve the dispute first.',
     };
   }
 
-  return { allowed: true };
+  const isLenderOrManual = !isShared || direction === 'gave';
+  if (isLenderOrManual) {
+    return { allowed: true };
+  }
+
+  // Borrower on a shared Udhar
+  const isOwnPendingClaim =
+    repayment.status === 'pending_confirmation' &&
+    Boolean(actorUserId) &&
+    repayment.recorded_by_user_id === actorUserId;
+
+  if (isOwnPendingClaim) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    httpStatus: 403,
+    reason: 'Only the lender can delete confirmed or lender-recorded repayments.',
+  };
+}
+
+/**
+ * Authoritative recalculation of an Udhar record from remaining active confirmed repayments.
+ * If remaining balance becomes > ₹0.01 on a previously settled Udhar, automatically reopens status to 'confirmed'.
+ */
+export function recalculateUdharFromRepayments(params: {
+  originalAmount: number | string;
+  repayments: Array<{
+    amount: number | string;
+    status?: string | null;
+    deleted_at?: string | null;
+  }>;
+  currentStatus?: string | null;
+}): {
+  originalAmount: number;
+  paidAmount: number;
+  remainingBalance: number;
+  isSettled: boolean;
+  nextStatus: 'confirmed' | 'settled' | 'pending_confirmation' | 'disputed' | 'cancelled';
+} {
+  const originalAmount = roundMoney(parseFloat(String(params.originalAmount)) || 0);
+  const activeConfirmedSum = (params.repayments || [])
+    .filter((r) => isActiveRepayment(r) && r.status === 'confirmed')
+    .reduce((sum, r) => sum + (parseFloat(String(r.amount)) || 0), 0);
+
+  const paidAmount = roundMoney(Math.min(originalAmount, Math.max(0, activeConfirmedSum)));
+  const rawRemaining = roundMoney(Math.max(0, originalAmount - paidAmount));
+  const isSettled = rawRemaining <= 0.01 && originalAmount > 0;
+  const remainingBalance = isSettled ? 0 : rawRemaining;
+
+  const prev = params.currentStatus;
+  let nextStatus: 'confirmed' | 'settled' | 'pending_confirmation' | 'disputed' | 'cancelled' = 'confirmed';
+  if (prev === 'cancelled') {
+    nextStatus = 'cancelled';
+  } else if (prev === 'disputed') {
+    nextStatus = 'disputed';
+  } else if (isSettled) {
+    nextStatus = 'settled';
+  } else if (prev === 'pending_confirmation') {
+    nextStatus = 'pending_confirmation';
+  } else {
+    // Handles reopening from 'settled' -> 'confirmed' when a repayment is deleted
+    nextStatus = 'confirmed';
+  }
+
+  return {
+    originalAmount,
+    paidAmount,
+    remainingBalance,
+    isSettled,
+    nextStatus,
+  };
 }
 
 export interface UdharItemLike {
@@ -554,7 +653,7 @@ export interface UdharItemLike {
   due_date?: string | null;
   counterpart_user_id?: string | null;
   counterpart_name?: string;
-  repayments?: Array<{ status: string }>;
+  repayments?: Array<{ status: string; deleted_at?: string | null }>;
 }
 
 /**
@@ -607,7 +706,9 @@ export function calculatePersonLedgerSummary(
     }
 
     if (Array.isArray(tx.repayments)) {
-      pendingRepaymentCount += tx.repayments.filter((r) => r.status === 'pending_confirmation').length;
+      pendingRepaymentCount += tx.repayments.filter(
+        (r) => isActiveRepayment(r) && r.status === 'pending_confirmation'
+      ).length;
     }
   }
 
@@ -665,7 +766,9 @@ export function calculatePeopleDashboardSummary(
       pendingConfirmationsCount += 1;
     }
     if (Array.isArray(tx.repayments)) {
-      pendingConfirmationsCount += tx.repayments.filter((r) => r.status === 'pending_confirmation').length;
+      pendingConfirmationsCount += tx.repayments.filter(
+        (r) => isActiveRepayment(r) && r.status === 'pending_confirmation'
+      ).length;
     }
   }
 

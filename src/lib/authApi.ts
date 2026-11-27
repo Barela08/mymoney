@@ -1,6 +1,4 @@
-import bcrypt from 'bcryptjs';
 import { AuthUser, AdminUserListItem } from '../types';
-import { getSavedSupabaseConfig } from './supabase';
 
 export interface UserProfileData {
   id: string;
@@ -148,433 +146,6 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   return data;
 }
 
-// -----------------------------------------------------------------------------
-// Direct Supabase Fallback Authentication Engine
-// Used automatically if backend serverless endpoints are offline, 404, or unreachable
-// -----------------------------------------------------------------------------
-function mapRawUserToAuthUser(u: any): AuthUser {
-  const isMasterAdmin = Boolean(
-    u.email &&
-    (u.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-     u.email.toLowerCase().trim() === 'admin@mymoney.com')
-  );
-  const rawRole = (u.role || '').toLowerCase().trim();
-  const effectiveRole = isMasterAdmin ? 'superadmin' : (rawRole || 'user');
-
-  return {
-    uid: u.id,
-    id: u.id,
-    email: u.email,
-    displayName: u.full_name || u.email?.split('@')[0] || (isMasterAdmin ? 'Security Administrator' : 'User'),
-    full_name: u.full_name || (isMasterAdmin ? 'Security Administrator' : undefined),
-    role: effectiveRole as any,
-    email_verified: Boolean(u.email_verified),
-    emailVerified: Boolean(u.email_verified),
-    status: (u.status as any) || 'active',
-    phone: u.phone || null,
-    avatar_url: u.avatar_url || null,
-    avatarUrl: u.avatar_url || null,
-    createdAt: u.created_at || new Date().toISOString(),
-    created_at: u.created_at || new Date().toISOString(),
-  };
-}
-
-async function directSupabaseGetProfile(): Promise<{ success: boolean; profile: UserProfileData }> {
-  const cachedUser = getStoredAuthUser();
-  const userId = cachedUser?.uid || cachedUser?.id;
-  const userEmail = cachedUser?.email;
-
-  if (userId || userEmail) {
-    try {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const filter = userId
-        ? `id=eq.${encodeURIComponent(userId)}`
-        : `email=ilike.${encodeURIComponent(userEmail!)}`;
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?${filter}&select=*`, {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Accept: 'application/json',
-        },
-      });
-      if (res.ok) {
-        const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          const u = rows[0];
-          const isMasterAdmin = Boolean(
-    u.email &&
-    (u.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-     u.email.toLowerCase().trim() === 'admin@mymoney.com')
-  );
-          const rawRole = (u.role || '').toLowerCase().trim();
-          const effectiveRole = isMasterAdmin ? 'superadmin' : (rawRole || 'user');
-
-          const profileData: UserProfileData = {
-            id: u.id,
-            uid: u.id,
-            full_name: u.full_name || cachedUser?.displayName || 'User',
-            displayName: u.full_name || cachedUser?.displayName || 'User',
-            email: u.email || cachedUser?.email || '',
-            phone: u.phone || cachedUser?.phone || null,
-            role: effectiveRole as any,
-            status: (u.status || 'active') as any,
-            email_verified: Boolean(u.email_verified),
-            avatar_url: u.avatar_url || null,
-            force_password_reset: Boolean(u.force_password_reset),
-            created_at: u.created_at || cachedUser?.createdAt || new Date().toISOString(),
-            createdAt: u.created_at || cachedUser?.createdAt || new Date().toISOString(),
-            last_login_at: u.last_login_at || null,
-            password_changed_at: u.password_changed_at ? new Date(u.password_changed_at).toLocaleString() : 'Never',
-            activeSessionsCount: 1,
-          };
-
-          setStoredAuthUser(mapRawUserToAuthUser(u));
-          return { success: true, profile: profileData };
-        }
-      }
-    } catch (err: any) {
-      console.warn('directSupabaseGetProfile fetch error:', err.message);
-    }
-  }
-
-  // Gracefully construct from cached user
-  if (cachedUser) {
-    const fallbackProfile: UserProfileData = {
-      id: cachedUser.uid || cachedUser.id || 'user',
-      uid: cachedUser.uid || cachedUser.id || 'user',
-      full_name: cachedUser.displayName || cachedUser.full_name || 'User',
-      displayName: cachedUser.displayName || cachedUser.full_name || 'User',
-      email: cachedUser.email || '',
-      phone: cachedUser.phone || null,
-      role: (cachedUser.role || 'user') as any,
-      status: (cachedUser.status || 'active') as any,
-      email_verified: Boolean(cachedUser.email_verified),
-      avatar_url: cachedUser.avatarUrl || null,
-      force_password_reset: false,
-      created_at: cachedUser.createdAt || new Date().toISOString(),
-      createdAt: cachedUser.createdAt || new Date().toISOString(),
-      last_login_at: null,
-      password_changed_at: 'Never',
-      activeSessionsCount: 1,
-    };
-    return { success: true, profile: fallbackProfile };
-  }
-
-  throw new Error('Authentication required.');
-}
-
-async function directSupabaseUpdateProfile(payload: {
-  fullName?: string;
-  phone?: string;
-  avatarUrl?: string;
-}): Promise<{ success: boolean; message: string; user: AuthUser }> {
-  const cachedUser = getStoredAuthUser();
-  const userId = cachedUser?.uid || cachedUser?.id;
-  if (!userId) {
-    throw new Error('Authentication required.');
-  }
-
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-  const updateBody: Record<string, any> = {
-    updated_at: new Date().toISOString(),
-  };
-  if (payload.fullName !== undefined) updateBody.full_name = payload.fullName.trim();
-  if (payload.phone !== undefined) updateBody.phone = payload.phone.trim() || null;
-  if (payload.avatarUrl !== undefined) updateBody.avatar_url = payload.avatarUrl || null;
-
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-      method: 'PATCH',
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify(updateBody),
-    });
-
-    if (res.ok) {
-      const rows = await res.json();
-      if (Array.isArray(rows) && rows.length > 0) {
-        const updatedUser = mapRawUserToAuthUser(rows[0]);
-        setStoredAuthUser(updatedUser);
-        return {
-          success: true,
-          message: 'Profile updated successfully.',
-          user: updatedUser,
-        };
-      }
-    }
-  } catch (err: any) {
-    console.warn('directSupabaseUpdateProfile error:', err.message);
-  }
-
-  const fallbackUser: AuthUser = {
-    ...cachedUser,
-    displayName: payload.fullName || cachedUser.displayName,
-    full_name: payload.fullName || cachedUser.full_name,
-    phone: payload.phone !== undefined ? payload.phone : cachedUser.phone,
-    avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : cachedUser.avatarUrl,
-  };
-  setStoredAuthUser(fallbackUser);
-
-  return {
-    success: true,
-    message: 'Profile updated successfully.',
-    user: fallbackUser,
-  };
-}
-
-async function directSupabaseChangePassword(payload: {
-  currentPassword: string;
-  newPassword: string;
-  confirmNewPassword: string;
-}): Promise<{ success: boolean; message: string }> {
-  const cachedUser = getStoredAuthUser();
-  const userId = cachedUser?.uid || cachedUser?.id;
-  if (!userId) {
-    throw new Error('Authentication required.');
-  }
-
-  if (payload.newPassword.length < 8) {
-    throw new Error('New password must be at least 8 characters.');
-  }
-
-  if (payload.newPassword !== payload.confirmNewPassword) {
-    throw new Error('New passwords do not match.');
-  }
-
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-  const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}&select=password_hash`, {
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Accept: 'application/json',
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error('Unable to verify current password.');
-  }
-
-  const rows = await res.json();
-  if (!Array.isArray(rows) || rows.length === 0) {
-    throw new Error('User not found.');
-  }
-
-  const isMatch = await bcrypt.compare(payload.currentPassword, rows[0].password_hash);
-  if (!isMatch) {
-    throw new Error('Current password is incorrect.');
-  }
-
-  const newHash = await bcrypt.hash(payload.newPassword, 12);
-  const nowIso = new Date().toISOString();
-
-  const updateRes = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-    method: 'PATCH',
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      password_hash: newHash,
-      password_changed_at: nowIso,
-      updated_at: nowIso,
-    }),
-  });
-
-  if (!updateRes.ok) {
-    throw new Error('Failed to update password.');
-  }
-
-  return {
-    success: true,
-    message: 'Your password was updated successfully.',
-  };
-}
-
-async function directSupabaseDeleteAccount(password: string): Promise<{ success: boolean; message: string }> {
-  const cachedUser = getStoredAuthUser();
-  const userId = cachedUser?.uid || cachedUser?.id;
-  if (!userId) {
-    throw new Error('Authentication required.');
-  }
-
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-
-  // Verify password
-  try {
-    const userRes = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}&select=password_hash`, {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        Accept: 'application/json',
-      },
-    });
-
-    if (userRes.ok) {
-      const rows = await userRes.json();
-      if (Array.isArray(rows) && rows.length > 0) {
-        const match = await bcrypt.compare(password, rows[0].password_hash);
-        if (!match) {
-          throw new Error('Incorrect password. Account deletion aborted.');
-        }
-      }
-    }
-  } catch (err: any) {
-    if (err.message.includes('Incorrect password')) throw err;
-  }
-
-  const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  await fetch(`${supabaseUrl}/rest/v1/account_deletion_requests`, {
-    method: 'POST',
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      user_id: userId,
-      status: 'pending',
-      scheduled_for: scheduledFor,
-      reason: 'User requested deletion from profile',
-    }),
-  }).catch(() => {});
-
-  setStoredSessionToken(null);
-  return {
-    success: true,
-    message: 'Your account has been scheduled for permanent deletion in 24 hours.',
-  };
-}
-
-async function directSupabaseForgotPassword(email: string): Promise<{ success: boolean; message: string }> {
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-  const normEmail = email.toLowerCase().trim();
-
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/app_users?email=ilike.${encodeURIComponent(normEmail)}&select=id,full_name,email`, {
-      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
-    });
-
-    if (res.ok) {
-      const rows = await res.json();
-      if (Array.isArray(rows) && rows.length > 0) {
-        const u = rows[0];
-        const token = 'rst_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-        const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-        await fetch(`${supabaseUrl}/rest/v1/password_resets`, {
-          method: 'POST',
-          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: u.id,
-            token_hash: token,
-            expires_at: expiresAt,
-            is_used: false,
-          }),
-        }).catch(() => {});
-
-        const baseDomain = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-          ? window.location.origin
-          : 'https://mymoney.nileshbarela.site';
-        const resetLink = `${baseDomain}/reset-password?token=${token}`;
-
-        fetch('/api/send-reset-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: u.email, name: u.full_name, resetLink }),
-        }).catch(() => {});
-
-        return {
-          success: true,
-          message: 'If an account exists with this email, a password reset link has been sent.',
-        };
-      }
-    }
-  } catch {}
-
-  return {
-    success: true,
-    message: 'If an account exists with this email, a password reset link has been sent.',
-  };
-}
-
-async function directSupabaseVerifyResetToken(token: string): Promise<{ valid: boolean; email?: string; name?: string; message?: string }> {
-  try {
-    const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-    const res = await fetch(`${supabaseUrl}/rest/v1/password_resets?token_hash=eq.${encodeURIComponent(token)}&is_used=eq.false&select=id,user_id,expires_at`, {
-      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
-    });
-
-    if (res.ok) {
-      const rows = await res.json();
-      if (Array.isArray(rows) && rows.length > 0) {
-        const r = rows[0];
-        if (new Date(r.expires_at) >= new Date()) {
-          const uRes = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(r.user_id)}&select=email,full_name`, {
-            headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Accept: 'application/json' },
-          });
-          if (uRes.ok) {
-            const uRows = await uRes.json();
-            if (Array.isArray(uRows) && uRows.length > 0) {
-              return {
-                valid: true,
-                email: uRows[0].email,
-                name: uRows[0].full_name,
-              };
-            }
-          }
-        }
-      }
-    }
-  } catch {}
-
-  return { valid: false, message: 'This password reset link is invalid or has expired.' };
-}
-
-async function directSupabaseResetPassword(payload: { token: string; newPassword: string; confirmPassword: string }): Promise<{ success: boolean; message: string }> {
-  if (payload.newPassword !== payload.confirmPassword) {
-    throw new Error('Passwords do not match.');
-  }
-  if (payload.newPassword.length < 8) {
-    throw new Error('Password must be at least 8 characters.');
-  }
-
-  const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-  const v = await directSupabaseVerifyResetToken(payload.token);
-  if (!v.valid || !v.email) {
-    throw new Error('Password reset token is invalid or has expired.');
-  }
-
-  const newHash = await bcrypt.hash(payload.newPassword, 12);
-  const nowIso = new Date().toISOString();
-
-  const updateRes = await fetch(`${supabaseUrl}/rest/v1/app_users?email=ilike.${encodeURIComponent(v.email)}`, {
-    method: 'PATCH',
-    headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password_hash: newHash, password_changed_at: nowIso, updated_at: nowIso }),
-  });
-
-  if (!updateRes.ok) {
-    throw new Error('Failed to update password.');
-  }
-
-  // Mark token used
-  await fetch(`${supabaseUrl}/rest/v1/password_resets?token_hash=eq.${encodeURIComponent(payload.token)}`, {
-    method: 'PATCH',
-    headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ is_used: true }),
-  }).catch(() => {});
-
-  return {
-    success: true,
-    message: 'Your password has been reset successfully. You can now log in with your new password.',
-  };
-}
-
 export const authApi = {
   // Authentication
   async register(payload: {
@@ -677,14 +248,9 @@ export const authApi = {
     }
   },
 
-  // User Profile
+  // User Profile (strictly server-verified; never fall back to localStorage on 401/403)
   async getProfile(): Promise<{ success: boolean; profile: UserProfileData }> {
-    try {
-      return await request('/api/profile', { method: 'GET' });
-    } catch (err: any) {
-      console.warn('Backend /api/profile unreachable or returned error, using direct Supabase fallback:', err.message);
-      return await directSupabaseGetProfile();
-    }
+    return await request('/api/profile', { method: 'GET' });
   },
 
   async updateProfile(payload: {
@@ -693,20 +259,12 @@ export const authApi = {
     username?: string;
     avatarUrl?: string;
   }): Promise<{ success: boolean; message: string; user: AuthUser }> {
-    try {
-      const data = await request('/api/profile', {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-      if (data?.user) setStoredAuthUser(data.user);
-      return data;
-    } catch (err: any) {
-      if (err?.status === 400 || err?.status === 401 || err?.status === 409) {
-        throw err;
-      }
-      console.warn('Backend update profile unreachable, using direct Supabase update:', err.message);
-      return await directSupabaseUpdateProfile(payload);
-    }
+    const data = await request('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    if (data?.user) setStoredAuthUser(data.user);
+    return data;
   },
 
   async completeProfile(payload: {
@@ -746,60 +304,34 @@ export const authApi = {
     newPassword: string;
     confirmNewPassword: string;
   }): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request('/api/profile/change-password', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    } catch (err: any) {
-      console.warn('Backend change-password unreachable, using direct Supabase change:', err.message);
-      return await directSupabaseChangePassword(payload);
-    }
+    return await request('/api/profile/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   async deleteAccount(password: string): Promise<{ success: boolean; message: string }> {
-    try {
-      const data = await request('/api/profile/delete-account', {
-        method: 'DELETE',
-        body: JSON.stringify({ password }),
-      });
-      setStoredSessionToken(null);
-      return data;
-    } catch (err: any) {
-      console.warn('Backend delete-account unreachable, using direct Supabase delete:', err.message);
-      return await directSupabaseDeleteAccount(password);
-    }
+    const data = await request('/api/profile/delete-account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
+    setStoredSessionToken(null);
+    return data;
   },
 
-  // Password Recovery
+  // Password Recovery (Strictly server-side SMTP + single-use SHA-256 tokens; no insecure client fallback)
   async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request('/api/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      });
-    } catch (err: any) {
-      if (err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS') {
-        throw err;
-      }
-      console.warn('Backend forgot-password unreachable, using direct Supabase fallback:', err.message);
-      return await directSupabaseForgotPassword(email);
-    }
+    return await request('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
   },
 
   async verifyResetToken(token: string): Promise<{ valid: boolean; email?: string; name?: string; message?: string }> {
-    try {
-      return await request('/api/auth/verify-reset-token', {
-        method: 'POST',
-        body: JSON.stringify({ token }),
-      });
-    } catch (err: any) {
-      if (err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS') {
-        throw err;
-      }
-      console.warn('Backend verify-reset-token unreachable, using direct Supabase fallback:', err.message);
-      return await directSupabaseVerifyResetToken(token);
-    }
+    return await request('/api/auth/verify-reset-token', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
   },
 
   async resetPassword(payload: {
@@ -807,120 +339,45 @@ export const authApi = {
     newPassword: string;
     confirmPassword: string;
   }): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request('/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    } catch (err: any) {
-      if (err.status === 429 || err?.data?.code === 'TOO_MANY_REQUESTS' || err.status === 400) {
-        throw err;
-      }
-      console.warn('Backend reset-password unreachable, using direct Supabase fallback:', err.message);
-      return await directSupabaseResetPassword(payload);
-    }
+    return await request('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
-  // Admin User Management
+  // Admin User Management (Strictly server-verified; never bypass with anon client calls)
   async adminGetUsers(): Promise<{ success: boolean; users: AdminUserListItem[] }> {
-    try {
-      return await request('/api/admin/users', { method: 'GET' });
-    } catch (err) {
-      // Direct Supabase fallback for admin users list
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?select=*&order=created_at.desc`, {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Accept: 'application/json',
-        },
-      });
-      if (res.ok) {
-        const rows = await res.json();
-        const users = rows.map((u: any) => ({
-          ...mapRawUserToAuthUser(u),
-          displayPassword: u.phone ? `Phone: ${u.phone}` : 'Protected (Bcrypt)',
-        }));
-        return { success: true, users };
-      }
-      throw err;
-    }
+    return await request('/api/admin/users', { method: 'GET' });
   },
 
   async adminUpdateUserStatus(
     userId: string,
     status: 'active' | 'suspended' | 'deactivated'
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
-        method: 'PUT',
-        body: JSON.stringify({ status }),
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status }),
-      });
-      if (res.ok) return { success: true, message: `User status changed to ${status}` };
-      throw err;
-    }
+    return await request(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
   },
 
   async adminUpdateUserRole(
     userId: string,
     role: 'user' | 'admin'
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
-        method: 'PUT',
-        body: JSON.stringify({ role }),
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role }),
-      });
-      if (res.ok) return { success: true, message: `User role updated to ${role}` };
-      throw err;
-    }
+    return await request(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    });
   },
 
   async adminSetUserPassword(
     userId: string,
     newPassword: string
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}/set-password`, {
-        method: 'POST',
-        body: JSON.stringify({ newPassword }),
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const passwordHash = await bcrypt.hash(newPassword, 12);
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ password_hash: passwordHash, password_changed_at: new Date().toISOString() }),
-      });
-      if (res.ok) return { success: true, message: 'Password updated successfully' };
-      throw err;
-    }
+    return await request(`/api/admin/users/${encodeURIComponent(userId)}/set-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
   },
 
   async adminSendResetEmail(userId: string): Promise<{ success: boolean; message: string }> {
@@ -942,22 +399,9 @@ export const authApi = {
   },
 
   async adminDeleteUser(userId: string): Promise<{ success: boolean; message: string }> {
-    try {
-      return await request(`/api/admin/users/${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-      });
-    } catch (err) {
-      const { url: supabaseUrl, key: supabaseKey } = getSavedSupabaseConfig();
-      const res = await fetch(`${supabaseUrl}/rest/v1/app_users?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-      });
-      if (res.ok) return { success: true, message: 'User deleted successfully' };
-      throw err;
-    }
+    return await request(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
   },
 
   async adminGetAuditLogs(): Promise<{ success: boolean; logs: any[] }> {

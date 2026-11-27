@@ -48,12 +48,12 @@ export function clearUpiProfileCache(): void {
 }
 
 function notifyUpiProfileChanged(detail: UpiProfileChangedDetail): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent<UpiProfileChangedDetail>('my-money-upi-profile-changed', { detail }));
 }
 
 // Clear cache whenever another component (e.g. PrivacyConsentCard) emits a profile-changed event without detail
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('my-money-upi-profile-changed', (ev: Event) => {
     const customEv = ev as CustomEvent<UpiProfileChangedDetail | undefined>;
     if (!customEv.detail) {

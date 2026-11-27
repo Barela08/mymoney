@@ -508,21 +508,27 @@ export const udharDeletionApi = {
     transaction: UdharTransactionItem;
     isLinked: boolean;
   }> {
-    return apiRequest('/api/udhar/transactions', {
+    const res = await apiRequest('/api/udhar/transactions', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async confirmUdharTransaction(id: string): Promise<{ success: boolean; message: string }> {
-    return apiRequest(`/api/udhar/transactions/${id}/confirm`, { method: 'POST' });
+    const res = await apiRequest(`/api/udhar/transactions/${id}/confirm`, { method: 'POST' });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async disputeUdharTransaction(id: string, reason: string): Promise<{ success: boolean; message: string }> {
-    return apiRequest(`/api/udhar/transactions/${id}/dispute`, {
+    const res = await apiRequest(`/api/udhar/transactions/${id}/dispute`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async repayUdharTransaction(
@@ -546,10 +552,12 @@ export const udharDeletionApi = {
     isPendingConfirmation?: boolean;
     repayment?: UdharRepayment;
   }> {
-    return apiRequest(`/api/udhar/transactions/${id}/repay`, {
+    const res = await apiRequest(`/api/udhar/transactions/${id}/repay`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async confirmRepayment(repaymentId: string): Promise<{
@@ -558,7 +566,9 @@ export const udharDeletionApi = {
     remainingBalance?: number;
     isSettled?: boolean;
   }> {
-    return apiRequest(`/api/udhar/repayments/${repaymentId}/confirm`, { method: 'POST' });
+    const res = await apiRequest(`/api/udhar/repayments/${repaymentId}/confirm`, { method: 'POST' });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async rejectRepayment(repaymentId: string, reason: string): Promise<{
@@ -566,10 +576,12 @@ export const udharDeletionApi = {
     message: string;
     rejectionReason?: string;
   }> {
-    return apiRequest(`/api/udhar/repayments/${repaymentId}/reject`, {
+    const res = await apiRequest(`/api/udhar/repayments/${repaymentId}/reject`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async editUdharTransaction(
@@ -590,10 +602,12 @@ export const udharDeletionApi = {
     remainingBalance?: number;
     isSettled?: boolean;
   }> {
-    return apiRequest(`/api/udhar/transactions/${id}`, {
+    const res = await apiRequest(`/api/udhar/transactions/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
+    dispatchUdharUpdated();
+    return res;
   },
 
   async getUdharTransactionHistory(id: string): Promise<{
@@ -609,13 +623,51 @@ export const udharDeletionApi = {
     id: string,
     payload?: { notes?: string; settlement_date?: string; payment_method?: string }
   ): Promise<{ success: boolean; message: string; isSettled: boolean }> {
-    return apiRequest(`/api/udhar/transactions/${id}/settle`, {
+    const res = await apiRequest(`/api/udhar/transactions/${id}/settle`, {
       method: 'POST',
       body: JSON.stringify(payload || {}),
     });
+    dispatchUdharUpdated();
+    return res;
   },
 
-  async cancelUdharTransaction(id: string): Promise<{ success: boolean; message: string }> {
-    return apiRequest(`/api/udhar/transactions/${id}`, { method: 'DELETE' });
+  async cancelUdharTransaction(
+    id: string,
+    reason?: string
+  ): Promise<{ success: boolean; deletedTransactionId?: string; linkId?: string; message: string }> {
+    const res = await apiRequest(`/api/udhar/transactions/${id}`, {
+      method: 'DELETE',
+      body: reason ? JSON.stringify({ reason }) : undefined,
+    });
+    dispatchUdharUpdated();
+    return res;
+  },
+
+  async deleteRepayment(
+    repaymentId: string,
+    reason?: string
+  ): Promise<{
+    success: boolean;
+    deletedRepaymentId: string;
+    transactionId: string;
+    linkId: string;
+    paidAmount: number;
+    remainingBalance: number;
+    udharStatus: string;
+    isSettled: boolean;
+    message: string;
+  }> {
+    const res = await apiRequest(`/api/udhar/repayments/${repaymentId}`, {
+      method: 'DELETE',
+      body: reason ? JSON.stringify({ reason }) : undefined,
+    });
+    dispatchUdharUpdated();
+    return res;
   },
 };
+
+function dispatchUdharUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
+  }
+}

@@ -475,7 +475,7 @@ return (
         </div>
       )}
 
-      {currentTab === 'admin' ? (
+      {currentTab === 'admin' && isAdmin ? (
         <Suspense fallback={<SectionFallback />}>
           <AdminDashboard
             onExit={() => {

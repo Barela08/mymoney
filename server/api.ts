@@ -103,6 +103,9 @@ import {
   calculateRepaymentApplication,
   validateUdharEdit,
   canCancelUdhar,
+  canDeleteRepayment,
+  isActiveRepayment,
+  recalculateUdharFromRepayments,
   calculatePeopleDashboardSummary,
   packStructuredNote,
   unpackStructuredNote,
@@ -136,8 +139,45 @@ import {
   editUdharRest,
   settleUdharRest,
   cancelUdharRest,
+  deleteRepaymentRest,
   getUdharHistoryRest,
 } from './supabaseRestUdhar.js';
+
+async function syncSupabaseAuthPassword(email: string, newPassword: string): Promise<void> {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
+  if (!serviceKey || !supabaseUrl || !email) return;
+
+  try {
+    const listRes = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!listRes.ok) return;
+    const listData = await listRes.json().catch(() => null);
+    const users: any[] = Array.isArray(listData?.users) ? listData.users : [];
+    const target = users.find((u) => String(u?.email || '').trim().toLowerCase() === email.trim().toLowerCase());
+    if (!target?.id) return;
+
+    await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(target.id)}`, {
+      method: 'PUT',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password: newPassword }),
+    });
+  } catch (err) {
+    console.warn('[Supabase Auth Password Sync Notice]:', err);
+  }
+}
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
@@ -1442,13 +1482,22 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
-      // Dispatch real email via Nodemailer
-      await sendPasswordResetEmail(user.email, user.full_name, resetLink);
+      // Dispatch real email via configured SMTP / Nodemailer transport
+      const emailSent = await sendPasswordResetEmail(user.email, user.full_name, resetLink);
+      if (!emailSent) {
+        console.warn('[Forgot Password] SMTP delivery failed or SMTP credentials are not configured.');
+        await logSecurityEvent('FORGOT_PASSWORD_SMTP_FAILED', {
+          userId: user.id,
+          userEmail: user.email,
+          ipAddress: clientIp,
+        }).catch(() => {});
+      }
 
       await logSecurityEvent('FORGOT_PASSWORD_LINK_GENERATED', {
         userId: user.id,
         userEmail: user.email,
         ipAddress: clientIp,
+        details: { emailSent },
       }).catch(() => {});
 
       // Strict security: Never return raw recovery URL or token in API responses
@@ -1609,22 +1658,57 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const nowIso = new Date().toISOString();
 
       if (isDatabaseAvailable()) {
-        // Update user password and clear force_password_reset
-        await query(
-          `UPDATE public.app_users 
-           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
-           WHERE id = $2`,
-          [passwordHash, record.user_id]
-        );
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          // Atomically claim the single-use reset token first to block concurrent reuse
+          const claimRes = await client.query(
+            `UPDATE public.password_resets
+             SET used = TRUE, used_at = NOW()
+             WHERE id = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING id`,
+            [record.id]
+          );
+          if (claimRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            sendJson(res, 400, {
+              success: false,
+              message: 'This reset link is invalid, expired, or has already been used. Please request a new one.',
+            });
+            return true;
+          }
 
-        // Mark token permanently used
-        await query(
-          `UPDATE public.password_resets 
-           SET used = TRUE, used_at = NOW() 
-           WHERE id = $1`,
-          [record.id]
-        );
+          await client.query(
+            `UPDATE public.app_users
+             SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL
+             WHERE id = $2`,
+            [passwordHash, record.user_id]
+          );
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
+        }
       } else {
+        // Atomically mark token used before updating password
+        const claimRest = await sbRestRequest<any[]>(
+          `password_resets?id=eq.${encodeURIComponent(record.id)}&used=eq.false`,
+          {
+            method: 'PATCH',
+            prefer: 'return=representation',
+            body: { used: true, used_at: nowIso },
+          }
+        );
+        if (!claimRest.ok || !Array.isArray(claimRest.data) || claimRest.data.length === 0) {
+          sendJson(res, 400, {
+            success: false,
+            message: 'This reset link is invalid, expired, or has already been used. Please request a new one.',
+          });
+          return true;
+        }
+
         const updUser = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(record.user_id)}`, {
           method: 'PATCH',
           body: {
@@ -1640,11 +1724,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           sendJson(res, 503, { success: false, message: 'Failed to update password right now. Please retry.' });
           return true;
         }
-        await sbRestRequest(`password_resets?id=eq.${encodeURIComponent(record.id)}`, {
-          method: 'PATCH',
-          body: { used: true, used_at: nowIso },
-        }).catch(() => {});
       }
+
+      // Sync Supabase Auth password if user also has a Supabase Auth account and Admin Key is configured
+      await syncSupabaseAuthPassword(record.email, newPassword).catch(() => {});
 
       // Invalidate all existing sessions
       await revokeAllUserSessions(record.user_id);
@@ -1653,7 +1736,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       await resetRateLimitAsync(`reset_pass:session:${tokenHash}`);
       await resetRateLimitAsync(`login:account:${record.email}`);
 
-      // Dispatch confirmation email
+      // Dispatch confirmation email via configured SMTP
       sendPasswordChangedEmail(record.email, record.full_name, clientIp).catch(() => {});
 
       await logSecurityEvent('PASSWORD_RESET_SUCCESSFUL', {
@@ -2795,12 +2878,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
         const targetRes = await query(
-          `SELECT id, full_name, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [linkedUserId]
         );
-        if (targetRes.rows.length === 0 || targetRes.rows[0].status !== 'active' || targetRes.rows[0].deletion_status !== 'none') {
-          sendJson(res, 404, { success: false, message: 'Selected user account is unavailable.' });
+        if (targetRes.rows.length === 0) {
+          sendJson(res, 404, { success: false, message: 'Selected user account was not found.' });
+          return true;
+        }
+        if (!isDiscoverableNormalUser(targetRes.rows[0])) {
+          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for Udhar connections.' });
           return true;
         }
       }
@@ -2959,12 +3046,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const contact = contactRes.rows[0];
 
       const targetUserRes = await query(
-        `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+        `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
          FROM public.app_users WHERE id = $1`,
         [registeredUserId]
       );
-      if (targetUserRes.rows.length === 0 || targetUserRes.rows[0].status !== 'active' || targetUserRes.rows[0].deletion_status !== 'none') {
-        sendJson(res, 404, { success: false, message: 'Registered user not found or unavailable.' });
+      if (targetUserRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Registered user not found.' });
+        return true;
+      }
+      if (!isDiscoverableNormalUser(targetUserRes.rows[0])) {
+        sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Target user account is not eligible for Udhar connections.' });
         return true;
       }
 
@@ -3941,8 +4032,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const tokenRes = await query(
-          `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
-                  u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+          `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used, t.is_single_use, t.used_at,
+                  u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
                   COALESCE(u.deletion_status, 'none') AS deletion_status
            FROM public.qr_pairing_tokens t
            JOIN public.app_users u ON t.user_id = u.id
@@ -3962,11 +4053,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         const qrRecord = tokenRes.rows[0];
 
-        if (qrRecord.used) {
+        if (qrRecord.used || (qrRecord.is_single_use && qrRecord.used_at)) {
           sendJson(res, 410, {
             success: false,
             code: 'QR_REVOKED',
-            message: 'This pairing QR has been revoked. Ask your friend to share their newer Udhar Pairing QR.',
+            message: 'This pairing QR has already been used or revoked. Ask your friend to share their newer Udhar Pairing QR.',
           });
           return true;
         }
@@ -3980,11 +4071,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
 
-        if (qrRecord.status !== 'active' || qrRecord.deletion_status !== 'none') {
+        if (!isDiscoverableNormalUser(qrRecord)) {
           sendJson(res, 403, {
             success: false,
             code: 'ACCOUNT_UNAVAILABLE',
-            message: 'This user account is currently deactivated or unavailable.',
+            message: 'This user account is currently deactivated or unavailable for Udhar connections.',
           });
           return true;
         }
@@ -4137,7 +4228,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const relationshipType = (body.relationshipType || 'Friend').trim();
 
         const tokenRes = await query(
-          `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+          `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
                   COALESCE(u.deletion_status, 'none') AS deletion_status
            FROM public.qr_pairing_tokens t
            JOIN public.app_users u ON t.user_id = u.id
@@ -4157,7 +4248,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const tokenRecord = tokenRes.rows[0];
         const targetUserId = tokenRecord.user_id;
 
-        if (tokenRecord.status !== 'active' || tokenRecord.deletion_status !== 'none') {
+        if (!isDiscoverableNormalUser(tokenRecord)) {
           sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is currently deactivated or unavailable.' });
           return true;
         }
@@ -4415,6 +4506,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const repaymentsByUdhar: Record<string, any[]> = {};
       for (const rep of repayRes.rows) {
+        if (!isActiveRepayment(rep)) continue;
         const key = rep.tx_id || rep.udhar_id;
         if (!repaymentsByUdhar[key]) repaymentsByUdhar[key] = [];
         const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
@@ -4433,7 +4525,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         editHistoryByLink[hist.link_id].push(hist);
       }
 
-      const transactions = txRes.rows.map((r: any) => {
+      const activeTxRows = txRes.rows.filter((r: any) => r.status !== 'cancelled' && !r.deleted_at);
+      const transactions = activeTxRows.map((r: any) => {
         const orig = parseFloat(r.original_amount) || 0;
         const cur = parseFloat(r.current_balance) || 0;
         const computedPaid = Math.max(0, roundMoney(orig - cur));
@@ -4541,11 +4634,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       if (counterpartUserId && counterpartUserId !== authUser.id) {
         const uCheck = await query(
-          `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [counterpartUserId]
         );
-        if (uCheck.rows.length > 0 && uCheck.rows[0].status === 'active' && uCheck.rows[0].deletion_status === 'none') {
+        if (uCheck.rows.length > 0) {
+          if (!isDiscoverableNormalUser(uCheck.rows[0])) {
+            sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for shared Udhar connections.' });
+            return true;
+          }
           const blk = await query(
             `SELECT 1 FROM public.user_connections
              WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
@@ -4758,6 +4855,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
+      if (tx.is_initiator) {
+        sendJson(res, 403, { success: false, message: 'Only the recipient counterpart can confirm this transaction.' });
+        return true;
+      }
       await query(
         `UPDATE public.udhar_transactions 
          SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
@@ -5048,6 +5149,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const rep = repRes.rows[0];
+      if (!isActiveRepayment(rep)) {
+        sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+        return true;
+      }
       if (rep.status === 'confirmed') {
         sendJson(res, 400, { success: false, message: 'This repayment has already been confirmed.' });
         return true;
@@ -5159,6 +5264,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const rep = repRes.rows[0];
+      if (!isActiveRepayment(rep)) {
+        sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+        return true;
+      }
       const txRes = await query(
         `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
         [rep.link_id, authUser.id]
@@ -5229,7 +5338,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         await client.query('BEGIN');
 
         const txRes = await client.query(
-          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2) FOR UPDATE',
+          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE',
           [txId, authUser.id]
         );
         if (txRes.rows.length === 0) {
@@ -5238,6 +5347,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
         const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === 'took') {
+          await client.query('ROLLBACK');
+          sendJson(res, 403, {
+            success: false,
+            message: 'Only the lender who gave the money can edit this Udhar transaction.',
+          });
+          return true;
+        }
 
         const repaySumRes = await client.query(
           `SELECT COALESCE(SUM(amount), 0) AS total_repaid
@@ -5446,9 +5563,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
           return true;
         }
-        if (tx.status === 'cancelled') {
+        if (tx.status === 'cancelled' || tx.deleted_at) {
           await client.query('ROLLBACK');
           sendJson(res, 400, { success: false, message: 'Cannot settle a cancelled transaction.' });
+          return true;
+        }
+        if (tx.status === 'disputed') {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, { success: false, message: 'Cannot settle a disputed transaction. Resolve the dispute first.' });
           return true;
         }
 
@@ -5460,12 +5582,24 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           [tx.link_id, tx.id, authUser.id, currentBal, settleDate, paymentMethod, notes, authUser.id]
         );
 
-        await client.query(
-          `UPDATE public.udhar_transactions 
-           SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
-           WHERE link_id = $1`,
-          [tx.link_id]
-        );
+        await client.query('SAVEPOINT settle_audit_cols');
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), settled_by = $2, updated_at = NOW() 
+             WHERE link_id = $1`,
+            [tx.link_id, authUser.id]
+          );
+          await client.query('RELEASE SAVEPOINT settle_audit_cols');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT settle_audit_cols');
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
+             WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
 
         if (tx.counterpart_user_id) {
           await client.query(
@@ -5517,7 +5651,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // 20C. CANCEL UDHAAR TRANSACTION (BLOCKED IF REPAYMENTS EXIST): DELETE /api/udhar/transactions/:id
+    // 20C. DELETE INDIVIDUAL UDHAAR TRANSACTION (LENDER ONLY; CASCADES SOFT-DELETE TO REPAYMENTS): DELETE /api/udhar/transactions/:id
     const deleteTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)$/);
     if (deleteTxMatch && method === 'DELETE') {
       const authUser = await authenticateRequest(req);
@@ -5533,85 +5667,324 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const txId = deleteTxMatch[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const deletionReason = typeof body?.reason === 'string'
+        ? body.reason.trim()
+        : typeof body?.deletion_reason === 'string'
+          ? body.deletion_reason.trim()
+          : '';
+
       if (!isDatabaseAvailable()) {
-        const restRes = await cancelUdharRest(authUser, txId);
+        const restRes = await cancelUdharRest(authUser, txId, deletionReason);
         sendJson(res, restRes.status, restRes.body);
         return true;
       }
 
-      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
-      if (txRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
-        return true;
-      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      const tx = txRes.rows[0];
-      if (tx.counterpart_user_id && tx.direction === 'took') {
-      sendJson(res, 403, {
-      success: false,
-      message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
-      });
-      return true;
-      }
-      const repsRes = await query(
-        `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
-        [tx.link_id]
-      );
+        const txRes = await client.query(
+          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE',
+          [txId, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+          return true;
+        }
 
-      const guard = canCancelUdhar({
-        status: tx.status,
-        paid_amount: tx.paid_amount,
-        repayments: repsRes.rows,
-      });
+        const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === 'took') {
+          await client.query('ROLLBACK');
+          sendJson(res, 403, {
+            success: false,
+            message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
+          });
+          return true;
+        }
+        const repsRes = await client.query(
+          `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
+          [tx.link_id]
+        );
 
-      if (!guard.allowed) {
-        sendJson(res, 409, {
-          success: false,
-          message: guard.reason,
+        const guard = canCancelUdhar({
+          status: tx.status,
+          deleted_at: tx.deleted_at,
+          paid_amount: tx.paid_amount,
+          repayments: repsRes.rows.filter((r: any) => isActiveRepayment(r)),
+        });
+
+        if (!guard.allowed) {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, {
+            success: false,
+            message: guard.reason,
+          });
+          return true;
+        }
+
+        const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        await client.query('SAVEPOINT delete_audit_cols');
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
+                 deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE link_id = $1`,
+            [tx.link_id, authUser.id, cleanReason]
+          );
+          await client.query('RELEASE SAVEPOINT delete_audit_cols');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT delete_audit_cols');
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
+             WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
+
+        // Soft-delete associated repayments so orphaned rows cannot affect totals or history
+        await client.query('SAVEPOINT delete_reps_soft');
+        try {
+          await client.query(
+            `UPDATE public.udhar_repayments
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE link_id = $1 AND status NOT IN ('deleted', 'cancelled')`,
+            [tx.link_id, authUser.id, cleanReason || 'Parent Udhar deleted']
+          );
+          await client.query('RELEASE SAVEPOINT delete_reps_soft');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT delete_reps_soft');
+          await client.query(
+            `DELETE FROM public.udhar_repayments WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
+
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
+            [
+              `Udhar Removed by ${authUser.full_name}`,
+              `${authUser.full_name} deleted the Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        await client.query('COMMIT');
+
+        await logSecurityEvent('UDHAR_CANCELLED', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount, reason: cleanReason },
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          deletedTransactionId: tx.id,
+          linkId: tx.link_id,
+          message: 'Udhar entry deleted successfully. Totals have been recalculated.',
         });
         return true;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // 20C-2. DELETE INDIVIDUAL REPAYMENT & RECALCULATE PARENT UDHAAR: DELETE /api/udhar/repayments/:id
+    const deleteRepaymentMatch = pathname.match(/^\/api\/udhar\/repayments\/([a-zA-Z0-9_-]+)$/);
+    if (deleteRepaymentMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
       }
 
-      await query(
-      `UPDATE public.udhar_transactions
-      SET status = 'cancelled', current_balance = 0, updated_at = NOW(),
-      deleted_at = NOW(), deleted_by = $2
-      WHERE link_id = $1`,
-      [tx.link_id, authUser.id]
-      ).catch(async () => {
-      await query(
-      `UPDATE public.udhar_transactions
-      SET status = 'cancelled', current_balance = 0, updated_at = NOW()
-      WHERE link_id = $1`,
-      [tx.link_id]
-      );
-      });
-
-      if (tx.counterpart_user_id) {
-        await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-           VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
-          [
-            `Udhar Cancelled by ${authUser.full_name}`,
-            `${authUser.full_name} has cancelled the transaction of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
-            tx.counterpart_user_id,
-            tx.link_id,
-            authUser.id,
-          ]
-        ).catch(() => {});
+      const rate = await checkRateLimitAsync(`udhar_rep_delete:${authUser.id}`, RATE_LIMITS.UDHAR_DELETE.max, RATE_LIMITS.UDHAR_DELETE.windowMs, RATE_LIMITS.UDHAR_DELETE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
       }
 
-      await logSecurityEvent('UDHAR_CANCELLED', {
-        userId: authUser.id,
-        userEmail: authUser.email,
-        details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount },
-      });
+      const repaymentId = deleteRepaymentMatch[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const deletionReason = typeof body?.reason === 'string'
+        ? body.reason.trim()
+        : typeof body?.deletion_reason === 'string'
+          ? body.deletion_reason.trim()
+          : '';
 
-      sendJson(res, 200, {
-        success: true,
-        message: 'Transaction cancelled successfully. Balances updated.',
-      });
-      return true;
+      if (!isDatabaseAvailable()) {
+        const restRes = await deleteRepaymentRest(authUser, repaymentId, deletionReason);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const repRes = await client.query(
+          `SELECT * FROM public.udhar_repayments WHERE id = $1 FOR UPDATE`,
+          [repaymentId]
+        );
+        if (repRes.rows.length === 0 || !isActiveRepayment(repRes.rows[0])) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+          return true;
+        }
+        const rep = repRes.rows[0];
+
+        const txRes = await client.query(
+          `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2 FOR UPDATE`,
+          [rep.link_id, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Associated Udhar transaction not found.' });
+          return true;
+        }
+        const tx = txRes.rows[0];
+
+        if (tx.status === 'cancelled' || tx.deleted_at) {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, { success: false, message: 'Associated Udhar has already been deleted.' });
+          return true;
+        }
+        if (tx.status === 'disputed') {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, { success: false, message: 'Cannot delete repayments on a disputed Udhar. Resolve the dispute first.' });
+          return true;
+        }
+
+        const guard = canDeleteRepayment({
+          isShared: Boolean(tx.counterpart_user_id),
+          direction: tx.direction,
+          actorUserId: authUser.id,
+          repayment: rep,
+        });
+        if (!guard.allowed) {
+          await client.query('ROLLBACK');
+          sendJson(res, guard.httpStatus || 403, { success: false, message: guard.reason || 'Not authorized to delete this repayment.' });
+          return true;
+        }
+
+        const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        await client.query('SAVEPOINT delete_single_rep_soft');
+        try {
+          await client.query(
+            `UPDATE public.udhar_repayments
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE id = $1`,
+            [repaymentId, authUser.id, cleanReason]
+          );
+          await client.query('RELEASE SAVEPOINT delete_single_rep_soft');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT delete_single_rep_soft');
+          await client.query(
+            `DELETE FROM public.udhar_repayments WHERE id = $1`,
+            [repaymentId]
+          );
+        }
+
+        const remRepsRes = await client.query(
+          `SELECT id, amount, status FROM public.udhar_repayments WHERE link_id = $1`,
+          [tx.link_id]
+        );
+        const remainingReps = remRepsRes.rows.filter((r: any) => r.id !== repaymentId && isActiveRepayment(r));
+
+        const recalc = recalculateUdharFromRepayments({
+          originalAmount: tx.original_amount,
+          repayments: remainingReps,
+          currentStatus: tx.status,
+        });
+
+        await client.query('SAVEPOINT recalc_parent_udhar_cols');
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET paid_amount = $1,
+                 current_balance = $2,
+                 status = $3,
+                 settled_at = CASE WHEN $4 = TRUE THEN COALESCE(settled_at, NOW()) ELSE NULL END,
+                 settled_by = CASE WHEN $4 = TRUE THEN COALESCE(settled_by, $5) ELSE NULL END,
+                 updated_at = NOW()
+             WHERE link_id = $6 AND status <> 'cancelled'`,
+            [recalc.paidAmount, recalc.remainingBalance, recalc.nextStatus, recalc.isSettled, authUser.id, tx.link_id]
+          );
+          await client.query('RELEASE SAVEPOINT recalc_parent_udhar_cols');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT recalc_parent_udhar_cols');
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET paid_amount = $1,
+                 current_balance = $2,
+                 status = $3,
+                 settled_at = CASE WHEN $4 = TRUE THEN COALESCE(settled_at, NOW()) ELSE NULL END,
+                 updated_at = NOW()
+             WHERE link_id = $5 AND status <> 'cancelled'`,
+            [recalc.paidAmount, recalc.remainingBalance, recalc.nextStatus, recalc.isSettled, tx.link_id]
+          );
+        }
+
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'repayment_deleted', $3, $4, $5, TRUE)`,
+            [
+              `Repayment Deleted by ${authUser.full_name}`,
+              `${authUser.full_name} deleted a repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}. Updated balance: ₹${recalc.remainingBalance.toLocaleString('en-IN')}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        await client.query('COMMIT');
+
+        await logSecurityEvent('UDHAR_REPAYMENT_DELETED', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: {
+            repaymentId,
+            txId: tx.id,
+            linkId: tx.link_id,
+            deletedAmount: rep.amount,
+            paidAmount: recalc.paidAmount,
+            remainingBalance: recalc.remainingBalance,
+            udharStatus: recalc.nextStatus,
+            reason: cleanReason,
+          },
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          deletedRepaymentId: repaymentId,
+          transactionId: tx.id,
+          linkId: tx.link_id,
+          paidAmount: recalc.paidAmount,
+          remainingBalance: recalc.remainingBalance,
+          udharStatus: recalc.nextStatus,
+          isSettled: recalc.isSettled,
+          message: `Repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')} deleted. Remaining balance: ₹${recalc.remainingBalance.toLocaleString('en-IN')}.`,
+        });
+        return true;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
     // 20D. GET TRANSACTION AUDIT & REPAYMENT HISTORY: GET /api/udhar/transactions/:id/history
@@ -5672,16 +6045,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [tx.link_id]
       );
 
-      const repayments = repaymentsRes.rows.map((r: any) => {
-        const { note: repNote, meta: repMeta } = unpackStructuredNote(r.notes);
-        return {
-          ...r,
-          notes: repNote || null,
-          transaction_ref: r.transaction_ref || repMeta.transaction_ref || null,
-          repayment_time: r.repayment_time || repMeta.repayment_time || null,
-          attachment_url: r.attachment_url || repMeta.attachment_url || null,
-        };
-      });
+      const repayments = repaymentsRes.rows
+        .filter((r: any) => isActiveRepayment(r))
+        .map((r: any) => {
+          const { note: repNote, meta: repMeta } = unpackStructuredNote(r.notes);
+          return {
+            ...r,
+            notes: repNote || null,
+            transaction_ref: r.transaction_ref || repMeta.transaction_ref || null,
+            repayment_time: r.repayment_time || repMeta.repayment_time || null,
+            attachment_url: r.attachment_url || repMeta.attachment_url || null,
+          };
+        });
 
       sendJson(res, 200, {
         success: true,

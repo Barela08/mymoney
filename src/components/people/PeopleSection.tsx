@@ -43,8 +43,11 @@ import {
 import {
   udharDeletionApi,
   UdharTransactionItem,
+  UdharRepayment,
   UdharSummaryData,
 } from '../../lib/udharDeletionApi';
+import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
+import { canCancelUdhar, canDeleteRepayment } from '../../lib/sharedUdharEngine';
 import { MyUdharQrModal } from './MyUdharQrModal';
 import { ScanQrModal } from './ScanQrModal';
 import { AddUdharModal } from './AddUdharModal';
@@ -78,6 +81,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     overdueAmount: 0,
   });
   const [isLoadingUdhar, setIsLoadingUdhar] = useState<boolean>(true);
+  const [hasLoadedUdhar, setHasLoadedUdhar] = useState<boolean>(false);
   const [requestsRefreshKey, setRequestsRefreshKey] = useState<number>(0);
 
   // Tab filter: 'all' | 'lent' | 'borrowed' | 'pending_confirmation' | 'overdue' | 'settled'
@@ -106,6 +110,14 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     avatarUrl?: string | null;
   } | null>(null);
 
+  const [pendingConfirmAction, setPendingConfirmAction] = useState<
+    | { type: 'settle_single'; tx: UdharTransactionItem }
+    | { type: 'delete_single'; tx: UdharTransactionItem }
+    | { type: 'delete_repayment'; tx: UdharTransactionItem; rep: UdharRepayment }
+    | null
+  >(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
   // Fetch Udhar Data from Backend
   const fetchUdharData = useCallback(async () => {
     try {
@@ -114,6 +126,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
       if (res.success) {
         setUdharTransactions(res.transactions);
         setUdharSummary(res.summary);
+        setHasLoadedUdhar(true);
       }
       await refreshContacts();
     } catch (err: any) {
@@ -130,8 +143,57 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         fetchUdharData();
       }
     }, 15000);
-    return () => clearInterval(interval);
-  }, [fetchUdharData]);
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribeRealtime = subscribeToSupabaseUdharRealtime(() => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchUdharData();
+        refreshTransactions();
+        setRequestsRefreshKey((k) => k + 1);
+      }, 350);
+    });
+
+    return () => {
+      clearInterval(interval);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubscribeRealtime();
+    };
+  }, [fetchUdharData, refreshTransactions]);
+
+  const executePendingConfirmAction = async () => {
+    if (!pendingConfirmAction) return;
+    setConfirmBusy(true);
+    try {
+      if (pendingConfirmAction.type === 'settle_single') {
+        const res = await udharDeletionApi.settleUdharTransaction(pendingConfirmAction.tx.id);
+        if (res.success) {
+          toast.success('Transaction Settled', res.message || 'This Udhar entry is now marked settled.');
+          await fetchUdharData();
+          await refreshTransactions();
+        }
+      } else if (pendingConfirmAction.type === 'delete_single') {
+        const res = await udharDeletionApi.cancelUdharTransaction(pendingConfirmAction.tx.id);
+        if (res.success) {
+          toast.success('Transaction Deleted', res.message || 'Udhar entry deleted and totals recalculated.');
+          await fetchUdharData();
+          await refreshTransactions();
+        }
+      } else if (pendingConfirmAction.type === 'delete_repayment') {
+        const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
+        if (res.success) {
+          toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
+          await fetchUdharData();
+          await refreshTransactions();
+        }
+      }
+      setPendingConfirmAction(null);
+    } catch (err: any) {
+      toast.error('Action Failed', err?.message || 'Unable to complete this action.');
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
 
   // Handle Confirm pending transaction
   const handleConfirmTransaction = async (id: string, personName: string) => {
@@ -161,6 +223,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         const q = searchQuery.toLowerCase().trim();
         return (
           t.counterpart_name.toLowerCase().includes(q) ||
+          (t.description && t.description.toLowerCase().includes(q)) ||
           (t.notes && t.notes.toLowerCase().includes(q)) ||
           String(t.original_amount).includes(q)
         );
@@ -202,6 +265,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         onOpenAddModal={onOpenAddModal}
         onEditPerson={() => setIsSavedPeopleOpen(true)}
         udharTransactions={udharTransactions}
+        udharLoaded={hasLoadedUdhar}
         onRefreshUdhar={fetchUdharData}
       />
     );
@@ -698,10 +762,11 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           )}
                         </div>
 
-                        {tx.notes && (
-                          <p className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                            {tx.notes}
-                          </p>
+                        {(tx.description || tx.notes) && (
+                          <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-200/60 dark:border-slate-700/60 space-y-0.5">
+                            {tx.description && <p className="font-semibold text-slate-800 dark:text-slate-200">{tx.description}</p>}
+                            {tx.notes && <p>{tx.notes}</p>}
+                          </div>
                         )}
 
                         {isDisputed && tx.dispute_reason && (
@@ -759,15 +824,43 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </>
                         )}
 
-                        {/* Repay / Settle Action */}
-                        {!isSettled && !isPendingConfirm && (
+                        {/* Record Repayment & Lender-Only Settle / Delete Controls */}
+                        {!isSettled && !isPendingConfirm && !isDisputed && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTxForRepay(tx)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>{isGave ? 'Record Payment' : 'Request Repayment'}</span>
+                            </button>
+
+                            {isGave && (
+                              <button
+                                type="button"
+                                onClick={() => setPendingConfirmAction({ type: 'settle_single', tx })}
+                                data-testid={`udhar-feed-settle-btn-${tx.id}`}
+                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Mark only this Udhar entry as settled (Lender only)"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Settle</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+
+                        {(isGave || !tx.counterpart_user_id) && canCancelUdhar({ status: tx.status, paid_amount: tx.paid_amount, repayments: tx.repayments }).allowed && (
                           <button
                             type="button"
-                            onClick={() => setSelectedTxForRepay(tx)}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                            onClick={() => setPendingConfirmAction({ type: 'delete_single', tx })}
+                            data-testid={`udhar-feed-delete-btn-${tx.id}`}
+                            className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Delete only this Udhar entry (Lender only)"
                           >
-                            <Receipt className="w-3.5 h-3.5" />
-                            <span>Repay / Settle</span>
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
                           </button>
                         )}
 
@@ -793,24 +886,58 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                         Repayments Ledger:
                       </h5>
                       <div className="space-y-1.5">
-                        {tx.repayments.map((rep) => (
-                          <div
-                            key={rep.id}
-                            className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex items-center justify-between text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                              <span className="font-bold text-slate-800 dark:text-slate-200">
-                                {formatINR(Number(rep.amount) || 0)}
-                              </span>
-                              <span className="text-slate-400">• {formatDisplayDate(rep.repayment_date)}</span>
-                              {rep.notes && <span className="text-slate-500 font-medium">({rep.notes})</span>}
+                        {tx.repayments.map((rep) => {
+                          const repDeleteAllowed = canDeleteRepayment({
+                            isShared: Boolean(tx.counterpart_user_id),
+                            direction: tx.direction,
+                            actorUserId: user?.id || user?.uid,
+                            repayment: rep,
+                          }).allowed;
+                          return (
+                            <div
+                              key={rep.id}
+                              className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                <CheckCircle2
+                                  className={`w-3.5 h-3.5 shrink-0 ${
+                                    rep.status === 'pending_confirmation'
+                                      ? 'text-amber-500'
+                                      : rep.status === 'rejected'
+                                      ? 'text-rose-500'
+                                      : 'text-emerald-500'
+                                  }`}
+                                />
+                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                  {formatINR(Number(rep.amount) || 0)}
+                                </span>
+                                <span className="text-slate-400">• {formatDisplayDate(rep.repayment_date)}</span>
+                                {rep.notes && <span className="text-slate-500 font-medium truncate">({rep.notes})</span>}
+                                {rep.status === 'pending_confirmation' && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
+                                    Pending
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                                  Logged by {rep.recorded_by_name || 'User'}
+                                </span>
+                                {repDeleteAllowed && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingConfirmAction({ type: 'delete_repayment', tx, rep })}
+                                    data-testid={`udhar-feed-repayment-delete-btn-${rep.id}`}
+                                    className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                                    title="Delete this repayment"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              Logged by {rep.recorded_by_name || 'User'}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -932,6 +1059,100 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         transaction={selectedTxForDetail}
         onRefreshUdhar={fetchUdharData}
       />
+
+      {pendingConfirmAction && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !confirmBusy && setPendingConfirmAction(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            data-testid="udhar-feed-confirm-modal"
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {pendingConfirmAction.type === 'settle_single'
+                  ? 'Settle This Udhar Transaction?'
+                  : pendingConfirmAction.type === 'delete_single'
+                  ? 'Delete This Udhar Transaction?'
+                  : 'Delete This Repayment?'}
+              </h3>
+              <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {pendingConfirmAction.type === 'settle_single' ? (
+                  <>
+                    Only this single Udhar entry of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.current_balance)) || 0)}</strong>{' '}
+                    with <strong>{pendingConfirmAction.tx.counterpart_name}</strong>
+                    {pendingConfirmAction.tx.description || pendingConfirmAction.tx.notes
+                      ? ` (“${pendingConfirmAction.tx.description || pendingConfirmAction.tx.notes}”)`
+                      : ''}{' '}
+                    will be marked as <strong>Settled</strong>. Other pending entries will stay untouched.
+                  </>
+                ) : pendingConfirmAction.type === 'delete_single' ? (
+                  <>
+                    Delete this Udhar entry of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0)}</strong>{' '}
+                    with <strong>{pendingConfirmAction.tx.counterpart_name}</strong>
+                    {pendingConfirmAction.tx.description || pendingConfirmAction.tx.notes
+                      ? ` (“${pendingConfirmAction.tx.description || pendingConfirmAction.tx.notes}”)`
+                      : ''}
+                    ? Any repayments linked to this entry will also be removed; all other Udhar transactions remain untouched and totals recalculate immediately.
+                  </>
+                ) : (
+                  <>
+                    Delete repayment of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.rep.amount)) || 0)}</strong>{' '}
+                    for <strong>{pendingConfirmAction.tx.counterpart_name}</strong>
+                    {pendingConfirmAction.rep.notes ? ` (“${pendingConfirmAction.rep.notes}”)` : ''}? The parent Udhar of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0)}</strong>{' '}
+                    will remain and its remaining balance will recalculate automatically
+                    {pendingConfirmAction.rep.status === 'confirmed'
+                      ? ` to ${formatINR(
+                          Math.min(
+                            parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0,
+                            (parseFloat(String(pendingConfirmAction.tx.current_balance)) || 0) +
+                              (parseFloat(String(pendingConfirmAction.rep.amount)) || 0)
+                          )
+                        )}`
+                      : ''}
+                    .
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingConfirmAction(null)}
+                disabled={confirmBusy}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executePendingConfirmAction}
+                disabled={confirmBusy}
+                data-testid="udhar-feed-confirm-action-btn"
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50 cursor-pointer ${
+                  pendingConfirmAction.type === 'settle_single'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                {confirmBusy
+                  ? 'Processing...'
+                  : pendingConfirmAction.type === 'settle_single'
+                  ? 'Confirm Settlement'
+                  : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

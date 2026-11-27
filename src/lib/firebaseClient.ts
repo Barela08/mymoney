@@ -41,6 +41,38 @@ function ensureFirebaseApp(): FirebaseApp {
   return cachedApp;
 }
 
+function normalizeFirebaseAuthError(err: any): Error {
+  const code = String(err?.code || '');
+  const msg = String(err?.message || '');
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  if (code === 'auth/unauthorized-domain' || msg.includes('auth/unauthorized-domain')) {
+    return new Error(
+      host
+        ? `Google Sign-In is not authorized for "${host}". Add "${host}" under Firebase Console → Authentication → Settings → Authorized domains, or sign in with Email & Password.`
+        : 'Google Sign-In is not authorized for this domain in Firebase Console → Authentication → Settings → Authorized domains.'
+    );
+  }
+  if (code === 'auth/popup-blocked' || msg.includes('auth/popup-blocked')) {
+    return new Error('Google Sign-In popup was blocked by your browser. Please allow popups for this site and try again.');
+  }
+  if (
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request' ||
+    msg.includes('popup-closed-by-user') ||
+    msg.includes('cancelled-popup-request')
+  ) {
+    return new Error('Google Sign-In was cancelled before completion.');
+  }
+  if (code === 'auth/operation-not-allowed' || msg.includes('auth/operation-not-allowed')) {
+    return new Error('Google Sign-In is disabled in Firebase Authentication settings.');
+  }
+  if (code === 'auth/network-request-failed' || msg.includes('auth/network-request-failed')) {
+    return new Error('Network error while connecting to Google Sign-In. Please check your internet connection.');
+  }
+  return err instanceof Error ? err : new Error(msg || 'Google sign-in failed.');
+}
+
 export async function signInWithFirebaseGoogle(): Promise<{
   idToken: string;
   email: string | null;
@@ -51,7 +83,13 @@ export async function signInWithFirebaseGoogle(): Promise<{
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  const result = await signInWithPopup(auth, provider);
+  let result;
+  try {
+    result = await signInWithPopup(auth, provider);
+  } catch (err: any) {
+    throw normalizeFirebaseAuthError(err);
+  }
+
   const idToken = await result.user.getIdToken(true);
 
   // Immediately clear client Firebase session so canonical backend session remains the single source of truth

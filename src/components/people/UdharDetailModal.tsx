@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Trash2,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import {
   udharDeletionApi,
@@ -27,7 +28,7 @@ import {
   UdharEditHistoryItem,
 } from '../../lib/udharDeletionApi';
 import { formatINR, formatDisplayDate } from '../../lib/dateUtils';
-import { canCancelUdhar } from '../../lib/sharedUdharEngine';
+import { canCancelUdhar, canDeleteRepayment, isActiveRepayment } from '../../lib/sharedUdharEngine';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EditUdharModal } from './EditUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
@@ -46,9 +47,11 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   transaction,
   onRefreshUdhar,
 }) => {
+  const { user } = useAuth();
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<'repayments' | 'history'>('repayments');
+  const [latestTransaction, setLatestTransaction] = useState<UdharTransactionItem | null>(transaction);
   const [historyList, setHistoryList] = useState<UdharEditHistoryItem[]>([]);
   const [repaymentsList, setRepaymentsList] = useState<UdharRepayment[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -58,6 +61,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [deletingRepayment, setDeletingRepayment] = useState<UdharRepayment | null>(null);
   const [isSettlingTx, setIsSettlingTx] = useState(false);
 
   // Reject dialog state
@@ -65,19 +69,22 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const [rejectionReason, setRejectionReason] = useState<string>('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
+  const activeTx = latestTransaction || transaction;
+
   const fetchDetails = async () => {
     if (!transaction) return;
     try {
       setIsLoadingHistory(true);
       const res = await udharDeletionApi.getUdharTransactionHistory(transaction.id);
       if (res.success) {
+        if (res.transaction) setLatestTransaction(res.transaction);
         setHistoryList(res.editHistory || []);
-        setRepaymentsList(res.repayments || []);
+        setRepaymentsList((res.repayments || []).filter((r) => isActiveRepayment(r)));
       }
     } catch (err: any) {
       console.warn('Could not fetch transaction history:', err.message);
-      // Fallback to transaction repayments
-      setRepaymentsList(transaction.repayments || []);
+      setLatestTransaction(transaction);
+      setRepaymentsList((transaction.repayments || []).filter((r) => isActiveRepayment(r)));
       setHistoryList(transaction.edit_history || []);
     } finally {
       setIsLoadingHistory(false);
@@ -85,33 +92,34 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   };
 
   useEffect(() => {
+    setLatestTransaction(transaction);
     if (isOpen && transaction) {
       fetchDetails();
     }
   }, [isOpen, transaction]);
 
-  if (!isOpen || !transaction) return null;
+  if (!isOpen || !activeTx) return null;
 
-  const isLender = transaction.direction === 'gave';
-  const isTwoSided = Boolean(transaction.counterpart_user_id);
+  const isLender = activeTx.direction === 'gave';
+  const isTwoSided = Boolean(activeTx.counterpart_user_id);
   const canManageAsLender = !isTwoSided || isLender;
-  const currentBal = parseFloat(String(transaction.current_balance)) || 0;
-  const originalAmt = parseFloat(String(transaction.original_amount)) || 0;
+  const currentBal = parseFloat(String(activeTx.current_balance)) || 0;
+  const originalAmt = parseFloat(String(activeTx.original_amount)) || 0;
   const paidAmt = Math.max(0, originalAmt - currentBal);
-  const isSettled = transaction.status === 'settled' || currentBal <= 0.01;
-  const isCancelled = transaction.status === 'cancelled';
+  const isSettled = activeTx.status === 'settled' || currentBal <= 0.01;
+  const isCancelled = activeTx.status === 'cancelled';
   const cancelGuard = canCancelUdhar({
-    status: transaction.status,
+    status: activeTx.status,
     paid_amount: paidAmt,
     repayments: repaymentsList,
   });
   const todayStr = new Date().toISOString().split('T')[0];
-  const isOverdue = transaction.due_date && transaction.due_date < todayStr && !isSettled && !isCancelled && currentBal > 0;
+  const isOverdue = activeTx.due_date && activeTx.due_date < todayStr && !isSettled && !isCancelled && currentBal > 0;
 
   const handleSettleTransaction = async (notes?: string) => {
     try {
       setIsSettlingTx(true);
-      const res = await udharDeletionApi.settleUdharTransaction(transaction.id, {
+      const res = await udharDeletionApi.settleUdharTransaction(activeTx.id, {
         notes: notes || 'Settled in full',
       });
       if (res.success) {
@@ -130,15 +138,33 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const handleCancelTransaction = async () => {
     try {
       setIsProcessingAction(true);
-      const res = await udharDeletionApi.cancelUdharTransaction(transaction.id);
+      const res = await udharDeletionApi.cancelUdharTransaction(activeTx.id);
       if (res.success) {
-        toast.success('Udhar Cancelled', res.message || 'Transaction cancelled.');
+        toast.success('Udhar Deleted', res.message || 'Udhar entry deleted.');
         setIsCancelConfirmOpen(false);
         if (onRefreshUdhar) onRefreshUdhar();
         onClose();
       }
     } catch (err: any) {
-      toast.error('Cancellation Failed', err.message || 'Could not cancel this transaction.');
+      toast.error('Deletion Failed', err.message || 'Could not delete this transaction.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleDeleteRepaymentConfirm = async () => {
+    if (!deletingRepayment) return;
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.deleteRepayment(deletingRepayment.id);
+      if (res.success) {
+        toast.success('Repayment Deleted', res.message);
+        setDeletingRepayment(null);
+        await fetchDetails();
+        if (onRefreshUdhar) onRefreshUdhar();
+      }
+    } catch (err: any) {
+      toast.error('Deletion Failed', err.message || 'Could not delete this repayment.');
     } finally {
       setIsProcessingAction(false);
     }
@@ -191,10 +217,10 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-3">
-              {transaction.counterpart_avatar ? (
+              {activeTx.counterpart_avatar ? (
                 <img
-                  src={transaction.counterpart_avatar}
-                  alt={transaction.counterpart_name}
+                  src={activeTx.counterpart_avatar}
+                  alt={activeTx.counterpart_name}
                   className="w-11 h-11 rounded-2xl object-cover border-2 border-emerald-500/30 flex-shrink-0"
                 />
               ) : (
@@ -205,14 +231,14 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                       : 'bg-gradient-to-tr from-rose-600 to-orange-500'
                   }`}
                 >
-                  {transaction.counterpart_name.charAt(0).toUpperCase()}
+                  {activeTx.counterpart_name.charAt(0).toUpperCase()}
                 </div>
               )}
 
               <div>
                 <div className="flex items-center gap-1.5">
                   <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                    {transaction.counterpart_name}
+                    {activeTx.counterpart_name}
                   </h3>
                   {isTwoSided && (
                     <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
@@ -231,7 +257,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                     </span>
                   )}
                   <span>•</span>
-                  <span>{formatDisplayDate(transaction.transaction_date)}</span>
+                  <span>{formatDisplayDate(activeTx.transaction_date)}</span>
                 </div>
               </div>
             </div>
@@ -245,11 +271,11 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
           </div>
 
           {/* Overdue Banner if applicable */}
-          {isOverdue && (
+          {isOverdue && activeTx.due_date && (
             <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center gap-2.5 text-xs text-rose-800 dark:text-rose-300">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
               <span>
-                <strong>Overdue!</strong> Due date was {formatDisplayDate(transaction.due_date!)}.
+                <strong>Overdue!</strong> Due date was {formatDisplayDate(activeTx.due_date)}.
               </span>
             </div>
           )}
@@ -299,28 +325,28 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </span>
             </div>
 
-            {transaction.due_date && (
+            {activeTx.due_date && (
               <div className="flex items-center justify-between text-slate-500">
                 <span>Due Date:</span>
                 <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {formatDisplayDate(transaction.due_date)}
+                  {formatDisplayDate(activeTx.due_date)}
                 </span>
               </div>
             )}
 
-            {transaction.notes && (
+            {(activeTx.description || activeTx.notes) && (
               <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
                 <span className="text-slate-400 block mb-0.5">Note:</span>
                 <p className="font-medium text-slate-700 dark:text-slate-300 italic">
-                  "{transaction.notes}"
+                  "{activeTx.description || activeTx.notes}"
                 </p>
               </div>
             )}
 
-            {transaction.last_edited_at && (
+            {activeTx.last_edited_at && (
               <p className="text-[10px] text-slate-400 pt-1">
-                Last edited on {formatDisplayDate(transaction.last_edited_at)}{' '}
-                {transaction.edit_reason ? `(${transaction.edit_reason})` : ''}
+                Last edited on {formatDisplayDate(activeTx.last_edited_at)}{' '}
+                {activeTx.edit_reason ? `(${activeTx.edit_reason})` : ''}
               </p>
             )}
           </div>
@@ -363,6 +389,12 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                   repaymentsList.map((rep) => {
                     const isPending = rep.status === 'pending_confirmation';
                     const isRejected = rep.status === 'rejected';
+                    const repDeleteGuard = canDeleteRepayment({
+                      isShared: isTwoSided,
+                      direction: activeTx.direction,
+                      actorUserId: user?.id || user?.uid,
+                      repayment: rep,
+                    });
 
                     return (
                       <div
@@ -375,7 +407,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                               : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800'
                         }`}
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
                             <span className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
                               {formatINR(Number(rep.amount))}
@@ -385,21 +417,35 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                             </span>
                           </div>
 
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              isPending
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                isPending
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                  : isRejected
+                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              }`}
+                            >
+                              {isPending
+                                ? 'Pending Confirmation'
                                 : isRejected
-                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            }`}
-                          >
-                            {isPending
-                              ? 'Pending Confirmation'
-                              : isRejected
-                                ? 'Rejected'
-                                : 'Confirmed'}
-                          </span>
+                                  ? 'Rejected'
+                                  : 'Confirmed'}
+                            </span>
+                            {repDeleteGuard.allowed && (
+                              <button
+                                type="button"
+                                disabled={isProcessingAction}
+                                onClick={() => setDeletingRepayment(rep)}
+                                data-testid={`modal-repayment-delete-btn-${rep.id}`}
+                                className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                                title="Delete this individual repayment"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex items-center justify-between text-[11px] text-slate-400">
@@ -531,7 +577,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && !isCancelled && canManageAsLender && (
+            {!isSettled && !isCancelled && isLender && (
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(true)}
@@ -542,7 +588,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && !isCancelled && canManageAsLender && transaction.status !== 'disputed' && (
+            {!isSettled && !isCancelled && canManageAsLender && activeTx.status !== 'disputed' && (
               <button
                 type="button"
                 onClick={() => setIsSettleModalOpen(true)}
@@ -553,14 +599,15 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && !isCancelled && canManageAsLender && cancelGuard.allowed && (
+            {!isCancelled && canManageAsLender && cancelGuard.allowed && (
               <button
                 type="button"
                 onClick={() => setIsCancelConfirmOpen(true)}
+                data-testid="modal-delete-udhar-btn"
                 className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Cancel</span>
+                <span>Delete Entry</span>
               </button>
             )}
           </div>
@@ -572,7 +619,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         <EditUdharModal
           isOpen={isEditModalOpen}
           onClose={() => setIsEditModalOpen(false)}
-          transaction={transaction}
+          transaction={activeTx}
           onSuccess={async () => {
             setIsEditModalOpen(false);
             await fetchDetails();
@@ -585,7 +632,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         <RepayUdharModal
           isOpen={isRepayModalOpen}
           onClose={() => setIsRepayModalOpen(false)}
-          transaction={transaction}
+          transaction={activeTx}
           onSuccess={async () => {
             setIsRepayModalOpen(false);
             await fetchDetails();
@@ -597,7 +644,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
       {isSettleModalOpen && (
         <SettleUdharModal
           isOpen={isSettleModalOpen}
-          personName={transaction.counterpart_name}
+          personName={activeTx.counterpart_name}
           outstandingBalance={currentBal}
           isLoading={isSettlingTx}
           onClose={() => setIsSettleModalOpen(false)}
@@ -607,13 +654,38 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
 
       <ConfirmModal
         isOpen={isCancelConfirmOpen}
-        title="Cancel Udhar Transaction?"
-        subtitle="Audit history is preserved; only this entry is cancelled."
-        message={`Cancel this individual Udhar entry of ${formatINR(originalAmt)} with ${transaction.counterpart_name}? Only this entry will be marked cancelled; all other entries and audit history remain preserved.`}
-        confirmLabel="Cancel Entry"
+        title="Delete This Udhar Entry?"
+        subtitle="Only this Udhar entry and its repayments will be removed; other entries stay untouched."
+        message={`Delete this individual Udhar entry of ${formatINR(originalAmt)} with ${activeTx.counterpart_name}${
+          activeTx.description || activeTx.notes ? ` ("${activeTx.description || activeTx.notes}")` : ''
+        }? All totals across People, Dashboard, and Reports will recalculate immediately.`}
+        confirmLabel="Delete Entry"
         isDestructive={true}
         onConfirm={handleCancelTransaction}
         onCancel={() => setIsCancelConfirmOpen(false)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(deletingRepayment)}
+        title="Delete This Repayment?"
+        subtitle="Only this repayment is deleted; the parent Udhar remains and its balance recalculates automatically."
+        message={
+          deletingRepayment
+            ? `Delete repayment of ${formatINR(Number(deletingRepayment.amount) || 0)} for ${activeTx.counterpart_name}${
+                deletingRepayment.notes ? ` ("${deletingRepayment.notes}")` : ''
+              }?${
+                deletingRepayment.status === 'confirmed'
+                  ? ` Remaining balance will recalculate to ${formatINR(
+                      Math.min(originalAmt, currentBal + (Number(deletingRepayment.amount) || 0))
+                    )}.`
+                  : ''
+              }`
+            : ''
+        }
+        confirmLabel="Delete Repayment"
+        isDestructive={true}
+        onConfirm={handleDeleteRepaymentConfirm}
+        onCancel={() => setDeletingRepayment(null)}
       />
     </>
   );

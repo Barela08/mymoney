@@ -13,6 +13,7 @@ import { handleApiRequest } from '../server/api';
 import {
   calculatePersonLedgerSummary,
   canCancelUdhar,
+  canDeleteRepayment,
   parseQrPayload,
   resolveCanonicalPerspective,
 } from '../src/lib/sharedUdharEngine';
@@ -287,27 +288,35 @@ test('Udhar lender/borrower perspective & cancellation guard: disputed or settle
   const disputedCheck = canCancelUdhar({ status: 'disputed', paid_amount: 0, repayments: [] });
   assert.equal(disputedCheck.allowed, false);
 
-  // Settled entry cannot be cancelled
+  // Settled & partially repaid entries CAN be deleted by authorized lender
   assert.equal(
     canCancelUdhar({ status: 'settled', paid_amount: 1000, repayments: [] }).allowed,
-    false
+    true
   );
 
-  // Partially repaid entry cannot be cancelled
   assert.equal(
     canCancelUdhar({ status: 'partial', paid_amount: 250, repayments: [] }).allowed,
-    false
+    true
   );
 
-  // Entry with pending repayment claim cannot be cancelled
   assert.equal(
     canCancelUdhar({
       status: 'confirmed',
       paid_amount: 0,
       repayments: [{ status: 'pending_confirmation' }],
     }).allowed,
-    false
+    true
   );
+
+  // Borrower cannot delete confirmed repayment (403)
+  const borrowerRepayDel = canDeleteRepayment({
+    isShared: true,
+    direction: 'took',
+    actorUserId: 'borrower-rahul',
+    repayment: { status: 'confirmed', recorded_by_user_id: 'lender-nilesh' },
+  });
+  assert.equal(borrowerRepayDel.allowed, false);
+  assert.equal(borrowerRepayDel.httpStatus, 403);
 
   // QR validation safely rejects invalid / UPI payment QRs
   const upiRes = parseQrPayload('upi://pay?pa=merchant@upi&pn=Shop&am=100');
@@ -365,6 +374,21 @@ test('API Routes: unauthenticated access to internal reset email, cron deletion,
     const req = createMockReq({
       method: 'DELETE',
       url: '/api/udhar/transactions/11111111-1111-4111-8111-111111111111',
+      headers: {
+        authorization: 'Bearer direct_11111111-1111-4111-8111-111111111111_1700000000000',
+      },
+    });
+    const mock = createMockRes();
+    const handled = await handleApiRequest(req, mock.res);
+    assert.equal(handled, true);
+    assert.equal(mock.getStatus(), 401);
+  }
+
+  // 4B. Unauthenticated / forged token to DELETE /api/udhar/repayments/:id -> 401
+  {
+    const req = createMockReq({
+      method: 'DELETE',
+      url: '/api/udhar/repayments/11111111-1111-4111-8111-111111111111',
       headers: {
         authorization: 'Bearer direct_11111111-1111-4111-8111-111111111111_1700000000000',
       },

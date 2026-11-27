@@ -9,6 +9,8 @@ import {
 import { getSupabaseClient } from '../lib/supabase';
 import { syncDeviceRegistration } from './PwaInstallContext';
 import { clearUpiProfileCache } from '../lib/upiProfileApi';
+import { signInWithFirebaseGoogle } from '../lib/firebaseClient';
+import { loginWithPasskeyOnDevice } from '../lib/webauthnClient';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -159,7 +161,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (supabase) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user && session.user.email) {
+        if (session?.user && session.user.email && session.access_token) {
+          setStoredSessionToken(session.access_token);
+          try {
+            const meRes = await authApi.getMe();
+            if (meRes.success && meRes.user) {
+              setUser(meRes.user);
+              setIsLoading(false);
+              return;
+            }
+          } catch (meErr: any) {
+            if (meErr?.status === 401 || meErr?.status === 403) {
+              clearUpiProfileCache();
+              setUser(null);
+              setIsLoading(false);
+              return;
+            }
+          }
+
           const email = session.user.email;
           const { data: prof } = await supabase
             .from('profiles')
@@ -167,23 +186,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .eq('id', session.user.id)
             .single();
 
-          const isAdm = email.toLowerCase() === 'hackifypro@gmail.com' || email.toLowerCase() === 'admin@mymoney.com' || prof?.role === 'admin' || prof?.role === 'superadmin';
+          const isMasterEmail =
+            email.toLowerCase() === 'hackifypro@gmail.com' ||
+            email.toLowerCase() === 'admin@mymoney.com';
+          const profRole = (prof?.role || '').toLowerCase().trim();
+          const effectiveRole = isMasterEmail
+            ? 'superadmin'
+            : (profRole === 'admin' || profRole === 'superadmin' || profRole === 'support' || profRole === 'analyst')
+              ? profRole
+              : 'user';
+          const isAdm = effectiveRole !== 'user';
           const authUser: AuthUser = {
             uid: session.user.id,
             id: session.user.id,
             email,
             displayName: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
             full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
-            role: isAdm ? 'admin' : (prof?.role || 'user'),
+            role: effectiveRole as any,
             status: prof?.status || 'active',
             email_verified: true,
             created_at: prof?.created_at || new Date().toISOString(),
           };
           setUser(authUser);
           setStoredAuthUser(authUser);
-          if (!getStoredSessionToken() && session.access_token) {
-            setStoredSessionToken(session.access_token);
-          }
           setIsLoading(false);
           return;
         }
@@ -235,22 +260,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (!supaErr && supaData?.user) {
-          const isAdm = email.trim().toLowerCase() === 'hackifypro@gmail.com' || email.trim().toLowerCase() === 'admin@mymoney.com';
-          const authUser: AuthUser = {
-            uid: supaData.user.id,
-            id: supaData.user.id,
-            email: supaData.user.email || email,
-            displayName: isAdm ? 'Security Administrator' : email.split('@')[0],
-            full_name: isAdm ? 'Security Administrator' : email.split('@')[0],
-            role: isAdm ? 'admin' : 'user',
-            status: 'active',
-            email_verified: true,
-            created_at: new Date().toISOString(),
-          };
           if (!apiSuccess && supaData.session?.access_token) {
+            setStoredSessionToken(supaData.session.access_token);
+            try {
+              const meRes = await authApi.getMe();
+              if (meRes.success && meRes.user) {
+                setUser(meRes.user);
+                syncDeviceRegistration();
+                return { success: true, message: 'Logged in successfully.' };
+              }
+            } catch (meErr: any) {
+              if (meErr?.status === 403 || meErr?.status === 401) {
+                setStoredSessionToken(null);
+                setStoredAuthUser(null);
+                return {
+                  success: false,
+                  message: meErr?.message || 'Account access denied.',
+                };
+              }
+            }
+
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('role, status, full_name')
+              .eq('id', supaData.user.id)
+              .single();
+            const isMasterEmail =
+              email.trim().toLowerCase() === 'hackifypro@gmail.com' ||
+              email.trim().toLowerCase() === 'admin@mymoney.com';
+            const profRole = (prof?.role || '').toLowerCase().trim();
+            const effectiveRole = isMasterEmail
+              ? 'superadmin'
+              : (profRole === 'admin' || profRole === 'superadmin' || profRole === 'support' || profRole === 'analyst')
+                ? profRole
+                : 'user';
+            const isAdm = effectiveRole !== 'user';
+            const authUser: AuthUser = {
+              uid: supaData.user.id,
+              id: supaData.user.id,
+              email: supaData.user.email || email,
+              displayName: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
+              full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
+              role: effectiveRole as any,
+              status: (prof?.status as any) || 'active',
+              email_verified: true,
+              created_at: new Date().toISOString(),
+            };
             setUser(authUser);
             setStoredAuthUser(authUser);
-            setStoredSessionToken(supaData.session.access_token);
             syncDeviceRegistration();
             return { success: true, message: 'Logged in successfully.' };
           }
@@ -512,7 +569,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Google Sign-In via Firebase Auth -> server-verified canonical app_users.id
   const loginWithGoogle = async () => {
     try {
-      const { signInWithFirebaseGoogle } = await import('../lib/firebaseClient');
       const { idToken } = await signInWithFirebaseGoogle();
       const res = await authApi.loginWithGoogle(idToken);
       if (res.success && res.user) {
@@ -534,7 +590,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Passkey (WebAuthn) Sign-In -> server-verified canonical app_users.id
   const loginWithPasskey = async (email?: string) => {
     try {
-      const { loginWithPasskeyOnDevice } = await import('../lib/webauthnClient');
       const res = await loginWithPasskeyOnDevice(email);
       if (res.success && res.user && res.sessionToken) {
         setStoredSessionToken(res.sessionToken);
@@ -560,53 +615,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Admin: Get users with Dual-Layer API + Supabase Profiles fallback
+  // Admin: Get users strictly via authenticated /api/admin/users
   const getAdminUsersList = async (): Promise<AdminUserListItem[]> => {
-    // 1. Try server API
     try {
       const res = await authApi.adminGetUsers();
-      if (res && res.users && res.users.length > 0) {
-        return res.users;
-      }
+      return res?.users || [];
     } catch (err: any) {
-      console.warn('Notice fetching admin users from API, trying Supabase directly:', err.message);
+      console.warn('Admin users fetch rejected:', err.message);
+      return [];
     }
-
-    // 2. Direct Supabase Fallback (ensures users always display!)
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { data: profs, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(profs) && profs.length > 0) {
-          return profs.map((p: any) => ({
-            id: p.id,
-            uid: p.id,
-            fullName: p.email ? p.email.split('@')[0] : 'User',
-            displayName: p.email ? p.email.split('@')[0] : 'User',
-            email: p.email,
-            phone: null,
-            role: p.role || 'user',
-            status: p.status || 'active',
-            emailVerified: true,
-            forcePasswordReset: false,
-            failedLoginAttempts: 0,
-            createdAt: p.created_at || new Date().toISOString(),
-            lastLoginAt: null,
-            passwordChangedAt: p.created_at || new Date().toISOString(),
-            passwordStatus: 'Protected (Bcrypt Encrypted)',
-            activeSessionsCount: 1,
-          }));
-        }
-      }
-    } catch (e) {
-      console.error('Supabase direct profiles query notice:', e);
-    }
-
-    return [];
   };
 
   // Admin: Toggle status

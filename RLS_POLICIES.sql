@@ -643,7 +643,7 @@ BEGIN
     DROP POLICY IF EXISTS "udhar_tx_select_participant" ON public.udhar_transactions;
     CREATE POLICY "udhar_tx_select_participant" ON public.udhar_transactions
       FOR SELECT TO authenticated
-      USING (auth.uid() = user_id OR auth.uid() = counterpart_user_id OR public.is_admin());
+      USING (auth.uid() = user_id OR auth.uid() = counterpart_user_id);
 
     DROP POLICY IF EXISTS "udhar_tx_insert_owner" ON public.udhar_transactions;
     CREATE POLICY "udhar_tx_insert_owner" ON public.udhar_transactions
@@ -672,12 +672,13 @@ BEGIN
     CREATE POLICY "udhar_rep_select_participant" ON public.udhar_repayments
       FOR SELECT TO authenticated
       USING (
-        EXISTS (
+        status NOT IN ('deleted', 'cancelled')
+        AND deleted_at IS NULL
+        AND EXISTS (
           SELECT 1 FROM public.udhar_transactions ut
           WHERE ut.link_id = udhar_repayments.link_id
             AND (ut.user_id = auth.uid() OR ut.counterpart_user_id = auth.uid())
         )
-        OR public.is_admin()
       );
 
     DROP POLICY IF EXISTS "udhar_rep_insert_participant" ON public.udhar_repayments;
@@ -689,6 +690,34 @@ BEGIN
           SELECT 1 FROM public.udhar_transactions ut
           WHERE ut.link_id = udhar_repayments.link_id
             AND (ut.user_id = auth.uid() OR ut.counterpart_user_id = auth.uid())
+        )
+      );
+
+    DROP POLICY IF EXISTS "udhar_rep_update_authorized" ON public.udhar_repayments;
+    CREATE POLICY "udhar_rep_update_authorized" ON public.udhar_repayments
+      FOR UPDATE TO authenticated
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_repayments.link_id
+            AND ut.user_id = auth.uid()
+            AND (
+              ut.counterpart_user_id IS NULL
+              OR ut.direction = 'gave'
+              OR (udhar_repayments.status = 'pending_confirmation' AND udhar_repayments.recorded_by_user_id = auth.uid())
+            )
+        )
+      )
+      WITH CHECK (
+        EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_repayments.link_id
+            AND ut.user_id = auth.uid()
+            AND (
+              ut.counterpart_user_id IS NULL
+              OR ut.direction = 'gave'
+              OR (udhar_repayments.recorded_by_user_id = auth.uid() AND udhar_repayments.status IN ('deleted', 'cancelled'))
+            )
         )
       );
   END IF;
@@ -705,7 +734,6 @@ BEGIN
           WHERE ut.link_id = udhar_edit_history.link_id
             AND (ut.user_id = auth.uid() OR ut.counterpart_user_id = auth.uid())
         )
-        OR public.is_admin()
       );
   END IF;
 END $$;
@@ -767,9 +795,20 @@ END $$;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_transactions') THEN
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS settled_by UUID;
     ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deleted_by UUID;
     ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deletion_reason TEXT;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_repayments') THEN
+    ALTER TABLE public.udhar_repayments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE public.udhar_repayments ADD COLUMN IF NOT EXISTS deleted_by UUID;
+    ALTER TABLE public.udhar_repayments ADD COLUMN IF NOT EXISTS deletion_reason TEXT;
+    ALTER TABLE public.udhar_repayments DROP CONSTRAINT IF EXISTS udhar_repayments_status_check;
+    ALTER TABLE public.udhar_repayments
+      ADD CONSTRAINT udhar_repayments_status_check
+      CHECK (status IN ('pending_confirmation', 'confirmed', 'disputed', 'rejected', 'deleted', 'cancelled'));
   END IF;
 
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'app_users') THEN
