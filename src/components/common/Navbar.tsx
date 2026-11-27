@@ -1,30 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Menu,
-  PlusCircle,
-  Sun,
-  Moon,
-  Clock,
-  Shield,
+  Settings,
   User,
   AlertTriangle,
-  HelpCircle,
-  Calculator,
+  PlusCircle,
 } from 'lucide-react';
-import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
 import { NavTab } from './Sidebar';
-import { formatDisplayDate, formatDisplayTime, getISTNow } from '../../lib/dateUtils';
-import { SUPPORT_CONTACT } from '../../config/contact';
-import { NotificationBell } from '../notifications/NotificationBell';
-import { HeaderInstallButton } from './HeaderInstallButton';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 
 interface NavbarProps {
   currentTab: NavTab;
   onOpenMobileMenu: () => void;
-  onOpenAddModal: () => void;
+  onOpenAddModal?: () => void;
   onSelectTab: (tab: NavTab) => void;
   onOpenHelpModal?: (tab?: 'help' | 'feedback' | 'complaint' | 'dpdp') => void;
   onOpenNotificationCenter?: () => void;
@@ -36,42 +26,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMobileMenu,
   onOpenAddModal,
   onSelectTab,
-  onOpenHelpModal,
-  onOpenNotificationCenter,
-  onOpenNotificationPreferences,
 }) => {
-  const { theme, toggleTheme } = useTheme();
   const { user, isAdmin } = useAuth();
   const {
     maintenanceSettings,
     dynamicSections,
     appBranding,
   } = useExpense();
-  const [istTimeStr, setIstTimeStr] = useState('');
-  const [istDateStr, setIstDateStr] = useState('');
-
-  // Live IST Clock (Without seconds churn)
-  useEffect(() => {
-    const updateTime = () => {
-      const ist = getISTNow();
-      const hours = String(ist.getHours()).padStart(2, '0');
-      const minutes = String(ist.getMinutes()).padStart(2, '0');
-      // Format clean time without seconds (e.g. 10:30 AM)
-      setIstTimeStr(formatDisplayTime(`${hours}:${minutes}`));
-
-      const year = ist.getFullYear();
-      const month = String(ist.getMonth() + 1).padStart(2, '0');
-      const day = String(ist.getDate()).padStart(2, '0');
-      setIstDateStr(formatDisplayDate(`${year}-${month}-${day}`));
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const titles: Record<string, { title: string; subtitle: string; shortTitle: string }> = {
-    dashboard: { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: 'Overview & Main Sections' },
+    dashboard: { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: 'Overview & Main Financial Sections' },
+    profile: { title: 'Profile & Account', shortTitle: 'Profile', subtitle: 'Personal credentials, active sessions & security' },
+    settings: { title: 'Application Settings', shortTitle: 'Settings', subtitle: 'Appearance, language, notifications & privacy' },
     ai_assistant: { title: 'AI Money Assistant', shortTitle: 'AI Assistant', subtitle: 'Conversational financial advisor grounded in your real data' },
     expense_calendar: { title: 'Expense Calendar', shortTitle: 'Calendar', subtitle: 'Daily, weekly & monthly spending heatmap and ledger' },
     smart_alerts: { title: 'Smart Financial Alerts', shortTitle: 'Smart Alerts', subtitle: 'Budget thresholds, upcoming bills, anomalies & Udhar reminders' },
@@ -91,7 +57,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     reports: { title: 'Reports & Analytics', shortTitle: 'Reports', subtitle: 'Expense charts & cashflow trends' },
     all_transactions: { title: 'All Transactions Ledger', shortTitle: 'All Ledger', subtitle: 'Searchable master ledger' },
     recycle_bin: { title: 'Recycle Bin & Recovery', shortTitle: 'Recycle Bin', subtitle: 'Soft-deleted transactions & safety recovery' },
-    settings: { title: 'Settings & Profile', shortTitle: 'Settings', subtitle: 'User profile & preferences' },
+    help_support: { title: 'Help & Support', shortTitle: 'Help', subtitle: 'Feedback, complaints & customer care' },
+    legal: { title: 'Legal & Privacy Center', shortTitle: 'Legal', subtitle: 'Terms of service, privacy policy & DPDP rights' },
     admin: { title: 'Admin Master Control Center', shortTitle: 'Admin Control', subtitle: 'Complete multi-user management, transactions & platform settings' },
   };
 
@@ -99,17 +66,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   const customSec = dynamicSections.find((s) => s.id === currentTab);
   const currentInfo = customSec
     ? { title: customSec.name, shortTitle: customSec.name, subtitle: customSec.description || 'Custom Section' }
-    : titles[currentTab] || { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: '' };
+    : titles[currentTab] || { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: 'Overview & Main Financial Sections' };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 lg:px-8 py-3 transition-colors">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 lg:px-8 py-2.5 transition-colors">
       <div className="flex items-center justify-between gap-2 sm:gap-4">
-        {/* Left: Hamburger + Title (Optimized for mobile to avoid text truncation) */}
+        {/* Left: Hamburger menu + Brand Logo / Section Title */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           <button
             onClick={onOpenMobileMenu}
             className="lg:hidden p-2 -ml-1 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
             aria-label="Open menu"
+            title="Open menu"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -122,7 +90,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           />
 
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm sm:text-base lg:text-lg font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate leading-tight">
               <span className="sm:hidden">{currentInfo.shortTitle}</span>
               <span className="hidden sm:inline">{currentInfo.title}</span>
             </h2>
@@ -132,122 +100,84 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Right: IST Clock + User Pill + Add Button + Theme Toggle */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        {/* Right: Only Account Controls — Settings and Profile */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* Admin Maintenance Mode Indicator */}
           {isAdmin && maintenanceSettings.isEnabled && (
             <div
               onClick={() => onSelectTab('admin')}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-medium text-xs rounded-xl cursor-pointer"
+              className="flex items-center gap-1.5 px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-medium text-xs rounded-xl cursor-pointer"
               title="Maintenance Mode is Active! Normal users are blocked. Click to manage."
             >
               <AlertTriangle className="w-3.5 h-3.5 stroke-[1.75]" />
-              <span className="hidden sm:inline">Maintenance active</span>
+              <span className="hidden sm:inline text-[11px] font-bold">Maintenance active</span>
             </div>
           )}
 
-          {/* Live Cloud & System Synchronization Status */}
+          {/* Real-time Network & Cloud Synchronization Indicator */}
           <SyncStatusIndicator />
 
-          {/* Top-right PWA Install Entry Point (only visible when installable & not installed) */}
-          <HeaderInstallButton />
-
-          {/* Quick Calculator Access (Standardized secondary button h-9) */}
-          <button
-            type="button"
-            onClick={() => onSelectTab('calculator')}
-            className={`hidden sm:inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium transition-colors cursor-pointer border ${
-              currentTab === 'calculator'
-                ? 'bg-emerald-600 text-white border-emerald-600'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
-            }`}
-            title="Financial Calculator (GST, Offer & Split)"
-            aria-label="Open calculator"
-          >
-            <Calculator className={`w-3.5 h-3.5 stroke-[1.75] ${currentTab === 'calculator' ? 'text-white' : 'text-emerald-500'}`} />
-            <span className="hidden sm:inline">Calculator</span>
-          </button>
-
-          {/* Help, Feedback & Support Button (Standardized secondary button h-9) */}
-          {onOpenHelpModal && (
+          {/* Add Transaction Button */}
+          {onOpenAddModal && (
             <button
               type="button"
-              onClick={() => onOpenHelpModal('help')}
-              className="hidden sm:inline-flex items-center gap-1.5 h-9 px-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-xs font-medium cursor-pointer border border-slate-200/80 dark:border-slate-800"
-              title={`Help, Feedback, Complaints & WhatsApp (${SUPPORT_CONTACT.displayPhone})`}
-              aria-label="Help and support"
+              onClick={onOpenAddModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+              title="Add Transaction"
+              aria-label="Add Transaction"
             >
-              <HelpCircle className="w-3.5 h-3.5 stroke-[1.75] text-emerald-500" />
-              <span className="hidden xl:inline">Help</span>
+              <PlusCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden sm:inline">Add Transaction</span>
+              <span className="sm:hidden">Add</span>
             </button>
           )}
 
-          {/* Notification Center Bell & Dropdown */}
-          <NotificationBell
-            onSelectTab={onSelectTab}
-            onOpenFullCenter={onOpenNotificationCenter || (() => {})}
-            onOpenPreferences={onOpenNotificationPreferences || (() => {})}
-            onOpenHelpModal={onOpenHelpModal}
-          />
-
-          {/* Live IST clock (Subtle, non-distracting typography) */}
-          <div className="hidden 2xl:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono px-1">
-            <Clock className="w-3.5 h-3.5 stroke-[1.75] text-slate-400" />
-            <span>{istDateStr}</span>
-            <span className="text-slate-300 dark:text-slate-600">·</span>
-            <span className="tabular-nums font-medium">{istTimeStr} IST</span>
-          </div>
-
-          {/* User Badge */}
-          {user && (
-            <div
-              onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
-              className="hidden sm:flex items-center gap-2 h-9 px-2.5 bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-medium cursor-pointer transition-colors border border-slate-200/60 dark:border-slate-700/60"
-              title={isAdmin ? 'Open Admin Control' : 'View Profile Settings'}
-            >
-              {user.avatar_url || user.avatarUrl ? (
-                <img
-                  src={user.avatar_url || user.avatarUrl || ''}
-                  alt={user.displayName}
-                  className="w-5 h-5 rounded-lg object-cover border border-emerald-500/30"
-                />
-              ) : (
-                <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">
-                  {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-                </div>
-              )}
-              <span className="truncate max-w-[100px]">{user.displayName}</span>
-              {isAdmin && (
-                <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-medium">
-                  Admin
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Add Transaction Button (visible on mobile where sidebar is hidden) */}
+          {/* 1. Settings Gear Icon */}
           <button
-            onClick={onOpenAddModal}
-            className="flex lg:hidden items-center gap-1 h-9 px-2.5 sm:px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            title="Add Transaction"
-            aria-label="Add Transaction"
+            type="button"
+            onClick={() => onSelectTab('settings')}
+            className={`h-9 w-9 flex items-center justify-center rounded-xl border transition-all cursor-pointer relative group ${
+              currentTab === 'settings'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
+            }`}
+            title="Settings"
+            aria-label="Settings"
           >
-            <PlusCircle className="w-4 h-4 stroke-[2] shrink-0" />
-            <span className="hidden xs:inline">Add</span>
+            <Settings className="w-4 h-4 stroke-[1.8]" />
+            {/* Desktop Tooltip */}
+            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm z-50 hidden sm:block">
+              Settings
+            </span>
           </button>
 
-          {/* Theme Switcher (Standardized icon button h-9 w-9) */}
+          {/* 2. Profile Avatar / Icon */}
           <button
-            onClick={toggleTheme}
-            className="h-9 w-9 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-800 transition-colors shrink-0 cursor-pointer"
-            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            aria-label="Toggle theme"
+            type="button"
+            onClick={() => onSelectTab('profile')}
+            className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all cursor-pointer relative group p-0.5 ${
+              currentTab === 'profile'
+                ? 'border-emerald-500 ring-2 ring-emerald-500/30'
+                : 'border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+            }`}
+            title={user?.displayName ? `Profile: ${user.displayName}` : 'Profile'}
+            aria-label="Profile"
           >
-            {theme === 'dark' ? (
-              <Moon className="w-4 h-4 text-amber-400" />
+            {user?.avatar_url || user?.avatarUrl ? (
+              <img
+                src={user?.avatar_url || user?.avatarUrl || ''}
+                alt={user.displayName || 'Profile'}
+                className="w-full h-full rounded-[10px] object-cover"
+              />
             ) : (
-              <Sun className="w-4 h-4 text-amber-500" />
+              <div className="w-full h-full rounded-[10px] bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-xs font-bold">
+                {user?.displayName ? user.displayName.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
+              </div>
             )}
+            {/* Desktop Tooltip */}
+            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm z-50 hidden sm:block">
+              Profile
+            </span>
           </button>
         </div>
       </div>

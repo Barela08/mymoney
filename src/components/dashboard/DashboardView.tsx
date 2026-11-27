@@ -176,33 +176,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-20 lg:pb-8">
-      {/* 1. Context Title & Profile Shortcut */}
+      {/* 1. Dashboard Heading (Clean Financial Overview) */}
       <div className="flex items-center justify-between px-1">
-        <div
-          onClick={() => onNavigate('settings')}
-          className="flex items-center gap-3 cursor-pointer group"
-          title="Account profile and settings"
-        >
-          {user?.avatar_url || user?.avatarUrl ? (
-            <img
-              src={user?.avatar_url || user?.avatarUrl || ''}
-              alt={user.displayName}
-              className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-800 transition-opacity group-hover:opacity-90"
-            />
-          ) : (
-            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-base flex items-center justify-center border border-slate-200 dark:border-slate-700">
-              {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-            </div>
-          )}
-
-          <div>
-            <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 transition-colors group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-              {greeting}, {user?.displayName || 'Personal Account'}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Financial Ledger · {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-            </p>
-          </div>
+        <div>
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+            Financial Overview
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            Personal Ledger · {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+          </p>
         </div>
       </div>
 
@@ -553,10 +535,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
-                onClick={() => onOpenAddModal('home', 'salary')}
+                onClick={() => onOpenAddModal()}
                 className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
-                + Add Received Money
+                + Add Transaction
               </button>
             </div>
           </div>
@@ -604,10 +586,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
-                onClick={() => onOpenAddModal('room')}
+                onClick={() => onOpenAddModal()}
                 className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
-                + Add room expense
+                + Add Transaction
               </button>
             </div>
           </div>
@@ -655,10 +637,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
-                onClick={() => onOpenAddModal('food')}
+                onClick={() => onOpenAddModal()}
                 className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
-                + Add food expense
+                + Add Transaction
               </button>
             </div>
           </div>
@@ -706,10 +688,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
-                onClick={() => onOpenAddModal('other')}
+                onClick={() => onOpenAddModal()}
                 className="w-full h-9 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center"
               >
-                + Add other expense
+                + Add Transaction
               </button>
             </div>
           </div>

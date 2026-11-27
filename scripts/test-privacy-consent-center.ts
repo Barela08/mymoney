@@ -146,8 +146,8 @@ async function run() {
   console.log('\n=== Privacy Choices & Consent Center Test Suite (15 Scenarios) ===\n');
 
   // 1. New user sees all optional categories unchecked
-  await test('1. New user sees all 6 optional categories unchecked by default', () => {
-    assert.equal(OPTIONAL_CONSENT_CATEGORIES.length, 6);
+  await test('1. New user sees all optional categories unchecked by default', () => {
+    assert.equal(OPTIONAL_CONSENT_CATEGORIES.length, 7);
     const fresh = createEmptyOptionalChoices();
     for (const cat of OPTIONAL_CONSENT_CATEGORIES) {
       assert.equal(fresh[cat], false, `Category ${cat} must start unchecked`);
@@ -163,10 +163,10 @@ async function run() {
   });
 
   // 2. Select All selects all optional categories
-  await test('2. Select All selects all 6 optional categories', () => {
+  await test('2. Select All selects all optional categories', () => {
     const initial = createEmptyOptionalChoices();
     const afterSelectAll = toggleSelectAllOptional(initial);
-    assert.equal(countSelectedOptional(afterSelectAll), 6);
+    assert.equal(countSelectedOptional(afterSelectAll), OPTIONAL_CONSENT_CATEGORIES.length);
     assert.equal(getSelectAllState(afterSelectAll), 'checked');
     for (const cat of OPTIONAL_CONSENT_CATEGORIES) {
       assert.equal(afterSelectAll[cat], true);
@@ -230,7 +230,7 @@ async function run() {
     firstChoices.personalization = true;
 
     const firstPayload = buildConsentSavePayload(firstChoices, null);
-    assert.equal(firstPayload.length, 6, 'First explicit save persists all 6 category records separately');
+    assert.equal(firstPayload.length, OPTIONAL_CONSENT_CATEGORIES.length, `First explicit save persists all ${OPTIONAL_CONSENT_CATEGORIES.length} category records separately`);
     const byPurpose = Object.fromEntries(firstPayload.map((e) => [e.purpose, e.status]));
     assert.equal(byPurpose.cloud_sync, 'granted');
     assert.equal(byPurpose.personalization, 'granted');
@@ -238,6 +238,7 @@ async function run() {
     assert.equal(byPurpose.udhar_sharing, 'withdrawn');
     assert.equal(byPurpose.analytics, 'withdrawn');
     assert.equal(byPurpose.marketing_updates, 'withdrawn');
+    assert.equal(byPurpose.upi_qr, 'withdrawn');
 
     // Subsequent update only emits changed categories
     const deltaPayload = buildConsentSavePayload(
@@ -249,6 +250,7 @@ async function run() {
         udhar_sharing: 'withdrawn',
         analytics: 'withdrawn',
         marketing_updates: 'withdrawn',
+        upi_qr: 'withdrawn',
       }
     );
     assert.equal(deltaPayload.length, 2);

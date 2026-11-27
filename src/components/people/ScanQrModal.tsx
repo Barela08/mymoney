@@ -3,6 +3,7 @@ import jsQR from 'jsqr';
 import {
   X,
   Camera,
+  CameraOff,
   Upload,
   Keyboard,
   ShieldCheck,
@@ -408,22 +409,35 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         await refreshDevices();
       } catch (err: any) {
         if (generation !== streamGenerationRef.current) return;
+        const isPermissionDenied =
+          err?.name === 'NotAllowedError' ||
+          err?.name === 'PermissionDeniedError' ||
+          err?.name === 'SecurityError' ||
+          String(err?.message || '').toLowerCase().includes('permission') ||
+          String(err?.message || '').toLowerCase().includes('denied') ||
+          String(err?.message || '').toLowerCase().includes('dismissed');
+
+        const isNotFound =
+          err?.name === 'NotFoundError' ||
+          err?.name === 'DevicesNotFoundError' ||
+          String(err?.message || '').toLowerCase().includes('not found');
+
+        const isBusy =
+          err?.name === 'NotReadableError' ||
+          err?.name === 'TrackStartError' ||
+          String(err?.message || '').toLowerCase().includes('busy') ||
+          String(err?.message || '').toLowerCase().includes('in use');
+
         setCameraError(
-          err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
-            ? 'Camera permission is blocked. Allow camera access in your browser settings, or use "Upload" / "Pair Code" below.'
-            : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
+          isPermissionDenied
+            ? 'Camera access was blocked or dismissed. Tap the lock/tune icon 🔒 in your browser address bar to allow Camera, then tap Retry Camera below.'
+            : isNotFound
               ? 'No camera was detected on this device. Use "Upload" or "Pair Code" instead.'
-              : err?.name === 'NotReadableError' || err?.name === 'TrackStartError'
-                ? 'The camera is in use by another app or tab. Close it and tap Try Again.'
-                : 'Camera could not be started. Use "Upload" or "Pair Code" below.'
+              : isBusy
+                ? 'The camera is in use by another app or browser tab. Please close it and tap Retry Camera.'
+                : 'Camera could not be started. Check permissions or use "Upload" or "Pair Code" below.'
         );
-        setCameraStatus(
-          err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
-            ? 'denied'
-            : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
-              ? 'unavailable'
-              : 'error'
-        );
+        setCameraStatus(isPermissionDenied ? 'denied' : isNotFound ? 'unavailable' : 'error');
       }
     },
     [currentDeviceId, stopCamera, refreshDevices, scanFrame]
@@ -924,15 +938,39 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 <div className="relative aspect-square max-w-[280px] mx-auto bg-slate-950 rounded-3xl overflow-hidden border-2 border-slate-800 shadow-inner flex items-center justify-center">
                   <video
                     ref={videoRef}
-                    className="w-full h-full object-cover"
+                    className={`w-full h-full object-cover ${cameraStatus === 'active' ? 'block' : 'hidden'}`}
                     muted
                     playsInline
                   />
                   <canvas ref={canvasRef} className="hidden" />
 
-                  <div className="absolute inset-8 border-2 border-emerald-400/80 rounded-2xl pointer-events-none flex items-center justify-center">
-                    <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-                  </div>
+                  {/* Fallback Viewport when camera is not streaming */}
+                  {cameraStatus !== 'active' && (
+                    <div className="flex flex-col items-center justify-center text-center p-6 space-y-2">
+                      {cameraStatus === 'starting' ? (
+                        <>
+                          <div className="w-12 h-12 rounded-2xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 animate-pulse">
+                            <Camera className="w-6 h-6" />
+                          </div>
+                          <p className="text-xs font-semibold text-slate-300">Connecting camera...</p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-12 h-12 rounded-2xl bg-amber-950/60 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                            <CameraOff className="w-6 h-6" />
+                          </div>
+                          <p className="text-xs font-semibold text-slate-300">Camera not active</p>
+                          <p className="text-[11px] text-slate-500">Allow permissions or use Upload / Pair Code below</p>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {cameraStatus === 'active' && !isScanningPaused && (
+                    <div className="absolute inset-8 border-2 border-emerald-400/80 rounded-2xl pointer-events-none flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+                    </div>
+                  )}
 
                   {/* Camera Controls: Torch, Switch Camera & Pause/Resume */}
                   <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">

@@ -44,6 +44,7 @@ const ReportsSection = lazy(() => import('./components/reports/ReportsSection').
 const RecycleBinSection = lazy(() => import('./components/recycle-bin/RecycleBinSection').then(m => ({ default: m.RecycleBinSection })));
 const DynamicCustomSection = lazy(() => import('./components/dynamic/DynamicCustomSection').then(m => ({ default: m.DynamicCustomSection })));
 const SettingsSection = lazy(() => import('./components/settings/SettingsSection').then(m => ({ default: m.SettingsSection })));
+const UserProfileSection = lazy(() => import('./components/profile/UserProfileSection').then(m => ({ default: m.UserProfileSection })));
 const HelpSupportSection = lazy(() => import('./components/support/HelpSupportSection').then(m => ({ default: m.HelpSupportSection })));
 const BudgetSection = lazy(() => import('./components/budget/BudgetSection').then(m => ({ default: m.BudgetSection })));
 const SavingsGoalsSection = lazy(() => import('./components/savings/SavingsGoalsSection').then(m => ({ default: m.SavingsGoalsSection })));
@@ -67,7 +68,9 @@ const PATH_TO_TAB: Record<string, NavTab> = {
   '/net-worth': 'net_worth',
   '/safe-to-spend': 'safe_to_spend',
   '/upi-qr': 'upi_qr',
-  };
+  '/profile': 'profile',
+  '/settings': 'settings',
+};
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
@@ -79,7 +82,9 @@ const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   net_worth: '/net-worth',
   safe_to_spend: '/safe-to-spend',
   upi_qr: '/upi-qr',
-  };
+  profile: '/profile',
+  settings: '/settings',
+};
 
 const SectionFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-20 min-h-[300px] space-y-3 animate-pulse">
@@ -121,10 +126,14 @@ const MainContent: React.FC = () => {
         hash === '#delete-account' ||
         hash === '#auto-detection' ||
         hash === '#privacy' ||
-        hash === '#manage-consent'
+        hash === '#manage-consent' ||
+        hash === '#appearance' ||
+        hash === '#notifications' ||
+        hash === '#language'
       ) {
         return 'settings';
       }
+      if (hash === '#profile') return 'profile';
       if (hash.includes('legal=')) return 'legal';
       return PATH_TO_TAB[p] || 'dashboard';
     }
@@ -221,9 +230,14 @@ const MainContent: React.FC = () => {
         hash === '#delete-account' ||
         hash === '#auto-detection' ||
         hash === '#privacy' ||
-        hash === '#manage-consent'
+        hash === '#manage-consent' ||
+        hash === '#appearance' ||
+        hash === '#notifications' ||
+        hash === '#language'
       ) {
         setCurrentTab('settings');
+      } else if (hash === '#profile') {
+        setCurrentTab('profile');
       }
     };
 
@@ -234,7 +248,7 @@ const MainContent: React.FC = () => {
 
   // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [modalInitialCategory, setModalInitialCategory] = useState<TransactionCategory>('home');
+  const [modalInitialCategory, setModalInitialCategory] = useState<TransactionCategory | undefined>(undefined);
   const [modalInitialSubcategory, setModalInitialSubcategory] = useState<TransactionSubcategory | undefined>(undefined);
   const [modalInitialPerson, setModalInitialPerson] = useState<string | undefined>(undefined);
   const [modalInitialAmount, setModalInitialAmount] = useState<string | undefined>(undefined);
@@ -262,7 +276,7 @@ const MainContent: React.FC = () => {
   };
 
   const handleOpenAddModal = (
-    category: TransactionCategory = 'home',
+    category?: TransactionCategory,
     subcategory?: TransactionSubcategory,
     personName?: string,
     amount?: number | string,
@@ -270,7 +284,7 @@ const MainContent: React.FC = () => {
     dateKey?: string
   ) => {
     const validCategories: TransactionCategory[] = ['home', 'room', 'food', 'other', 'people', 'received'];
-    setModalInitialCategory(validCategories.includes(category) ? category : 'other');
+    setModalInitialCategory(category && validCategories.includes(category) ? category : undefined);
     setModalInitialSubcategory(subcategory);
     setModalInitialPerson(personName);
     setModalInitialAmount(amount !== undefined ? String(amount) : undefined);
@@ -474,7 +488,7 @@ return (
             <Sidebar
               currentTab={currentTab}
               onSelectTab={setCurrentTab}
-              onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+              onOpenAddModal={() => handleOpenAddModal()}
               onOpenHelpModal={handleOpenHelpModal}
             />
 
@@ -484,7 +498,7 @@ return (
               <Navbar
                 currentTab={currentTab}
                 onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-                onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+                onOpenAddModal={() => handleOpenAddModal()}
                 onSelectTab={setCurrentTab}
                 onOpenHelpModal={handleOpenHelpModal}
                 onOpenNotificationCenter={() => setCurrentTab('notifications')}
@@ -607,10 +621,18 @@ return (
                     />
                   )}
 
+                  {currentTab === 'profile' && (
+                    <UserProfileSection
+                      onNavigateToDeletion={() => setCurrentTab('settings')}
+                      onNavigateToSettings={() => setCurrentTab('settings')}
+                    />
+                  )}
+
                   {currentTab === 'settings' && (
                     <SettingsSection
-                      initialTab="profile"
+                      initialTab="appearance"
                       initialLegalPolicy={initialLegalPolicy}
+                      onNavigateToProfile={() => setCurrentTab('profile')}
                     />
                   )}
 
@@ -630,7 +652,7 @@ return (
               onClose={() => setIsMobileMenuOpen(false)}
               currentTab={currentTab}
               onSelectTab={setCurrentTab}
-              onOpenAddModal={() => handleOpenAddModal(currentTab === 'all_transactions' ? 'home' : (currentTab as any))}
+              onOpenAddModal={() => handleOpenAddModal()}
               onOpenHelpModal={handleOpenHelpModal}
             />
           </div>

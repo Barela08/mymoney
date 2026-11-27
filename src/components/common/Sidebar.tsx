@@ -48,6 +48,8 @@ import { SUPPORT_CONTACT } from '../../config/contact';
 
 export type NavTab =
   | 'dashboard'
+  | 'profile'
+  | 'settings'
   | 'ai_assistant'
   | 'expense_calendar'
   | 'smart_alerts'
@@ -68,7 +70,6 @@ export type NavTab =
   | 'all_transactions'
   | 'recycle_bin'
   | 'help_support'
-  | 'settings'
   | 'legal'
   | 'admin'
   | string;
@@ -180,7 +181,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Account',
       items: [
-        { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
+        { id: 'profile' as NavTab, label: 'Profile', icon: User },
+        { id: 'settings' as NavTab, label: 'Settings', icon: Settings },
         { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
         {
           id: 'help_support' as NavTab,
@@ -323,9 +325,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3.5 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
         {/* User Profile Card */}
         <div
-          onClick={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
+          onClick={() => onSelectTab(isAdmin ? 'admin' : 'profile')}
           className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-colors"
-          title={`Signed in as ${user?.email || 'User'}`}
+          title={`Signed in as ${user?.email || 'User'} · Click to view Profile`}
         >
           <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
             {user?.avatar_url || user?.avatarUrl ? (

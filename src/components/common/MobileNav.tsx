@@ -10,6 +10,7 @@ import {
   BarChart3,
   ListOrdered,
   Settings,
+  User,
   X,
   Plus,
   Sun,
@@ -140,7 +141,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
     { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
-    { id: 'settings' as NavTab, label: 'Settings & Profile', icon: Settings },
+    { id: 'profile' as NavTab, label: 'Profile & Account', icon: User },
+    { id: 'settings' as NavTab, label: 'Application Settings', icon: Settings },
     ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
   ];
 
@@ -198,7 +200,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
         {/* User Card in Mobile Drawer */}
         {user && (
-          <div className="mx-4 mt-3 p-3 bg-slate-100/80 dark:bg-slate-800/80 rounded-2xl flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60">
+          <div
+            onClick={() => handleSelect('profile')}
+            className="mx-4 mt-3 p-3 bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700/80 transition-colors cursor-pointer rounded-2xl flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60"
+            title="Open Profile & Account"
+          >
             <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
               {user.avatar_url || user.avatarUrl ? (
                 <img
@@ -658,6 +664,18 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               >
                 <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
                 <span className="text-xs font-medium">Notifications</span>
+              </button>
+
+              {/* Profile */}
+              <button
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('profile');
+                }}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+              >
+                <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                <span className="text-xs font-medium">Profile</span>
               </button>
 
               {/* Settings */}

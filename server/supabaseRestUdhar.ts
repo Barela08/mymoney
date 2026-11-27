@@ -132,7 +132,7 @@ async function fetchUsersByIds(ids: string[]): Promise<Map<string, any>> {
   if (uniqueIds.length === 0) return map;
   const inList = uniqueIds.map((id) => `"${id.replace(/"/g, '')}"`).join(',');
   const res = await sbRest<any[]>(
-    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username`
+    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified`
   );
   if (res.ok && Array.isArray(res.data)) {
     for (const u of res.data) {
@@ -322,13 +322,13 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
   let queryPath = '';
 
   if (classified.mode === 'email_exact') {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=5`;
+    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified,role&limit=5`;
   } else if (classified.mode === 'phone_exact') {
     const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=15`;
+    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified,role&limit=15`;
   } else {
-    const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(','))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&order=full_name.asc&limit=20`;
+    const orClauses = [`full_name.ilike.*${escaped}*`, `email.ilike.*${escaped}*`];
+    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(','))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified,role&order=full_name.asc&limit=20`;
   }
 
   const usersRes = await sbRest<any[]>(queryPath);

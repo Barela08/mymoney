@@ -15,6 +15,7 @@ import {
   Edit3,
   ShieldCheck,
   X,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -27,10 +28,12 @@ import { Camera } from 'lucide-react';
 
 interface UserProfileSectionProps {
   onNavigateToDeletion?: () => void;
+  onNavigateToSettings?: () => void;
 }
 
 export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
   onNavigateToDeletion,
+  onNavigateToSettings,
 }) => {
   const { user, logout, logoutAllDevices, changePassword, updateUserProfile } = useAuth();
   const toast = useToast();
@@ -200,6 +203,29 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-16 animate-fade-in">
+      {/* Top Header */}
+      <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+            Profile & Account
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Manage your personal profile photo, name, email, credentials and active sessions
+          </p>
+        </div>
+        {onNavigateToSettings && (
+          <button
+            type="button"
+            onClick={onNavigateToSettings}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            title="Open Application Settings"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+        )}
+      </div>
+
       {/* Top Profile Hero Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
