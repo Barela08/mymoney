@@ -225,7 +225,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </p>
         </div>
       </div>
-      </div>
 
       {/* 1A. Mobile Notification Bar Opt-in Banner (only when permission === 'default' & not dismissed) */}
       {isPushSupported && pushPermission === 'default' && !pushBannerDismissed && (

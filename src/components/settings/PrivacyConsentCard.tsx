@@ -25,7 +25,6 @@ import {
   Loader2,
   Check,
   Minus,
-  QrCode,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';

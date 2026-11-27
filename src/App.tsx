@@ -77,7 +77,6 @@ const PATH_TO_TAB: Record<string, NavTab> = {
   '/safe-to-spend': 'safe_to_spend',
   '/upi-qr': 'upi_qr',
   '/profile': 'profile',
-  '/settings': 'settings',
 };
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
@@ -98,7 +97,6 @@ const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   safe_to_spend: '/safe-to-spend',
   upi_qr: '/upi-qr',
   profile: '/profile',
-  settings: '/settings',
 };
 
 const SectionFallback: React.FC = () => (
