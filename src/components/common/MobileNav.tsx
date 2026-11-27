@@ -718,18 +718,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 <span className="text-xs font-medium">Calc</span>
               </button>
 
-              {/* UPI QR Generator */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('upi_qr');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <QrCode className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">UPI QR</span>
-              </button>
-
               {/* Notifications */}
               <button
                 onClick={() => {
@@ -739,10 +727,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Notifications</span>
+                <span className="text-xs font-medium">Alerts</span>
               </button>
 
-              {/* Profile */}
+              {/* Unified My Account (Profile + Settings + Security + Devices) */}
               <button
                 onClick={() => {
                   setIsMoreSheetOpen(false);
@@ -751,19 +739,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
               >
                 <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Profile</span>
-              </button>
-
-              {/* Settings */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('settings');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Settings className="w-4 h-4 text-slate-600 dark:text-slate-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Settings</span>
+                <span className="text-xs font-medium">My Account</span>
               </button>
             </div>
 

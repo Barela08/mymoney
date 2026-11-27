@@ -507,11 +507,16 @@ export const AuthPage: React.FC = () => {
               <div className="flex items-start gap-2.5">
                 <Laptop className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
-                    Active on {maxSessionsPrompt.sessions.length} / {maxSessionsPrompt.maxSessions} Devices
+                  <p className="text-xs font-bold text-amber-900 dark:text-amber-200 leading-snug">
+                    You have reached the maximum limit of {maxSessionsPrompt.maxSessions} active devices. Please log out from an existing device before signing in here.
                   </p>
-                  <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
-                    Select a device below to log it out and sign in here immediately:
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 text-[11px] font-bold">
+                      Manage My Devices ({maxSessionsPrompt.sessions.length} / {maxSessionsPrompt.maxSessions})
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-1">
+                    Select a device below to review and revoke its session so you can sign in here:
                   </p>
                 </div>
               </div>

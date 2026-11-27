@@ -34,6 +34,8 @@ import {
   KeyRound,
   Bot,
   UserCheck,
+  UserPlus,
+  CheckCheck,
   Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -163,16 +165,41 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     setCollapsedGroups((prev) => ({ ...prev, [groupLabel]: !prev[groupLabel] }));
   };
 
-  // Load Alerts
+  // Load Alerts & Admin Notifications
+  const [adminNotifs, setAdminNotifs] = useState<any[]>([]);
+
   const loadAlerts = async () => {
     try {
-      const res = await adminClient.getAdminAlerts();
-      if (res.success && Array.isArray(res.alerts)) {
-        setAlerts(res.alerts);
+      const [alertRes, notifRes] = await Promise.allSettled([
+        adminClient.getAdminAlerts(),
+        adminClient.getAdminNotifications(),
+      ]);
+      if (alertRes.status === 'fulfilled' && alertRes.value?.success && Array.isArray(alertRes.value.alerts)) {
+        setAlerts(alertRes.value.alerts);
+      }
+      if (notifRes.status === 'fulfilled' && notifRes.value?.success && Array.isArray(notifRes.value.notifications)) {
+        setAdminNotifs(notifRes.value.notifications);
       }
     } catch {
       // Silently catch in layout
     }
+  };
+
+  const handleMarkNotifRead = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      await adminClient.markAdminNotificationRead(id);
+      setAdminNotifs((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+      );
+    } catch {}
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    try {
+      await adminClient.markAllAdminNotificationsRead();
+      setAdminNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch {}
   };
 
   useEffect(() => {
@@ -207,7 +234,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   const activeGroup = NAV_GROUPS.find((g) => g.items.some((i) => i.key === currentSection))?.label || 'Overview';
   const activeItem = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === currentSection)?.label || 'Dashboard';
-  const unreadAlertsCount = alerts.filter((a) => a.status === 'unread').length;
+  const unreadAlertsCount =
+    alerts.filter((a) => a.status === 'unread').length +
+    adminNotifs.filter((n) => !n.is_read).length;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
@@ -337,38 +366,155 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               )}
             </button>
 
-            {/* Alerts Dropdown */}
+            {/* Alerts & In-App Notifications Dropdown */}
             {isAlertsOpen && (
-              <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 space-y-3">
+              <div className="absolute right-0 mt-2 w-88 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                  <h4 className="font-bold text-xs">Security & Platform Alerts</h4>
-                  <span className="text-[10px] font-bold text-slate-400">{alerts.length} Total</span>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-xs">Admin Notifications & Alerts</h4>
+                    {unreadAlertsCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                        {unreadAlertsCount} unread
+                      </span>
+                    )}
+                  </div>
+                  {adminNotifs.some((n) => !n.is_read) && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllNotifsRead}
+                      className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      <span>Mark all read</span>
+                    </button>
+                  )}
                 </div>
-                <div className="max-h-64 overflow-y-auto space-y-2">
-                  {alerts.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-4">No active alerts recorded.</p>
-                  ) : (
-                    alerts.slice(0, 5).map((a) => (
-                      <div
-                        key={a.id}
-                        className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-xs space-y-1"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{a.title}</span>
-                          <span
-                            className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
-                              a.severity === 'critical'
-                                ? 'bg-rose-100 text-rose-700'
-                                : 'bg-amber-100 text-amber-700'
+
+                <div className="max-h-80 overflow-y-auto space-y-2 pr-0.5">
+                  {/* Section 1: Admin In-App Notifications (New User Registrations, etc.) */}
+                  {adminNotifs.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Recent Activity & Registrations
+                      </p>
+                      {adminNotifs.slice(0, 10).map((n) => {
+                        const isNewUser = n.event_type === 'new_user' || n.title?.includes('New User');
+                        const meta = n.metadata || {};
+                        return (
+                          <div
+                            key={n.id}
+                            onClick={() => {
+                              handleMarkNotifRead(n.id);
+                              if (isNewUser || n.user_id) {
+                                onSelectSection('users');
+                              }
+                              setIsAlertsOpen(false);
+                            }}
+                            className={`p-3 rounded-xl border text-xs space-y-1.5 transition-colors cursor-pointer ${
+                              !n.is_read
+                                ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-850'
+                                : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
-                            {a.severity}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">{a.description}</p>
-                      </div>
-                    ))
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {isNewUser ? (
+                                  <UserPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                ) : (
+                                  <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                )}
+                                <span className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                                  {n.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {!n.is_read && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleMarkNotifRead(n.id, e)}
+                                    title="Mark as read"
+                                    className="p-1 rounded hover:bg-emerald-200/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(n.created_at).toLocaleTimeString('en-IN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+
+                            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                              {n.message}
+                            </p>
+
+                            {/* Detailed User Registration Information */}
+                            {isNewUser && (
+                              <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60 grid grid-cols-2 gap-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                <div>
+                                  <span className="font-medium text-slate-400">Email: </span>
+                                  <span className="font-mono text-slate-700 dark:text-slate-300">
+                                    {n.user_email || meta.userEmail || 'N/A'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-slate-400">Status: </span>
+                                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                    {meta.status || 'Active'}
+                                  </span>
+                                </div>
+                                <div className="col-span-2 flex items-center justify-between">
+                                  <span>
+                                    <span className="font-medium text-slate-400">User ID: </span>
+                                    <span className="font-mono text-slate-600 dark:text-slate-300">
+                                      {(n.user_id || meta.userId || '').slice(0, 12)}...
+                                    </span>
+                                  </span>
+                                  <span className="text-emerald-600 font-bold hover:underline">
+                                    View in Users →
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
+
+                  {/* Section 2: Security & Platform Alerts */}
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Security & Platform Health
+                    </p>
+                    {alerts.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-2">No security incidents recorded.</p>
+                    ) : (
+                      alerts.slice(0, 5).map((a) => (
+                        <div
+                          key={a.id}
+                          className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-xs space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{a.title}</span>
+                            <span
+                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                a.severity === 'critical'
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {a.severity}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-snug">{a.description}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             )}

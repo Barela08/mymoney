@@ -76,7 +76,7 @@ export function generateWelcomeEmail(data: WelcomeEmailData): {
   const supportPhone = data.supportPhone || APP_CONFIG.supportPhone;
   const supportPhoneClean = (supportPhone || '').replace(/[^\d+]/g, '');
 
-  const subject = `Welcome aboard! 👋 - ${APP_CONFIG.appName}`;
+  const subject = `Welcome to My Money Manager – Your Financial Journey Starts Here!`;
 
   // 1. Table-based HTML Email Template with Inline CSS for Gmail, Outlook, Apple Mail & Mobile
   const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -208,21 +208,40 @@ export function generateWelcomeEmail(data: WelcomeEmailData): {
 
               <!-- 8. Short Welcome Message -->
               <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-                Welcome to ${escapeHtml(APP_CONFIG.appName)}. We&#39;re happy to have you with us!
+                Thank you for joining ${escapeHtml(APP_CONFIG.appName)}. We&#39;re thrilled to have you with us on your journey to financial freedom!
               </p>
-              <p style="margin: 0 0 20px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
-                Your money management journey just got simpler. Track your income, manage expenses, plan budgets, and build better financial habits—all in one place.
+              <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; color: #334155; line-height: 1.6;">
+                Your personal money management journey just got simpler and smarter. Here is everything you can do:
               </p>
+
+              <!-- Feature Highlights List -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 0 0 20px 0; font-size: 13px; color: #334155; line-height: 1.6;">
+                <tr>
+                  <td style="padding: 4px 0;"><strong>📊 Income & Expense Tracking:</strong> Log daily transactions effortlessly with quick categories and auto-tagging.</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px 0;"><strong>⚡ Transaction Management:</strong> Keep full control of cash flows, bank accounts, and recycle bin recovery.</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px 0;"><strong>📲 UPI QR Integration:</strong> Scan and generate instant payment QR codes safely without third-party fees.</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px 0;"><strong>🤝 Udhar Khata:</strong> Manage shared loans, repayments, and 2-way ledger syncing with contacts.</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px 0;"><strong>📈 Financial Reports:</strong> Visualize monthly spending trends, net worth, and safe-to-spend insights.</td>
+                </tr>
+              </table>
 
               <!-- 9. Small Highlighted Message Card -->
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="highlight-card" style="margin: 0 0 24px 0; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px 20px;">
                 <tr>
                   <td>
                     <p style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #065f46; line-height: 1.4;">
-                      Your money. Your control.
+                      Your money. Your privacy. Your control.
                     </p>
                     <p style="margin: 0; font-size: 13px; font-weight: 400; color: #166534; line-height: 1.5;">
-                      Make smarter decisions, save better, and take a step closer to your financial goals.
+                      Built with end-to-end security and bank-grade data isolation by HackifyPro. Make smarter decisions, save consistently, and achieve your financial goals.
                     </p>
                   </td>
                 </tr>
@@ -345,13 +364,18 @@ Welcome aboard! 👋
 
 ${plainGreeting}
 
-Welcome to ${APP_CONFIG.appName}. We're happy to have you with us!
+Thank you for joining ${APP_CONFIG.appName}. We're thrilled to have you with us on your journey to financial freedom!
 
-Your money management journey just got simpler. Track your income, manage expenses, plan budgets, and build better financial habits—all in one place.
+Your money management journey just got simpler and smarter:
+- Income & Expense Tracking: Log daily cashflows effortlessly.
+- Transaction Management: Control accounts with instant soft-delete & restore.
+- UPI QR Integration: Instant zero-fee QR payment requests and scanning.
+- Udhar Khata: Manage shared loans, repayments, and 2-way ledger sync.
+- Financial Reports: Visualize monthly trends, net worth, and safe-to-spend.
 
 --------------------------------------------------
-Your money. Your control.
-Make smarter decisions, save better, and take a step closer to your financial goals.
+Your money. Your privacy. Your control.
+Built with end-to-end security and data isolation by HackifyPro.
 --------------------------------------------------
 
 Login to Your Account:

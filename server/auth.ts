@@ -50,7 +50,7 @@ export class SessionLimitError extends Error {
 
   constructor(activeSessions: ActiveSessionDisplay[], maxSessions: number = MAX_ACTIVE_SESSIONS) {
     super(
-      `Maximum ${maxSessions} concurrent logins allowed per account. Please log out from one of your active devices to continue.`
+      `You have reached the maximum limit of ${maxSessions} active devices. Please log out from an existing device before signing in here.`
     );
     this.name = 'SessionLimitError';
     this.maxSessions = maxSessions;

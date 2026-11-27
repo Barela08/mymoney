@@ -17,8 +17,32 @@ const AUTH_SESSION_DISMISSED_KEY = 'my_money_popup_auth_dismissed';
 const APP_SESSION_DISMISSED_KEY = 'my_money_popup_app_dismissed';
 const AUTH_DISMISSED_AT_KEY = 'my_money_popup_auth_dismissed_at';
 const APP_DISMISSED_AT_KEY = 'my_money_popup_app_dismissed_at';
+const SESSION_START_KEY = 'my_money_page_visit_start';
 
 export const POPUP_REPROMPT_DELAY_MS = 60_000;
+
+export function getInitialVisitWaitMs(): number {
+  if (typeof window === 'undefined') return 0;
+  if (window.location?.hash === '#install') return 0;
+  try {
+    const rawStart = sessionStorage.getItem(SESSION_START_KEY);
+    const now = Date.now();
+    if (!rawStart) {
+      sessionStorage.setItem(SESSION_START_KEY, String(now));
+      return POPUP_REPROMPT_DELAY_MS;
+    }
+    const start = parseInt(rawStart, 10);
+    if (Number.isFinite(start)) {
+      const elapsed = now - start;
+      if (elapsed < POPUP_REPROMPT_DELAY_MS) {
+        return POPUP_REPROMPT_DELAY_MS - elapsed;
+      }
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
 
 // Legacy keys to clean up so users are not blocked by old 7-day cookie
 const LEGACY_POPUP_STORAGE_KEY = 'my_money_app_popup_action';
@@ -209,27 +233,37 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
     cleanupLegacyDismissals();
   }, []);
 
-  // Re-evaluate visibility and schedule exact 1-minute re-appear if user cancelled without installing.
-  // While visible and not installed, never auto-hide on its own.
+  // Re-evaluate visibility:
+  // 1. If installed: permanently hidden.
+  // 2. If cancelled: wait 60s cooldown before reappearing.
+  // 3. If new visitor session: wait 60s after arrival before displaying.
+  // 4. Once displayed: stays visible until user explicitly clicks Cancel or Install (never auto-hides).
   useEffect(() => {
     if (isAppDownloadedOrInstalled(isInstalled)) {
       setIsHidden(true);
       return;
     }
 
-    const remainingMs = getPopupRemainingCooldownMs(isAuthView);
-    if (remainingMs <= 0) {
-      setIsHidden(false);
-      return;
+    const cooldownMs = getPopupRemainingCooldownMs(isAuthView);
+    if (cooldownMs > 0) {
+      setIsHidden(true);
+      const timer = window.setTimeout(() => {
+        clearDismissalForView(isAuthView);
+        setIsHidden(false);
+      }, cooldownMs);
+      return () => window.clearTimeout(timer);
     }
 
-    setIsHidden(true);
-    const timer = window.setTimeout(() => {
-      clearDismissalForView(isAuthView);
-      setIsHidden(false);
-    }, remainingMs);
+    const initialWaitMs = getInitialVisitWaitMs();
+    if (initialWaitMs > 0) {
+      setIsHidden(true);
+      const timer = window.setTimeout(() => {
+        setIsHidden(false);
+      }, initialWaitMs);
+      return () => window.clearTimeout(timer);
+    }
 
-    return () => window.clearTimeout(timer);
+    setIsHidden(false);
   }, [isInstalled, isAuthView, dismissTick]);
 
   // Popup is visible by default unless explicitly disabled by admin, suppressed after cancel cooldown, or already installed

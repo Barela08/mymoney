@@ -25,6 +25,7 @@ import { authApi, type SecurityMethodsData, type ActiveDeviceSession } from '../
 import { upiProfileApi, type UpiProfileChangedDetail } from '../../lib/upiProfileApi';
 import { doesUpiProfileBelongToUser, type UpiProfileRecord } from '../../lib/upiQrUtils';
 import { UpiSetupModal } from '../upi/UpiSetupModal';
+import { ConfirmModal } from '../common/ConfirmModal';
 import { isPasskeySupported, registerPasskeyOnDevice } from '../../lib/webauthnClient';
 import { isFirebaseGoogleConfigured, signInWithFirebaseGoogle } from '../../lib/firebaseClient';
 
@@ -55,6 +56,9 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
   const [maxSessions, setMaxSessions] = useState<number>(3);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [sessionToRevoke, setSessionToRevoke] = useState<ActiveDeviceSession | null>(null);
+  const [isConfirmRevokeAllOtherOpen, setIsConfirmRevokeAllOtherOpen] = useState(false);
+  const [isRevokingAllOther, setIsRevokingAllOther] = useState(false);
   const [sessionsFeedback, setSessionsFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadAll = useCallback(async (forceUpiRefresh = false) => {
@@ -246,6 +250,30 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
       });
     } finally {
       setRevokingSessionId(null);
+    }
+  };
+
+  const handleLogoutAllOtherDevices = async () => {
+    setIsRevokingAllOther(true);
+    setSessionsFeedback(null);
+    try {
+      const otherSessions = sessions.filter((s) => !s.isCurrent);
+      for (const s of otherSessions) {
+        await authApi.revokeSession(s.id);
+      }
+      await refreshSessionsOnly();
+      setSessionsFeedback({
+        type: 'success',
+        text: 'All other device sessions have been revoked successfully.',
+      });
+    } catch (err: any) {
+      setSessionsFeedback({
+        type: 'error',
+        text: err?.message || 'Could not log out other devices.',
+      });
+    } finally {
+      setIsRevokingAllOther(false);
+      setIsConfirmRevokeAllOtherOpen(false);
     }
   };
 

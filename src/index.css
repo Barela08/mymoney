@@ -53,3 +53,136 @@
 .safe-area-bottom-inset {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
 }
+
+/* ============================================================================
+   My Money Manager — Lightweight Premium Animation System
+   GPU-composited (transform + opacity only) & respects prefers-reduced-motion
+   ============================================================================ */
+@keyframes mmFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mmSlideUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes mmScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mmPop {
+  0% {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  65% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes mmDrawerRight {
+  from {
+    opacity: 0.4;
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes mmQrReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: mmFadeIn 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-slide-up {
+  animation: mmSlideUp 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-scale-in {
+  animation: mmScaleIn 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-pop {
+  animation: mmPop 280ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+.animate-drawer-right {
+  animation: mmDrawerRight 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-qr-reveal {
+  animation: mmQrReveal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Interactive Button & Card Micro-interactions */
+.btn-press {
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 150ms ease;
+}
+.btn-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.card-interactive {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms ease, border-color 180ms ease;
+}
+@media (hover: hover) {
+  .card-interactive:hover {
+    transform: translateY(-2px);
+  }
+}
+.card-interactive:active {
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-scale-in,
+  .animate-pop,
+  .animate-drawer-right,
+  .animate-qr-reveal {
+    animation: none !important;
+  }
+  .btn-press,
+  .card-interactive,
+  .transition-all,
+  .transition-transform {
+    transition-duration: 0.01ms !important;
+  }
+}
