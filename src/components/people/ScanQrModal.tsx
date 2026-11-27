@@ -19,10 +19,13 @@ import {
   SwitchCamera,
   Play,
   Pause,
+  Loader2,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
-import { udharDeletionApi, ResolveQrResponse } from '../../lib/udharDeletionApi';
+import { udharDeletionApi, ResolveQrResponse, UdharTransactionItem } from '../../lib/udharDeletionApi';
 import { parseQrPayload } from '../../lib/sharedUdharEngine';
 
 interface ScanQrModalProps {
@@ -35,6 +38,7 @@ interface ScanQrModalProps {
     emailMasked?: string;
     avatarUrl?: string | null;
   }) => void;
+  onInstantUdharCreated?: (tx?: UdharTransactionItem) => void;
   onRecordExpense?: (expense: {
     title: string;
     amount?: string;
@@ -48,6 +52,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   onClose,
   initialPairCode,
   onConnected,
+  onInstantUdharCreated,
   onRecordExpense,
 }) => {
   const toast = useToast();
@@ -62,6 +67,12 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     code?: string;
   } | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [showInstantForm, setShowInstantForm] = useState<boolean>(false);
+  const [instantDirection, setInstantDirection] = useState<'gave' | 'took'>('gave');
+  const [instantAmount, setInstantAmount] = useState<string>('');
+  const [instantDescription, setInstantDescription] = useState<string>('');
+  const [isCreatingInstant, setIsCreatingInstant] = useState<boolean>(false);
+  const [instantError, setInstantError] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   // Explicit camera lifecycle. A live preview is never reported as an error.
   const [cameraStatus, setCameraStatus] = useState<
@@ -137,14 +148,14 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   // Nielsen Heuristic: User Control & Freedom — Escape key handling & camera cleanup
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !isConnecting && !isCreatingInstant) {
         stopCamera();
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, stopCamera]);
+  }, [isOpen, isConnecting, isCreatingInstant, onClose, stopCamera]);
 
   const refreshDevices = useCallback(async () => {
     try {
@@ -603,9 +614,52 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     }
   };
 
+  const handleCreateInstantUdhar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvedOwner?.owner || isCreatingInstant) return;
+    setInstantError(null);
+    const amt = parseFloat(instantAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setInstantError('Enter a valid amount greater than ₹0.');
+      return;
+    }
+
+    try {
+      setIsCreatingInstant(true);
+      const res = await udharDeletionApi.createUdharViaQr({
+        pairing_code: resolvedOwner.pairingCode,
+        qr_token: resolvedOwner.pairingToken,
+        direction: instantDirection,
+        amount: amt,
+        description: instantDescription.trim() || undefined,
+      });
+
+      if (res.success) {
+        toast.success(
+          'Udhar Added Successfully',
+          res.message || `Instant Udhar with ${resolvedOwner.owner.displayName} confirmed.`
+        );
+        setInstantAmount('');
+        setInstantDescription('');
+        setShowInstantForm(false);
+        setResolvedOwner(null);
+        if (onInstantUdharCreated) onInstantUdharCreated(res.transaction);
+        onClose();
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Could not create instant Udhar.';
+      setInstantError(msg);
+      toast.error('Instant Udhar Failed', msg);
+    } finally {
+      setIsCreatingInstant(false);
+    }
+  };
+
   const handleRetryScan = () => {
     setScanError(null);
     setResolvedOwner(null);
+    setShowInstantForm(false);
+    setInstantError(null);
     if (activeTab === 'camera') {
       void startCamera();
     }
@@ -812,7 +866,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               )}
             </div>
 
-            {!resolvedOwner.isAlreadyConnected && (
+            {!resolvedOwner.isAlreadyConnected && !showInstantForm && (
               <div className="space-y-1.5 text-left">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   Relationship Tag
@@ -832,15 +886,109 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               </div>
             )}
 
-            <div className="flex items-center gap-3 pt-2">
+            {/* Method B: Instant Udhar via QR / Code */}
+            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 space-y-3 text-left">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Add Instant Udhar (Verified QR)</span>
+                  </p>
+                  <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80">
+                    Immediately confirms and syncs both ledgers without manual waiting.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInstantForm((v) => !v);
+                    setInstantError(null);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shrink-0 cursor-pointer"
+                >
+                  {showInstantForm ? 'Hide' : 'Add Instant'}
+                </button>
+              </div>
+
+              {showInstantForm && (
+                <form onSubmit={handleCreateInstantUdhar} className="space-y-2.5 pt-1 border-t border-emerald-200/70 dark:border-emerald-800/50">
+                  {instantError && (
+                    <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                      {instantError}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setInstantDirection('gave')}
+                      className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer ${
+                        instantDirection === 'gave'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                      <span>I Gave</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstantDirection('took')}
+                      className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer ${
+                        instantDirection === 'took'
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <ArrowDownLeft className="w-3.5 h-3.5" />
+                      <span>I Took</span>
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    required
+                    placeholder="Amount (₹)"
+                    value={instantAmount}
+                    onChange={(e) => setInstantAmount(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-black"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Note / purpose (optional)"
+                    value={instantDescription}
+                    onChange={(e) => setInstantDescription(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isCreatingInstant}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {isCreatingInstant ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Confirming Instant Udhar...</span>
+                      </>
+                    ) : (
+                      <span>Confirm &amp; Add Instant Udhar</span>
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
               <button
                 type="button"
+                disabled={isConnecting || isCreatingInstant}
                 onClick={() => {
                   setResolvedOwner(null);
+                  setShowInstantForm(false);
                   setScanError(null);
                   if (activeTab === 'camera') void startCamera();
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
               >
                 Scan Another
               </button>
@@ -862,8 +1010,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                       }
                     : handleConfirmConnect
                 }
-                disabled={isConnecting}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                disabled={isConnecting || isCreatingInstant}
+                className="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 active:scale-95 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {isConnecting ? (
                   <span>Sending...</span>

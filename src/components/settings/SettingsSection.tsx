@@ -123,6 +123,15 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
 
+  useEffect(() => {
+    if (!initialTab) return;
+    if (initialTab === 'profile') {
+      setActiveTab('security');
+    } else {
+      setActiveTab(initialTab as SettingsTabId);
+    }
+  }, [initialTab]);
+
   // Language state & preference
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
     try {

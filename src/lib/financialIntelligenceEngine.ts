@@ -1695,7 +1695,16 @@ export function evaluateSmartAlerts(params: {
   if (preferences.udharRemindersEnabled && params.udharRecords && params.udharRecords.length > 0) {
     const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     for (const rec of params.udharRecords) {
-      if (rec.status === 'settled' || rec.status === 'cancelled' || rec.current_balance <= 0) continue;
+      if (
+        rec.status === 'settled' ||
+        rec.status === 'cancelled' ||
+        rec.status === 'rejected' ||
+        rec.status === 'deleted' ||
+        rec.status === 'pending_confirmation' ||
+        rec.current_balance <= 0
+      ) {
+        continue;
+      }
       if (rec.due_date) {
         const parts = parseDateKeyToParts(rec.due_date);
         if (!parts) continue;

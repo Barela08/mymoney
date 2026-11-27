@@ -34,6 +34,11 @@ export interface UdharContact {
   last_transaction_date?: string | null;
   pending_transactions_count?: number;
   total_transactions_count?: number;
+  pending_requests_count?: number;
+  pending_requests_amount?: number;
+  pending_given_amount?: number;
+  pending_received_amount?: number;
+  rejected_count?: number;
   photo_url?: string | null;
   is_registered?: boolean;
 }
@@ -197,8 +202,15 @@ export interface UdharTransactionItem {
   due_date?: string | null;
   notes?: string | null;
   attachment_url?: string | null;
-  status: 'pending_confirmation' | 'confirmed' | 'disputed' | 'settled' | 'cancelled';
-  confirmation_status: 'pending' | 'confirmed' | 'disputed';
+  status: 'pending_confirmation' | 'confirmed' | 'rejected' | 'disputed' | 'settled' | 'cancelled' | 'deleted';
+  confirmation_status: 'pending' | 'confirmed' | 'rejected' | 'disputed';
+  creation_method?: 'manual' | 'qr' | 'code';
+  accepted_by?: string | null;
+  rejected_by?: string | null;
+  cancelled_by?: string | null;
+  responded_at?: string | null;
+  cancelled_at?: string | null;
+  rejection_reason?: string | null;
   is_initiator: boolean;
   last_edited_at?: string | null;
   last_edited_by?: string | null;
@@ -225,6 +237,12 @@ export interface UdharSummaryData {
   totalManualPeople?: number;
   peopleWithActiveUdhar?: number;
   pendingConfirmationsCount?: number;
+  pendingConfirmationCount?: number;
+  pendingGivenAmount?: number;
+  pendingReceivedAmount?: number;
+  pendingTotalAmount?: number;
+  rejectedCount?: number;
+  cancelledCount?: number;
 }
 
 async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -511,6 +529,9 @@ export const udharDeletionApi = {
   async createUdharTransaction(payload: {
     counterpart_name: string;
     counterpart_user_id?: string | null;
+    qr_token?: string;
+    pairing_code?: string;
+    qrData?: string;
     direction: 'gave' | 'took';
     amount: number;
     category?: string;
@@ -524,6 +545,8 @@ export const udharDeletionApi = {
   }): Promise<{
     success: boolean;
     deduplicated?: boolean;
+    requiresConfirmation?: boolean;
+    creationMethod?: 'manual' | 'qr' | 'code';
     message: string;
     transaction: UdharTransactionItem;
     isLinked: boolean;
@@ -536,8 +559,57 @@ export const udharDeletionApi = {
     return res;
   },
 
-  async confirmUdharTransaction(id: string): Promise<{ success: boolean; message: string }> {
+  async createUdharViaQr(payload: {
+    qr_token?: string;
+    pairing_code?: string;
+    qrData?: string;
+    direction: 'gave' | 'took';
+    amount: number;
+    category?: string;
+    payment_method?: string;
+    description?: string;
+    transaction_date?: string;
+    due_date?: string | null;
+    notes?: string;
+    attachment_url?: string | null;
+    idempotency_key?: string;
+  }): Promise<{
+    success: boolean;
+    deduplicated?: boolean;
+    requiresConfirmation?: boolean;
+    creationMethod?: 'qr' | 'code';
+    message: string;
+    transaction: UdharTransactionItem;
+    isLinked: boolean;
+  }> {
+    const res = await apiRequest('/api/udhar/qr/create-transaction', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    dispatchUdharUpdated();
+    return res;
+  },
+
+  async confirmUdharTransaction(id: string): Promise<{ success: boolean; status?: string; message: string }> {
     const res = await apiRequest(`/api/udhar/transactions/${id}/confirm`, { method: 'POST' });
+    dispatchUdharUpdated();
+    return res;
+  },
+
+  async rejectUdharTransaction(id: string, reason?: string): Promise<{ success: boolean; status?: string; message: string }> {
+    const res = await apiRequest(`/api/udhar/transactions/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+    dispatchUdharUpdated();
+    return res;
+  },
+
+  async cancelUdharRequest(id: string, reason?: string): Promise<{ success: boolean; status?: string; message: string }> {
+    const res = await apiRequest(`/api/udhar/transactions/${id}/cancel-request`, {
+      method: 'POST',
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
     dispatchUdharUpdated();
     return res;
   },

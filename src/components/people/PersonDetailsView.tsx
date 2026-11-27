@@ -34,9 +34,13 @@ import {
 } from '../../lib/udharDeletionApi';
 import {
   calculatePersonLedgerSummary,
+  canAcceptUdhar,
   canCancelUdhar,
   canDeleteRepayment,
+  canRejectUdhar,
+  canSenderCancelUdhar,
   getUdharSettlementStatus,
+  normalizeUdharLifecycleStatus,
 } from '../../lib/sharedUdharEngine';
 import { SettleUdharModal } from './SettleUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
@@ -68,17 +72,23 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   const toast = useToast();
 
   const [searchHistory, setSearchHistory] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'given' | 'received' | 'settled'>('all');
+  const [filterType, setFilterType] = useState<
+    'all' | 'pending' | 'confirmed' | 'rejected' | 'settled' | 'given' | 'received'
+  >('all');
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
   const [selectedTxForRepay, setSelectedTxForRepay] = useState<UdharTransactionItem | null>(null);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<UdharTransactionItem | null>(null);
   const [expandedRepayments, setExpandedRepayments] = useState<Record<string, boolean>>({});
   const [isInviting, setIsInviting] = useState(false);
+  const [busyTxId, setBusyTxId] = useState<string | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState<string>('');
   const [pendingConfirmAction, setPendingConfirmAction] = useState<
     | { type: 'settle_single'; tx: UdharTransactionItem }
     | { type: 'delete_single'; tx: UdharTransactionItem }
     | { type: 'delete_repayment'; tx: UdharTransactionItem; rep: UdharRepayment }
+    | { type: 'reject_request'; tx: UdharTransactionItem }
+    | { type: 'cancel_request'; tx: UdharTransactionItem }
     | { type: 'delete_history' }
     | null
   >(null);
@@ -131,6 +141,18 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
       list = list.filter((t) => t.direction === 'gave');
     } else if (filterType === 'received') {
       list = list.filter((t) => t.direction === 'took');
+    } else if (filterType === 'pending') {
+      list = list.filter((t) => normalizeUdharLifecycleStatus(t) === 'pending_confirmation');
+    } else if (filterType === 'confirmed') {
+      list = list.filter((t) => {
+        const lc = normalizeUdharLifecycleStatus(t);
+        return lc === 'confirmed' || lc === 'disputed';
+      });
+    } else if (filterType === 'rejected') {
+      list = list.filter((t) => {
+        const lc = normalizeUdharLifecycleStatus(t);
+        return lc === 'rejected' || lc === 'cancelled';
+      });
     } else if (filterType === 'settled') {
       list = list.filter((t) => getUdharSettlementStatus(t).isSettled);
     }
@@ -176,8 +198,26 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
     setPendingConfirmAction({ type: 'delete_history' });
   };
 
+  const handleAcceptRequest = async (tx: UdharTransactionItem) => {
+    if (busyTxId) return;
+    setBusyTxId(tx.id);
+    try {
+      const res = await udharDeletionApi.confirmUdharTransaction(tx.id);
+      if (res.success) {
+        toast.success('Request Accepted', `Udhar of ${formatINR(Number(tx.original_amount) || 0)} confirmed.`);
+        if (onRefreshUdhar) await onRefreshUdhar();
+        await refreshTransactions();
+        await refreshNotifications();
+      }
+    } catch (err: any) {
+      toast.error('Confirmation Failed', err?.message || 'Could not confirm this request.');
+    } finally {
+      setBusyTxId(null);
+    }
+  };
+
   const executePendingConfirmAction = async () => {
-    if (!pendingConfirmAction) return;
+    if (!pendingConfirmAction || confirmBusy) return;
     setConfirmBusy(true);
     try {
       if (pendingConfirmAction.type === 'settle_single') {
@@ -200,6 +240,26 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
         const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
         if (res.success) {
           toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
+          if (onRefreshUdhar) await onRefreshUdhar();
+          await refreshTransactions();
+          await refreshNotifications();
+        }
+      } else if (pendingConfirmAction.type === 'reject_request') {
+        const res = await udharDeletionApi.rejectUdharTransaction(
+          pendingConfirmAction.tx.id,
+          rejectReasonInput.trim() || undefined
+        );
+        if (res.success) {
+          toast.info('Request Rejected', res.message || 'Udhar request rejected.');
+          setRejectReasonInput('');
+          if (onRefreshUdhar) await onRefreshUdhar();
+          await refreshTransactions();
+          await refreshNotifications();
+        }
+      } else if (pendingConfirmAction.type === 'cancel_request') {
+        const res = await udharDeletionApi.cancelUdharRequest(pendingConfirmAction.tx.id);
+        if (res.success) {
+          toast.info('Request Cancelled', res.message || 'Pending Udhar request cancelled.');
           if (onRefreshUdhar) await onRefreshUdhar();
           await refreshTransactions();
           await refreshNotifications();
@@ -440,43 +500,37 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                 />
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setFilterType('all')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                    filterType === 'all' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('given')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                    filterType === 'given' ? 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-400 shadow-xs' : 'text-slate-500'
-                  }`}
-                >
-                  I Gave
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('received')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                    filterType === 'received' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500'
-                  }`}
-                >
-                  I Borrowed
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('settled')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                    filterType === 'settled' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500'
-                  }`}
-                >
-                  Settled
-                </button>
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold flex-wrap">
+                {(['all', 'pending', 'confirmed', 'rejected', 'settled', 'given', 'received'] as const).map((fKey) => (
+                  <button
+                    key={fKey}
+                    type="button"
+                    onClick={() => setFilterType(fKey)}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      filterType === fKey
+                        ? fKey === 'given'
+                          ? 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-400 shadow-xs'
+                          : fKey === 'received'
+                            ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                            : 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-500'
+                    }`}
+                  >
+                    {fKey === 'all'
+                      ? 'All'
+                      : fKey === 'pending'
+                        ? `Pending (${ledgerBreakdown.pendingConfirmationCount})`
+                        : fKey === 'confirmed'
+                          ? 'Confirmed'
+                          : fKey === 'rejected'
+                            ? 'Rejected'
+                            : fKey === 'settled'
+                              ? 'Settled'
+                              : fKey === 'given'
+                                ? 'I Gave'
+                                : 'I Borrowed'}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -489,16 +543,20 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
             ) : (
               filteredUdharTxs.map((tx) => {
                 const statusInfo = getUdharSettlementStatus(tx);
+                const lifecycle = normalizeUdharLifecycleStatus(tx);
+                const isPendingConfirm = lifecycle === 'pending_confirmation';
+                const isRejectedOrCancelled = lifecycle === 'rejected' || lifecycle === 'cancelled';
                 const curBal = statusInfo.remainingAmount;
                 const origAmt = statusInfo.originalAmount;
                 const isGave = tx.direction === 'gave';
                 const isLinked = Boolean(tx.counterpart_user_id);
                 const isTxSettled = statusInfo.isSettled;
-                const isDisputed = tx.status === 'disputed';
+                const isDisputed = lifecycle === 'disputed';
                 const isRepaymentsExpanded = Boolean(expandedRepayments[tx.id]);
                 const deleteGuard = canCancelUdhar({
                   status: tx.status,
                   deleted_at: tx.deleted_at,
+                  notes: tx.notes,
                   direction: tx.direction,
                   is_shared: isLinked,
                   counterpart_user_id: tx.counterpart_user_id,
@@ -508,6 +566,9 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                   settled_at: tx.settled_at,
                   repayments: tx.repayments,
                 });
+                const acceptGuard = canAcceptUdhar(tx, user?.id || user?.uid);
+                const rejectGuard = canRejectUdhar(tx, user?.id || user?.uid);
+                const senderCancelGuard = canSenderCancelUdhar(tx, user?.id || user?.uid);
 
                 return (
                   <div
@@ -537,18 +598,18 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                             </span>
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isDisputed
+                                isRejectedOrCancelled
                                   ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
-                                  : isTxSettled
-                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                                  : statusInfo.isPartiallySettled
-                                  ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                  : isDisputed
+                                    ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                                    : isTxSettled
+                                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                                      : isPendingConfirm
+                                        ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                               }`}
                             >
-                              {tx.status === 'pending_confirmation' && !isTxSettled
-                                ? 'Pending Confirmation'
-                                : statusInfo.label}
+                              {statusInfo.lifecycleLabel}
                             </span>
                             <span className="font-mono text-[10px] text-slate-400" title={tx.id}>
                               ID: {tx.id}
@@ -559,10 +620,20 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                               {tx.description}
                             </p>
                           )}
+                          {isPendingConfirm && tx.is_initiator && (
+                            <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 mt-0.5">
+                              Waiting for recipient confirmation
+                            </p>
+                          )}
+                          {isRejectedOrCancelled && tx.rejection_reason && (
+                            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
+                              Reason: {tx.rejection_reason}
+                            </p>
+                          )}
                           {tx.notes && <p className="text-xs text-slate-500 mt-0.5">{tx.notes}</p>}
                           <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1 flex-wrap">
                             <span>Date: {formatDisplayDate(tx.transaction_date)}</span>
-                            {tx.due_date && <span>· Due: {formatDisplayDate(tx.due_date)}</span>}
+                            {tx.due_date && !isRejectedOrCancelled && <span>· Due: {formatDisplayDate(tx.due_date)}</span>}
                             {statusInfo.paidAmount > 0.01 && (
                               <span>· Repaid: {formatINR(statusInfo.paidAmount)}</span>
                             )}
@@ -574,7 +645,15 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                         <div className="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">
                           Amount: {formatINR(origAmt)}
                         </div>
-                        {statusInfo.isPartiallySettled ? (
+                        {isPendingConfirm ? (
+                          <div className="font-bold text-xs text-amber-600 dark:text-amber-400">
+                            Awaiting confirmation
+                          </div>
+                        ) : isRejectedOrCancelled ? (
+                          <div className="font-bold text-xs text-slate-400">
+                            Not in active balance
+                          </div>
+                        ) : statusInfo.isPartiallySettled ? (
                           <div className="font-black text-sm text-amber-600 dark:text-amber-400">
                             Remaining: {formatINR(curBal)}
                           </div>
@@ -613,7 +692,39 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                         >
                           Details
                         </button>
-                        {!isTxSettled && !isDisputed && curBal > 0 && (
+                        {isPendingConfirm && acceptGuard.allowed && (
+                          <button
+                            type="button"
+                            disabled={busyTxId === tx.id}
+                            onClick={() => handleAcceptRequest(tx)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-50"
+                          >
+                            {busyTxId === tx.id ? 'Accepting...' : 'Accept'}
+                          </button>
+                        )}
+                        {isPendingConfirm && rejectGuard.allowed && (
+                          <button
+                            type="button"
+                            disabled={busyTxId === tx.id}
+                            onClick={() => {
+                              setRejectReasonInput('');
+                              setPendingConfirmAction({ type: 'reject_request', tx });
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold cursor-pointer"
+                          >
+                            Reject
+                          </button>
+                        )}
+                        {isPendingConfirm && senderCancelGuard.allowed && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingConfirmAction({ type: 'cancel_request', tx })}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold cursor-pointer"
+                          >
+                            Cancel Request
+                          </button>
+                        )}
+                        {!isTxSettled && !isPendingConfirm && !isRejectedOrCancelled && !isDisputed && curBal > 0 && (
                           <>
                             <button
                               type="button"
@@ -909,6 +1020,10 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                   ? 'Delete This Udhar Transaction?'
                   : pendingConfirmAction.type === 'delete_repayment'
                   ? 'Delete This Repayment?'
+                  : pendingConfirmAction.type === 'reject_request'
+                  ? 'Are you sure you want to reject this Udhaar request?'
+                  : pendingConfirmAction.type === 'cancel_request'
+                  ? 'Cancel Pending Udhaar Request?'
                   : `Clear All History for ${person.name}?`}
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
@@ -951,6 +1066,20 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                       : ''}
                     .
                   </>
+                ) : pendingConfirmAction.type === 'reject_request' ? (
+                  <>
+                    Rejecting this Udhaar request of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0)}</strong>{' '}
+                    from <strong>{person.name}</strong> will mark it as <strong>Rejected</strong>. It will remain in
+                    history for audit clarity and will never affect either account&apos;s balance.
+                  </>
+                ) : pendingConfirmAction.type === 'cancel_request' ? (
+                  <>
+                    Cancel your pending Udhaar request of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0)}</strong>{' '}
+                    sent to <strong>{person.name}</strong>? It will remain in history as <strong>Cancelled</strong>{' '}
+                    without affecting any confirmed balance.
+                  </>
                 ) : (
                   <>
                     Are you sure you want to permanently remove all local financial records for{' '}
@@ -960,12 +1089,31 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
               </p>
             </div>
 
+            {pendingConfirmAction.type === 'reject_request' && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Rejection Reason (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={rejectReasonInput}
+                  onChange={(e) => setRejectReasonInput(e.target.value)}
+                  disabled={confirmBusy}
+                  placeholder="e.g., Wrong amount or already settled"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setPendingConfirmAction(null)}
+                onClick={() => {
+                  setPendingConfirmAction(null);
+                  setRejectReasonInput('');
+                }}
                 disabled={confirmBusy}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -974,7 +1122,7 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                 onClick={executePendingConfirmAction}
                 disabled={confirmBusy}
                 data-testid="udhar-confirm-action-btn"
-                className={`px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50 ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50 cursor-pointer ${
                   pendingConfirmAction.type === 'settle_single'
                     ? 'bg-emerald-600 hover:bg-emerald-700'
                     : 'bg-rose-600 hover:bg-rose-700'
@@ -984,6 +1132,10 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                   ? 'Processing...'
                   : pendingConfirmAction.type === 'settle_single'
                   ? 'Confirm Settlement'
+                  : pendingConfirmAction.type === 'reject_request'
+                  ? 'Confirm Reject'
+                  : pendingConfirmAction.type === 'cancel_request'
+                  ? 'Confirm Cancel'
                   : 'Confirm Delete'}
               </button>
             </div>

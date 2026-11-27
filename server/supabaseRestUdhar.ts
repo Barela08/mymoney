@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { isDiscoverableNormalUser, type AuthenticatedUser } from './auth.js';
 import { purgeUdharNotificationsFallback } from './supabaseRestFallback.js';
+import { createNotification } from './notificationService.js';
 import {
   normalizeSearchQuery,
   classifyLiveSearchQuery,
@@ -10,14 +11,19 @@ import {
   calculateRepaymentApplication,
   validateUdharEdit,
   canCancelUdhar,
+  canAcceptUdhar,
+  canRejectUdhar,
+  canSenderCancelUdhar,
   canDeleteRepayment,
   isActiveRepayment,
   recalculateUdharFromRepayments,
   calculatePeopleDashboardSummary,
+  normalizeUdharLifecycleStatus,
   packStructuredNote,
   unpackStructuredNote,
   roundMoney,
   parseConnectionRequestKey,
+  type UdharCreationMethod,
 } from '../src/lib/sharedUdharEngine.js';
 
 const DEFAULT_SUPABASE_URL = 'https://frgrfajnrzqwnevhlrio.supabase.co';
@@ -93,9 +99,18 @@ function enrichTransactionRow(
   const computedPaid = Math.max(0, roundMoney(orig - cur));
   const { note, meta } = unpackStructuredNote(row.notes);
   const counterpart = row.counterpart_user_id ? userMap.get(row.counterpart_user_id) : null;
+  const lifecycleStatus = normalizeUdharLifecycleStatus(row);
 
   return {
     ...row,
+    status: lifecycleStatus,
+    creation_method: (row.creation_method || meta.creation_method || 'manual') as UdharCreationMethod,
+    accepted_by: row.accepted_by || meta.accepted_by || null,
+    rejected_by: row.rejected_by || meta.rejected_by || null,
+    cancelled_by: row.cancelled_by || meta.cancelled_by || null,
+    responded_at: row.responded_at || meta.responded_at || null,
+    cancelled_at: row.cancelled_at || meta.cancelled_at || null,
+    rejection_reason: row.rejection_reason || meta.rejection_reason || null,
     counterpart_registered_name: counterpart?.full_name || row.counterpart_registered_name || null,
     counterpart_email: counterpart?.email || row.counterpart_email || null,
     counterpart_avatar: counterpart?.avatar_url || row.counterpart_avatar || null,
@@ -374,9 +389,17 @@ async function createTargetedNotificationRest(params: {
   category?: string;
   deepLink?: string;
   relatedEntityId?: string;
+  dedupeKey?: string;
   metadata?: Record<string, any>;
 }) {
   if (!params.targetUserId || params.targetUserId === 'all') return;
+  const notifType =
+    params.type === 'udhar_connection_request' || params.type === 'udhar_request' || params.type === 'repayment_pending'
+      ? 'info'
+      : params.type === 'udhar_rejected' || params.type === 'repayment_rejected' || params.type === 'udhar_request_cancelled' || params.type === 'udhar_deleted'
+        ? 'warning'
+        : 'success';
+
   await Promise.all([
     sbRest('notifications', {
       method: 'POST',
@@ -391,27 +414,24 @@ async function createTargetedNotificationRest(params: {
         is_active: true,
       },
     }).catch(() => {}),
-    sbRest('user_notifications', {
-      method: 'POST',
-      prefer: 'return=minimal',
-      body: {
-        user_id: params.targetUserId,
-        title: params.title,
-        message: params.message,
-        category: params.category || 'udhar',
-        type: params.type === 'udhar_connection_request' ? 'info' : 'success',
-        related_entity_type: 'udhar',
-        related_entity_id: params.relatedEntityId || null,
-        deep_link: params.deepLink || 'people',
-        is_read: false,
-        is_deleted: false,
-        metadata: params.metadata || {
-          actionType: params.type,
-          relatedEntityId: params.relatedEntityId || null,
-          linkId: params.relatedEntityId || null,
-          actorUserId: params.actorUserId,
-        },
+    createNotification({
+      userId: params.targetUserId,
+      title: params.title,
+      message: params.message,
+      category: (params.category as any) || 'udhar',
+      type: notifType,
+      relatedEntityType: 'udhar',
+      relatedEntityId: params.relatedEntityId || undefined,
+      deepLink: params.deepLink || 'people',
+      dedupeKey: params.dedupeKey,
+      metadata: {
+        actionType: params.type,
+        relatedEntityId: params.relatedEntityId || null,
+        linkId: params.relatedEntityId || null,
+        actorUserId: params.actorUserId,
+        ...(params.metadata || {}),
       },
+      channels: ['in_app', 'push'],
     }).catch(() => {}),
   ]);
 }
@@ -1392,9 +1412,9 @@ async function buildMergedDirectoryForUserRest(
     });
   }
 
-  // Synthesize missing entries for active Udhar counterparts
+  // Synthesize missing entries for active (non-deleted) Udhar counterparts
   for (const t of activeTxs) {
-    if (t.status === 'cancelled' || t.deleted_at) continue;
+    if (normalizeUdharLifecycleStatus(t) === 'deleted') continue;
     const linkedId = t.counterpart_user_id || null;
     const rawName = (t.counterpart_name || '').trim();
     const normName = rawName.toLowerCase();
@@ -1442,7 +1462,7 @@ export async function getContactsRest(authUser: AuthenticatedUser) {
     `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`
   );
   const activeTxs = (txRes.ok && Array.isArray(txRes.data))
-    ? txRes.data.filter((t) => t.status !== 'cancelled' && !t.deleted_at)
+    ? txRes.data.filter((t) => normalizeUdharLifecycleStatus(t) !== 'deleted')
     : [];
 
   const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
@@ -1467,7 +1487,7 @@ export async function getContactsRest(authUser: AuthenticatedUser) {
 export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
   const txRes = await sbRest<any[]>(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`);
   const activeTxs = (txRes.ok && Array.isArray(txRes.data))
-    ? txRes.data.filter((t) => t.status !== 'cancelled' && !t.deleted_at)
+    ? txRes.data.filter((t) => normalizeUdharLifecycleStatus(t) !== 'deleted')
     : [];
 
   const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
@@ -1491,12 +1511,37 @@ export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
     let payable = 0;
     let lastDate: string | null = null;
     let pendingCount = 0;
+    let pendingRequestsCount = 0;
+    let pendingRequestsAmount = 0;
+    let pendingGivenAmount = 0;
+    let pendingReceivedAmount = 0;
+    let rejectedCount = 0;
 
     for (const t of matchingTxs) {
-      if (t.status === 'cancelled' || t.deleted_at) continue;
+      const lifecycle = normalizeUdharLifecycleStatus(t);
+      if (lifecycle === 'deleted') continue;
+
+      if (t.transaction_date && (!lastDate || t.transaction_date > lastDate)) {
+        lastDate = t.transaction_date;
+      }
+
+      if (lifecycle === 'rejected') {
+        rejectedCount += 1;
+        continue;
+      }
+      if (lifecycle === 'cancelled') continue;
+
       const orig = parseFloat(t.original_amount) || 0;
+      if (lifecycle === 'pending_confirmation') {
+        pendingRequestsCount += 1;
+        pendingRequestsAmount += orig;
+        if (t.direction === 'gave') pendingGivenAmount += orig;
+        else pendingReceivedAmount += orig;
+        continue;
+      }
+
       const cur = parseFloat(t.current_balance) || 0;
-      const isSettled = t.status === 'settled' || cur <= 0.01;
+      const isSettled = lifecycle === 'settled' || cur <= 0.01;
       if (t.direction === 'gave') {
         totalGiven += orig;
         if (!isSettled) receivable += cur;
@@ -1505,9 +1550,6 @@ export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
         if (!isSettled) payable += cur;
       }
       if (!isSettled && cur > 0.01) pendingCount += 1;
-      if (t.transaction_date && (!lastDate || t.transaction_date > lastDate)) {
-        lastDate = t.transaction_date;
-      }
     }
 
     return {
@@ -1523,6 +1565,11 @@ export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
       last_transaction_date: lastDate,
       total_transactions_count: matchingTxs.length,
       pending_transactions_count: pendingCount,
+      pending_requests_count: pendingRequestsCount,
+      pending_requests_amount: roundMoney(pendingRequestsAmount),
+      pending_given_amount: roundMoney(pendingGivenAmount),
+      pending_received_amount: roundMoney(pendingReceivedAmount),
+      rejected_count: rejectedCount,
       is_registered: Boolean(c.linked_user_id),
     };
   });
@@ -2014,7 +2061,8 @@ export async function getUdharTransactionsRest(authUser: AuthenticatedUser) {
     return { status: 503, body: { success: false, message: 'Unable to load Udhar ledger right now.' } };
   }
 
-  const rawTxs = (txRes.data || []).filter((t) => t.status !== 'cancelled' && !t.deleted_at);
+  // Keep rejected and sender-cancelled visible in request history; exclude permanently deleted records
+  const rawTxs = (txRes.data || []).filter((t) => normalizeUdharLifecycleStatus(t) !== 'deleted');
   const linkIds = Array.from(new Set(rawTxs.map((t) => t.link_id).filter(Boolean)));
   const txIds = rawTxs.map((t) => t.id).filter(Boolean);
 
@@ -2082,8 +2130,11 @@ export async function getUdharTransactionsRest(authUser: AuthenticatedUser) {
 }
 
 export async function createUdharTransactionRest(authUser: AuthenticatedUser, body: any) {
-  const counterpartName = (body.counterpart_name || body.person_name || '').trim();
+  let counterpartName = (body.counterpart_name || body.person_name || '').trim();
   const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || '').trim() || null;
+  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || '').trim();
+  const pairingCode = (body.pairing_code || body.pairingCode || '').replace(/\s+/g, '').trim().toUpperCase();
+  const qrDataRaw = (body.qrData || body.qr_data || '').trim();
   const direction = body.direction;
   const amount = roundMoney(parseFloat(body.amount));
   const txDate = body.transaction_date || body.date || new Date().toISOString().split('T')[0];
@@ -2095,9 +2146,6 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
   const attachmentUrl = body.attachment_url || null;
   const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
-  if (!counterpartName) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
   if (!['gave', 'took'].includes(direction)) {
     return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
   }
@@ -2126,7 +2174,49 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
   }
 
   let registeredUser: any = null;
-  if (counterpartUserId && counterpartUserId !== authUser.id) {
+  let verifiedCreationMethod: UdharCreationMethod = 'manual';
+  let singleUseTokenRecordId: string | null = null;
+
+  // METHOD B: Valid QR or Confirmation Code resolves owner server-side & bypasses manual confirmation
+  if (qrToken || pairingCode || qrDataRaw) {
+    const resolved = await resolveQrRest(authUser, {
+      qrData: qrDataRaw || undefined,
+      pairingToken: qrToken || undefined,
+      pairingCode: pairingCode || undefined,
+    });
+    if (resolved.status !== 200 || !resolved.body?.success || !resolved.body?.owner?.id) {
+      return resolved;
+    }
+
+    const ownerId = resolved.body.owner.id;
+    const uRes = await sbRest<any[]>(
+      `app_users?id=eq.${encodeURIComponent(ownerId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
+    );
+    if (!uRes.ok || !uRes.data || uRes.data.length === 0) {
+      return { status: 404, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Target user account not found.' } };
+    }
+    registeredUser = uRes.data[0];
+    if (!isDiscoverableNormalUser(registeredUser)) {
+      return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Target user account is unavailable for shared Udhar.' } };
+    }
+    if (await isBlockedBetween(authUser.id, registeredUser.id)) {
+      return { status: 403, body: { success: false, code: 'BLOCKED', message: 'Cannot create shared Udhar with a blocked user.' } };
+    }
+    counterpartName = registeredUser.full_name || resolved.body.owner.fullName || counterpartName || 'Friend';
+    verifiedCreationMethod = qrToken || (qrDataRaw && qrDataRaw.startsWith('{')) ? 'qr' : 'code';
+
+    // Check if the resolved token was single-use so we can mark it consumed after insert
+    const resolvedToken = resolved.body.pairingToken;
+    if (resolvedToken) {
+      const tokCheck = await sbRest<any[]>(
+        `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolvedToken)}&select=id,is_single_use&limit=1`
+      );
+      if (tokCheck.ok && tokCheck.data?.[0]?.is_single_use) {
+        singleUseTokenRecordId = tokCheck.data[0].id;
+      }
+    }
+  } else if (counterpartUserId && counterpartUserId !== authUser.id) {
+    // METHOD A: Manual addition with a registered user -> ALWAYS requires recipient confirmation!
     const uRes = await sbRest<any[]>(
       `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
     );
@@ -2139,20 +2229,33 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
         return { status: 403, body: { success: false, message: 'Cannot create shared Udhar with a blocked user.' } };
       }
       registeredUser = u;
+      counterpartName = counterpartName || registeredUser.full_name;
     }
   }
 
-  const packedNotes = packStructuredNote(plainNotes, {
-    category,
-    payment_method: paymentMethod,
-    description: description || undefined,
-    attachment_url: attachmentUrl || undefined,
-  });
+  if (!counterpartName) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
 
   const linkId = crypto.randomUUID();
   const nowIso = new Date().toISOString();
 
   if (registeredUser) {
+    const isInstantQr = verifiedCreationMethod === 'qr' || verifiedCreationMethod === 'code';
+    const initialLifecycle = isInstantQr ? 'confirmed' : 'pending_confirmation';
+    const initialConfirmStatus = isInstantQr ? 'confirmed' : 'pending';
+
+    const packedNotes = packStructuredNote(plainNotes, {
+      category,
+      payment_method: paymentMethod,
+      description: description || undefined,
+      attachment_url: attachmentUrl || undefined,
+      creation_method: verifiedCreationMethod,
+      lifecycle_status: initialLifecycle,
+      accepted_by: isInstantQr ? registeredUser.id : undefined,
+      responded_at: isInstantQr ? nowIso : undefined,
+    });
+
     const counterpartDirection = direction === 'gave' ? 'took' : 'gave';
     const userARow = {
       link_id: linkId,
@@ -2167,8 +2270,8 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
       due_date: dueDate || null,
       notes: packedNotes,
       attachment_url: attachmentUrl,
-      status: 'confirmed',
-      confirmation_status: 'confirmed',
+      status: initialLifecycle,
+      confirmation_status: initialConfirmStatus,
       is_initiator: true,
       idempotency_key: idempotencyKey,
       created_at: nowIso,
@@ -2188,8 +2291,8 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
       due_date: dueDate || null,
       notes: packedNotes,
       attachment_url: attachmentUrl,
-      status: 'confirmed',
-      confirmation_status: 'confirmed',
+      status: initialLifecycle,
+      confirmation_status: initialConfirmStatus,
       is_initiator: false,
       idempotency_key: idempotencyKey ? `${idempotencyKey}:counterpart` : null,
       created_at: nowIso,
@@ -2206,32 +2309,111 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
       return { status: 500, body: { success: false, message: insertRes.error || 'Failed to create shared Udhar.' } };
     }
 
+    if (singleUseTokenRecordId) {
+      await sbRest(`qr_pairing_tokens?id=eq.${encodeURIComponent(singleUseTokenRecordId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { used: true, used_by_user_id: authUser.id, used_at: nowIso },
+      }).catch(() => {});
+    }
+
     const createdUserA = insertRes.data.find((r) => r.user_id === authUser.id) || insertRes.data[0];
 
     await ensureConnectionAndReciprocalContactsRest(authUser, registeredUser, 'Friend');
 
-    // Private targeted notification for User B ONLY (never target_user_id='all')
-    await createTargetedNotificationRest({
-      targetUserId: registeredUser.id,
-      actorUserId: authUser.id,
-      title: `New Shared Udhar from ${authUser.full_name}`,
-      message: `${authUser.full_name} recorded an Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? "You'll Pay" : "You'll Receive"}).`,
-      type: 'udhar_created',
-      relatedEntityId: linkId,
-    });
+    if (isInstantQr) {
+      // Method B: Notify BOTH participants immediately upon QR/code instant confirmation
+      const viaLabel = verifiedCreationMethod === 'qr' ? 'QR code' : 'confirmation code';
+      await Promise.all([
+        createTargetedNotificationRest({
+          targetUserId: registeredUser.id,
+          actorUserId: authUser.id,
+          title: `Instant Udhar Confirmed via ${viaLabel}`,
+          message: `${authUser.full_name} added a confirmed Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+          type: 'udhar_qr_confirmed',
+          relatedEntityId: linkId,
+          dedupeKey: `udhar_qr_rec_${linkId}`,
+          metadata: {
+            actionType: 'udhar_qr_confirmed',
+            linkId,
+            udharId: createdUserA.id,
+            senderName: authUser.full_name,
+            amount,
+            direction: counterpartDirection,
+            creationMethod: verifiedCreationMethod,
+          },
+        }),
+        createTargetedNotificationRest({
+          targetUserId: authUser.id,
+          actorUserId: authUser.id,
+          title: `Udhar Added via ${viaLabel}`,
+          message: `Your Udhar of ₹${amount.toLocaleString('en-IN')} with ${registeredUser.full_name} was confirmed immediately.`,
+          type: 'udhar_qr_confirmed',
+          relatedEntityId: linkId,
+          dedupeKey: `udhar_qr_init_${linkId}`,
+          metadata: {
+            actionType: 'udhar_qr_confirmed',
+            linkId,
+            udharId: createdUserA.id,
+            counterpartName: registeredUser.full_name,
+            amount,
+            direction,
+            creationMethod: verifiedCreationMethod,
+          },
+        }),
+      ]);
+    } else {
+      // Method A: Notify User B ONLY that confirmation is requested
+      const dirHuman = direction === 'gave' ? 'gave you (You Borrowed)' : 'borrowed from you (You Gave)';
+      await createTargetedNotificationRest({
+        targetUserId: registeredUser.id,
+        actorUserId: authUser.id,
+        title: 'New Udhaar Confirmation Request',
+        message: `${authUser.full_name} added an Udhaar request of ₹${amount.toLocaleString('en-IN')} (${dirHuman}). Please review and confirm.`,
+        type: 'udhar_request',
+        relatedEntityId: linkId,
+        dedupeKey: `udhar_req_${linkId}`,
+        metadata: {
+          actionType: 'udhar_confirmation_request',
+          linkId,
+          udharId: createdUserA.id,
+          requesterUserId: authUser.id,
+          requesterName: authUser.full_name,
+          requesterAvatar: authUser.avatar_url || null,
+          amount,
+          direction: counterpartDirection,
+          description: description || plainNotes || null,
+          transactionDate: txDate,
+          creationMethod: 'manual',
+        },
+      });
+    }
 
     const userMap = new Map<string, any>([[registeredUser.id, registeredUser]]);
     return {
       status: 201,
       body: {
         success: true,
-        message: `Shared Udhar recorded with ${registeredUser.full_name}. Synced to both accounts.`,
+        requiresConfirmation: !isInstantQr,
+        creationMethod: verifiedCreationMethod,
+        message: isInstantQr
+          ? `Udhaar added successfully.`
+          : `Udhaar request sent to ${registeredUser.full_name}. Waiting for recipient confirmation.`,
         transaction: enrichTransactionRow(createdUserA, userMap, [], []),
         isLinked: true,
       },
     };
   } else {
-    // Manual / Local Contact Udhar (NO 2-way sync)
+    // Manual / Local Contact Udhar (unlinked local record)
+    const packedNotes = packStructuredNote(plainNotes, {
+      category,
+      payment_method: paymentMethod,
+      description: description || undefined,
+      attachment_url: attachmentUrl || undefined,
+      creation_method: 'manual',
+      lifecycle_status: 'confirmed',
+    });
+
     const singleRow = {
       link_id: linkId,
       user_id: authUser.id,
@@ -2280,12 +2462,27 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
       status: 201,
       body: {
         success: true,
+        requiresConfirmation: false,
+        creationMethod: 'manual',
         message: `Local Udhar recorded for ${counterpartName}.`,
         transaction: enrichTransactionRow(insertRes.data[0], new Map(), [], []),
         isLinked: false,
       },
     };
   }
+}
+
+export async function createUdharViaQrRest(authUser: AuthenticatedUser, body: any) {
+  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || '').trim();
+  const pairingCode = (body.pairing_code || body.pairingCode || '').replace(/\s+/g, '').trim().toUpperCase();
+  const qrDataRaw = (body.qrData || body.qr_data || '').trim();
+  if (!qrToken && !pairingCode && !qrDataRaw) {
+    return {
+      status: 400,
+      body: { success: false, code: 'QR_OR_CODE_REQUIRED', message: 'A valid QR token or confirmation code is required.' },
+    };
+  }
+  return createUdharTransactionRest(authUser, body);
 }
 
 export async function confirmUdharTransactionRest(authUser: AuthenticatedUser, txId: string) {
@@ -2296,19 +2493,241 @@ export async function confirmUdharTransactionRest(authUser: AuthenticatedUser, t
     return { status: 404, body: { success: false, message: 'Transaction not found.' } };
   }
   const tx = txRes.data[0];
-  if (tx.is_initiator) {
+  const guard = canAcceptUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: 'confirmed',
+    accepted_by: authUser.id,
+    responded_at: nowIso,
+  });
+
+  // Atomic conditional update: only transition pending_confirmation -> confirmed once
+  const patchRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        status: 'confirmed',
+        confirmation_status: 'confirmed',
+        notes: updatedPackedNotes,
+        updated_at: nowIso,
+      },
+    }
+  );
+
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
     return {
-      status: 403,
-      body: { success: false, message: 'Only the recipient counterpart can confirm this transaction.' },
+      status: 409,
+      body: { success: false, code: 'CONCURRENT_MODIFICATION', message: 'This Udhar request has already been accepted, rejected, or cancelled.' },
     };
   }
 
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: 'PATCH',
-    body: { status: 'confirmed', confirmation_status: 'confirmed', updated_at: new Date().toISOString() },
+  // Deactivate the pending request notification and notify sender
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {});
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: 'Udhaar Request Accepted',
+      message: `${authUser.full_name} accepted your Udhaar request of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}. Both balances are now updated.`,
+      type: 'udhar_accepted',
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_acc_${tx.link_id}`,
+      metadata: {
+        actionType: 'udhar_accepted',
+        linkId: tx.link_id,
+        udharId: tx.id,
+        acceptedBy: authUser.id,
+        amount: parseFloat(tx.original_amount) || 0,
+      },
+    });
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: 'Udhaar request accepted successfully.',
+      status: 'confirmed',
+    },
+  };
+}
+
+export async function rejectUdharTransactionRest(authUser: AuthenticatedUser, txId: string, reason?: string) {
+  const txRes = await sbRest<any[]>(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: 'Transaction not found.' } };
+  }
+  const tx = txRes.data[0];
+  const guard = canRejectUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+
+  const nowIso = new Date().toISOString();
+  const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 400) : 'Rejected by recipient';
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: 'rejected',
+    rejected_by: authUser.id,
+    responded_at: nowIso,
+    rejection_reason: cleanReason,
   });
 
-  return { status: 200, body: { success: true, message: 'Transaction confirmed on both accounts.' } };
+  // Try native 'rejected' status first, fall back to 'cancelled' + MM_META lifecycle_status:'rejected' (NEVER set deleted_at)
+  let patchRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        status: 'rejected',
+        confirmation_status: 'rejected',
+        current_balance: 0,
+        paid_amount: 0,
+        notes: updatedPackedNotes,
+        updated_at: nowIso,
+      },
+    }
+  );
+
+  if (!patchRes.ok && (patchRes.status === 400 || String(patchRes.error || '').includes('23514'))) {
+    patchRes = await sbRest<any[]>(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+      {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: {
+          status: 'cancelled',
+          current_balance: 0,
+          paid_amount: 0,
+          notes: updatedPackedNotes,
+          updated_at: nowIso,
+        },
+      }
+    );
+  }
+
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: 'CONCURRENT_MODIFICATION', message: 'This Udhar request has already been handled.' },
+    };
+  }
+
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {});
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: 'Udhaar Request Rejected',
+      message: `${authUser.full_name} rejected your Udhaar request of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+      type: 'udhar_rejected',
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_rej_${tx.link_id}`,
+      metadata: {
+        actionType: 'udhar_rejected',
+        linkId: tx.link_id,
+        udharId: tx.id,
+        rejectedBy: authUser.id,
+        reason: cleanReason,
+      },
+    });
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: 'rejected',
+      message: 'You rejected this Udhaar request.',
+    },
+  };
+}
+
+export async function cancelUdharRequestRest(authUser: AuthenticatedUser, txId: string, reason?: string) {
+  const txRes = await sbRest<any[]>(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: 'Transaction not found.' } };
+  }
+  const tx = txRes.data[0];
+  const guard = canSenderCancelUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+
+  const nowIso = new Date().toISOString();
+  const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 400) : 'Cancelled by sender';
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: 'cancelled',
+    cancelled_by: authUser.id,
+    cancelled_at: nowIso,
+    rejection_reason: cleanReason,
+  });
+
+  const patchRes = await sbRest<any[]>(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        status: 'cancelled',
+        current_balance: 0,
+        paid_amount: 0,
+        notes: updatedPackedNotes,
+        updated_at: nowIso,
+      },
+    }
+  );
+
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: 'CONCURRENT_MODIFICATION', message: 'This Udhar request has already been responded to or cancelled.' },
+    };
+  }
+
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {});
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: 'Udhaar Request Cancelled',
+      message: `${authUser.full_name} cancelled their pending Udhaar request of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+      type: 'udhar_request_cancelled',
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_canc_${tx.link_id}`,
+      metadata: {
+        actionType: 'udhar_request_cancelled',
+        linkId: tx.link_id,
+        udharId: tx.id,
+        cancelledBy: authUser.id,
+      },
+    });
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: 'cancelled',
+      message: 'Pending Udhaar request cancelled.',
+    },
+  };
 }
 
 export async function disputeUdharTransactionRest(authUser: AuthenticatedUser, txId: string, reason: string) {
@@ -2399,6 +2818,8 @@ export async function repayUdharRest(authUser: AuthenticatedUser, txId: string, 
     existingReps.filter((r) => r.status === 'pending_confirmation').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   );
 
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
+
   const calc = calculateRepaymentApplication({
     originalAmount: parseFloat(tx.original_amount) || 0,
     confirmedPaidAmount: confirmedPaid,
@@ -2406,7 +2827,7 @@ export async function repayUdharRest(authUser: AuthenticatedUser, txId: string, 
     repayAmount,
     isShared: Boolean(tx.counterpart_user_id),
     actorRole: tx.direction === 'gave' ? 'lender' : 'borrower',
-    udharStatus: tx.status,
+    udharStatus: lifecycle,
   });
 
   if (!calc.valid) {
@@ -2643,13 +3064,14 @@ export async function editUdharRest(authUser: AuthenticatedUser, txId: string, b
   );
 
   const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
   const editReason = (body.reason_for_edit || body.reason || body.edit_reason || '').trim();
 
   const validation = validateUdharEdit(
     {
       original_amount: parseFloat(tx.original_amount) || 0,
       paid_amount: confirmedPaid,
-      status: tx.status,
+      status: lifecycle,
       notes: prevPlainNote,
       transaction_date: tx.transaction_date,
       due_date: tx.due_date,
@@ -2675,10 +3097,12 @@ export async function editUdharRest(authUser: AuthenticatedUser, txId: string, b
 
   const nextPlainNote = body.notes !== undefined ? (body.notes || '').trim() : prevPlainNote;
   const nextPackedNotes = packStructuredNote(nextPlainNote, {
+    ...prevMeta,
     category: body.category !== undefined ? body.category : prevMeta.category,
     payment_method: body.payment_method !== undefined ? body.payment_method : prevMeta.payment_method,
     description: body.description !== undefined ? body.description : prevMeta.description,
     attachment_url: body.attachment_url !== undefined ? body.attachment_url : prevMeta.attachment_url,
+    lifecycle_status: lifecycle === 'pending_confirmation' ? 'pending_confirmation' : validation.nextStatus,
   });
 
   const nextDate = body.transaction_date || body.date || tx.transaction_date;
@@ -2715,7 +3139,7 @@ export async function editUdharRest(authUser: AuthenticatedUser, txId: string, b
       original_amount: validation.nextOriginalAmount,
       current_balance: validation.nextRemainingAmount,
       paid_amount: confirmedPaid,
-      status: validation.nextStatus,
+      status: lifecycle === 'pending_confirmation' ? 'pending_confirmation' : validation.nextStatus,
       notes: nextPackedNotes,
       transaction_date: nextDate,
       due_date: nextDueDate,
@@ -2769,14 +3193,18 @@ export async function settleUdharRest(authUser: AuthenticatedUser, txId: string,
     };
   }
 
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
   const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
-  if (tx.status === 'settled' || currentBal <= 0.01) {
+  if (lifecycle === 'pending_confirmation') {
+    return { status: 409, body: { success: false, message: 'Waiting for recipient confirmation before settling.' } };
+  }
+  if (lifecycle === 'settled' || currentBal <= 0.01) {
     return { status: 400, body: { success: false, message: 'This transaction is already settled.' } };
   }
-  if (tx.status === 'cancelled' || tx.deleted_at) {
-    return { status: 400, body: { success: false, message: 'Cannot settle a cancelled transaction.' } };
+  if (lifecycle === 'rejected' || lifecycle === 'cancelled' || lifecycle === 'deleted') {
+    return { status: 400, body: { success: false, message: 'Cannot settle a rejected, cancelled, or deleted transaction.' } };
   }
-  if (tx.status === 'disputed') {
+  if (lifecycle === 'disputed') {
     return { status: 409, body: { success: false, message: 'Cannot settle a disputed transaction. Resolve the dispute first.' } };
   }
 
@@ -2786,7 +3214,7 @@ export async function settleUdharRest(authUser: AuthenticatedUser, txId: string,
   const nowIso = new Date().toISOString();
 
   let patchRes = await sbRest<any[]>(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,rejected,pending_confirmation)`,
     {
       method: 'PATCH',
       prefer: 'return=representation',
@@ -2802,7 +3230,7 @@ export async function settleUdharRest(authUser: AuthenticatedUser, txId: string,
   );
   if (!patchRes.ok && patchRes.status === 400) {
     patchRes = await sbRest<any[]>(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,pending_confirmation)`,
       {
         method: 'PATCH',
         prefer: 'return=representation',
@@ -2884,15 +3312,19 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
     currentStatus: tx.status,
   });
 
-  const effectiveStatus = tx.status === 'cancelled' || tx.deleted_at
-    ? 'cancelled'
-    : tx.status === 'disputed'
+  const baseLifecycle = normalizeUdharLifecycleStatus(tx);
+  const effectiveStatus = baseLifecycle === 'deleted' || baseLifecycle === 'cancelled' || baseLifecycle === 'rejected'
+    ? baseLifecycle
+    : baseLifecycle === 'disputed'
       ? 'disputed'
-      : (repayments.length > 0 ? recalc.nextStatus : tx.status);
+      : baseLifecycle === 'pending_confirmation'
+        ? 'pending_confirmation'
+        : (repayments.length > 0 ? recalc.nextStatus : baseLifecycle);
 
   const guard = canCancelUdhar({
     status: effectiveStatus,
     deleted_at: tx.deleted_at,
+    notes: tx.notes,
     direction: tx.direction,
     is_shared: Boolean(tx.counterpart_user_id),
     counterpart_user_id: tx.counterpart_user_id,
@@ -2912,9 +3344,17 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
 
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : null;
   const nowIso = new Date().toISOString();
+  const { note: prevNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const deletedPackedNotes = packStructuredNote(prevNote, {
+    ...prevMeta,
+    lifecycle_status: 'deleted',
+    cancelled_at: nowIso,
+    cancelled_by: authUser.id,
+  });
+
   // Atomic conditional soft-delete across both linked user rows (prevents replay/concurrent delete)
   let softDelRes = await sbRest<any[]>(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&deleted_at=is.null&status=not.in.(disputed)`,
     {
       method: 'PATCH',
       prefer: 'return=representation',
@@ -2922,6 +3362,7 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
         status: 'cancelled',
         current_balance: 0,
         paid_amount: 0,
+        notes: deletedPackedNotes,
         deleted_at: nowIso,
         deleted_by: authUser.id,
         deletion_reason: cleanReason,
@@ -2936,7 +3377,13 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
       {
         method: 'PATCH',
         prefer: 'return=representation',
-        body: { status: 'cancelled', current_balance: 0, paid_amount: 0, updated_at: nowIso },
+        body: {
+          status: 'cancelled',
+          current_balance: 0,
+          paid_amount: 0,
+          notes: deletedPackedNotes,
+          updated_at: nowIso,
+        },
       }
     );
   }
@@ -2971,8 +3418,24 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
     }
   }
 
-  // Remove notifications referencing this deleted transaction so neither user sees stale reminders
+  // Purge stale action/reminder notifications tied to this deleted Udhar, then notify counterpart
   await deactivateUdharNotificationsRest(tx.link_id, tx.id);
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Deleted by ${authUser.full_name}`,
+      message: `${authUser.full_name} permanently deleted the shared Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}. Both accounts have been updated.`,
+      type: 'udhar_deleted',
+      dedupeKey: `udhar_del_${tx.link_id}`,
+      metadata: {
+        actionType: 'udhar_deleted',
+        deletedLinkId: tx.link_id,
+        deletedTxId: tx.id,
+        amount: parseFloat(tx.original_amount) || 0,
+      },
+    }).catch(() => {});
+  }
 
   return {
     status: 200,

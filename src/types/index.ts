@@ -276,6 +276,9 @@ export interface PersonSummary {
   avatarUrl?: string | null;
   relationshipType?: string | null;
   isRegisteredUser?: boolean;
+  pendingRequestsCount?: number;
+  pendingRequestsAmount?: number;
+  rejectedCount?: number;
 }
 
 export interface DateFilterRange {

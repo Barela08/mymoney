@@ -24,6 +24,17 @@ export const UDHAR_PAYMENT_METHODS = [
 
 export type UdharPaymentMethod = (typeof UDHAR_PAYMENT_METHODS)[number];
 
+export type UdharCreationMethod = 'manual' | 'qr' | 'code';
+
+export type UdharLifecycleStatus =
+  | 'pending_confirmation'
+  | 'confirmed'
+  | 'rejected'
+  | 'cancelled'
+  | 'disputed'
+  | 'settled'
+  | 'deleted';
+
 export interface CanonicalUdharRecord {
   id: string;
   link_id: string;
@@ -34,7 +45,8 @@ export interface CanonicalUdharRecord {
   original_amount: number;
   paid_amount: number;
   remaining_amount: number;
-  status: 'pending_confirmation' | 'confirmed' | 'active' | 'disputed' | 'settled' | 'cancelled';
+  status: UdharLifecycleStatus | 'active';
+  creation_method?: UdharCreationMethod;
   category?: UdharCategory | string;
   description?: string | null;
   payment_method?: UdharPaymentMethod | string;
@@ -320,8 +332,20 @@ export function resolveCanonicalPerspective(
 export function calculateRepaymentApplication(
   input: RepaymentValidationInput
 ): RepaymentValidationResult {
+  if (input.udharStatus === 'pending_confirmation') {
+    return { valid: false, error: 'Waiting for recipient confirmation before repayments can be recorded.' };
+  }
+  if (input.udharStatus === 'rejected') {
+    return { valid: false, error: 'Cannot record repayment on a rejected Udhar request.' };
+  }
+  if (input.udharStatus === 'deleted') {
+    return { valid: false, error: 'Cannot record repayment on a deleted Udhar.' };
+  }
   if (input.udharStatus === 'cancelled') {
     return { valid: false, error: 'Cannot record repayment on a cancelled Udhar.' };
+  }
+  if (input.udharStatus === 'disputed') {
+    return { valid: false, error: 'Cannot record repayment while Udhar is disputed. Resolve the dispute first.' };
   }
   if (input.udharStatus === 'settled') {
     return { valid: false, error: 'This Udhar is already fully settled.' };
@@ -417,8 +441,8 @@ export function validateUdharEdit(
   isSettled?: boolean;
   changes?: UdharAuditFieldChange[];
 } {
-  if (current.status === 'cancelled') {
-    return { valid: false, error: 'Cancelled Udhar records cannot be edited.' };
+  if (current.status === 'cancelled' || current.status === 'rejected' || current.status === 'deleted') {
+    return { valid: false, error: 'Rejected, cancelled, or deleted Udhar records cannot be edited.' };
   }
 
   const reason = (updates.reason_for_edit || '').trim();
@@ -518,14 +542,46 @@ export function isActiveRepayment(repayment: {
 }
 
 export interface UdharSettlementStatusInfo {
-  code: 'pending' | 'partial' | 'settled' | 'disputed' | 'cancelled';
-  label: 'Pending' | 'Partially Settled' | 'Settled' | 'Disputed' | 'Deleted';
+  code: 'pending_confirmation' | 'pending' | 'partial' | 'settled' | 'disputed' | 'rejected' | 'cancelled' | 'deleted';
+  label: 'Pending Confirmation' | 'Pending' | 'Partially Settled' | 'Settled' | 'Disputed' | 'Rejected' | 'Cancelled' | 'Deleted';
+  lifecycleLabel: 'Pending Confirmation' | 'Confirmed' | 'Partially Settled' | 'Settled' | 'Disputed' | 'Rejected' | 'Cancelled' | 'Deleted';
   originalAmount: number;
   paidAmount: number;
   remainingAmount: number;
   isSettled: boolean;
   isPartiallySettled: boolean;
   isPending: boolean;
+  isAwaitingConfirmation: boolean;
+  isRejectedOrCancelled: boolean;
+}
+
+/**
+ * Resolve normalized lifecycle status from column + packed MM_META fallback
+ * (preserves Rejected vs Sender-Cancelled vs Deleted distinction cleanly across older schemas).
+ */
+export function normalizeUdharLifecycleStatus(row: {
+  status?: string | null;
+  deleted_at?: string | null;
+  notes?: string | null;
+  rejection_reason?: string | null;
+  rejected_by?: string | null;
+  cancelled_by?: string | null;
+  cancelled_at?: string | null;
+}): UdharLifecycleStatus {
+  const { meta } = unpackStructuredNote(row?.notes);
+  if (row?.deleted_at || row?.status === 'deleted' || meta.lifecycle_status === 'deleted') {
+    return 'deleted';
+  }
+  if (row?.status === 'rejected' || meta.lifecycle_status === 'rejected' || Boolean(row?.rejected_by || meta.rejected_by)) {
+    return 'rejected';
+  }
+  if (row?.status === 'cancelled' || meta.lifecycle_status === 'cancelled' || Boolean(row?.cancelled_at || meta.cancelled_at)) {
+    return 'cancelled';
+  }
+  if (row?.status === 'disputed') return 'disputed';
+  if (row?.status === 'settled') return 'settled';
+  if (row?.status === 'pending_confirmation') return 'pending_confirmation';
+  return 'confirmed';
 }
 
 /**
@@ -534,6 +590,10 @@ export interface UdharSettlementStatusInfo {
 export function getUdharSettlementStatus(tx: {
   status: string;
   deleted_at?: string | null;
+  notes?: string | null;
+  rejected_by?: string | null;
+  cancelled_by?: string | null;
+  cancelled_at?: string | null;
   original_amount?: number | string;
   current_balance?: number | string;
   paid_amount?: number | string;
@@ -541,6 +601,7 @@ export function getUdharSettlementStatus(tx: {
 }): UdharSettlementStatusInfo {
   const originalAmount = roundMoney(Math.max(0, parseFloat(String(tx.original_amount ?? 0)) || 0));
   const rawRemaining = roundMoney(Math.max(0, parseFloat(String(tx.current_balance ?? 0)) || 0));
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
 
   let paidAmount = roundMoney(Math.max(0, parseFloat(String(tx.paid_amount ?? 0)) || 0));
   if (Array.isArray(tx.repayments) && tx.repayments.length > 0) {
@@ -556,43 +617,100 @@ export function getUdharSettlementStatus(tx: {
     paidAmount = roundMoney(Math.max(0, originalAmount - rawRemaining));
   }
 
-  if (tx.status === 'cancelled' || Boolean(tx.deleted_at)) {
+  if (lifecycle === 'deleted') {
     return {
-      code: 'cancelled',
+      code: 'deleted',
       label: 'Deleted',
+      lifecycleLabel: 'Deleted',
       originalAmount,
       paidAmount: 0,
       remainingAmount: 0,
       isSettled: false,
       isPartiallySettled: false,
       isPending: false,
+      isAwaitingConfirmation: false,
+      isRejectedOrCancelled: true,
     };
   }
 
-  if (tx.status === 'disputed') {
+  if (lifecycle === 'rejected') {
+    return {
+      code: 'rejected',
+      label: 'Rejected',
+      lifecycleLabel: 'Rejected',
+      originalAmount,
+      paidAmount: 0,
+      remainingAmount: 0,
+      isSettled: false,
+      isPartiallySettled: false,
+      isPending: false,
+      isAwaitingConfirmation: false,
+      isRejectedOrCancelled: true,
+    };
+  }
+
+  if (lifecycle === 'cancelled') {
+    return {
+      code: 'cancelled',
+      label: 'Cancelled',
+      lifecycleLabel: 'Cancelled',
+      originalAmount,
+      paidAmount: 0,
+      remainingAmount: 0,
+      isSettled: false,
+      isPartiallySettled: false,
+      isPending: false,
+      isAwaitingConfirmation: false,
+      isRejectedOrCancelled: true,
+    };
+  }
+
+  if (lifecycle === 'pending_confirmation') {
+    return {
+      code: 'pending_confirmation',
+      label: 'Pending Confirmation',
+      lifecycleLabel: 'Pending Confirmation',
+      originalAmount,
+      paidAmount: 0,
+      remainingAmount: originalAmount,
+      isSettled: false,
+      isPartiallySettled: false,
+      isPending: false,
+      isAwaitingConfirmation: true,
+      isRejectedOrCancelled: false,
+    };
+  }
+
+  if (lifecycle === 'disputed') {
     return {
       code: 'disputed',
       label: 'Disputed',
+      lifecycleLabel: 'Disputed',
       originalAmount,
       paidAmount,
       remainingAmount: rawRemaining,
       isSettled: false,
       isPartiallySettled: false,
       isPending: false,
+      isAwaitingConfirmation: false,
+      isRejectedOrCancelled: false,
     };
   }
 
-  const isSettled = tx.status === 'settled' || (originalAmount > 0 && rawRemaining <= 0.01);
+  const isSettled = lifecycle === 'settled' || (originalAmount > 0 && rawRemaining <= 0.01);
   if (isSettled) {
     return {
       code: 'settled',
       label: 'Settled',
+      lifecycleLabel: 'Settled',
       originalAmount,
       paidAmount: originalAmount > 0 ? originalAmount : paidAmount,
       remainingAmount: 0,
       isSettled: true,
       isPartiallySettled: false,
       isPending: false,
+      isAwaitingConfirmation: false,
+      isRejectedOrCancelled: false,
     };
   }
 
@@ -601,38 +719,142 @@ export function getUdharSettlementStatus(tx: {
     return {
       code: 'partial',
       label: 'Partially Settled',
+      lifecycleLabel: 'Partially Settled',
       originalAmount,
       paidAmount,
       remainingAmount: rawRemaining,
       isSettled: false,
       isPartiallySettled: true,
       isPending: false,
+      isAwaitingConfirmation: false,
+      isRejectedOrCancelled: false,
     };
   }
 
   return {
     code: 'pending',
     label: 'Pending',
+    lifecycleLabel: 'Confirmed',
     originalAmount,
     paidAmount,
     remainingAmount: rawRemaining,
     isSettled: false,
     isPartiallySettled: false,
     isPending: true,
+    isAwaitingConfirmation: false,
+    isRejectedOrCancelled: false,
   };
 }
 
 /**
+ * Guard for accepting a pending manual Udhaar request (recipient ONLY).
+ */
+export function canAcceptUdhar(udhar: {
+  status?: string | null;
+  deleted_at?: string | null;
+  notes?: string | null;
+  is_initiator?: boolean | null;
+  user_id?: string | null;
+  counterpart_user_id?: string | null;
+}, actorUserId?: string | null): { allowed: boolean; httpStatus?: number; code?: string; reason?: string } {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === 'deleted') {
+    return { allowed: false, httpStatus: 404, code: 'NOT_FOUND', reason: 'This Udhar request has been deleted.' };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: 'FORBIDDEN', reason: 'Not authorized to respond to this Udhar request.' };
+  }
+  if (udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: 'SELF_APPROVAL_BLOCKED', reason: 'Only the recipient can accept this Udhar request.' };
+  }
+  if (lifecycle === 'rejected') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_REJECTED', reason: 'Rejected Udhar requests cannot be accepted.' };
+  }
+  if (lifecycle === 'cancelled') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_CANCELLED', reason: 'This Udhar request was cancelled by the sender.' };
+  }
+  if (lifecycle !== 'pending_confirmation') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_CONFIRMED', reason: 'This Udhar transaction is already confirmed.' };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Guard for rejecting a pending manual Udhaar request (recipient ONLY).
+ */
+export function canRejectUdhar(udhar: {
+  status?: string | null;
+  deleted_at?: string | null;
+  notes?: string | null;
+  is_initiator?: boolean | null;
+  user_id?: string | null;
+}, actorUserId?: string | null): { allowed: boolean; httpStatus?: number; code?: string; reason?: string } {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === 'deleted') {
+    return { allowed: false, httpStatus: 404, code: 'NOT_FOUND', reason: 'This Udhar request has been deleted.' };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: 'FORBIDDEN', reason: 'Not authorized to reject this Udhar request.' };
+  }
+  if (udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: 'SELF_REJECT_BLOCKED', reason: 'Use Cancel Request to cancel a request you sent.' };
+  }
+  if (lifecycle === 'rejected') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_REJECTED', reason: 'This Udhar request was already rejected.' };
+  }
+  if (lifecycle === 'cancelled') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_CANCELLED', reason: 'This Udhar request was already cancelled by the sender.' };
+  }
+  if (lifecycle !== 'pending_confirmation') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_CONFIRMED', reason: 'Confirmed transactions cannot be rejected.' };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Guard for sender cancelling their own unconfirmed pending manual Udhaar request.
+ */
+export function canSenderCancelUdhar(udhar: {
+  status?: string | null;
+  deleted_at?: string | null;
+  notes?: string | null;
+  is_initiator?: boolean | null;
+  user_id?: string | null;
+}, actorUserId?: string | null): { allowed: boolean; httpStatus?: number; code?: string; reason?: string } {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === 'deleted') {
+    return { allowed: false, httpStatus: 404, code: 'NOT_FOUND', reason: 'This Udhar request has been deleted.' };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: 'FORBIDDEN', reason: 'Not authorized to cancel this Udhar request.' };
+  }
+  if (!udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: 'SENDER_ONLY', reason: 'Only the sender can cancel a pending request. Recipients can Reject it.' };
+  }
+  if (lifecycle === 'cancelled') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_CANCELLED', reason: 'This Udhar request is already cancelled.' };
+  }
+  if (lifecycle === 'rejected') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_REJECTED', reason: 'This request has already been rejected by the recipient.' };
+  }
+  if (lifecycle !== 'pending_confirmation') {
+    return { allowed: false, httpStatus: 409, code: 'ALREADY_CONFIRMED', reason: 'Already accepted requests cannot be cancelled as pending requests.' };
+  }
+  return { allowed: true };
+}
+
+/**
  * Deletion/cancellation guard:
- * - Already deleted/cancelled or disputed transactions cannot be deleted.
+ * - Already deleted or disputed transactions cannot be deleted.
  * - "I Gave" (`direction === 'gave'`) or local non-shared transactions can be deleted anytime
- *   (Pending, Partially Settled, or Settled).
+ *   (Pending Confirmation, Confirmed, Partially Settled, or Settled).
  * - Shared "I Borrowed" (`direction === 'took'` with `is_shared` / `counterpart_user_id`) CANNOT
  *   be deleted while Pending or Partially Settled; it can ONLY be deleted once fully Settled.
  */
 export function canCancelUdhar(udhar: {
   status: string;
   deleted_at?: string | null;
+  notes?: string | null;
   direction?: 'gave' | 'took';
   is_shared?: boolean;
   counterpart_user_id?: string | null;
@@ -642,7 +864,8 @@ export function canCancelUdhar(udhar: {
   settled_at?: string | null;
   repayments?: Array<{ amount?: number | string; status: string; deleted_at?: string | null }>;
 }): { allowed: boolean; httpStatus?: number; code?: string; reason?: string } {
-  if (udhar.status === 'cancelled' || Boolean(udhar.deleted_at)) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === 'deleted' || Boolean(udhar.deleted_at) || udhar.status === 'cancelled') {
     return {
       allowed: false,
       httpStatus: 404,
@@ -650,7 +873,7 @@ export function canCancelUdhar(udhar: {
       reason: 'This Udhar is already deleted.',
     };
   }
-  if (udhar.status === 'disputed') {
+  if (lifecycle === 'disputed') {
     return {
       allowed: false,
       httpStatus: 409,
@@ -676,8 +899,8 @@ export function canCancelUdhar(udhar: {
         })),
         currentStatus: udhar.status,
       });
-      isFullySettled = recalc.isSettled && udhar.status === 'settled';
-    } else if (udhar.status === 'settled') {
+      isFullySettled = recalc.isSettled && lifecycle === 'settled';
+    } else if (lifecycle === 'settled') {
       const orig = roundMoney(parseFloat(String(udhar.original_amount ?? 0)) || 0);
       const cur = roundMoney(parseFloat(String(udhar.current_balance ?? 0)) || 0);
       const paid = roundMoney(parseFloat(String(udhar.paid_amount ?? orig)) || 0);
@@ -810,6 +1033,8 @@ export interface UdharItemLike {
   current_balance: number | string;
   paid_amount?: number | string;
   status: string;
+  deleted_at?: string | null;
+  notes?: string | null;
   due_date?: string | null;
   counterpart_user_id?: string | null;
   counterpart_name?: string;
@@ -817,8 +1042,9 @@ export interface UdharItemLike {
 }
 
 /**
- * People-wise ledger summary: Net Balance = Total Receivable - Total Payable.
- * Separate loan records are NEVER merged, and cancelled records are excluded from balances.
+ * People-wise ledger summary: Net Balance = Confirmed Receivable - Confirmed Payable.
+ * Pending Confirmation, Rejected, Cancelled, and Deleted entries NEVER pollute confirmed balances;
+ * pending amounts and counts are returned in dedicated fields.
  */
 export function calculatePersonLedgerSummary(
   items: UdharItemLike[],
@@ -833,13 +1059,34 @@ export function calculatePersonLedgerSummary(
   let activeCount = 0;
   let settledCount = 0;
   let pendingRepaymentCount = 0;
+  let pendingConfirmationCount = 0;
+  let pendingGivenAmount = 0;
+  let pendingReceivedAmount = 0;
+  let rejectedCount = 0;
+  let cancelledCount = 0;
 
   for (const tx of items) {
-    if (tx.status === 'cancelled') continue;
+    const lifecycle = normalizeUdharLifecycleStatus(tx);
+    if (lifecycle === 'deleted') continue;
+    if (lifecycle === 'rejected') {
+      rejectedCount += 1;
+      continue;
+    }
+    if (lifecycle === 'cancelled') {
+      cancelledCount += 1;
+      continue;
+    }
 
     const orig = parseFloat(String(tx.original_amount)) || 0;
+    if (lifecycle === 'pending_confirmation') {
+      pendingConfirmationCount += 1;
+      if (tx.direction === 'gave') pendingGivenAmount += orig;
+      else pendingReceivedAmount += orig;
+      continue;
+    }
+
     const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = tx.status === 'settled' || cur <= 0.01;
+    const isSettled = lifecycle === 'settled' || cur <= 0.01;
 
     if (tx.direction === 'gave') {
       totalGiven += orig;
@@ -885,11 +1132,17 @@ export function calculatePersonLedgerSummary(
     activeCount,
     settledCount,
     pendingRepaymentCount,
+    pendingConfirmationCount,
+    pendingGivenAmount: roundMoney(pendingGivenAmount),
+    pendingReceivedAmount: roundMoney(pendingReceivedAmount),
+    pendingTotalAmount: roundMoney(pendingGivenAmount + pendingReceivedAmount),
+    rejectedCount,
+    cancelledCount,
   };
 }
 
 /**
- * Full People Dashboard metrics including connected count, active people count, and Net Balance.
+ * Full People Dashboard metrics including connected count, active people count, and Confirmed Net Balance.
  */
 export function calculatePeopleDashboardSummary(
   items: UdharItemLike[],
@@ -912,18 +1165,23 @@ export function calculatePeopleDashboardSummary(
   let pendingConfirmationsCount = 0;
 
   for (const tx of items) {
-    if (tx.status === 'cancelled') continue;
-    const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = tx.status === 'settled' || cur <= 0.01;
+    const lifecycle = normalizeUdharLifecycleStatus(tx);
+    if (lifecycle === 'deleted' || lifecycle === 'rejected' || lifecycle === 'cancelled') continue;
+
     if (tx.counterpart_user_id) {
       connectedKeys.add(tx.counterpart_user_id);
     }
+
+    if (lifecycle === 'pending_confirmation') {
+      pendingConfirmationsCount += 1;
+      continue;
+    }
+
+    const cur = parseFloat(String(tx.current_balance)) || 0;
+    const isSettled = lifecycle === 'settled' || cur <= 0.01;
     if (!isSettled && cur > 0.01) {
       const personKey = tx.counterpart_user_id || (tx.counterpart_name || '').trim().toLowerCase();
       if (personKey) activePeopleSet.add(personKey);
-    }
-    if (tx.status === 'pending_confirmation') {
-      pendingConfirmationsCount += 1;
     }
     if (Array.isArray(tx.repayments)) {
       pendingConfirmationsCount += tx.repayments.filter(
@@ -944,6 +1202,8 @@ export function calculatePeopleDashboardSummary(
     totalManualPeople: manualKeys.size,
     peopleWithActiveUdhar: activePeopleSet.size,
     pendingConfirmationsCount,
+    pendingUdharRequestsCount: base.pendingConfirmationCount,
+    pendingUdharAmount: base.pendingTotalAmount,
   };
 }
 
@@ -1003,6 +1263,14 @@ export interface UdharRichMetadata {
   transaction_ref?: string;
   repayment_time?: string;
   attachment_url?: string;
+  creation_method?: UdharCreationMethod;
+  lifecycle_status?: UdharLifecycleStatus;
+  accepted_by?: string;
+  rejected_by?: string;
+  cancelled_by?: string;
+  responded_at?: string;
+  cancelled_at?: string;
+  rejection_reason?: string;
 }
 
 export function packStructuredNote(plainNote: string | null | undefined, meta: UdharRichMetadata): string | null {
@@ -1014,6 +1282,14 @@ export function packStructuredNote(plainNote: string | null | undefined, meta: U
   if (meta.transaction_ref && meta.transaction_ref.trim()) filteredMeta.transaction_ref = meta.transaction_ref.trim();
   if (meta.repayment_time && meta.repayment_time.trim()) filteredMeta.repayment_time = meta.repayment_time.trim();
   if (meta.attachment_url && meta.attachment_url.trim()) filteredMeta.attachment_url = meta.attachment_url.trim();
+  if (meta.creation_method) filteredMeta.creation_method = meta.creation_method;
+  if (meta.lifecycle_status) filteredMeta.lifecycle_status = meta.lifecycle_status;
+  if (meta.accepted_by && meta.accepted_by.trim()) filteredMeta.accepted_by = meta.accepted_by.trim();
+  if (meta.rejected_by && meta.rejected_by.trim()) filteredMeta.rejected_by = meta.rejected_by.trim();
+  if (meta.cancelled_by && meta.cancelled_by.trim()) filteredMeta.cancelled_by = meta.cancelled_by.trim();
+  if (meta.responded_at && meta.responded_at.trim()) filteredMeta.responded_at = meta.responded_at.trim();
+  if (meta.cancelled_at && meta.cancelled_at.trim()) filteredMeta.cancelled_at = meta.cancelled_at.trim();
+  if (meta.rejection_reason && meta.rejection_reason.trim()) filteredMeta.rejection_reason = meta.rejection_reason.trim();
 
   if (Object.keys(filteredMeta).length === 0) {
     return cleanNote || null;

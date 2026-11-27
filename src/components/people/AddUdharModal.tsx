@@ -15,6 +15,9 @@ import {
   Sparkles,
   UserCheck,
   Lock,
+  ShieldCheck,
+  Zap,
+  Clock,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -27,12 +30,14 @@ import {
   UdharContact,
   SearchUserResult,
   UdharTransactionItem,
+  ResolveQrResponse,
 } from '../../lib/udharDeletionApi';
 import { getCurrentISTDate, formatINR } from '../../lib/dateUtils';
 import {
   UDHAR_CATEGORIES,
   UDHAR_PAYMENT_METHODS,
   normalizeSearchQuery,
+  parseQrPayload,
 } from '../../lib/sharedUdharEngine';
 
 interface AddUdharModalProps {
@@ -42,6 +47,8 @@ interface AddUdharModalProps {
   onOpenScanner?: () => void;
   initialPersonName?: string;
   initialPersonUserId?: string | null;
+  initialMode?: 'saved' | 'registered' | 'manual' | 'qr_code';
+  initialQrCode?: string;
 }
 
 function generateIdempotencyKey(): string {
@@ -58,13 +65,15 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
   onOpenScanner,
   initialPersonName,
   initialPersonUserId,
+  initialMode,
+  initialQrCode,
 }) => {
   const toast = useToast();
 
   // Core Form Fields (Amount FIRST!)
   const [amount, setAmount] = useState<string>('');
   const [direction, setDirection] = useState<'gave' | 'took'>('gave');
-  const [personMode, setPersonMode] = useState<'saved' | 'registered' | 'manual'>('saved');
+  const [personMode, setPersonMode] = useState<'saved' | 'registered' | 'manual' | 'qr_code'>('saved');
   const [personName, setPersonName] = useState<string>(initialPersonName || '');
   const [counterpartUserId, setCounterpartUserId] = useState<string | null>(
     initialPersonUserId || null
@@ -74,6 +83,12 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<string>('UPI');
   const [description, setDescription] = useState<string>('');
 
+  // Method B: QR / Confirmation Code Verification State
+  const [qrCodeInput, setQrCodeInput] = useState<string>(initialQrCode || '');
+  const [isVerifyingQr, setIsVerifyingQr] = useState<boolean>(false);
+  const [qrVerifyError, setQrVerifyError] = useState<string | null>(null);
+  const [resolvedQr, setResolvedQr] = useState<ResolveQrResponse | null>(null);
+
   // Optional Expandable Section
   const [showOptional, setShowOptional] = useState<boolean>(false);
   const [dueDate, setDueDate] = useState<string>('');
@@ -82,6 +97,8 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
 
   // Submission & Idempotency
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitStage, setSubmitStage] = useState<string>('');
+  const [formError, setFormError] = useState<string | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
   const idempotencyKeyRef = useRef<string>(generateIdempotencyKey());
 
@@ -117,6 +134,18 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     return () => window.removeEventListener(PRIVACY_CHANGED_EVENT, syncConsent);
   }, [isOpen]);
 
+  // Escape key close when idle
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmittingRef.current) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   const handleGrantUdharSharingConsent = async () => {
     if (isGrantingUdharConsent) return;
     setIsGrantingUdharConsent(true);
@@ -139,6 +168,51 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     }
   };
 
+  const resolveConfirmationCode = async (rawCode: string): Promise<ResolveQrResponse | null> => {
+    const clean = rawCode.trim();
+    if (!clean) {
+      setQrVerifyError('Enter a confirmation code (e.g. MM-XXXXXX) or paste a QR link.');
+      return null;
+    }
+
+    const parsed = parseQrPayload(clean);
+    if (!parsed.valid) {
+      const msg = parsed.error || 'Enter a valid My Money Manager confirmation code (MM-XXXXXX) or QR payload.';
+      setQrVerifyError(msg);
+      return null;
+    }
+
+    try {
+      setIsVerifyingQr(true);
+      setQrVerifyError(null);
+      const res = await udharDeletionApi.resolveQrCode({
+        qrData: parsed.kind === 'json' ? clean : undefined,
+        pairingToken: parsed.token,
+        pairingCode: parsed.code,
+      });
+
+      if (res.success && res.owner?.displayName) {
+        setResolvedQr(res);
+        setPersonName(res.owner.displayName);
+        setCounterpartUserId(res.owner.id);
+        setFormError(null);
+        return res;
+      }
+
+      const msg = res.message || 'Could not verify confirmation code.';
+      setQrVerifyError(msg);
+      setResolvedQr(null);
+      return null;
+    } catch (err: any) {
+      const msg = err?.message || 'Verification failed. Please check the code and retry.';
+      setQrVerifyError(msg);
+      setResolvedQr(null);
+      return null;
+    } finally {
+      setIsVerifyingQr(false);
+    }
+  };
+
   // Initialize form whenever modal opens
   useEffect(() => {
     if (!isOpen) {
@@ -149,10 +223,22 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     idempotencyKeyRef.current = generateIdempotencyKey();
     isSubmittingRef.current = false;
     setIsSubmitting(false);
+    setSubmitStage('');
+    setFormError(null);
+    setQrVerifyError(null);
+    setResolvedQr(null);
+    setQrCodeInput(initialQrCode || '');
     setTxDate(getCurrentISTDate());
     setSearchQuery('');
     setSearchResults([]);
     setSearchError(null);
+
+    if (initialMode === 'qr_code' || initialQrCode) {
+      setPersonMode('qr_code');
+      if (initialQrCode) {
+        void resolveConfirmationCode(initialQrCode);
+      }
+    }
 
     const loadContactsAndPreservePerson = async () => {
       try {
@@ -183,9 +269,12 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
         const contacts = [...baseContacts, ...extraConnected];
         setSavedContacts(contacts);
 
+        if (initialMode === 'qr_code' || initialQrCode) {
+          return;
+        }
+
         if (initialPersonName) {
           setPersonName(initialPersonName);
-          // Preserve connected user link! Never silently strip linked_user_id.
           const matchedContact = contacts.find(
             (c) =>
               (initialPersonUserId && c.linked_user_id === initialPersonUserId) ||
@@ -194,14 +283,14 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
 
           const resolvedUid = initialPersonUserId || matchedContact?.linked_user_id || null;
           setCounterpartUserId(resolvedUid);
-          setPersonMode(matchedContact ? 'saved' : resolvedUid ? 'saved' : 'manual');
+          setPersonMode(initialMode || (matchedContact || resolvedUid ? 'saved' : 'manual'));
         } else {
           setPersonName('');
           setCounterpartUserId(null);
-          setPersonMode(contacts.length > 0 ? 'saved' : 'registered');
+          setPersonMode(initialMode || (contacts.length > 0 ? 'saved' : 'registered'));
         }
       } catch {
-        if (initialPersonName) {
+        if (initialPersonName && initialMode !== 'qr_code') {
           setPersonName(initialPersonName);
           setCounterpartUserId(initialPersonUserId || null);
           setPersonMode(initialPersonUserId ? 'saved' : 'manual');
@@ -212,7 +301,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     };
 
     void loadContactsAndPreservePerson();
-  }, [isOpen, initialPersonName, initialPersonUserId]);
+  }, [isOpen, initialPersonName, initialPersonUserId, initialMode, initialQrCode]);
 
   // Debounced live search for registered users
   useEffect(() => {
@@ -261,16 +350,24 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isInstantMethodB = personMode === 'qr_code';
+  const isManualTwoWay = !isInstantMethodB && Boolean(counterpartUserId);
+
   const handleSelectRegisteredUser = (u: SearchUserResult) => {
     if (u.isSelf || u.connectionStatus === 'self') return;
     setPersonName(u.displayName);
     setCounterpartUserId(u.id);
-    toast.success('2-Way User Selected', `${u.displayName} will receive a live synced Udhar.`);
+    setFormError(null);
+    toast.info(
+      'Recipient Selected',
+      `${u.displayName} will receive an Udhar confirmation request (Method A).`
+    );
   };
 
   const handleSelectSavedContact = (c: UdharContact) => {
     setPersonName(c.name);
     setCounterpartUserId(c.linked_user_id || null);
+    setFormError(null);
   };
 
   const handleAttachmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -293,24 +390,90 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingRef.current) return;
+    setFormError(null);
 
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) {
-      toast.error('Invalid Amount', 'Please enter an amount greater than ₹0.');
+      setFormError('Please enter an amount greater than ₹0.');
       return;
     }
 
+    if (isInstantMethodB) {
+      let verified = resolvedQr;
+      if (!verified?.owner) {
+        verified = await resolveConfirmationCode(qrCodeInput);
+        if (!verified?.owner) {
+          setFormError('Verify a valid confirmation code (MM-XXXXXX) or scan a QR code first.');
+          return;
+        }
+      }
+
+      if (!hasUdharSharingConsent) {
+        toast.info(
+          'Two-way Udhar Sharing Consent Needed',
+          'Enable Two-way Udhar Sharing below to record this instant shared Udhar.'
+        );
+        return;
+      }
+
+      try {
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
+        setSubmitStage('Creating instant verified Udhar...');
+
+        const res = await udharDeletionApi.createUdharViaQr({
+          pairing_code: verified.pairingCode,
+          qr_token: verified.pairingToken,
+          direction,
+          amount: amt,
+          category,
+          payment_method: paymentMethod,
+          description: description.trim() || undefined,
+          transaction_date: txDate,
+          due_date: dueDate || null,
+          notes: notes.trim() || undefined,
+          attachment_url: attachmentUrl.trim() || null,
+          idempotency_key: idempotencyKeyRef.current,
+        });
+
+        if (res.success) {
+          toast.success(
+            'Udhar Added Successfully',
+            res.message || `Instant Udhar with ${verified.owner.displayName} confirmed and synced.`
+          );
+          setAmount('');
+          setDescription('');
+          setNotes('');
+          setDueDate('');
+          setAttachmentUrl('');
+          setShowOptional(false);
+          idempotencyKeyRef.current = generateIdempotencyKey();
+          if (onSuccess) onSuccess(res.transaction);
+          onClose();
+        }
+      } catch (err: any) {
+        const msg = err?.message || 'Failed to add instant Udhar transaction.';
+        setFormError(msg);
+        toast.error('Could Not Add Instant Udhar', msg);
+      } finally {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        setSubmitStage('');
+      }
+      return;
+    }
+
+    // Method A: Manual Entry (Shared = Pending Confirmation; Local = Confirmed)
     const cleanName = personName.trim();
     if (!cleanName) {
-      toast.error('Person Required', 'Please select a connected person or enter a name.');
+      setFormError('Please select a connected person or enter a name.');
       return;
     }
 
-    // Enforce explicit Two-way Udhar Sharing consent before sharing an entry with a connected account
     if (counterpartUserId && !hasUdharSharingConsent) {
       toast.info(
         'Two-way Udhar Sharing Consent Needed',
-        'Enable Two-way Udhar Sharing below to share this entry, or click "Save Locally Only" to record it privately without sharing.'
+        'Enable Two-way Udhar Sharing below to send this request, or click "Save Locally Only".'
       );
       return;
     }
@@ -318,6 +481,9 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     try {
       isSubmittingRef.current = true;
       setIsSubmitting(true);
+      setSubmitStage(
+        counterpartUserId ? 'Sending Udhar confirmation request...' : 'Saving local Udhar...'
+      );
 
       const res = await udharDeletionApi.createUdharTransaction({
         counterpart_name: cleanName,
@@ -335,14 +501,18 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
       });
 
       if (res.success) {
-        toast.success(
-          direction === 'gave' ? 'Udhar Given Recorded' : 'Udhar Taken Recorded',
-          res.isLinked
-            ? `Canonical 2-way Shared Udhar synced with ${cleanName}.`
-            : `Local Udhar with ${cleanName} recorded.`
-        );
+        if (res.requiresConfirmation) {
+          toast.success(
+            'Udhar Request Sent',
+            `Udhar request sent to ${cleanName}. Waiting for confirmation.`
+          );
+        } else {
+          toast.success(
+            direction === 'gave' ? 'Udhar Given Recorded' : 'Udhar Taken Recorded',
+            res.message || `Local Udhar with ${cleanName} recorded.`
+          );
+        }
 
-        // Reset fields for next use
         setAmount('');
         setDescription('');
         setNotes('');
@@ -355,16 +525,27 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
         onClose();
       }
     } catch (err: any) {
-      toast.error('Could Not Record Udhar', err?.message || 'Failed to save Udhar transaction.');
+      const msg = err?.message || 'Failed to save Udhar transaction.';
+      setFormError(msg);
+      toast.error('Could Not Record Udhar', msg);
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmitStage('');
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+      onClick={() => !isSubmitting && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -395,13 +576,24 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
 
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={onClose}
             aria-label="Close Add Udhar Modal"
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {formError && (
+          <div
+            role="alert"
+            className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{formError}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 1. Prominent Amount Field FIRST */}
@@ -419,6 +611,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                 min="0.01"
                 required
                 autoFocus
+                disabled={isSubmitting}
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -431,6 +624,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                 <button
                   key={preset}
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setAmount(String(preset))}
                   className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
                 >
@@ -444,6 +638,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setDirection('gave')}
               className={`py-2.5 px-3 rounded-xl font-bold text-xs transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                 direction === 'gave'
@@ -462,6 +657,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
 
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setDirection('took')}
               className={`py-2.5 px-3 rounded-xl font-bold text-xs transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                 direction === 'took'
@@ -479,15 +675,16 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
             </button>
           </div>
 
-          {/* 3. Person Selection */}
+          {/* 3. Person & Method Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700 dark:text-slate-300">
-                Select Person <span className="text-rose-500">*</span>
+                Person &amp; Confirmation Method <span className="text-rose-500">*</span>
               </span>
               {onOpenScanner && (
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => {
                     onClose();
                     onOpenScanner();
@@ -495,16 +692,20 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                   className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <QrCode className="w-3.5 h-3.5" />
-                  <span>Scan QR</span>
+                  <span>Open Camera QR</span>
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-[11px] font-bold">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-[11px] font-bold">
               <button
                 type="button"
-                onClick={() => setPersonMode('saved')}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+                disabled={isSubmitting}
+                onClick={() => {
+                  setPersonMode('saved');
+                  setFormError(null);
+                }}
+                className={`py-1.5 px-1 rounded-lg transition-all cursor-pointer truncate ${
                   personMode === 'saved'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500'
@@ -514,8 +715,12 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setPersonMode('registered')}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+                disabled={isSubmitting}
+                onClick={() => {
+                  setPersonMode('registered');
+                  setFormError(null);
+                }}
+                className={`py-1.5 px-1 rounded-lg transition-all cursor-pointer truncate ${
                   personMode === 'registered'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500'
@@ -525,11 +730,33 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setPersonMode('qr_code');
+                  setFormError(null);
+                  if (resolvedQr?.owner) {
+                    setPersonName(resolvedQr.owner.displayName);
+                    setCounterpartUserId(resolvedQr.owner.id);
+                  }
+                }}
+                className={`py-1.5 px-1 rounded-lg transition-all cursor-pointer truncate flex items-center justify-center gap-1 ${
+                  personMode === 'qr_code'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-emerald-700 dark:text-emerald-400'
+                }`}
+              >
+                <Zap className="w-3 h-3 shrink-0" />
+                <span>QR / Code</span>
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
                 onClick={() => {
                   setPersonMode('manual');
                   setCounterpartUserId(null);
+                  setFormError(null);
                 }}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`py-1.5 px-1 rounded-lg transition-all cursor-pointer truncate ${
                   personMode === 'manual'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500'
@@ -539,7 +766,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </button>
             </div>
 
-            {/* Mode A: Saved & Connected Contacts */}
+            {/* Mode A1: Saved & Connected Contacts */}
             {personMode === 'saved' && (
               <div className="space-y-2">
                 {isLoadingContacts ? (
@@ -550,6 +777,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                 ) : savedContacts.length > 0 ? (
                   <select
                     value={personName}
+                    disabled={isSubmitting}
                     onChange={(e) => {
                       const val = e.target.value;
                       const sel = savedContacts.find((c) => c.name === val);
@@ -566,7 +794,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                       <option key={c.id} value={c.name}>
                         {c.name}{' '}
                         {c.linked_user_id
-                          ? '(Connected • 2-Way Sync)'
+                          ? '(Connected • Requires Confirmation)'
                           : `(Local Contact • ${c.relationship_type || 'Manual'})`}
                       </option>
                     ))}
@@ -584,10 +812,10 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                     or{' '}
                     <button
                       type="button"
-                      onClick={() => setPersonMode('manual')}
+                      onClick={() => setPersonMode('qr_code')}
                       className="font-bold text-emerald-600 underline cursor-pointer"
                     >
-                      enter local name
+                      use QR / Code
                     </button>
                     .
                   </div>
@@ -595,7 +823,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </div>
             )}
 
-            {/* Mode B: Live Registered User Search */}
+            {/* Mode A2: Live Registered User Search */}
             {personMode === 'registered' && (
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5">
                 <div className="relative">
@@ -686,12 +914,88 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </div>
             )}
 
+            {/* Mode B: Instant Verified Udhar via QR or Confirmation Code */}
+            {personMode === 'qr_code' && (
+              <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/25 rounded-2xl border border-emerald-200 dark:border-emerald-800/70 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Method B: Instant Verified Udhar</span>
+                    </p>
+                    <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 mt-0.5">
+                      Enter the recipient&apos;s Confirmation Code (<span className="font-mono font-bold">MM-XXXXXX</span>) or scan their QR code for immediate confirmation.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Enter code (e.g. MM-A1B2C3) or #pair link"
+                    value={qrCodeInput}
+                    disabled={isSubmitting || isVerifyingQr}
+                    onChange={(e) => {
+                      setQrCodeInput(e.target.value);
+                      if (resolvedQr) {
+                        setResolvedQr(null);
+                      }
+                      setQrVerifyError(null);
+                    }}
+                    className="flex-1 px-3 py-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={isVerifyingQr || isSubmitting || !qrCodeInput.trim()}
+                    onClick={() => void resolveConfirmationCode(qrCodeInput)}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shrink-0 cursor-pointer flex items-center gap-1"
+                  >
+                    {isVerifyingQr ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <span>Verify</span>
+                    )}
+                  </button>
+                </div>
+
+                {qrVerifyError && (
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{qrVerifyError}</span>
+                  </p>
+                )}
+
+                {resolvedQr?.owner && (
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                        {resolvedQr.owner.displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate flex items-center gap-1">
+                          <span>{resolvedQr.owner.displayName}</span>
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono truncate">
+                          {resolvedQr.owner.emailMasked || resolvedQr.owner.phoneMasked || 'Verified User'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 shrink-0">
+                      Instant Confirm
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Mode C: Local Manual Person Name */}
             {personMode === 'manual' && (
               <div className="space-y-1.5">
                 <input
                   type="text"
                   required
+                  disabled={isSubmitting}
                   placeholder="Enter local contact's name (e.g. Ramesh, Priya)"
                   value={personName}
                   onChange={(e) => {
@@ -703,28 +1007,44 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               </div>
             )}
 
-            {/* Explicit Sync Mode Status Indicator */}
-            {personName.trim() && (
+            {/* Explicit Lifecycle & Sync Mode Status Indicator */}
+            {isInstantMethodB && resolvedQr?.owner ? (
+              <div className="p-2.5 rounded-xl text-[11px] font-semibold flex items-center justify-between gap-2 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800/70">
+                <span className="flex items-center gap-1.5 truncate">
+                  <Zap className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">
+                    QR / Code Verified: Confirmed immediately on both accounts
+                  </span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 bg-white/80 dark:bg-slate-900/60">
+                  Instant Sync
+                </span>
+              </div>
+            ) : !isInstantMethodB && personName.trim() ? (
               <div
                 className={`p-2.5 rounded-xl text-[11px] font-semibold flex items-center justify-between gap-2 ${
-                  counterpartUserId
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800/70'
-                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800/60'
+                  isManualTwoWay
+                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/70'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                 }`}
               >
                 <span className="flex items-center gap-1.5 truncate">
-                  {counterpartUserId ? (
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  {isManualTwoWay ? (
+                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                   ) : (
-                    <UserCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <UserCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   )}
-                  <span className="truncate">Selected: {personName}</span>
+                  <span className="truncate">
+                    {isManualTwoWay
+                      ? `Method A: Request sent to ${personName} (Confirmed only after acceptance)`
+                      : `Local Entry: ${personName}`}
+                  </span>
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 bg-white/80 dark:bg-slate-900/60">
-                  {counterpartUserId ? '2-Way Shared Sync' : 'Local Contact Only'}
+                  {isManualTwoWay ? 'Needs Confirmation' : 'Local Only'}
                 </span>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* 4. Date, Category & Payment Method */}
@@ -736,6 +1056,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               <input
                 type="date"
                 required
+                disabled={isSubmitting}
                 value={txDate}
                 onChange={(e) => setTxDate(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium focus:ring-2 focus:ring-emerald-500"
@@ -747,6 +1068,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                 Category
               </label>
               <select
+                disabled={isSubmitting}
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium focus:ring-2 focus:ring-emerald-500"
@@ -764,6 +1086,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                 Payment Method
               </label>
               <select
+                disabled={isSubmitting}
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium focus:ring-2 focus:ring-emerald-500"
@@ -784,6 +1107,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
             </label>
             <input
               type="text"
+              disabled={isSubmitting}
               placeholder="e.g. Hostel rent split, hospital deposit, trip booking"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -873,7 +1197,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
           </div>
 
           {/* Explicit Two-way Udhar Sharing Consent Notice when sharing with a connected user */}
-          {counterpartUserId && !hasUdharSharingConsent && (
+          {(counterpartUserId || isInstantMethodB) && !hasUdharSharingConsent && (
             <div className="p-3.5 rounded-2xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 space-y-2.5 text-xs">
               <div className="flex items-start gap-2">
                 <Lock className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -895,16 +1219,18 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                 >
                   {isGrantingUdharConsent ? 'Saving...' : 'Enable Two-way Udhar Sharing'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCounterpartUserId(null);
-                    setPersonMode('manual');
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-semibold text-[11px] cursor-pointer"
-                >
-                  Save Locally Only (No Sharing)
-                </button>
+                {!isInstantMethodB && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCounterpartUserId(null);
+                      setPersonMode('manual');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-semibold text-[11px] cursor-pointer"
+                  >
+                    Save Locally Only (No Sharing)
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -915,7 +1241,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
@@ -931,8 +1257,16 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving...</span>
+                  <span>{submitStage || 'Saving...'}</span>
                 </>
+              ) : isInstantMethodB ? (
+                <span>
+                  Add Instant Udhar ({direction === 'gave' ? 'I Gave' : 'I Took'})
+                </span>
+              ) : isManualTwoWay ? (
+                <span>
+                  Send Request ({direction === 'gave' ? 'I Gave' : 'I Took'})
+                </span>
               ) : (
                 <span>
                   Save Udhar ({direction === 'gave' ? 'I Gave' : 'I Took'})

@@ -58,6 +58,7 @@ const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToS
 const UpiQrGeneratorSection = lazy(() => import('./components/upi/UpiQrGeneratorSection').then(m => ({ default: m.UpiQrGeneratorSection })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
 const CompleteProfileScreen = lazy(() => import('./components/auth/CompleteProfileScreen').then(m => ({ default: m.CompleteProfileScreen })));
+const AddUdharModal = lazy(() => import('./components/people/AddUdharModal').then(m => ({ default: m.AddUdharModal })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
   '/admin': 'admin',
@@ -157,6 +158,16 @@ const MainContent: React.FC = () => {
   });
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'appearance';
+    const hash = window.location.hash;
+    if (hash === '#app-install' || hash === '#install') return 'install';
+    if (hash === '#auto-detection' || hash === '#privacy' || hash === '#manage-consent') return 'privacy';
+    if (hash === '#delete-account') return 'deletion';
+    if (hash === '#notifications') return 'notifications';
+    if (hash === '#language') return 'language';
+    return 'appearance';
+  });
 
   const setCurrentTab = (tab: NavTab) => {
     setCurrentTabState(tab);
@@ -242,30 +253,48 @@ const MainContent: React.FC = () => {
       } else if (hash === '#privacy-policy') {
         setInitialLegalPolicy('privacy_policy');
         setCurrentTab('legal');
-      } else if (
-        hash === '#delete-account' ||
-        hash === '#auto-detection' ||
-        hash === '#privacy' ||
-        hash === '#manage-consent' ||
-        hash === '#appearance' ||
-        hash === '#notifications' ||
-        hash === '#language' ||
-        hash === '#app-install' ||
-        hash === '#install'
-      ) {
+      } else if (hash === '#delete-account') {
+        setSettingsInitialTab('deletion');
+        setCurrentTab('settings');
+      } else if (hash === '#auto-detection' || hash === '#privacy' || hash === '#manage-consent') {
+        setSettingsInitialTab('privacy');
+        setCurrentTab('settings');
+      } else if (hash === '#notifications') {
+        setSettingsInitialTab('notifications');
+        setCurrentTab('settings');
+      } else if (hash === '#language') {
+        setSettingsInitialTab('language');
+        setCurrentTab('settings');
+      } else if (hash === '#app-install' || hash === '#install') {
+        setSettingsInitialTab('install');
+        setCurrentTab('settings');
+      } else if (hash === '#appearance') {
+        setSettingsInitialTab('appearance');
         setCurrentTab('settings');
       } else if (hash === '#profile') {
         setCurrentTab('profile');
       }
     };
 
+    const handleOpenSettingsEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ tab?: string }>).detail;
+      if (detail?.tab) setSettingsInitialTab(detail.tab);
+      setCurrentTab('settings');
+    };
+
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('mymoney:open-settings', handleOpenSettingsEvent);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('mymoney:open-settings', handleOpenSettingsEvent);
+    };
   }, [toast]);
 
   // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAddUdharModalOpen, setIsAddUdharModalOpen] = useState(false);
+  const [addUdharInitialPerson, setAddUdharInitialPerson] = useState<string | undefined>(undefined);
   const [modalInitialCategory, setModalInitialCategory] = useState<TransactionCategory | undefined>(undefined);
   const [modalInitialSubcategory, setModalInitialSubcategory] = useState<TransactionSubcategory | undefined>(undefined);
   const [modalInitialPerson, setModalInitialPerson] = useState<string | undefined>(undefined);
@@ -280,7 +309,7 @@ const MainContent: React.FC = () => {
 
   const { setScannerActive, setModalsSuppressed } = usePwaInstall();
 
-  const isAnyInteractiveModalOpen = isAddModalOpen || isScanQrOpen || isNotifPrefsOpen;
+  const isAnyInteractiveModalOpen = isAddModalOpen || isAddUdharModalOpen || isScanQrOpen || isNotifPrefsOpen;
 
   useEffect(() => {
     setModalsSuppressed(isAnyInteractiveModalOpen);
@@ -303,6 +332,11 @@ const MainContent: React.FC = () => {
     title?: string,
     dateKey?: string
   ) => {
+    if (category === 'people') {
+      setAddUdharInitialPerson(personName);
+      setIsAddUdharModalOpen(true);
+      return;
+    }
     const validCategories: TransactionCategory[] = ['home', 'room', 'food', 'other', 'people', 'received'];
     setModalInitialCategory(category && validCategories.includes(category) ? category : undefined);
     setModalInitialSubcategory(subcategory);
@@ -658,14 +692,20 @@ return (
 
                   {currentTab === 'profile' && (
                     <UserProfileSection
-                      onNavigateToDeletion={() => setCurrentTab('settings')}
-                      onNavigateToSettings={() => setCurrentTab('settings')}
+                      onNavigateToDeletion={() => {
+                        setSettingsInitialTab('deletion');
+                        setCurrentTab('settings');
+                      }}
+                      onNavigateToSettings={() => {
+                        setSettingsInitialTab('appearance');
+                        setCurrentTab('settings');
+                      }}
                     />
                   )}
 
                   {currentTab === 'settings' && (
                     <SettingsSection
-                      initialTab="appearance"
+                      initialTab={settingsInitialTab}
                       initialLegalPolicy={initialLegalPolicy}
                       onNavigateToProfile={() => setCurrentTab('profile')}
                     />
@@ -674,7 +714,10 @@ return (
                   {currentTab === 'legal' && (
                     <LegalCenterSection
                       initialPolicyId={initialLegalPolicy}
-                      onNavigateToAccountDeletion={() => setCurrentTab('settings')}
+                      onNavigateToAccountDeletion={() => {
+                        setSettingsInitialTab('deletion');
+                        setCurrentTab('settings');
+                      }}
                     />
                   )}
                 </Suspense>
@@ -708,6 +751,23 @@ return (
         />
 
         <Suspense fallback={null}>
+          {/* Dedicated Add Udhar Modal (when triggered via People / quick-action) */}
+          <AddUdharModal
+            isOpen={isAddUdharModalOpen}
+            onClose={() => {
+              setIsAddUdharModalOpen(false);
+              setAddUdharInitialPerson(undefined);
+            }}
+            initialPersonName={addUdharInitialPerson}
+            onOpenScanner={() => {
+              setIsAddUdharModalOpen(false);
+              setIsScanQrOpen(true);
+            }}
+            onSuccess={() => {
+              refreshTransactions();
+            }}
+          />
+
           {/* Scan QR Modal (Udhar pairing) */}
           <ScanQrModal
             isOpen={isScanQrOpen}

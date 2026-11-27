@@ -384,11 +384,17 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // When user switches or logs in/out, immediately load only this user's data
   useEffect(() => {
     if (user) {
+      const tombstones = getDeletedTombstones(user.uid);
       const key = getUserTxStorageKey(user.uid);
       const saved = localStorage.getItem(key);
       if (saved) {
         try {
-          setAllTransactions(JSON.parse(saved));
+          const parsed: Transaction[] = JSON.parse(saved);
+          setAllTransactions(
+            Array.isArray(parsed)
+              ? parsed.filter((t) => !tombstones.has(String(t.id)) && !t.is_deleted)
+              : []
+          );
         } catch {
           setAllTransactions([]);
         }
@@ -399,7 +405,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           try {
             const parsed: Transaction[] = JSON.parse(legacy);
             const userOwned = parsed.filter(
-              (t) => t.user_id === user.uid || (t.user_email && t.user_email.toLowerCase() === user.email.toLowerCase())
+              (t) =>
+                !tombstones.has(String(t.id)) &&
+                !t.is_deleted &&
+                (t.user_id === user.uid || (t.user_email && t.user_email.toLowerCase() === user.email.toLowerCase()))
             );
             if (userOwned.length > 0) {
               setAllTransactions(userOwned);
@@ -568,10 +577,16 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Fallback to cached local storage
     if (user) {
+      const tombstones = getDeletedTombstones(user.uid);
       const saved = localStorage.getItem(getUserTxStorageKey(user.uid));
       if (saved) {
         try {
-          setAllTransactions(JSON.parse(saved));
+          const parsed: Transaction[] = JSON.parse(saved);
+          setAllTransactions(
+            Array.isArray(parsed)
+              ? parsed.filter((t) => !tombstones.has(String(t.id)) && !t.is_deleted)
+              : []
+          );
         } catch {}
       }
     }
@@ -699,6 +714,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       if (eventType === 'INSERT' && newRecord) {
+        const tombstones = getDeletedTombstones(user.uid);
+        if (tombstones.has(String(newRecord.id)) || newRecord.is_deleted) {
+          return;
+        }
         setAllTransactions((prev) => {
           const exists = prev.some((t) => t.id === newRecord.id);
           const next = exists
@@ -708,6 +727,15 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return next;
         });
       } else if (eventType === 'UPDATE' && newRecord) {
+        const tombstones = getDeletedTombstones(user.uid);
+        if (tombstones.has(String(newRecord.id)) || newRecord.is_deleted) {
+          setAllTransactions((prev) => {
+            const next = prev.filter((t) => t.id !== newRecord.id);
+            persistLocally(next);
+            return next;
+          });
+          return;
+        }
         setAllTransactions((prev) => {
           const exists = prev.some((t) => t.id === newRecord.id);
           const next = exists
@@ -717,6 +745,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return next;
         });
       } else if (eventType === 'DELETE' && oldId) {
+        addDeletedTombstones(user.uid, [String(oldId)]);
         setAllTransactions((prev) => {
           const next = prev.filter((t) => t.id !== oldId);
           persistLocally(next);
@@ -1117,11 +1146,12 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      permanentDeleteTransactionFromSupabase(id)
-        .then(() => setIsSupabaseConnected(true))
-        .catch((err: any) => {
-          console.warn('Supabase permanent delete notice:', err.message);
-        });
+      try {
+        await permanentDeleteTransactionFromSupabase(id);
+        setIsSupabaseConnected(true);
+      } catch (err: any) {
+        console.warn('Supabase permanent delete notice:', err.message);
+      }
     }
 
     return true;
@@ -1208,11 +1238,12 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const supabase = getSupabaseClient();
     if (supabase) {
-      permanentDeleteTransactionsFromSupabase(ids)
-        .then(() => setIsSupabaseConnected(true))
-        .catch((err: any) => {
-          console.warn('Supabase permanent delete notice:', err.message);
-        });
+      try {
+        await permanentDeleteTransactionsFromSupabase(ids);
+        setIsSupabaseConnected(true);
+      } catch (err: any) {
+        console.warn('Supabase permanent delete notice:', err.message);
+      }
     }
 
     return true;
@@ -1431,6 +1462,9 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         avatarUrl?: string | null;
         relationshipType?: string | null;
         isRegisteredUser?: boolean;
+        pendingRequestsCount?: number;
+        pendingRequestsAmount?: number;
+        rejectedCount?: number;
       }
     >();
     const linkedToKey = new Map<string, string>();
@@ -1467,6 +1501,9 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           avatarUrl: c.linked_user_avatar || c.photo_url || null,
           relationshipType: c.relationship_type,
           isRegisteredUser: Boolean(c.linked_user_id || c.is_registered),
+          pendingRequestsCount: Number(c.pending_requests_count) || 0,
+          pendingRequestsAmount: Number(c.pending_requests_amount) || 0,
+          rejectedCount: Number(c.rejected_count) || 0,
         });
       }
     }
@@ -1537,6 +1574,9 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         avatarUrl: val.avatarUrl,
         relationshipType: val.relationshipType,
         isRegisteredUser: val.isRegisteredUser,
+        pendingRequestsCount: val.pendingRequestsCount || 0,
+        pendingRequestsAmount: val.pendingRequestsAmount || 0,
+        rejectedCount: val.rejectedCount || 0,
       });
     });
 

@@ -1,0 +1,1230 @@
+# ULTIMATE MASTER PROMPT — MY MONEY MANAGER
+
+## Complete Udhaar System + Permanent Deletion Fix + Manual Confirmation + Instant QR/Code + Real-Time Sync + Universal Button Functionality + Performance Optimization
+
+**Project:** My Money Manager by HackifyPro  
+**GitHub Repository:** https://github.com/Barela08/mymoney  
+**Production URL:** https://mymoney.nileshbarela.site
+
+---
+
+# 1. MAIN OBJECTIVE
+
+Completely inspect, fix, optimize and upgrade the existing My Money Manager application, with special focus on the People / Udhaar module and the functionality of every interactive element across the entire website.
+
+The implementation must cover these major areas:
+
+1. Permanent Udhaar deletion and synchronization bug fix.
+2. Manual Udhaar addition with recipient Accept/Reject confirmation.
+3. Instant Udhaar addition through QR code or confirmation code.
+4. Fast performance with visible real-time user action statuses.
+5. Secure backend, database integrity and two-account synchronization.
+6. Universal functionality audit of every button, delete button, icon, menu, tab, link and interactive element across the entire website.
+7. Complete verification that no visible action is broken, inactive, misleading or unfinished.
+
+**IMPORTANT:** This is an upgrade and repair of an existing application, not a request to rebuild it.
+
+Preserve existing functionality, data, UI design system, authentication, financial records, user settings and application architecture.
+
+First inspect the complete existing codebase and identify its actual architecture. Determine whether the project uses Firebase, Supabase or another backend. Never assume a technology without checking.
+
+---
+
+# 2. COMPLETE ROOT-CAUSE AUDIT
+
+Before making changes, inspect the entire application and identify the actual root causes of existing problems.
+
+Inspect:
+
+- All pages, routes and modules.
+- Dashboard and account/profile sections.
+- People and Udhaar components.
+- Add, update, settle and delete transaction functions.
+- All buttons, icons, dropdowns, menus, tabs and interactive components.
+- Frontend callbacks and API/service functions.
+- Backend endpoints and cloud functions.
+- Database collections, documents and tables.
+- Shared transaction relationships.
+- Firebase Security Rules or Supabase RLS policies.
+- Authentication and participant permissions.
+- QR and confirmation code generation/validation.
+- Real-time notification implementation.
+- Firestore listeners or Supabase subscriptions.
+- Query cache and offline persistence.
+- Loading states, error handling and retry logic.
+- Database indexes and slow queries.
+- Navigation, routing and page transitions.
+- Forms, validation and submission handlers.
+- Modal dialogs and confirmation dialogs.
+
+Identify the actual root causes before modifying code.
+
+Do not hide bugs with frontend-only workarounds.
+
+---
+
+# 3. UNIVERSAL BUTTON & ACTION FUNCTIONALITY AUDIT — CRITICAL REQUIREMENT
+
+**This section applies to the ENTIRE My Money Manager website, not just the People/Udhaar module.**
+
+I want every button, icon, delete button, action menu, dropdown, tab, link, clickable card, form control and interactive element across the complete website to work correctly.
+
+**STRICT RULE: No visible button or interactive element should be non-functional.**
+
+A button must never exist only for UI decoration when it appears to offer an action.
+
+## 3.1 Complete Website-Wide Inventory
+
+First inspect every route and screen, including:
+
+- Login and registration.
+- Forgot password and password reset.
+- Dashboard.
+- Profile and account settings.
+- Available Balance.
+- Income and expense sections.
+- Add income and expense.
+- Transaction history.
+- Categories.
+- People and Udhaar.
+- Add People and connection requests.
+- QR code and confirmation code.
+- UPI QR and QR generation.
+- Settlement and payment records.
+- Notifications and alerts.
+- Reports, charts and summaries.
+- Calculator and Splitwise features.
+- Reminders.
+- Search and filters.
+- Settings.
+- Admin-related interfaces, if present.
+- Mobile navigation and bottom tab bar.
+- Desktop navigation and menus.
+- Installation/PWA prompts.
+- All other existing application pages and modules.
+
+Do not assume that a button works just because it is visible.
+
+## 3.2 Audit Every Interactive Element
+
+Inspect each element individually:
+
+- Primary action buttons.
+- Secondary action buttons.
+- Save buttons.
+- Submit buttons.
+- Cancel buttons.
+- Delete buttons.
+- Edit buttons.
+- Update buttons.
+- Add buttons.
+- Remove buttons.
+- Accept and Reject buttons.
+- Confirm buttons.
+- Back buttons.
+- Close buttons.
+- Refresh buttons.
+- Search buttons.
+- Filter controls.
+- Sort controls.
+- Dropdown options.
+- Navigation tabs.
+- Sidebar menu options.
+- Bottom navigation icons.
+- Settings icons.
+- Notification icons.
+- QR scan and QR generation buttons.
+- Copy buttons.
+- Download buttons.
+- Export buttons.
+- Import buttons.
+- Share buttons.
+- Profile and account controls.
+- Clickable cards.
+- Toggle switches.
+- Checkboxes.
+- Radio buttons.
+- Links.
+- Form submission controls.
+- Modal action buttons.
+- Context menu actions.
+- Keyboard-accessible actions.
+
+For every element, verify:
+
+1. Does it respond to a click or appropriate interaction?
+2. Does it trigger the correct callback?
+3. Does it perform the intended operation?
+4. Does it communicate with the correct backend function when required?
+5. Does it validate user input?
+6. Does it display the correct loading state?
+7. Does it show success only after the operation succeeds?
+8. Does it show a useful error if the operation fails?
+9. Does it update the UI after a successful operation?
+10. Does it synchronize data where required?
+11. Does it work on mobile and desktop?
+12. Does it respect authentication and permissions?
+
+## 3.3 Fix Dead Buttons and Incomplete Actions
+
+Find and fix:
+
+- Buttons with missing onClick handlers.
+- Buttons connected to empty functions.
+- Buttons that only display a toast without performing the operation.
+- Buttons that navigate to incorrect routes.
+- Buttons that open empty pages.
+- Buttons that do nothing after being clicked.
+- Delete buttons that do not delete backend records.
+- Save buttons that do not persist data.
+- Submit buttons that do not submit forms.
+- Dropdown options that do not apply their selected action.
+- Icons that look clickable but are not interactive.
+- Links with invalid destinations.
+- Buttons that trigger the wrong operation.
+- Buttons that work only after refreshing.
+- Buttons that work on desktop but fail on mobile.
+- Buttons that trigger duplicate actions.
+- Buttons that remain permanently disabled.
+- Actions that silently fail.
+- Buttons whose backend request succeeds but whose UI remains unchanged.
+
+Do not merely remove or hide broken buttons to make the audit pass.
+
+Implement their intended functionality using the existing application's architecture.
+
+If a feature requires an unavailable external service or configuration, implement all supported parts and clearly identify the missing configuration. Never create fake functionality.
+
+## 3.4 Delete Button Functionality — Every Module
+
+Audit every delete/remove action across the application.
+
+For each delete button:
+
+1. Identify exactly which record or resource it is supposed to delete.
+2. Show an appropriate confirmation dialog for destructive operations.
+3. Verify authenticated user permissions on the backend.
+4. Execute deletion against the authoritative backend.
+5. Use atomic operations where required.
+6. Update the relevant UI only after backend confirmation.
+7. Update real-time listeners and invalidate relevant caches.
+8. Show a successful deletion message only after confirmed success.
+9. Show a clear error if deletion fails.
+10. Prevent repeated deletion clicks while processing.
+11. Ensure deleted records do not reappear after refresh or synchronization.
+
+Important:
+
+- Do not delete unrelated records.
+- Do not accidentally delete an entire account when only one item should be removed.
+- Do not allow unauthorized users to delete another user's data.
+- Preserve financial and audit history wherever required.
+- Apply existing business rules for each module.
+- Never implement a frontend-only fake delete.
+
+For shared Udhaar transactions, follow the special deletion rules in Section 5.
+
+## 3.5 Forms and Input Controls
+
+Inspect every form throughout the application.
+
+Verify:
+
+- All input fields accept the correct data.
+- Required fields are validated.
+- Amount fields accept valid numeric values.
+- Invalid values are rejected.
+- Date inputs work correctly.
+- Dropdown selections are saved correctly.
+- Search inputs actually filter the correct data.
+- Forms preserve valid input after recoverable errors.
+- Submit buttons prevent accidental duplicate submissions.
+- Successful submissions persist in the backend.
+- Form reset and cancel actions work correctly.
+- Validation messages are clear and appear in the correct place.
+
+Do not allow forms to submit incomplete or invalid financial data.
+
+## 3.6 Navigation and Routing
+
+Verify that:
+
+- Every navigation item opens the correct page.
+- Every bottom navigation tab works.
+- Every menu item works.
+- Back navigation works.
+- Browser refresh does not cause unexpected errors.
+- Direct URLs load the correct pages.
+- Protected pages enforce authentication.
+- Invalid routes show an appropriate not-found page.
+- Links do not lead to blank pages.
+- Navigation does not unexpectedly reset unsaved form data.
+- Mobile navigation works properly.
+
+## 3.7 Maintain a Button and Action Registry
+
+Create a complete internal audit checklist or structured registry containing:
+
+- Page/module name.
+- Component name.
+- Button/action label.
+- Element type.
+- Intended functionality.
+- Frontend handler.
+- Backend/API function, if applicable.
+- Authentication requirement.
+- Permission requirement.
+- Expected success result.
+- Expected error behavior.
+- Test result.
+- Final status.
+
+Use this registry to ensure that every interactive element has been checked.
+
+Do not leave any discovered element untested.
+
+## 3.8 Automated and Manual Testing
+
+Where practical, use automated tests to verify:
+
+- Button click handlers.
+- Navigation.
+- Form submission.
+- Modal open/close.
+- Delete confirmation.
+- Backend requests.
+- Authentication restrictions.
+- Permission failures.
+- Duplicate-click prevention.
+- Error handling.
+- Mobile interactions.
+
+Also perform manual testing on actual application flows.
+
+**Final requirement:** Every visible interactive element must have a working, verified action or a clearly justified disabled state. No dead buttons, fake actions or misleading controls.
+
+---
+
+# 4. COMPLETE ROOT-CAUSE AUDIT OF UDHAAR
+
+Inspect:
+
+- People and Udhaar components.
+- Add, update, settle and delete transaction functions.
+- Frontend callbacks and API/service functions.
+- Backend endpoints and cloud functions.
+- Database collections, documents and tables.
+- Shared transaction relationships.
+- Firebase Security Rules or Supabase RLS policies.
+- Authentication and participant permissions.
+- QR and confirmation code generation/validation.
+- Real-time notification implementation.
+- Firestore listeners or Supabase subscriptions.
+- Query cache and offline persistence.
+- Loading states, error handling and retry logic.
+- Database indexes and slow queries.
+
+Identify the actual root causes before modifying code.
+
+---
+
+# 5. PERMANENT UDHAAR DELETION — CRITICAL BUG FIX
+
+## Existing Problems
+
+1. Deleted Udhaar records reappear after refreshing.
+2. Delete button remains stuck on Processing...
+3. UI indicates deletion but database records remain.
+4. Other connected users may still see deleted transactions.
+5. Real-time listeners, stale cache or offline synchronization may restore deleted data.
+
+## Required Implementation
+
+- Execute deletion against the authoritative backend record.
+- Verify authenticated user's ownership and participant permissions.
+- Delete or durably mark the correct canonical shared transaction.
+- Use atomic database operations where multiple records must be updated.
+- Synchronize deletion across both participants.
+- Invalidate all relevant query caches.
+- Update real-time listeners.
+- Prevent stale API responses from restoring deleted records.
+- Reconcile offline queues with the authoritative backend.
+- Use deletion tombstones or equivalent durable deletion state if necessary.
+- Ensure all relevant queries exclude deleted records.
+- Preserve required audit history without displaying deleted records as active transactions.
+
+A record must remain deleted after:
+
+- Page refresh.
+- Logout and login.
+- Opening another device.
+- Reconnecting after being offline.
+- Real-time listener reconnection.
+- Cache refresh.
+
+Never independently delete only one participant's copy while leaving the canonical shared transaction active.
+
+## Existing Business Rules — Must Preserve
+
+**I Gave**
+
+- Allow deletion according to existing permission rules.
+- Do not introduce unnecessary restrictions.
+
+**I Borrowed**
+
+- Deletion is permitted only after the transaction is fully Settled.
+- Pending or Partially Settled I Borrowed transactions cannot be deleted.
+- Enforce this rule on the backend, not only in the UI.
+
+Do not delete unrelated contacts, transactions or account data.
+
+---
+
+# 6. SMART UDHAAR ADDITION — TWO SEPARATE WORKFLOWS
+
+Implement two distinct addition methods.
+
+## METHOD A — MANUAL ADDITION WITHOUT QR/CODE
+
+When User A adds Udhaar for User B without using a QR code or confirmation code, the recipient must confirm the request.
+
+### User A — Create Request
+
+The existing Add Udhaar form should support:
+
+- Select connected person.
+- Enter amount.
+- Select transaction direction:
+  - I Gave — User A gave money to User B.
+  - I Borrowed — User A borrowed money from User B.
+- Optional description.
+- Transaction date.
+- Submit button.
+
+When submitted without QR/code:
+
+1. Create a backend confirmation request.
+2. Set its status to Pending Confirmation.
+3. Send a real notification to User B.
+4. Show User A that confirmation is awaited.
+5. Do not include the amount in confirmed balances.
+
+### Initial Status
+
+**User A sees:**
+
+- Pending Confirmation.
+- Waiting for recipient confirmation.
+
+**User B sees:**
+
+- New Udhaar Request.
+- Accept button.
+- Reject button.
+- View Details option.
+
+Both users must see the same canonical request and its actual backend status.
+
+## User B — Confirmation Notification
+
+Send a real-time in-app notification containing:
+
+- Requester's name.
+- Profile picture, if available.
+- Amount.
+- Transaction direction.
+- Description, if available.
+- Date and time.
+- Accept.
+- Reject.
+- View Details.
+
+Example:
+
+"New Udhaar Confirmation Request"
+
+"Someone has added an Udhaar request of ₹500. Please review and confirm."
+
+The notification must be generated and stored through the backend.
+
+Use actual push notifications where supported and permitted. In-app notifications must continue working even when push permission is denied.
+
+## ACCEPT FLOW
+
+When User B clicks Accept:
+
+1. Verify User B's authenticated identity.
+2. Verify User B is the intended recipient.
+3. Verify the request is still Pending Confirmation.
+4. Validate the request data on the backend.
+5. Atomically update the canonical shared record to Confirmed.
+6. Update both users' People/Udhaar views.
+7. Update confirmed balances and summaries.
+8. Notify User A that the request was accepted.
+9. Synchronize both devices in real time.
+
+Show:
+
+"Udhaar request accepted successfully."
+
+## REJECT FLOW
+
+When User B clicks Reject:
+
+1. Show a confirmation dialog.
+2. Ask: "Are you sure you want to reject this Udhaar request?"
+3. On confirmation, atomically update the request to Rejected.
+4. Notify User A.
+5. Remove the request from the Pending list.
+6. Keep its rejection history where appropriate.
+7. Never include rejected amounts in confirmed balances.
+
+User A sees:
+
+"Your Udhaar request was rejected."
+
+User B sees:
+
+"You rejected this Udhaar request."
+
+Rejected requests must never become confirmed automatically.
+
+## PENDING REQUEST RULES
+
+- Pending requests remain pending until accepted, rejected or cancelled.
+- Refreshing must not change their status.
+- Logout/login must preserve status.
+- Multiple devices must show the same status.
+- No automatic approval.
+- Pending amounts must be shown separately from confirmed balances.
+- Prevent duplicate submissions.
+- User A may cancel only their own pending request.
+- Cancellation must notify User B.
+- Already accepted or rejected requests cannot be cancelled.
+
+---
+
+# 7. INSTANT ADDITION THROUGH QR CODE / CONFIRMATION CODE
+
+## METHOD B — INSTANT CONFIRMED ADDITION
+
+When User A uses User B's valid QR code or confirmation code:
+
+1. Validate the QR/code on the backend.
+2. Verify the target user's identity.
+3. Validate transaction amount and direction.
+4. Create the canonical shared transaction.
+5. Mark it Confirmed immediately.
+6. Update both users' People/Udhaar records.
+7. Update both confirmed balances.
+8. Send confirmation notifications to both participants.
+9. Synchronize both accounts and devices.
+
+**STRICT RULE: QR/code-based addition must bypass manual Accept/Reject confirmation.**
+
+Do not create a Pending Confirmation request for valid QR/code transactions.
+
+Show:
+
+"Udhaar added successfully."
+
+## QR/CODE SECURITY
+
+- Use securely generated identifiers.
+- Never expose sensitive account details inside QR codes.
+- Never trust frontend-supplied user IDs or amounts.
+- Validate ownership, permissions, expiry and revocation on the backend.
+- Prevent duplicate transaction submissions.
+- Preserve reusable QR functionality if the existing design supports it.
+- Enforce single-use behavior only where the existing code is intended to be single-use.
+- Invalid, expired or revoked codes must never create transactions.
+- A QR scan is not proof of payment.
+
+---
+
+# 8. UNIFIED TRANSACTION STATUS MANAGEMENT
+
+Implement a backend-controlled status lifecycle.
+
+| Status | Meaning | Included in confirmed balance |
+|---|---|---|
+| Pending Confirmation | Waiting for recipient | No |
+| Confirmed | Accepted or added through valid QR/code | Yes |
+| Rejected | Recipient rejected request | No |
+| Cancelled | Sender cancelled request | No |
+| Partially Settled | Some amount settled | Existing settlement rules |
+| Settled | Fully settled | Existing settlement rules |
+| Deleted | Durably deleted/hidden according to deletion policy | No |
+
+Important:
+
+- Pending, Rejected and Cancelled must not affect confirmed balances.
+- Confirmed transactions must follow existing settlement calculations.
+- Preserve existing partially settled and settled transaction logic.
+- Do not double-count a shared transaction in the same user's balance.
+- Do not modify unrelated financial records.
+
+---
+
+# 9. PEOPLE / UDHAAR UI AND EXPERIENCE
+
+Upgrade the existing interface without unnecessarily redesigning the entire application.
+
+Provide clear filters or sections:
+
+- All
+- Pending
+- Confirmed
+- Rejected
+- Settled
+
+For each person, display:
+
+- Name and profile picture.
+- Confirmed I Gave amount.
+- Confirmed I Borrowed amount.
+- Pending request count.
+- Pending amount separately.
+- Latest transaction date.
+
+## Pending Request Cards
+
+Display:
+
+- Person's name.
+- Amount.
+- Direction.
+- Description.
+- Request date.
+- Status.
+
+For the recipient:
+
+- Accept.
+- Reject.
+- View Details.
+
+For the sender:
+
+- Waiting for Confirmation.
+- Cancel Request.
+
+For rejected or cancelled requests, show the correct status in request history.
+
+For deletion:
+
+- Show the existing confirmation dialog.
+- Display the real processing state.
+- Remove the record only after backend confirmation.
+
+Maintain responsive mobile and desktop behavior.
+
+---
+
+# 10. NOTIFICATION SYSTEM
+
+Implement backend-backed notifications for:
+
+| Event | Recipient |
+|---|---|
+| New manual Udhaar request | Recipient |
+| Request accepted | Sender |
+| Request rejected | Sender |
+| Request cancelled | Recipient |
+| QR/code Udhaar added | Both participants |
+| Shared transaction updated | Relevant participants |
+| Shared transaction deleted | Relevant participants |
+
+Requirements:
+
+- Real-time in-app notifications.
+- Push notifications where supported and permission is granted.
+- Unread count.
+- Mark as read.
+- Notification history.
+- Direct navigation to the relevant request or transaction.
+- Duplicate notification prevention.
+- Secure notification access.
+- Respect notification preferences.
+
+A notification must not claim an operation succeeded before the backend confirms it.
+
+---
+
+# 11. BACKEND, DATABASE AND SECURITY ARCHITECTURE
+
+Use the existing backend and database. Do not create an unnecessary second transaction system.
+
+Use the existing canonical shared transaction model if available.
+
+Suggested request fields:
+
+- requestId
+- senderUserId
+- recipientUserId
+- amount
+- direction
+- description
+- transactionDate
+- creationMethod: manual / qr / code
+- status
+- createdAt
+- updatedAt
+- respondedAt
+- cancelledAt
+- acceptedBy
+- rejectedBy
+- idempotencyKey
+
+Adapt this structure to the existing schema rather than blindly creating duplicate tables or collections.
+
+## Backend Validation
+
+Every important operation must be validated server-side:
+
+- Create manual request.
+- Accept request.
+- Reject request.
+- Cancel request.
+- Create QR/code transaction.
+- Update transaction.
+- Settle transaction.
+- Delete transaction.
+- Update balances.
+- Generate notifications.
+
+Enforce:
+
+- Only the intended recipient can accept or reject.
+- Only the sender can cancel a pending request.
+- Only authorized participants can access shared transactions.
+- Only permitted users can delete records.
+- I Borrowed deletion requires full settlement.
+- A request can be accepted or rejected only once.
+- A rejected or cancelled request cannot become confirmed.
+- A confirmed transaction cannot be rejected.
+- Users cannot modify another user's records.
+- Users cannot manipulate amounts, directions or statuses through frontend requests.
+
+Use atomic transactions and secure server-side operations wherever required.
+
+Apply Firebase Security Rules or Supabase RLS according to the actual project architecture.
+
+Never expose privileged backend credentials, service-role keys or private API secrets to the frontend.
+
+---
+
+# 12. DUPLICATE, CONCURRENCY AND RACE-CONDITION PROTECTION
+
+Handle these situations safely:
+
+- Multiple Accept clicks.
+- Multiple Reject clicks.
+- Accept and Reject from different devices simultaneously.
+- Repeated manual submissions.
+- Repeated QR scans.
+- Repeated code submissions.
+- Concurrent deletion.
+- Network timeout after backend success.
+- Multiple settlement requests.
+
+Use:
+
+- Atomic status transitions.
+- Idempotency keys.
+- Transactional writes.
+- Backend-side duplicate detection.
+- Canonical transaction IDs.
+- Safe retry logic.
+
+Only one valid state transition may succeed.
+
+If an operation times out, check the authoritative backend state before retrying.
+
+Never create duplicate financial records or duplicate balance changes.
+
+---
+
+# 13. FIX PROCESSING... FOREVER
+
+Every operation must have reliable loading-state management.
+
+Inspect and fix the actual asynchronous operation.
+
+Requirements:
+
+- Show Processing only while the real request is running.
+- Use try/catch/finally or an equivalent reliable pattern.
+- Always reset loading state after success, failure or timeout.
+- Prevent duplicate clicks while the same operation is running.
+- Show success only after backend confirmation.
+- Retain the record if deletion fails.
+- Display a clear actionable error.
+- Make the button usable again after the operation finishes.
+- Do not block the entire application unnecessarily.
+
+Apply this to:
+
+- Adding Udhaar.
+- Accepting requests.
+- Rejecting requests.
+- Cancelling requests.
+- QR/code addition.
+- Updating transactions.
+- Settlement.
+- Deletion.
+- Contact connection.
+- Notifications and synchronization.
+
+---
+
+# 14. PERFORMANCE OPTIMIZATION — COMPLETE APPLICATION
+
+Optimize the People/Udhaar module and other existing application modules without breaking functionality.
+
+Optimize:
+
+- People list loading.
+- Contact search.
+- Contact connection.
+- Manual Udhaar creation.
+- QR/code validation.
+- Request acceptance/rejection.
+- Transaction updates.
+- Settlement processing.
+- Deletion.
+- Notification delivery.
+- Real-time synchronization.
+- Dashboard statistics.
+- Navigation.
+- Refresh and data fetching.
+- Other frequently used application actions.
+
+Requirements:
+
+1. Avoid unnecessary database queries.
+2. Prevent duplicate API requests.
+3. Add appropriate database indexes.
+4. Use pagination or lazy loading for large lists.
+5. Avoid fetching complete transaction history unnecessarily.
+6. Clean up real-time listeners when components unmount.
+7. Prevent unnecessary component re-renders.
+8. Use efficient caching with correct invalidation.
+9. Optimize payload sizes.
+10. Use lightweight animations.
+11. Show cached data immediately where safe.
+12. Reconcile cached data with the authoritative backend.
+13. Never show stale data as confirmed.
+14. Avoid listener leaks and repeated subscriptions.
+15. Preserve financial integrity and backend authorization.
+
+Measure actual performance rather than claiming optimization without testing.
+
+---
+
+# 15. LIVE USER ACTION STATUS AND SYNC INDICATORS
+
+Users must always understand what the application is doing.
+
+Show meaningful status messages near the relevant action.
+
+**Manual request**
+
+- Creating Udhaar request...
+- Sending confirmation notification...
+- Waiting for recipient confirmation...
+- Request accepted.
+- Request rejected.
+
+**QR/code addition**
+
+- Validating QR code...
+- Verifying confirmation code...
+- Adding Udhaar...
+- Synchronizing transaction...
+- Udhaar added successfully.
+
+**Deletion**
+
+1. Verifying permission...
+2. Deleting transaction...
+3. Synchronizing with the other account...
+4. Confirming deletion...
+5. Deleted successfully.
+
+**Other operations**
+
+- Loading People...
+- Searching people...
+- Connecting...
+- Saving transaction...
+- Updating transaction...
+- Processing settlement...
+- Verifying settlement...
+- Refreshing data...
+- Something went wrong. Please retry.
+
+Only display stages that correspond to real operations. Do not simulate progress or show fake percentages.
+
+## Synchronization Indicator
+
+Where appropriate, show:
+
+- Synced
+- Syncing
+- Offline
+- Sync failed
+- Reconnecting
+
+Do not claim the other participant's account has updated until the shared backend state confirms it.
+
+## Error Handling
+
+Handle:
+
+- Permission denied.
+- Record not found.
+- Already deleted.
+- Network failure.
+- Backend timeout.
+- Concurrent modification.
+- Invalid transaction status.
+- User no longer a participant.
+- Invalid or expired QR/code.
+
+Never expose raw stack traces, database credentials or internal technical details.
+
+Preserve unsaved form input if an operation fails.
+
+Use controlled retries only for retry-safe operations.
+
+---
+
+# 16. IMPORTANT EDGE CASES
+
+Test and handle:
+
+1. Recipient is offline when a manual request is created.
+2. Recipient opens the app several hours later.
+3. Sender refreshes while request is pending.
+4. Recipient refreshes while viewing a request.
+5. Both users log out and log back in.
+6. Both users access the app on different devices.
+7. Recipient accepts on one device and rejects on another.
+8. Sender cancels before recipient responds.
+9. Network disconnects during acceptance.
+10. Network disconnects during deletion.
+11. Same QR is scanned repeatedly.
+12. Code is invalid, expired or revoked.
+13. User tries to approve their own request.
+14. One participant is suspended or deleted.
+15. Transaction is partially settled.
+16. Transaction is fully settled.
+17. Transaction is already deleted.
+18. A stale listener attempts to restore deleted data.
+19. An offline device reconnects with old local data.
+20. A request times out after the backend has already completed it.
+21. User double-clicks any action button.
+22. User opens multiple copies of the same page.
+23. User navigates away while an operation is running.
+24. Backend rejects a request after the frontend has started processing.
+25. A button's target feature is unavailable due to missing external configuration.
+26. A user accesses an unauthorized route directly.
+27. A form is submitted with invalid or incomplete data.
+28. A deleted item is still present in cached UI data.
+29. A notification is received after its related request has already been handled.
+30. A button is clicked while the user is offline.
+
+The canonical backend state must always take priority.
+
+---
+
+# 17. COMPLETE TESTING AND VERIFICATION
+
+Use isolated test accounts and test data. Do not use real production financial data for destructive tests.
+
+## TEST A — MANUAL ADDITION
+
+1. A adds ₹500 as I Gave without QR/code.
+2. A sees Pending Confirmation.
+3. B receives a real notification.
+4. B sees the request.
+5. B accepts.
+6. Both accounts see the same confirmed transaction.
+7. Both balances update correctly.
+8. Refresh both accounts and verify persistence.
+
+## TEST B — MANUAL REJECTION
+
+1. A creates a manual request.
+2. B receives notification.
+3. B rejects.
+4. A receives rejection notification.
+5. Both accounts show Rejected.
+6. Neither confirmed balance includes the amount.
+
+## TEST C — QR ADDITION
+
+1. A scans B's valid QR.
+2. A enters the amount and direction.
+3. The backend validates and creates the transaction.
+4. Both accounts show Confirmed.
+5. No manual confirmation is requested.
+
+## TEST D — CODE ADDITION
+
+1. A enters B's valid confirmation code.
+2. A submits the transaction.
+3. Backend validates the code.
+4. Both accounts show the confirmed transaction immediately.
+
+## TEST E — DELETION
+
+1. A and B see the same shared Udhaar.
+2. A deletes an eligible I Gave transaction.
+3. Backend confirms deletion.
+4. Both accounts stop displaying it.
+5. Refresh both accounts.
+6. Log out and log back in.
+7. Open another device.
+8. Reconnect an offline device.
+9. Verify the deleted transaction never reappears.
+
+## TEST F — DELETION BUSINESS RULES
+
+1. Delete eligible I Gave transaction according to existing permissions.
+2. Attempt to delete unsettled I Borrowed.
+3. Attempt to delete partially settled I Borrowed.
+4. Verify both are rejected by the backend.
+5. Settle I Borrowed fully.
+6. Verify deletion is now permitted according to existing permissions.
+
+## TEST G — UNIVERSAL BUTTON AUDIT
+
+For every route and module:
+
+1. Open the page.
+2. Identify every visible interactive element.
+3. Click each button and icon.
+4. Verify its intended action.
+5. Verify correct backend interaction where required.
+6. Verify loading, success and error states.
+7. Verify correct UI update.
+8. Verify permissions and unauthorized access.
+9. Verify duplicate-click protection.
+10. Repeat on mobile and desktop.
+11. Verify all delete buttons with isolated test data.
+12. Verify navigation, links, forms, menus and dropdowns.
+13. Record each result in the Button and Action Registry.
+
+No visible action may be marked as working without testing.
+
+## TEST H — PROCESSING AND PERFORMANCE
+
+Test:
+
+- Slow internet.
+- Unstable internet.
+- Offline/reconnect.
+- Large People lists.
+- Large transaction histories.
+- Multiple simultaneous users.
+- Repeated clicks.
+- Concurrent updates.
+- Multiple devices.
+- Backend timeouts.
+- Failed API calls.
+
+Verify loading states always finish and errors are visible.
+
+## TEST I — REGRESSION TESTING
+
+Verify that existing features still work after implementation:
+
+- Login and logout.
+- Registration.
+- Forgot password and reset password.
+- Dashboard.
+- Income and expenses.
+- Categories.
+- Transactions.
+- Available Balance.
+- UPI QR features.
+- QR generation and scanning.
+- People connections.
+- Udhaar.
+- Settlement.
+- Notifications.
+- Reports and summaries.
+- Profile and settings.
+- Existing navigation and responsive layout.
+
+Do not mark regression testing successful without actually testing the relevant features.
+
+---
+
+# 18. STRICT IMPLEMENTATION RULES
+
+- Inspect the complete existing codebase first.
+- Identify the actual root cause before fixing.
+- Preserve all existing user data.
+- Preserve transaction IDs and required audit history.
+- Do not rebuild the application from scratch.
+- Do not reset or recreate the database.
+- Do not perform bulk deletion.
+- Do not introduce mock data.
+- Do not create duplicate transaction systems.
+- Do not implement frontend-only financial operations.
+- Do not trust frontend-supplied permissions or statuses.
+- Do not remove existing QR/code features.
+- Do not break authentication, notifications, balances, reports or settlement.
+- Do not change unrelated modules.
+- Do not expose secret keys.
+- Back up relevant production data before migrations.
+- Use isolated test accounts for destructive tests.
+- Keep mobile and desktop layouts responsive.
+- Do not claim a feature is fixed without verifying it.
+- Do not leave any visible button or action without its intended functionality.
+- Do not hide broken features to pass testing.
+- Do not use fake success messages.
+- Do not leave placeholder links, empty callbacks or non-functional controls.
+- Do not introduce unnecessary redesigns.
+- Preserve the existing design system and user experience.
+
+If a required external configuration is missing, identify it clearly instead of pretending it works.
+
+**Implementation sequence:**
+
+1. Inspect the repository and map the existing architecture.
+2. Create the complete page, feature and button inventory.
+3. Identify bugs and root causes.
+4. Plan backward-compatible database and backend changes.
+5. Implement backend security and transaction integrity.
+6. Fix deletion and synchronization.
+7. Implement manual confirmation.
+8. Implement instant QR/code addition.
+9. Implement notifications.
+10. Connect and repair all frontend buttons and actions.
+11. Optimize performance and loading states.
+12. Run automated and manual tests.
+13. Perform regression testing.
+14. Verify two-account synchronization.
+15. Produce the final implementation report.
+
+Do not stop after the audit or after UI changes. Complete the implementation and verification.
+
+---
+
+# 19. FINAL IMPLEMENTATION REPORT
+
+After completing implementation, provide a detailed report containing:
+
+1. Exact root causes discovered.
+2. Frontend files modified.
+3. Backend files/functions modified.
+4. Database/schema changes.
+5. Firebase Rules or Supabase RLS changes.
+6. Deletion synchronization implementation.
+7. Manual confirmation workflow implementation.
+8. QR/code instant-add implementation.
+9. Notification implementation.
+10. Performance optimizations.
+11. Cache and offline synchronization fixes.
+12. Security and duplicate-prevention measures.
+13. Complete list of pages and modules audited.
+14. Total interactive elements identified.
+15. Number of buttons/actions successfully tested.
+16. Number of buttons/actions fixed.
+17. Any remaining non-functional or disabled controls and the reason.
+18. Two-account test results.
+19. Regression test results.
+20. Actual performance measurements.
+21. Remaining bugs or manual configuration requirements.
+
+Mark each requirement as:
+
+- FIXED
+- PARTIALLY FIXED
+- NOT FIXED
+- NEEDS MANUAL CONFIGURATION
+- NOT APPLICABLE
+
+Do not mark a requirement FIXED unless it has been tested successfully.
+
+For the Button and Action Registry, report each page/module and its audit result. Do not simply report that all buttons work without evidence.
+
+---
+
+# 20. FINAL ACCEPTANCE CONDITIONS
+
+The project is complete only when all these conditions are satisfied:
+
+**A. Manual Udhaar**
+
+- Without QR/code, recipient confirmation is mandatory.
+- Sender sees Pending Confirmation.
+- Recipient receives a real notification.
+- Accept confirms the shared transaction.
+- Reject rejects it permanently.
+- Pending, Rejected and Cancelled requests do not affect confirmed balances.
+
+**B. QR/Code Udhaar**
+
+- Valid QR/code creates a transaction immediately.
+- Backend validates the request.
+- No manual approval is required.
+- Both participants receive the correct update.
+
+**C. Deletion**
+
+- Eligible Udhaar deletion is permanent and backend-confirmed.
+- Shared deletion synchronizes across both accounts.
+- Deleted records never return after refresh, login, reconnect or another device.
+- I Borrowed deletion is blocked until fully settled.
+
+**D. Universal Button Functionality**
+
+- Every existing visible button has its intended working functionality.
+- Every delete button performs the correct authorized deletion.
+- Every menu, tab, link and icon performs its intended action.
+- All forms and submission controls work.
+- No dead buttons or empty event handlers remain.
+- No fake actions or misleading success messages.
+- All actions work on mobile and desktop.
+- Every action is tested and documented.
+- Any intentionally disabled action has a clear reason and appropriate UI state.
+
+**E. Performance and Status**
+
+- No infinite Processing state.
+- No silent failures.
+- Every important operation has visible status.
+- No fake progress.
+- Success only after backend confirmation.
+- Fast loading and efficient synchronization.
+
+**F. Security and Reliability**
+
+- Backend-enforced permissions.
+- Atomic state transitions.
+- Duplicate protection.
+- Safe error handling.
+- No unauthorized access or financial data manipulation.
+- No loss of existing user data.
+
+**FINAL INSTRUCTION:**
+
+Implement all requirements together as one integrated, production-ready My Money Manager application.
+
+Preserve the existing application, design, architecture and data.
+
+Audit and repair the entire website, including every button, icon, delete control, menu, tab, link, form and action—not just Udhaar.
+
+Every visible interactive element must work according to its intended purpose. Do not leave dummy buttons, empty click handlers, fake actions, broken delete functions or unfinished features.
+
+Do not stop after UI changes. Verify the actual backend, database, security rules, notifications, synchronization, every important user action and two-account behavior before reporting completion.
+
+If any action cannot be completed because of missing credentials, external configuration or unsupported functionality, clearly report the exact reason. Never pretend it works.
+
+**The final result must be a fully functional, secure, responsive and thoroughly tested existing application—not just a visually updated website.**

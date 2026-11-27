@@ -723,12 +723,16 @@ export const AiAssistantSection: React.FC<AiAssistantSectionProps> = ({
             >
               {isGrantingAiConsent ? 'Saving...' : 'Enable AI Processing'}
             </button>
-            <a
-              href="#manage-consent"
-              className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 font-semibold text-xs"
+            <button
+              type="button"
+              onClick={() => {
+                window.location.hash = '#manage-consent';
+                window.dispatchEvent(new CustomEvent('mymoney:open-settings', { detail: { tab: 'privacy' } }));
+              }}
+              className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 font-semibold text-xs cursor-pointer"
             >
               Manage Consent
-            </a>
+            </button>
           </div>
         </div>
       )}

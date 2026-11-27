@@ -86,6 +86,7 @@ export const NetWorthSection: React.FC = () => {
   const [itemNotes, setItemNotes] = useState('');
   const [isSavingItem, setIsSavingItem] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'asset' | 'liability'; id: string; name: string } | null>(null);
+  const [isDeletingTarget, setIsDeletingTarget] = useState(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -291,7 +292,8 @@ export const NetWorthSection: React.FC = () => {
   };
 
   const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || isDeletingTarget) return;
+    setIsDeletingTarget(true);
     try {
       if (deleteTarget.type === 'asset') {
         const next = await aiFinanceApi.deleteNetWorthAsset(deleteTarget.id);
@@ -304,6 +306,8 @@ export const NetWorthSection: React.FC = () => {
       setDeleteTarget(null);
     } catch (err: any) {
       toast.error('Delete failed', err.message || 'Could not delete item.');
+    } finally {
+      setIsDeletingTarget(false);
     }
   };
 
@@ -816,8 +820,11 @@ export const NetWorthSection: React.FC = () => {
 
       <ConfirmModal
         isOpen={Boolean(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => {
+          if (!isDeletingTarget) setDeleteTarget(null);
+        }}
         onConfirm={handleConfirmDelete}
+        isLoading={isDeletingTarget}
         title={`Delete ${deleteTarget?.name || 'item'}?`}
         message="This permanently removes this Net Worth record. Historical snapshots remain intact."
         confirmLabel="Delete"

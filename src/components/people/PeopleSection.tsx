@@ -48,9 +48,13 @@ import {
 } from '../../lib/udharDeletionApi';
 import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
 import {
+  canAcceptUdhar,
   canCancelUdhar,
   canDeleteRepayment,
+  canRejectUdhar,
+  canSenderCancelUdhar,
   getUdharSettlementStatus,
+  normalizeUdharLifecycleStatus,
 } from '../../lib/sharedUdharEngine';
 import { MyUdharQrModal } from './MyUdharQrModal';
 import { ScanQrModal } from './ScanQrModal';
@@ -70,7 +74,6 @@ interface PeopleSectionProps {
 
 export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) => {
   const {
-    summary,
     refreshTransactions,
     peopleSummaries,
     refreshContacts,
@@ -97,14 +100,22 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   const [udharError, setUdharError] = useState<string | null>(null);
   const [requestsRefreshKey, setRequestsRefreshKey] = useState<number>(0);
 
-  // Tab filter: 'all' | 'lent' | 'borrowed' | 'pending_confirmation' | 'overdue' | 'settled'
+  // Unified lifecycle + direction filters
   const [activeTab, setActiveTab] = useState<
-    'all' | 'lent' | 'borrowed' | 'pending_confirmation' | 'overdue' | 'settled'
+    | 'all'
+    | 'pending_confirmation'
+    | 'confirmed'
+    | 'rejected'
+    | 'settled'
+    | 'lent'
+    | 'borrowed'
+    | 'overdue'
   >('all');
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedRepayments, setExpandedRepayments] = useState<Record<string, boolean>>({});
+  const [busyTxId, setBusyTxId] = useState<string | null>(null);
 
   // Modals state
   const [isAddUdharOpen, setIsAddUdharOpen] = useState(false);
@@ -127,8 +138,11 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     | { type: 'settle_single'; tx: UdharTransactionItem }
     | { type: 'delete_single'; tx: UdharTransactionItem }
     | { type: 'delete_repayment'; tx: UdharTransactionItem; rep: UdharRepayment }
+    | { type: 'reject_request'; tx: UdharTransactionItem }
+    | { type: 'cancel_request'; tx: UdharTransactionItem }
     | null
   >(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState<string>('');
   const [confirmBusy, setConfirmBusy] = useState(false);
 
   // Fetch Udhar Data from Backend
@@ -201,7 +215,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   }, [fetchUdharData, refreshTransactions, refreshNotifications]);
 
   const executePendingConfirmAction = async () => {
-    if (!pendingConfirmAction) return;
+    if (!pendingConfirmAction || confirmBusy) return;
     setConfirmBusy(true);
     try {
       if (pendingConfirmAction.type === 'settle_single') {
@@ -228,6 +242,26 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           await refreshTransactions();
           await refreshNotifications();
         }
+      } else if (pendingConfirmAction.type === 'reject_request') {
+        const res = await udharDeletionApi.rejectUdharTransaction(
+          pendingConfirmAction.tx.id,
+          rejectReasonInput.trim() || undefined
+        );
+        if (res.success) {
+          toast.info('Request Rejected', res.message || 'Udhar request rejected.');
+          setRejectReasonInput('');
+          await fetchUdharData();
+          await refreshTransactions();
+          await refreshNotifications();
+        }
+      } else if (pendingConfirmAction.type === 'cancel_request') {
+        const res = await udharDeletionApi.cancelUdharRequest(pendingConfirmAction.tx.id);
+        if (res.success) {
+          toast.info('Request Cancelled', res.message || 'Pending Udhar request cancelled.');
+          await fetchUdharData();
+          await refreshTransactions();
+          await refreshNotifications();
+        }
       }
       setPendingConfirmAction(null);
     } catch (err: any) {
@@ -237,17 +271,22 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     }
   };
 
-  // Handle Confirm pending transaction
+  // Handle Accept pending transaction
   const handleConfirmTransaction = async (id: string, personName: string) => {
+    if (busyTxId) return;
+    setBusyTxId(id);
     try {
       const res = await udharDeletionApi.confirmUdharTransaction(id);
       if (res.success) {
-        toast.success('Confirmed', `Transaction with ${personName} confirmed.`);
+        toast.success('Request Accepted', `Udhar with ${personName} is now confirmed.`);
         await fetchUdharData();
         await refreshTransactions();
+        await refreshNotifications();
       }
     } catch (err: any) {
-      toast.error('Error', err.message || 'Failed to confirm transaction.');
+      toast.error('Confirmation Failed', err.message || 'Failed to accept Udhar request.');
+    } finally {
+      setBusyTxId(null);
     }
   };
 
@@ -257,6 +296,32 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
 
   // Filtered transactions
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const pendingConfirmationItems = useMemo(
+    () =>
+      udharTransactions.filter(
+        (t) => normalizeUdharLifecycleStatus(t) === 'pending_confirmation'
+      ),
+    [udharTransactions]
+  );
+
+  const rejectedOrCancelledCount = useMemo(
+    () =>
+      udharTransactions.filter((t) => {
+        const lc = normalizeUdharLifecycleStatus(t);
+        return lc === 'rejected' || lc === 'cancelled';
+      }).length,
+    [udharTransactions]
+  );
+
+  const confirmedActiveCount = useMemo(
+    () =>
+      udharTransactions.filter((t) => {
+        const lc = normalizeUdharLifecycleStatus(t);
+        return lc === 'confirmed' || lc === 'disputed';
+      }).length,
+    [udharTransactions]
+  );
 
   const filteredTransactions = useMemo(() => {
     return udharTransactions
@@ -271,26 +336,44 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         );
       })
       .filter((t) => {
+        const lifecycle = normalizeUdharLifecycleStatus(t);
         const cur = parseFloat(String(t.current_balance)) || 0;
-        const isOverdue = t.due_date && t.due_date < todayStr && t.status !== 'settled' && cur > 0;
+        const isConfirmedActive = lifecycle === 'confirmed' || lifecycle === 'disputed';
+        const isOverdue =
+          Boolean(t.due_date && t.due_date < todayStr) &&
+          isConfirmedActive &&
+          cur > 0;
 
         if (activeTab === 'lent') return t.direction === 'gave';
         if (activeTab === 'borrowed') return t.direction === 'took';
-        if (activeTab === 'pending_confirmation') return t.status === 'pending_confirmation';
+        if (activeTab === 'pending_confirmation') return lifecycle === 'pending_confirmation';
+        if (activeTab === 'confirmed') return isConfirmedActive;
+        if (activeTab === 'rejected') return lifecycle === 'rejected' || lifecycle === 'cancelled';
         if (activeTab === 'overdue') return isOverdue;
-        if (activeTab === 'settled') return t.status === 'settled';
+        if (activeTab === 'settled') return lifecycle === 'settled';
         return true;
       });
   }, [udharTransactions, searchQuery, activeTab, todayStr]);
 
-  // Counts for tabs
-  const pendingConfirmationCount = udharTransactions.filter(
-    (t) => t.status === 'pending_confirmation'
-  ).length;
+  const pendingConfirmationCount = pendingConfirmationItems.length;
+
+  const pendingTotalAmount = useMemo(
+    () =>
+      pendingConfirmationItems.reduce(
+        (sum, t) => sum + (parseFloat(String(t.original_amount)) || 0),
+        0
+      ),
+    [pendingConfirmationItems]
+  );
 
   const overdueCount = udharTransactions.filter((t) => {
+    const lifecycle = normalizeUdharLifecycleStatus(t);
     const cur = parseFloat(String(t.current_balance)) || 0;
-    return t.due_date && t.due_date < todayStr && t.status !== 'settled' && cur > 0;
+    return (
+      Boolean(t.due_date && t.due_date < todayStr) &&
+      (lifecycle === 'confirmed' || lifecycle === 'disputed') &&
+      cur > 0
+    );
   }).length;
 
   // Screen 8: Individual Person Details View
@@ -442,6 +525,125 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         }}
       />
 
+      {/* Pending Udhar Confirmation Requests Panel (Method A) */}
+      {pendingConfirmationItems.length > 0 && (
+        <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/70 rounded-3xl p-4 sm:p-5 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <h3 className="text-sm sm:text-base font-black text-amber-950 dark:text-amber-100">
+                  Pending Udhar Requests ({pendingConfirmationItems.length})
+                </h3>
+              </div>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                Total awaiting confirmation: <strong>{formatINR(pendingTotalAmount)}</strong> — excluded from confirmed totals until accepted.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('pending_confirmation')}
+              className="self-start sm:self-auto px-3 py-1 rounded-xl bg-amber-600/15 hover:bg-amber-600/25 text-amber-900 dark:text-amber-200 text-xs font-bold cursor-pointer"
+            >
+              Filter Pending
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {pendingConfirmationItems.map((tx) => {
+              const isSender = Boolean(tx.is_initiator);
+              const amt = parseFloat(String(tx.original_amount)) || 0;
+              const isRowBusy = busyTxId === tx.id;
+              return (
+                <div
+                  key={`pending-${tx.id}`}
+                  className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                          isSender
+                            ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200'
+                            : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200'
+                        }`}
+                      >
+                        {isSender ? 'Pending Confirmation' : 'New Udhar Request'}
+                      </span>
+                      <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100">
+                        {tx.counterpart_name}
+                      </span>
+                      <span className="text-xs font-black text-slate-800 dark:text-slate-200">
+                        {formatINR(amt)}
+                      </span>
+                      <span
+                        className={`text-[11px] font-bold ${
+                          tx.direction === 'gave'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        ({tx.direction === 'gave' ? 'I Gave' : 'I Borrowed'})
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {isSender
+                        ? 'Waiting for recipient confirmation'
+                        : `Sent by ${tx.counterpart_name} on ${formatDisplayDate(tx.transaction_date)}${
+                            tx.description ? ` · ${tx.description}` : ''
+                          }`}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTxForDetail(tx)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                    >
+                      View Details
+                    </button>
+
+                    {!isSender ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={isRowBusy}
+                          onClick={() => handleConfirmTransaction(tx.id, tx.counterpart_name)}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{isRowBusy ? 'Accepting...' : 'Accept'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isRowBusy}
+                          onClick={() => {
+                            setRejectReasonInput('');
+                            setPendingConfirmAction({ type: 'reject_request', tx });
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold cursor-pointer"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPendingConfirmAction({ type: 'cancel_request', tx })}
+                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold cursor-pointer"
+                      >
+                        Cancel Request
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Connected & Saved People Directory */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -533,8 +735,21 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               const isLinked = Boolean(person.linkedUserId || person.isRegisteredUser);
               const balance = person.outstandingBalance;
               const owesYou = balance > 0;
-              const youOwe = balance < 0;
               const isSettled = Math.abs(balance) < 0.01;
+              const matchingTxs = udharTransactions.filter(
+                (t) =>
+                  (person.linkedUserId && t.counterpart_user_id === person.linkedUserId) ||
+                  t.counterpart_name.trim().toLowerCase() === person.name.trim().toLowerCase()
+              );
+              const livePending = matchingTxs.filter(
+                (t) => normalizeUdharLifecycleStatus(t) === 'pending_confirmation'
+              );
+              const personPendingCount =
+                livePending.length > 0 ? livePending.length : person.pendingRequestsCount || 0;
+              const personPendingAmt =
+                livePending.length > 0
+                  ? livePending.reduce((s, t) => s + (parseFloat(String(t.original_amount)) || 0), 0)
+                  : person.pendingRequestsAmount || 0;
 
               return (
                 <div
@@ -548,7 +763,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                       setSelectedPersonForDetails(person);
                     }
                   }}
-                  className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer text-left"
+                  className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3.5 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer text-left"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="relative shrink-0">
@@ -574,7 +789,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
                           {person.name}
                         </p>
@@ -583,15 +798,20 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                             2-WAY
                           </span>
                         )}
+                        {personPendingCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 shrink-0">
+                            {personPendingCount} Pending ({formatINR(personPendingAmt)})
+                          </span>
+                        )}
                       </div>
-                      <p className="text-[10.5px] text-slate-400 truncate">
-                        {isLinked ? 'Connected account' : 'Local contact'}
-                        {person.relationshipType ? ` · ${person.relationshipType}` : ''}
+                      <p className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        Confirmed Gave {formatINR(person.totalGiven)} · Borrowed {formatINR(person.totalReceived)}
+                        {person.lastTransactionDate ? ` · ${formatDisplayDate(person.lastTransactionDate)}` : ''}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                     <span
                       className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
                         isSettled
@@ -632,9 +852,10 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6">
         {/* Tabs & Search */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-          {/* Subtabs */}
+          {/* Subtabs: Lifecycle & Direction Filters */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
             <button
+              type="button"
               onClick={() => setActiveTab('all')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'all'
@@ -646,6 +867,60 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             </button>
 
             <button
+              type="button"
+              onClick={() => setActiveTab('pending_confirmation')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'pending_confirmation'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              <span>Pending</span>
+              {pendingConfirmationCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white">
+                  {pendingConfirmationCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('confirmed')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'confirmed'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              Confirmed ({confirmedActiveCount})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('rejected')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'rejected'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              Rejected ({rejectedOrCancelledCount})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('settled')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'settled'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              Settled
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('lent')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'lent'
@@ -657,6 +932,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             </button>
 
             <button
+              type="button"
               onClick={() => setActiveTab('borrowed')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'borrowed'
@@ -668,22 +944,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
             </button>
 
             <button
-              onClick={() => setActiveTab('pending_confirmation')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'pending_confirmation'
-                  ? 'bg-amber-600 text-white shadow-sm'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              <span>Pending Confirmation</span>
-              {pendingConfirmationCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white">
-                  {pendingConfirmationCount}
-                </span>
-              )}
-            </button>
-
-            <button
+              type="button"
               onClick={() => setActiveTab('overdue')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'overdue'
@@ -697,17 +958,6 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                   {overdueCount}
                 </span>
               )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settled')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === 'settled'
-                  ? 'bg-slate-700 text-white shadow-sm'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              Settled
             </button>
           </div>
 
@@ -755,14 +1005,26 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               const cur = parseFloat(String(tx.current_balance)) || 0;
               const isGave = tx.direction === 'gave';
               const isLinked = Boolean(tx.counterpart_user_id);
-              const isPendingConfirm = tx.status === 'pending_confirmation';
-              const isDisputed = tx.status === 'disputed';
+              const lifecycle = normalizeUdharLifecycleStatus(tx);
+              const isPendingConfirm = lifecycle === 'pending_confirmation';
+              const isRejectedOrCancelled = lifecycle === 'rejected' || lifecycle === 'cancelled';
+              const isDisputed = lifecycle === 'disputed';
               const statusInfo = getUdharSettlementStatus(tx);
               const isSettled = statusInfo.isSettled;
-              const isOverdue = tx.due_date && tx.due_date < todayStr && !isSettled;
+              const isOverdue = Boolean(
+                tx.due_date &&
+                  tx.due_date < todayStr &&
+                  !isSettled &&
+                  !isPendingConfirm &&
+                  !isRejectedOrCancelled
+              );
+              const acceptGuard = canAcceptUdhar(tx, user?.id || user?.uid);
+              const rejectGuard = canRejectUdhar(tx, user?.id || user?.uid);
+              const senderCancelGuard = canSenderCancelUdhar(tx, user?.id || user?.uid);
               const deleteGuard = canCancelUdhar({
                 status: tx.status,
                 deleted_at: tx.deleted_at,
+                notes: tx.notes,
                 direction: tx.direction,
                 is_shared: isLinked,
                 counterpart_user_id: tx.counterpart_user_id,
@@ -778,9 +1040,12 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               return (
                 <div
                   key={tx.id}
+                  data-testid={`udhar-feed-card-${tx.id}`}
                   className={`p-4 sm:p-5 rounded-2xl border transition-all ${
                     isPendingConfirm
                       ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
+                      : isRejectedOrCancelled
+                      ? 'bg-slate-50/70 dark:bg-slate-900/50 border-rose-200/80 dark:border-rose-900/50 opacity-85'
                       : isDisputed
                       ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
                       : isSettled
@@ -809,10 +1074,18 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                             {tx.counterpart_name}
                           </h4>
 
-                          {/* Status Badge */}
-                          {isDisputed ? (
+                          {/* Lifecycle / Settlement Status Badge */}
+                          {isRejectedOrCancelled ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                              {statusInfo.lifecycleLabel}
+                            </span>
+                          ) : isDisputed ? (
                             <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300">
                               Disputed
+                            </span>
+                          ) : isPendingConfirm ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300">
+                              Pending Confirmation
                             </span>
                           ) : isSettled ? (
                             <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
@@ -823,8 +1096,19 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                               Partially Settled
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
-                              {isPendingConfirm ? 'Pending Confirmation' : 'Pending'}
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                              Confirmed
+                            </span>
+                          )}
+
+                          {tx.creation_method === 'qr' && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/70">
+                              QR Verified
+                            </span>
+                          )}
+                          {tx.creation_method === 'code' && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/70">
+                              Code Verified
                             </span>
                           )}
 
@@ -834,7 +1118,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                             </span>
                           )}
 
-                          {isLinked && (
+                          {isLinked && !isRejectedOrCancelled && (
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               <span>2-Way synced</span>
@@ -855,7 +1139,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           <span className="font-mono text-[10px] text-slate-400" title={tx.id}>
                             ID: {tx.id.slice(0, 8)}
                           </span>
-                          {tx.due_date && (
+                          {tx.due_date && !isRejectedOrCancelled && (
                             <>
                               <span>•</span>
                               <span className={isOverdue ? 'text-red-600 font-bold' : 'text-slate-500'}>
@@ -864,6 +1148,22 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                             </>
                           )}
                         </div>
+
+                        {isPendingConfirm && tx.is_initiator && (
+                          <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                            Waiting for recipient confirmation (excluded from confirmed totals)
+                          </p>
+                        )}
+                        {isPendingConfirm && !tx.is_initiator && (
+                          <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                            New Udhaar Request — review and accept or reject before it enters active balance.
+                          </p>
+                        )}
+                        {isRejectedOrCancelled && tx.rejection_reason && (
+                          <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                            Reason: {tx.rejection_reason}
+                          </p>
+                        )}
 
                         {(tx.description || tx.notes) && (
                           <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-200/60 dark:border-slate-700/60 space-y-0.5">
@@ -886,12 +1186,24 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                         <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 font-sans">
                           {formatINR(orig)}
                         </div>
-                        {!isSettled && (
+                        {isPendingConfirm ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-300 sm:text-right font-semibold">
+                            Awaiting confirmation
+                          </p>
+                        ) : isRejectedOrCancelled ? (
+                          <p className="text-xs text-slate-400 sm:text-right font-medium">
+                            Not in active balance
+                          </p>
+                        ) : !isSettled ? (
                           <p className="text-xs text-slate-500 sm:text-right font-medium">
                             Remaining:{' '}
                             <strong className={isGave ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>
                               {formatINR(cur)}
                             </strong>
+                          </p>
+                        ) : (
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400 sm:text-right font-semibold">
+                            Settled (₹0 due)
                           </p>
                         )}
                       </div>
@@ -903,32 +1215,48 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           onClick={() => setSelectedTxForDetail(tx)}
                           className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
                         >
-                          <span>Details</span>
+                          <span>View Details</span>
                         </button>
 
-                        {/* Pending Confirmation Controls: For the counterpart */}
-                        {isPendingConfirm && !tx.is_initiator && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmTransaction(tx.id, tx.counterpart_name)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Confirm</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedTxForDispute(tx)}
-                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
-                            >
-                              Dispute
-                            </button>
-                          </>
+                        {/* Pending Confirmation Controls */}
+                        {isPendingConfirm && acceptGuard.allowed && (
+                          <button
+                            type="button"
+                            disabled={busyTxId === tx.id}
+                            onClick={() => handleConfirmTransaction(tx.id, tx.counterpart_name)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{busyTxId === tx.id ? 'Accepting...' : 'Accept'}</span>
+                          </button>
                         )}
 
-                        {/* Record Repayment & Lender-Only Settle / Delete Controls */}
-                        {!isSettled && !isPendingConfirm && !isDisputed && (
+                        {isPendingConfirm && rejectGuard.allowed && (
+                          <button
+                            type="button"
+                            disabled={busyTxId === tx.id}
+                            onClick={() => {
+                              setRejectReasonInput('');
+                              setPendingConfirmAction({ type: 'reject_request', tx });
+                            }}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        )}
+
+                        {isPendingConfirm && senderCancelGuard.allowed && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingConfirmAction({ type: 'cancel_request', tx })}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
+                          >
+                            Cancel Request
+                          </button>
+                        )}
+
+                        {/* Record Repayment & Lender-Only Settle */}
+                        {!isSettled && !isPendingConfirm && !isRejectedOrCancelled && !isDisputed && (
                           <>
                             <button
                               type="button"
@@ -954,7 +1282,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </>
                         )}
 
-                        {deleteGuard.allowed ? (
+                        {!isPendingConfirm && deleteGuard.allowed ? (
                           <button
                             type="button"
                             onClick={() => setPendingConfirmAction({ type: 'delete_single', tx })}
@@ -965,7 +1293,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>Delete</span>
                           </button>
-                        ) : !isGave && isLinked && !isDisputed ? (
+                        ) : !isPendingConfirm && !isGave && isLinked && !isDisputed && !isRejectedOrCancelled ? (
                           <button
                             type="button"
                             disabled
@@ -979,18 +1307,18 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                         ) : null}
 
                         {/* Expand Repayments history */}
-                        {repaymentsCount > 0 && (
+                        {repaymentsCount > 0 && !isPendingConfirm && !isRejectedOrCancelled && (
                           <button
                             type="button"
                             onClick={() => toggleRepayments(tx.id)}
-                            className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                            className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                           >
                             <span>{repaymentsCount} repayment{repaymentsCount > 1 ? 's' : ''}</span>
                             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </button>
                         )}
                       </div>
-                      {!isGave && isLinked && !isDisputed && !deleteGuard.allowed && (
+                      {!isPendingConfirm && !isGave && isLinked && !isDisputed && !isRejectedOrCancelled && !deleteGuard.allowed && (
                         <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium sm:text-right">
                           You can delete this transaction after it is fully settled.
                         </p>
@@ -1091,6 +1419,12 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           setIsScanQrOpen(false);
           // A scan may have created a pending request.
           setRequestsRefreshKey((k) => k + 1);
+        }}
+        onInstantUdharCreated={() => {
+          fetchUdharData();
+          refreshContacts();
+          refreshTransactions();
+          refreshNotifications();
         }}
         onConnected={(p) => {
           fetchUdharData();
@@ -1195,9 +1529,13 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {pendingConfirmAction.type === 'settle_single'
                   ? 'Settle This Udhar Transaction?'
-                  : pendingConfirmAction.type === 'delete_single'
-                  ? 'Delete This Udhar Transaction?'
-                  : 'Delete This Repayment?'}
+                  : pendingConfirmAction.type === 'reject_request'
+                    ? 'Are you sure you want to reject this Udhaar request?'
+                    : pendingConfirmAction.type === 'cancel_request'
+                      ? 'Cancel Pending Udhar Request?'
+                      : pendingConfirmAction.type === 'delete_single'
+                        ? 'Delete This Udhar Transaction?'
+                        : 'Delete This Repayment?'}
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                 {pendingConfirmAction.type === 'settle_single' ? (
@@ -1209,6 +1547,19 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                       ? ` (“${pendingConfirmAction.tx.description || pendingConfirmAction.tx.notes}”)`
                       : ''}{' '}
                     will be marked as <strong>Settled</strong>. Other pending entries will stay untouched.
+                  </>
+                ) : pendingConfirmAction.type === 'reject_request' ? (
+                  <>
+                    You are rejecting the manual Udhar request of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0)}</strong>{' '}
+                    from <strong>{pendingConfirmAction.tx.counterpart_name}</strong>. It will remain marked as{' '}
+                    <strong>Rejected</strong> in request history and will never affect your confirmed balance.
+                  </>
+                ) : pendingConfirmAction.type === 'cancel_request' ? (
+                  <>
+                    Cancel your unconfirmed Udhar request of{' '}
+                    <strong>{formatINR(parseFloat(String(pendingConfirmAction.tx.original_amount)) || 0)}</strong>{' '}
+                    to <strong>{pendingConfirmAction.tx.counterpart_name}</strong>?
                   </>
                 ) : pendingConfirmAction.type === 'delete_single' ? (
                   <>
@@ -1241,13 +1592,26 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                   </>
                 )}
               </p>
+
+              {pendingConfirmAction.type === 'reject_request' && (
+                <div className="mt-3">
+                  <input
+                    type="text"
+                    placeholder="Reason for rejecting (optional)..."
+                    value={rejectReasonInput}
+                    disabled={confirmBusy}
+                    onChange={(e) => setRejectReasonInput(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => setPendingConfirmAction(null)}
                 disabled={confirmBusy}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1265,8 +1629,12 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                 {confirmBusy
                   ? 'Processing...'
                   : pendingConfirmAction.type === 'settle_single'
-                  ? 'Confirm Settlement'
-                  : 'Confirm Delete'}
+                    ? 'Confirm Settlement'
+                    : pendingConfirmAction.type === 'reject_request'
+                      ? 'Confirm Reject'
+                      : pendingConfirmAction.type === 'cancel_request'
+                        ? 'Cancel Request'
+                        : 'Confirm Delete'}
               </button>
             </div>
           </div>

@@ -117,6 +117,11 @@ import {
   unpackStructuredNote,
   roundMoney,
   parseConnectionRequestKey,
+  normalizeUdharLifecycleStatus,
+  canAcceptUdhar,
+  canRejectUdhar,
+  canSenderCancelUdhar,
+  type UdharCreationMethod,
 } from '../src/lib/sharedUdharEngine.js';
 import { validateReceiptFileSignature } from '../src/lib/financialIntelligenceEngine.js';
 import {
@@ -138,7 +143,10 @@ import {
   connectQrRest,
   getUdharTransactionsRest,
   createUdharTransactionRest,
+  createUdharViaQrRest,
   confirmUdharTransactionRest,
+  rejectUdharTransactionRest,
+  cancelUdharRequestRest,
   disputeUdharTransactionRest,
   repayUdharRest,
   confirmRepaymentRest,
@@ -3332,9 +3340,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
+      const activeTxs = txsRes.rows.filter((t: any) => normalizeUdharLifecycleStatus(t) !== 'deleted');
       const parsedContacts = baseContacts
         .map((c) => {
-          const matchingTxs = txsRes.rows.filter((t: any) => {
+          const matchingTxs = activeTxs.filter((t: any) => {
             if (c.linked_user_id && t.counterpart_user_id === c.linked_user_id) return true;
             if (
               !c.linked_user_id &&
@@ -3352,11 +3361,37 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           let payable = 0;
           let lastDate: string | null = null;
           let pendingCount = 0;
+          let pendingRequestsCount = 0;
+          let pendingRequestsAmount = 0;
+          let pendingGivenAmount = 0;
+          let pendingReceivedAmount = 0;
+          let rejectedCount = 0;
 
           for (const t of matchingTxs) {
+            const lifecycle = normalizeUdharLifecycleStatus(t);
+            if (lifecycle === 'deleted') continue;
+
+            if (t.transaction_date && (!lastDate || t.transaction_date > lastDate)) {
+              lastDate = t.transaction_date;
+            }
+
+            if (lifecycle === 'rejected') {
+              rejectedCount += 1;
+              continue;
+            }
+            if (lifecycle === 'cancelled') continue;
+
             const orig = parseFloat(t.original_amount) || 0;
+            if (lifecycle === 'pending_confirmation') {
+              pendingRequestsCount += 1;
+              pendingRequestsAmount += orig;
+              if (t.direction === 'gave') pendingGivenAmount += orig;
+              else pendingReceivedAmount += orig;
+              continue;
+            }
+
             const cur = parseFloat(t.current_balance) || 0;
-            const isSettled = t.status === 'settled' || cur <= 0.01;
+            const isSettled = lifecycle === 'settled' || cur <= 0.01;
             if (t.direction === 'gave') {
               totalGiven += orig;
               if (!isSettled) receivable += cur;
@@ -3365,9 +3400,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
               if (!isSettled) payable += cur;
             }
             if (!isSettled && cur > 0.01) pendingCount += 1;
-            if (t.transaction_date && (!lastDate || t.transaction_date > lastDate)) {
-              lastDate = t.transaction_date;
-            }
           }
 
           return {
@@ -3381,6 +3413,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             last_transaction_date: lastDate,
             total_transactions_count: matchingTxs.length,
             pending_transactions_count: pendingCount,
+            pending_requests_count: pendingRequestsCount,
+            pending_requests_amount: roundMoney(pendingRequestsAmount),
+            pending_given_amount: roundMoney(pendingGivenAmount),
+            pending_received_amount: roundMoney(pendingReceivedAmount),
+            rejected_count: rejectedCount,
             is_registered: Boolean(c.linked_user_id),
           };
         })
@@ -5108,14 +5145,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         editHistoryByLink[hist.link_id].push(hist);
       }
 
-      const activeTxRows = txRes.rows.filter((r: any) => r.status !== 'cancelled' && !r.deleted_at);
+      const activeTxRows = txRes.rows.filter((r: any) => normalizeUdharLifecycleStatus(r) !== 'deleted');
       const transactions = activeTxRows.map((r: any) => {
         const orig = parseFloat(r.original_amount) || 0;
         const cur = parseFloat(r.current_balance) || 0;
         const computedPaid = Math.max(0, roundMoney(orig - cur));
         const { note, meta } = unpackStructuredNote(r.notes);
+        const normalizedStatus = normalizeUdharLifecycleStatus(r);
         return {
           ...r,
+          status: normalizedStatus,
+          creation_method: (r.creation_method || meta.creation_method || 'manual') as UdharCreationMethod,
+          accepted_by: r.accepted_by || meta.accepted_by || null,
+          rejected_by: r.rejected_by || meta.rejected_by || null,
+          cancelled_by: r.cancelled_by || meta.cancelled_by || null,
+          responded_at: r.responded_at || meta.responded_at || null,
+          cancelled_at: r.cancelled_at || meta.cancelled_at || null,
+          rejection_reason: r.rejection_reason || meta.rejection_reason || null,
           paid_amount: r.paid_amount !== null && r.paid_amount !== undefined ? parseFloat(r.paid_amount) : computedPaid,
           category: r.category || meta.category || 'Personal Loan',
           payment_method: r.payment_method || meta.payment_method || 'UPI',
@@ -5138,8 +5184,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // 16. CREATE UDHAAR TRANSACTION (TWO-SIDED IF LINKED USER): POST /api/udhar/transactions
-    if (pathname === '/api/udhar/transactions' && method === 'POST') {
+    // 16. CREATE UDHAAR TRANSACTION (METHOD A MANUAL -> PENDING_CONFIRMATION; METHOD B QR/CODE -> INSTANT CONFIRMED)
+    // Supports POST /api/udhar/transactions and POST /api/udhar/qr/create-transaction
+    if (
+      (pathname === '/api/udhar/transactions' || pathname === '/api/udhar/qr/create-transaction') &&
+      method === 'POST'
+    ) {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
@@ -5153,14 +5203,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+      const isExplicitQrEndpoint = pathname === '/api/udhar/qr/create-transaction';
+
       if (!isDatabaseAvailable()) {
-        const restRes = await createUdharTransactionRest(authUser, body);
+        const restRes = isExplicitQrEndpoint
+          ? await createUdharViaQrRest(authUser, body)
+          : await createUdharTransactionRest(authUser, body);
         sendJson(res, restRes.status, restRes.body);
         return true;
       }
 
-      const counterpartName = (body.counterpart_name || body.person_name || '').trim();
+      let counterpartName = (body.counterpart_name || body.person_name || '').trim();
       const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || '').trim() || null;
+      let qrToken = (body.qr_token || body.qrToken || body.pairingToken || '').trim();
+      let pairingCode = (body.pairing_code || body.pairingCode || '').replace(/\s+/g, '').trim().toUpperCase();
+      const qrDataRaw = (body.qrData || body.qr_data || '').trim();
       const direction = body.direction;
       const amount = roundMoney(parseFloat(body.amount));
       const txDate = body.transaction_date || body.date || new Date().toISOString().split('T')[0];
@@ -5172,8 +5229,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const attachmentUrl = body.attachment_url || null;
       const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
-      if (!counterpartName) {
-        sendJson(res, 400, { success: false, message: "Person's name is required." });
+      if (isExplicitQrEndpoint && !qrToken && !pairingCode && !qrDataRaw) {
+        sendJson(res, 400, { success: false, code: 'QR_OR_CODE_REQUIRED', message: 'A valid QR token or confirmation code is required.' });
         return true;
       }
       if (!['gave', 'took'].includes(direction)) {
@@ -5202,20 +5259,84 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
-      const packedNotes = packStructuredNote(plainNotes, {
-        category,
-        payment_method: paymentMethod,
-        description: description || undefined,
-        attachment_url: attachmentUrl || undefined,
-      });
-
-      const linkId = crypto.randomUUID();
-
-      // Verify registered counterpart ONLY when explicit counterpartUserId is provided
       let isRegisteredCounterpart = false;
       let registeredUser: any = null;
+      let verifiedCreationMethod: UdharCreationMethod = 'manual';
+      let singleUseTokenRecordId: string | null = null;
 
-      if (counterpartUserId && counterpartUserId !== authUser.id) {
+      if (qrToken || pairingCode || qrDataRaw) {
+        if (qrDataRaw) {
+          const parsedQr = parseQrPayload(qrDataRaw);
+          if (!parsedQr.valid) {
+            sendJson(res, 400, {
+              success: false,
+              code: parsedQr.errorCode || 'INVALID_QR',
+              message: parsedQr.error || 'Invalid QR format. Please scan a genuine My Money Manager Udhar QR.',
+            });
+            return true;
+          }
+          if (parsedQr.token) qrToken = parsedQr.token;
+          if (parsedQr.code) pairingCode = parsedQr.code;
+        }
+
+        if (!qrToken && !pairingCode) {
+          sendJson(res, 400, { success: false, code: 'INVALID_QR', message: 'No valid QR token or confirmation code provided.' });
+          return true;
+        }
+
+        const tokenRes = await query(
+          `SELECT t.id, t.user_id, t.expires_at, t.used, t.is_single_use, t.used_at,
+                  u.id AS account_id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
+                  COALESCE(u.deletion_status, 'none') AS deletion_status
+           FROM public.qr_pairing_tokens t
+           JOIN public.app_users u ON t.user_id = u.id
+           WHERE (t.pairing_token = $1 OR t.pairing_code = $2)
+           ORDER BY t.created_at DESC LIMIT 1`,
+          [qrToken || '__none__', pairingCode || '__none__']
+        );
+
+        if (tokenRes.rows.length === 0) {
+          sendJson(res, 404, { success: false, code: 'NOT_FOUND', message: 'Confirmation code or QR not recognized.' });
+          return true;
+        }
+        const qrRecord = tokenRes.rows[0];
+        if (qrRecord.used || (qrRecord.is_single_use && qrRecord.used_at)) {
+          sendJson(res, 410, { success: false, code: 'QR_REVOKED', message: 'This QR or code has already been revoked or replaced.' });
+          return true;
+        }
+        if (new Date(qrRecord.expires_at) <= new Date()) {
+          sendJson(res, 410, { success: false, code: 'QR_EXPIRED', message: 'This QR or confirmation code has expired.' });
+          return true;
+        }
+        if (!isDiscoverableNormalUser(qrRecord)) {
+          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Target user account is unavailable for shared Udhar.' });
+          return true;
+        }
+        if (qrRecord.user_id === authUser.id) {
+          sendJson(res, 400, { success: false, code: 'SELF_CONNECTION', message: 'You cannot add an Udhar with your own QR or code.' });
+          return true;
+        }
+        const blk = await query(
+          `SELECT 1 FROM public.user_connections
+           WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+             AND status = 'blocked' LIMIT 1`,
+          [authUser.id, qrRecord.user_id]
+        );
+        if (blk.rows.length > 0) {
+          sendJson(res, 403, { success: false, code: 'BLOCKED', message: 'Cannot create shared Udhar with a blocked user.' });
+          return true;
+        }
+
+        isRegisteredCounterpart = true;
+        registeredUser = {
+          id: qrRecord.user_id,
+          full_name: qrRecord.full_name,
+          email: qrRecord.email,
+        };
+        counterpartName = qrRecord.full_name || counterpartName || 'Friend';
+        verifiedCreationMethod = qrToken || (qrDataRaw && qrDataRaw.startsWith('{')) ? 'qr' : 'code';
+        if (qrRecord.is_single_use) singleUseTokenRecordId = qrRecord.id;
+      } else if (counterpartUserId && counterpartUserId !== authUser.id) {
         const uCheck = await query(
           `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
@@ -5238,21 +5359,45 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           }
           isRegisteredCounterpart = true;
           registeredUser = uCheck.rows[0];
+          counterpartName = counterpartName || registeredUser.full_name;
         }
       }
+
+      if (!counterpartName) {
+        sendJson(res, 400, { success: false, message: "Person's name is required." });
+        return true;
+      }
+
+      const linkId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
 
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
 
         if (isRegisteredCounterpart) {
+          const isInstantQr = verifiedCreationMethod === 'qr' || verifiedCreationMethod === 'code';
+          const initialLifecycle = isInstantQr ? 'confirmed' : 'pending_confirmation';
+          const initialConfirmStatus = isInstantQr ? 'confirmed' : 'pending';
+
+          const packedNotes = packStructuredNote(plainNotes, {
+            category,
+            payment_method: paymentMethod,
+            description: description || undefined,
+            attachment_url: attachmentUrl || undefined,
+            creation_method: verifiedCreationMethod,
+            lifecycle_status: initialLifecycle,
+            accepted_by: isInstantQr ? registeredUser.id : undefined,
+            responded_at: isInstantQr ? nowIso : undefined,
+          });
+
           const userARes = await client.query(
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
               transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'confirmed', 'confirmed', TRUE, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, $12, $13, TRUE, $14)
             RETURNING *`,
-            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, packedNotes, attachmentUrl, idempotencyKey]
+            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, packedNotes, attachmentUrl, initialLifecycle, initialConfirmStatus, idempotencyKey]
           );
 
           const counterpartDirection = direction === 'gave' ? 'took' : 'gave';
@@ -5260,7 +5405,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
               transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'confirmed', 'confirmed', FALSE, $12)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, $12, $13, FALSE, $14)`,
             [
               linkId,
               registeredUser.id,
@@ -5273,9 +5418,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
               dueDate,
               packedNotes,
               attachmentUrl,
+              initialLifecycle,
+              initialConfirmStatus,
               idempotencyKey ? `${idempotencyKey}:counterpart` : null,
             ]
           );
+
+          if (singleUseTokenRecordId) {
+            await client.query(
+              `UPDATE public.qr_pairing_tokens SET used = TRUE, used_by_user_id = $1, used_at = NOW() WHERE id = $2`,
+              [authUser.id, singleUseTokenRecordId]
+            ).catch(() => {});
+          }
+
+          await client.query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [authUser.id, registeredUser.id]
+          ).catch(() => {});
+          await client.query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [registeredUser.id, authUser.id]
+          ).catch(() => {});
 
           await client.query(
             `INSERT INTO public.udhar_contacts (user_id, name, email, relationship_type, linked_user_id, updated_at)
@@ -5291,35 +5458,92 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             [registeredUser.id, authUser.full_name, authUser.email, authUser.id]
           );
 
-          // FIXED PRIVACY LEAK: Always scope notification strictly to registeredUser.id (NEVER default to 'all')
-          const notifMsg = `${authUser.full_name} recorded a shared Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? "You'll Pay" : "You'll Receive"}).`;
-          await client.query(
-            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-             VALUES ($1, $2, 'udhar_created', $3, $4, $5, TRUE)`,
-            [`New Shared Udhar from ${authUser.full_name}`, notifMsg, registeredUser.id, linkId, authUser.id]
-          ).catch(() => {});
+          if (isInstantQr) {
+            const viaLabel = verifiedCreationMethod === 'qr' ? 'QR code' : 'confirmation code';
+            await client.query(
+              `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+               VALUES ($1, $2, 'udhar_qr_confirmed', $3, $4, $5, TRUE)`,
+              [
+                `Instant Udhar Confirmed via ${viaLabel}`,
+                `${authUser.full_name} added a confirmed Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+                registeredUser.id,
+                linkId,
+                authUser.id,
+              ]
+            ).catch(() => {});
+          } else {
+            const dirHuman = direction === 'gave' ? 'gave you (You Borrowed)' : 'borrowed from you (You Gave)';
+            await client.query(
+              `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+               VALUES ($1, $2, 'udhar_request', $3, $4, $5, TRUE)`,
+              [
+                'New Udhaar Confirmation Request',
+                `${authUser.full_name} added an Udhaar request of ₹${amount.toLocaleString('en-IN')} (${dirHuman}). Please review and confirm.`,
+                registeredUser.id,
+                linkId,
+                authUser.id,
+              ]
+            ).catch(() => {});
+          }
 
           await client.query('COMMIT');
 
           await ensureReciprocalContact(registeredUser.id, authUser, 'Friend');
 
-          await logSecurityEvent('UDHAR_TWO_SIDED_CREATED', {
+          await logSecurityEvent(isInstantQr ? 'UDHAR_QR_INSTANT_CREATED' : 'UDHAR_REQUEST_CREATED', {
             userId: authUser.id,
             userEmail: authUser.email,
-            details: { linkId, counterpartId: registeredUser.id, amount, direction },
+            details: { linkId, counterpartId: registeredUser.id, amount, direction, creationMethod: verifiedCreationMethod },
           });
 
-          notifyUdharCreated({
-            initiatorUserId: authUser.id,
-            initiatorName: authUser.full_name || 'Friend',
-            recipientUserId: registeredUser.id,
-            transactionId: userARes.rows[0].id,
-            contactName: registeredUser.full_name || 'Friend',
-            amount,
-            direction,
-            dueDate,
-            skipEmail: true,
-          }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
+          if (isInstantQr) {
+            const viaLabel = verifiedCreationMethod === 'qr' ? 'QR code' : 'confirmation code';
+            Promise.all([
+              createNotification({
+                userId: registeredUser.id,
+                title: `Instant Udhar Confirmed via ${viaLabel}`,
+                message: `${authUser.full_name} added a confirmed Udhar of ₹${amount.toLocaleString('en-IN')} (${direction === 'gave' ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+                category: 'udhar',
+                type: 'success',
+                deepLink: 'people',
+                dedupeKey: `udhar_qr_rec_${linkId}`,
+                metadata: { actionType: 'udhar_qr_confirmed', linkId, udharId: userARes.rows[0].id, amount, creationMethod: verifiedCreationMethod },
+                channels: ['in_app', 'push'],
+              }),
+              createNotification({
+                userId: authUser.id,
+                title: `Udhar Added via ${viaLabel}`,
+                message: `Your Udhar of ₹${amount.toLocaleString('en-IN')} with ${registeredUser.full_name} was confirmed immediately.`,
+                category: 'udhar',
+                type: 'success',
+                deepLink: 'people',
+                dedupeKey: `udhar_qr_init_${linkId}`,
+                metadata: { actionType: 'udhar_qr_confirmed', linkId, udharId: userARes.rows[0].id, amount, creationMethod: verifiedCreationMethod },
+                channels: ['in_app', 'push'],
+              }),
+            ]).catch(() => {});
+          } else {
+            const dirHuman = direction === 'gave' ? 'gave you (You Borrowed)' : 'borrowed from you (You Gave)';
+            createNotification({
+              userId: registeredUser.id,
+              title: 'New Udhaar Confirmation Request',
+              message: `${authUser.full_name} added an Udhaar request of ₹${amount.toLocaleString('en-IN')} (${dirHuman}). Please review and confirm.`,
+              category: 'udhar',
+              type: 'info',
+              deepLink: 'people',
+              dedupeKey: `udhar_req_${linkId}`,
+              metadata: {
+                actionType: 'udhar_confirmation_request',
+                linkId,
+                udharId: userARes.rows[0].id,
+                requesterUserId: authUser.id,
+                requesterName: authUser.full_name,
+                amount,
+                creationMethod: 'manual',
+              },
+              channels: ['in_app', 'push'],
+            }).catch((e) => console.warn('[Notify Udhar Request Error]:', e));
+          }
 
           sendUdharCreatedEmails({
             transactionId: userARes.rows[0].id,
@@ -5334,15 +5558,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             amount,
             description: description || plainNotes || undefined,
             transactionDate: txDate,
-            status: 'confirmed',
+            status: initialLifecycle,
           }).catch((e) => console.warn('[Udhar Created Two-Sided Email Error]:', e));
 
           const createdRow = userARes.rows[0];
           sendJson(res, 201, {
             success: true,
-            message: `Shared Udhar recorded with ${registeredUser.full_name}. Synchronized across both accounts.`,
+            requiresConfirmation: !isInstantQr,
+            creationMethod: verifiedCreationMethod,
+            message: isInstantQr
+              ? 'Udhaar added successfully.'
+              : `Udhaar request sent to ${registeredUser.full_name}. Waiting for recipient confirmation.`,
             transaction: {
               ...createdRow,
+              status: initialLifecycle,
+              creation_method: verifiedCreationMethod,
               category,
               payment_method: paymentMethod,
               description: description || null,
@@ -5355,6 +5585,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           });
           return true;
         } else {
+          const packedNotes = packStructuredNote(plainNotes, {
+            category,
+            payment_method: paymentMethod,
+            description: description || undefined,
+            attachment_url: attachmentUrl || undefined,
+            creation_method: 'manual',
+            lifecycle_status: 'confirmed',
+          });
+
           const singleRes = await client.query(
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
@@ -5392,9 +5631,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           const createdRow = singleRes.rows[0];
           sendJson(res, 201, {
             success: true,
+            requiresConfirmation: false,
+            creationMethod: 'manual',
             message: `Local Udhar recorded for ${counterpartName}.`,
             transaction: {
               ...createdRow,
+              status: 'confirmed',
+              creation_method: 'manual',
               category,
               payment_method: paymentMethod,
               description: description || null,
@@ -5415,7 +5658,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // 17. CONFIRM TRANSACTION: POST /api/udhar/transactions/:id/confirm
+    // 17. CONFIRM TRANSACTION (RECIPIENT ONLY): POST /api/udhar/transactions/:id/confirm
     const confirmMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/confirm$/);
     if (confirmMatch && method === 'POST') {
       const authUser = await authenticateRequest(req);
@@ -5438,16 +5681,54 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
-      if (tx.is_initiator) {
-        sendJson(res, 403, { success: false, message: 'Only the recipient counterpart can confirm this transaction.' });
+      const guard = canAcceptUdhar(tx, authUser.id);
+      if (!guard.allowed) {
+        sendJson(res, guard.httpStatus || 403, { success: false, code: guard.code, message: guard.reason });
         return true;
       }
-      await query(
+
+      const nowIso = new Date().toISOString();
+      const { note, meta } = unpackStructuredNote(tx.notes);
+      const updatedPackedNotes = packStructuredNote(note, {
+        ...meta,
+        lifecycle_status: 'confirmed',
+        accepted_by: authUser.id,
+        responded_at: nowIso,
+      });
+
+      const updRes = await query(
         `UPDATE public.udhar_transactions 
-         SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
-         WHERE link_id = $1`,
-        [tx.link_id]
+         SET status = 'confirmed', confirmation_status = 'confirmed', notes = $2, updated_at = NOW() 
+         WHERE link_id = $1 AND status = 'pending_confirmation'
+         RETURNING id`,
+        [tx.link_id, updatedPackedNotes]
       );
+
+      if (updRes.rows.length === 0) {
+        sendJson(res, 409, { success: false, code: 'CONCURRENT_MODIFICATION', message: 'This Udhar request has already been accepted, rejected, or cancelled.' });
+        return true;
+      }
+
+      await query(`UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`, [tx.link_id, tx.id]).catch(() => {});
+      await query(
+        `UPDATE public.user_notifications SET is_deleted = TRUE, deleted_at = NOW()
+         WHERE related_entity_id = $1 OR related_entity_id = $2 OR metadata->>'linkId' = $1`,
+        [tx.link_id, tx.id]
+      ).catch(() => {});
+
+      if (tx.counterpart_user_id) {
+        createNotification({
+          userId: tx.counterpart_user_id,
+          title: 'Udhaar Request Accepted',
+          message: `${authUser.full_name} accepted your Udhaar request of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}. Both balances are now updated.`,
+          category: 'udhar',
+          type: 'success',
+          deepLink: 'people',
+          dedupeKey: `udhar_acc_${tx.link_id}`,
+          metadata: { actionType: 'udhar_accepted', linkId: tx.link_id, udharId: tx.id, acceptedBy: authUser.id },
+          channels: ['in_app', 'push'],
+        }).catch(() => {});
+      }
 
       await logSecurityEvent('UDHAR_CONFIRMED', {
         userId: authUser.id,
@@ -5455,7 +5736,194 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         details: { txId, linkId: tx.link_id },
       });
 
-      sendJson(res, 200, { success: true, message: 'Transaction confirmed successfully on both accounts.' });
+      sendJson(res, 200, { success: true, status: 'confirmed', message: 'Udhaar request accepted successfully.' });
+      return true;
+    }
+
+    // 17B. REJECT PENDING UDHAAR REQUEST (RECIPIENT ONLY): POST /api/udhar/transactions/:id/reject
+    const rejectMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/reject$/);
+    if (rejectMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = rejectMatch[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await rejectUdharTransactionRest(authUser, txId, reason);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      const guard = canRejectUdhar(tx, authUser.id);
+      if (!guard.allowed) {
+        sendJson(res, guard.httpStatus || 403, { success: false, code: guard.code, message: guard.reason });
+        return true;
+      }
+
+      const nowIso = new Date().toISOString();
+      const cleanReason = reason ? reason.slice(0, 400) : 'Rejected by recipient';
+      const { note, meta } = unpackStructuredNote(tx.notes);
+      const updatedPackedNotes = packStructuredNote(note, {
+        ...meta,
+        lifecycle_status: 'rejected',
+        rejected_by: authUser.id,
+        responded_at: nowIso,
+        rejection_reason: cleanReason,
+      });
+
+      let updRows: any[] = [];
+      try {
+        const r = await query(
+          `UPDATE public.udhar_transactions
+           SET status = 'rejected', confirmation_status = 'rejected', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
+           WHERE link_id = $1 AND status = 'pending_confirmation'
+           RETURNING id`,
+          [tx.link_id, updatedPackedNotes]
+        );
+        updRows = r.rows;
+      } catch {
+        const r = await query(
+          `UPDATE public.udhar_transactions
+           SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
+           WHERE link_id = $1 AND status = 'pending_confirmation'
+           RETURNING id`,
+          [tx.link_id, updatedPackedNotes]
+        );
+        updRows = r.rows;
+      }
+
+      if (updRows.length === 0) {
+        sendJson(res, 409, { success: false, code: 'CONCURRENT_MODIFICATION', message: 'This Udhar request has already been handled.' });
+        return true;
+      }
+
+      await query(`UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`, [tx.link_id, tx.id]).catch(() => {});
+      await query(
+        `UPDATE public.user_notifications SET is_deleted = TRUE, deleted_at = NOW()
+         WHERE related_entity_id = $1 OR related_entity_id = $2 OR metadata->>'linkId' = $1`,
+        [tx.link_id, tx.id]
+      ).catch(() => {});
+
+      if (tx.counterpart_user_id) {
+        createNotification({
+          userId: tx.counterpart_user_id,
+          title: 'Udhaar Request Rejected',
+          message: `${authUser.full_name} rejected your Udhaar request of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+          category: 'udhar',
+          type: 'warning',
+          deepLink: 'people',
+          dedupeKey: `udhar_rej_${tx.link_id}`,
+          metadata: { actionType: 'udhar_rejected', linkId: tx.link_id, udharId: tx.id, rejectedBy: authUser.id, reason: cleanReason },
+          channels: ['in_app', 'push'],
+        }).catch(() => {});
+      }
+
+      await logSecurityEvent('UDHAR_REJECTED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id, reason: cleanReason },
+      });
+
+      sendJson(res, 200, { success: true, status: 'rejected', message: 'You rejected this Udhaar request.' });
+      return true;
+    }
+
+    // 17C. CANCEL PENDING UDHAAR REQUEST (SENDER ONLY): POST /api/udhar/transactions/:id/cancel-request
+    const cancelReqMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/cancel-request$/);
+    if (cancelReqMatch && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const txId = cancelReqMatch[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+
+      if (!isDatabaseAvailable()) {
+        const restRes = await cancelUdharRequestRest(authUser, txId, reason);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+        return true;
+      }
+
+      const tx = txRes.rows[0];
+      const guard = canSenderCancelUdhar(tx, authUser.id);
+      if (!guard.allowed) {
+        sendJson(res, guard.httpStatus || 403, { success: false, code: guard.code, message: guard.reason });
+        return true;
+      }
+
+      const nowIso = new Date().toISOString();
+      const cleanReason = reason ? reason.slice(0, 400) : 'Cancelled by sender';
+      const { note, meta } = unpackStructuredNote(tx.notes);
+      const updatedPackedNotes = packStructuredNote(note, {
+        ...meta,
+        lifecycle_status: 'cancelled',
+        cancelled_by: authUser.id,
+        cancelled_at: nowIso,
+        rejection_reason: cleanReason,
+      });
+
+      const updRes = await query(
+        `UPDATE public.udhar_transactions
+         SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
+         WHERE link_id = $1 AND status = 'pending_confirmation'
+         RETURNING id`,
+        [tx.link_id, updatedPackedNotes]
+      );
+
+      if (updRes.rows.length === 0) {
+        sendJson(res, 409, { success: false, code: 'CONCURRENT_MODIFICATION', message: 'This Udhar request has already been responded to or cancelled.' });
+        return true;
+      }
+
+      await query(`UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`, [tx.link_id, tx.id]).catch(() => {});
+      await query(
+        `UPDATE public.user_notifications SET is_deleted = TRUE, deleted_at = NOW()
+         WHERE related_entity_id = $1 OR related_entity_id = $2 OR metadata->>'linkId' = $1`,
+        [tx.link_id, tx.id]
+      ).catch(() => {});
+
+      if (tx.counterpart_user_id) {
+        createNotification({
+          userId: tx.counterpart_user_id,
+          title: 'Udhaar Request Cancelled',
+          message: `${authUser.full_name} cancelled their pending Udhaar request of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+          category: 'udhar',
+          type: 'info',
+          deepLink: 'people',
+          dedupeKey: `udhar_canc_${tx.link_id}`,
+          metadata: { actionType: 'udhar_request_cancelled', linkId: tx.link_id, udharId: tx.id, cancelledBy: authUser.id },
+          channels: ['in_app', 'push'],
+        }).catch(() => {});
+      }
+
+      await logSecurityEvent('UDHAR_REQUEST_CANCELLED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id, reason: cleanReason },
+      });
+
+      sendJson(res, 200, { success: true, status: 'cancelled', message: 'Pending Udhaar request cancelled.' });
       return true;
     }
 
@@ -5593,7 +6061,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           repayAmount,
           isShared: Boolean(tx.counterpart_user_id),
           actorRole: tx.direction === 'gave' ? 'lender' : 'borrower',
-          udharStatus: tx.status,
+          udharStatus: normalizeUdharLifecycleStatus(tx),
         });
 
         if (!calc.valid) {
@@ -5953,7 +6421,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           {
             original_amount: parseFloat(tx.original_amount) || 0,
             paid_amount: totalConfirmedRepaid,
-            status: tx.status,
+            status: normalizeUdharLifecycleStatus(tx),
             notes: prevPlainNote,
             transaction_date: tx.transaction_date,
             due_date: tx.due_date,
@@ -5985,6 +6453,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const newStatus = validation.nextStatus!;
         const nextPlainNote = body.notes !== undefined ? (body.notes || '').trim() : prevPlainNote;
         const nextPackedNotes = packStructuredNote(nextPlainNote, {
+          ...prevMeta,
+          lifecycle_status: newStatus,
           category: body.category !== undefined ? body.category : prevMeta.category,
           payment_method: body.payment_method !== undefined ? body.payment_method : prevMeta.payment_method,
           description: body.description !== undefined ? body.description : prevMeta.description,
@@ -6141,17 +6611,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
-        if (tx.status === 'settled' || currentBal <= 0.01) {
+        const txLifecycle = normalizeUdharLifecycleStatus(tx);
+        if (txLifecycle === 'settled' || (txLifecycle === 'confirmed' && currentBal <= 0.01)) {
           await client.query('ROLLBACK');
           sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
           return true;
         }
-        if (tx.status === 'cancelled' || tx.deleted_at) {
+        if (txLifecycle === 'pending_confirmation') {
           await client.query('ROLLBACK');
-          sendJson(res, 400, { success: false, message: 'Cannot settle a cancelled transaction.' });
+          sendJson(res, 409, { success: false, message: 'Cannot settle a request that has not been confirmed by the recipient yet.' });
           return true;
         }
-        if (tx.status === 'disputed') {
+        if (txLifecycle === 'rejected' || txLifecycle === 'cancelled' || txLifecycle === 'deleted') {
+          await client.query('ROLLBACK');
+          sendJson(res, 400, { success: false, message: `Cannot settle a ${txLifecycle} transaction.` });
+          return true;
+        }
+        if (txLifecycle === 'disputed') {
           await client.query('ROLLBACK');
           sendJson(res, 409, { success: false, message: 'Cannot settle a disputed transaction. Resolve the dispute first.' });
           return true;
@@ -6303,15 +6779,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           repayments: activeReps,
           currentStatus: tx.status,
         });
-        const effectiveStatus = tx.status === 'cancelled' || tx.deleted_at
-          ? 'cancelled'
-          : tx.status === 'disputed'
+        const baseLifecycle = normalizeUdharLifecycleStatus(tx);
+        const effectiveStatus = baseLifecycle === 'deleted' || baseLifecycle === 'cancelled' || baseLifecycle === 'rejected'
+          ? baseLifecycle
+          : baseLifecycle === 'disputed'
             ? 'disputed'
-            : (activeReps.length > 0 ? recalc.nextStatus : tx.status);
+            : baseLifecycle === 'pending_confirmation'
+              ? 'pending_confirmation'
+              : (activeReps.length > 0 ? recalc.nextStatus : baseLifecycle);
 
         const guard = canCancelUdhar({
           status: effectiveStatus,
           deleted_at: tx.deleted_at,
+          notes: tx.notes,
           direction: tx.direction,
           is_shared: Boolean(tx.counterpart_user_id),
           counterpart_user_id: tx.counterpart_user_id,
@@ -6333,16 +6813,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        const nowIso = new Date().toISOString();
+        const { note: prevPlain, meta: prevMeta } = unpackStructuredNote(tx.notes);
+        const deletedPackedNotes = packStructuredNote(prevPlain, {
+          ...prevMeta,
+          lifecycle_status: 'deleted',
+          cancelled_at: nowIso,
+          cancelled_by: authUser.id,
+        });
+
         let updatedRows: any[] = [];
         await client.query('SAVEPOINT delete_audit_cols');
         try {
           const upd = await client.query(
             `UPDATE public.udhar_transactions
-             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $4, updated_at = NOW(),
                  deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
-             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             WHERE link_id = $1 AND deleted_at IS NULL AND status <> 'disputed'
              RETURNING id`,
-            [tx.link_id, authUser.id, cleanReason]
+            [tx.link_id, authUser.id, cleanReason, deletedPackedNotes]
           );
           updatedRows = upd.rows;
           await client.query('RELEASE SAVEPOINT delete_audit_cols');
@@ -6350,10 +6839,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           await client.query('ROLLBACK TO SAVEPOINT delete_audit_cols');
           const upd = await client.query(
             `UPDATE public.udhar_transactions
-             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
              WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
              RETURNING id`,
-            [tx.link_id]
+            [tx.link_id, deletedPackedNotes]
           );
           updatedRows = upd.rows;
         }
@@ -6402,6 +6891,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         ).catch(() => {});
 
         await client.query('COMMIT');
+
+        if (tx.counterpart_user_id) {
+          createNotification({
+            userId: tx.counterpart_user_id,
+            title: `Udhar Deleted by ${authUser.full_name}`,
+            message: `${authUser.full_name} permanently deleted the shared Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}. Both accounts have been updated.`,
+            category: 'udhar',
+            type: 'info',
+            deepLink: 'people',
+            dedupeKey: `udhar_del_${tx.link_id}`,
+            metadata: { actionType: 'udhar_deleted', deletedLinkId: tx.link_id, deletedTxId: tx.id },
+            channels: ['in_app', 'push'],
+          }).catch(() => {});
+        }
 
         await logSecurityEvent('UDHAR_DELETED', {
           userId: authUser.id,
@@ -6644,11 +7147,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         `SELECT * FROM public.udhar_transactions
          WHERE id = $1
            AND (user_id = $2 OR counterpart_user_id = $2)
-           AND status <> 'cancelled'
            AND deleted_at IS NULL`,
         [txId, authUser.id]
       );
-      if (txRes.rows.length === 0) {
+      if (txRes.rows.length === 0 || normalizeUdharLifecycleStatus(txRes.rows[0]) === 'deleted') {
         sendJson(res, 404, { success: false, message: 'Transaction not found.' });
         return true;
       }

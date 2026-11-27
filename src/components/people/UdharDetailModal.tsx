@@ -29,10 +29,14 @@ import {
 } from '../../lib/udharDeletionApi';
 import { formatINR, formatDisplayDate } from '../../lib/dateUtils';
 import {
+  canAcceptUdhar,
   canCancelUdhar,
   canDeleteRepayment,
+  canRejectUdhar,
+  canSenderCancelUdhar,
   isActiveRepayment,
   getUdharSettlementStatus,
+  normalizeUdharLifecycleStatus,
 } from '../../lib/sharedUdharEngine';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { EditUdharModal } from './EditUdharModal';
@@ -66,6 +70,9 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [isRejectRequestOpen, setIsRejectRequestOpen] = useState(false);
+  const [isCancelRequestOpen, setIsCancelRequestOpen] = useState(false);
+  const [requestRejectReason, setRequestRejectReason] = useState('');
   const [deletingRepayment, setDeletingRepayment] = useState<UdharRepayment | null>(null);
   const [isSettlingTx, setIsSettlingTx] = useState(false);
 
@@ -103,14 +110,29 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
     }
   }, [isOpen, transaction]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isProcessingAction && !isSettlingTx) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, isProcessingAction, isSettlingTx, onClose]);
+
   if (!isOpen || !activeTx) return null;
 
   const isLender = activeTx.direction === 'gave';
   const isTwoSided = Boolean(activeTx.counterpart_user_id);
   const canManageAsLender = !isTwoSided || isLender;
+  const lifecycle = normalizeUdharLifecycleStatus(activeTx);
+  const isPendingConfirm = lifecycle === 'pending_confirmation';
+  const isRejectedOrCancelled = lifecycle === 'rejected' || lifecycle === 'cancelled';
   const statusInfo = getUdharSettlementStatus({
     status: activeTx.status,
     deleted_at: activeTx.deleted_at,
+    notes: activeTx.notes,
     original_amount: activeTx.original_amount,
     current_balance: activeTx.current_balance,
     paid_amount: activeTx.paid_amount,
@@ -120,10 +142,11 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const originalAmt = statusInfo.originalAmount;
   const paidAmt = statusInfo.paidAmount;
   const isSettled = statusInfo.isSettled;
-  const isCancelled = activeTx.status === 'cancelled';
+  const isCancelled = lifecycle === 'cancelled' || lifecycle === 'deleted';
   const cancelGuard = canCancelUdhar({
     status: activeTx.status,
     deleted_at: activeTx.deleted_at,
+    notes: activeTx.notes,
     direction: activeTx.direction,
     is_shared: isTwoSided,
     counterpart_user_id: activeTx.counterpart_user_id,
@@ -133,8 +156,17 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
     settled_at: activeTx.settled_at,
     repayments: repaymentsList.length > 0 ? repaymentsList : activeTx.repayments,
   });
+  const acceptGuard = canAcceptUdhar(activeTx, user?.id || user?.uid);
+  const rejectGuard = canRejectUdhar(activeTx, user?.id || user?.uid);
+  const senderCancelGuard = canSenderCancelUdhar(activeTx, user?.id || user?.uid);
   const todayStr = new Date().toISOString().split('T')[0];
-  const isOverdue = activeTx.due_date && activeTx.due_date < todayStr && !isSettled && !isCancelled && currentBal > 0;
+  const isOverdue =
+    Boolean(activeTx.due_date && activeTx.due_date < todayStr) &&
+    !isSettled &&
+    !isPendingConfirm &&
+    !isRejectedOrCancelled &&
+    !isCancelled &&
+    currentBal > 0;
 
   const notifyUdharChanged = () => {
     if (typeof window !== 'undefined') {
@@ -208,6 +240,60 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
       }
     } catch (err: any) {
       toast.error('Confirmation Failed', err.message);
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleAcceptPendingRequest = async () => {
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.confirmUdharTransaction(activeTx.id);
+      if (res.success) {
+        toast.success('Request Accepted', res.message || 'Udhar confirmed on both accounts.');
+        await fetchDetails();
+        notifyUdharChanged();
+      }
+    } catch (err: any) {
+      toast.error('Confirmation Failed', err?.message || 'Could not accept this request.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleRejectPendingRequest = async () => {
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.rejectUdharTransaction(
+        activeTx.id,
+        requestRejectReason.trim() || undefined
+      );
+      if (res.success) {
+        toast.info('Request Rejected', res.message || 'Udhar request marked as rejected.');
+        setIsRejectRequestOpen(false);
+        setRequestRejectReason('');
+        await fetchDetails();
+        notifyUdharChanged();
+      }
+    } catch (err: any) {
+      toast.error('Reject Failed', err?.message || 'Could not reject this request.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleSenderCancelPendingRequest = async () => {
+    try {
+      setIsProcessingAction(true);
+      const res = await udharDeletionApi.cancelUdharRequest(activeTx.id);
+      if (res.success) {
+        toast.info('Request Cancelled', res.message || 'Pending Udhar request cancelled.');
+        setIsCancelRequestOpen(false);
+        await fetchDetails();
+        notifyUdharChanged();
+      }
+    } catch (err: any) {
+      toast.error('Cancel Failed', err?.message || 'Could not cancel this request.');
     } finally {
       setIsProcessingAction(false);
     }
@@ -345,16 +431,45 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                   isSettled
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                    : statusInfo.code === 'disputed'
+                    : isRejectedOrCancelled || statusInfo.code === 'disputed'
                       ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                      : isPendingConfirm
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                 }`}
               >
-                {activeTx.status === 'pending_confirmation' && !isSettled
-                  ? 'Pending Confirmation'
-                  : statusInfo.label}
+                {statusInfo.lifecycleLabel}
               </span>
             </div>
+
+            {isTwoSided && (
+              <div className="flex items-center justify-between text-slate-500">
+                <span>Method:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {activeTx.creation_method === 'qr'
+                    ? 'Instant via QR Scan'
+                    : activeTx.creation_method === 'code'
+                      ? 'Instant via Confirmation Code'
+                      : 'Manual Entry (2-Way)'}
+                </span>
+              </div>
+            )}
+
+            {isPendingConfirm && (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                {activeTx.is_initiator
+                  ? 'Waiting for recipient confirmation. Not counted in confirmed totals yet.'
+                  : 'New Udhar request awaiting your decision. Accepting will update both confirmed balances.'}
+              </div>
+            )}
+
+            {isRejectedOrCancelled && (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[11px] font-semibold text-rose-800 dark:text-rose-200">
+                {lifecycle === 'rejected'
+                  ? `Request was rejected${activeTx.rejection_reason ? `: "${activeTx.rejection_reason}"` : '.'}`
+                  : 'Request was cancelled by sender prior to confirmation.'}
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-slate-500">
               <span>Transaction ID:</span>
@@ -604,7 +719,44 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            {!isSettled && !isCancelled && (
+            {isPendingConfirm && acceptGuard.allowed && (
+              <button
+                type="button"
+                disabled={isProcessingAction}
+                onClick={handleAcceptPendingRequest}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>{isProcessingAction ? 'Accepting...' : 'Accept Request'}</span>
+              </button>
+            )}
+
+            {isPendingConfirm && rejectGuard.allowed && (
+              <button
+                type="button"
+                disabled={isProcessingAction}
+                onClick={() => {
+                  setRequestRejectReason('');
+                  setIsRejectRequestOpen(true);
+                }}
+                className="py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Reject Request
+              </button>
+            )}
+
+            {isPendingConfirm && senderCancelGuard.allowed && (
+              <button
+                type="button"
+                disabled={isProcessingAction}
+                onClick={() => setIsCancelRequestOpen(true)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel Request
+              </button>
+            )}
+
+            {!isSettled && !isCancelled && !isPendingConfirm && !isRejectedOrCancelled && (
               <button
                 type="button"
                 onClick={() => setIsRepayModalOpen(true)}
@@ -615,7 +767,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && !isCancelled && isLender && (
+            {!isSettled && !isCancelled && !isPendingConfirm && !isRejectedOrCancelled && isLender && (
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(true)}
@@ -626,7 +778,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isSettled && !isCancelled && canManageAsLender && activeTx.status !== 'disputed' && (
+            {!isSettled && !isCancelled && !isPendingConfirm && !isRejectedOrCancelled && canManageAsLender && activeTx.status !== 'disputed' && (
               <button
                 type="button"
                 onClick={() => setIsSettleModalOpen(true)}
@@ -707,6 +859,30 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
       )}
 
       <ConfirmModal
+        isOpen={isRejectRequestOpen}
+        title="Are you sure you want to reject this Udhaar request?"
+        subtitle={`Manual request of ${formatINR(originalAmt)} from ${activeTx.counterpart_name}`}
+        message="This request will remain visible as Rejected in request history and will never affect your confirmed Udhar balances."
+        confirmLabel="Confirm Reject"
+        isDestructive={true}
+        isLoading={isProcessingAction}
+        onConfirm={handleRejectPendingRequest}
+        onCancel={() => !isProcessingAction && setIsRejectRequestOpen(false)}
+      />
+
+      <ConfirmModal
+        isOpen={isCancelRequestOpen}
+        title="Cancel Pending Udhar Request?"
+        subtitle={`Waiting for ${activeTx.counterpart_name}`}
+        message={`Cancel your pending Udhar request of ${formatINR(originalAmt)} with ${activeTx.counterpart_name}?`}
+        confirmLabel="Cancel Request"
+        isDestructive={true}
+        isLoading={isProcessingAction}
+        onConfirm={handleSenderCancelPendingRequest}
+        onCancel={() => !isProcessingAction && setIsCancelRequestOpen(false)}
+      />
+
+      <ConfirmModal
         isOpen={isCancelConfirmOpen}
         title="Delete This Udhar Entry?"
         subtitle="Only this Udhar entry and its repayments will be removed; other entries stay untouched."
@@ -715,8 +891,9 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         }? All totals across People, Dashboard, and Reports will recalculate immediately.`}
         confirmLabel="Delete Entry"
         isDestructive={true}
+        isLoading={isProcessingAction}
         onConfirm={handleCancelTransaction}
-        onCancel={() => setIsCancelConfirmOpen(false)}
+        onCancel={() => !isProcessingAction && setIsCancelConfirmOpen(false)}
       />
 
       <ConfirmModal
@@ -738,8 +915,9 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         }
         confirmLabel="Delete Repayment"
         isDestructive={true}
+        isLoading={isProcessingAction}
         onConfirm={handleDeleteRepaymentConfirm}
-        onCancel={() => setDeletingRepayment(null)}
+        onCancel={() => !isProcessingAction && setDeletingRepayment(null)}
       />
     </>
   );

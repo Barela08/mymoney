@@ -937,7 +937,7 @@ export const RoomSection: React.FC<RoomSectionProps> = ({ onOpenAddModal }) => {
                 title="No Room Expenses Recorded Yet"
                 description="Track room rent, groceries & ration, LPG gas cylinder refills, and electricity bills."
                 actionLabel="+ Add Room Expense"
-                onAction={() => setActiveCategory('all')}
+                onAction={() => onOpenAddModal('room')}
                 onClearFilters={() => {
                   setSearchQuery('');
                   setActiveCategory('all');

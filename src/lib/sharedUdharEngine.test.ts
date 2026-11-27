@@ -9,6 +9,10 @@ import {
   calculateRepaymentApplication,
   validateUdharEdit,
   canCancelUdhar,
+  canAcceptUdhar,
+  canRejectUdhar,
+  canSenderCancelUdhar,
+  normalizeUdharLifecycleStatus,
   isActiveRepayment,
   canDeleteRepayment,
   recalculateUdharFromRepayments,
@@ -472,3 +476,118 @@ test('QR Payload validation, search normalization, privacy masking, and structur
   assert.equal(dash.peopleWithActiveUdhar, 1);
   assert.equal(dash.netBalance, 3000);
 });
+
+test('Scenario 11 & 12: Manual Udhaar Pending Confirmation, Recipient Accept/Reject, Sender Cancel, and Balance Separation', () => {
+  // 1. Packed MM_META distinguishes Rejected vs Sender-Cancelled vs Deleted cleanly
+  const rejectedNote = packStructuredNote('Lunch split', {
+    creation_method: 'manual',
+    lifecycle_status: 'rejected',
+    rejected_by: 'user-b',
+    responded_at: '2026-11-27T10:00:00Z',
+    rejection_reason: 'Wrong amount',
+  });
+  assert.equal(
+    normalizeUdharLifecycleStatus({ status: 'cancelled', deleted_at: null, notes: rejectedNote }),
+    'rejected'
+  );
+
+  const senderCancelledNote = packStructuredNote('Dinner split', {
+    creation_method: 'manual',
+    lifecycle_status: 'cancelled',
+    cancelled_by: 'user-a',
+    cancelled_at: '2026-11-27T10:05:00Z',
+  });
+  assert.equal(
+    normalizeUdharLifecycleStatus({ status: 'cancelled', deleted_at: null, notes: senderCancelledNote }),
+    'cancelled'
+  );
+
+  assert.equal(
+    normalizeUdharLifecycleStatus({ status: 'cancelled', deleted_at: '2026-11-27T10:10:00Z', notes: rejectedNote }),
+    'deleted'
+  );
+
+  // 2. Role & state transition guards
+  const pendingRecipientRow = {
+    status: 'pending_confirmation',
+    is_initiator: false,
+    user_id: 'user-b',
+    counterpart_user_id: 'user-a',
+    deleted_at: null,
+  };
+  const pendingSenderRow = {
+    status: 'pending_confirmation',
+    is_initiator: true,
+    user_id: 'user-a',
+    counterpart_user_id: 'user-b',
+    deleted_at: null,
+  };
+
+  // Recipient can accept or reject; sender CANNOT self-approve or reject
+  assert.equal(canAcceptUdhar(pendingRecipientRow, 'user-b').allowed, true);
+  assert.equal(canRejectUdhar(pendingRecipientRow, 'user-b').allowed, true);
+  assert.equal(canAcceptUdhar(pendingSenderRow, 'user-a').allowed, false);
+  assert.equal(canRejectUdhar(pendingSenderRow, 'user-a').allowed, false);
+
+  // Sender can cancel own pending request; recipient cannot sender-cancel
+  assert.equal(canSenderCancelUdhar(pendingSenderRow, 'user-a').allowed, true);
+  assert.equal(canSenderCancelUdhar(pendingRecipientRow, 'user-b').allowed, false);
+
+  // Rejected or cancelled requests can never become confirmed; confirmed requests cannot be rejected or sender-cancelled
+  const rejectedRow = { status: 'cancelled', notes: rejectedNote, is_initiator: false, user_id: 'user-b' };
+  assert.equal(canAcceptUdhar(rejectedRow, 'user-b').allowed, false);
+  assert.equal(canSenderCancelUdhar({ status: 'confirmed', is_initiator: true, user_id: 'user-a' }, 'user-a').allowed, false);
+  assert.equal(canRejectUdhar({ status: 'confirmed', is_initiator: false, user_id: 'user-b' }, 'user-b').allowed, false);
+
+  // Repayments blocked while pending_confirmation or rejected
+  const repayPending = calculateRepaymentApplication({
+    originalAmount: 500,
+    confirmedPaidAmount: 0,
+    pendingRepaymentsAmount: 0,
+    repayAmount: 500,
+    isShared: true,
+    actorRole: 'borrower',
+    udharStatus: 'pending_confirmation',
+  });
+  assert.equal(repayPending.valid, false);
+  assert.match(repayPending.error || '', /waiting for recipient confirmation/i);
+
+  // 3. Pending Confirmation, Rejected, Cancelled, Deleted NEVER pollute confirmed balances
+  const summary = calculatePersonLedgerSummary([
+    { direction: 'gave', original_amount: 1000, current_balance: 1000, status: 'confirmed' },
+    { direction: 'gave', original_amount: 500, current_balance: 500, status: 'pending_confirmation' },
+    { direction: 'took', original_amount: 300, current_balance: 300, status: 'pending_confirmation' },
+    { direction: 'gave', original_amount: 900, current_balance: 0, status: 'cancelled', notes: rejectedNote },
+    { direction: 'gave', original_amount: 700, current_balance: 0, status: 'cancelled', notes: senderCancelledNote },
+    { direction: 'gave', original_amount: 400, current_balance: 0, status: 'cancelled', deleted_at: '2026-11-27T11:00:00Z' },
+  ]);
+
+  assert.equal(summary.totalGiven, 1000);
+  assert.equal(summary.youWillReceive, 1000);
+  assert.equal(summary.youWillPay, 0);
+  assert.equal(summary.netBalance, 1000);
+  assert.equal(summary.pendingConfirmationCount, 2);
+  assert.equal(summary.pendingGivenAmount, 500);
+  assert.equal(summary.pendingReceivedAmount, 300);
+  assert.equal(summary.pendingTotalAmount, 800);
+  assert.equal(summary.rejectedCount, 1);
+  assert.equal(summary.cancelledCount, 1);
+
+  const statusPendingConf = getUdharSettlementStatus({
+    status: 'pending_confirmation',
+    original_amount: 500,
+    current_balance: 500,
+  });
+  assert.equal(statusPendingConf.label, 'Pending Confirmation');
+  assert.equal(statusPendingConf.isAwaitingConfirmation, true);
+
+  const statusRejected = getUdharSettlementStatus({
+    status: 'cancelled',
+    notes: rejectedNote,
+    original_amount: 900,
+    current_balance: 0,
+  });
+  assert.equal(statusRejected.label, 'Rejected');
+  assert.equal(statusRejected.isRejectedOrCancelled, true);
+});
+
