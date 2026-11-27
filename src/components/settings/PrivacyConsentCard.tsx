@@ -25,6 +25,7 @@ import {
   Loader2,
   Check,
   Minus,
+  QrCode,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -128,7 +129,7 @@ export const PrivacyConsentCard: React.FC<PrivacyConsentCardProps> = ({
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [savingCategory, setSavingCategory] = useState<OptionalConsentCategory | 'all' | null>(null);
+  const [savingCategory, setSavingCategory] = useState<OptionalConsentCategory | 'upi_qr_storage' | 'all' | null>(null);
   const [actionError, setActionError] = useState<{
     message: string;
     retryAction: () => void;
@@ -322,6 +323,47 @@ export const PrivacyConsentCard: React.FC<PrivacyConsentCardProps> = ({
       setActionError({
         message: msg,
         retryAction: () => void handleWithdrawAllOptional(),
+      });
+      toast.error('Withdrawal Failed', msg);
+    } finally {
+      setSavingCategory(null);
+    }
+  };
+
+  const latestUpiConsentEntry = history.find((row) => row.purpose === 'upi_qr_storage') || null;
+  const upiConsentStatus: 'granted' | 'withdrawn' | 'not_granted' = latestUpiConsentEntry
+    ? (latestUpiConsentEntry.consent_status || latestUpiConsentEntry.status || latestUpiConsentEntry.action) === 'granted'
+      ? 'granted'
+      : 'withdrawn'
+    : 'not_granted';
+
+  const handleWithdrawUpiConsent = async () => {
+    if (savingCategory) return;
+    setActionError(null);
+    setSavingCategory('upi_qr_storage');
+    try {
+      await privacyConsentApi.saveSingleConsent({
+        purpose: 'upi_qr_storage',
+        status: 'withdrawn',
+        source: 'settings_manage_consent',
+        language,
+        idempotencyKey: generateConsentIdempotencyKey('withdraw_upi_qr'),
+      });
+      const refreshed = await privacyConsentApi.fetchConsents();
+      setChoices({ ...refreshed.choices });
+      setCategoryStates(refreshed.consents || {});
+      setHistory(refreshed.history || []);
+      setLastUpdatedAt(refreshed.lastUpdatedAt || new Date().toISOString());
+      window.dispatchEvent(new CustomEvent('my-money-upi-profile-changed'));
+      toast.info(
+        'UPI QR Consent Withdrawn',
+        'Your UPI QR storage consent was withdrawn and your saved UPI ID has been removed.'
+      );
+    } catch (err: any) {
+      const msg = err?.message || 'Could not withdraw UPI QR storage consent. Please retry.';
+      setActionError({
+        message: msg,
+        retryAction: () => void handleWithdrawUpiConsent(),
       });
       toast.error('Withdrawal Failed', msg);
     } finally {
@@ -719,6 +761,73 @@ export const PrivacyConsentCard: React.FC<PrivacyConsentCardProps> = ({
                 })}
               </div>
 
+              {/* Feature-Specific Consent: UPI QR Storage */}
+              <div
+                data-testid="privacy-upi-consent-card"
+                className={`rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  upiConsentStatus === 'granted'
+                    ? 'border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/30 dark:bg-emerald-950/15'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60'
+                }`}
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <QrCode className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                        UPI QR Storage
+                      </h3>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          upiConsentStatus === 'granted'
+                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                            : upiConsentStatus === 'withdrawn'
+                            ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {upiConsentStatus === 'granted'
+                          ? copy.statusGranted
+                          : upiConsentStatus === 'withdrawn'
+                          ? copy.statusWithdrawn
+                          : copy.statusNotGranted}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Stores your UPI ID, optional Payee Name, and optional Payment Note only to generate your personal UPI QR codes. Withdrawing removes your saved UPI profile.
+                    </p>
+                    {latestUpiConsentEntry && (
+                      <p className="text-[10.5px] text-slate-400 dark:text-slate-500 tabular-nums">
+                        Updated {formatDateTime(latestUpiConsentEntry.granted_at || latestUpiConsentEntry.withdrawn_at || latestUpiConsentEntry.created_at)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {upiConsentStatus === 'granted' ? (
+                  <button
+                    type="button"
+                    disabled={savingCategory !== null}
+                    onClick={() => void handleWithdrawUpiConsent()}
+                    data-testid="withdraw-upi-consent-btn"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-900/70 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 text-rose-700 dark:text-rose-300 disabled:opacity-50 transition-colors cursor-pointer shrink-0 self-start sm:self-center"
+                  >
+                    {savingCategory === 'upi_qr_storage' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    )}
+                    <span>Withdraw UPI Consent</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 shrink-0">
+                    Granted only when saving a UPI ID
+                  </span>
+                )}
+              </div>
+
               {/* Separate Informational Section: Essential Financial Data Processing (NO checkbox) */}
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/35 p-4 space-y-2.5">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -784,7 +893,12 @@ export const PrivacyConsentCard: React.FC<PrivacyConsentCardProps> = ({
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {history.map((row) => {
                         const def = CATEGORY_DEF_MAP[row.purpose as OptionalConsentCategory];
-                        const label = def ? def.translations[language].title : row.purpose;
+                        const label =
+                          row.purpose === 'upi_qr_storage'
+                            ? 'UPI QR Storage'
+                            : def
+                            ? def.translations[language].title
+                            : row.purpose;
                         const statusVal = row.consent_status || row.status || row.action;
                         const isGranted = statusVal === 'granted';
                         return (

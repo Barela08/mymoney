@@ -18,6 +18,7 @@ import {
   Sparkles,
   ShieldCheck,
   Clock,
+  Fingerprint,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
@@ -29,6 +30,8 @@ import type { ConsentLanguage } from '../../lib/privacyConsent';
 export const AuthPage: React.FC = () => {
   const {
     login,
+    loginWithGoogle,
+    loginWithPasskey,
     register,
     requestPasswordReset,
     completePasswordReset,
@@ -379,13 +382,15 @@ export const AuthPage: React.FC = () => {
               {appBranding?.appName || 'My Money Manager'}
             </h1>
             <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-              {appBranding?.subTitle || 'by HackifyPro'} · Production Security
+              {appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
+                ? appBranding.subTitle
+                : 'A product of HackifyPro'}
             </p>
           </div>
         </div>
 
         <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-2">
-          Enterprise Security Architecture · Bcrypt Encryption · Multi-Tenant Isolation
+          Personal Finance, Room Budgets, Udhar Ledger &amp; UPI QR
         </p>
       </div>
 
@@ -455,8 +460,19 @@ export const AuthPage: React.FC = () => {
           {errorMessage && (
             <div className="mb-5 p-3.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 rounded-2xl flex items-start gap-3">
               <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-rose-700 dark:text-rose-300">
+              <div className="text-xs text-rose-700 dark:text-rose-300 space-y-2">
                 <p className="font-semibold">{errorMessage}</p>
+                {errorMessage.includes('embedded preview frame') && typeof window !== 'undefined' && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-[11px] font-bold text-rose-700 dark:text-rose-200 hover:bg-rose-100/60 dark:hover:bg-rose-900/40 transition-colors"
+                  >
+                    <span>Open in Full Browser Tab</span>
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                )}
                 {validationErrors.length > 0 && (
                   <ul className="list-disc list-inside mt-1 space-y-0.5 text-[11px] opacity-90">
                     {validationErrors.map((err, i) => (
@@ -761,6 +777,86 @@ export const AuthPage: React.FC = () => {
             </form>
           )}
 
+          {/* Unified Alternative Sign-In Methods: Google Auth & Passkey (WebAuthn) */}
+          {(mode === 'login' || mode === 'register') && (
+            <div className="mt-5 space-y-3">
+              <div className="relative flex items-center justify-center">
+                <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                <span className="px-3 bg-white dark:bg-slate-900 text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0">
+                  Or continue with
+                </span>
+                <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  data-testid="auth-google-btn"
+                  onClick={async () => {
+                    setErrorMessage(null);
+                    setIsSubmitting(true);
+                    try {
+                      const res = await loginWithGoogle();
+                      if (res.success) {
+                        toast.success('Signed In', res.message || 'Authenticated with Google.');
+                      } else {
+                        setErrorMessage(res.message || 'Google sign-in could not be completed.');
+                      }
+                    } finally {
+                      setIsSubmitting(false);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2 py-2.5 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.44a5.5 5.5 0 0 1-2.39 3.61v3h3.87c2.26-2.08 3.57-5.15 3.57-8.64z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.87-3c-1.07.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.72-4.95H1.28v3.1A12 12 0 0 0 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.29a7.18 7.18 0 0 1 0-4.58v-3.1H1.28a12 12 0 0 0 0 10.78l4-3.1z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.76c1.76 0 3.34.61 4.58 1.79l3.43-3.43C17.94 1.19 15.23 0 12 0A12 12 0 0 0 1.28 6.61l4 3.1c.95-2.84 3.6-4.95 6.72-4.95z"
+                    />
+                  </svg>
+                  <span>Google</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  data-testid="auth-passkey-btn"
+                  onClick={async () => {
+                    setErrorMessage(null);
+                    setIsSubmitting(true);
+                    try {
+                      const res = await loginWithPasskey(email.trim() || undefined);
+                      if (res.success) {
+                        toast.success('Signed In', res.message || 'Authenticated with Passkey.');
+                      } else {
+                        setErrorMessage(res.message || 'Passkey sign-in could not be completed.');
+                      }
+                    } finally {
+                      setIsSubmitting(false);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2 py-2.5 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Fingerprint className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>Passkey</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Navigation between modes */}
           <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-center text-xs">
             {mode === 'forgot_password' && (
@@ -829,6 +925,11 @@ export const AuthPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Consistent Product Branding Footer */}
+      <p className="mt-6 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        {appBranding?.appName || 'My Money Manager'} — A product of HackifyPro
+      </p>
 
       {/* Standalone Trilingual Privacy Notice (read-only informational preview before login) */}
       <PrivacyNoticeModal

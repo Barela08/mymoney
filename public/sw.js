@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-money-pwa-v2.0.0';
+const CACHE_NAME = 'my-money-pwa-v2.0.1';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -63,6 +63,21 @@ function shouldBypassCache(request, url) {
     url.pathname.includes('/auth/v1') ||
     url.pathname.includes('/rest/v1') ||
     url.pathname.includes('/realtime')
+  ) {
+    return true;
+  }
+
+  // Never cache Vite dev modules, pre-bundled deps, HMR endpoints, or versioned dev imports
+  if (
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@vite/') ||
+    url.pathname.startsWith('/@react-refresh') ||
+    url.pathname.startsWith('/@id/') ||
+    url.pathname.startsWith('/@fs/') ||
+    url.searchParams.has('v') ||
+    url.searchParams.has('t') ||
+    url.searchParams.has('import')
   ) {
     return true;
   }

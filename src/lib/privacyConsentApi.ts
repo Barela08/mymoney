@@ -247,15 +247,15 @@ export const privacyConsentApi = {
   },
 
   /**
-   * Grants or withdraws a single optional consent category (e.g. from Settings or AI prompt).
+   * Grants or withdraws a single optional consent category (e.g. from Settings, AI prompt, or UPI QR).
    */
-  async saveSingleConsent(params: {
-    purpose: OptionalConsentCategory;
+  async saveSingleConsent<P extends OptionalConsentCategory | 'upi_qr_storage'>(params: {
+    purpose: P;
     status: 'granted' | 'withdrawn';
     source: string;
     language: ConsentLanguage;
     idempotencyKey?: string;
-  }): Promise<{ success: boolean; purpose: OptionalConsentCategory; status: 'granted' | 'withdrawn' }> {
+  }): Promise<{ success: boolean; purpose: P; status: 'granted' | 'withdrawn' }> {
     const data = await privacyRequest('/api/privacy/consents', {
       method: 'POST',
       body: JSON.stringify({
@@ -273,10 +273,10 @@ export const privacyConsentApi = {
     });
 
     const uid = getActiveUserId();
-    if (uid) {
+    if (uid && (OPTIONAL_CONSENT_CATEGORIES as readonly string[]).includes(params.purpose)) {
       const prev = getCachedUserPrivacyState(uid);
       const nextChoices = prev ? { ...prev.choices } : createEmptyOptionalChoices();
-      nextChoices[params.purpose] = params.status === 'granted';
+      nextChoices[params.purpose as OptionalConsentCategory] = params.status === 'granted';
       setCachedUserPrivacyState({
         userId: uid,
         hasSavedChoices: true,

@@ -4,6 +4,7 @@ import { AlertTriangle, X, Trash2 } from 'lucide-react';
 interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
+  subtitle?: string;
   message: string;
   itemDetails?: {
     title: string;
@@ -21,6 +22,7 @@ interface ConfirmModalProps {
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
   title,
+  subtitle,
   message,
   itemDetails,
   confirmLabel = 'Delete Record',
@@ -75,7 +77,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 {title}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {isDestructive ? 'This record can be restored from Recycle Bin.' : 'Please confirm your decision.'}
+                {subtitle ?? (isDestructive ? 'This record can be restored from Recycle Bin.' : 'Please confirm your decision.')}
               </p>
             </div>
           </div>

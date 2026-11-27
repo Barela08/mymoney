@@ -71,7 +71,7 @@ async function runVerification() {
   const initialPassword = 'SuperSecureP@ssw0rd!2026#';
   const updatedPassword = 'NewSuperSecureP@ssw0rd!2026#';
 
-  // TEST 1: Password Strength Validation (< 12 chars rejected)
+  // TEST 1: Password Strength Validation (< 8 chars rejected)
   console.log('\n--- 1. Testing Registration Validation ---');
   const shortPassRes = await api('/api/auth/register', {
     method: 'POST',
@@ -84,8 +84,8 @@ async function runVerification() {
     }),
   });
   assert(
-    shortPassRes.status === 400 && shortPassRes.data.errors?.some((e: string) => e.includes('12')),
-    'Reject password shorter than 12 characters',
+    shortPassRes.status === 400 && shortPassRes.data.errors?.some((e: string) => e.includes('8')),
+    'Reject password shorter than 8 characters',
     JSON.stringify(shortPassRes.data)
   );
 

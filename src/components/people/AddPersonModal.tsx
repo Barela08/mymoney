@@ -28,6 +28,7 @@ interface AddPersonModalProps {
   isOpen: boolean;
   onClose: () => void;
   onPersonAdded: (personName: string, linkedUserId?: string | null) => void;
+  onRequestSent?: () => void;
   onOpenScanner?: () => void;
   onOpenProfile?: (personName: string, linkedUserId?: string | null) => void;
 }
@@ -36,6 +37,7 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
   isOpen,
   onClose,
   onPersonAdded,
+  onRequestSent,
   onOpenScanner,
   onOpenProfile,
 }) => {
@@ -168,12 +170,14 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
           res.message || `"${selectedCandidate.fullName}" is now connected for 2-way shared Udhar.`
         );
         onPersonAdded(selectedCandidate.fullName, selectedCandidate.id);
+        onRequestSent?.();
       } else {
         toast.success(
           'Request Sent',
           res.message ||
             'Your connection request was sent. They must accept it before any profile details are shared.'
         );
+        onRequestSent?.();
       }
       setSelectedCandidate(null);
       setSearchQuery('');
@@ -181,6 +185,30 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
       onClose();
     } catch (err: any) {
       toast.error('Connection Failed', err.message || 'Could not connect with this user.');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleAcceptIncoming = async (userItem: SearchUserResult) => {
+    if (isConnecting) return;
+    try {
+      setIsConnecting(true);
+      const res = await udharDeletionApi.respondToConnectionRequest(
+        userItem.requestId || userItem.id,
+        'accept'
+      );
+      toast.success(
+        'Connected!',
+        res.message || `Connected with ${userItem.fullName}. Added to your Saved People.`
+      );
+      onPersonAdded(userItem.fullName, userItem.id);
+      onRequestSent?.();
+      setSearchQuery('');
+      setSearchResults([]);
+      onClose();
+    } catch (err: any) {
+      toast.error('Accept Failed', err?.message || 'Could not accept connection request.');
     } finally {
       setIsConnecting(false);
     }
@@ -353,7 +381,7 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                   {selectedCandidate.fullName}
                 </h4>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  {selectedCandidate.emailMasked}
+                  {selectedCandidate.emailMasked || 'Registered My Money Manager account'}
                 </p>
                 {selectedCandidate.phoneMasked && (
                   <p className="text-[11px] text-slate-400 font-mono">
@@ -578,7 +606,7 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                                 )}
                               </div>
                               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
-                                {userItem.emailMasked}
+                                {userItem.emailMasked || 'Registered My Money Manager account'}
                                 {userItem.phoneMasked ? ` · ${userItem.phoneMasked}` : ''}
                               </p>
                             </div>
@@ -608,6 +636,20 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                                 </button>
                               )}
                             </div>
+                          ) : status === 'incoming_pending' ? (
+                            <button
+                              type="button"
+                              disabled={isConnecting}
+                              onClick={() => void handleAcceptIncoming(userItem)}
+                              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 text-white text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm"
+                            >
+                              {isConnecting ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-3 h-3" />
+                              )}
+                              <span>Accept Request</span>
+                            </button>
                           ) : status === 'pending' ? (
                             <span className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 shrink-0">
                               <Clock className="w-3 h-3" />

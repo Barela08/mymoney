@@ -272,7 +272,7 @@ CREATE POLICY "audit_select_admin_only"
 -- 9. ADMIN PROCEDURES: USER MANAGEMENT & CREDENTIAL OVERRIDES
 -- ------------------------------------------------------------------------------
 
--- Function: Admin Set User Password
+-- Function: Admin Set User Password (strictly requires authenticated active admin/superadmin)
 CREATE OR REPLACE FUNCTION public.admin_set_user_password(target_user_id UUID, new_password TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -280,16 +280,14 @@ SECURITY DEFINER
 SET search_path = public, auth, extensions
 AS $$
 BEGIN
-  IF NOT (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role = 'admin' AND status = 'active'
-    ) OR auth.uid() IS NULL
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role IN ('admin', 'superadmin') AND status = 'active'
   ) THEN
-    RAISE EXCEPTION 'Access Denied: Only administrators can modify user passwords.';
+    RAISE EXCEPTION 'Access Denied: Only active administrators can modify user passwords.';
   END IF;
 
-  IF length(new_password) < 8 THEN
+  IF new_password IS NULL OR length(new_password) < 8 THEN
     RAISE EXCEPTION 'Password must be at least 8 characters long.';
   END IF;
 
@@ -302,7 +300,7 @@ BEGIN
 END;
 $$;
 
--- Function: Admin Delete User
+-- Function: Admin Delete User (strictly requires authenticated active admin/superadmin)
 CREATE OR REPLACE FUNCTION public.admin_delete_user(target_user_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -310,13 +308,15 @@ SECURITY DEFINER
 SET search_path = public, auth, extensions
 AS $$
 BEGIN
-  IF NOT (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role = 'admin' AND status = 'active'
-    ) OR auth.uid() IS NULL
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role IN ('admin', 'superadmin') AND status = 'active'
   ) THEN
-    RAISE EXCEPTION 'Access Denied: Only administrators can delete users.';
+    RAISE EXCEPTION 'Access Denied: Only active administrators can delete users.';
+  END IF;
+
+  IF target_user_id = auth.uid() THEN
+    RAISE EXCEPTION 'Administrators cannot self-delete via this RPC.';
   END IF;
 
   DELETE FROM auth.users WHERE id = target_user_id;
@@ -327,8 +327,10 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_set_user_password(UUID, TEXT) TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION public.admin_delete_user(UUID) TO authenticated, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_set_user_password(UUID, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.admin_delete_user(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_set_user_password(UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_delete_user(UUID) TO authenticated;
 
 -- ------------------------------------------------------------------------------
 -- 10. ENTERPRISE TABLES: DYNAMIC SECTIONS, APP SETTINGS & RECYCLE BIN
@@ -468,19 +470,19 @@ ALTER TABLE public.user_calculator_settings ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "calc_history_user_select" ON public.calculator_history;
 CREATE POLICY "calc_history_user_select" ON public.calculator_history
-    FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
+    FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "calc_history_user_insert" ON public.calculator_history;
 CREATE POLICY "calc_history_user_insert" ON public.calculator_history
-    FOR INSERT WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+    FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "calc_history_user_delete" ON public.calculator_history;
 CREATE POLICY "calc_history_user_delete" ON public.calculator_history
-    FOR DELETE USING (auth.uid() = user_id OR user_id IS NULL);
+    FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "calc_settings_user_all" ON public.user_calculator_settings;
 CREATE POLICY "calc_settings_user_all" ON public.user_calculator_settings
-    FOR ALL USING (auth.uid() = user_id);
+    FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
 -- 11. SHARED UDHAR & PEOPLE REALTIME PUBLICATION
@@ -549,41 +551,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- ==============================================================================
--- 12. AI FINANCIAL INTELLIGENCE TABLES — ROW LEVEL SECURITY (STRICT USER ISOLATION)
--- ==============================================================================
--- Applies auth.uid()::text = user_id isolation to all tables introduced for
--- AI Money Assistant, Smart Categorization, Receipt Scanner, Net Worth Tracker,
--- Safe-to-Spend Calculator, and Smart Financial Alerts.
-DO $$
-DECLARE
-  tbl TEXT;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'ai_conversations',
-    'ai_messages',
-    'user_categorization_rules',
-    'receipt_records',
-    'net_worth_assets',
-    'net_worth_liabilities',
-    'net_worth_settings',
-    'net_worth_snapshots',
-    'safe_to_spend_preferences',
-    'smart_alert_preferences',
-    'smart_alert_events'
-  ]
-  LOOP
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
-      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
-      EXECUTE format('DROP POLICY IF EXISTS "%s_owner_isolation" ON public.%I', tbl, tbl);
-      EXECUTE format(
-        'CREATE POLICY "%s_owner_isolation" ON public.%I FOR ALL USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id)',
-        tbl,
-        tbl
-      );
-    END IF;
-  END LOOP;
-END $$;
+-- (Duplicate Section 12 block removed cleanly during security remediation)
 
 -- ==============================================================================
 -- 13. UDHAR & QR PAIRING SYSTEM TABLES
@@ -608,16 +576,17 @@ CREATE INDEX IF NOT EXISTS idx_qr_pairing_code ON public.qr_pairing_tokens(pairi
 ALTER TABLE public.qr_pairing_tokens ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "qr_pairing_select_all" ON public.qr_pairing_tokens;
-CREATE POLICY "qr_pairing_select_all" ON public.qr_pairing_tokens
-    FOR SELECT USING (true);
+DROP POLICY IF EXISTS "qr_pairing_select_own" ON public.qr_pairing_tokens;
+CREATE POLICY "qr_pairing_select_own" ON public.qr_pairing_tokens
+    FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "qr_pairing_insert_own" ON public.qr_pairing_tokens;
 CREATE POLICY "qr_pairing_insert_own" ON public.qr_pairing_tokens
-    FOR INSERT WITH CHECK (auth.uid() = user_id OR auth.uid() IS NULL);
+    FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "qr_pairing_update_own" ON public.qr_pairing_tokens;
 CREATE POLICY "qr_pairing_update_own" ON public.qr_pairing_tokens
-    FOR UPDATE USING (auth.uid() = user_id OR auth.uid() IS NULL);
+    FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 CREATE TABLE IF NOT EXISTS public.udhar_contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -641,13 +610,13 @@ ALTER TABLE public.udhar_contacts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "udhar_contacts_owner_all" ON public.udhar_contacts;
 CREATE POLICY "udhar_contacts_owner_all" ON public.udhar_contacts
-    FOR ALL USING (auth.uid() = user_id OR auth.uid() IS NULL);
+    FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 CREATE TABLE IF NOT EXISTS public.user_connections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_a_id UUID NOT NULL,
     user_b_id UUID NOT NULL,
-    status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'blocked')),
+    status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('pending', 'connected', 'blocked')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_user_connection_pair UNIQUE (user_a_id, user_b_id)
 );
@@ -659,7 +628,115 @@ ALTER TABLE public.user_connections ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "user_connections_member_all" ON public.user_connections;
 CREATE POLICY "user_connections_member_all" ON public.user_connections
-    FOR ALL USING (auth.uid() = user_a_id OR auth.uid() = user_b_id OR auth.uid() IS NULL);
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_a_id OR auth.uid() = user_b_id)
+    WITH CHECK (auth.uid() = user_a_id OR auth.uid() = user_b_id);
+
+-- ==============================================================================
+-- 14. UDHAR TRANSACTIONS, REPAYMENTS & AUDIT HISTORY — STRICT LENDER CONTROLS
+-- ==============================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_transactions') THEN
+    ALTER TABLE public.udhar_transactions ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "udhar_tx_select_participant" ON public.udhar_transactions;
+    CREATE POLICY "udhar_tx_select_participant" ON public.udhar_transactions
+      FOR SELECT TO authenticated
+      USING (auth.uid() = user_id OR auth.uid() = counterpart_user_id);
+
+    DROP POLICY IF EXISTS "udhar_tx_insert_owner" ON public.udhar_transactions;
+    CREATE POLICY "udhar_tx_insert_owner" ON public.udhar_transactions
+      FOR INSERT TO authenticated
+      WITH CHECK (auth.uid() = user_id);
+
+    -- Borrowers (direction = 'took' on shared transactions) cannot settle or cancel directly via PostgREST
+    DROP POLICY IF EXISTS "udhar_tx_update_lender_enforced" ON public.udhar_transactions;
+    CREATE POLICY "udhar_tx_update_lender_enforced" ON public.udhar_transactions
+      FOR UPDATE TO authenticated
+      USING (auth.uid() = user_id)
+      WITH CHECK (
+        auth.uid() = user_id
+        AND (
+          counterpart_user_id IS NULL
+          OR direction = 'gave'
+          OR status NOT IN ('settled', 'cancelled')
+        )
+      );
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_repayments') THEN
+    ALTER TABLE public.udhar_repayments ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "udhar_rep_select_participant" ON public.udhar_repayments;
+    CREATE POLICY "udhar_rep_select_participant" ON public.udhar_repayments
+      FOR SELECT TO authenticated
+      USING (
+        status NOT IN ('deleted', 'cancelled')
+        AND deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_repayments.link_id
+            AND (ut.user_id = auth.uid() OR ut.counterpart_user_id = auth.uid())
+        )
+      );
+
+    DROP POLICY IF EXISTS "udhar_rep_insert_participant" ON public.udhar_repayments;
+    CREATE POLICY "udhar_rep_insert_participant" ON public.udhar_repayments
+      FOR INSERT TO authenticated
+      WITH CHECK (
+        auth.uid() = recorded_by_user_id
+        AND EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_repayments.link_id
+            AND (ut.user_id = auth.uid() OR ut.counterpart_user_id = auth.uid())
+        )
+      );
+
+    DROP POLICY IF EXISTS "udhar_rep_update_authorized" ON public.udhar_repayments;
+    CREATE POLICY "udhar_rep_update_authorized" ON public.udhar_repayments
+      FOR UPDATE TO authenticated
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_repayments.link_id
+            AND ut.user_id = auth.uid()
+            AND (
+              ut.counterpart_user_id IS NULL
+              OR ut.direction = 'gave'
+              OR (udhar_repayments.status = 'pending_confirmation' AND udhar_repayments.recorded_by_user_id = auth.uid())
+            )
+        )
+      )
+      WITH CHECK (
+        EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_repayments.link_id
+            AND ut.user_id = auth.uid()
+            AND (
+              ut.counterpart_user_id IS NULL
+              OR ut.direction = 'gave'
+              OR (udhar_repayments.recorded_by_user_id = auth.uid() AND udhar_repayments.status IN ('deleted', 'cancelled'))
+            )
+        )
+      );
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_edit_history') THEN
+    ALTER TABLE public.udhar_edit_history ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "udhar_hist_select_participant" ON public.udhar_edit_history;
+    CREATE POLICY "udhar_hist_select_participant" ON public.udhar_edit_history
+      FOR SELECT TO authenticated
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.udhar_transactions ut
+          WHERE ut.link_id = udhar_edit_history.link_id
+            AND (ut.user_id = auth.uid() OR ut.counterpart_user_id = auth.uid())
+        )
+      );
+  END IF;
+END $$;
 
 -- ------------------------------------------------------------------------------
 -- USER CONSENTS (STRICT USER ISOLATION & APPEND-ONLY AUDIT HISTORY)
@@ -700,12 +777,52 @@ CREATE POLICY "user_consents_insert_own" ON public.user_consents
     WITH CHECK (auth.uid() = user_id);
 
 -- ------------------------------------------------------------------------------
--- USER UPI PROFILES (STRICT OWNER-ONLY RLS, PRIVATE TO USER)
+-- 15. USER CONNECTIONS CONSTRAINT UPDATE (SUPPORTS pending / connected / rejected / blocked)
+-- ------------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_connections') THEN
+    ALTER TABLE public.user_connections DROP CONSTRAINT IF EXISTS user_connections_status_check;
+    ALTER TABLE public.user_connections
+      ADD CONSTRAINT user_connections_status_check
+      CHECK (status IN ('pending', 'connected', 'rejected', 'blocked'));
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------------------------
+-- 16. UDHAR TRANSACTIONS SOFT-DELETE AUDIT COLUMNS & APP_USERS PROFILE COMPLETION
+-- ------------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_transactions') THEN
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS settled_by UUID;
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deleted_by UUID;
+    ALTER TABLE public.udhar_transactions ADD COLUMN IF NOT EXISTS deletion_reason TEXT;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'udhar_repayments') THEN
+    ALTER TABLE public.udhar_repayments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE public.udhar_repayments ADD COLUMN IF NOT EXISTS deleted_by UUID;
+    ALTER TABLE public.udhar_repayments ADD COLUMN IF NOT EXISTS deletion_reason TEXT;
+    ALTER TABLE public.udhar_repayments DROP CONSTRAINT IF EXISTS udhar_repayments_status_check;
+    ALTER TABLE public.udhar_repayments
+      ADD CONSTRAINT udhar_repayments_status_check
+      CHECK (status IN ('pending_confirmation', 'confirmed', 'disputed', 'rejected', 'deleted', 'cancelled'));
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'app_users') THEN
+    ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS profile_completed BOOLEAN NOT NULL DEFAULT TRUE;
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------------------------
+-- 17. USER UPI PROFILES (STRICT USER-ONLY ISOLATION — NEVER PUBLIC OR SEARCHABLE)
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_upi_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL UNIQUE,
-    upi_id TEXT NOT NULL,
+    user_id UUID NOT NULL UNIQUE REFERENCES public.app_users(id) ON DELETE CASCADE,
+    upi_id TEXT NOT NULL CHECK (upi_id ~* '^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9]{2,64}$'),
     payee_name TEXT,
     payment_note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -717,30 +834,84 @@ CREATE INDEX IF NOT EXISTS idx_user_upi_profiles_user_id ON public.user_upi_prof
 ALTER TABLE public.user_upi_profiles ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "user_upi_profiles_select_own" ON public.user_upi_profiles;
-DROP POLICY IF EXISTS "user_upi_profiles_insert_own" ON public.user_upi_profiles;
-DROP POLICY IF EXISTS "user_upi_profiles_update_own" ON public.user_upi_profiles;
-DROP POLICY IF EXISTS "user_upi_profiles_delete_own" ON public.user_upi_profiles;
-
 CREATE POLICY "user_upi_profiles_select_own" ON public.user_upi_profiles
     FOR SELECT TO authenticated
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "user_upi_profiles_insert_own" ON public.user_upi_profiles;
 CREATE POLICY "user_upi_profiles_insert_own" ON public.user_upi_profiles
     FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "user_upi_profiles_update_own" ON public.user_upi_profiles;
 CREATE POLICY "user_upi_profiles_update_own" ON public.user_upi_profiles
     FOR UPDATE TO authenticated
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "user_upi_profiles_delete_own" ON public.user_upi_profiles;
 CREATE POLICY "user_upi_profiles_delete_own" ON public.user_upi_profiles
+    FOR DELETE TO authenticated
+    USING (auth.uid() = user_id);
+
+-- ------------------------------------------------------------------------------
+-- 18. UNIFIED AUTH IDENTITIES (MAPS FIREBASE GOOGLE / PASSKEY / EMAIL -> CANONICAL app_users.id)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_auth_identities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (provider IN ('google_firebase', 'passkey', 'email')),
+    provider_uid TEXT NOT NULL,
+    provider_email TEXT,
+    is_verified BOOLEAN NOT NULL DEFAULT TRUE,
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_user_auth_provider_uid UNIQUE (provider, provider_uid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_auth_identities_user_id ON public.user_auth_identities(user_id);
+
+ALTER TABLE public.user_auth_identities ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_auth_identities_owner_select" ON public.user_auth_identities;
+CREATE POLICY "user_auth_identities_owner_select" ON public.user_auth_identities
+    FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+-- ------------------------------------------------------------------------------
+-- 19. USER PASSKEYS (WEBAUTHN CREDENTIALS — MULTIPLE DEVICES PER USER)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_passkeys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
+    credential_id TEXT NOT NULL UNIQUE,
+    public_key_spki TEXT NOT NULL,
+    algorithm INTEGER NOT NULL DEFAULT -7,
+    counter BIGINT NOT NULL DEFAULT 0,
+    transports TEXT[] NOT NULL DEFAULT '{}'::text[],
+    device_name TEXT NOT NULL DEFAULT 'Passkey Device',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_passkeys_user_id ON public.user_passkeys(user_id);
+
+ALTER TABLE public.user_passkeys ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_passkeys_owner_select" ON public.user_passkeys;
+CREATE POLICY "user_passkeys_owner_select" ON public.user_passkeys
+    FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "user_passkeys_owner_delete" ON public.user_passkeys;
+CREATE POLICY "user_passkeys_owner_delete" ON public.user_passkeys
     FOR DELETE TO authenticated
     USING (auth.uid() = user_id);
 
 -- ==============================================================================
 -- Schema and RLS configuration complete.
 -- ==============================================================================
+
 
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   BarChart3,
   Download,
@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Percent,
+  Users,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -25,6 +26,8 @@ import { useToast } from '../../context/ToastContext';
 import { StatCard } from '../common/StatCard';
 import { SkeletonCardsGrid, SkeletonChart } from '../common/states';
 import { formatINR, formatDisplayDate, getPresetDateRange } from '../../lib/dateUtils';
+import { udharDeletionApi, UdharSummaryData } from '../../lib/udharDeletionApi';
+import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
 
 export const ReportsSection: React.FC = () => {
   const { transactions, isLoading } = useExpense();
@@ -37,6 +40,34 @@ export const ReportsSection: React.FC = () => {
 
   // Aggregation granularity: 'daily' | 'weekly' | 'monthly' | 'yearly'
   const [granularity, setGranularity] = useState<'daily' | 'monthly' | 'yearly'>('daily');
+  const [udharSummary, setUdharSummary] = useState<UdharSummaryData | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadUdhar = async () => {
+      try {
+        const res = await udharDeletionApi.getUdharTransactions();
+        if (mounted && res.success) {
+          setUdharSummary(res.summary);
+        }
+      } catch {
+        // Ignore silently
+      }
+    };
+    loadUdhar();
+    window.addEventListener('mymoney:udhar-updated', loadUdhar);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = subscribeToSupabaseUdharRealtime(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(loadUdhar, 350);
+    });
+    return () => {
+      mounted = false;
+      window.removeEventListener('mymoney:udhar-updated', loadUdhar);
+      if (timer) clearTimeout(timer);
+      unsub();
+    };
+  }, [transactions.length]);
 
   // Filter transactions by selected range
   const filteredTxs = useMemo(() => {
@@ -319,6 +350,53 @@ export const ReportsSection: React.FC = () => {
               <p className="text-xs text-slate-400 mt-1">
                 Percentage of income retained
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* People Ledger (Udhar) Summary Strip — Accounting Separated from Personal Income & Expenses */}
+      {udharSummary && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Users className="w-4 h-4 text-amber-600" />
+              <span>People Ledger Summary (Udhar)</span>
+            </h4>
+            <span className="text-[11px] font-medium text-slate-400">
+              Tracked separately from personal Income & Expenses
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Lent</span>
+              <span className="text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
+                {formatINR(udharSummary.totalLent)}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Receivable</span>
+              <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                {formatINR(udharSummary.outstandingReceivable)}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Payable</span>
+              <span className="text-sm font-extrabold text-rose-600 dark:text-rose-400 tabular-nums">
+                {formatINR(udharSummary.outstandingPayable)}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Settled / Repaid</span>
+              <span className="text-sm font-extrabold text-blue-600 dark:text-blue-400 tabular-nums">
+                {formatINR(udharSummary.settledAmount)}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/50 col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300 block">Net Udhar</span>
+              <span className="text-sm font-black text-amber-700 dark:text-amber-300 tabular-nums">
+                {formatINR(udharSummary.netBalance)}
+              </span>
             </div>
           </div>
         </div>

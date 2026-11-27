@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   CheckCircle2,
@@ -35,6 +35,19 @@ export const RepayUdharModal: React.FC<RepayUdharModalProps> = ({
   const [repayDate, setRepayDate] = useState<string>(getCurrentISTDate());
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isOpen || !transaction) return;
+    setAmount('');
+    setPaymentMethod('UPI');
+    setRepayDate(getCurrentISTDate());
+    setNotes('');
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, transaction?.id, isSubmitting, onClose]);
 
   if (!isOpen || !transaction) return null;
 

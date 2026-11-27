@@ -25,6 +25,7 @@ import {
   revokeAllUserSessions,
   authenticateRequest,
   sanitizeUserOutput,
+  isDiscoverableNormalUser,
 } from './auth.js';
 import {
   sendPasswordResetEmail,
@@ -53,6 +54,7 @@ import { handleAdminApiRequest } from './adminApi.js';
 import { handleAiFinanceRequest } from './aiFinanceApi.js';
 import { handleUpiDetectionRequest } from './upiDetectionApi.js';
 import { handlePrivacyConsentApi } from './privacyConsentApi.js';
+import { handleUserAccountExtensions } from './userAccountExtensions.js';
 import {
   getUserNotificationPreferences,
   updateUserNotificationPreferences,
@@ -101,10 +103,14 @@ import {
   calculateRepaymentApplication,
   validateUdharEdit,
   canCancelUdhar,
+  canDeleteRepayment,
+  isActiveRepayment,
+  recalculateUdharFromRepayments,
   calculatePeopleDashboardSummary,
   packStructuredNote,
   unpackStructuredNote,
   roundMoney,
+  parseConnectionRequestKey,
 } from '../src/lib/sharedUdharEngine.js';
 import {
   searchUsersRest,
@@ -133,8 +139,45 @@ import {
   editUdharRest,
   settleUdharRest,
   cancelUdharRest,
+  deleteRepaymentRest,
   getUdharHistoryRest,
 } from './supabaseRestUdhar.js';
+
+async function syncSupabaseAuthPassword(email: string, newPassword: string): Promise<void> {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
+  if (!serviceKey || !supabaseUrl || !email) return;
+
+  try {
+    const listRes = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!listRes.ok) return;
+    const listData = await listRes.json().catch(() => null);
+    const users: any[] = Array.isArray(listData?.users) ? listData.users : [];
+    const target = users.find((u) => String(u?.email || '').trim().toLowerCase() === email.trim().toLowerCase());
+    if (!target?.id) return;
+
+    await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(target.id)}`, {
+      method: 'PUT',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password: newPassword }),
+    });
+  } catch (err) {
+    console.warn('[Supabase Auth Password Sync Notice]:', err);
+  }
+}
 
 // Helper: parse JSON body from incoming request
 async function parseJsonBody(req: IncomingMessage): Promise<any> {
@@ -518,9 +561,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      let sessionToken = `direct_${userRecord.id}_${Date.now()}`;
-      let expiresAt = new Date(Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000);
-
       if (isDatabaseAvailable()) {
         try {
           await query(
@@ -529,13 +569,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
              WHERE id = $2`,
             [clientIp, userRecord.id]
           );
-          const session = await createSession(userRecord.id, { rememberMe, userAgent, ipAddress: clientIp });
-          sessionToken = session.sessionToken;
-          expiresAt = session.expiresAt;
-        } catch {
-          // Keep fallback token
-        }
+        } catch {}
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(userRecord.id)}`, {
+          method: 'PATCH',
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: new Date().toISOString(),
+            last_login_ip: clientIp,
+          },
+        }).catch(() => {});
       }
+
+      const session = await createSession(userRecord.id, {
+        rememberMe,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: effectiveRole, email },
+      });
+      const sessionToken = session.sessionToken;
+      const expiresAt = session.expiresAt;
 
       setSessionCookie(res, sessionToken, expiresAt);
       await resetRateLimitAsync(`admin_login:ip:${clientIp}`);
@@ -608,19 +662,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // When direct PostgreSQL is not configured or unavailable, return 503 on auth/profile routes
-    // so the client's built-in Supabase HTTPS fallback activates immediately instead of returning false 401s.
-    if (
-      !isDatabaseAvailable() &&
-      (pathname.startsWith('/api/auth/') ||
-        pathname.startsWith('/api/profile'))
-    ) {
-      sendJson(res, 503, {
-        success: false,
-        message: 'PostgreSQL database is not connected in this preview environment.',
-      });
-      return true;
-    }
+    // All /api/auth/* and /api/profile* routes support direct PostgreSQL with native Supabase HTTPS REST fallback.
 
     // ---------------------------------------------------------
     // 0B. AI & FINANCIAL INTELLIGENCE DISPATCH (Auth Protected)
@@ -635,6 +677,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/upi-detection')) {
       const handled = await handleUpiDetectionRequest(req, res, pathname, method);
+      if (handled) return true;
+    }
+
+    // ---------------------------------------------------------
+    // 0D. UPI QR PROFILES, UNIFIED AUTH (GOOGLE / PASSKEY), COMPLETE PROFILE
+    // ---------------------------------------------------------
+    if (
+      pathname === '/api/upi/profile' ||
+      pathname === '/api/profile/complete' ||
+      pathname === '/api/profile/security-methods' ||
+      pathname.startsWith('/api/auth/google') ||
+      pathname.startsWith('/api/auth/passkey')
+    ) {
+      const handled = await handleUserAccountExtensions(req, res, pathname, method, clientIp, userAgent);
       if (handled) return true;
     }
 
@@ -673,9 +729,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const email = normalizeEmail(rawEmail);
 
-      // Duplicate email check
-      const dup = await query('SELECT id FROM public.app_users WHERE LOWER(email) = $1', [email]);
-      if (dup.rows.length > 0) {
+      // Duplicate email check (PostgreSQL primary with Supabase REST fallback)
+      let emailExists = false;
+      if (isDatabaseAvailable()) {
+        try {
+          const dup = await query('SELECT id FROM public.app_users WHERE LOWER(email) = $1', [email]);
+          emailExists = dup.rows.length > 0;
+        } catch (err: any) {
+          console.warn('[Register] PG duplicate check failed, falling back to Supabase REST:', err?.message);
+          const dupRest = await sbRestRequest<any[]>(
+            `app_users?email=ilike.${encodeURIComponent(email)}&select=id&limit=1`
+          );
+          emailExists = Boolean(dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0);
+        }
+      } else {
+        const dupRest = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=id&limit=1`
+        );
+        emailExists = Boolean(dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0);
+      }
+
+      if (emailExists) {
         sendJson(res, 409, {
           success: false,
           message: 'An account with this email address already exists. Please log in or reset your password.',
@@ -686,19 +760,61 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Hash password with bcrypt (12 rounds)
       const passwordHash = await hashPassword(password);
 
+      const requireProfileCompletion = body.requireProfileCompletion === true;
+      const initialCustomPermissions = requireProfileCompletion ? { __profile_completed: false } : {};
+
       // Default role is strictly 'user' from backend authority
-      const userRes = await query(
-        `INSERT INTO public.app_users (
-          full_name, email, phone, password_hash, role, status, email_verified
-        ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE)
-        RETURNING *`,
-        [fullName, email, phone || null, passwordHash]
-      );
+      let newUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query(
+            `INSERT INTO public.app_users (
+              full_name, email, phone, password_hash, role, status, email_verified, custom_permissions
+            ) VALUES ($1, $2, $3, $4, 'user', 'active', FALSE, $5::jsonb)
+            RETURNING *`,
+            [fullName, email, phone || null, passwordHash, JSON.stringify(initialCustomPermissions)]
+          );
+          newUser = userRes.rows[0] || null;
+        } catch (err: any) {
+          console.warn('[Register] PG insert failed, attempting Supabase REST:', err?.message);
+        }
+      }
 
-      const newUser = userRes.rows[0];
+      if (!newUser) {
+        const insertRest = await sbRestRequest<any[]>('app_users', {
+          method: 'POST',
+          prefer: 'return=representation',
+          body: {
+            full_name: fullName,
+            email,
+            phone: phone || null,
+            password_hash: passwordHash,
+            role: 'user',
+            status: 'active',
+            email_verified: false,
+            custom_permissions: initialCustomPermissions,
+          },
+        });
+        if (!insertRest.ok || !Array.isArray(insertRest.data) || !insertRest.data[0]) {
+          const errMsg = insertRest.error || 'Could not create your account right now. Please try again.';
+          const isDup = String(errMsg).toLowerCase().includes('duplicate') || insertRest.status === 409;
+          sendJson(res, isDup ? 409 : 503, {
+            success: false,
+            message: isDup
+              ? 'An account with this email address already exists. Please log in or reset your password.'
+              : errMsg,
+          });
+          return true;
+        }
+        newUser = insertRest.data[0];
+      }
 
-      // Create session
-      const session = await createSession(newUser.id, { userAgent, ipAddress: clientIp });
+      // Create server-verified session (PG -> Supabase REST user_sessions -> HMAC-SHA256 fallback)
+      const session = await createSession(newUser.id, {
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: 'user', email },
+      });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
       // Async send welcome email (non-blocking, trusted user record from DB, idempotent)
@@ -721,7 +837,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userEmail: email,
         actorRole: 'user',
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 201, {
         success: true,
@@ -761,15 +877,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Query user
-      const userRes = await query('SELECT * FROM public.app_users WHERE LOWER(email) = $1', [email]);
-      if (userRes.rows.length === 0) {
-        await logSecurityEvent('LOGIN_FAILED_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp });
+      // Query user (PostgreSQL primary with Supabase REST fallback)
+      let user: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT * FROM public.app_users WHERE LOWER(email) = $1', [email]);
+          if (userRes.rows.length > 0) user = userRes.rows[0];
+        } catch (err: any) {
+          console.warn('[Login] PG lookup failed, attempting Supabase REST:', err?.message);
+        }
+      }
+
+      if (!user) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (restUser.ok && Array.isArray(restUser.data) && restUser.data.length > 0) {
+          user = restUser.data[0];
+        }
+      }
+
+      if (!user) {
+        await logSecurityEvent('LOGIN_FAILED_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 401, { success: false, message: 'Invalid email or password.' });
         return true;
       }
-
-      const user = userRes.rows[0];
 
       // Check account lockout
       if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -783,7 +915,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Check account status
       if (user.status === 'suspended') {
-        await logSecurityEvent('LOGIN_BLOCKED_SUSPENDED', { userId: user.id, userEmail: email, ipAddress: clientIp });
+        await logSecurityEvent('LOGIN_BLOCKED_SUSPENDED', { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 403, {
           success: false,
           message: 'Your account has been suspended by an administrator. Please contact security support.',
@@ -803,30 +935,54 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const isValid = await verifyPassword(password, user.password_hash);
       if (!isValid) {
         const attempts = (user.failed_login_attempts || 0) + 1;
-        let lockSql = 'UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2';
-        let lockParams: any[] = [attempts, user.id];
-
-        if (attempts >= 5) {
-          // Lock account for 15 minutes
-          lockSql = "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2";
+        const lockUntilIso = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
+        if (isDatabaseAvailable()) {
+          let lockSql = 'UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2';
+          if (attempts >= 5) {
+            lockSql = "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2";
+          }
+          await query(lockSql, [attempts, user.id]).catch(() => {});
+        } else {
+          await sbRestRequest(`app_users?id=eq.${encodeURIComponent(user.id)}`, {
+            method: 'PATCH',
+            body: lockUntilIso
+              ? { failed_login_attempts: attempts, locked_until: lockUntilIso }
+              : { failed_login_attempts: attempts },
+          }).catch(() => {});
         }
-        await query(lockSql, lockParams);
 
-        await logSecurityEvent('LOGIN_FAILED_BAD_PASSWORD', { userId: user.id, userEmail: email, ipAddress: clientIp });
+        await logSecurityEvent('LOGIN_FAILED_BAD_PASSWORD', { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 401, { success: false, message: 'Invalid email or password.' });
         return true;
       }
 
       // Reset failed login attempts and update last login
-      await query(
-        `UPDATE public.app_users 
-         SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1 
-         WHERE id = $2`,
-        [clientIp, user.id]
-      );
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.app_users 
+           SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1 
+           WHERE id = $2`,
+          [clientIp, user.id]
+        ).catch(() => {});
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(user.id)}`, {
+          method: 'PATCH',
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: new Date().toISOString(),
+            last_login_ip: clientIp,
+          },
+        }).catch(() => {});
+      }
 
-      // Create session
-      const session = await createSession(user.id, { rememberMe, userAgent, ipAddress: clientIp });
+      // Create server-verified session (PG -> Supabase REST user_sessions -> HMAC-SHA256 fallback)
+      const session = await createSession(user.id, {
+        rememberMe,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: user.role, email },
+      });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
       await resetRateLimitAsync(`login:ip:${clientIp}`);
@@ -837,7 +993,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userEmail: email,
         actorRole: user.role,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
@@ -957,12 +1113,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const body = await parseJsonBody(req);
+      // Security: strictly allow ONLY full_name, phone, username, avatar_url — NEVER role, status, or email_verified
       const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
       const phone = (body.phone !== undefined ? body.phone : authUser.phone || '').trim();
       const avatarUrl = body.avatarUrl !== undefined ? body.avatarUrl : authUser.avatar_url;
+      const rawUsername =
+        body.username !== undefined ? String(body.username || '').trim().toLowerCase() : authUser.username || '';
 
-      if (!fullName || fullName.length < 2) {
-        sendJson(res, 400, { success: false, message: 'Full name must be at least 2 characters.' });
+      if (!fullName || fullName.length < 2 || fullName.length > 80) {
+        sendJson(res, 400, { success: false, message: 'Full name must be between 2 and 80 characters.' });
         return true;
       }
 
@@ -971,24 +1130,69 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const updatedRes = await query(
-        `UPDATE public.app_users 
-         SET full_name = $1, phone = $2, avatar_url = $3, updated_at = NOW() 
-         WHERE id = $4 
-         RETURNING *`,
-        [fullName, phone || null, avatarUrl || null, authUser.id]
-      );
+      if (rawUsername && !/^[a-z0-9_]{3,30}$/.test(rawUsername)) {
+        sendJson(res, 400, {
+          success: false,
+          message: 'Username must be 3-30 characters using lowercase letters, numbers, or underscores.',
+        });
+        return true;
+      }
+
+      if (rawUsername && rawUsername !== (authUser.username || '').toLowerCase()) {
+        const dupUsername = await sbRestRequest<any[]>(
+          `app_users?username=eq.${encodeURIComponent(rawUsername)}&id=neq.${encodeURIComponent(authUser.id)}&select=id&limit=1`
+        );
+        if (dupUsername.ok && Array.isArray(dupUsername.data) && dupUsername.data.length > 0) {
+          sendJson(res, 409, { success: false, message: 'That username is already taken. Please choose another.' });
+          return true;
+        }
+      }
+
+      let updatedUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const updatedRes = await query(
+            `UPDATE public.app_users 
+             SET full_name = $1, phone = $2, avatar_url = $3, username = $4, updated_at = NOW() 
+             WHERE id = $5 
+             RETURNING *`,
+            [fullName, phone || null, avatarUrl || null, rawUsername || null, authUser.id]
+          );
+          updatedUser = updatedRes.rows[0] || null;
+        } catch (err: any) {
+          console.warn('[Profile PUT] PG update failed, attempting Supabase REST:', err?.message);
+        }
+      }
+
+      if (!updatedUser) {
+        const restUpd = await sbRestRequest<any[]>(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: {
+            full_name: fullName,
+            phone: phone || null,
+            avatar_url: avatarUrl || null,
+            username: rawUsername || null,
+            updated_at: new Date().toISOString(),
+          },
+        });
+        if (!restUpd.ok || !Array.isArray(restUpd.data) || !restUpd.data[0]) {
+          sendJson(res, 503, { success: false, message: restUpd.error || 'Failed to update profile.' });
+          return true;
+        }
+        updatedUser = restUpd.data[0];
+      }
 
       await logSecurityEvent('PROFILE_UPDATED', {
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
         message: 'Profile updated successfully.',
-        user: sanitizeUserOutput(updatedRes.rows[0]),
+        user: sanitizeUserOutput(updatedUser),
       });
       return true;
     }
@@ -1014,16 +1218,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       // Fetch user's current password hash
-      const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
-      const currentHash = userRes.rows[0]?.password_hash;
+      let currentHash: string | null = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
+          currentHash = userRes.rows[0]?.password_hash || null;
+        } catch {}
+      }
+      if (!currentHash) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?id=eq.${encodeURIComponent(authUser.id)}&select=password_hash&limit=1`
+        );
+        currentHash = restUser.ok && Array.isArray(restUser.data) ? restUser.data[0]?.password_hash || null : null;
+      }
 
-      const isCurrentValid = await verifyPassword(currentPassword, currentHash);
+      const isCurrentValid = currentHash ? await verifyPassword(currentPassword, currentHash) : false;
       if (!isCurrentValid) {
         await logSecurityEvent('PASSWORD_CHANGE_FAILED_WRONG_CURRENT', {
           userId: authUser.id,
           userEmail: authUser.email,
           ipAddress: clientIp,
-        });
+        }).catch(() => {});
         sendJson(res, 400, { success: false, message: 'Current password is incorrect.' });
         return true;
       }
@@ -1047,25 +1262,52 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Hash new password
       const newHash = await hashPassword(newPassword);
+      const nowIso = new Date().toISOString();
 
-      // Update password in DB
-      await query(
-        `UPDATE public.app_users 
-         SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, updated_at = NOW() 
-         WHERE id = $2`,
-        [newHash, authUser.id]
-      );
+      // Update password in DB or Supabase REST
+      if (isDatabaseAvailable()) {
+        await query(
+          `UPDATE public.app_users 
+           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, updated_at = NOW() 
+           WHERE id = $2`,
+          [newHash, authUser.id]
+        );
+      } else {
+        const updRest = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+          method: 'PATCH',
+          body: {
+            password_hash: newHash,
+            password_changed_at: nowIso,
+            force_password_reset: false,
+            updated_at: nowIso,
+          },
+        });
+        if (!updRest.ok) {
+          sendJson(res, 503, { success: false, message: updRest.error || 'Failed to update password.' });
+          return true;
+        }
+      }
 
       // Revoke all other sessions (keep current session active)
       const currentToken = (req.headers['authorization']?.slice(7) || '').trim();
-      if (currentToken) {
+      if (currentToken && !currentToken.startsWith('mmf1.')) {
         const curHash = hashToken(currentToken);
-        await query(
-          `UPDATE public.user_sessions 
-           SET is_revoked = TRUE 
-           WHERE user_id = $1 AND session_token_hash <> $2`,
-          [authUser.id, curHash]
-        );
+        if (isDatabaseAvailable()) {
+          await query(
+            `UPDATE public.user_sessions 
+             SET is_revoked = TRUE 
+             WHERE user_id = $1 AND session_token_hash <> $2`,
+            [authUser.id, curHash]
+          ).catch(() => {});
+        } else {
+          await sbRestRequest(
+            `user_sessions?user_id=eq.${encodeURIComponent(authUser.id)}&session_token_hash=neq.${encodeURIComponent(curHash)}`,
+            {
+              method: 'PATCH',
+              body: { is_revoked: true },
+            }
+          ).catch(() => {});
+        }
       }
 
       // Async send password changed email
@@ -1075,7 +1317,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
@@ -1102,20 +1344,38 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
-      const currentHash = userRes.rows[0]?.password_hash;
+      let currentHash: string | null = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
+          currentHash = userRes.rows[0]?.password_hash || null;
+        } catch {}
+      }
+      if (!currentHash) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?id=eq.${encodeURIComponent(authUser.id)}&select=password_hash&limit=1`
+        );
+        currentHash = restUser.ok && Array.isArray(restUser.data) ? restUser.data[0]?.password_hash || null : null;
+      }
 
-      const isCurrentValid = await verifyPassword(password, currentHash);
+      const isCurrentValid = currentHash ? await verifyPassword(password, currentHash) : false;
       if (!isCurrentValid) {
         sendJson(res, 400, { success: false, message: 'Incorrect password. Account deletion aborted.' });
         return true;
       }
 
       // Delete transactions, sessions, user
-      await query('DELETE FROM public.transactions WHERE user_id = $1', [authUser.id]).catch(() => {});
-      await query('DELETE FROM public.user_sessions WHERE user_id = $1', [authUser.id]);
-      await query('DELETE FROM public.password_resets WHERE user_id = $1', [authUser.id]);
-      await query('DELETE FROM public.app_users WHERE id = $1', [authUser.id]);
+      if (isDatabaseAvailable()) {
+        await query('DELETE FROM public.transactions WHERE user_id = $1', [authUser.id]).catch(() => {});
+        await query('DELETE FROM public.user_sessions WHERE user_id = $1', [authUser.id]).catch(() => {});
+        await query('DELETE FROM public.password_resets WHERE user_id = $1', [authUser.id]).catch(() => {});
+        await query('DELETE FROM public.app_users WHERE id = $1', [authUser.id]);
+      } else {
+        await sbRestRequest(`transactions?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' }).catch(() => {});
+        await sbRestRequest(`user_sessions?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' }).catch(() => {});
+        await sbRestRequest(`password_resets?user_id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' }).catch(() => {});
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, { method: 'DELETE' });
+      }
 
       clearSessionCookie(res);
 
@@ -1123,7 +1383,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         userId: authUser.id,
         userEmail: authUser.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, { success: true, message: 'Your account and all associated data have been permanently deleted.' });
       return true;
@@ -1153,21 +1413,34 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const userRes = await query('SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1', [email]);
-      
+      let user: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT id, full_name, email, status FROM public.app_users WHERE LOWER(email) = $1', [email]);
+          if (userRes.rows.length > 0) user = userRes.rows[0];
+        } catch {}
+      }
+      if (!user) {
+        const restUser = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=id,full_name,email,status&limit=1`
+        );
+        if (restUser.ok && Array.isArray(restUser.data) && restUser.data.length > 0) {
+          user = restUser.data[0];
+        }
+      }
+
       // Prevent Email Enumeration: Always return identical success response
       const standardResponse = {
         success: true,
         message: 'If an account exists with this email, a password reset link has been sent.',
       };
 
-      if (userRes.rows.length === 0) {
-        await logSecurityEvent('FORGOT_PASSWORD_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp });
+      if (!user) {
+        await logSecurityEvent('FORGOT_PASSWORD_UNKNOWN_EMAIL', { userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 200, standardResponse);
         return true;
       }
 
-      const user = userRes.rows[0];
       if (user.status !== 'active') {
         sendJson(res, 200, standardResponse);
         return true;
@@ -1177,29 +1450,55 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const rawToken = generateCryptoToken(32);
       const tokenHash = hashToken(rawToken);
 
-      // Invalidate any previous unused reset tokens for this user
-      await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [user.id]);
-
       // Set 15-minute expiration
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-      await query(
-        `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, tokenHash, expiresAt, clientIp, userAgent]
-      );
+      if (isDatabaseAvailable()) {
+        // Invalidate any previous unused reset tokens for this user
+        await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [user.id]);
+        await query(
+          `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [user.id, tokenHash, expiresAt, clientIp, userAgent]
+        );
+      } else {
+        await sbRestRequest(
+          `password_resets?user_id=eq.${encodeURIComponent(user.id)}&used=eq.false`,
+          { method: 'PATCH', body: { used: true } }
+        ).catch(() => {});
+        await sbRestRequest('password_resets', {
+          method: 'POST',
+          body: {
+            user_id: user.id,
+            token_hash: tokenHash,
+            expires_at: expiresAt.toISOString(),
+            ip_address: clientIp,
+            user_agent: userAgent,
+            used: false,
+          },
+        });
+      }
 
       const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
-      // Dispatch real email via Nodemailer
-      await sendPasswordResetEmail(user.email, user.full_name, resetLink);
+      // Dispatch real email via configured SMTP / Nodemailer transport
+      const emailSent = await sendPasswordResetEmail(user.email, user.full_name, resetLink);
+      if (!emailSent) {
+        console.warn('[Forgot Password] SMTP delivery failed or SMTP credentials are not configured.');
+        await logSecurityEvent('FORGOT_PASSWORD_SMTP_FAILED', {
+          userId: user.id,
+          userEmail: user.email,
+          ipAddress: clientIp,
+        }).catch(() => {});
+      }
 
       await logSecurityEvent('FORGOT_PASSWORD_LINK_GENERATED', {
         userId: user.id,
         userEmail: user.email,
         ipAddress: clientIp,
-      });
+        details: { emailSent },
+      }).catch(() => {});
 
       // Strict security: Never return raw recovery URL or token in API responses
       sendJson(res, 200, standardResponse);
@@ -1225,20 +1524,40 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tokenHash = hashToken(rawToken);
-      const resDb = await query(
-        `SELECT pr.id, pr.expires_at, pr.used, u.email, u.full_name
-         FROM public.password_resets pr
-         JOIN public.app_users u ON pr.user_id = u.id
-         WHERE pr.token_hash = $1`,
-        [tokenHash]
-      );
+      let record: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const resDb = await query(
+            `SELECT pr.id, pr.expires_at, pr.used, u.email, u.full_name
+             FROM public.password_resets pr
+             JOIN public.app_users u ON pr.user_id = u.id
+             WHERE pr.token_hash = $1`,
+            [tokenHash]
+          );
+          if (resDb.rows.length > 0) record = resDb.rows[0];
+        } catch {}
+      }
+      if (!record) {
+        const restPr = await sbRestRequest<any[]>(
+          `password_resets?token_hash=eq.${encodeURIComponent(tokenHash)}&select=id,user_id,expires_at,used&limit=1`
+        );
+        if (restPr.ok && Array.isArray(restPr.data) && restPr.data[0]) {
+          const prRow = restPr.data[0];
+          const restU = await sbRestRequest<any[]>(
+            `app_users?id=eq.${encodeURIComponent(prRow.user_id)}&select=email,full_name&limit=1`
+          );
+          const uRow = restU.ok && Array.isArray(restU.data) ? restU.data[0] : null;
+          if (uRow) {
+            record = { ...prRow, email: uRow.email, full_name: uRow.full_name };
+          }
+        }
+      }
 
-      if (resDb.rows.length === 0) {
+      if (!record) {
         sendJson(res, 200, { valid: false, message: 'Invalid reset token.' });
         return true;
       }
 
-      const record = resDb.rows[0];
       if (record.used) {
         sendJson(res, 200, { valid: false, message: 'This reset token has already been used.' });
         return true;
@@ -1284,23 +1603,43 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendRateLimitExceeded(res, rateSession);
         return true;
       }
-      const resDb = await query(
-        `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
-         FROM public.password_resets pr
-         JOIN public.app_users u ON pr.user_id = u.id
-         WHERE pr.token_hash = $1`,
-        [tokenHash]
-      );
 
-      if (resDb.rows.length === 0 || resDb.rows[0].used || new Date(resDb.rows[0].expires_at) < new Date()) {
+      let record: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const resDb = await query(
+            `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.full_name
+             FROM public.password_resets pr
+             JOIN public.app_users u ON pr.user_id = u.id
+             WHERE pr.token_hash = $1`,
+            [tokenHash]
+          );
+          if (resDb.rows.length > 0) record = resDb.rows[0];
+        } catch {}
+      }
+      if (!record) {
+        const restPr = await sbRestRequest<any[]>(
+          `password_resets?token_hash=eq.${encodeURIComponent(tokenHash)}&select=id,user_id,expires_at,used&limit=1`
+        );
+        if (restPr.ok && Array.isArray(restPr.data) && restPr.data[0]) {
+          const prRow = restPr.data[0];
+          const restU = await sbRestRequest<any[]>(
+            `app_users?id=eq.${encodeURIComponent(prRow.user_id)}&select=email,full_name&limit=1`
+          );
+          const uRow = restU.ok && Array.isArray(restU.data) ? restU.data[0] : null;
+          if (uRow) {
+            record = { ...prRow, email: uRow.email, full_name: uRow.full_name };
+          }
+        }
+      }
+
+      if (!record || record.used || new Date(record.expires_at) < new Date()) {
         sendJson(res, 400, {
           success: false,
           message: 'This reset link is invalid, expired, or has already been used. Please request a new one.',
         });
         return true;
       }
-
-      const record = resDb.rows[0];
 
       // Validate new password policy
       const passVal = validatePasswordPolicy(newPassword);
@@ -1316,22 +1655,79 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Hash with bcrypt
       const passwordHash = await hashPassword(newPassword);
+      const nowIso = new Date().toISOString();
 
-      // Update user password and clear force_password_reset
-      await query(
-        `UPDATE public.app_users 
-         SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
-         WHERE id = $2`,
-        [passwordHash, record.user_id]
-      );
+      if (isDatabaseAvailable()) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          // Atomically claim the single-use reset token first to block concurrent reuse
+          const claimRes = await client.query(
+            `UPDATE public.password_resets
+             SET used = TRUE, used_at = NOW()
+             WHERE id = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING id`,
+            [record.id]
+          );
+          if (claimRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            sendJson(res, 400, {
+              success: false,
+              message: 'This reset link is invalid, expired, or has already been used. Please request a new one.',
+            });
+            return true;
+          }
 
-      // Mark token permanently used
-      await query(
-        `UPDATE public.password_resets 
-         SET used = TRUE, used_at = NOW() 
-         WHERE id = $1`,
-        [record.id]
-      );
+          await client.query(
+            `UPDATE public.app_users
+             SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL
+             WHERE id = $2`,
+            [passwordHash, record.user_id]
+          );
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
+        } finally {
+          client.release();
+        }
+      } else {
+        // Atomically mark token used before updating password
+        const claimRest = await sbRestRequest<any[]>(
+          `password_resets?id=eq.${encodeURIComponent(record.id)}&used=eq.false`,
+          {
+            method: 'PATCH',
+            prefer: 'return=representation',
+            body: { used: true, used_at: nowIso },
+          }
+        );
+        if (!claimRest.ok || !Array.isArray(claimRest.data) || claimRest.data.length === 0) {
+          sendJson(res, 400, {
+            success: false,
+            message: 'This reset link is invalid, expired, or has already been used. Please request a new one.',
+          });
+          return true;
+        }
+
+        const updUser = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(record.user_id)}`, {
+          method: 'PATCH',
+          body: {
+            password_hash: passwordHash,
+            password_changed_at: nowIso,
+            force_password_reset: false,
+            failed_login_attempts: 0,
+            locked_until: null,
+            updated_at: nowIso,
+          },
+        });
+        if (!updUser.ok) {
+          sendJson(res, 503, { success: false, message: 'Failed to update password right now. Please retry.' });
+          return true;
+        }
+      }
+
+      // Sync Supabase Auth password if user also has a Supabase Auth account and Admin Key is configured
+      await syncSupabaseAuthPassword(record.email, newPassword).catch(() => {});
 
       // Invalidate all existing sessions
       await revokeAllUserSessions(record.user_id);
@@ -1340,14 +1736,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       await resetRateLimitAsync(`reset_pass:session:${tokenHash}`);
       await resetRateLimitAsync(`login:account:${record.email}`);
 
-      // Dispatch confirmation email
+      // Dispatch confirmation email via configured SMTP
       sendPasswordChangedEmail(record.email, record.full_name, clientIp).catch(() => {});
 
       await logSecurityEvent('PASSWORD_RESET_SUCCESSFUL', {
         userId: record.user_id,
         userEmail: record.email,
         ipAddress: clientIp,
-      });
+      }).catch(() => {});
 
       sendJson(res, 200, {
         success: true,
@@ -2246,8 +2642,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // 5. TRIGGER EXPIRED DELETIONS: POST /api/account/deletion/process-expired
+    // 5. TRIGGER EXPIRED DELETIONS: POST /api/account/deletion/process-expired (Admin or CRON_SECRET only)
     if (pathname === '/api/account/deletion/process-expired' && method === 'POST') {
+      const cronSecret = process.env.CRON_SECRET || '';
+      const providedCron = String(req.headers['x-cron-secret'] || '').trim();
+      const validCron =
+        cronSecret.length >= 16 &&
+        providedCron.length === cronSecret.length &&
+        crypto.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
+      if (!validCron) {
+        const authUser = await authenticateRequest(req);
+        if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
+          sendJson(res, 403, { success: false, message: 'Access Denied: Administrator or cron secret required.' });
+          return true;
+        }
+      }
       const processed = await processExpiredAccountDeletions();
       sendJson(res, 200, { success: true, processedCount: processed });
       return true;
@@ -2469,12 +2878,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
         const targetRes = await query(
-          `SELECT id, full_name, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [linkedUserId]
         );
-        if (targetRes.rows.length === 0 || targetRes.rows[0].status !== 'active' || targetRes.rows[0].deletion_status !== 'none') {
-          sendJson(res, 404, { success: false, message: 'Selected user account is unavailable.' });
+        if (targetRes.rows.length === 0) {
+          sendJson(res, 404, { success: false, message: 'Selected user account was not found.' });
+          return true;
+        }
+        if (!isDiscoverableNormalUser(targetRes.rows[0])) {
+          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for Udhar connections.' });
           return true;
         }
       }
@@ -2633,12 +3046,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const contact = contactRes.rows[0];
 
       const targetUserRes = await query(
-        `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+        `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
          FROM public.app_users WHERE id = $1`,
         [registeredUserId]
       );
-      if (targetUserRes.rows.length === 0 || targetUserRes.rows[0].status !== 'active' || targetUserRes.rows[0].deletion_status !== 'none') {
-        sendJson(res, 404, { success: false, message: 'Registered user not found or unavailable.' });
+      if (targetUserRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Registered user not found.' });
+        return true;
+      }
+      if (!isDiscoverableNormalUser(targetUserRes.rows[0])) {
+        sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Target user account is not eligible for Udhar connections.' });
         return true;
       }
 
@@ -2698,7 +3115,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       try {
         const targetUserId = (body.targetUserId || body.target_user_id || '').trim();
         const relationshipType = (body.relationshipType || body.relationship_type || 'Friend').trim();
-        const requestedVia = (body.requestedVia || 'search').trim();
+        const requestedVia = (body.requestedVia || body.source || 'search').trim();
 
         if (!targetUserId) {
           sendJson(res, 400, { success: false, code: 'MISSING_TARGET', message: 'Target user ID is required.' });
@@ -2710,7 +3127,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const targetRes = await query(
-          `SELECT id, full_name, email, phone, avatar_url, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, phone, avatar_url, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [targetUserId]
         );
@@ -2719,8 +3136,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
         const target = targetRes.rows[0];
-        if (target.status !== 'active' || target.deletion_status !== 'none') {
-          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is deactivated or unavailable.' });
+        if (!isDiscoverableNormalUser(target)) {
+          sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is not eligible for Udhar connections.' });
           return true;
         }
 
@@ -3004,6 +3421,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const key = connAcceptMatch[1];
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        sendJson(res, 400, { success: false, message: 'Valid connection request ID is required.' });
+        return true;
+      }
+
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -3011,6 +3434,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       try {
+        const lookupKey = parsedKey.kind === 'composite' ? (parsedKey.requesterUserId || key) : (parsedKey.uuid || key);
         const reqRes = await query(
           `SELECT uc.id, uc.user_a_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
            FROM public.user_connections uc
@@ -3018,7 +3442,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            WHERE uc.user_b_id = $1 AND uc.status = 'pending'
              AND (uc.id::text = $2 OR uc.user_a_id::text = $2)
            LIMIT 1`,
-          [authUser.id, key]
+          [authUser.id, lookupKey]
         );
 
         if (reqRes.rows.length === 0) {
@@ -3102,6 +3526,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const key = connRejectMatch[1];
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        sendJson(res, 400, { success: false, message: 'Valid connection request ID is required.' });
+        return true;
+      }
+
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -3109,12 +3539,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       try {
+        const lookupKey = parsedKey.kind === 'composite' ? (parsedKey.requesterUserId || key) : (parsedKey.uuid || key);
         const reqRes = await query(
           `SELECT id, user_a_id FROM public.user_connections
            WHERE user_b_id = $1 AND status = 'pending'
              AND (id::text = $2 OR user_a_id::text = $2)
            LIMIT 1`,
-          [authUser.id, key]
+          [authUser.id, lookupKey]
         );
         if (reqRes.rows.length === 0) {
           sendJson(res, 404, { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending connection request not found.' });
@@ -3383,7 +3814,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const usersRes = await query(
-          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url,
+          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
+             COALESCE(u.deletion_status, 'none') AS deletion_status,
              COALESCE(u.email_verified, TRUE) AS is_verified,
              (
                SELECT uc.status FROM public.user_connections uc
@@ -3411,8 +3843,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            FROM public.app_users u
            WHERE u.status = 'active'
            AND COALESCE(u.deletion_status, 'none') = 'none'
-           AND COALESCE(u.role, 'user') != 'admin'
-           AND LOWER(TRIM(COALESCE(u.email, ''))) != 'admin@mymoney.com'
+           AND COALESCE(LOWER(u.role), 'user') = 'user'
+           AND LOWER(TRIM(COALESCE(u.email, ''))) NOT IN ('admin@mymoney.com', 'hackifypro@gmail.com')
            AND NOT EXISTS (
                SELECT 1 FROM public.user_connections blk
                WHERE ((blk.user_a_id = $1 AND blk.user_b_id = u.id) OR (blk.user_b_id = $1 AND blk.user_a_id = u.id))
@@ -3425,7 +3857,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         );
 
         // Privacy-preserving output: partial name search NEVER exposes email or phone before consent
-        const sanitizedUsers = usersRes.rows.map((u: any) => {
+        const sanitizedUsers = usersRes.rows
+          .filter((u: any) => isDiscoverableNormalUser(u))
+          .map((u: any) => {
           const isSelf = u.id === authUser.id;
           const isConnected = !isSelf && (u.conn_status === 'connected' || Boolean(u.is_saved_contact));
           const isIncomingPending = !isSelf && !isConnected && u.conn_status === 'pending' && u.pending_requester_id === u.id;
@@ -3598,8 +4032,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const tokenRes = await query(
-          `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
-                  u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+          `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used, t.is_single_use, t.used_at,
+                  u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
                   COALESCE(u.deletion_status, 'none') AS deletion_status
            FROM public.qr_pairing_tokens t
            JOIN public.app_users u ON t.user_id = u.id
@@ -3619,11 +4053,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         const qrRecord = tokenRes.rows[0];
 
-        if (qrRecord.used) {
+        if (qrRecord.used || (qrRecord.is_single_use && qrRecord.used_at)) {
           sendJson(res, 410, {
             success: false,
             code: 'QR_REVOKED',
-            message: 'This pairing QR has been revoked. Ask your friend to share their newer Udhar Pairing QR.',
+            message: 'This pairing QR has already been used or revoked. Ask your friend to share their newer Udhar Pairing QR.',
           });
           return true;
         }
@@ -3637,11 +4071,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
 
-        if (qrRecord.status !== 'active' || qrRecord.deletion_status !== 'none') {
+        if (!isDiscoverableNormalUser(qrRecord)) {
           sendJson(res, 403, {
             success: false,
             code: 'ACCOUNT_UNAVAILABLE',
-            message: 'This user account is currently deactivated or unavailable.',
+            message: 'This user account is currently deactivated or unavailable for Udhar connections.',
           });
           return true;
         }
@@ -3794,7 +4228,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const relationshipType = (body.relationshipType || 'Friend').trim();
 
         const tokenRes = await query(
-          `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+          `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
                   COALESCE(u.deletion_status, 'none') AS deletion_status
            FROM public.qr_pairing_tokens t
            JOIN public.app_users u ON t.user_id = u.id
@@ -3814,7 +4248,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const tokenRecord = tokenRes.rows[0];
         const targetUserId = tokenRecord.user_id;
 
-        if (tokenRecord.status !== 'active' || tokenRecord.deletion_status !== 'none') {
+        if (!isDiscoverableNormalUser(tokenRecord)) {
           sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'This user account is currently deactivated or unavailable.' });
           return true;
         }
@@ -4072,6 +4506,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const repaymentsByUdhar: Record<string, any[]> = {};
       for (const rep of repayRes.rows) {
+        if (!isActiveRepayment(rep)) continue;
         const key = rep.tx_id || rep.udhar_id;
         if (!repaymentsByUdhar[key]) repaymentsByUdhar[key] = [];
         const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
@@ -4090,7 +4525,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         editHistoryByLink[hist.link_id].push(hist);
       }
 
-      const transactions = txRes.rows.map((r: any) => {
+      const activeTxRows = txRes.rows.filter((r: any) => r.status !== 'cancelled' && !r.deleted_at);
+      const transactions = activeTxRows.map((r: any) => {
         const orig = parseFloat(r.original_amount) || 0;
         const cur = parseFloat(r.current_balance) || 0;
         const computedPaid = Math.max(0, roundMoney(orig - cur));
@@ -4198,11 +4634,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       if (counterpartUserId && counterpartUserId !== authUser.id) {
         const uCheck = await query(
-          `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [counterpartUserId]
         );
-        if (uCheck.rows.length > 0 && uCheck.rows[0].status === 'active' && uCheck.rows[0].deletion_status === 'none') {
+        if (uCheck.rows.length > 0) {
+          if (!isDiscoverableNormalUser(uCheck.rows[0])) {
+            sendJson(res, 403, { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for shared Udhar connections.' });
+            return true;
+          }
           const blk = await query(
             `SELECT 1 FROM public.user_connections
              WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
@@ -4415,6 +4855,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const tx = txRes.rows[0];
+      if (tx.is_initiator) {
+        sendJson(res, 403, { success: false, message: 'Only the recipient counterpart can confirm this transaction.' });
+        return true;
+      }
       await query(
         `UPDATE public.udhar_transactions 
          SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
@@ -4705,6 +5149,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const rep = repRes.rows[0];
+      if (!isActiveRepayment(rep)) {
+        sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+        return true;
+      }
       if (rep.status === 'confirmed') {
         sendJson(res, 400, { success: false, message: 'This repayment has already been confirmed.' });
         return true;
@@ -4816,6 +5264,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const rep = repRes.rows[0];
+      if (!isActiveRepayment(rep)) {
+        sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+        return true;
+      }
       const txRes = await query(
         `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
         [rep.link_id, authUser.id]
@@ -4886,7 +5338,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         await client.query('BEGIN');
 
         const txRes = await client.query(
-          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2) FOR UPDATE',
+          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE',
           [txId, authUser.id]
         );
         if (txRes.rows.length === 0) {
@@ -4895,6 +5347,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
         const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === 'took') {
+          await client.query('ROLLBACK');
+          sendJson(res, 403, {
+            success: false,
+            message: 'Only the lender who gave the money can edit this Udhar transaction.',
+          });
+          return true;
+        }
 
         const repaySumRes = await client.query(
           `SELECT COALESCE(SUM(amount), 0) AS total_repaid
@@ -5103,9 +5563,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           sendJson(res, 400, { success: false, message: 'This transaction is already settled.' });
           return true;
         }
-        if (tx.status === 'cancelled') {
+        if (tx.status === 'cancelled' || tx.deleted_at) {
           await client.query('ROLLBACK');
           sendJson(res, 400, { success: false, message: 'Cannot settle a cancelled transaction.' });
+          return true;
+        }
+        if (tx.status === 'disputed') {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, { success: false, message: 'Cannot settle a disputed transaction. Resolve the dispute first.' });
           return true;
         }
 
@@ -5117,12 +5582,24 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           [tx.link_id, tx.id, authUser.id, currentBal, settleDate, paymentMethod, notes, authUser.id]
         );
 
-        await client.query(
-          `UPDATE public.udhar_transactions 
-           SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
-           WHERE link_id = $1`,
-          [tx.link_id]
-        );
+        await client.query('SAVEPOINT settle_audit_cols');
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), settled_by = $2, updated_at = NOW() 
+             WHERE link_id = $1`,
+            [tx.link_id, authUser.id]
+          );
+          await client.query('RELEASE SAVEPOINT settle_audit_cols');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT settle_audit_cols');
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
+             WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
 
         if (tx.counterpart_user_id) {
           await client.query(
@@ -5174,7 +5651,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
     }
 
-    // 20C. CANCEL UDHAAR TRANSACTION (BLOCKED IF REPAYMENTS EXIST): DELETE /api/udhar/transactions/:id
+    // 20C. DELETE INDIVIDUAL UDHAAR TRANSACTION (LENDER ONLY; CASCADES SOFT-DELETE TO REPAYMENTS): DELETE /api/udhar/transactions/:id
     const deleteTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)$/);
     if (deleteTxMatch && method === 'DELETE') {
       const authUser = await authenticateRequest(req);
@@ -5190,85 +5667,324 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const txId = deleteTxMatch[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const deletionReason = typeof body?.reason === 'string'
+        ? body.reason.trim()
+        : typeof body?.deletion_reason === 'string'
+          ? body.deletion_reason.trim()
+          : '';
+
       if (!isDatabaseAvailable()) {
-        const restRes = await cancelUdharRest(authUser, txId);
+        const restRes = await cancelUdharRest(authUser, txId, deletionReason);
         sendJson(res, restRes.status, restRes.body);
         return true;
       }
 
-      const txRes = await query('SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2', [txId, authUser.id]);
-      if (txRes.rows.length === 0) {
-        sendJson(res, 404, { success: false, message: 'Transaction not found.' });
-        return true;
-      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      const tx = txRes.rows[0];
-      if (tx.counterpart_user_id && tx.direction === 'took') {
-      sendJson(res, 403, {
-      success: false,
-      message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
-      });
-      return true;
-      }
-      const repsRes = await query(
-        `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
-        [tx.link_id]
-      );
+        const txRes = await client.query(
+          'SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE',
+          [txId, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Transaction not found.' });
+          return true;
+        }
 
-      const guard = canCancelUdhar({
-        status: tx.status,
-        paid_amount: tx.paid_amount,
-        repayments: repsRes.rows,
-      });
+        const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === 'took') {
+          await client.query('ROLLBACK');
+          sendJson(res, 403, {
+            success: false,
+            message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
+          });
+          return true;
+        }
+        const repsRes = await client.query(
+          `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
+          [tx.link_id]
+        );
 
-      if (!guard.allowed) {
-        sendJson(res, 409, {
-          success: false,
-          message: guard.reason,
+        const guard = canCancelUdhar({
+          status: tx.status,
+          deleted_at: tx.deleted_at,
+          paid_amount: tx.paid_amount,
+          repayments: repsRes.rows.filter((r: any) => isActiveRepayment(r)),
+        });
+
+        if (!guard.allowed) {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, {
+            success: false,
+            message: guard.reason,
+          });
+          return true;
+        }
+
+        const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        await client.query('SAVEPOINT delete_audit_cols');
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
+                 deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE link_id = $1`,
+            [tx.link_id, authUser.id, cleanReason]
+          );
+          await client.query('RELEASE SAVEPOINT delete_audit_cols');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT delete_audit_cols');
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
+             WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
+
+        // Soft-delete associated repayments so orphaned rows cannot affect totals or history
+        await client.query('SAVEPOINT delete_reps_soft');
+        try {
+          await client.query(
+            `UPDATE public.udhar_repayments
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE link_id = $1 AND status NOT IN ('deleted', 'cancelled')`,
+            [tx.link_id, authUser.id, cleanReason || 'Parent Udhar deleted']
+          );
+          await client.query('RELEASE SAVEPOINT delete_reps_soft');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT delete_reps_soft');
+          await client.query(
+            `DELETE FROM public.udhar_repayments WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
+
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
+            [
+              `Udhar Removed by ${authUser.full_name}`,
+              `${authUser.full_name} deleted the Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        await client.query('COMMIT');
+
+        await logSecurityEvent('UDHAR_CANCELLED', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount, reason: cleanReason },
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          deletedTransactionId: tx.id,
+          linkId: tx.link_id,
+          message: 'Udhar entry deleted successfully. Totals have been recalculated.',
         });
         return true;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // 20C-2. DELETE INDIVIDUAL REPAYMENT & RECALCULATE PARENT UDHAAR: DELETE /api/udhar/repayments/:id
+    const deleteRepaymentMatch = pathname.match(/^\/api\/udhar\/repayments\/([a-zA-Z0-9_-]+)$/);
+    if (deleteRepaymentMatch && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
       }
 
-      await query(
-      `UPDATE public.udhar_transactions
-      SET status = 'cancelled', current_balance = 0, updated_at = NOW(),
-      deleted_at = NOW(), deleted_by = $2
-      WHERE link_id = $1`,
-      [tx.link_id, authUser.id]
-      ).catch(async () => {
-      await query(
-      `UPDATE public.udhar_transactions
-      SET status = 'cancelled', current_balance = 0, updated_at = NOW()
-      WHERE link_id = $1`,
-      [tx.link_id]
-      );
-      });
-
-      if (tx.counterpart_user_id) {
-        await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-           VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
-          [
-            `Udhar Cancelled by ${authUser.full_name}`,
-            `${authUser.full_name} has cancelled the transaction of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
-            tx.counterpart_user_id,
-            tx.link_id,
-            authUser.id,
-          ]
-        ).catch(() => {});
+      const rate = await checkRateLimitAsync(`udhar_rep_delete:${authUser.id}`, RATE_LIMITS.UDHAR_DELETE.max, RATE_LIMITS.UDHAR_DELETE.windowMs, RATE_LIMITS.UDHAR_DELETE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
       }
 
-      await logSecurityEvent('UDHAR_CANCELLED', {
-        userId: authUser.id,
-        userEmail: authUser.email,
-        details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount },
-      });
+      const repaymentId = deleteRepaymentMatch[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const deletionReason = typeof body?.reason === 'string'
+        ? body.reason.trim()
+        : typeof body?.deletion_reason === 'string'
+          ? body.deletion_reason.trim()
+          : '';
 
-      sendJson(res, 200, {
-        success: true,
-        message: 'Transaction cancelled successfully. Balances updated.',
-      });
-      return true;
+      if (!isDatabaseAvailable()) {
+        const restRes = await deleteRepaymentRest(authUser, repaymentId, deletionReason);
+        sendJson(res, restRes.status, restRes.body);
+        return true;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const repRes = await client.query(
+          `SELECT * FROM public.udhar_repayments WHERE id = $1 FOR UPDATE`,
+          [repaymentId]
+        );
+        if (repRes.rows.length === 0 || !isActiveRepayment(repRes.rows[0])) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Repayment record not found.' });
+          return true;
+        }
+        const rep = repRes.rows[0];
+
+        const txRes = await client.query(
+          `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2 FOR UPDATE`,
+          [rep.link_id, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 404, { success: false, message: 'Associated Udhar transaction not found.' });
+          return true;
+        }
+        const tx = txRes.rows[0];
+
+        if (tx.status === 'cancelled' || tx.deleted_at) {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, { success: false, message: 'Associated Udhar has already been deleted.' });
+          return true;
+        }
+        if (tx.status === 'disputed') {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, { success: false, message: 'Cannot delete repayments on a disputed Udhar. Resolve the dispute first.' });
+          return true;
+        }
+
+        const guard = canDeleteRepayment({
+          isShared: Boolean(tx.counterpart_user_id),
+          direction: tx.direction,
+          actorUserId: authUser.id,
+          repayment: rep,
+        });
+        if (!guard.allowed) {
+          await client.query('ROLLBACK');
+          sendJson(res, guard.httpStatus || 403, { success: false, message: guard.reason || 'Not authorized to delete this repayment.' });
+          return true;
+        }
+
+        const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        await client.query('SAVEPOINT delete_single_rep_soft');
+        try {
+          await client.query(
+            `UPDATE public.udhar_repayments
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE id = $1`,
+            [repaymentId, authUser.id, cleanReason]
+          );
+          await client.query('RELEASE SAVEPOINT delete_single_rep_soft');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT delete_single_rep_soft');
+          await client.query(
+            `DELETE FROM public.udhar_repayments WHERE id = $1`,
+            [repaymentId]
+          );
+        }
+
+        const remRepsRes = await client.query(
+          `SELECT id, amount, status FROM public.udhar_repayments WHERE link_id = $1`,
+          [tx.link_id]
+        );
+        const remainingReps = remRepsRes.rows.filter((r: any) => r.id !== repaymentId && isActiveRepayment(r));
+
+        const recalc = recalculateUdharFromRepayments({
+          originalAmount: tx.original_amount,
+          repayments: remainingReps,
+          currentStatus: tx.status,
+        });
+
+        await client.query('SAVEPOINT recalc_parent_udhar_cols');
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET paid_amount = $1,
+                 current_balance = $2,
+                 status = $3,
+                 settled_at = CASE WHEN $4 = TRUE THEN COALESCE(settled_at, NOW()) ELSE NULL END,
+                 settled_by = CASE WHEN $4 = TRUE THEN COALESCE(settled_by, $5) ELSE NULL END,
+                 updated_at = NOW()
+             WHERE link_id = $6 AND status <> 'cancelled'`,
+            [recalc.paidAmount, recalc.remainingBalance, recalc.nextStatus, recalc.isSettled, authUser.id, tx.link_id]
+          );
+          await client.query('RELEASE SAVEPOINT recalc_parent_udhar_cols');
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT recalc_parent_udhar_cols');
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET paid_amount = $1,
+                 current_balance = $2,
+                 status = $3,
+                 settled_at = CASE WHEN $4 = TRUE THEN COALESCE(settled_at, NOW()) ELSE NULL END,
+                 updated_at = NOW()
+             WHERE link_id = $5 AND status <> 'cancelled'`,
+            [recalc.paidAmount, recalc.remainingBalance, recalc.nextStatus, recalc.isSettled, tx.link_id]
+          );
+        }
+
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'repayment_deleted', $3, $4, $5, TRUE)`,
+            [
+              `Repayment Deleted by ${authUser.full_name}`,
+              `${authUser.full_name} deleted a repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')}. Updated balance: ₹${recalc.remainingBalance.toLocaleString('en-IN')}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id,
+            ]
+          ).catch(() => {});
+        }
+
+        await client.query('COMMIT');
+
+        await logSecurityEvent('UDHAR_REPAYMENT_DELETED', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: {
+            repaymentId,
+            txId: tx.id,
+            linkId: tx.link_id,
+            deletedAmount: rep.amount,
+            paidAmount: recalc.paidAmount,
+            remainingBalance: recalc.remainingBalance,
+            udharStatus: recalc.nextStatus,
+            reason: cleanReason,
+          },
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          deletedRepaymentId: repaymentId,
+          transactionId: tx.id,
+          linkId: tx.link_id,
+          paidAmount: recalc.paidAmount,
+          remainingBalance: recalc.remainingBalance,
+          udharStatus: recalc.nextStatus,
+          isSettled: recalc.isSettled,
+          message: `Repayment of ₹${parseFloat(rep.amount).toLocaleString('en-IN')} deleted. Remaining balance: ₹${recalc.remainingBalance.toLocaleString('en-IN')}.`,
+        });
+        return true;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
     // 20D. GET TRANSACTION AUDIT & REPAYMENT HISTORY: GET /api/udhar/transactions/:id/history
@@ -5329,16 +6045,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [tx.link_id]
       );
 
-      const repayments = repaymentsRes.rows.map((r: any) => {
-        const { note: repNote, meta: repMeta } = unpackStructuredNote(r.notes);
-        return {
-          ...r,
-          notes: repNote || null,
-          transaction_ref: r.transaction_ref || repMeta.transaction_ref || null,
-          repayment_time: r.repayment_time || repMeta.repayment_time || null,
-          attachment_url: r.attachment_url || repMeta.attachment_url || null,
-        };
-      });
+      const repayments = repaymentsRes.rows
+        .filter((r: any) => isActiveRepayment(r))
+        .map((r: any) => {
+          const { note: repNote, meta: repMeta } = unpackStructuredNote(r.notes);
+          return {
+            ...r,
+            notes: repNote || null,
+            transaction_ref: r.transaction_ref || repMeta.transaction_ref || null,
+            repayment_time: r.repayment_time || repMeta.repayment_time || null,
+            attachment_url: r.attachment_url || repMeta.attachment_url || null,
+          };
+        });
 
       sendJson(res, 200, {
         success: true,
@@ -7382,13 +8100,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    // Legacy alias: POST /api/send-reset-email
+    // Legacy alias: POST /api/send-reset-email (strictly restricted to authenticated admins)
     if (pathname === '/api/send-reset-email' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
+        sendJson(res, 403, { success: false, message: 'Access Denied: Administrator authentication required.' });
+        return true;
+      }
       const body = await parseJsonBody(req);
       const email = normalizeEmail(body.email || '');
-      const rawToken = body.token || body.otp || generateCryptoToken(32);
-      const resetLink = body.resetLink || `${origin}/#reset-password&token=${rawToken}&email=${encodeURIComponent(email)}`;
-      const sent = await sendPasswordResetEmail(email, body.name || 'User', resetLink);
+      if (!validateEmail(email)) {
+        sendJson(res, 400, { success: false, message: 'Valid email address is required.' });
+        return true;
+      }
+      const rawToken = generateCryptoToken(32);
+      const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
+      const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+      const sent = await sendPasswordResetEmail(email, String(body.name || 'User').slice(0, 80), resetLink);
       sendJson(res, 200, { success: sent, message: sent ? 'Reset email dispatched' : 'Failed to dispatch email' });
       return true;
     }

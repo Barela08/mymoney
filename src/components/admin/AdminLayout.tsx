@@ -238,14 +238,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-sm tracking-tight text-slate-900 dark:text-slate-100">
-                  {appBranding?.appName || 'My Money'} Control Center
+                  {appBranding?.appName || 'My Money Manager'} Control Center
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                   {roleName}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                {appBranding?.subTitle || 'by HackifyPro'} · Administrative Platform
+                A product of HackifyPro · Administrative Platform
               </p>
             </div>
           </div>
@@ -320,12 +320,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                 )}
               </div>
             )}
-          </div>
-
-          {/* System Health Dot */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Operational</span>
           </div>
 
           {/* Alerts Bell */}
@@ -517,6 +511,33 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                     })}
                   </div>
                 ))}
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                {onExitAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileOpen(false);
+                      onExitAdmin();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Switch to User App</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileOpen(false);
+                    logout();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-xs font-bold text-rose-600 dark:text-rose-400 cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Logout Admin Session</span>
+                </button>
               </div>
             </div>
           </div>

@@ -8,6 +8,9 @@ import {
 } from '../lib/authApi';
 import { getSupabaseClient } from '../lib/supabase';
 import { syncDeviceRegistration } from './PwaInstallContext';
+import { clearUpiProfileCache } from '../lib/upiProfileApi';
+import { signInWithFirebaseGoogle } from '../lib/firebaseClient';
+import { loginWithPasskeyOnDevice } from '../lib/webauthnClient';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -19,6 +22,8 @@ interface AuthContextType {
   setIsRecoveryMode: React.Dispatch<React.SetStateAction<boolean>>;
   setRecoveryToken: React.Dispatch<React.SetStateAction<string | null>>;
   login: (email: string, pass: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>;
+  loginWithGoogle: () => Promise<{ success: boolean; message?: string; code?: string }>;
+  loginWithPasskey: (email?: string) => Promise<{ success: boolean; message?: string }>;
   adminLogin: (
     email: string,
     pass: string,
@@ -36,7 +41,8 @@ interface AuthContextType {
   requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordReset: (token: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message: string }>;
   changePassword: (currentPassword: string, newPassword: string, confirmNewPassword: string) => Promise<{ success: boolean; message: string }>;
-  updateUserProfile: (payload: { fullName?: string; phone?: string; avatarUrl?: string }) => Promise<{ success: boolean; message: string }>;
+  updateUserProfile: (payload: { fullName?: string; phone?: string; username?: string; avatarUrl?: string }) => Promise<{ success: boolean; message: string }>;
+  completeUserProfile: (payload: { fullName: string; username?: string; phone?: string }) => Promise<{ success: boolean; message: string }>;
   deleteAccount: (password: string) => Promise<{ success: boolean; message: string }>;
   // Secure Admin Functions
   getAdminUsersList: () => Promise<AdminUserListItem[]>;
@@ -155,7 +161,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (supabase) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user && session.user.email) {
+        if (session?.user && session.user.email && session.access_token) {
+          setStoredSessionToken(session.access_token);
+          try {
+            const meRes = await authApi.getMe();
+            if (meRes.success && meRes.user) {
+              setUser(meRes.user);
+              setIsLoading(false);
+              return;
+            }
+          } catch (meErr: any) {
+            if (meErr?.status === 401 || meErr?.status === 403) {
+              clearUpiProfileCache();
+              setUser(null);
+              setIsLoading(false);
+              return;
+            }
+          }
+
           const email = session.user.email;
           const { data: prof } = await supabase
             .from('profiles')
@@ -163,23 +186,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .eq('id', session.user.id)
             .single();
 
-          const isAdm = email.toLowerCase() === 'hackifypro@gmail.com' || email.toLowerCase() === 'admin@mymoney.com' || prof?.role === 'admin' || prof?.role === 'superadmin';
+          const isMasterEmail =
+            email.toLowerCase() === 'hackifypro@gmail.com' ||
+            email.toLowerCase() === 'admin@mymoney.com';
+          const profRole = (prof?.role || '').toLowerCase().trim();
+          const effectiveRole = isMasterEmail
+            ? 'superadmin'
+            : (profRole === 'admin' || profRole === 'superadmin' || profRole === 'support' || profRole === 'analyst')
+              ? profRole
+              : 'user';
+          const isAdm = effectiveRole !== 'user';
           const authUser: AuthUser = {
             uid: session.user.id,
             id: session.user.id,
             email,
             displayName: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
             full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
-            role: isAdm ? 'admin' : (prof?.role || 'user'),
+            role: effectiveRole as any,
             status: prof?.status || 'active',
             email_verified: true,
             created_at: prof?.created_at || new Date().toISOString(),
           };
           setUser(authUser);
           setStoredAuthUser(authUser);
-          if (!getStoredSessionToken()) {
-            setStoredSessionToken(session.access_token || `direct_${session.user.id}_${Date.now()}`);
-          }
           setIsLoading(false);
           return;
         }
@@ -188,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    clearUpiProfileCache();
     setUser(null);
     setIsLoading(false);
   }, []);
@@ -230,22 +260,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (!supaErr && supaData?.user) {
-          const isAdm = email.trim().toLowerCase() === 'hackifypro@gmail.com' || email.trim().toLowerCase() === 'admin@mymoney.com';
-          const authUser: AuthUser = {
-            uid: supaData.user.id,
-            id: supaData.user.id,
-            email: supaData.user.email || email,
-            displayName: isAdm ? 'Security Administrator' : email.split('@')[0],
-            full_name: isAdm ? 'Security Administrator' : email.split('@')[0],
-            role: isAdm ? 'admin' : 'user',
-            status: 'active',
-            email_verified: true,
-            created_at: new Date().toISOString(),
-          };
-          if (!apiSuccess) {
+          if (!apiSuccess && supaData.session?.access_token) {
+            setStoredSessionToken(supaData.session.access_token);
+            try {
+              const meRes = await authApi.getMe();
+              if (meRes.success && meRes.user) {
+                setUser(meRes.user);
+                syncDeviceRegistration();
+                return { success: true, message: 'Logged in successfully.' };
+              }
+            } catch (meErr: any) {
+              if (meErr?.status === 403 || meErr?.status === 401) {
+                setStoredSessionToken(null);
+                setStoredAuthUser(null);
+                return {
+                  success: false,
+                  message: meErr?.message || 'Account access denied.',
+                };
+              }
+            }
+
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('role, status, full_name')
+              .eq('id', supaData.user.id)
+              .single();
+            const isMasterEmail =
+              email.trim().toLowerCase() === 'hackifypro@gmail.com' ||
+              email.trim().toLowerCase() === 'admin@mymoney.com';
+            const profRole = (prof?.role || '').toLowerCase().trim();
+            const effectiveRole = isMasterEmail
+              ? 'superadmin'
+              : (profRole === 'admin' || profRole === 'superadmin' || profRole === 'support' || profRole === 'analyst')
+                ? profRole
+                : 'user';
+            const isAdm = effectiveRole !== 'user';
+            const authUser: AuthUser = {
+              uid: supaData.user.id,
+              id: supaData.user.id,
+              email: supaData.user.email || email,
+              displayName: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
+              full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
+              role: effectiveRole as any,
+              status: (prof?.status as any) || 'active',
+              email_verified: true,
+              created_at: new Date().toISOString(),
+            };
             setUser(authUser);
             setStoredAuthUser(authUser);
-            setStoredSessionToken(supaData.session?.access_token || `direct_${supaData.user.id}_${Date.now()}`);
             syncDeviceRegistration();
             return { success: true, message: 'Logged in successfully.' };
           }
@@ -319,6 +381,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phone,
         password: pass,
         confirmPassword: confirmPass,
+        requireProfileCompletion: true,
       });
 
       if (res.success && res.user) {
@@ -381,6 +444,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email_verified: false,
               created_at: new Date().toISOString(),
             };
+            if (data.session?.access_token) {
+              setStoredSessionToken(data.session.access_token);
+            }
+            setStoredAuthUser(newUser);
             setUser(newUser);
             return { success: true, message: 'Account registered successfully!' };
           }
@@ -403,6 +470,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authApi.logout();
     } finally {
+      clearUpiProfileCache();
       setUser(null);
       setStoredSessionToken(null);
       setStoredAuthUser(null);
@@ -414,6 +482,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authApi.logoutAllDevices();
     } finally {
+      clearUpiProfileCache();
       setUser(null);
       setStoredSessionToken(null);
       setStoredAuthUser(null);
@@ -468,16 +537,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Update profile
-  const updateUserProfile = async (payload: { fullName?: string; phone?: string; avatarUrl?: string }) => {
+  const updateUserProfile = async (payload: { fullName?: string; phone?: string; username?: string; avatarUrl?: string }) => {
     try {
       const res = await authApi.updateProfile(payload);
       if (res.success && res.user) {
         setUser(res.user);
+        setStoredAuthUser(res.user);
         return { success: true, message: res.message };
       }
       return { success: false, message: res.message || 'Failed to update profile.' };
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to update profile.' };
+    }
+  };
+
+  // Complete first-time profile
+  const completeUserProfile = async (payload: { fullName: string; username?: string; phone?: string }) => {
+    try {
+      const res = await authApi.completeProfile(payload);
+      if (res.success && res.user) {
+        setUser(res.user);
+        setStoredAuthUser(res.user);
+        return { success: true, message: res.message };
+      }
+      return { success: false, message: res.message || 'Could not save profile.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Could not save profile.' };
+    }
+  };
+
+  // Google Sign-In via Firebase Auth -> server-verified canonical app_users.id
+  const loginWithGoogle = async () => {
+    try {
+      const { idToken } = await signInWithFirebaseGoogle();
+      const res = await authApi.loginWithGoogle(idToken);
+      if (res.success && res.user) {
+        setUser(res.user);
+        setStoredAuthUser(res.user);
+        syncDeviceRegistration();
+        return { success: true, message: res.message || 'Signed in with Google.' };
+      }
+      return { success: false, message: res.message || 'Google sign-in failed.' };
+    } catch (err: any) {
+      return {
+        success: false,
+        code: err?.data?.code,
+        message: err?.message || 'Google sign-in failed.',
+      };
+    }
+  };
+
+  // Passkey (WebAuthn) Sign-In -> server-verified canonical app_users.id
+  const loginWithPasskey = async (email?: string) => {
+    try {
+      const res = await loginWithPasskeyOnDevice(email);
+      if (res.success && res.user && res.sessionToken) {
+        setStoredSessionToken(res.sessionToken);
+        setStoredAuthUser(res.user);
+        setUser(res.user);
+        syncDeviceRegistration();
+        return { success: true, message: res.message || 'Signed in with Passkey.' };
+      }
+      return { success: false, message: res.message || 'Passkey sign-in failed.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Passkey sign-in failed.' };
     }
   };
 
@@ -492,90 +615,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Admin: Get users with Dual-Layer API + Supabase Profiles fallback
+  // Admin: Get users strictly via authenticated /api/admin/users
   const getAdminUsersList = async (): Promise<AdminUserListItem[]> => {
-    // 1. Try server API
     try {
       const res = await authApi.adminGetUsers();
-      if (res && res.users && res.users.length > 0) {
-        return res.users;
-      }
+      return res?.users || [];
     } catch (err: any) {
-      console.warn('Notice fetching admin users from API, trying Supabase directly:', err.message);
+      console.warn('Admin users fetch rejected:', err.message);
+      return [];
     }
-
-    // 2. Direct Supabase Fallback (ensures users always display!)
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { data: profs, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(profs) && profs.length > 0) {
-          return profs.map((p: any) => ({
-            id: p.id,
-            uid: p.id,
-            fullName: p.email ? p.email.split('@')[0] : 'User',
-            displayName: p.email ? p.email.split('@')[0] : 'User',
-            email: p.email,
-            phone: null,
-            role: p.role || 'user',
-            status: p.status || 'active',
-            emailVerified: true,
-            forcePasswordReset: false,
-            failedLoginAttempts: 0,
-            createdAt: p.created_at || new Date().toISOString(),
-            lastLoginAt: null,
-            passwordChangedAt: p.created_at || new Date().toISOString(),
-            passwordStatus: 'Protected (Bcrypt Encrypted)',
-            activeSessionsCount: 1,
-          }));
-        }
-      }
-    } catch (e) {
-      console.error('Supabase direct profiles query notice:', e);
-    }
-
-    return [];
   };
 
   // Admin: Toggle status
   const toggleUserStatus = async (targetUserId: string, newStatus: 'active' | 'suspended' | 'deactivated') => {
-    let apiMsg = '';
     try {
       const res = await authApi.adminUpdateUserStatus(targetUserId, newStatus);
-      apiMsg = res.message;
-    } catch {}
-
-    // Also update Supabase profiles
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        await supabase.from('profiles').update({ status: newStatus }).eq('id', targetUserId);
-      }
-    } catch {}
-
-    return { success: true, message: apiMsg || `Account status updated to ${newStatus}.` };
+      return { success: true, message: res.message || `Account status updated to ${newStatus}.` };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to update account status.' };
+    }
   };
 
   // Admin: Change role
   const adminUpdateUserRole = async (targetUserId: string, newRole: 'user' | 'admin') => {
-    let apiMsg = '';
     try {
       const res = await authApi.adminUpdateUserRole(targetUserId, newRole);
-      apiMsg = res.message;
-    } catch {}
-
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        await supabase.from('profiles').update({ role: newRole }).eq('id', targetUserId);
-      }
-    } catch {}
-
-    return { success: true, message: apiMsg || `User role updated to ${newRole}.` };
+      return { success: true, message: res.message || `User role updated to ${newRole}.` };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to update user role.' };
+    }
   };
 
   // Admin: Send reset email
@@ -610,23 +678,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Admin: Delete user
   const adminDeleteUser = async (targetUserId: string) => {
-    let apiMsg = '';
     try {
       const res = await authApi.adminDeleteUser(targetUserId);
-      if (res.success) {
-        apiMsg = res.message;
-      }
-    } catch {}
-
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        await supabase.from('profiles').delete().eq('id', targetUserId);
-        await supabase.from('transactions').delete().eq('user_id', targetUserId);
-      }
-    } catch {}
-
-    return { success: true, message: apiMsg || 'User deleted successfully.' };
+      return { success: Boolean(res.success), message: res.message || 'User deleted successfully.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to delete user.' };
+    }
   };
 
   // Admin: Audit logs
@@ -663,6 +720,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsRecoveryMode,
         setRecoveryToken,
         login,
+        loginWithGoogle,
+        loginWithPasskey,
         adminLogin,
         register,
         logout,
@@ -671,6 +730,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completePasswordReset,
         changePassword,
         updateUserProfile,
+        completeUserProfile,
         deleteAccount,
         getAdminUsersList,
         toggleUserStatus,

@@ -80,7 +80,7 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
   onOpenPrivacyPolicy,
   source = 'privacy_choices_modal',
 }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const toast = useToast();
 
   const [isVisible, setIsVisible] = useState<boolean>(Boolean(forcedIsOpen));
@@ -101,6 +101,7 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
   // Save state & idempotency guard (prevents duplicate DB rows on double-click / retry)
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveRequiresReauth, setSaveRequiresReauth] = useState<boolean>(false);
   const isSavingRef = useRef<boolean>(false);
   const saveIdempotencyKeyRef = useRef<string>(generateConsentIdempotencyKey('privacy_save'));
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
@@ -241,6 +242,7 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
     isSavingRef.current = true;
     setIsSaving(true);
     setSaveError(null);
+    setSaveRequiresReauth(false);
 
     try {
       // 2. Collect ONLY the explicit optional choices (separate entry per category)
@@ -273,8 +275,11 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
       }
     } catch (err: any) {
       // 5. Never display success if Supabase save fails — keep modal open with retry option
-      const msg =
-        err?.message || 'Unable to save your privacy choices right now. Please check your connection and retry.';
+      const isAuthErr = err?.status === 401 || err?.code === 'UNAUTHORIZED';
+      setSaveRequiresReauth(isAuthErr);
+      const msg = isAuthErr
+        ? 'Your session has expired. Please sign in again to save your privacy choices.'
+        : err?.message || 'Unable to save your privacy choices right now. Please check your connection and retry.';
       setSaveError(msg);
       toast.error('Save failed', msg);
     } finally {
@@ -585,15 +590,30 @@ export const PrivacyChoicesModal: React.FC<PrivacyChoicesModalProps> = ({
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer whitespace-nowrap"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>{copy.retrySave}</span>
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {saveRequiresReauth ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsVisible(false);
+                        logout();
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer whitespace-nowrap"
+                    >
+                      <span>Sign In Again</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={isSaving}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer whitespace-nowrap"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{copy.retrySave}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

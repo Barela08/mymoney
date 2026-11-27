@@ -41,6 +41,10 @@ import { NavTab } from '../common/Sidebar';
 import { AiIntelligenceWidgets } from './AiIntelligenceWidgets';
 import { SearchVoiceBar } from '../common/SearchVoiceBar';
 import { PendingDetectedExpensesBanner } from '../upi/PendingDetectedExpensesBanner';
+import { DashboardUpiQrSection } from '../upi/DashboardUpiQrSection';
+import { ProfileDropdown } from '../common/ProfileDropdown';
+import { udharDeletionApi, UdharSummaryData } from '../../lib/udharDeletionApi';
+import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -60,6 +64,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isEnablingPush, setIsEnablingPush] = useState(false);
+  const [liveUdharSummary, setLiveUdharSummary] = useState<UdharSummaryData | null>(null);
   const [pushBannerDismissed, setPushBannerDismissed] = useState(() => {
     try {
       const raw = localStorage.getItem('mm_push_banner_dismissed_at');
@@ -70,6 +75,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
       return false;
     }
   });
+
+  React.useEffect(() => {
+    let mounted = true;
+    const loadUdharSummary = async () => {
+      try {
+        const res = await udharDeletionApi.getUdharTransactions();
+        if (mounted && res.success) {
+          setLiveUdharSummary(res.summary);
+        }
+      } catch {
+        // Fallback silently to ExpenseContext summary if unauthenticated or offline
+      }
+    };
+    loadUdharSummary();
+
+    const handleUdharEvent = () => {
+      loadUdharSummary();
+    };
+    window.addEventListener('mymoney:udhar-updated', handleUdharEvent);
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = subscribeToSupabaseUdharRealtime(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(loadUdharSummary, 350);
+    });
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('mymoney:udhar-updated', handleUdharEvent);
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [transactions.length]);
 
   const handleDismissPushBanner = () => {
     setPushBannerDismissed(true);
@@ -187,6 +225,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </p>
         </div>
       </div>
+      </div>
 
       {/* 1A. Mobile Notification Bar Opt-in Banner (only when permission === 'default' & not dismissed) */}
       {isPushSupported && pushPermission === 'default' && !pushBannerDismissed && (
@@ -298,6 +337,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
+
+      {/* 2B. Dedicated UPI QR Section Directly Connected Below Available Balance */}
+      <DashboardUpiQrSection />
 
       {/* 3. Quick Action Buttons Row (Consolidated: No duplicate calculator) */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
@@ -717,19 +759,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
                   <span>Given (Lent)</span>
                   <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                    {formatINR(summary.totalMoneyGiven)}
+                    {formatINR(liveUdharSummary ? liveUdharSummary.totalLent : summary.totalMoneyGiven)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
                   <span>Received (Repaid)</span>
                   <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {formatINR(summary.totalMoneyReceived)}
+                    {formatINR(liveUdharSummary ? liveUdharSummary.settledAmount : summary.totalMoneyReceived)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 font-semibold text-slate-900 dark:text-slate-100">
                   <span>Outstanding net</span>
                   <span className="text-amber-600 dark:text-amber-400 tabular-nums">
-                    {formatINR(summary.netPeopleBalance)}
+                    {formatINR(liveUdharSummary ? liveUdharSummary.netBalance : summary.netPeopleBalance)}
                   </span>
                 </div>
               </div>

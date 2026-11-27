@@ -9,11 +9,8 @@ import {
   Laptop,
   Trash2,
   Activity,
-  Server,
   RefreshCw,
   TrendingUp,
-  Clock,
-  ArrowUpRight,
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
@@ -131,7 +128,7 @@ export const AdminOverviewTab: React.FC = () => {
             {stats?.activeUsers?.toLocaleString() || 0}
           </p>
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
-            <span>● Status: Normal / Operational</span>
+            <span>Verified active accounts</span>
           </div>
         </div>
 
@@ -239,40 +236,49 @@ export const AdminOverviewTab: React.FC = () => {
               <span className="w-3 h-3 rounded bg-emerald-500 inline-block" />
               <span>Registrations</span>
             </div>
-            <div className="flex items-center gap-1.5 text-blue-500">
-              <span className="w-3 h-3 rounded bg-blue-500 inline-block" />
-              <span>Logins</span>
-            </div>
           </div>
         </div>
 
-        {/* SVG Sparkline/Bar Chart */}
-        <div className="h-44 w-full flex items-end gap-2 pt-6 pb-2 border-b border-slate-100 dark:border-slate-800">
-          {(charts?.registrations?.length > 0 ? charts.registrations : [
-            { date: 'Day 1', count: 1 },
-            { date: 'Day 2', count: 3 },
-            { date: 'Day 3', count: 2 },
-            { date: 'Day 4', count: 5 },
-            { date: 'Day 5', count: 4 },
-          ]).map((item: any, idx: number) => {
-            const heightPct = Math.min(100, Math.max(15, (parseInt(item.count) || 1) * 20));
-            return (
-              <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
-                <div
-                  style={{ height: `${heightPct}%` }}
-                  className="w-full rounded-t-lg bg-emerald-500/80 group-hover:bg-emerald-500 transition-all relative"
-                >
-                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                    {item.count} users
-                  </span>
-                </div>
-                <span className="text-[9px] text-slate-400 font-mono truncate w-full text-center">
-                  {item.date ? String(item.date).slice(-5) : idx}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        {/* Real Registration Trend Bars or Honest Empty State */}
+        {Array.isArray(charts?.registrations) && charts.registrations.length > 0 ? (
+          <div className="h-44 w-full flex items-end gap-2 pt-6 pb-2 border-b border-slate-100 dark:border-slate-800">
+            {(() => {
+              const maxCount = Math.max(
+                ...charts.registrations.map((r: any) => Number(r.count) || 0),
+                1
+              );
+              return charts.registrations.map((item: any, idx: number) => {
+                const numericCount = Number(item.count) || 0;
+                const heightPct = numericCount > 0 ? Math.min(100, Math.max(12, Math.round((numericCount / maxCount) * 100))) : 4;
+                return (
+                  <div key={item.date || idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
+                    <div
+                      style={{ height: `${heightPct}%` }}
+                      className="w-full rounded-t-lg bg-emerald-500/80 group-hover:bg-emerald-500 transition-all relative"
+                    >
+                      <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                        {numericCount} users
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-slate-400 font-mono truncate w-full text-center">
+                      {item.date ? String(item.date).slice(-5) : idx + 1}
+                    </span>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        ) : (
+          <div className="h-36 w-full flex flex-col items-center justify-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-center px-4">
+            <TrendingUp className="w-5 h-5 text-slate-400 mb-1.5" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              No registration trend data recorded yet
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Daily signup bars appear automatically as new users register.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Recent Administrative Events Feed */}

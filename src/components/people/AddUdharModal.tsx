@@ -157,8 +157,30 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
     const loadContactsAndPreservePerson = async () => {
       try {
         setIsLoadingContacts(true);
-        const res = await udharDeletionApi.getContacts();
-        const contacts = res.success ? res.contacts || [] : [];
+        const [res, reqRes] = await Promise.all([
+          udharDeletionApi.getContacts(),
+          udharDeletionApi.listConnectionRequests().catch(() => null),
+        ]);
+        const baseContacts = res.success ? res.contacts || [] : [];
+        const existingLinkedIds = new Set(
+          baseContacts.map((c) => c.linked_user_id).filter(Boolean) as string[]
+        );
+        const extraConnected: UdharContact[] = (reqRes?.connected || [])
+          .filter((conn) => conn.userId && !existingLinkedIds.has(conn.userId))
+          .map((conn) => ({
+            id: `conn-${conn.userId}`,
+            user_id: '',
+            name: conn.displayName || 'Connected User',
+            email: null,
+            phone: null,
+            photo_url: conn.avatarUrl || null,
+            relationship_type: 'Friend',
+            notes: null,
+            linked_user_id: conn.userId,
+            created_at: conn.createdAt,
+            updated_at: conn.createdAt,
+          }));
+        const contacts = [...baseContacts, ...extraConnected];
         setSavedContacts(contacts);
 
         if (initialPersonName) {
@@ -643,7 +665,7 @@ export const AddUdharModal: React.FC<AddUdharModalProps> = ({
                                 {su.displayName} {isSelf ? '(You)' : ''}
                               </p>
                               <p className="text-[10px] text-slate-400 font-mono truncate">
-                                {su.emailMasked}
+                                {su.emailMasked || su.phoneMasked || 'Verified My Money Manager account'}
                               </p>
                             </div>
                           </div>

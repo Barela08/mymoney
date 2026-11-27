@@ -82,22 +82,22 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Bar */}
-      <header className="max-w-5xl w-full mx-auto flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
+      <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-2 z-10">
+        <div className="flex items-center gap-2.5 min-w-0">
           <img
             src={appBranding?.logoUrl || '/logo.jpg'}
             alt={`${appBranding?.appName || 'My Money Manager'} by HackifyPro`}
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).src = '/logo.jpg';
             }}
-            className="w-10 h-10 rounded-xl object-cover border border-emerald-500/40 shadow-lg"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-emerald-500/40 shadow-lg shrink-0"
           />
-          <div>
-            <span className="text-sm font-black tracking-tight text-white block">
+          <div className="min-w-0">
+            <span className="text-sm font-black tracking-tight text-white block truncate">
               {appBranding?.appName || 'My Money Manager'}
             </span>
-            <span className="text-[11px] font-semibold text-emerald-400">
-              Admin Security Gateway · HackifyPro
+            <span className="text-[11px] font-semibold text-emerald-400 block truncate">
+              A product of HackifyPro · Admin Security Gateway
             </span>
           </div>
         </div>
@@ -105,9 +105,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
         <button
           type="button"
           onClick={handleReturnHome}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
           <span>User Website</span>
         </button>
       </header>
@@ -224,7 +224,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
 
       {/* Footer */}
       <footer className="text-center text-[11px] text-slate-500 z-10">
-        {appBranding?.appName || 'My Money Manager'} · A Product of HackifyPro
+        {appBranding?.appName || 'My Money Manager'} — A product of HackifyPro
       </footer>
     </div>
   );

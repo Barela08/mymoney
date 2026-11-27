@@ -9,6 +9,9 @@ import {
   calculateRepaymentApplication,
   validateUdharEdit,
   canCancelUdhar,
+  isActiveRepayment,
+  canDeleteRepayment,
+  recalculateUdharFromRepayments,
   calculatePersonLedgerSummary,
   calculatePeopleDashboardSummary,
   calculatePersonalIncomeExpenseExcludingUdhar,
@@ -222,18 +225,73 @@ test('Scenario 8 & 9: Edit audit diff, repayment preservation, and cancellation 
   assert.equal(goodEdit.nextRemainingAmount, 4000);
   assert.equal(goodEdit.changes?.length, 2);
 
-  // Cancellation allowed with 0 repayments
+  // Deletion/cancellation allowed for active entries including partial or settled ones
   assert.equal(canCancelUdhar({ status: 'confirmed', paid_amount: 0, repayments: [] }).allowed, true);
-  // Cancellation blocked when repayments exist
   assert.equal(
     canCancelUdhar({ status: 'confirmed', paid_amount: 1000, repayments: [{ status: 'confirmed' }] }).allowed,
-    false
+    true
   );
-  // Cancellation blocked when pending repayment exists
+  assert.equal(
+    canCancelUdhar({ status: 'settled', paid_amount: 5000, repayments: [{ status: 'confirmed' }] }).allowed,
+    true
+  );
   assert.equal(
     canCancelUdhar({ status: 'confirmed', paid_amount: 0, repayments: [{ status: 'pending_confirmation' }] }).allowed,
-    false
+    true
   );
+  // Disputed or already cancelled entries remain blocked
+  assert.equal(canCancelUdhar({ status: 'disputed', paid_amount: 0, repayments: [] }).allowed, false);
+  assert.equal(canCancelUdhar({ status: 'cancelled', paid_amount: 0, repayments: [] }).allowed, false);
+});
+
+test('Repayment deletion guard & balance recalculation reopen settled Udhar accurately', () => {
+  assert.equal(isActiveRepayment({ status: 'confirmed', deleted_at: null }), true);
+  assert.equal(isActiveRepayment({ status: 'deleted', deleted_at: null }), false);
+  assert.equal(isActiveRepayment({ status: 'confirmed', deleted_at: '2026-11-27T00:00:00Z' }), false);
+
+  // Lender can delete confirmed repayment; borrower gets 403
+  assert.equal(
+    canDeleteRepayment({
+      isShared: true,
+      direction: 'gave',
+      actorUserId: 'lender-1',
+      repayment: { status: 'confirmed', recorded_by_user_id: 'lender-1' },
+    }).allowed,
+    true
+  );
+  const borrowerDel = canDeleteRepayment({
+    isShared: true,
+    direction: 'took',
+    actorUserId: 'borrower-1',
+    repayment: { status: 'confirmed', recorded_by_user_id: 'lender-1' },
+  });
+  assert.equal(borrowerDel.allowed, false);
+  assert.equal(borrowerDel.httpStatus, 403);
+
+  // Borrower may only withdraw their own unconfirmed pending claim
+  assert.equal(
+    canDeleteRepayment({
+      isShared: true,
+      direction: 'took',
+      actorUserId: 'borrower-1',
+      repayment: { status: 'pending_confirmation', recorded_by_user_id: 'borrower-1' },
+    }).allowed,
+    true
+  );
+
+  // Settled ₹1,500 Udhar with ₹1,000 repayment deleted -> ₹500 paid, ₹1,000 remaining, status reopened to 'confirmed'
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: 1500,
+    repayments: [
+      { amount: 500, status: 'confirmed', deleted_at: null },
+      { amount: 1000, status: 'deleted', deleted_at: '2026-11-27T00:00:00Z' },
+    ],
+    currentStatus: 'settled',
+  });
+  assert.equal(recalc.paidAmount, 500);
+  assert.equal(recalc.remainingBalance, 1000);
+  assert.equal(recalc.isSettled, false);
+  assert.equal(recalc.nextStatus, 'confirmed');
 });
 
 test('Scenario 10: Financial accounting separation excludes Udhar from personal Income/Expenses', () => {

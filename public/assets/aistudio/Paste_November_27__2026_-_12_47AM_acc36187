@@ -1,0 +1,919 @@
+MASTER PROMPT: My Money Manager — Universal Responsive UI/UX + Existing UPI QR Bottom Navigation Integration + Complete Bug Fix + Vercel Production Deployment Audit
+
+Project: My Money Manager by HackifyPro
+Repository: https://github.com/Barela08/mymoney
+Production URL: https://mymoney.nileshbarela.site
+Frontend Hosting: Vercel
+Database: Supabase
+Google Authentication: Firebase Authentication
+Existing Authentication: Supabase Email/Password and Passkeys
+Push Notifications: Firebase Cloud Messaging
+
+PRIMARY OBJECTIVE
+
+Perform a complete application audit, device-responsive optimization, existing UPI QR navigation integration, error correction and Vercel production deployment verification.
+
+IMPORTANT:
+
+- Preserve the existing project architecture.
+- Preserve all existing working features.
+- Do not rebuild the application from scratch.
+- Do not delete existing components unnecessarily.
+- Do not create duplicate UPI QR functionality.
+- Reuse existing components, services, hooks and database integrations.
+- Do not change existing user data.
+- Do not introduce unnecessary paid services.
+- Do not replace existing authentication architecture.
+
+First inspect the complete repository and understand the existing implementation.
+
+---
+
+PHASE 1: COMPLETE PROJECT AUDIT
+
+Inspect:
+
+- Complete source code.
+- All routes and pages.
+- Shared UI components.
+- Existing navigation system.
+- Existing bottom navigation.
+- Existing UPI QR feature.
+- Existing authentication integration.
+- Supabase database integration.
+- Firebase FCM integration.
+- Responsive CSS and breakpoints.
+- Tailwind or other styling configuration.
+- API routes and server functions.
+- Environment variables.
+- Vercel deployment configuration.
+- Package dependencies.
+- Existing build errors.
+- Browser console errors.
+- Runtime errors.
+- TypeScript errors.
+- Lint errors.
+
+Identify root causes before changing code.
+
+Create an audit report and implementation plan.
+
+---
+
+PHASE 2: UNIVERSAL DEVICE RESPONSIVENESS
+
+The entire application must work correctly on:
+
+1. Android smartphones.
+2. iPhones.
+3. Small-screen mobile devices.
+4. Large-screen smartphones.
+5. Android tablets.
+6. iPads.
+7. Windows laptops.
+8. macOS laptops.
+9. Desktop monitors.
+10. Large displays.
+
+Implement responsive layouts using the project's existing design system.
+
+Mobile requirements
+
+- No horizontal overflow.
+- No clipped text.
+- No overlapping buttons.
+- Proper spacing.
+- Touch-friendly controls.
+- Readable typography.
+- Responsive cards.
+- Proper form layouts.
+- Responsive QR code display.
+- Correct modal positioning.
+- Keyboard-aware forms.
+- Safe-area support for iOS.
+- Proper scrolling.
+- Bottom navigation must not cover page content.
+
+Tablet requirements
+
+- Proper grid layout.
+- Balanced spacing.
+- Suitable card widths.
+- Responsive sidebar/navigation.
+- Optimized dashboard layout.
+
+Desktop requirements
+
+- Professional dashboard layout.
+- Proper content width.
+- Balanced sidebar and main content.
+- Consistent spacing.
+- No stretched or distorted components.
+- Proper modal and dropdown positioning.
+
+Use consistent responsive breakpoints.
+
+Do not independently redesign each page. Maintain a unified design system.
+
+---
+
+PHASE 3: BOTTOM NAVIGATION — ADD EXISTING UPI QR OPTION
+
+CRITICAL REQUIREMENT:
+
+The UPI QR functionality already exists in the application.
+
+I only want its existing entry point added to the bottom navigation bar.
+
+Do not rebuild or duplicate the UPI QR feature.
+
+Instructions
+
+1. Locate the existing UPI QR page/component.
+2. Identify its existing route.
+3. Identify the existing QR generation component.
+4. Identify its existing UPI ID and amount functionality.
+5. Identify existing validation and save functionality.
+6. Identify its authentication requirements.
+7. Reuse the exact existing route and component.
+
+Add a new bottom navigation tab:
+
+Label: UPI QR
+
+Icon: qr-code
+
+When the user taps UPI QR:
+
+- Navigate to the existing UPI QR page.
+- Display the existing UPI QR functionality.
+- Preserve existing QR generation.
+- Preserve existing UPI ID configuration.
+- Preserve existing amount-based QR generation.
+- Preserve existing save functionality.
+- Preserve existing validation.
+- Preserve existing user data.
+
+Do not create another QR generation service.
+
+Do not introduce a new QR database table.
+
+Do not change existing QR functionality.
+
+Navigation requirements
+
+- Add UPI QR to mobile bottom navigation.
+- Add it to the appropriate desktop/tablet navigation where applicable.
+- Maintain existing tab order as much as possible.
+- Highlight the active tab.
+- Support browser back/forward navigation.
+- Prevent duplicate navigation entries.
+- Ensure all navigation items remain accessible.
+
+Responsive navigation
+
+On mobile:
+
+- Fixed bottom navigation.
+- Respect safe-area-inset-bottom.
+- Touch-friendly buttons.
+- No content hidden behind navigation.
+- Proper active state.
+- Horizontal scrolling only if absolutely necessary; prefer fitting the navigation correctly.
+
+On desktop:
+
+- Preserve the existing sidebar/top navigation design.
+- Do not force mobile-style bottom navigation onto desktop if inappropriate.
+
+---
+
+PHASE 4: EXISTING UPI QR FUNCTIONALITY AUDIT
+
+Test the existing implementation.
+
+Verify:
+
+- Existing QR loads correctly.
+- UPI ID is displayed correctly.
+- User profile details remain correct.
+- Amount input works.
+- Amount-based QR generation works.
+- Invalid UPI IDs are rejected.
+- Empty values are validated.
+- QR remains readable.
+- QR downloads correctly if supported.
+- QR sharing works if supported.
+- Existing saved settings remain available.
+- Unauthenticated users cannot access private QR information.
+- RLS policies protect user-specific data.
+
+Do not change existing UPI payment logic.
+
+Do not claim payment success based on QR generation.
+
+---
+
+PHASE 5: AUTHENTICATION COMPATIBILITY
+
+Preserve the existing planned authentication architecture:
+
+- Google Authentication through Firebase Auth.
+- Email/Password through Supabase Auth.
+- Passkey authentication through Supabase WebAuthn.
+- Supabase as the primary application database.
+- Firebase Cloud Messaging for push notifications.
+
+Ensure:
+
+- Protected routes work.
+- User identity mapping is consistent.
+- Profile data loads correctly.
+- Existing user sessions survive page refreshes.
+- Logout works correctly.
+- Account switching works safely.
+- Onboarding is respected.
+- No duplicate user profiles are created.
+
+Do not modify authentication architecture unnecessarily.
+
+---
+
+PHASE 6: COMPLETE BUG FIXING
+
+Perform a full error audit.
+
+Fix:
+
+Frontend
+
+- React errors.
+- Missing keys.
+- State synchronization bugs.
+- Invalid props.
+- Broken routes.
+- Rendering errors.
+- Modal bugs.
+- Form validation bugs.
+- Loading state bugs.
+- Mobile layout bugs.
+
+Backend
+
+- API failures.
+- Invalid request handling.
+- Authorization failures.
+- Session verification issues.
+- Database query errors.
+- Unexpected null values.
+
+Supabase
+
+- Incorrect queries.
+- RLS failures.
+- Missing indexes where genuinely required.
+- Profile synchronization bugs.
+- Data ownership problems.
+- Realtime subscription cleanup issues.
+
+Firebase
+
+- Authentication configuration errors.
+- FCM registration errors.
+- Token refresh handling.
+- Notification permission errors.
+- Service worker errors.
+
+Performance
+
+- Unnecessary re-renders.
+- Duplicate API calls.
+- Memory leaks.
+- Unnecessary dependencies.
+- Large bundle sizes.
+- Slow page loading.
+
+Never hide errors with empty catch blocks.
+
+Never disable security checks to make features work.
+
+---
+
+PHASE 7: VERCEL PRODUCTION DEPLOYMENT AUDIT
+
+Ensure the application can build and deploy successfully on Vercel.
+
+Inspect:
+
+- vercel.json.
+- package.json.
+- Build scripts.
+- Framework configuration.
+- Node.js compatibility.
+- Dependency versions.
+- Environment variables.
+- API routes.
+- Server-side rendering.
+- Client/server component boundaries if applicable.
+- Route rewrites.
+- SPA fallback configuration where appropriate.
+- Static asset paths.
+- Image handling.
+- Production URL configuration.
+
+Environment variables
+
+Audit every required environment variable.
+
+Check:
+
+- Supabase URL.
+- Supabase public/anon key or publishable key.
+- Firebase web configuration.
+- Authentication configuration.
+- Google client configuration if required.
+- Other existing production variables.
+
+Rules:
+
+- Never expose service-role keys.
+- Never expose Firebase service-account private keys.
+- Never hardcode secrets.
+- Do not commit .env files.
+- Do not overwrite existing production environment variables.
+- Do not invent missing secrets.
+
+Deployment verification
+
+1. Run clean dependency installation.
+2. Run production build.
+3. Run TypeScript checks.
+4. Run lint checks.
+5. Fix build-breaking errors.
+6. Verify environment variable availability.
+7. Verify production routes.
+8. Verify authentication redirects.
+9. Verify QR navigation.
+10. Verify database connectivity.
+11. Verify FCM functionality.
+12. Verify mobile responsiveness.
+
+Do not report successful deployment based only on a local build.
+
+If Vercel deployment access is available, inspect the actual deployment and logs.
+
+Do not delete existing working deployments.
+
+Do not change production domain settings without authorization.
+
+---
+
+PHASE 8: CROSS-DEVICE TESTING
+
+Test these scenarios:
+
+1. Login on Android.
+2. Login on iPhone.
+3. Login on desktop.
+4. Dashboard on mobile.
+5. Dashboard on desktop.
+6. Bottom navigation on mobile.
+7. UPI QR tab navigation.
+8. Existing QR generation.
+9. Amount-based QR.
+10. QR download/share if supported.
+11. Browser refresh.
+12. Browser back/forward.
+13. Logout.
+14. Protected route access.
+15. Empty profile handling.
+16. Notification permissions.
+17. Page loading on slow connections.
+18. Small screen layout.
+19. Tablet layout.
+20. Production URL.
+
+Check browser console and network requests.
+
+---
+
+PHASE 9: ACCESSIBILITY AND UX
+
+- Keyboard accessibility.
+- Screen-reader labels.
+- Visible focus states.
+- Proper contrast.
+- Accessible buttons.
+- Semantic HTML.
+- Touch-friendly navigation.
+- Form error announcements.
+- Loading feedback.
+- Consistent empty states.
+
+Respect reduced-motion preferences.
+
+---
+
+PHASE 10: FINAL DELIVERABLE
+
+Provide:
+
+1. Complete audit report.
+2. All identified bugs.
+3. Root causes.
+4. Files modified.
+5. UPI QR navigation implementation details.
+6. Responsive improvements.
+7. Database changes, if any.
+8. Security changes.
+9. Build results.
+10. TypeScript results.
+11. Lint results.
+12. Cross-device testing results.
+13. Vercel deployment status.
+14. Remaining issues.
+15. Manual configuration required.
+
+FINAL NON-NEGOTIABLE RULES
+
+- Preserve existing functionality.
+- Reuse the existing UPI QR implementation.
+- Add only the UPI QR navigation entry.
+- Never create duplicate QR functionality.
+- Never delete existing user data.
+- Never weaken RLS or authentication security.
+- Never claim an untested feature works.
+- Never claim Vercel deployment succeeded without actual deployment evidence.
+- Make minimal, production-safe code changes.
+
+The final result must be a stable, professional, fully responsive My Money Manager application that works across supported devices and deploys reliably on Vercel.
+MASTER PROMPT: My Money Manager – Dashboard UPI QR, Saved UPI ID Management & Amount-Based QR Generation
+
+Project: My Money Manager by HackifyPro
+Repository: https://github.com/Barela08/mymoney
+Production: https://mymoney.nileshbarela.site
+
+OBJECTIVE
+
+Upgrade the existing Dashboard to provide two separate UPI QR functionalities:
+
+1. My UPI QR: Display and manage the user's permanently saved UPI ID and its default QR code.
+2. Generate UPI QR: Generate a temporary amount-specific UPI QR whenever the user enters an amount.
+
+Reuse the existing UPI QR components, routes, database structure and QR-generation logic wherever possible.
+
+---
+
+1. DASHBOARD – TWO UPI QUICK ACTIONS
+
+Immediately below the Available Balance section, display two responsive action cards.
+
+Option 1: UPI QR
+
+- Title: UPI QR
+- Display an appropriate QR-code icon.
+- Open the existing user's saved UPI QR functionality.
+- If the user has already saved a UPI ID, immediately display their existing UPI ID and corresponding QR code.
+- Provide Edit UPI ID and Delete UPI ID actions.
+- Do not ask the user to enter their UPI ID again unless they choose Edit.
+
+Option 2: Generate UPI QR
+
+- Title: Generate UPI QR
+- Display an appropriate QR generation icon.
+- Open the amount-based QR generator.
+- Allow the user to enter any valid amount.
+- Automatically use their saved UPI ID.
+- Generate an amount-specific UPI QR.
+- Display the QR preview and amount.
+- Preserve existing Save, Download and Share functionality wherever implemented.
+
+---
+
+2. SAVE UPI ID – ONE-TIME SETUP
+
+Implement a proper UPI ID setup flow.
+
+When the user opens UPI QR for the first time:
+
+1. Display an Enter UPI ID screen.
+2. Provide a UPI ID input field.
+3. Validate the UPI ID format.
+4. Display a clear privacy and consent notice.
+5. Add a mandatory consent checkbox.
+6. Enable the Save button only after valid input and consent.
+7. Save the UPI ID against the authenticated user's account.
+8. Generate the user's default UPI QR automatically after successful saving.
+
+After saving:
+
+- Keep the UPI ID saved across sessions and devices.
+- Fetch the saved UPI ID automatically after login.
+- Display the saved UPI QR without asking for the UPI ID again.
+- Use the same saved UPI ID for amount-based QR generation.
+- Prevent duplicate UPI ID records for the same user.
+
+The saved UPI ID must be user-specific and must never be shared with another user's account.
+
+---
+
+3. EDIT UPI ID FUNCTIONALITY
+
+When the user clicks Edit UPI ID:
+
+- Open an editable UPI ID form.
+- Pre-fill the existing saved UPI ID.
+- Allow the user to change it.
+- Validate the new UPI ID before saving.
+- Require appropriate consent for the updated information.
+- Save the updated UPI ID against the existing user's account.
+- Regenerate the default QR using the updated UPI ID.
+- Ensure the old QR is no longer displayed as the active QR.
+- Refresh the Dashboard and QR preview automatically.
+
+Show a confirmation message after successful updating.
+
+Do not create a second UPI ID record unnecessarily.
+
+---
+
+4. DELETE UPI ID FUNCTIONALITY
+
+Provide a Delete UPI ID option.
+
+When clicked:
+
+1. Display a confirmation dialog.
+2. Clearly explain that deleting the UPI ID will remove the saved UPI QR from the user's account.
+3. Require explicit confirmation.
+4. Delete only the authenticated user's saved UPI ID.
+5. Remove or invalidate the associated default QR data if stored separately.
+6. Return the user to the UPI ID setup screen.
+7. Show a clear message confirming the deletion.
+
+Important:
+
+- Do not delete the user's financial transaction history.
+- Do not delete unrelated profile information.
+- Do not affect other users' UPI IDs.
+- Do not delete historical transactions or payment records.
+
+---
+
+5. AMOUNT-BASED UPI QR GENERATOR
+
+This functionality must remain separate from the default saved UPI QR.
+
+When the user selects Generate UPI QR:
+
+1. Automatically retrieve the saved UPI ID.
+2. Display the UPI ID.
+3. Display an Enter Amount input.
+4. Allow the user to enter the required amount.
+5. Validate the amount.
+6. Generate a dynamic UPI payment URI using the saved UPI ID and entered amount.
+7. Generate and display the QR code.
+
+Example UPI URI format:
+
+"upi://pay?pa=USER_UPI_ID&am=AMOUNT&cu=INR"
+
+Use proper URL encoding and the existing QR-generation library.
+
+Amount validation
+
+- Amount must be greater than zero.
+- Reject negative values.
+- Reject invalid characters.
+- Apply appropriate INR decimal precision.
+- Prevent QR generation when the amount is invalid.
+- Do not silently generate a QR for ₹0.
+
+Generated QR actions
+
+- Display QR preview.
+- Display recipient UPI ID.
+- Display entered amount in INR.
+- Allow Download.
+- Allow Share.
+- Allow Generate Another QR.
+
+Important: Amount-based QR generation must not overwrite the user's default saved UPI QR or change their saved UPI ID.
+
+The amount-based QR should be generated on demand and should not create unnecessary permanent database records.
+
+---
+
+6. MISSING UPI ID HANDLING
+
+If the user has not saved a UPI ID:
+
+- Show a clear message: "Please set up your UPI ID first."
+- Provide a Set UPI ID button.
+- Redirect to the existing UPI ID setup flow.
+- Do not allow amount-based QR generation without a valid saved UPI ID.
+
+After successfully saving the UPI ID, allow the user to return to the QR generator automatically where practical.
+
+---
+
+7. BOTTOM TAB BAR INTEGRATION
+
+- Find the existing UPI QR item in the Bottom Tab Bar.
+- Reuse its existing route and component.
+- Ensure it opens the same saved UPI QR functionality as the Dashboard UPI QR shortcut.
+- Do not create duplicate pages or separate implementations.
+- Keep existing navigation working.
+
+Both Dashboard and Bottom Tab Bar must use the same UPI QR management functionality.
+
+---
+
+8. DASHBOARD UI DESIGN
+
+Maintain this exact order:
+
+1. User Profile / Account Information
+2. Available Balance
+3. UPI QR and Generate UPI QR action cards
+4. Existing Dashboard sections
+
+Design requirements:
+
+- Follow existing My Money Manager branding.
+- Use existing colors, typography and design system.
+- Two-column layout on wider screens.
+- Responsive layout on mobile devices.
+- Appropriate icons and touch targets.
+- Proper loading, error and success states.
+- No horizontal overflow or overlapping elements.
+
+Saved QR screen
+
+When a UPI ID is saved, display:
+
+- User's UPI QR code.
+- Saved UPI ID.
+- Edit UPI ID button.
+- Delete UPI ID button.
+- Share QR button.
+- Download QR button, if supported.
+
+Keep the UI clean and professional.
+
+---
+
+9. SECURITY AND DATA MANAGEMENT
+
+- Reuse the existing authentication system.
+- Maintain strict per-user data isolation.
+- Enforce authorization on the server/database side.
+- Never trust client-side user IDs for access control.
+- Validate all UPI ID updates.
+- Protect against unauthorized updates and deletions.
+- Do not expose API keys or private credentials.
+- Preserve existing database architecture.
+- Do not introduce unnecessary database tables or migrations.
+- Do not modify authentication or unrelated financial records.
+
+---
+
+10. IMPLEMENTATION AND TESTING
+
+Before implementation, inspect:
+
+- Existing Dashboard component.
+- Existing UPI QR route.
+- Existing Bottom Tab Bar.
+- Existing UPI ID setup and save functionality.
+- Existing QR-generation library.
+- Existing user profile and database schema.
+- Existing security rules.
+
+Implement changes directly in the existing project.
+
+Mandatory test cases
+
+1. New user without a saved UPI ID.
+2. User saves a UPI ID for the first time.
+3. Saved UPI QR appears automatically.
+4. Saved UPI ID persists after logout and login.
+5. Saved UPI ID is accessible on another authenticated device.
+6. User edits the saved UPI ID.
+7. Updated QR displays the new UPI ID.
+8. User deletes their UPI ID.
+9. User's transaction history remains intact after deletion.
+10. Amount-based QR generates correctly.
+11. Amount-based QR does not overwrite the default QR.
+12. Invalid and zero amounts are rejected.
+13. Dashboard UPI QR shortcut works.
+14. Bottom Tab Bar UPI QR navigation works.
+15. Users cannot access or modify another user's UPI ID.
+
+Test on mobile, tablet and desktop.
+
+Run:
+
+- ESLint
+- TypeScript checks
+- Production build
+- Existing automated tests
+
+Fix errors introduced by the implementation.
+
+Verify Vercel deployment and production routes wherever deployment access is available.
+
+---
+
+FINAL ACCEPTANCE CRITERIA
+
+The implementation is complete only when:
+
+1. Two UPI QR shortcuts appear below Available Balance.
+2. The user can save their UPI ID once.
+3. Their saved UPI QR displays automatically.
+4. The user can edit their saved UPI ID.
+5. The user can delete their saved UPI ID with confirmation.
+6. The amount-based QR generator works independently.
+7. The amount-based QR always uses the currently saved UPI ID.
+8. Generating an amount-based QR never overwrites the default QR.
+9. Dashboard and Bottom Tab Bar use the same existing UPI QR functionality.
+10. Data persists across devices.
+11. Existing authentication, transactions and other features remain intact.
+12. Security and responsive UI tests pass.
+13. Production build succeeds.
+
+IMPORTANT FINAL INSTRUCTION: Modify the existing My Money Manager project directly. Inspect before changing, reuse existing components and preserve all working functionality. Do not create a mockup, duplicate implementation or unnecessary database architecture. Complete the implementation and report exactly what was changed, tested and deployed. Never claim deployment verification unless it has actually been completed.
+
+URGENT BUG FIX: UDHAR ADD PEOPLE / SAVED PEOPLE — CONNECT BUTTON NOT WORKING
+
+Project: My Money Manager by HackifyPro
+GitHub: https://github.com/Barela08/mymoney
+Production: https://mymoney.nileshbarela.site
+Backend: Existing Supabase
+
+MAIN ISSUE
+
+In the Udhar section, when I open Add People / Saved People & Contacts, search for another registered user and click the Connect button, an error occurs.
+
+Fix this issue permanently.
+
+STEP 1 — FIND THE ROOT CAUSE
+
+Inspect the complete existing implementation:
+
+- Add People modal.
+- Saved People & Contacts.
+- Find People search.
+- Connect button click handler.
+- Supabase queries and mutations.
+- Database tables and relationships.
+- Foreign keys and unique constraints.
+- Supabase RLS policies.
+- Current authentication session.
+- User ID mapping.
+- API/RPC/Edge Function responses.
+- Realtime subscriptions.
+
+Check actual browser console errors and Supabase database errors.
+
+Identify the exact failing query or operation before changing code.
+
+STEP 2 — FIX USER SEARCH
+
+Ensure registered users can be searched using:
+
+- Username.
+- Display name.
+- Full registered email.
+- Mobile number, where available and permitted.
+
+Requirements:
+
+- Correct authenticated session.
+- Correct user IDs.
+- Proper query filters.
+- Debounced search.
+- Loading indicator.
+- Empty results state.
+- Useful error messages.
+- No admin/service accounts in normal People Search.
+- No exposure of private financial data or authentication information.
+
+STEP 3 — FIX CONNECT BUTTON
+
+When Connect is clicked:
+
+1. Validate the current authenticated user.
+2. Retrieve the actual user ID from the Supabase session.
+3. Validate the selected person's user ID.
+4. Prevent self-connection.
+5. Check for existing connections.
+6. Create a connection using the existing database architecture.
+7. Verify the database response.
+8. Show success only after confirmed database success.
+9. Update Saved People immediately.
+10. Change Connect to Connected.
+
+Prevent duplicate connections in both directions.
+
+If the connection already exists, show Connected instead of creating another record.
+
+STEP 4 — FIX SUPABASE RLS AND DATABASE ERRORS
+
+Inspect existing policies and constraints.
+
+Fix:
+
+- Permission denied errors.
+- RLS violations.
+- Foreign key errors.
+- Invalid UUID errors.
+- Duplicate key errors.
+- Incorrect table or column names.
+- Incorrect relationship mapping.
+- Missing profile records.
+- Incorrect insert/update operations.
+
+Never disable RLS as a workaround.
+
+Use secure database functions or server-side operations where necessary.
+
+Users must only access their own authorized connections and the minimum profile information needed for Udhar.
+
+STEP 5 — SAVED PEOPLE INTEGRATION
+
+After successful connection:
+
+- Person appears in Saved People.
+- Connected status updates immediately.
+- Connection persists after page refresh.
+- No duplicate contacts.
+- Correct profile information appears.
+- Connected person becomes selectable when creating Udhar transactions.
+
+Do not delete existing connections or financial records.
+
+STEP 6 — ERROR HANDLING
+
+Show meaningful messages for:
+
+- Already connected.
+- Invalid account.
+- Expired session.
+- Permission denied.
+- Network failure.
+- Unexpected server error.
+
+Log technical errors securely for debugging.
+
+Never show fake success.
+
+STEP 7 — SECURITY
+
+- Maintain Supabase authentication.
+- Preserve existing RLS.
+- Prevent cross-user data access.
+- Prevent unauthorized connection creation.
+- Prevent admin/service account discovery.
+- Never expose service-role keys in frontend.
+- Validate ownership server-side.
+- Keep financial transactions separate from contact connections.
+
+STEP 8 — TEST WITH TWO ACCOUNTS
+
+Use two separate test accounts, Account A and Account B.
+
+Test:
+
+1. Account A searches Account B.
+2. Account A clicks Connect.
+3. Database confirms connection.
+4. Account B appears in Account A's Saved People.
+5. Refresh the page.
+6. Confirm the connection still exists.
+7. Test duplicate Connect.
+8. Test self-connection.
+9. Test invalid account.
+10. Test expired session.
+11. Test RLS isolation.
+12. Test on two different devices.
+13. Test Add Udhar with the connected person.
+14. Confirm existing Udhar records remain unchanged.
+
+STEP 9 — FINAL VERIFICATION
+
+- Fix the actual root cause.
+- Run tests.
+- Check browser console.
+- Check Supabase logs.
+- Verify database insertion.
+- Verify RLS.
+- Verify Saved People persistence.
+- Preserve all existing functionality.
+- Push changes to the existing GitHub repository.
+- Deploy through Vercel only after successful verification.
+
+Provide the exact root cause, files changed, database/RLS changes and test results.
+
+NON-NEGOTIABLE: Do not hide the error, bypass RLS, create fake contacts or mark Connect successful without database confirmation. The feature must work after refresh and across two separate user accounts.

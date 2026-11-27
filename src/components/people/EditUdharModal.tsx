@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Edit3,
@@ -38,6 +38,20 @@ export const EditUdharModal: React.FC<EditUdharModalProps> = ({
   const [notes, setNotes] = useState<string>(transaction?.notes || '');
   const [editReason, setEditReason] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isOpen || !transaction) return;
+    setAmount(String(transaction.original_amount));
+    setTxDate(transaction.transaction_date ? transaction.transaction_date.split('T')[0] : '');
+    setDueDate(transaction.due_date ? transaction.due_date.split('T')[0] : '');
+    setNotes(transaction.notes || '');
+    setEditReason('');
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, transaction?.id, isSubmitting, onClose]);
 
   if (!isOpen || !transaction) return null;
 

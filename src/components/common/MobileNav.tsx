@@ -121,6 +121,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
     { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
     { id: 'people' as NavTab, label: 'People Section (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
+    { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
     { id: 'all_transactions' as NavTab, label: 'All Transactions Ledger', icon: ListOrdered, count: summary.totalTransactionsCount },
     { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
     { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
@@ -414,85 +415,165 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         </button>
       </div>
 
-      {/* Fixed 5-Tab Bottom Navigation for Mobile (Home, Transactions, People, Reports, More) */}
-      <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200/80 dark:border-slate-800 lg:hidden px-2 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))] flex items-center justify-around shadow-sm">
-        {/* 1. Home (Dashboard) */}
-        <button
-          onClick={() => {
-            setIsMoreSheetOpen(false);
-            onSelectTab('dashboard');
-          }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            currentTab === 'dashboard'
-              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          <LayoutDashboard className="w-4 h-4 mb-0.5 stroke-[1.75]" />
-          <span className="truncate">Home</span>
-        </button>
+      {/* Floating Notch 6-Tab Bottom Navigation for Mobile (Home, Transactions, People, UPI QR, Reports, More) */}
+      {(() => {
+        const MORE_TABS = new Set([
+          'ai_assistant',
+          'expense_calendar',
+          'smart_alerts',
+          'receipt_scanner',
+          'net_worth',
+          'safe_to_spend',
+          'budget',
+          'savings_goals',
+          'recurring_bills',
+          'calculator',
+          'notifications',
+          'settings',
+          'help_support',
+          'recycle_bin',
+          'legal',
+          'home',
+          'room',
+          'food',
+          'other',
+        ]);
+        const activeIndex = isMoreSheetOpen || MORE_TABS.has(currentTab)
+          ? 5
+          : currentTab === 'dashboard'
+          ? 0
+          : currentTab === 'all_transactions'
+          ? 1
+          : currentTab === 'people'
+          ? 2
+          : currentTab === 'upi_qr'
+          ? 3
+          : currentTab === 'reports'
+          ? 4
+          : 0;
 
-        {/* 2. Transactions */}
-        <button
-          onClick={() => {
-            setIsMoreSheetOpen(false);
-            onSelectTab('all_transactions');
-          }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            currentTab === 'all_transactions'
-              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          <ListOrdered className="w-4 h-4 mb-0.5 stroke-[1.75]" />
-          <span className="truncate">Transactions</span>
-        </button>
+        const mobileBottomItems = [
+          {
+            key: 'dashboard',
+            label: 'Home',
+            shortLabel: 'Home',
+            icon: LayoutDashboard,
+            onClick: () => {
+              setIsMoreSheetOpen(false);
+              onSelectTab('dashboard');
+            },
+          },
+          {
+            key: 'all_transactions',
+            label: 'Transactions',
+            shortLabel: 'Txns',
+            icon: ListOrdered,
+            onClick: () => {
+              setIsMoreSheetOpen(false);
+              onSelectTab('all_transactions');
+            },
+          },
+          {
+            key: 'people',
+            label: 'People',
+            shortLabel: 'People',
+            icon: Users,
+            onClick: () => {
+              setIsMoreSheetOpen(false);
+              onSelectTab('people');
+            },
+          },
+          {
+            key: 'upi_qr',
+            label: 'UPI QR',
+            shortLabel: 'UPI QR',
+            icon: QrCode,
+            onClick: () => {
+              setIsMoreSheetOpen(false);
+              onSelectTab('upi_qr');
+            },
+          },
+          {
+            key: 'reports',
+            label: 'Reports',
+            shortLabel: 'Reports',
+            icon: BarChart3,
+            onClick: () => {
+              setIsMoreSheetOpen(false);
+              onSelectTab('reports');
+            },
+          },
+          {
+            key: 'more',
+            label: 'More',
+            shortLabel: 'More',
+            icon: MoreHorizontal,
+            onClick: () => setIsMoreSheetOpen(!isMoreSheetOpen),
+          },
+        ];
 
-        {/* 3. People */}
-        <button
-          onClick={() => {
-            setIsMoreSheetOpen(false);
-            onSelectTab('people');
-          }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            currentTab === 'people'
-              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          <Users className="w-4 h-4 mb-0.5 stroke-[1.75]" />
-          <span className="truncate">People</span>
-        </button>
+        return (
+          <nav
+            aria-label="Mobile Navigation"
+            data-testid="floating-notch-tab-bar"
+            className="fixed bottom-0 inset-x-0 z-30 lg:hidden pointer-events-none px-2 sm:px-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-2"
+          >
+            <div className="pointer-events-auto relative mx-auto max-w-lg rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/80 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.22)] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.65)] px-1.5 py-1.5">
+              {/* Smooth Sliding Floating Notch Pill */}
+              <div
+                aria-hidden="true"
+                data-testid="floating-notch-indicator"
+                data-active-index={activeIndex}
+                className="absolute top-1.5 bottom-1.5 left-1.5 w-[calc((100%-0.75rem)/6)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.35,0.64,1)] pointer-events-none"
+                style={{ transform: `translateX(${activeIndex * 100}%)` }}
+              >
+                <div className="relative w-full h-full rounded-xl bg-emerald-50 dark:bg-emerald-950/75 border border-emerald-200/80 dark:border-emerald-700/60 shadow-xs">
+                  {/* Top Notch Accent Crest */}
+                  <span className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-5 h-1 rounded-full bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.65)]" />
+                </div>
+              </div>
 
-        {/* 4. Reports */}
-        <button
-          onClick={() => {
-            setIsMoreSheetOpen(false);
-            onSelectTab('reports');
-          }}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            currentTab === 'reports'
-              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4 mb-0.5 stroke-[1.75]" />
-          <span className="truncate">Reports</span>
-        </button>
-
-        {/* 5. More */}
-        <button
-          onClick={() => setIsMoreSheetOpen(!isMoreSheetOpen)}
-          className={`flex-1 flex flex-col items-center py-1 rounded-xl text-xs font-medium transition-colors ${
-            isMoreSheetOpen || ['ai_assistant', 'expense_calendar', 'smart_alerts', 'receipt_scanner', 'net_worth', 'safe_to_spend', 'budget', 'savings_goals', 'recurring_bills', 'calculator', 'notifications', 'settings', 'help_support', 'upi_qr'].includes(currentTab)
-              ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50/60 dark:bg-emerald-950/40'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          <MoreHorizontal className="w-4 h-4 mb-0.5 stroke-[1.75]" />
-          <span className="truncate">More</span>
-        </button>
-      </div>
+              <div className="relative z-10 grid grid-cols-6 items-center">
+                {mobileBottomItems.map((item, idx) => {
+                  const Icon = item.icon;
+                  const isActive = idx === activeIndex;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={item.onClick}
+                      aria-current={isActive ? 'page' : undefined}
+                      aria-label={item.label}
+                      data-testid={`mobile-tab-${item.key}`}
+                      className={`flex flex-col items-center justify-center min-h-[44px] py-1.5 px-0.5 rounded-xl transition-all duration-200 select-none cursor-pointer ${
+                        isActive
+                          ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+                      }`}
+                    >
+                      <Icon
+                        className={`w-[18px] h-[18px] mb-0.5 transition-transform duration-200 shrink-0 ${
+                          isActive ? '-translate-y-0.5 stroke-[2.25]' : 'stroke-[1.75]'
+                        }`}
+                      />
+                      <span className="text-[9.5px] sm:text-[10.5px] leading-tight whitespace-nowrap truncate max-w-full">
+                        {item.shortLabel !== item.label ? (
+                          <>
+                            <span className="min-[410px]:hidden">{item.shortLabel}</span>
+                            <span className="hidden min-[410px]:inline">{item.label}</span>
+                          </>
+                        ) : (
+                          item.label
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </nav>
+        );
+      })()}
 
       {/* More Slide-up Bottom Sheet */}
       {isMoreSheetOpen && (

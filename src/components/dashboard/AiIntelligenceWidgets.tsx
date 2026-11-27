@@ -76,12 +76,21 @@ export const AiIntelligenceWidgets: React.FC<AiIntelligenceWidgetsProps> = ({
       if (nwRes) {
         setNwAssets(nwRes.assets || []);
         setNwLiabilities(nwRes.liabilities || []);
-        if (nwRes.settings) setNwSettings(nwRes.settings);
+        if (nwRes.settings) setNwSettings((prev) => ({ ...prev, ...nwRes.settings }));
       }
-      if (stsRes) setStsPrefs(stsRes);
-      if (alRes) {
-        setAlertPrefs(alRes.preferences);
-        setAlertState(alRes.eventState);
+      if (stsRes && typeof stsRes === 'object') {
+        setStsPrefs({ ...DEFAULT_SAFE_TO_SPEND_PREFS, ...stsRes });
+      }
+      if (alRes && typeof alRes === 'object') {
+        if (alRes.preferences && typeof alRes.preferences === 'object') {
+          setAlertPrefs({ ...DEFAULT_SMART_ALERT_PREFS, ...alRes.preferences });
+        }
+        if (alRes.eventState && typeof alRes.eventState === 'object') {
+          setAlertState({
+            readKeys: Array.isArray(alRes.eventState.readKeys) ? alRes.eventState.readKeys : [],
+            dismissedKeys: Array.isArray(alRes.eventState.dismissedKeys) ? alRes.eventState.dismissedKeys : [],
+          });
+        }
       }
     });
   }, []);

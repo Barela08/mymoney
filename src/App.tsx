@@ -58,9 +58,17 @@ const NetWorthSection = lazy(() => import('./components/net-worth/NetWorthSectio
 const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToSpendSection').then(m => ({ default: m.SafeToSpendSection })));
 const UpiQrGeneratorSection = lazy(() => import('./components/upi/UpiQrGeneratorSection').then(m => ({ default: m.UpiQrGeneratorSection })));
 const NotificationPreferencesModal = lazy(() => import('./components/notifications/NotificationPreferencesModal').then(m => ({ default: m.NotificationPreferencesModal })));
+const CompleteProfileScreen = lazy(() => import('./components/auth/CompleteProfileScreen').then(m => ({ default: m.CompleteProfileScreen })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
   '/admin': 'admin',
+  '/transactions': 'all_transactions',
+  '/people': 'people',
+  '/reports': 'reports',
+  '/settings': 'settings',
+  '/budget': 'budget',
+  '/savings': 'savings_goals',
+  '/bills': 'recurring_bills',
   '/ai-assistant': 'ai_assistant',
   '/expense-calendar': 'expense_calendar',
   '/smart-alerts': 'smart_alerts',
@@ -75,6 +83,13 @@ const PATH_TO_TAB: Record<string, NavTab> = {
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
   admin: '/admin',
+  all_transactions: '/transactions',
+  people: '/people',
+  reports: '/reports',
+  settings: '/settings',
+  budget: '/budget',
+  savings_goals: '/savings',
+  recurring_bills: '/bills',
   ai_assistant: '/ai-assistant',
   expense_calendar: '/expense-calendar',
   smart_alerts: '/smart-alerts',
@@ -442,6 +457,15 @@ return (
     );
   }
 
+  // Mandatory first-time Complete Your Profile gate after Google, Passkey, or Email registration
+  if (user && !isAdmin && (user.profileCompleted === false || user.profile_completed === false)) {
+    return (
+      <Suspense fallback={<SectionFallback />}>
+        <CompleteProfileScreen />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* State 11 & 12: Offline and Reconnecting Status Banner */}
@@ -465,7 +489,7 @@ return (
         </div>
       )}
 
-      {currentTab === 'admin' ? (
+      {currentTab === 'admin' && isAdmin ? (
         <Suspense fallback={<SectionFallback />}>
           <AdminDashboard
             onExit={() => {
@@ -506,7 +530,7 @@ return (
               />
 
               {/* Dynamic Section Views */}
-              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
+              <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[calc(6rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
                 <Suspense fallback={<SectionFallback />}>
                   {currentTab === 'dashboard' && (
                     <DashboardView

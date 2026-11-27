@@ -18,6 +18,7 @@ import {
 import { adminClient } from '../../../lib/adminApi';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
+import { ConfirmModal } from '../../common/ConfirmModal';
 
 interface AdminAccount {
   id: string;
@@ -55,6 +56,8 @@ export const AdminAccountsTab: React.FC = () => {
   const [assignEmail, setAssignEmail] = useState<string>('');
   const [assignRole, setAssignRole] = useState<string>('support');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [pendingRevokeAdmin, setPendingRevokeAdmin] = useState<AdminAccount | null>(null);
+  const [isRevoking, setIsRevoking] = useState<boolean>(false);
 
   const fetchAdmins = async () => {
     setIsLoading(true);
@@ -108,7 +111,7 @@ export const AdminAccountsTab: React.FC = () => {
     }
   };
 
-  const handleRevokeAdmin = async (adminAccount: AdminAccount) => {
+  const handleRevokeAdmin = (adminAccount: AdminAccount) => {
     const isOwner =
       adminAccount.email.toLowerCase() === 'hackifypro@gmail.com' ||
       adminAccount.email.toLowerCase() === 'admin@mymoney.com';
@@ -118,18 +121,23 @@ export const AdminAccountsTab: React.FC = () => {
       return;
     }
 
-    if (!window.confirm(`Revoke administrative privileges for ${adminAccount.email}? They will return to ordinary user status and their active sessions will be terminated.`)) {
-      return;
-    }
+    setPendingRevokeAdmin(adminAccount);
+  };
 
+  const confirmRevokeAdmin = async () => {
+    if (!pendingRevokeAdmin || isRevoking) return;
     try {
-      const res = await adminClient.revokeAdmin(adminAccount.id);
+      setIsRevoking(true);
+      const res = await adminClient.revokeAdmin(pendingRevokeAdmin.id);
       if (res.success) {
         toast.success('Privileges Revoked', res.message);
+        setPendingRevokeAdmin(null);
         fetchAdmins();
       }
     } catch (err: any) {
       toast.error('Revocation Failed', err.message);
+    } finally {
+      setIsRevoking(false);
     }
   };
 
@@ -395,6 +403,18 @@ export const AdminAccountsTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!pendingRevokeAdmin}
+        title="Revoke Admin Privileges?"
+        subtitle="Active administrative sessions will be terminated immediately."
+        message={`Revoke administrative privileges for ${pendingRevokeAdmin?.email || ''}? They will return to ordinary user status and their active sessions will be terminated.`}
+        confirmLabel="Revoke Access"
+        isDestructive={true}
+        isLoading={isRevoking}
+        onConfirm={confirmRevokeAdmin}
+        onCancel={() => !isRevoking && setPendingRevokeAdmin(null)}
+      />
     </div>
   );
 };
