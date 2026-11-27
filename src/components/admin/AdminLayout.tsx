@@ -37,6 +37,10 @@ import {
   Download,
   LayoutTemplate,
   ClipboardList,
+  Palette,
+  Megaphone,
+  Eye,
+  History,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
@@ -73,7 +77,14 @@ export type AdminSectionKey =
   | 'website_control'
   | 'staff_tasks'
   | 'roles'
-  | 'features';
+  | 'features'
+  | 'app_management'
+  | 'app_branding'
+  | 'app_pwa'
+  | 'app_push'
+  | 'app_config'
+  | 'app_preview'
+  | 'app_history';
 
 interface NavGroup {
   label: string;
@@ -88,58 +99,92 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Overview',
+    label: '1. Dashboard',
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { key: 'dashboard', label: 'Overview & Key Metrics', icon: LayoutDashboard },
       { key: 'analytics', label: 'Platform Analytics', icon: BarChart3, requiredPermission: 'analytics.read' },
-      { key: 'system', label: 'System Health', icon: Server, requiredPermission: 'system.read' },
+      { key: 'system', label: 'System Health & Status', icon: Server, requiredPermission: 'system.read' },
     ],
   },
   {
-    label: 'User Management',
+    label: '2. User Management',
     items: [
       { key: 'users', label: 'All Users', icon: Users, requiredPermission: 'users.read' },
       { key: 'installed_devices', label: 'Installed Devices / PWA', icon: Smartphone, requiredPermission: 'users.read' },
-      { key: 'admins', label: 'Admin Accounts', icon: UserCheck, requiredPermission: 'admins.view' },
-      { key: 'roles', label: 'Roles & Permissions', icon: Shield, requiredPermission: 'roles.read' },
-      { key: 'sessions', label: 'Sessions & Devices', icon: Laptop, requiredPermission: 'security.read' },
     ],
   },
   {
-    label: 'Financial Monitoring',
+    label: '3. Staff Management',
     items: [
-      { key: 'transactions', label: 'Transaction Monitoring', icon: Activity, requiredPermission: 'dashboard.view' },
+      { key: 'admins', label: 'Staff Accounts', icon: UserCheck, requiredPermission: 'admins.view' },
+      { key: 'roles', label: 'Role & Module Permissions', icon: Shield, requiredPermission: 'roles.read' },
+      { key: 'staff_tasks', label: 'Staff Tasks Desk', icon: ClipboardList, requiredPermission: 'support.read' },
+    ],
+  },
+  {
+    label: '4. App Management',
+    items: [
+      { key: 'app_branding', label: 'App Branding & Identity', icon: Palette, requiredPermission: 'settings.manage' },
+      { key: 'app_pwa', label: 'App Installation & PWA', icon: Smartphone, requiredPermission: 'settings.manage' },
+      { key: 'app_push', label: 'App Push Notifications', icon: Megaphone, requiredPermission: 'notifications.manage' },
+      { key: 'app_config', label: 'App Configuration', icon: Sliders, requiredPermission: 'settings.manage' },
+      { key: 'app_preview', label: 'App Preview (3 Apps)', icon: Eye, requiredPermission: 'settings.manage' },
+      { key: 'app_history', label: 'Branding Change History', icon: History, requiredPermission: 'settings.manage' },
+    ],
+  },
+  {
+    label: '5. Notifications',
+    items: [
+      { key: 'notifications', label: 'Admin Operational Alerts', icon: Bell, requiredPermission: 'notifications.manage' },
+    ],
+  },
+  {
+    label: '6. Security & Access',
+    items: [
+      { key: 'security', label: 'Security Center & Incidents', icon: ShieldAlert, requiredPermission: 'security.read' },
+      { key: 'sessions', label: 'Sessions & Device Access', icon: Laptop, requiredPermission: 'security.read' },
       { key: 'financial_access', label: 'Financial Access Requests', icon: KeyRound, requiredPermission: 'users.financial_data.request' },
     ],
   },
   {
-    label: 'Communication',
+    label: '7. Email Management',
     items: [
-      { key: 'notifications', label: 'Push Notifications', icon: Bell, requiredPermission: 'notifications.manage' },
-      { key: 'emails', label: 'Email Dispatch Logs', icon: Mail, requiredPermission: 'emails.read' },
+      { key: 'emails', label: 'SMTP Logs & Dispatch', icon: Mail, requiredPermission: 'emails.read' },
       { key: 'email_templates', label: 'Email Templates', icon: FileText, requiredPermission: 'emails.templates.manage' },
-      { key: 'support', label: 'Support & Feedback', icon: MessageSquare, requiredPermission: 'support.read' },
-      { key: 'staff_tasks', label: 'Staff Tasks', icon: ClipboardList, requiredPermission: 'support.read' },
     ],
   },
   {
-    label: 'Application Control',
+    label: '8. Reports & Analytics',
     items: [
-      { key: 'website_control', label: 'Website Control Center', icon: LayoutTemplate, requiredPermission: 'settings.manage' },
-      { key: 'features', label: 'Feature Flags', icon: Sliders, requiredPermission: 'features.manage' },
-      { key: 'ai', label: 'AI Management', icon: Bot, requiredPermission: 'ai.manage' },
-      { key: 'settings', label: 'Website Settings', icon: Settings, requiredPermission: 'settings.manage' },
-      { key: 'legal', label: 'Legal & Policies', icon: Scale, requiredPermission: 'legal.read' },
+      { key: 'transactions', label: 'Transaction Monitoring', icon: Activity, requiredPermission: 'dashboard.view' },
     ],
   },
   {
-    label: 'Security & Infrastructure',
+    label: '9. Support & Feedback',
     items: [
-      { key: 'security', label: 'Security Center', icon: ShieldAlert, requiredPermission: 'security.read' },
-      { key: 'audit_logs', label: 'Audit Trail', icon: FileCode, requiredPermission: 'audit.read' },
-      { key: 'database', label: 'Database & Storage', icon: Database, requiredPermission: 'database.view' },
+      { key: 'support', label: 'User Feedback & Support Desk', icon: MessageSquare, requiredPermission: 'support.read' },
+    ],
+  },
+  {
+    label: '10. System Management',
+    items: [
+      { key: 'database', label: 'Database & Storage Status', icon: Database, requiredPermission: 'database.view' },
       { key: 'backups', label: 'Backups & Snapshots', icon: Save, requiredPermission: 'backups.read' },
-      { key: 'deletions', label: 'Deletion Requests', icon: Trash2, requiredPermission: 'deletions.read' },
+      { key: 'deletions', label: 'Account Deletion Requests', icon: Trash2, requiredPermission: 'deletions.read' },
+    ],
+  },
+  {
+    label: '11. Legal & Website Settings',
+    items: [
+      { key: 'legal', label: 'Legal & Privacy Policies', icon: Scale, requiredPermission: 'legal.read' },
+      { key: 'settings', label: 'Website Settings', icon: Settings, requiredPermission: 'settings.manage' },
+      { key: 'features', label: 'Feature Flags & AI Control', icon: Bot, requiredPermission: 'features.manage' },
+    ],
+  },
+  {
+    label: '12. Audit Logs',
+    items: [
+      { key: 'audit_logs', label: 'Audit Trail & Action Logs', icon: FileCode, requiredPermission: 'audit.read' },
     ],
   },
 ];

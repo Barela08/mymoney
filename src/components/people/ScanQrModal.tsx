@@ -401,7 +401,13 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         }
         setSupportsTorch(Boolean(videoTrack?.getCapabilities && "torch" in (videoTrack.getCapabilities() as any)));
 
-        const video = videoRef.current;
+        let video = videoRef.current;
+        if (!video) {
+          // Allow a brief frame for modal DOM to attach the video ref
+          await new Promise((r) => setTimeout(r, 60));
+          video = videoRef.current;
+        }
+
         if (!video) {
           stream.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
@@ -416,13 +422,15 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
         // Wait for real frame dimensions before decoding anything.
         await new Promise<void>((resolve) => {
-          if (video.readyState >= 1) return resolve();
+          if (video && video.readyState >= 1) return resolve();
           const done = () => resolve();
-          video.addEventListener('loadedmetadata', done, { once: true });
-          setTimeout(done, 2500);
+          video?.addEventListener('loadedmetadata', done, { once: true });
+          setTimeout(done, 2000);
         });
 
-        await video.play().catch(() => {});
+        if (video) {
+          await video.play().catch(() => {});
+        }
 
         if (generation !== streamGenerationRef.current) {
           stream.getTracks().forEach((t) => t.stop());

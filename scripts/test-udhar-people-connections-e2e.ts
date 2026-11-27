@@ -631,6 +631,54 @@ async function main() {
       assert.strictEqual(afterTxA.payload.transactions[0].description, 'Dinner split');
     });
 
+    await check('Repeated Cancel is idempotent (alreadyCancelled) and Profile Edit updates local nickname/notes only without touching peer account', async () => {
+      // Re-send search request -> cancel once -> cancel again
+      const reqRes = await apiCall(TOKEN_A, 'POST', '/api/udhar/connections/connect', { targetUserId: USER_B_ID });
+      assert.strictEqual(reqRes.status, 200);
+      assert.strictEqual(reqRes.payload.status, 'pending');
+      const reqId = reqRes.payload.requestId;
+
+      // Verify exactly 1 outgoing for A and 1 incoming for B
+      const listA = await apiCall(TOKEN_A, 'GET', '/api/udhar/connections/requests');
+      const listB = await apiCall(TOKEN_B, 'GET', '/api/udhar/connections/requests');
+      assert.strictEqual(listA.payload.outgoing.length, 1, 'Must have exactly 1 outgoing request');
+      assert.strictEqual(listB.payload.incoming.length, 1, 'Must have exactly 1 incoming request');
+
+      const cancel1 = await apiCall(TOKEN_A, 'POST', `/api/udhar/connections/${encodeURIComponent(reqId)}/cancel`);
+      assert.strictEqual(cancel1.status, 200);
+      assert.strictEqual(cancel1.payload.success, true);
+
+      const cancel2 = await apiCall(TOKEN_A, 'POST', `/api/udhar/connections/${encodeURIComponent(reqId)}/cancel`);
+      assert.strictEqual(cancel2.status, 200);
+      assert.strictEqual(cancel2.payload.alreadyCancelled, true);
+
+      // Re-send request from User B and have User A accept so we can test Profile Edit on linked contact + conn_ fallback
+      const reqRes2 = await apiCall(TOKEN_B, 'POST', '/api/udhar/connections/connect', { targetUserId: USER_A_ID });
+      assert.strictEqual(reqRes2.status, 200);
+      const acceptRes2 = await apiCall(TOKEN_A, 'POST', `/api/udhar/connections/${encodeURIComponent(reqRes2.payload.requestId)}/accept`);
+      assert.strictEqual(acceptRes2.status, 200);
+
+      // Edit using conn_<USER_B_ID> synthetic ID -> creates/updates local nickname & notes only
+      const editConnRes = await apiCall(TOKEN_A, 'PUT', `/api/udhar/contacts/conn_${USER_B_ID}`, {
+        name: 'Bobby Nickname',
+        relationship_type: 'Roommate',
+        notes: 'Flatmate rent split',
+        email: 'hacked@evil.com',
+      });
+      assert.strictEqual(editConnRes.status, 200);
+      assert.strictEqual(editConnRes.payload.success, true);
+      assert.strictEqual(editConnRes.payload.contact.name, 'Bobby Nickname');
+      assert.strictEqual(editConnRes.payload.contact.notes, 'Flatmate rent split');
+      // Ownership check: User B's contact email/name must NOT be altered by User A
+      assert.notStrictEqual(editConnRes.payload.contact.email, 'hacked@evil.com');
+
+      // Unauthorized modification: User B cannot edit User A's contact row
+      const unauthEdit = await apiCall(TOKEN_B, 'PUT', `/api/udhar/contacts/${editConnRes.payload.contact.id}`, {
+        name: 'Hacked',
+      });
+      assert.strictEqual(unauthEdit.status, 404);
+    });
+
     console.log(`\n================================================================`);
     console.log(`🎉 ALL ${passed} E2E UDHAAR PEOPLE SCENARIOS PASSED!`);
     console.log(`================================================================`);

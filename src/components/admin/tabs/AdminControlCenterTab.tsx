@@ -98,15 +98,23 @@ const CONTROL_MODULES: {
 
 interface AdminControlCenterTabProps {
   onNavigateSection?: (section: AdminSectionKey) => void;
+  initialModule?: ControlModuleId;
 }
 
 export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
   onNavigateSection,
+  initialModule = 'branding',
 }) => {
   const toast = useToast();
   const { siteConfig: liveSiteConfig, applyLiveSiteConfig } = useExpense();
 
-  const [activeModule, setActiveModule] = useState<ControlModuleId>('branding');
+  const [activeModule, setActiveModule] = useState<ControlModuleId>(initialModule);
+
+  useEffect(() => {
+    if (initialModule) {
+      setActiveModule(initialModule);
+    }
+  }, [initialModule]);
   const [activeBrandScope, setActiveBrandScope] = useState<
     'user_app' | 'admin_app' | 'staff_app' | 'website'
   >('user_app');
@@ -2012,53 +2020,241 @@ export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
 
             {/* 16. PWA & Installation Settings */}
             {activeModule === 'pwa' && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    16. PWA &amp; Isolated App Installation Settings
+                    App Installation &amp; PWA Settings (3 Separate Web Apps)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Each app serves its own manifest &amp; icon (`/api/pwa/manifest/user`, `/myadmin`, `/mystaff`).
+                    Independently configure installability, manifests, icons, prompt texts, and installation experiences for User App (/), Admin App (/admin), and Staff App (/staff).
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
                   <div>
-                    <p className="font-bold">OS &amp; Browser Home-Screen Icon Caching Notice</p>
+                    <p className="font-bold">Independent Scopes &amp; Manifest Caching Notice</p>
                     <p className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
-                      Publishing a new icon or app name immediately updates dynamic manifests, browser tabs, install prompts, and un-installed previews. Already-installed Android/iOS/Desktop home-screen shortcuts retain cached OS launcher icons until the browser refreshes the WebAPK or the user reinstalls the shortcut.
+                      Each application operates with an isolated manifest, service worker scope, and app icon to prevent identity collisions. Changes save to the backend immediately and update dynamic manifests.
                     </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 3 App Scope Selector for PWA Settings */}
+                <div className="flex flex-wrap gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
                   {(
                     [
-                      ['userAppInstallEnabled', 'Enable User App Install (/)'],
-                      ['adminAppInstallEnabled', 'Enable Admin App Install (/myadmin)'],
-                      ['staffAppInstallEnabled', 'Enable Staff App Install (/mystaff)'],
-                      ['showDownloadPopup', 'Show Timed Install Popup Banner'],
-                      ['offlineFallbackEnabled', 'Enable Offline Shell Fallback'],
+                      { id: 'user_app', label: '1. User App (/)' },
+                      { id: 'admin_app', label: '2. Admin App (/admin)' },
+                      { id: 'staff_app', label: '3. Staff App (/staff)' },
                     ] as const
-                  ).map(([field, label]) => (
-                    <label
-                      key={field}
-                      className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveBrandScope(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                        activeBrandScope === tab.id
+                          ? 'bg-white dark:bg-slate-900 text-emerald-600 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300'
+                      }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={Boolean(draftConfig.pwa[field])}
-                        onChange={(e) =>
-                          patchDraft((p) => ({
-                            ...p,
-                            pwa: { ...p.pwa, [field]: e.target.checked },
-                          }))
-                        }
-                      />
-                      <span>{label}</span>
-                    </label>
+                      {tab.label}
+                    </button>
                   ))}
+                </div>
+
+                {/* Scope-Specific PWA Configuration */}
+                {activeBrandScope !== 'website' && (
+                  <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          {activeBrandScope === 'user_app'
+                            ? 'User App PWA Settings'
+                            : activeBrandScope === 'admin_app'
+                            ? 'Admin Web App PWA Settings'
+                            : 'Staff Web App PWA Settings'}
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          Configure prompt copy, install button labels, theme colors, and help guidance.
+                        </p>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={
+                            activeBrandScope === 'user_app'
+                              ? Boolean(draftConfig.pwa.userAppInstallEnabled)
+                              : activeBrandScope === 'admin_app'
+                              ? Boolean(draftConfig.pwa.adminAppInstallEnabled)
+                              : Boolean(draftConfig.pwa.staffAppInstallEnabled)
+                          }
+                          onChange={(e) => {
+                            const field =
+                              activeBrandScope === 'user_app'
+                                ? 'userAppInstallEnabled'
+                                : activeBrandScope === 'admin_app'
+                                ? 'adminAppInstallEnabled'
+                                : 'staffAppInstallEnabled';
+                            patchDraft((p) => ({
+                              ...p,
+                              pwa: { ...p.pwa, [field]: e.target.checked },
+                            }));
+                          }}
+                          className="w-4 h-4 accent-emerald-600 rounded"
+                        />
+                        <span>Enable PWA Installation</span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Install Prompt Title</label>
+                        <input
+                          type="text"
+                          value={
+                            activeBrandScope === 'user_app'
+                              ? draftConfig.pwa.userPromptTitle || 'Install My Money Manager'
+                              : activeBrandScope === 'admin_app'
+                              ? draftConfig.pwa.adminPromptTitle || 'Install My Money Admin'
+                              : draftConfig.pwa.staffPromptTitle || 'Install My Money Staff'
+                          }
+                          onChange={(e) => {
+                            const field =
+                              activeBrandScope === 'user_app'
+                                ? 'userPromptTitle'
+                                : activeBrandScope === 'admin_app'
+                                ? 'adminPromptTitle'
+                                : 'staffPromptTitle';
+                            patchDraft((p) => ({
+                              ...p,
+                              pwa: { ...p.pwa, [field]: e.target.value },
+                            }));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Install Button Label</label>
+                        <input
+                          type="text"
+                          value={
+                            activeBrandScope === 'user_app'
+                              ? draftConfig.pwa.userInstallButtonText || 'Install User App'
+                              : activeBrandScope === 'admin_app'
+                              ? draftConfig.pwa.adminInstallButtonText || 'Install Admin App'
+                              : draftConfig.pwa.staffInstallButtonText || 'Install Staff App'
+                          }
+                          onChange={(e) => {
+                            const field =
+                              activeBrandScope === 'user_app'
+                                ? 'userInstallButtonText'
+                                : activeBrandScope === 'admin_app'
+                                ? 'adminInstallButtonText'
+                                : 'staffInstallButtonText';
+                            patchDraft((p) => ({
+                              ...p,
+                              pwa: { ...p.pwa, [field]: e.target.value },
+                            }));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold mb-1">Install Prompt Description</label>
+                        <textarea
+                          rows={2}
+                          value={
+                            activeBrandScope === 'user_app'
+                              ? draftConfig.pwa.userPromptDescription || ''
+                              : activeBrandScope === 'admin_app'
+                              ? draftConfig.pwa.adminPromptDescription || ''
+                              : draftConfig.pwa.staffPromptDescription || ''
+                          }
+                          placeholder="Short summary displayed inside the installation banner or modal..."
+                          onChange={(e) => {
+                            const field =
+                              activeBrandScope === 'user_app'
+                                ? 'userPromptDescription'
+                                : activeBrandScope === 'admin_app'
+                                ? 'adminPromptDescription'
+                                : 'staffPromptDescription';
+                            patchDraft((p) => ({
+                              ...p,
+                              pwa: { ...p.pwa, [field]: e.target.value },
+                            }));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold mb-1">Manual Installation Help Text</label>
+                        <textarea
+                          rows={2}
+                          value={
+                            activeBrandScope === 'user_app'
+                              ? draftConfig.pwa.userHelpText || ''
+                              : activeBrandScope === 'admin_app'
+                              ? draftConfig.pwa.adminHelpText || ''
+                              : draftConfig.pwa.staffHelpText || ''
+                          }
+                          placeholder="Guidance shown when browser does not support one-click installation..."
+                          onChange={(e) => {
+                            const field =
+                              activeBrandScope === 'user_app'
+                                ? 'userHelpText'
+                                : activeBrandScope === 'admin_app'
+                                ? 'adminHelpText'
+                                : 'staffHelpText';
+                            patchDraft((p) => ({
+                              ...p,
+                              pwa: { ...p.pwa, [field]: e.target.value },
+                            }));
+                          }}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Global PWA Settings */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draftConfig.pwa.showDownloadPopup)}
+                      onChange={(e) =>
+                        patchDraft((p) => ({
+                          ...p,
+                          pwa: { ...p.pwa, showDownloadPopup: e.target.checked },
+                        }))
+                      }
+                      className="w-4 h-4 accent-emerald-600 rounded"
+                    />
+                    <span>Show Timed Install Popup Banner</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draftConfig.pwa.offlineFallbackEnabled)}
+                      onChange={(e) =>
+                        patchDraft((p) => ({
+                          ...p,
+                          pwa: { ...p.pwa, offlineFallbackEnabled: e.target.checked },
+                        }))
+                      }
+                      className="w-4 h-4 accent-emerald-600 rounded"
+                    />
+                    <span>Enable Offline Shell Fallback</span>
+                  </label>
+
                   <div>
                     <label className="block text-xs font-bold mb-1">Auto-Prompt Delay (Seconds)</label>
                     <input
@@ -2077,6 +2273,151 @@ export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
                       }
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
                     />
+                  </div>
+                </div>
+
+                {/* Live Diagnostics & Install Action Cards */}
+                <div className="space-y-3 pt-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Live Diagnostics &amp; Independent App Install Options
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* User App Card */}
+                    <div className="p-4 rounded-2xl border border-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/20 space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={draftConfig.branding.user_app.pwaIconUrl || '/icon-192.png'}
+                          alt="User App"
+                          className="w-9 h-9 rounded-xl object-cover border border-emerald-500/40"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = '/icon-192.png';
+                          }}
+                        />
+                        <div>
+                          <p className="text-xs font-bold text-slate-900 dark:text-white">
+                            {draftConfig.branding.user_app.appName}
+                          </p>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
+                            Scope: / (User App)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] space-y-1 text-slate-600 dark:text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Manifest:</span>
+                          <a href="/manifest.json" target="_blank" rel="noreferrer" className="text-emerald-500 underline font-mono">/manifest.json</a>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Service Worker:</span>
+                          <span className="font-mono text-slate-700 dark:text-slate-300">/sw.js</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Display Mode:</span>
+                          <span className="font-semibold text-emerald-600">standalone</span>
+                        </div>
+                      </div>
+
+                      <a
+                        href="/?install=prompt"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold text-center block transition-all shadow-sm"
+                      >
+                        Install User App
+                      </a>
+                    </div>
+
+                    {/* Admin App Card */}
+                    <div className="p-4 rounded-2xl border border-slate-500/30 bg-slate-50/50 dark:bg-slate-800/40 space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={draftConfig.branding.admin_app.pwaIconUrl || '/admin-icon-192.png'}
+                          alt="Admin App"
+                          className="w-9 h-9 rounded-xl object-cover border border-slate-500/40"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = '/admin-icon-192.png';
+                          }}
+                        />
+                        <div>
+                          <p className="text-xs font-bold text-slate-900 dark:text-white">
+                            {draftConfig.branding.admin_app.appName}
+                          </p>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Scope: /admin (Admin Console)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] space-y-1 text-slate-600 dark:text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Manifest:</span>
+                          <a href="/admin-manifest.json" target="_blank" rel="noreferrer" className="text-emerald-500 underline font-mono">/admin-manifest.json</a>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Service Worker:</span>
+                          <span className="font-mono text-slate-700 dark:text-slate-300">/admin-sw.js</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Display Mode:</span>
+                          <span className="font-semibold text-emerald-600">standalone</span>
+                        </div>
+                      </div>
+
+                      <a
+                        href="/admin"
+                        className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold text-center block transition-all shadow-sm"
+                      >
+                        Install Admin App
+                      </a>
+                    </div>
+
+                    {/* Staff App Card */}
+                    <div className="p-4 rounded-2xl border border-indigo-500/30 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={draftConfig.branding.staff_app.pwaIconUrl || '/staff-icon-192.png'}
+                          alt="Staff App"
+                          className="w-9 h-9 rounded-xl object-cover border border-indigo-500/40"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = '/staff-icon-192.png';
+                          }}
+                        />
+                        <div>
+                          <p className="text-xs font-bold text-slate-900 dark:text-white">
+                            {draftConfig.branding.staff_app.appName}
+                          </p>
+                          <span className="text-[10px] text-indigo-500 font-mono">
+                            Scope: /staff (Staff Portal)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] space-y-1 text-slate-600 dark:text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Manifest:</span>
+                          <a href="/staff-manifest.json" target="_blank" rel="noreferrer" className="text-indigo-400 underline font-mono">/staff-manifest.json</a>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Service Worker:</span>
+                          <span className="font-mono text-slate-700 dark:text-slate-300">/staff-sw.js</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Display Mode:</span>
+                          <span className="font-semibold text-emerald-600">standalone</span>
+                        </div>
+                      </div>
+
+                      <a
+                        href="/staff"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold text-center block transition-all shadow-sm"
+                      >
+                        Install Staff App
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>

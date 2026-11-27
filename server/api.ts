@@ -4027,6 +4027,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [authUser.id, lookupKey]
       );
       if (reqRes.rows.length === 0) {
+        const anyRes = await query(
+          `SELECT id, status FROM public.user_connections
+           WHERE user_a_id = $1 AND (id::text = $2 OR user_b_id::text = $2)
+           LIMIT 1`,
+          [authUser.id, lookupKey]
+        ).catch(() => ({ rows: [] as any[] }));
+        const existing = anyRes.rows[0];
+        if (existing?.status === 'connected') {
+          return {
+            status: 409,
+            body: { success: false, code: 'ALREADY_CONNECTED', message: 'This connection request was already accepted and cannot be cancelled.' },
+          };
+        }
+        if (existing && (existing.status === 'cancelled' || existing.status === 'rejected')) {
+          return {
+            status: 200,
+            body: { success: true, alreadyCancelled: true, status: 'cancelled', requestId: String(existing.id), message: 'Connection request was already cancelled.' },
+          };
+        }
         return { status: 404, body: { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending outgoing connection request not found.' } };
       }
 
@@ -4543,15 +4562,75 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const updRes = await query(
-        `UPDATE public.udhar_contacts 
-         SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5,
-             photo_url = COALESCE($6, photo_url),
-             linked_user_id = COALESCE($7, linked_user_id), updated_at = NOW()
-         WHERE id = $8 AND user_id = $9
-         RETURNING *`,
-        [name, email || null, phone || null, relationshipType, notes || null, photoUrl ?? null, linkedUserId, contactId, authUser.id]
+      if (contactId.startsWith('conn_')) {
+        const peerUserId = contactId.slice(5).trim();
+        if (!peerUserId || peerUserId === authUser.id) {
+          sendJson(res, 400, { success: false, message: 'Invalid connected user identifier.' });
+          return true;
+        }
+        const connCheck = await query(
+          `SELECT id FROM public.user_connections
+           WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+             AND status = 'connected'
+           LIMIT 1`,
+          [authUser.id, peerUserId]
+        );
+        if (connCheck.rows.length === 0) {
+          sendJson(res, 404, { success: false, message: 'Active connection not found.' });
+          return true;
+        }
+        const existingPeerRow = await query(
+          `SELECT id FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
+          [authUser.id, peerUserId]
+        );
+        if (existingPeerRow.rows.length > 0) {
+          const updRes = await query(
+            `UPDATE public.udhar_contacts
+             SET name = $1, relationship_type = $2, notes = $3, updated_at = NOW()
+             WHERE id = $4 AND user_id = $5
+             RETURNING *`,
+            [name, relationshipType, notes || null, existingPeerRow.rows[0].id, authUser.id]
+          );
+          sendJson(res, 200, { success: true, contact: updRes.rows[0], reciprocallyLinked: true });
+          return true;
+        }
+        const insRes = await query(
+          `INSERT INTO public.udhar_contacts (user_id, name, relationship_type, notes, linked_user_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [authUser.id, name, relationshipType, notes || null, peerUserId]
+        );
+        sendJson(res, 200, { success: true, contact: insRes.rows[0], reciprocallyLinked: true });
+        return true;
+      }
+
+      const existingRes = await query(
+        `SELECT id, linked_user_id FROM public.udhar_contacts WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [contactId, authUser.id]
       );
+      if (existingRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Contact not found.' });
+        return true;
+      }
+      const isLinked = Boolean(existingRes.rows[0].linked_user_id);
+
+      const updRes = isLinked
+        ? await query(
+            `UPDATE public.udhar_contacts
+             SET name = $1, relationship_type = $2, notes = $3, updated_at = NOW()
+             WHERE id = $4 AND user_id = $5
+             RETURNING *`,
+            [name, relationshipType, notes || null, contactId, authUser.id]
+          )
+        : await query(
+            `UPDATE public.udhar_contacts 
+             SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5,
+                 photo_url = COALESCE($6, photo_url),
+                 linked_user_id = COALESCE($7, linked_user_id), updated_at = NOW()
+             WHERE id = $8 AND user_id = $9
+             RETURNING *`,
+            [name, email || null, phone || null, relationshipType, notes || null, photoUrl ?? null, linkedUserId, contactId, authUser.id]
+          );
 
       if (updRes.rows.length === 0) {
         sendJson(res, 404, { success: false, message: 'Contact not found.' });
@@ -4559,10 +4638,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const finalLinkedId = updRes.rows[0].linked_user_id;
-      if (finalLinkedId && finalLinkedId !== authUser.id) {
-        await ensureReciprocalContact(finalLinkedId, authUser, relationshipType);
-      }
-
       sendJson(res, 200, {
         success: true,
         contact: updRes.rows[0],
@@ -4791,11 +4866,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
         const incoming: any[] = [];
         const outgoing: any[] = [];
+        const seenIncomingUsers = new Set<string>();
+        const seenOutgoingUsers = new Set<string>();
         const connectedMap = new Map<string, any>();
 
         for (const r of rowsRes.rows) {
           if (r.status === 'pending') {
             if (r.user_b_id === authUser.id) {
+              if (seenIncomingUsers.has(r.user_a_id)) continue;
+              seenIncomingUsers.add(r.user_a_id);
               incoming.push({
                 id: r.id,
                 direction: 'incoming',
@@ -4810,6 +4889,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
                 createdAt: r.created_at,
               });
             } else if (r.user_a_id === authUser.id) {
+              if (seenOutgoingUsers.has(r.user_b_id)) continue;
+              seenOutgoingUsers.add(r.user_b_id);
               outgoing.push({
                 id: r.id,
                 direction: 'outgoing',
@@ -4943,7 +5024,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // 10G. INSTANT TWO-SIDED CONNECTION REMOVAL: DELETE /api/udhar/connections/:id
-    const connDeleteMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)$/);
+    const connDeleteMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)$/);
     if (connDeleteMatch && method === 'DELETE') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -4951,7 +5032,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const targetOrContactId = connDeleteMatch[1];
+      const targetOrContactId = decodeURIComponent(connDeleteMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await removeSavedConnectionRest(authUser, targetOrContactId);
         sendJson(res, restRes.status, restRes.body);

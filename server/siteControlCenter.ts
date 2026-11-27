@@ -454,6 +454,8 @@ function normalizeIdentity(
     tagline: String(raw?.tagline || def.tagline).trim().slice(0, 140) || def.tagline,
     description: String(raw?.description || def.description).trim().slice(0, 320) || def.description,
     logoUrl: sanitizeAssetRef(raw?.logoUrl, def.logoUrl),
+    lightLogoUrl: sanitizeAssetRef(raw?.lightLogoUrl, raw?.logoUrl || def.lightLogoUrl || def.logoUrl),
+    darkLogoUrl: sanitizeAssetRef(raw?.darkLogoUrl, raw?.logoUrl || def.darkLogoUrl || def.logoUrl),
     faviconUrl: sanitizeAssetRef(raw?.faviconUrl, def.faviconUrl),
     pwaIconUrl: sanitizeAssetRef(raw?.pwaIconUrl, def.pwaIconUrl),
     primaryColor: sanitizeHexColor(raw?.primaryColor, def.primaryColor),
@@ -466,6 +468,7 @@ function normalizeIdentity(
     dashboardHeading: String(raw?.dashboardHeading || def.dashboardHeading).trim().slice(0, 80) || def.dashboardHeading,
     splashHeadline: String(raw?.splashHeadline || def.splashHeadline).trim().slice(0, 80) || def.splashHeadline,
     splashTagline: String(raw?.splashTagline || def.splashTagline).trim().slice(0, 120) || def.splashTagline,
+    headerBrandText: String(raw?.headerBrandText ?? def.headerBrandText ?? def.appName).trim().slice(0, 100),
   };
 }
 
@@ -724,6 +727,18 @@ export function normalizeSiteControlCenterConfig(raw: any): SiteControlCenterCon
         typeof r.pwa?.offlineFallbackEnabled === 'boolean'
           ? r.pwa.offlineFallbackEnabled
           : def.pwa.offlineFallbackEnabled,
+      userPromptTitle: String(r.pwa?.userPromptTitle || def.pwa.userPromptTitle || 'Install My Money Manager').trim().slice(0, 100),
+      userPromptDescription: String(r.pwa?.userPromptDescription || def.pwa.userPromptDescription || '').trim().slice(0, 240),
+      userInstallButtonText: String(r.pwa?.userInstallButtonText || def.pwa.userInstallButtonText || 'Install User App').trim().slice(0, 60),
+      userHelpText: String(r.pwa?.userHelpText || def.pwa.userHelpText || '').trim().slice(0, 300),
+      adminPromptTitle: String(r.pwa?.adminPromptTitle || def.pwa.adminPromptTitle || 'Install My Money Admin').trim().slice(0, 100),
+      adminPromptDescription: String(r.pwa?.adminPromptDescription || def.pwa.adminPromptDescription || '').trim().slice(0, 240),
+      adminInstallButtonText: String(r.pwa?.adminInstallButtonText || def.pwa.adminInstallButtonText || 'Install Admin App').trim().slice(0, 60),
+      adminHelpText: String(r.pwa?.adminHelpText || def.pwa.adminHelpText || '').trim().slice(0, 300),
+      staffPromptTitle: String(r.pwa?.staffPromptTitle || def.pwa.staffPromptTitle || 'Install My Money Staff').trim().slice(0, 100),
+      staffPromptDescription: String(r.pwa?.staffPromptDescription || def.pwa.staffPromptDescription || '').trim().slice(0, 240),
+      staffInstallButtonText: String(r.pwa?.staffInstallButtonText || def.pwa.staffInstallButtonText || 'Install Staff App').trim().slice(0, 60),
+      staffHelpText: String(r.pwa?.staffHelpText || def.pwa.staffHelpText || '').trim().slice(0, 300),
     },
     notifications: {
       userAppName: String(r.notifications?.userAppName || userBrand.appName).trim().slice(0, 80),

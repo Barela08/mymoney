@@ -30,8 +30,17 @@ export const ConnectionRequestsPanel: React.FC<ConnectionRequestsPanelProps> = (
       setIsLoading(true);
       setError('');
       const res = await udharDeletionApi.listConnectionRequests();
-      setIncoming(res.incoming || []);
-      setOutgoing(res.outgoing || []);
+      const dedupeByKey = (list: ConnectionRequestItem[], keyFn: (r: ConnectionRequestItem) => string) => {
+        const seen = new Set<string>();
+        return list.filter((item) => {
+          const k = keyFn(item);
+          if (!k || seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+      };
+      setIncoming(dedupeByKey(res.incoming || [], (r) => r.requesterUserId || r.id));
+      setOutgoing(dedupeByKey(res.outgoing || [], (r) => r.targetUserId || r.id));
     } catch (err: any) {
       setError(
         err?.status === 503 || err?.isNonJson
@@ -73,13 +82,19 @@ export const ConnectionRequestsPanel: React.FC<ConnectionRequestsPanelProps> = (
     try {
       setActingId(request.id);
       const res = await udharDeletionApi.cancelConnectionRequest(request.id);
+      setOutgoing((prev) => prev.filter((item) => item.id !== request.id && item.targetUserId !== request.targetUserId));
       toast.info(
-        'Request Cancelled',
+        (res as any)?.alreadyCancelled ? 'Already Cancelled' : 'Request Cancelled',
         res.message || `Cancelled connection request to ${request.displayName}.`
       );
       await load();
       if (onChanged) onChanged();
     } catch (err: any) {
+      if (err?.status === 404) {
+        setOutgoing((prev) => prev.filter((item) => item.id !== request.id));
+        await load();
+        if (onChanged) onChanged();
+      }
       toast.error('Cancel Failed', err?.message || 'Could not cancel this request.');
     } finally {
       setActingId(null);

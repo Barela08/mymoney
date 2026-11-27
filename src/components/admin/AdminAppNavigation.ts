@@ -26,7 +26,16 @@ export type AdminSectionKey =
   | 'audit_logs'
   | 'settings'
   | 'roles'
-  | 'features';
+  | 'features'
+  | 'website_control'
+  | 'staff_tasks'
+  | 'app_management'
+  | 'app_branding'
+  | 'app_pwa'
+  | 'app_push'
+  | 'app_config'
+  | 'app_preview'
+  | 'app_history';
 
 const VALID_SECTIONS = new Set<string>([
   'dashboard',
@@ -57,6 +66,15 @@ const VALID_SECTIONS = new Set<string>([
   'settings',
   'roles',
   'features',
+  'website_control',
+  'staff_tasks',
+  'app_management',
+  'app_branding',
+  'app_pwa',
+  'app_push',
+  'app_config',
+  'app_preview',
+  'app_history',
 ]);
 
 export function normalizeAdminSection(raw?: string | null): AdminSectionKey {

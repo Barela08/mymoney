@@ -84087,6 +84087,8 @@ function normalizeIdentity(raw, def) {
     tagline: String(raw?.tagline || def.tagline).trim().slice(0, 140) || def.tagline,
     description: String(raw?.description || def.description).trim().slice(0, 320) || def.description,
     logoUrl: sanitizeAssetRef(raw?.logoUrl, def.logoUrl),
+    lightLogoUrl: sanitizeAssetRef(raw?.lightLogoUrl, raw?.logoUrl || def.lightLogoUrl || def.logoUrl),
+    darkLogoUrl: sanitizeAssetRef(raw?.darkLogoUrl, raw?.logoUrl || def.darkLogoUrl || def.logoUrl),
     faviconUrl: sanitizeAssetRef(raw?.faviconUrl, def.faviconUrl),
     pwaIconUrl: sanitizeAssetRef(raw?.pwaIconUrl, def.pwaIconUrl),
     primaryColor: sanitizeHexColor(raw?.primaryColor, def.primaryColor),
@@ -84098,7 +84100,8 @@ function normalizeIdentity(raw, def) {
     loginSubtitle: String(raw?.loginSubtitle || def.loginSubtitle).trim().slice(0, 220) || def.loginSubtitle,
     dashboardHeading: String(raw?.dashboardHeading || def.dashboardHeading).trim().slice(0, 80) || def.dashboardHeading,
     splashHeadline: String(raw?.splashHeadline || def.splashHeadline).trim().slice(0, 80) || def.splashHeadline,
-    splashTagline: String(raw?.splashTagline || def.splashTagline).trim().slice(0, 120) || def.splashTagline
+    splashTagline: String(raw?.splashTagline || def.splashTagline).trim().slice(0, 120) || def.splashTagline,
+    headerBrandText: String(raw?.headerBrandText ?? def.headerBrandText ?? def.appName).trim().slice(0, 100)
   };
 }
 function normalizeSiteControlCenterConfig(raw) {
@@ -84258,7 +84261,19 @@ function normalizeSiteControlCenterConfig(raw) {
         120,
         Math.max(3, Number(r2.pwa?.autoPromptDelaySeconds) || def.pwa.autoPromptDelaySeconds)
       ),
-      offlineFallbackEnabled: typeof r2.pwa?.offlineFallbackEnabled === "boolean" ? r2.pwa.offlineFallbackEnabled : def.pwa.offlineFallbackEnabled
+      offlineFallbackEnabled: typeof r2.pwa?.offlineFallbackEnabled === "boolean" ? r2.pwa.offlineFallbackEnabled : def.pwa.offlineFallbackEnabled,
+      userPromptTitle: String(r2.pwa?.userPromptTitle || def.pwa.userPromptTitle || "Install My Money Manager").trim().slice(0, 100),
+      userPromptDescription: String(r2.pwa?.userPromptDescription || def.pwa.userPromptDescription || "").trim().slice(0, 240),
+      userInstallButtonText: String(r2.pwa?.userInstallButtonText || def.pwa.userInstallButtonText || "Install User App").trim().slice(0, 60),
+      userHelpText: String(r2.pwa?.userHelpText || def.pwa.userHelpText || "").trim().slice(0, 300),
+      adminPromptTitle: String(r2.pwa?.adminPromptTitle || def.pwa.adminPromptTitle || "Install My Money Admin").trim().slice(0, 100),
+      adminPromptDescription: String(r2.pwa?.adminPromptDescription || def.pwa.adminPromptDescription || "").trim().slice(0, 240),
+      adminInstallButtonText: String(r2.pwa?.adminInstallButtonText || def.pwa.adminInstallButtonText || "Install Admin App").trim().slice(0, 60),
+      adminHelpText: String(r2.pwa?.adminHelpText || def.pwa.adminHelpText || "").trim().slice(0, 300),
+      staffPromptTitle: String(r2.pwa?.staffPromptTitle || def.pwa.staffPromptTitle || "Install My Money Staff").trim().slice(0, 100),
+      staffPromptDescription: String(r2.pwa?.staffPromptDescription || def.pwa.staffPromptDescription || "").trim().slice(0, 240),
+      staffInstallButtonText: String(r2.pwa?.staffInstallButtonText || def.pwa.staffInstallButtonText || "Install Staff App").trim().slice(0, 60),
+      staffHelpText: String(r2.pwa?.staffHelpText || def.pwa.staffHelpText || "").trim().slice(0, 300)
     },
     notifications: {
       userAppName: String(r2.notifications?.userAppName || userBrand.appName).trim().slice(0, 80),
@@ -95404,6 +95419,18 @@ async function searchUsersRest(authUser, rawQuery) {
       }
     }
   }
+  for (const fb of fallbackPendingRequests.values()) {
+    if (fb.user_a_id === authUser.id || fb.user_b_id === authUser.id) {
+      const isOutgoing = fb.user_a_id === authUser.id;
+      const otherId = isOutgoing ? fb.user_b_id : fb.user_a_id;
+      if (!statusByUserId.has(otherId)) {
+        statusByUserId.set(otherId, {
+          status: isOutgoing ? "pending" : "incoming_pending",
+          requestId: fb.id
+        });
+      }
+    }
+  }
   const linkedContactSet = /* @__PURE__ */ new Set();
   if (contactsRes.ok && Array.isArray(contactsRes.data)) {
     for (const ct of contactsRes.data) {
@@ -95436,6 +95463,35 @@ async function searchUsersRest(authUser, rawQuery) {
   return { status: 200, body: { success: true, users: sanitized, searchMode: classified.mode } };
 }
 var fallbackPendingRequests = /* @__PURE__ */ new Map();
+async function fetchPersistedPendingRequestsRest(authUserId) {
+  const res = await sbRest2(
+    `user_notifications?type=eq.udhar_connection_request&is_deleted=eq.false&or=(user_id.eq.${encodeURIComponent(authUserId)},metadata->>requesterId.eq.${encodeURIComponent(authUserId)})&select=id,user_id,related_entity_id,metadata,created_at&order=created_at.desc`
+  ).catch(() => ({ ok: false, data: null }));
+  if (!res.ok || !Array.isArray(res.data)) return [];
+  const results = [];
+  const seenPairs = /* @__PURE__ */ new Set();
+  for (const row of res.data) {
+    const meta = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const reqStatus = String(meta.requestStatus || "pending").toLowerCase();
+    if (reqStatus !== "pending") continue;
+    const requesterId = String(meta.requesterId || meta.requesterUserId || "").trim();
+    const receiverId = String(meta.receiverId || row.user_id || "").trim();
+    if (!requesterId || !receiverId || requesterId === receiverId) continue;
+    const pairKey = `${requesterId}:${receiverId}`;
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+    results.push({
+      id: String(meta.requestId || row.related_entity_id || pairKey),
+      user_a_id: requesterId,
+      user_b_id: receiverId,
+      relationship_type: String(meta.relationshipType || "Friend"),
+      requested_via: String(meta.requestedVia || "search"),
+      connection_method: String(meta.connectionMethod || "SEARCH"),
+      created_at: row.created_at || (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  return results;
+}
 async function connectUserRest(authUser, body) {
   const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
   const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
@@ -95495,14 +95551,15 @@ async function connectUserRest(authUser, body) {
       }
     };
   }
-  const incomingFallback = fallbackPendingRequests.get(`${targetUserId}:${authUser.id}`);
+  const persistedPending = await fetchPersistedPendingRequestsRest(authUser.id);
+  const incomingFallback = fallbackPendingRequests.get(`${targetUserId}:${authUser.id}`) || persistedPending.find((p) => p.user_a_id === targetUserId && p.user_b_id === authUser.id);
   const incomingPending = pairRows.find(
     (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
   ) || (incomingFallback ? { id: incomingFallback.id } : void 0);
   if (incomingPending) {
     return acceptConnectionRequestRest(authUser, incomingPending.id || targetUserId);
   }
-  const outgoingFallback = fallbackPendingRequests.get(`${authUser.id}:${targetUserId}`);
+  const outgoingFallback = fallbackPendingRequests.get(`${authUser.id}:${targetUserId}`) || persistedPending.find((p) => p.user_a_id === authUser.id && p.user_b_id === targetUserId);
   const outgoingPending = pairRows.find(
     (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
   ) || (outgoingFallback ? { id: outgoingFallback.id } : void 0);
@@ -95629,8 +95686,16 @@ async function getConnectionRequestsRest(authUser) {
     return { status: 503, body: { success: false, message: "Unable to load connection requests right now." } };
   }
   const rows = [...connRes.data || []];
-  for (const fb of fallbackPendingRequests.values()) {
-    if ((fb.user_a_id === authUser.id || fb.user_b_id === authUser.id) && !rows.some((r2) => r2.user_a_id === fb.user_a_id && r2.user_b_id === fb.user_b_id)) {
+  const persistedPending = await fetchPersistedPendingRequestsRest(authUser.id);
+  const existingPairStatuses = new Set(
+    rows.filter((r2) => r2.status === "pending" || r2.status === "connected").map((r2) => `${r2.user_a_id}:${r2.user_b_id}`)
+  );
+  for (const fb of [...fallbackPendingRequests.values(), ...persistedPending]) {
+    if (fb.user_a_id !== authUser.id && fb.user_b_id !== authUser.id) continue;
+    const pairKey = `${fb.user_a_id}:${fb.user_b_id}`;
+    const reversePairKey = `${fb.user_b_id}:${fb.user_a_id}`;
+    if (!existingPairStatuses.has(pairKey) && !existingPairStatuses.has(reversePairKey)) {
+      existingPairStatuses.add(pairKey);
       rows.push({ ...fb, status: "pending" });
     }
   }
@@ -95638,10 +95703,14 @@ async function getConnectionRequestsRest(authUser) {
   const userMap2 = await fetchUsersByIds(otherIds);
   const incoming2 = [];
   const outgoing2 = [];
+  const seenIncomingUsers = /* @__PURE__ */ new Set();
+  const seenOutgoingUsers = /* @__PURE__ */ new Set();
   const connectedMap = /* @__PURE__ */ new Map();
   for (const r2 of rows) {
     if (r2.status === "pending") {
       if (r2.user_b_id === authUser.id) {
+        if (seenIncomingUsers.has(r2.user_a_id)) continue;
+        seenIncomingUsers.add(r2.user_a_id);
         const u = userMap2.get(r2.user_a_id);
         incoming2.push({
           id: r2.id,
@@ -95657,6 +95726,8 @@ async function getConnectionRequestsRest(authUser) {
           createdAt: r2.created_at
         });
       } else if (r2.user_a_id === authUser.id) {
+        if (seenOutgoingUsers.has(r2.user_b_id)) continue;
+        seenOutgoingUsers.add(r2.user_b_id);
         const u = userMap2.get(r2.user_b_id);
         outgoing2.push({
           id: r2.id,
@@ -95690,39 +95761,6 @@ async function getConnectionRequestsRest(authUser) {
       }
     }
   }
-  for (const r2 of fallbackPendingRequests.values()) {
-    if (r2.user_b_id === authUser.id) {
-      const u = userMap2.get(r2.user_a_id);
-      incoming2.push({
-        id: r2.id,
-        direction: "incoming",
-        requesterUserId: r2.user_a_id,
-        displayName: u?.full_name || "My Money User",
-        avatarUrl: u?.avatar_url || null,
-        isVerified: Boolean(u?.is_verified ?? true),
-        status: "pending",
-        relationshipType: r2.relationship_type || "Friend",
-        requestedVia: r2.requested_via || "search",
-        connectionMethod: r2.connection_method || "SEARCH",
-        createdAt: r2.created_at
-      });
-    } else if (r2.user_a_id === authUser.id) {
-      const u = userMap2.get(r2.user_b_id);
-      outgoing2.push({
-        id: r2.id,
-        direction: "outgoing",
-        targetUserId: r2.user_b_id,
-        displayName: u?.full_name || "My Money User",
-        avatarUrl: u?.avatar_url || null,
-        isVerified: Boolean(u?.is_verified ?? true),
-        status: "pending",
-        relationshipType: r2.relationship_type || "Friend",
-        requestedVia: r2.requested_via || "search",
-        connectionMethod: r2.connection_method || "SEARCH",
-        createdAt: r2.created_at
-      });
-    }
-  }
   return {
     status: 200,
     body: {
@@ -95751,7 +95789,8 @@ async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
   }
   let pendingRow = reqRes.data?.[0];
   if (!pendingRow) {
-    for (const fb of fallbackPendingRequests.values()) {
+    const persisted = await fetchPersistedPendingRequestsRest(authUser.id);
+    for (const fb of [...fallbackPendingRequests.values(), ...persisted]) {
       if (fb.user_b_id === authUser.id && (fb.id === requestIdOrUserId || parsedKey.kind === "composite" && fb.user_a_id === parsedKey.requesterUserId || parsedKey.kind === "uuid" && fb.user_a_id === parsedKey.uuid)) {
         pendingRow = { ...fb, status: "pending" };
         break;
@@ -95840,10 +95879,13 @@ async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
     return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
   }
   let pendingRow = reqRes.data?.[0];
+  let isFallbackOnly = false;
   if (!pendingRow) {
-    for (const fb of fallbackPendingRequests.values()) {
+    const persisted = await fetchPersistedPendingRequestsRest(authUser.id);
+    for (const fb of [...fallbackPendingRequests.values(), ...persisted]) {
       if (fb.user_b_id === authUser.id && (fb.id === requestIdOrUserId || parsedKey.kind === "composite" && fb.user_a_id === parsedKey.requesterUserId || parsedKey.kind === "uuid" && fb.user_a_id === parsedKey.uuid)) {
         pendingRow = { ...fb, status: "pending" };
+        isFallbackOnly = true;
         break;
       }
     }
@@ -95852,19 +95894,26 @@ async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
     return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
   }
   fallbackPendingRequests.delete(`${pendingRow.user_a_id}:${authUser.id}`);
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  let patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-    method: "PATCH",
-    body: { status: "rejected", responded_at: nowIso, updated_at: nowIso }
-  });
-  if (!patchRes.ok && patchRes.status === 400) {
-    patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+  if (!isFallbackOnly) {
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    let patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
       method: "PATCH",
-      body: { status: "rejected" }
+      body: { status: "rejected", responded_at: nowIso, updated_at: nowIso }
     });
-  }
-  if (!patchRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to decline request right now." } };
+    if (!patchRes.ok && patchRes.status === 400 && !String(patchRes.error || "").includes("23514")) {
+      patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+        method: "PATCH",
+        body: { status: "rejected" }
+      });
+    }
+    if (!patchRes.ok && (String(patchRes.error || "").includes("user_connections_status_check") || String(patchRes.error || "").includes("23514"))) {
+      patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+        method: "DELETE"
+      });
+    }
+    if (!patchRes.ok) {
+      return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to decline request right now." } };
+    }
   }
   await updateConnectionRequestNotificationsState({
     requestId: String(pendingRow.id),
@@ -95914,7 +95963,8 @@ async function cancelConnectionRequestRest(authUser, requestIdOrUserId) {
   let pendingRow = reqRes.data?.[0];
   let isFallbackOnly = false;
   if (!pendingRow) {
-    for (const fb of fallbackPendingRequests.values()) {
+    const persisted = await fetchPersistedPendingRequestsRest(authUser.id);
+    for (const fb of [...fallbackPendingRequests.values(), ...persisted]) {
       if (fb.user_a_id === authUser.id && (fb.id === requestIdOrUserId || parsedKey.kind === "composite" && fb.user_b_id === parsedKey.targetUserId || parsedKey.kind === "uuid" && fb.user_b_id === parsedKey.uuid)) {
         pendingRow = { ...fb, status: "pending" };
         isFallbackOnly = true;
@@ -95923,6 +95973,68 @@ async function cancelConnectionRequestRest(authUser, requestIdOrUserId) {
     }
   }
   if (!pendingRow) {
+    let anyStatusPath = "";
+    if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+      const encoded = encodeURIComponent(parsedKey.uuid);
+      anyStatusPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&or=(id.eq.${encoded},user_b_id.eq.${encoded})&select=id,status,user_b_id&limit=1`;
+    } else if (parsedKey.kind === "composite" && parsedKey.targetUserId) {
+      anyStatusPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&user_b_id=eq.${encodeURIComponent(parsedKey.targetUserId)}&select=id,status,user_b_id&limit=1`;
+    }
+    if (anyStatusPath) {
+      const existingRes = await sbRest2(anyStatusPath).catch(() => ({ ok: false, data: null }));
+      const existingRow = existingRes.ok ? existingRes.data?.[0] : null;
+      if (existingRow?.status === "connected") {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            code: "ALREADY_CONNECTED",
+            message: "This connection request was already accepted and cannot be cancelled."
+          }
+        };
+      }
+      if (existingRow && (existingRow.status === "cancelled" || existingRow.status === "rejected")) {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            alreadyCancelled: true,
+            status: "cancelled",
+            requestId: String(existingRow.id),
+            message: "Connection request was already cancelled."
+          }
+        };
+      }
+    }
+    const notifLookup = await sbRest2(
+      `user_notifications?type=eq.udhar_connection_request&metadata->>requesterId=eq.${encodeURIComponent(authUser.id)}&or=(related_entity_id.eq.${encodeURIComponent(requestIdOrUserId)},metadata->>requestId.eq.${encodeURIComponent(requestIdOrUserId)})&select=id,metadata&limit=1`
+    ).catch(() => ({ ok: false, data: null }));
+    const notifRow = notifLookup.ok ? notifLookup.data?.[0] : null;
+    if (notifRow) {
+      const nStatus = String(notifRow.metadata?.requestStatus || "").toLowerCase();
+      if (nStatus === "cancelled" || nStatus === "rejected") {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            alreadyCancelled: true,
+            status: "cancelled",
+            requestId: requestIdOrUserId,
+            message: "Connection request was already cancelled."
+          }
+        };
+      }
+      if (nStatus === "accepted") {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            code: "ALREADY_CONNECTED",
+            message: "This connection request was already accepted and cannot be cancelled."
+          }
+        };
+      }
+    }
     return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending outgoing connection request not found." } };
   }
   fallbackPendingRequests.delete(`${authUser.id}:${pendingRow.user_b_id}`);
@@ -96546,6 +96658,56 @@ async function updateContactRest(authUser, contactId, body) {
   if (!name2) {
     return { status: 400, body: { success: false, message: "Person's name is required." } };
   }
+  if (contactId.startsWith("conn_")) {
+    const peerUserId = contactId.slice(5).trim();
+    if (!peerUserId || peerUserId === authUser.id) {
+      return { status: 400, body: { success: false, message: "Invalid connected user identifier." } };
+    }
+    const connRes = await sbRest2(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&status=eq.connected&select=id&limit=1`
+    );
+    if (!connRes.ok || !connRes.data || connRes.data.length === 0) {
+      return { status: 404, body: { success: false, message: "Active connection not found." } };
+    }
+    const existingByPeer = await sbRest2(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}&limit=1`
+    );
+    if (existingByPeer.ok && existingByPeer.data && existingByPeer.data.length > 0) {
+      const existingRow = existingByPeer.data[0];
+      const updRes2 = await sbRest2(
+        `udhar_contacts?id=eq.${encodeURIComponent(existingRow.id)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+        {
+          method: "PATCH",
+          prefer: "return=representation",
+          body: {
+            name: name2,
+            relationship_type: relationshipType,
+            notes: notes || null,
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        }
+      );
+      if (!updRes2.ok || !updRes2.data || updRes2.data.length === 0) {
+        return { status: 500, body: { success: false, message: updRes2.error || "Failed to update contact." } };
+      }
+      return { status: 200, body: { success: true, contact: updRes2.data[0], reciprocallyLinked: true } };
+    }
+    const insRes = await sbRest2("udhar_contacts", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: authUser.id,
+        name: name2,
+        relationship_type: relationshipType,
+        notes: notes || null,
+        linked_user_id: peerUserId
+      }
+    });
+    if (!insRes.ok || !insRes.data || insRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: insRes.error || "Failed to save contact nickname." } };
+    }
+    return { status: 200, body: { success: true, contact: insRes.data[0], reciprocallyLinked: true } };
+  }
   const existingRes = await sbRest2(
     `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
@@ -96553,15 +96715,18 @@ async function updateContactRest(authUser, contactId, body) {
     return { status: 404, body: { success: false, message: "Contact not found." } };
   }
   const existing = existingRes.data[0];
+  const isLinked = Boolean(existing.linked_user_id);
   const patchBody = {
     name: name2,
-    email: email || null,
-    phone: phone || null,
     relationship_type: relationshipType,
     notes: notes || null,
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  if (photoUrl !== void 0) patchBody.photo_url = photoUrl;
+  if (!isLinked) {
+    patchBody.email = email || null;
+    patchBody.phone = phone || null;
+    if (photoUrl !== void 0) patchBody.photo_url = photoUrl;
+  }
   const updRes = await sbRest2(
     `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
     {
@@ -96578,7 +96743,7 @@ async function updateContactRest(authUser, contactId, body) {
     body: {
       success: true,
       contact: updRes.data[0],
-      reciprocallyLinked: Boolean(existing.linked_user_id)
+      reciprocallyLinked: isLinked
     }
   };
 }
@@ -105192,6 +105357,25 @@ async function handleApiRequest(req, res) {
         [authUser.id, lookupKey]
       );
       if (reqRes.rows.length === 0) {
+        const anyRes = await query(
+          `SELECT id, status FROM public.user_connections
+           WHERE user_a_id = $1 AND (id::text = $2 OR user_b_id::text = $2)
+           LIMIT 1`,
+          [authUser.id, lookupKey]
+        ).catch(() => ({ rows: [] }));
+        const existing = anyRes.rows[0];
+        if (existing?.status === "connected") {
+          return {
+            status: 409,
+            body: { success: false, code: "ALREADY_CONNECTED", message: "This connection request was already accepted and cannot be cancelled." }
+          };
+        }
+        if (existing && (existing.status === "cancelled" || existing.status === "rejected")) {
+          return {
+            status: 200,
+            body: { success: true, alreadyCancelled: true, status: "cancelled", requestId: String(existing.id), message: "Connection request was already cancelled." }
+          };
+        }
         return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending outgoing connection request not found." } };
       }
       const pending = reqRes.rows[0];
@@ -105644,13 +105828,69 @@ async function handleApiRequest(req, res) {
         sendJson6(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
-      const updRes = await query(
+      if (contactId.startsWith("conn_")) {
+        const peerUserId = contactId.slice(5).trim();
+        if (!peerUserId || peerUserId === authUser.id) {
+          sendJson6(res, 400, { success: false, message: "Invalid connected user identifier." });
+          return true;
+        }
+        const connCheck = await query(
+          `SELECT id FROM public.user_connections
+           WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+             AND status = 'connected'
+           LIMIT 1`,
+          [authUser.id, peerUserId]
+        );
+        if (connCheck.rows.length === 0) {
+          sendJson6(res, 404, { success: false, message: "Active connection not found." });
+          return true;
+        }
+        const existingPeerRow = await query(
+          `SELECT id FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`,
+          [authUser.id, peerUserId]
+        );
+        if (existingPeerRow.rows.length > 0) {
+          const updRes2 = await query(
+            `UPDATE public.udhar_contacts
+             SET name = $1, relationship_type = $2, notes = $3, updated_at = NOW()
+             WHERE id = $4 AND user_id = $5
+             RETURNING *`,
+            [name2, relationshipType, notes || null, existingPeerRow.rows[0].id, authUser.id]
+          );
+          sendJson6(res, 200, { success: true, contact: updRes2.rows[0], reciprocallyLinked: true });
+          return true;
+        }
+        const insRes = await query(
+          `INSERT INTO public.udhar_contacts (user_id, name, relationship_type, notes, linked_user_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [authUser.id, name2, relationshipType, notes || null, peerUserId]
+        );
+        sendJson6(res, 200, { success: true, contact: insRes.rows[0], reciprocallyLinked: true });
+        return true;
+      }
+      const existingRes = await query(
+        `SELECT id, linked_user_id FROM public.udhar_contacts WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [contactId, authUser.id]
+      );
+      if (existingRes.rows.length === 0) {
+        sendJson6(res, 404, { success: false, message: "Contact not found." });
+        return true;
+      }
+      const isLinked = Boolean(existingRes.rows[0].linked_user_id);
+      const updRes = isLinked ? await query(
+        `UPDATE public.udhar_contacts
+             SET name = $1, relationship_type = $2, notes = $3, updated_at = NOW()
+             WHERE id = $4 AND user_id = $5
+             RETURNING *`,
+        [name2, relationshipType, notes || null, contactId, authUser.id]
+      ) : await query(
         `UPDATE public.udhar_contacts 
-         SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5,
-             photo_url = COALESCE($6, photo_url),
-             linked_user_id = COALESCE($7, linked_user_id), updated_at = NOW()
-         WHERE id = $8 AND user_id = $9
-         RETURNING *`,
+             SET name = $1, email = $2, phone = $3, relationship_type = $4, notes = $5,
+                 photo_url = COALESCE($6, photo_url),
+                 linked_user_id = COALESCE($7, linked_user_id), updated_at = NOW()
+             WHERE id = $8 AND user_id = $9
+             RETURNING *`,
         [name2, email || null, phone || null, relationshipType, notes || null, photoUrl ?? null, linkedUserId, contactId, authUser.id]
       );
       if (updRes.rows.length === 0) {
@@ -105658,9 +105898,6 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const finalLinkedId = updRes.rows[0].linked_user_id;
-      if (finalLinkedId && finalLinkedId !== authUser.id) {
-        await ensureReciprocalContact(finalLinkedId, authUser, relationshipType);
-      }
       sendJson6(res, 200, {
         success: true,
         contact: updRes.rows[0],
@@ -105856,10 +106093,14 @@ async function handleApiRequest(req, res) {
         }
         const incoming2 = [];
         const outgoing2 = [];
+        const seenIncomingUsers = /* @__PURE__ */ new Set();
+        const seenOutgoingUsers = /* @__PURE__ */ new Set();
         const connectedMap = /* @__PURE__ */ new Map();
         for (const r2 of rowsRes.rows) {
           if (r2.status === "pending") {
             if (r2.user_b_id === authUser.id) {
+              if (seenIncomingUsers.has(r2.user_a_id)) continue;
+              seenIncomingUsers.add(r2.user_a_id);
               incoming2.push({
                 id: r2.id,
                 direction: "incoming",
@@ -105874,6 +106115,8 @@ async function handleApiRequest(req, res) {
                 createdAt: r2.created_at
               });
             } else if (r2.user_a_id === authUser.id) {
+              if (seenOutgoingUsers.has(r2.user_b_id)) continue;
+              seenOutgoingUsers.add(r2.user_b_id);
               outgoing2.push({
                 id: r2.id,
                 direction: "outgoing",
@@ -105992,14 +106235,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
     }
-    const connDeleteMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)$/);
+    const connDeleteMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)$/);
     if (connDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const targetOrContactId = connDeleteMatch[1];
+      const targetOrContactId = decodeURIComponent(connDeleteMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await removeSavedConnectionRest(authUser, targetOrContactId);
         sendJson6(res, restRes.status, restRes.body);

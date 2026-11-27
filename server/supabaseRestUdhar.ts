@@ -656,6 +656,18 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
       }
     }
   }
+  for (const fb of fallbackPendingRequests.values()) {
+    if (fb.user_a_id === authUser.id || fb.user_b_id === authUser.id) {
+      const isOutgoing = fb.user_a_id === authUser.id;
+      const otherId = isOutgoing ? fb.user_b_id : fb.user_a_id;
+      if (!statusByUserId.has(otherId)) {
+        statusByUserId.set(otherId, {
+          status: isOutgoing ? 'pending' : 'incoming_pending',
+          requestId: fb.id,
+        });
+      }
+    }
+  }
 
   const linkedContactSet = new Set<string>();
   if (contactsRes.ok && Array.isArray(contactsRes.data)) {
@@ -717,6 +729,37 @@ interface FallbackPendingRequest {
   created_at: string;
 }
 const fallbackPendingRequests = new Map<string, FallbackPendingRequest>();
+
+async function fetchPersistedPendingRequestsRest(authUserId: string): Promise<FallbackPendingRequest[]> {
+  const res = await sbRest<any[]>(
+    `user_notifications?type=eq.udhar_connection_request&is_deleted=eq.false&or=(user_id.eq.${encodeURIComponent(authUserId)},metadata->>requesterId.eq.${encodeURIComponent(authUserId)})&select=id,user_id,related_entity_id,metadata,created_at&order=created_at.desc`
+  ).catch(() => ({ ok: false, data: null as any[] | null }));
+
+  if (!res.ok || !Array.isArray(res.data)) return [];
+  const results: FallbackPendingRequest[] = [];
+  const seenPairs = new Set<string>();
+  for (const row of res.data) {
+    const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const reqStatus = String(meta.requestStatus || 'pending').toLowerCase();
+    if (reqStatus !== 'pending') continue;
+    const requesterId = String(meta.requesterId || meta.requesterUserId || '').trim();
+    const receiverId = String(meta.receiverId || row.user_id || '').trim();
+    if (!requesterId || !receiverId || requesterId === receiverId) continue;
+    const pairKey = `${requesterId}:${receiverId}`;
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+    results.push({
+      id: String(meta.requestId || row.related_entity_id || pairKey),
+      user_a_id: requesterId,
+      user_b_id: receiverId,
+      relationship_type: String(meta.relationshipType || 'Friend'),
+      requested_via: String(meta.requestedVia || 'search'),
+      connection_method: String(meta.connectionMethod || 'SEARCH'),
+      created_at: row.created_at || new Date().toISOString(),
+    });
+  }
+  return results;
+}
 
 export async function connectUserRest(
   authUser: AuthenticatedUser,
@@ -790,7 +833,10 @@ export async function connectUserRest(
   }
 
   // Case 2: Target already sent a pending request to authUser -> mutual consent -> accept!
-  const incomingFallback = fallbackPendingRequests.get(`${targetUserId}:${authUser.id}`);
+  const persistedPending = await fetchPersistedPendingRequestsRest(authUser.id);
+  const incomingFallback =
+    fallbackPendingRequests.get(`${targetUserId}:${authUser.id}`) ||
+    persistedPending.find((p) => p.user_a_id === targetUserId && p.user_b_id === authUser.id);
   const incomingPending =
     pairRows.find(
       (r) => r.user_a_id === targetUserId && r.user_b_id === authUser.id && r.status === 'pending'
@@ -800,7 +846,9 @@ export async function connectUserRest(
   }
 
   // Case 3: Duplicate outgoing pending request -> prevent duplicates
-  const outgoingFallback = fallbackPendingRequests.get(`${authUser.id}:${targetUserId}`);
+  const outgoingFallback =
+    fallbackPendingRequests.get(`${authUser.id}:${targetUserId}`) ||
+    persistedPending.find((p) => p.user_a_id === authUser.id && p.user_b_id === targetUserId);
   const outgoingPending =
     pairRows.find(
       (r) => r.user_a_id === authUser.id && r.user_b_id === targetUserId && r.status === 'pending'
@@ -935,11 +983,18 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
   }
 
   const rows = [...(connRes.data || [])];
-  for (const fb of fallbackPendingRequests.values()) {
-    if (
-      (fb.user_a_id === authUser.id || fb.user_b_id === authUser.id) &&
-      !rows.some((r) => r.user_a_id === fb.user_a_id && r.user_b_id === fb.user_b_id)
-    ) {
+  const persistedPending = await fetchPersistedPendingRequestsRest(authUser.id);
+  const existingPairStatuses = new Set(
+    rows
+      .filter((r) => r.status === 'pending' || r.status === 'connected')
+      .map((r) => `${r.user_a_id}:${r.user_b_id}`)
+  );
+  for (const fb of [...fallbackPendingRequests.values(), ...persistedPending]) {
+    if (fb.user_a_id !== authUser.id && fb.user_b_id !== authUser.id) continue;
+    const pairKey = `${fb.user_a_id}:${fb.user_b_id}`;
+    const reversePairKey = `${fb.user_b_id}:${fb.user_a_id}`;
+    if (!existingPairStatuses.has(pairKey) && !existingPairStatuses.has(reversePairKey)) {
+      existingPairStatuses.add(pairKey);
       rows.push({ ...fb, status: 'pending' });
     }
   }
@@ -950,11 +1005,15 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
 
   const incoming: any[] = [];
   const outgoing: any[] = [];
+  const seenIncomingUsers = new Set<string>();
+  const seenOutgoingUsers = new Set<string>();
   const connectedMap = new Map<string, any>();
 
   for (const r of rows) {
     if (r.status === 'pending') {
       if (r.user_b_id === authUser.id) {
+        if (seenIncomingUsers.has(r.user_a_id)) continue;
+        seenIncomingUsers.add(r.user_a_id);
         const u = userMap.get(r.user_a_id);
         incoming.push({
           id: r.id,
@@ -970,6 +1029,8 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
           createdAt: r.created_at,
         });
       } else if (r.user_a_id === authUser.id) {
+        if (seenOutgoingUsers.has(r.user_b_id)) continue;
+        seenOutgoingUsers.add(r.user_b_id);
         const u = userMap.get(r.user_b_id);
         outgoing.push({
           id: r.id,
@@ -1004,41 +1065,6 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
     }
   }
 
-  // Merge any in-memory fallback pending requests
-  for (const r of fallbackPendingRequests.values()) {
-    if (r.user_b_id === authUser.id) {
-      const u = userMap.get(r.user_a_id);
-      incoming.push({
-        id: r.id,
-        direction: 'incoming',
-        requesterUserId: r.user_a_id,
-        displayName: u?.full_name || 'My Money User',
-        avatarUrl: u?.avatar_url || null,
-        isVerified: Boolean(u?.is_verified ?? true),
-        status: 'pending',
-        relationshipType: r.relationship_type || 'Friend',
-        requestedVia: r.requested_via || 'search',
-        connectionMethod: r.connection_method || 'SEARCH',
-        createdAt: r.created_at,
-      });
-    } else if (r.user_a_id === authUser.id) {
-      const u = userMap.get(r.user_b_id);
-      outgoing.push({
-        id: r.id,
-        direction: 'outgoing',
-        targetUserId: r.user_b_id,
-        displayName: u?.full_name || 'My Money User',
-        avatarUrl: u?.avatar_url || null,
-        isVerified: Boolean(u?.is_verified ?? true),
-        status: 'pending',
-        relationshipType: r.relationship_type || 'Friend',
-        requestedVia: r.requested_via || 'search',
-        connectionMethod: r.connection_method || 'SEARCH',
-        createdAt: r.created_at,
-      });
-    }
-  }
-
   return {
     status: 200,
     body: {
@@ -1070,7 +1096,8 @@ export async function acceptConnectionRequestRest(authUser: AuthenticatedUser, r
   }
   let pendingRow = reqRes.data?.[0];
   if (!pendingRow) {
-    for (const fb of fallbackPendingRequests.values()) {
+    const persisted = await fetchPersistedPendingRequestsRest(authUser.id);
+    for (const fb of [...fallbackPendingRequests.values(), ...persisted]) {
       if (
         fb.user_b_id === authUser.id &&
         (fb.id === requestIdOrUserId ||
@@ -1171,8 +1198,10 @@ export async function rejectConnectionRequestRest(authUser: AuthenticatedUser, r
     return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to verify connection request right now.' } };
   }
   let pendingRow = reqRes.data?.[0];
+  let isFallbackOnly = false;
   if (!pendingRow) {
-    for (const fb of fallbackPendingRequests.values()) {
+    const persisted = await fetchPersistedPendingRequestsRest(authUser.id);
+    for (const fb of [...fallbackPendingRequests.values(), ...persisted]) {
       if (
         fb.user_b_id === authUser.id &&
         (fb.id === requestIdOrUserId ||
@@ -1180,6 +1209,7 @@ export async function rejectConnectionRequestRest(authUser: AuthenticatedUser, r
           (parsedKey.kind === 'uuid' && fb.user_a_id === parsedKey.uuid))
       ) {
         pendingRow = { ...fb, status: 'pending' };
+        isFallbackOnly = true;
         break;
       }
     }
@@ -1188,19 +1218,26 @@ export async function rejectConnectionRequestRest(authUser: AuthenticatedUser, r
     return { status: 404, body: { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending connection request not found.' } };
   }
   fallbackPendingRequests.delete(`${pendingRow.user_a_id}:${authUser.id}`);
-  const nowIso = new Date().toISOString();
-  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-    method: 'PATCH',
-    body: { status: 'rejected', responded_at: nowIso, updated_at: nowIso },
-  });
-  if (!patchRes.ok && patchRes.status === 400) {
-    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+  if (!isFallbackOnly) {
+    const nowIso = new Date().toISOString();
+    let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
       method: 'PATCH',
-      body: { status: 'rejected' },
+      body: { status: 'rejected', responded_at: nowIso, updated_at: nowIso },
     });
-  }
-  if (!patchRes.ok) {
-    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to decline request right now.' } };
+    if (!patchRes.ok && patchRes.status === 400 && !String(patchRes.error || '').includes('23514')) {
+      patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+        method: 'PATCH',
+        body: { status: 'rejected' },
+      });
+    }
+    if (!patchRes.ok && (String(patchRes.error || '').includes('user_connections_status_check') || String(patchRes.error || '').includes('23514'))) {
+      patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+        method: 'DELETE',
+      });
+    }
+    if (!patchRes.ok) {
+      return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to decline request right now.' } };
+    }
   }
 
   await updateConnectionRequestNotificationsState({
@@ -1255,7 +1292,8 @@ export async function cancelConnectionRequestRest(authUser: AuthenticatedUser, r
   let pendingRow = reqRes.data?.[0];
   let isFallbackOnly = false;
   if (!pendingRow) {
-    for (const fb of fallbackPendingRequests.values()) {
+    const persisted = await fetchPersistedPendingRequestsRest(authUser.id);
+    for (const fb of [...fallbackPendingRequests.values(), ...persisted]) {
       if (
         fb.user_a_id === authUser.id &&
         (fb.id === requestIdOrUserId ||
@@ -1269,6 +1307,70 @@ export async function cancelConnectionRequestRest(authUser: AuthenticatedUser, r
     }
   }
   if (!pendingRow) {
+    // Check if this request was already cancelled/rejected or already connected
+    let anyStatusPath = '';
+    if (parsedKey.kind === 'uuid' && parsedKey.uuid) {
+      const encoded = encodeURIComponent(parsedKey.uuid);
+      anyStatusPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&or=(id.eq.${encoded},user_b_id.eq.${encoded})&select=id,status,user_b_id&limit=1`;
+    } else if (parsedKey.kind === 'composite' && parsedKey.targetUserId) {
+      anyStatusPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&user_b_id=eq.${encodeURIComponent(parsedKey.targetUserId)}&select=id,status,user_b_id&limit=1`;
+    }
+    if (anyStatusPath) {
+      const existingRes = await sbRest<any[]>(anyStatusPath).catch(() => ({ ok: false, data: null as any[] | null }));
+      const existingRow = existingRes.ok ? existingRes.data?.[0] : null;
+      if (existingRow?.status === 'connected') {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            code: 'ALREADY_CONNECTED',
+            message: 'This connection request was already accepted and cannot be cancelled.',
+          },
+        };
+      }
+      if (existingRow && (existingRow.status === 'cancelled' || existingRow.status === 'rejected')) {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            alreadyCancelled: true,
+            status: 'cancelled',
+            requestId: String(existingRow.id),
+            message: 'Connection request was already cancelled.',
+          },
+        };
+      }
+    }
+    // Also check if a notification for this request was already cancelled
+    const notifLookup = await sbRest<any[]>(
+      `user_notifications?type=eq.udhar_connection_request&metadata->>requesterId=eq.${encodeURIComponent(authUser.id)}&or=(related_entity_id.eq.${encodeURIComponent(requestIdOrUserId)},metadata->>requestId.eq.${encodeURIComponent(requestIdOrUserId)})&select=id,metadata&limit=1`
+    ).catch(() => ({ ok: false, data: null as any[] | null }));
+    const notifRow = notifLookup.ok ? notifLookup.data?.[0] : null;
+    if (notifRow) {
+      const nStatus = String(notifRow.metadata?.requestStatus || '').toLowerCase();
+      if (nStatus === 'cancelled' || nStatus === 'rejected') {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            alreadyCancelled: true,
+            status: 'cancelled',
+            requestId: requestIdOrUserId,
+            message: 'Connection request was already cancelled.',
+          },
+        };
+      }
+      if (nStatus === 'accepted') {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            code: 'ALREADY_CONNECTED',
+            message: 'This connection request was already accepted and cannot be cancelled.',
+          },
+        };
+      }
+    }
     return { status: 404, body: { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending outgoing connection request not found.' } };
   }
   fallbackPendingRequests.delete(`${authUser.id}:${pendingRow.user_b_id}`);
@@ -1995,6 +2097,61 @@ export async function updateContactRest(authUser: AuthenticatedUser, contactId: 
     return { status: 400, body: { success: false, message: "Person's name is required." } };
   }
 
+  // Handle synthetic conn_<peerUserId> contacts for 2-way connected users
+  if (contactId.startsWith('conn_')) {
+    const peerUserId = contactId.slice(5).trim();
+    if (!peerUserId || peerUserId === authUser.id) {
+      return { status: 400, body: { success: false, message: 'Invalid connected user identifier.' } };
+    }
+    const connRes = await sbRest<any[]>(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&status=eq.connected&select=id&limit=1`
+    );
+    if (!connRes.ok || !connRes.data || connRes.data.length === 0) {
+      return { status: 404, body: { success: false, message: 'Active connection not found.' } };
+    }
+
+    // Check if an udhar_contacts row already exists for this linked_user_id
+    const existingByPeer = await sbRest<any[]>(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}&limit=1`
+    );
+    if (existingByPeer.ok && existingByPeer.data && existingByPeer.data.length > 0) {
+      const existingRow = existingByPeer.data[0];
+      const updRes = await sbRest<any[]>(
+        `udhar_contacts?id=eq.${encodeURIComponent(existingRow.id)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+        {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: {
+            name,
+            relationship_type: relationshipType,
+            notes: notes || null,
+            updated_at: new Date().toISOString(),
+          },
+        }
+      );
+      if (!updRes.ok || !updRes.data || updRes.data.length === 0) {
+        return { status: 500, body: { success: false, message: updRes.error || 'Failed to update contact.' } };
+      }
+      return { status: 200, body: { success: true, contact: updRes.data[0], reciprocallyLinked: true } };
+    }
+
+    const insRes = await sbRest<any[]>('udhar_contacts', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: {
+        user_id: authUser.id,
+        name,
+        relationship_type: relationshipType,
+        notes: notes || null,
+        linked_user_id: peerUserId,
+      },
+    });
+    if (!insRes.ok || !insRes.data || insRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: insRes.error || 'Failed to save contact nickname.' } };
+    }
+    return { status: 200, body: { success: true, contact: insRes.data[0], reciprocallyLinked: true } };
+  }
+
   const existingRes = await sbRest<any[]>(
     `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
@@ -2003,15 +2160,19 @@ export async function updateContactRest(authUser: AuthenticatedUser, contactId: 
   }
 
   const existing = existingRes.data[0];
+  const isLinked = Boolean(existing.linked_user_id);
+  // Ownership & privacy rule: for 2-way linked users, only allow editing local contact nickname, relationship, and notes.
   const patchBody: Record<string, any> = {
     name,
-    email: email || null,
-    phone: phone || null,
     relationship_type: relationshipType,
     notes: notes || null,
     updated_at: new Date().toISOString(),
   };
-  if (photoUrl !== undefined) patchBody.photo_url = photoUrl;
+  if (!isLinked) {
+    patchBody.email = email || null;
+    patchBody.phone = phone || null;
+    if (photoUrl !== undefined) patchBody.photo_url = photoUrl;
+  }
 
   const updRes = await sbRest<any[]>(
     `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
@@ -2031,7 +2192,7 @@ export async function updateContactRest(authUser: AuthenticatedUser, contactId: 
     body: {
       success: true,
       contact: updRes.data[0],
-      reciprocallyLinked: Boolean(existing.linked_user_id),
+      reciprocallyLinked: isLinked,
     },
   };
 }

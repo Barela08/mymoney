@@ -27,6 +27,7 @@ import { AdminDatabaseTab } from './tabs/AdminDatabaseTab';
 import { AdminInstalledDevicesTab } from './tabs/AdminInstalledDevicesTab';
 import { AdminControlCenterTab } from './tabs/AdminControlCenterTab';
 import { AdminStaffTasksTab } from './tabs/AdminStaffTasksTab';
+import { AdminAppPushNotificationsTab } from './tabs/AdminAppPushNotificationsTab';
 
 interface AdminDashboardProps {
   onExit?: () => void;
@@ -186,8 +187,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return <AdminAuditLogsTab />;
       case 'settings':
         return <AdminSettingsTab />;
+      case 'app_management':
       case 'website_control':
-        return <AdminControlCenterTab onNavigateSection={setCurrentSection} />;
+        return <AdminControlCenterTab initialModule="branding" onNavigateSection={setCurrentSection} />;
+      case 'app_branding':
+        return <AdminControlCenterTab initialModule="branding" onNavigateSection={setCurrentSection} />;
+      case 'app_pwa':
+        return <AdminControlCenterTab initialModule="pwa" onNavigateSection={setCurrentSection} />;
+      case 'app_push':
+        return <AdminAppPushNotificationsTab />;
+      case 'app_config':
+        return <AdminControlCenterTab initialModule="general" onNavigateSection={setCurrentSection} />;
+      case 'app_preview':
+        return <AdminControlCenterTab initialModule="preview" onNavigateSection={setCurrentSection} />;
+      case 'app_history':
+        return <AdminControlCenterTab initialModule="history" onNavigateSection={setCurrentSection} />;
       case 'staff_tasks':
         return <AdminStaffTasksTab />;
       case 'roles':

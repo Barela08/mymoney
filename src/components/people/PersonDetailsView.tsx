@@ -378,18 +378,36 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
 
           {onEditPerson && (
             <button
+              type="button"
               onClick={() => onEditPerson(person.name)}
+              data-testid="person-profile-edit-btn"
               className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-              title="Edit Contact"
+              title="Edit Contact Details"
+              aria-label={`Edit ${person.name}`}
             >
               <Edit3 className="w-4 h-4" />
             </button>
           )}
 
           <button
-            onClick={handleDeleteHistory}
+            type="button"
+            onClick={() => {
+              if (onDeletePerson) {
+                onDeletePerson(person.name);
+              } else {
+                handleDeleteHistory();
+              }
+            }}
+            data-testid="person-profile-delete-btn"
             className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
-            title="Delete History with Person"
+            title={
+              onDeletePerson
+                ? person.isRegisteredUser
+                  ? 'Remove Saved Connection (keeps Udhar history)'
+                  : 'Delete Saved Contact (keeps Udhar history)'
+                : 'Delete History with Person'
+            }
+            aria-label={`Delete ${person.name}`}
           >
             <Trash2 className="w-4 h-4" />
           </button>

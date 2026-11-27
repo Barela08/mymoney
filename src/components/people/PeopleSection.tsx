@@ -147,6 +147,14 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [pendingRemovePerson, setPendingRemovePerson] = useState<PersonSummary | null>(null);
   const [isRemovingPerson, setIsRemovingPerson] = useState(false);
+  const [editingProfilePerson, setEditingProfilePerson] = useState<PersonSummary | null>(null);
+  const [editContactId, setEditContactId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editRelationship, setEditRelationship] = useState('Friend');
+  const [editNotes, setEditNotes] = useState('');
+  const [isSavingProfileEdit, setIsSavingProfileEdit] = useState(false);
 
   // Fetch Udhar Data from Backend
   const fetchUdharData = useCallback(async () => {
@@ -348,6 +356,105 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     }
   };
 
+  const openEditProfileModal = (person: PersonSummary) => {
+    const normName = person.name.trim().toLowerCase();
+    const matchingContact = savedContacts.find(
+      (c) =>
+        (person.linkedUserId && c.linked_user_id === person.linkedUserId) ||
+        (person.contactId && c.id === person.contactId) ||
+        c.name.trim().toLowerCase() === normName
+    );
+    const resolvedId =
+      person.contactId ||
+      matchingContact?.id ||
+      (person.linkedUserId ? `conn_${person.linkedUserId}` : null);
+
+    setEditContactId(resolvedId);
+    setEditName(matchingContact?.name || person.name || '');
+    setEditEmail(matchingContact?.email || person.email || '');
+    setEditPhone(matchingContact?.phone || person.phone || '');
+    setEditRelationship(matchingContact?.relationship_type || 'Friend');
+    setEditNotes(matchingContact?.notes || '');
+    setEditingProfilePerson(person);
+  };
+
+  const handleSaveProfileEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProfilePerson || isSavingProfileEdit) return;
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      toast.error('Name Required', 'Please enter a display name or nickname.');
+      return;
+    }
+
+    try {
+      setIsSavingProfileEdit(true);
+      let targetId = editContactId;
+      if (!targetId) {
+        const freshRes = await udharDeletionApi.getContacts().catch(() => null);
+        const normName = editingProfilePerson.name.trim().toLowerCase();
+        const match = freshRes?.contacts?.find(
+          (c) =>
+            (editingProfilePerson.linkedUserId && c.linked_user_id === editingProfilePerson.linkedUserId) ||
+            c.name.trim().toLowerCase() === normName
+        );
+        targetId = match?.id || (editingProfilePerson.linkedUserId ? `conn_${editingProfilePerson.linkedUserId}` : null);
+      }
+
+      if (!targetId) {
+        const createRes = await udharDeletionApi.saveContact({
+          name: trimmedName,
+          email: editingProfilePerson.isRegisteredUser ? undefined : editEmail.trim() || undefined,
+          phone: editingProfilePerson.isRegisteredUser ? undefined : editPhone.trim() || undefined,
+          relationship_type: editRelationship,
+          notes: editNotes.trim() || undefined,
+          linked_user_id: editingProfilePerson.linkedUserId || undefined,
+        });
+        if (!createRes.success) {
+          throw new Error(createRes.message || 'Could not save contact details.');
+        }
+      } else {
+        const updRes = await udharDeletionApi.updateContact(targetId, {
+          name: trimmedName,
+          email: editingProfilePerson.isRegisteredUser ? undefined : editEmail.trim() || undefined,
+          phone: editingProfilePerson.isRegisteredUser ? undefined : editPhone.trim() || undefined,
+          relationship_type: editRelationship,
+          notes: editNotes.trim() || undefined,
+        });
+        if (!updRes.success) {
+          throw new Error('Could not update contact details.');
+        }
+      }
+
+      toast.success(
+        'Profile Updated',
+        editingProfilePerson.isRegisteredUser
+          ? `Saved local nickname and notes for ${trimmedName}.`
+          : `Updated contact details for ${trimmedName}.`
+      );
+
+      if (selectedPersonForDetails) {
+        setSelectedPersonForDetails((prev) =>
+          prev
+            ? {
+                ...prev,
+                name: trimmedName,
+                email: editingProfilePerson.isRegisteredUser ? prev.email : editEmail.trim() || prev.email,
+                phone: editingProfilePerson.isRegisteredUser ? prev.phone : editPhone.trim() || prev.phone,
+              }
+            : null
+        );
+      }
+
+      setEditingProfilePerson(null);
+      await Promise.all([refreshContacts(), fetchUdharData()]);
+    } catch (err: any) {
+      toast.error('Update Failed', err?.message || 'Could not update this profile.');
+    } finally {
+      setIsSavingProfileEdit(false);
+    }
+  };
+
   const toggleRepayments = (txId: string) => {
     setExpandedRepayments((prev) => ({ ...prev, [txId]: !prev[txId] }));
   };
@@ -446,17 +553,181 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
     );
   }, [selectedPersonForDetails, peopleSummaries]);
 
+  const sharedProfileModals = (
+    <>
+      <ConfirmModal
+        isOpen={Boolean(pendingRemovePerson)}
+        title="Remove Connection?"
+        subtitle="Existing Udhaar transactions and balances remain completely intact."
+        message={
+          pendingRemovePerson
+            ? `Are you sure you want to remove ${pendingRemovePerson.name} from your saved connections?`
+            : 'Are you sure you want to remove this person from your saved connections?'
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        isDestructive={true}
+        isLoading={isRemovingPerson}
+        onConfirm={() => void confirmRemovePersonConnection()}
+        onCancel={() => !isRemovingPerson && setPendingRemovePerson(null)}
+      />
+
+      {editingProfilePerson && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => !isSavingProfileEdit && setEditingProfilePerson(null)}
+        >
+          <form
+            onSubmit={handleSaveProfileEdit}
+            onClick={(e) => e.stopPropagation()}
+            data-testid="edit-person-profile-modal"
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                    {editingProfilePerson.isRegisteredUser ? 'Edit Local Contact Nickname' : 'Edit Saved Contact'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {editingProfilePerson.isRegisteredUser
+                      ? 'Only updates how this person appears in your own Saved People list.'
+                      : 'Update locally saved contact details.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isSavingProfileEdit}
+                onClick={() => setEditingProfilePerson(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  {editingProfilePerson.isRegisteredUser ? 'Local Nickname / Display Name *' : 'Name *'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  disabled={isSavingProfileEdit}
+                  data-testid="edit-person-name-input"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {!editingProfilePerson.isRegisteredUser && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      Phone (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      disabled={isSavingProfileEdit}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      Email (Optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      disabled={isSavingProfileEdit}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Relationship
+                </label>
+                <select
+                  value={editRelationship}
+                  onChange={(e) => setEditRelationship(e.target.value)}
+                  disabled={isSavingProfileEdit}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
+                >
+                  <option value="Friend">Friend</option>
+                  <option value="Family">Family</option>
+                  <option value="Colleague">Colleague</option>
+                  <option value="Roommate">Roommate</option>
+                  <option value="Business">Business</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Private Notes (Only visible to you)
+                </label>
+                <textarea
+                  rows={2}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  disabled={isSavingProfileEdit}
+                  data-testid="edit-person-notes-input"
+                  placeholder="Optional local notes..."
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isSavingProfileEdit}
+                onClick={() => setEditingProfilePerson(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingProfileEdit}
+                data-testid="edit-person-save-btn"
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+              >
+                {isSavingProfileEdit ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+
   if (currentSelectedPerson) {
     return (
-      <PersonDetailsView
-        person={currentSelectedPerson}
-        onBack={() => setSelectedPersonForDetails(null)}
-        onOpenAddModal={onOpenAddModal}
-        onEditPerson={() => setIsSavedPeopleOpen(true)}
-        udharTransactions={udharTransactions}
-        udharLoaded={hasLoadedUdhar}
-        onRefreshUdhar={fetchUdharData}
-      />
+      <>
+        <PersonDetailsView
+          person={currentSelectedPerson}
+          onBack={() => setSelectedPersonForDetails(null)}
+          onOpenAddModal={onOpenAddModal}
+          onEditPerson={() => openEditProfileModal(currentSelectedPerson)}
+          onDeletePerson={() => setPendingRemovePerson(currentSelectedPerson)}
+          udharTransactions={udharTransactions}
+          udharLoaded={hasLoadedUdhar}
+          onRefreshUdhar={fetchUdharData}
+        />
+        {sharedProfileModals}
+      </>
     );
   }
 
@@ -1568,18 +1839,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         onRefreshUdhar={fetchUdharData}
       />
 
-      <ConfirmModal
-        isOpen={Boolean(pendingRemovePerson)}
-        title="Remove Connection?"
-        subtitle="Existing Udhaar transactions and balances remain completely intact."
-        message="Are you sure you want to remove this person from your saved connections?"
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        isDestructive={true}
-        isLoading={isRemovingPerson}
-        onConfirm={() => void confirmRemovePersonConnection()}
-        onCancel={() => !isRemovingPerson && setPendingRemovePerson(null)}
-      />
+      {sharedProfileModals}
 
       {pendingConfirmAction && (
         <div
