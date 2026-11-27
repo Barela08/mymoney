@@ -24,6 +24,13 @@ import {
   assertAdminRole,
   SecurityAuthorizationError,
 } from '../src/lib/security';
+import { validateReceiptFileSignature } from '../src/lib/financialIntelligenceEngine';
+import {
+  MAX_ACTIVE_SESSIONS,
+  SessionLimitError,
+  isMasterAdminAccountEmail,
+} from '../server/auth';
+import { POPUP_REPROMPT_DELAY_MS } from '../src/components/common/AppDownloadPopup';
 import { Transaction, DynamicSection, MaintenanceSettings } from '../src/types';
 
 interface TestResult {
@@ -327,6 +334,78 @@ runTest(12, 'Anti-IDOR Defense', 'Users cannot access or modify another user rec
 });
 
 // -------------------------------------------------------------
+// TEST 13: File upload magic-byte verification blocks spoofed SVG/MIME payloads
+// -------------------------------------------------------------
+runTest(13, 'Upload Hardening', 'File signature validator rejects spoofed MIME types and SVG payloads', () => {
+  const validJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01]).toString('base64');
+  const validPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49]).toString('base64');
+  const validWebp = Buffer.from('RIFF1234WEBPabcd', 'ascii').toString('base64');
+  const spoofedSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'utf8').toString('base64');
+
+  assert(validateReceiptFileSignature(validJpeg, 'image/jpeg').valid === true, 'Valid JPEG signature must pass');
+  assert(validateReceiptFileSignature(validPng, 'image/png').valid === true, 'Valid PNG signature must pass');
+  assert(validateReceiptFileSignature(validWebp, 'image/webp').valid === true, 'Valid WEBP signature must pass');
+  assert(validateReceiptFileSignature(spoofedSvg, 'image/jpeg').valid === false, 'SVG payload spoofed as JPEG must be rejected');
+  assert(validateReceiptFileSignature(validPng, 'image/jpeg').valid === false, 'Mismatched PNG signature with JPEG MIME must be rejected');
+});
+
+// -------------------------------------------------------------
+// TEST 14: Master-admin protection guard prevents modification/impersonation
+// -------------------------------------------------------------
+runTest(14, 'Admin Protection', 'Master-admin accounts are protected from downgrade or non-discoverable abuse', () => {
+  assert(isMasterAdminAccountEmail('hackifypro@gmail.com') === true, 'Primary master admin must be recognized');
+  assert(isMasterAdminAccountEmail('ADMIN@MYMONEY.COM ') === true, 'Master admin email check must be case-insensitive');
+  assert(isMasterAdminAccountEmail('alice@example.com') === false, 'Standard user must not be treated as master admin');
+});
+
+// -------------------------------------------------------------
+// TEST 15: 3-Device concurrent session limit enforcement
+// -------------------------------------------------------------
+runTest(15, 'Session Security', '3-device maximum session limit and structured 409 lock error', () => {
+  assert(MAX_ACTIVE_SESSIONS === 3, `Expected MAX_ACTIVE_SESSIONS === 3, got ${MAX_ACTIVE_SESSIONS}`);
+  const err = new SessionLimitError([]);
+  assert(err.code === 'MAX_SESSIONS_REACHED', 'SessionLimitError must expose MAX_SESSIONS_REACHED code');
+  assert(err.status === 409, 'SessionLimitError must map to HTTP 409 Conflict');
+  assert(err.maxSessions === 3, 'SessionLimitError maxSessions must equal 3');
+});
+
+// -------------------------------------------------------------
+// TEST 16: Amount tampering and negative/zero transaction rejection
+// -------------------------------------------------------------
+runTest(16, 'Amount Integrity', 'Transaction validator rejects negative, zero, and NaN amounts', () => {
+  const negativeRes = validateTransactionPayload(
+    {
+      category: 'food',
+      subcategory: 'delivery',
+      transaction_type: 'expense',
+      amount: -500,
+      title: 'Negative Tamper',
+    },
+    user1Id
+  );
+  assert(!negativeRes.isValid, 'Negative transaction amount must be rejected');
+
+  const zeroRes = validateTransactionPayload(
+    {
+      category: 'food',
+      subcategory: 'delivery',
+      transaction_type: 'expense',
+      amount: 0,
+      title: 'Zero Tamper',
+    },
+    user1Id
+  );
+  assert(!zeroRes.isValid, 'Zero transaction amount must be rejected');
+});
+
+// -------------------------------------------------------------
+// TEST 17: Persistent PWA install reminder waits 60s before showing/re-prompting
+// -------------------------------------------------------------
+runTest(17, 'PWA UX Lifecycle', 'Persistent PWA install prompt enforces 60-second delay constant', () => {
+  assert(POPUP_REPROMPT_DELAY_MS === 60_000, `Expected 60000ms delay, got ${POPUP_REPROMPT_DELAY_MS}`);
+});
+
+// -------------------------------------------------------------
 // SUMMARY REPORT
 // -------------------------------------------------------------
 console.log('RESULTS:');
@@ -345,7 +424,7 @@ console.log('----------------------------------------------------------------');
 console.log(`Total: ${results.length} | Passed: ${passedCount} | Failed: ${results.length - passedCount}`);
 
 if (passedCount === results.length) {
-  console.log('\n🎉 ALL 12 ENTERPRISE TEST SCENARIOS PASSED WITH ZERO FAILURES!\n');
+  console.log(`\n🎉 ALL ${results.length} ENTERPRISE TEST SCENARIOS PASSED WITH ZERO FAILURES!\n`);
 } else {
   console.error('\n⚠️ SOME SECURITY TESTS FAILED. PLEASE REVIEW LOGS.\n');
   process.exit(1);

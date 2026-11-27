@@ -6,6 +6,7 @@ import {
   isRunningStandalone,
   PlatformCompatibilityInfo,
 } from '../lib/pwaUtils';
+import { getStoredSessionToken } from '../lib/authApi';
 
 export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -98,22 +99,17 @@ export function syncDeviceRegistration(isInstalledApp?: boolean) {
       ? Notification.permission
       : 'unsupported';
 
-  let userId: string | null = null;
-  try {
-    const rawUser = localStorage.getItem('my_money_auth_user');
-    if (rawUser) {
-      const u = JSON.parse(rawUser);
-      userId = u?.id || u?.uid || null;
-    }
-  } catch {}
-
-  if (!userId) return;
+  const token = getStoredSessionToken();
+  if (!token) return;
 
   fetch('/api/pwa/register-device', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({
-      userId,
       deviceType,
       browser: compat.browserLabel,
       os: compat.osLabel,

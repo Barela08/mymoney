@@ -9,6 +9,9 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { validateReceiptFileSignature } from '../../lib/financialIntelligenceEngine';
+
+const ALLOWED_AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
 interface ProfilePhotoUploadModalProps {
   isOpen: boolean;
@@ -40,8 +43,15 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = (event) => {
+        const dataUrl = String(event.target?.result || '');
+        const b64Part = dataUrl.split(',')[1] || '';
+        const sigCheck = validateReceiptFileSignature(b64Part, file.type);
+        if (!sigCheck.valid) {
+          reject(new Error(sigCheck.error || 'Selected file is not a valid JPEG, PNG, or WEBP image.'));
+          return;
+        }
         const img = new Image();
-        img.src = event.target?.result as string;
+        img.src = dataUrl;
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const maxDim = 480;
@@ -64,7 +74,7 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           if (!ctx) {
-            resolve(img.src);
+            reject(new Error('Image processor unavailable in this browser.'));
             return;
           }
 
@@ -82,9 +92,9 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate type
-    if (!file.type.startsWith('image/')) {
-      toast.error('Invalid File', 'Please select a valid image file (JPEG, PNG, WEBP).');
+    // Validate strict MIME type allowlist (rejects SVG, HTML, scripts)
+    if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type.toLowerCase())) {
+      toast.error('Invalid File', 'Please select a valid JPEG, PNG, or WEBP image.');
       return;
     }
 
@@ -200,7 +210,7 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           className="hidden"
           onChange={handleFileChange}
         />

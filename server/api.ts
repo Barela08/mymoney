@@ -118,6 +118,7 @@ import {
   roundMoney,
   parseConnectionRequestKey,
 } from '../src/lib/sharedUdharEngine.js';
+import { validateReceiptFileSignature } from '../src/lib/financialIntelligenceEngine.js';
 import {
   searchUsersRest,
   connectUserRest,
@@ -270,7 +271,69 @@ function setSessionCookie(res: ServerResponse, sessionToken: string, expiresAt: 
 
 // Helper: clear session cookie
 function clearSessionCookie(res: ServerResponse) {
-  res.setHeader('Set-Cookie', 'session_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax');
+  const isProd = process.env.NODE_ENV === 'production';
+  const secureFlag = isProd ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `session_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${secureFlag}`
+  );
+}
+
+const PROTECTED_MASTER_ADMINS = new Set(['hackifypro@gmail.com', 'admin@mymoney.com']);
+function isProtectedMasterAdminEmail(email?: string | null): boolean {
+  return Boolean(email && PROTECTED_MASTER_ADMINS.has(String(email).trim().toLowerCase()));
+}
+
+function validateAvatarUrlInput(raw: unknown): { valid: boolean; value: string | null; error?: string } {
+  if (raw === null || raw === undefined) return { valid: true, value: null };
+  const trimmed = String(raw).trim();
+  if (!trimmed) return { valid: true, value: null };
+
+  if (trimmed.startsWith('data:')) {
+    const match = trimmed.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) {
+      return {
+        valid: false,
+        value: null,
+        error: 'Profile photo must be a valid JPEG, PNG, or WEBP image.',
+      };
+    }
+    const mimeType = match[1].toLowerCase();
+    const base64Data = match[2];
+    const estimatedBytes = Math.floor((base64Data.length * 3) / 4);
+    if (estimatedBytes <= 0 || estimatedBytes > 2 * 1024 * 1024) {
+      return {
+        valid: false,
+        value: null,
+        error: 'Profile photo must be smaller than 2 MB.',
+      };
+    }
+    const sigCheck = validateReceiptFileSignature(base64Data, mimeType);
+    if (!sigCheck.valid) {
+      return {
+        valid: false,
+        value: null,
+        error: 'Uploaded photo signature does not match a valid JPEG, PNG, or WEBP image.',
+      };
+    }
+    return { valid: true, value: trimmed };
+  }
+
+  if (trimmed.length > 500) {
+    return { valid: false, value: null, error: 'Avatar URL is too long (maximum 500 characters).' };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      return { valid: false, value: null, error: 'Avatar URL must be a valid HTTPS image URL.' };
+    }
+    if (/\.(svgz?|html?|xhtml|js|mjs)(\?|#|$)/i.test(parsed.pathname)) {
+      return { valid: false, value: null, error: 'SVG or executable avatar URLs are not permitted.' };
+    }
+    return { valid: true, value: parsed.toString() };
+  } catch {
+    return { valid: false, value: null, error: 'Invalid avatar URL format.' };
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -393,6 +456,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       if (hostHeader && parsed.host === hostHeader) return true;
       if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return true;
       if (parsed.hostname === 'mymoney-two-rho.vercel.app') return true;
+      if (parsed.hostname === 'mymoney.nileshbarela.site') return true;
       if (parsed.hostname.endsWith('.run.app')) return true;
       const configuredAppUrl = process.env.APP_URL || '';
       if (configuredAppUrl) {
@@ -418,6 +482,32 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     res.writeHead(204);
     res.end();
     return true;
+  }
+
+  // CSRF Defense: For state-changing requests authenticated solely via cookie, validate Origin/Referer
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const cookieHeader = String(req.headers.cookie || '');
+    const authHeader = String(req.headers.authorization || '');
+    const usesCookieOnlyAuth = cookieHeader.includes('session_token=') && !authHeader.startsWith('Bearer ');
+    if (usesCookieOnlyAuth) {
+      if (requestOrigin) {
+        if (!isAllowedOrigin(requestOrigin)) {
+          sendJson(res, 403, { success: false, code: 'CSRF_ORIGIN_REJECTED', message: 'Cross-origin state-changing request rejected.' });
+          return true;
+        }
+      } else if (req.headers.referer) {
+        try {
+          const refOrigin = new URL(String(req.headers.referer)).origin;
+          if (!isAllowedOrigin(refOrigin)) {
+            sendJson(res, 403, { success: false, code: 'CSRF_ORIGIN_REJECTED', message: 'Cross-origin state-changing request rejected.' });
+            return true;
+          }
+        } catch {
+          sendJson(res, 403, { success: false, code: 'CSRF_ORIGIN_REJECTED', message: 'Invalid request origin.' });
+          return true;
+        }
+      }
+    }
   }
 
   // Lightweight health check (no secrets exposed)
@@ -1260,7 +1350,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Security: strictly allow ONLY full_name, phone, username, avatar_url — NEVER role, status, or email_verified
       const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
       const phone = (body.phone !== undefined ? body.phone : authUser.phone || '').trim();
-      const avatarUrl = body.avatarUrl !== undefined ? body.avatarUrl : authUser.avatar_url;
+      const rawAvatarInput = body.avatarUrl !== undefined ? body.avatarUrl : authUser.avatar_url;
+      const avatarCheck = validateAvatarUrlInput(rawAvatarInput);
+      if (!avatarCheck.valid) {
+        sendJson(res, 400, {
+          success: false,
+          code: 'INVALID_AVATAR_IMAGE',
+          message: avatarCheck.error || 'Invalid profile photo format.',
+        });
+        return true;
+      }
+      const avatarUrl = avatarCheck.value;
       const rawUsername =
         body.username !== undefined ? String(body.username || '').trim().toLowerCase() : authUser.username || '';
 
@@ -2071,34 +2171,46 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         try {
           const userRes = await query('SELECT * FROM public.app_users WHERE id = $1', [targetUserId]);
           targetUser = userRes.rows[0] || null;
-          if (targetUser) {
-            await query('UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2', [newStatus, targetUserId]);
-            if (newStatus !== 'active') {
-              await revokeAllUserSessions(targetUserId);
-            }
-          }
         } catch {}
       }
-
       if (!targetUser) {
         const fbUsers = await listAllAppUsersFallback();
         targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
-        if (targetUser) {
-          await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
-            method: 'PATCH',
-            body: { status: newStatus, updated_at: new Date().toISOString() },
-          });
-          await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
-            method: 'PATCH',
-            body: { status: newStatus },
-          });
-        }
       }
 
       if (!targetUser) {
         sendJson(res, 404, { success: false, message: 'User not found.' });
         return true;
       }
+
+      if (isProtectedMasterAdminEmail(targetUser.email) && newStatus !== 'active') {
+        sendJson(res, 403, { success: false, message: 'Protected master administrator account cannot be suspended or deactivated.' });
+        return true;
+      }
+
+      const callerIsSuper = authUser.role === 'superadmin' || isProtectedMasterAdminEmail(authUser.email);
+      if (String(targetUser.role || '').toLowerCase() === 'superadmin' && !callerIsSuper) {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can modify another superadmin account.' });
+        return true;
+      }
+
+      if (isDatabaseAvailable()) {
+        try {
+          await query('UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2', [newStatus, targetUserId]);
+          if (newStatus !== 'active') {
+            await revokeAllUserSessions(targetUserId);
+          }
+        } catch {}
+      }
+
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: 'PATCH',
+        body: { status: newStatus, updated_at: new Date().toISOString() },
+      });
+      await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+        method: 'PATCH',
+        body: { status: newStatus },
+      });
 
       // Async send email alert
       if (targetUser.email) {
@@ -2138,24 +2250,59 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const targetUserId = roleMatch[1];
       const body = await parseJsonBody(req);
-      const newRole = body.role;
+      const newRole = String(body.role || '').trim().toLowerCase();
+      const callerIsSuper = authUser.role === 'superadmin' || isProtectedMasterAdminEmail(authUser.email);
+      const allowedRoles = callerIsSuper
+        ? ['user', 'admin', 'support', 'analyst', 'superadmin']
+        : ['user', 'admin', 'support', 'analyst'];
 
-      if (!['user', 'admin'].includes(newRole)) {
-        sendJson(res, 400, { success: false, message: 'Invalid role. Must be user or admin.' });
+      if (!allowedRoles.includes(newRole)) {
+        sendJson(res, newRole === 'superadmin' && !callerIsSuper ? 403 : 400, {
+          success: false,
+          message: newRole === 'superadmin' && !callerIsSuper
+            ? 'Only a superadmin can assign superadmin privileges.'
+            : 'Invalid role specified.',
+        });
         return true;
       }
 
-      if (targetUserId === authUser.id && newRole !== 'admin') {
+      if (targetUserId === authUser.id && newRole !== 'admin' && newRole !== 'superadmin') {
         sendJson(res, 400, { success: false, message: 'You cannot demote yourself from admin.' });
         return true;
       }
 
+      let targetUser: any = null;
       if (isDatabaseAvailable()) {
-        await query('UPDATE public.app_users SET role = $1, updated_at = NOW() WHERE id = $2', [newRole, targetUserId]).catch(() => {});
+        try {
+          const userRes = await query('SELECT id, email, role FROM public.app_users WHERE id = $1', [targetUserId]);
+          targetUser = userRes.rows[0] || null;
+        } catch {}
+      }
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+      }
+      if (!targetUser) {
+        sendJson(res, 404, { success: false, message: 'User not found.' });
+        return true;
+      }
+      if (isProtectedMasterAdminEmail(targetUser.email)) {
+        sendJson(res, 403, { success: false, message: 'Protected master administrator role cannot be modified.' });
+        return true;
+      }
+      if (String(targetUser.role || '').toLowerCase() === 'superadmin' && !callerIsSuper) {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can modify another superadmin account.' });
+        return true;
+      }
+
+      const nextRoleSlug = newRole === 'user' ? null : newRole;
+      if (isDatabaseAvailable()) {
+        await query('UPDATE public.app_users SET role = $1, role_slug = $2, updated_at = NOW() WHERE id = $3', [newRole, nextRoleSlug, targetUserId]).catch(() => {});
+        await revokeAllUserSessions(targetUserId).catch(() => 0);
       }
       await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUserId)}`, {
         method: 'PATCH',
-        body: { role: newRole, updated_at: new Date().toISOString() },
+        body: { role: newRole, role_slug: nextRoleSlug, updated_at: new Date().toISOString() },
       });
       await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
         method: 'PATCH',
@@ -2167,11 +2314,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           userId: authUser.id,
           actorRole: authUser.role,
           ipAddress: clientIp,
-          details: { targetUserId, newRole },
+          details: { targetUserId, previousRole: targetUser.role, newRole },
         }).catch(() => {});
       }
 
-      sendJson(res, 200, { success: true, message: `User role updated to ${newRole}.` });
+      sendJson(res, 200, { success: true, message: `User role updated to ${newRole}. Active sessions revoked for security.` });
       return true;
     }
 
@@ -2263,6 +2410,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const targetUserId = forceResetMatch[1];
+      let targetUser: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const uRes = await query('SELECT id, email, role FROM public.app_users WHERE id = $1', [targetUserId]);
+          targetUser = uRes.rows[0] || null;
+        } catch {}
+      }
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+      }
+      if (!targetUser) {
+        sendJson(res, 404, { success: false, message: 'User not found.' });
+        return true;
+      }
+      const callerIsSuper = authUser.role === 'superadmin' || isProtectedMasterAdminEmail(authUser.email);
+      if (isProtectedMasterAdminEmail(targetUser.email) && !callerIsSuper) {
+        sendJson(res, 403, { success: false, message: 'Protected master administrator account cannot be modified.' });
+        return true;
+      }
+      if (String(targetUser.role || '').toLowerCase() === 'superadmin' && !callerIsSuper) {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can force password reset on a superadmin account.' });
+        return true;
+      }
+
       if (isDatabaseAvailable()) {
         await query('UPDATE public.app_users SET force_password_reset = TRUE WHERE id = $1', [targetUserId]).catch(() => {});
         await revokeAllUserSessions(targetUserId).catch(() => {});
@@ -2346,11 +2518,34 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      let targetEmail: string | undefined;
+      let targetUser: any = null;
       if (isDatabaseAvailable()) {
         try {
-          const userRes = await query('SELECT email FROM public.app_users WHERE id = $1', [targetUserId]);
-          targetEmail = userRes.rows[0]?.email;
+          const userRes = await query('SELECT id, email, role FROM public.app_users WHERE id = $1', [targetUserId]);
+          targetUser = userRes.rows[0] || null;
+        } catch {}
+      }
+      if (!targetUser) {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => u.id === targetUserId) || null;
+      }
+      if (!targetUser) {
+        sendJson(res, 404, { success: false, message: 'User not found.' });
+        return true;
+      }
+      if (isProtectedMasterAdminEmail(targetUser.email)) {
+        sendJson(res, 403, { success: false, message: 'Protected master administrator account cannot be deleted.' });
+        return true;
+      }
+      const callerIsSuper = authUser.role === 'superadmin' || isProtectedMasterAdminEmail(authUser.email);
+      if (String(targetUser.role || '').toLowerCase() === 'superadmin' && !callerIsSuper) {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can delete another superadmin account.' });
+        return true;
+      }
+
+      const targetEmail = targetUser.email;
+      if (isDatabaseAvailable()) {
+        try {
           await query('DELETE FROM public.transactions WHERE user_id = $1', [targetUserId]).catch(() => {});
           await query('DELETE FROM public.user_sessions WHERE user_id = $1', [targetUserId]).catch(() => {});
           await query('DELETE FROM public.password_resets WHERE user_id = $1', [targetUserId]).catch(() => {});
@@ -2367,27 +2562,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       await sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUserId)}`, { method: 'DELETE' });
 
       sendJson(res, 200, { success: true, message: 'User and all associated data permanently deleted.' });
-      return true;
-    }
-
-    // ---------------------------------------------------------
-    // 20. ADMIN: GET AUDIT LOGS: GET /api/admin/audit-logs
-    // ---------------------------------------------------------
-    if (pathname === '/api/admin/audit-logs' && method === 'GET') {
-      const authUser = await authenticateRequest(req);
-      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
-        sendJson(res, 403, { success: false, message: 'Administrator authorization required.' });
-        return true;
-      }
-
-      const logsRes = await query(
-        `SELECT id, event_type, user_id, user_email, actor_role, ip_address, details, created_at 
-         FROM public.security_audit_logs 
-         ORDER BY created_at DESC 
-         LIMIT 100`
-      );
-
-      sendJson(res, 200, { success: true, logs: logsRes.rows });
       return true;
     }
 
@@ -2503,6 +2677,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Account deletion service requires an active database connection.' });
+        return true;
+      }
+
       // Verify password
       const uRes = await query('SELECT password_hash FROM public.app_users WHERE id = $1', [authUser.id]);
       const currentHash = uRes.rows[0]?.password_hash;
@@ -2544,7 +2723,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       // Backend controlled 24-hour cancellation window
       const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const nowIso = new Date().toISOString();
 
       const insRes = await query(
         `INSERT INTO public.account_deletion_requests (
@@ -2564,7 +2742,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         [scheduledFor, requestId, authUser.id]
       );
 
-      const cancelLink = `${origin}/#cancel-deletion&token=${rawToken}&email=${encodeURIComponent(authUser.email)}`;
+      const safeAppBase =
+        (requestOrigin && isAllowedOrigin(requestOrigin) ? requestOrigin : '') ||
+        APP_CONFIG.appBaseUrl ||
+        'https://mymoney.nileshbarela.site';
+      const cancelLink = `${safeAppBase}/#cancel-deletion&token=${rawToken}&email=${encodeURIComponent(authUser.email)}`;
       const submissionTimeStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
       const scheduledForStr = scheduledFor.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
 
@@ -3206,8 +3388,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       await query(
         `UPDATE public.udhar_contacts 
          SET linked_user_id = $1, updated_at = NOW() 
-         WHERE id = $2`,
-        [registeredUserId, contactId]
+         WHERE id = $2 AND user_id = $3`,
+        [registeredUserId, contactId, authUser.id]
       );
 
       await ensureReciprocalContact(registeredUserId, authUser, contact.relationship_type || 'Friend');
@@ -3801,6 +3983,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Contact invitation service requires an active database connection.' });
         return true;
       }
 
@@ -7704,16 +7891,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       method === 'POST'
     ) {
       const authUser = await authenticateRequest(req);
-      const body = await parseJsonBody(req);
-      const userId = authUser?.id || body.userId;
-
-      if (!userId) {
-        sendJson(res, 400, {
+      if (!authUser) {
+        sendJson(res, 401, {
           success: false,
-          message: 'Authenticated user or userId is required to register device installation.',
+          message: 'Authentication required to register device installation.',
         });
         return true;
       }
+      const body = await parseJsonBody(req);
+      const userId = authUser.id;
 
       const resDev = await recordDeviceInstallation({
         userId,
@@ -7904,6 +8090,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 200, { success: true, budgets: [] });
+        return true;
+      }
 
       const listRes = await query(
         `SELECT * FROM public.user_budgets WHERE user_id = $1 ORDER BY created_at ASC`,
@@ -7921,18 +8111,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable for saving budgets.' });
+        return true;
+      }
 
       const body = await parseJsonBody(req);
-      const category = (body.category || '').trim().toLowerCase();
-      const monthlyLimit = Number(body.monthly_limit || body.monthlyLimit) || 0;
-      const alertThreshold = Math.min(100, Math.max(1, Number(body.alert_threshold || body.alertThreshold) || 85));
+      const category = String(body.category || '').trim().toLowerCase().slice(0, 60);
+      const monthlyLimit = Number(body.monthly_limit ?? body.monthlyLimit);
+      const rawThreshold = Number(body.alert_threshold ?? body.alertThreshold);
+      const alertThreshold = Number.isFinite(rawThreshold) ? Math.min(100, Math.max(1, Math.round(rawThreshold))) : 85;
 
       if (!category) {
         sendJson(res, 400, { success: false, message: 'Category is required for budget.' });
         return true;
       }
-      if (monthlyLimit <= 0) {
-        sendJson(res, 400, { success: false, message: 'Monthly budget limit must be greater than 0.' });
+      if (!Number.isFinite(monthlyLimit) || monthlyLimit <= 0 || monthlyLimit > 999999999) {
+        sendJson(res, 400, { success: false, message: 'Monthly budget limit must be between 1 and 99,99,99,999.' });
         return true;
       }
 
@@ -7944,7 +8139,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            alert_threshold = EXCLUDED.alert_threshold,
            updated_at = NOW()
          RETURNING *`,
-        [authUser.id, category, monthlyLimit, alertThreshold]
+        [authUser.id, category, Math.round(monthlyLimit * 100) / 100, alertThreshold]
       );
 
       sendJson(res, 200, {
@@ -7963,12 +8158,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable.' });
+        return true;
+      }
 
       const budgetId = budgetDeleteMatch[1];
-      await query(
-        `DELETE FROM public.user_budgets WHERE id = $1 AND user_id = $2`,
+      const delRes = await query(
+        `DELETE FROM public.user_budgets WHERE id = $1 AND user_id = $2 RETURNING id`,
         [budgetId, authUser.id]
       );
+      if (delRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Budget not found.' });
+        return true;
+      }
 
       sendJson(res, 200, { success: true, message: 'Budget removed successfully.' });
       return true;
@@ -7983,6 +8186,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 200, { success: true, goals: [] });
         return true;
       }
 
@@ -8002,22 +8209,28 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable for savings goals.' });
+        return true;
+      }
 
       const body = await parseJsonBody(req);
-      const title = (body.title || '').trim();
-      const targetAmount = Number(body.target_amount || body.targetAmount) || 0;
-      const currentAmount = Math.max(0, Number(body.current_amount || body.currentAmount) || 0);
-      const targetDate = body.target_date || body.targetDate || null;
-      const category = (body.category || 'general').trim();
-      const notes = (body.notes || '').trim() || null;
+      const title = String(body.title || '').trim().slice(0, 120);
+      const targetAmount = Number(body.target_amount ?? body.targetAmount);
+      const rawCurrent = Number(body.current_amount ?? body.currentAmount ?? 0);
+      const currentAmount = Number.isFinite(rawCurrent) ? Math.min(999999999, Math.max(0, rawCurrent)) : 0;
+      const rawDate = body.target_date || body.targetDate || null;
+      const targetDate = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(String(rawDate).trim()) ? String(rawDate).trim() : null;
+      const category = String(body.category || 'general').trim().slice(0, 60) || 'general';
+      const notes = String(body.notes || '').trim().slice(0, 500) || null;
       const isCompleted = !!body.is_completed || currentAmount >= targetAmount;
 
       if (!title || title.length < 2) {
         sendJson(res, 400, { success: false, message: 'Goal title must be at least 2 characters.' });
         return true;
       }
-      if (targetAmount <= 0) {
-        sendJson(res, 400, { success: false, message: 'Target amount must be greater than 0.' });
+      if (!Number.isFinite(targetAmount) || targetAmount <= 0 || targetAmount > 999999999) {
+        sendJson(res, 400, { success: false, message: 'Target amount must be between 1 and 99,99,99,999.' });
         return true;
       }
 
@@ -8028,14 +8241,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            SET title = $1, target_amount = $2, current_amount = $3, target_date = $4, category = $5, notes = $6, is_completed = $7, updated_at = NOW()
            WHERE id = $8 AND user_id = $9
            RETURNING *`,
-          [title, targetAmount, currentAmount, targetDate, category, notes, isCompleted, body.id, authUser.id]
+          [title, Math.round(targetAmount * 100) / 100, Math.round(currentAmount * 100) / 100, targetDate, category, notes, isCompleted, body.id, authUser.id]
         );
+        if (goalRes.rows.length === 0) {
+          sendJson(res, 404, { success: false, message: 'Savings goal not found.' });
+          return true;
+        }
       } else {
         goalRes = await query(
           `INSERT INTO public.savings_goals (user_id, title, target_amount, current_amount, target_date, category, notes, is_completed)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *`,
-          [authUser.id, title, targetAmount, currentAmount, targetDate, category, notes, isCompleted]
+          [authUser.id, title, Math.round(targetAmount * 100) / 100, Math.round(currentAmount * 100) / 100, targetDate, category, notes, isCompleted]
         );
       }
 
@@ -8055,14 +8272,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable.' });
+        return true;
+      }
 
       const goalId = goalContributeMatch[1];
       const body = await parseJsonBody(req);
-      const delta = Number(body.amount) || 0;
+      const delta = Number(body.amount);
       const action = body.action === 'withdraw' ? 'withdraw' : 'add';
 
-      if (delta <= 0) {
-        sendJson(res, 400, { success: false, message: 'Contribution amount must be greater than 0.' });
+      if (!Number.isFinite(delta) || delta <= 0 || delta > 999999999) {
+        sendJson(res, 400, { success: false, message: 'Contribution amount must be between 1 and 99,99,99,999.' });
         return true;
       }
 
@@ -8080,7 +8301,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const prevAmount = Number(goal.current_amount) || 0;
       const newAmount = action === 'withdraw'
         ? Math.max(0, prevAmount - delta)
-        : prevAmount + delta;
+        : Math.min(999999999, prevAmount + delta);
       const isCompleted = newAmount >= Number(goal.target_amount);
 
       const updateRes = await query(
@@ -8088,7 +8309,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
          SET current_amount = $1, is_completed = $2, updated_at = NOW() 
          WHERE id = $3 AND user_id = $4 
          RETURNING *`,
-        [newAmount, isCompleted, goalId, authUser.id]
+        [Math.round(newAmount * 100) / 100, isCompleted, goalId, authUser.id]
       );
 
       sendJson(res, 200, {
@@ -8107,12 +8328,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable.' });
+        return true;
+      }
 
       const goalId = goalDeleteMatch[1];
-      await query(
-        `DELETE FROM public.savings_goals WHERE id = $1 AND user_id = $2`,
+      const delRes = await query(
+        `DELETE FROM public.savings_goals WHERE id = $1 AND user_id = $2 RETURNING id`,
         [goalId, authUser.id]
       );
+      if (delRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Savings goal not found.' });
+        return true;
+      }
 
       sendJson(res, 200, { success: true, message: 'Savings goal deleted.' });
       return true;
@@ -8127,6 +8356,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 200, { success: true, bills: [] });
         return true;
       }
 
@@ -8146,13 +8379,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable for recurring bills.' });
+        return true;
+      }
 
       const body = await parseJsonBody(req);
-      const title = (body.title || '').trim();
-      const category = (body.category || 'other').trim().toLowerCase();
-      const amount = Number(body.amount) || 0;
-      const frequency = (body.frequency || 'monthly').trim().toLowerCase();
-      const dueDay = Math.min(31, Math.max(1, Number(body.due_day || body.dueDay) || 1));
+      const title = String(body.title || '').trim().slice(0, 120);
+      const category = String(body.category || 'other').trim().toLowerCase().slice(0, 60) || 'other';
+      const amount = Number(body.amount);
+      const rawFreq = String(body.frequency || 'monthly').trim().toLowerCase();
+      const frequency = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'].includes(rawFreq) ? rawFreq : 'monthly';
+      const rawDueDay = Number(body.due_day ?? body.dueDay);
+      const dueDay = Number.isFinite(rawDueDay) ? Math.min(31, Math.max(1, Math.round(rawDueDay))) : 1;
       const reminderEnabled = body.reminder_enabled !== undefined ? !!body.reminder_enabled : true;
       const isActive = body.is_active !== undefined ? !!body.is_active : true;
 
@@ -8160,8 +8399,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 400, { success: false, message: 'Bill title must be at least 2 characters.' });
         return true;
       }
-      if (amount <= 0) {
-        sendJson(res, 400, { success: false, message: 'Bill amount must be greater than 0.' });
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 999999999) {
+        sendJson(res, 400, { success: false, message: 'Bill amount must be between 1 and 99,99,99,999.' });
         return true;
       }
 
@@ -8172,14 +8411,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
            SET title = $1, category = $2, amount = $3, frequency = $4, due_day = $5, reminder_enabled = $6, is_active = $7, updated_at = NOW()
            WHERE id = $8 AND user_id = $9
            RETURNING *`,
-          [title, category, amount, frequency, dueDay, reminderEnabled, isActive, body.id, authUser.id]
+          [title, category, Math.round(amount * 100) / 100, frequency, dueDay, reminderEnabled, isActive, body.id, authUser.id]
         );
+        if (billRes.rows.length === 0) {
+          sendJson(res, 404, { success: false, message: 'Recurring bill not found.' });
+          return true;
+        }
       } else {
         billRes = await query(
           `INSERT INTO public.recurring_bills (user_id, title, category, amount, frequency, due_day, reminder_enabled, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *`,
-          [authUser.id, title, category, amount, frequency, dueDay, reminderEnabled, isActive]
+          [authUser.id, title, category, Math.round(amount * 100) / 100, frequency, dueDay, reminderEnabled, isActive]
         );
       }
 
@@ -8199,10 +8442,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable.' });
+        return true;
+      }
 
       const billId = billPayMatch[1];
       const body = await parseJsonBody(req);
-      const paidDate = body.paid_date || new Date().toISOString().split('T')[0];
+      const rawPaid = String(body.paid_date || '').trim();
+      const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaid) ? rawPaid : new Date().toISOString().split('T')[0];
 
       const updateRes = await query(
         `UPDATE public.recurring_bills
@@ -8233,12 +8481,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
         return true;
       }
+      if (!isDatabaseAvailable()) {
+        sendJson(res, 503, { success: false, message: 'Database unavailable.' });
+        return true;
+      }
 
       const billId = billDeleteMatch[1];
-      await query(
-        `DELETE FROM public.recurring_bills WHERE id = $1 AND user_id = $2`,
+      const delRes = await query(
+        `DELETE FROM public.recurring_bills WHERE id = $1 AND user_id = $2 RETURNING id`,
         [billId, authUser.id]
       );
+      if (delRes.rows.length === 0) {
+        sendJson(res, 404, { success: false, message: 'Recurring bill not found.' });
+        return true;
+      }
 
       sendJson(res, 200, { success: true, message: 'Recurring bill deleted.' });
       return true;
@@ -8257,10 +8513,45 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         sendJson(res, 400, { success: false, message: 'Valid email address is required.' });
         return true;
       }
+
+      let targetUser: any = null;
+      if (isDatabaseAvailable()) {
+        const uRes = await query('SELECT id, full_name, email FROM public.app_users WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
+        targetUser = uRes.rows[0] || null;
+      } else {
+        const fbUsers = await listAllAppUsersFallback();
+        targetUser = fbUsers.find((u) => String(u.email || '').trim().toLowerCase() === email) || null;
+      }
+      if (!targetUser) {
+        sendJson(res, 404, { success: false, message: 'User account not found.' });
+        return true;
+      }
+
       const rawToken = generateCryptoToken(32);
-      const appBase = process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
+      const tokenHash = hashToken(rawToken);
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      if (isDatabaseAvailable()) {
+        await query('UPDATE public.password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [targetUser.id]).catch(() => {});
+        await query(
+          `INSERT INTO public.password_resets (user_id, token_hash, expires_at, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [targetUser.id, tokenHash, expiresAt, clientIp, 'Admin-Initiated-Legacy-Dispatch']
+        ).catch(() => {});
+      }
+
+      const appBase = APP_CONFIG.appBaseUrl || process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site';
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
-      const sent = await sendPasswordResetEmail(email, String(body.name || 'User').slice(0, 80), resetLink);
+      const sent = await sendPasswordResetEmail(email, String(targetUser.full_name || body.name || 'User').slice(0, 80), resetLink);
+
+      if (isDatabaseAvailable()) {
+        await logSecurityEvent('ADMIN_SENT_PASSWORD_RESET_EMAIL', {
+          userId: authUser.id,
+          actorRole: authUser.role,
+          ipAddress: clientIp,
+          details: { targetUserId: targetUser.id, targetEmail: email, emailDispatched: sent },
+        }).catch(() => {});
+      }
+
       sendJson(res, 200, { success: sent, message: sent ? 'Reset email dispatched' : 'Failed to dispatch email' });
       return true;
     }

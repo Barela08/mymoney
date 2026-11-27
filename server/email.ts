@@ -824,6 +824,9 @@ export async function getWelcomeEmailDeliveryStatus(userIdOrEmail: string): Prom
 // 4. Account Status Alert Email
 // -------------------------------------------------------------
 export async function sendAccountStatusEmail(email: string, name: string, newStatus: string): Promise<boolean> {
+  const safeName = escapeEmailHtml(name || 'User');
+  const safeEmail = escapeEmailHtml(email);
+  const safeStatus = escapeEmailHtml(newStatus);
   const subject = `[Account Update] Account Status Changed to ${newStatus.toUpperCase()} - ${APP_CONFIG.appName}`;
   const html = `
     <!DOCTYPE html>
@@ -832,8 +835,8 @@ export async function sendAccountStatusEmail(email: string, name: string, newSta
     <body style="font-family: sans-serif; background: #f8fafc; padding: 20px;">
       <div style="max-width: 500px; margin: auto; background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;">
         <h2>Account Status Notice</h2>
-        <p>Hello ${name || 'User'},</p>
-        <p>Your ${APP_CONFIG.appName} account (<strong>${email}</strong>) status has been updated to: <strong style="text-transform: uppercase;">${newStatus}</strong> by an administrator.</p>
+        <p>Hello ${safeName},</p>
+        <p>Your ${escapeEmailHtml(APP_CONFIG.appName)} account (<strong>${safeEmail}</strong>) status has been updated to: <strong style="text-transform: uppercase;">${safeStatus}</strong> by an administrator.</p>
         ${newStatus === 'suspended' ? '<p style="color: red;">Your active sessions have been revoked. If you believe this is an error, please reach out to administrator support.</p>' : '<p style="color: green;">Your account is in good standing and ready for use.</p>'}
       </div>
     </body>
@@ -880,15 +883,15 @@ export async function sendAccountDeletionRequestedEmail(
           <p>Security & Account Protection Notice</p>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 700; color: #0f172a;">Dear ${name || 'User'},</p>
+          <p style="font-size: 15px; font-weight: 700; color: #0f172a;">Dear ${escapeEmailHtml(name || 'User')},</p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             We received an explicit request to permanently delete your <strong>My Money Manager</strong> account and all associated personal financial records.
           </p>
 
           <div class="schedule-box">
             <div style="font-weight: 700; color: #0f172a; margin-bottom: 10px; font-size: 13px;">📅 Request Timeline:</div>
-            <div style="margin-bottom: 6px; font-size: 12px;"><strong>Submission Date & Time:</strong> ${submissionTimeStr}</div>
-            <div style="margin-bottom: 6px; font-size: 12px; color: #dc2626;"><strong>Scheduled Permanent Deletion:</strong> ${scheduledForDateStr}</div>
+            <div style="margin-bottom: 6px; font-size: 12px;"><strong>Submission Date & Time:</strong> ${escapeEmailHtml(submissionTimeStr)}</div>
+            <div style="margin-bottom: 6px; font-size: 12px; color: #dc2626;"><strong>Scheduled Permanent Deletion:</strong> ${escapeEmailHtml(scheduledForDateStr)}</div>
             <div style="font-size: 12px; color: #475569;"><strong>Cancellation Window:</strong> 24 Hours from request time</div>
           </div>
 
@@ -902,11 +905,11 @@ export async function sendAccountDeletionRequestedEmail(
           </p>
 
           <div style="text-align: center; margin: 24px 0;">
-            <a href="${cancelLink}" class="btn" target="_blank">Cancel Account Deletion</a>
+            <a href="${sanitizeEmailHref(cancelLink)}" class="btn" target="_blank">Cancel Account Deletion</a>
           </div>
 
           <p style="font-size: 11px; color: #64748b; margin-bottom: 4px;">Or copy and paste this secure, single-use cancellation link into your browser:</p>
-          <div class="url-box">${cancelLink}</div>
+          <div class="url-box">${sanitizeEmailHref(cancelLink)}</div>
 
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5;">
             <strong style="color: #b91c1c;">Did not initiate this request?</strong><br/>
@@ -951,10 +954,10 @@ export async function sendAccountDeletionCancelledEmail(email: string, name: str
           <h1>My Money Manager</h1>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600;">Hello ${name || 'User'},</p>
+          <p style="font-size: 15px; font-weight: 600;">Hello ${escapeEmailHtml(name || 'User')},</p>
           <div class="success-box">
             <strong>✓ Account Deletion Request Cancelled</strong><br/>
-            Your pending account deletion request was successfully cancelled on <strong>${now} IST</strong>.
+            Your pending account deletion request was successfully cancelled on <strong>${escapeEmailHtml(now)} IST</strong>.
           </div>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             Your My Money Manager account has been restored to normal active status. Your transactions, budgets, Udhar records, and saved people contacts remain intact and safe.
@@ -1001,10 +1004,10 @@ export async function sendAccountDeletionCompletedEmail(email: string, name: str
           <h1>My Money Manager</h1>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600;">Hello ${name || 'User'},</p>
+          <p style="font-size: 15px; font-weight: 600;">Hello ${escapeEmailHtml(name || 'User')},</p>
           <div class="info-box">
             <strong>Permanent Account Deletion Completed</strong><br/>
-            In accordance with your request, your My Money Manager account (<strong>${email}</strong>) and associated personal financial data were permanently purged on <strong>${now} IST</strong>.
+            In accordance with your request, your My Money Manager account (<strong>${escapeEmailHtml(email)}</strong>) and associated personal financial data were permanently purged on <strong>${escapeEmailHtml(now)} IST</strong>.
           </div>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
             All active sessions and authentication access have been revoked. Any legally mandated security audit logs are retained in accordance with our Data Retention Policy and applicable law.
@@ -2166,16 +2169,16 @@ export async function sendContactInvitationEmail(opts: {
     <body>
       <div class="card">
         <div class="header">
-          <h1>${APP_CONFIG.appName}</h1>
-          <p>by ${APP_CONFIG.companyName} · Smart Money & Udhar Tracker</p>
+          <h1>${escapeEmailHtml(APP_CONFIG.appName)}</h1>
+          <p>by ${escapeEmailHtml(APP_CONFIG.companyName)} · Smart Money & Udhar Tracker</p>
         </div>
         <div class="content">
-          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hi ${opts.recipientName || 'Friend'},</p>
+          <p style="font-size: 15px; font-weight: 600; color: #0f172a;">Hi ${escapeEmailHtml(opts.recipientName || 'Friend')},</p>
           <p style="font-size: 13px; line-height: 1.6; color: #334155;">
-            <strong>${opts.inviterName}</strong> has added you as a contact in ${APP_CONFIG.appName} to help manage money lending, borrowing, and repayment records digitally.
+            <strong>${escapeEmailHtml(opts.inviterName)}</strong> has added you as a contact in ${escapeEmailHtml(APP_CONFIG.appName)} to help manage money lending, borrowing, and repayment records digitally.
           </p>
           <div class="feature-box">
-            <p style="font-weight: 700; font-size: 13px; color: #065f46; margin: 0 0 10px 0;">With ${APP_CONFIG.appName}, you can:</p>
+            <p style="font-weight: 700; font-size: 13px; color: #065f46; margin: 0 0 10px 0;">With ${escapeEmailHtml(APP_CONFIG.appName)}, you can:</p>
             <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #166534; line-height: 1.6;">
               <li>Track money given and received.</li>
               <li>Manage borrowing and repayment records.</li>
@@ -2187,10 +2190,10 @@ export async function sendContactInvitationEmail(opts: {
             Create your account to join and manage your financial records:
           </p>
           <div style="text-align: center;">
-            <a href="${opts.inviteLink}" class="btn" target="_blank">Create Your Account</a>
+            <a href="${sanitizeEmailHref(opts.inviteLink)}" class="btn" target="_blank">Create Your Account</a>
           </div>
           <p style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Or copy and paste this link into your browser:</p>
-          <div class="url-box">${opts.inviteLink}</div>
+          <div class="url-box">${sanitizeEmailHref(opts.inviteLink)}</div>
         </div>
         <div class="footer">
           &copy; ${new Date().getFullYear()} ${APP_CONFIG.appName} · Developed under ${APP_CONFIG.companyName}.

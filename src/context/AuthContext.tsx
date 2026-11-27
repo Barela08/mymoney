@@ -220,7 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
             role: effectiveRole as any,
             status: prof?.status || 'active',
-            email_verified: true,
+            email_verified: Boolean(session.user.email_confirmed_at),
             created_at: prof?.created_at || new Date().toISOString(),
           };
           setUser(authUser);
@@ -380,7 +380,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               full_name: prof?.full_name || (isAdm ? 'Security Administrator' : email.split('@')[0]),
               role: effectiveRole as any,
               status: (prof?.status as any) || 'active',
-              email_verified: true,
+              email_verified: Boolean(supaData.user.email_confirmed_at),
               created_at: new Date().toISOString(),
             };
             setUser(authUser);

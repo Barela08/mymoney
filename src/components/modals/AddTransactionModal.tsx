@@ -26,6 +26,11 @@ import {
   Sparkles,
   Loader2,
   Clock,
+  CheckCircle2,
+  Download,
+  Upload,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
@@ -97,6 +102,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [note, setNote] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [recentCategories, setRecentCategories] = useState<string[]>([]);
+  const [showAllCategories, setShowAllCategories] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<{ type: 'receive' | 'spend'; amount: number } | null>(null);
 
   const amountInputRef = useRef<HTMLInputElement>(null);
 
@@ -125,6 +132,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   // Initialize modal state on open or prop change
   useEffect(() => {
     if (!isOpen) return;
+
+    setSaveSuccess(null);
+    setShowAllCategories(false);
 
     // Prefill amount and note if provided
     if (initialAmount !== undefined && initialAmount !== null) {
@@ -183,6 +193,42 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       return () => clearTimeout(timer);
     }
   }, [isOpen, mode]);
+
+  const isReceive = mode === 'receive';
+  const isSpend = mode === 'spend';
+
+  // Filter recent categories relevant to current form mode
+  const relevantRecent = useMemo(() => {
+    if (isReceive) {
+      return recentCategories.filter((c) => RECEIVE_CATEGORIES.some((rc) => rc.label === c));
+    }
+    if (isSpend) {
+      return recentCategories.filter((c) => SPEND_CATEGORIES.some((sc) => sc.label === c));
+    }
+    return [];
+  }, [isReceive, isSpend, recentCategories]);
+
+  const sortedReceiveCategories = useMemo(() => {
+    return [...RECEIVE_CATEGORIES].sort((a, b) => {
+      const ia = recentCategories.indexOf(a.label);
+      const ib = recentCategories.indexOf(b.label);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return 0;
+    });
+  }, [recentCategories]);
+
+  const sortedSpendCategories = useMemo(() => {
+    return [...SPEND_CATEGORIES].sort((a, b) => {
+      const ia = recentCategories.indexOf(a.label);
+      const ib = recentCategories.indexOf(b.label);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return 0;
+    });
+  }, [recentCategories]);
 
   if (!isOpen) return null;
 
@@ -308,20 +354,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setIsSubmitting(false);
     }
   };
-
-  const isReceive = mode === 'receive';
-  const isSpend = mode === 'spend';
-
-  // Filter recent categories relevant to current form mode
-  const relevantRecent = useMemo(() => {
-    if (isReceive) {
-      return recentCategories.filter((c) => RECEIVE_CATEGORIES.some((rc) => rc.label === c));
-    }
-    if (isSpend) {
-      return recentCategories.filter((c) => SPEND_CATEGORIES.some((sc) => sc.label === c));
-    }
-    return [];
-  }, [isReceive, isSpend, recentCategories]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/65 backdrop-blur-sm animate-fade-in overflow-y-auto">

@@ -416,32 +416,108 @@ export async function handleAiFinanceRequest(
         return true;
       }
 
-      const contextSnapshot: AiFinancialContextSnapshot = body.financialContext || {
-        asOfDate: new Date().toISOString().slice(0, 10),
+      const safeStr = (val: unknown, maxLen = 80): string =>
+        String(val ?? '')
+          .replace(/[\x00-\x1F\x7F<>]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, maxLen);
+      const safeNum = (val: unknown): number => {
+        const n = Number(val);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(-9999999999, Math.min(9999999999, Math.round(n * 100) / 100));
+      };
+      const rawCtx = body.financialContext && typeof body.financialContext === 'object' ? body.financialContext : {};
+      const rawTotals = rawCtx.totals && typeof rawCtx.totals === 'object' ? rawCtx.totals : {};
+      const rawUdhar = rawCtx.udharSummary && typeof rawCtx.udharSummary === 'object' ? rawCtx.udharSummary : {};
+
+      const contextSnapshot: AiFinancialContextSnapshot = {
+        asOfDate: /^\d{4}-\d{2}-\d{2}$/.test(String(rawCtx.asOfDate || '')) ? String(rawCtx.asOfDate) : new Date().toISOString().slice(0, 10),
         currency: 'INR',
         totals: {
-          allTimeIncome: 0,
-          allTimeExpenses: 0,
-          allTimeBorrowed: 0,
-          availableBalance: 0,
-          thisMonthIncome: 0,
-          thisMonthExpenses: 0,
-          lastMonthIncome: 0,
-          lastMonthExpenses: 0,
-          thisMonthNetFlow: 0,
-          monthOverMonthExpenseDelta: 0,
-          monthOverMonthExpensePercent: null,
-          totalTransactionCount: 0,
+          allTimeIncome: safeNum(rawTotals.allTimeIncome),
+          allTimeExpenses: safeNum(rawTotals.allTimeExpenses),
+          allTimeBorrowed: safeNum(rawTotals.allTimeBorrowed),
+          availableBalance: safeNum(rawTotals.availableBalance),
+          thisMonthIncome: safeNum(rawTotals.thisMonthIncome),
+          thisMonthExpenses: safeNum(rawTotals.thisMonthExpenses),
+          lastMonthIncome: safeNum(rawTotals.lastMonthIncome),
+          lastMonthExpenses: safeNum(rawTotals.lastMonthExpenses),
+          thisMonthNetFlow: safeNum(rawTotals.thisMonthNetFlow),
+          monthOverMonthExpenseDelta: safeNum(rawTotals.monthOverMonthExpenseDelta),
+          monthOverMonthExpensePercent:
+            rawTotals.monthOverMonthExpensePercent === null || rawTotals.monthOverMonthExpensePercent === undefined
+              ? null
+              : safeNum(rawTotals.monthOverMonthExpensePercent),
+          totalTransactionCount: Math.max(0, Math.min(1000000, Math.round(safeNum(rawTotals.totalTransactionCount)))),
         },
-        topExpenseCategoriesThisMonth: [],
-        topExpenseCategoriesAllTime: [],
-        biggestExpenseThisMonth: null,
-        monthlyTrendLast6Months: [],
-        budgets: [],
-        upcomingBills: [],
-        savingsGoals: [],
-        udharSummary: { totalReceivable: 0, totalPayable: 0, netUdharBalance: 0, activePeopleCount: 0 },
-        recentTransactions: [],
+        topExpenseCategoriesThisMonth: Array.isArray(rawCtx.topExpenseCategoriesThisMonth)
+          ? rawCtx.topExpenseCategoriesThisMonth.slice(0, 15).map((c: any) => ({
+              category: safeStr(c?.category, 50),
+              amount: safeNum(c?.amount),
+              sharePercent: safeNum(c?.sharePercent),
+            }))
+          : [],
+        topExpenseCategoriesAllTime: Array.isArray(rawCtx.topExpenseCategoriesAllTime)
+          ? rawCtx.topExpenseCategoriesAllTime.slice(0, 15).map((c: any) => ({
+              category: safeStr(c?.category, 50),
+              amount: safeNum(c?.amount),
+              sharePercent: safeNum(c?.sharePercent),
+            }))
+          : [],
+        biggestExpenseThisMonth:
+          rawCtx.biggestExpenseThisMonth && typeof rawCtx.biggestExpenseThisMonth === 'object'
+            ? {
+                title: safeStr(rawCtx.biggestExpenseThisMonth.title, 80),
+                amount: safeNum(rawCtx.biggestExpenseThisMonth.amount),
+                date: safeStr(rawCtx.biggestExpenseThisMonth.date, 20),
+                category: safeStr(rawCtx.biggestExpenseThisMonth.category, 50),
+              }
+            : null,
+        monthlyTrendLast6Months: Array.isArray(rawCtx.monthlyTrendLast6Months)
+          ? rawCtx.monthlyTrendLast6Months.slice(0, 12).map((m: any) => ({
+              month: safeStr(m?.month, 20),
+              income: safeNum(m?.income),
+              expenses: safeNum(m?.expenses),
+            }))
+          : [],
+        budgets: Array.isArray(rawCtx.budgets)
+          ? rawCtx.budgets.slice(0, 30).map((b: any) => ({
+              category: safeStr(b?.category, 50),
+              limit: safeNum(b?.limit),
+              spent: safeNum(b?.spent),
+              percentUsed: safeNum(b?.percentUsed),
+            }))
+          : [],
+        upcomingBills: Array.isArray(rawCtx.upcomingBills)
+          ? rawCtx.upcomingBills.slice(0, 30).map((b: any) => ({
+              title: safeStr(b?.title, 80),
+              amount: safeNum(b?.amount),
+              dueDay: Math.max(1, Math.min(31, Math.round(safeNum(b?.dueDay)) || 1)),
+            }))
+          : [],
+        savingsGoals: Array.isArray(rawCtx.savingsGoals)
+          ? rawCtx.savingsGoals.slice(0, 30).map((g: any) => ({
+              title: safeStr(g?.title, 80),
+              current: safeNum(g?.current),
+              target: safeNum(g?.target),
+            }))
+          : [],
+        udharSummary: {
+          totalReceivable: safeNum(rawUdhar.totalReceivable),
+          totalPayable: safeNum(rawUdhar.totalPayable),
+          netUdharBalance: safeNum(rawUdhar.netUdharBalance),
+          activePeopleCount: Math.max(0, Math.min(10000, Math.round(safeNum(rawUdhar.activePeopleCount)))),
+        },
+        recentTransactions: Array.isArray(rawCtx.recentTransactions)
+          ? rawCtx.recentTransactions.slice(0, 40).map((t: any) => ({
+              title: safeStr(t?.title, 80),
+              amount: safeNum(t?.amount),
+              type: t?.type === 'income' ? 'income' : 'expense',
+              category: safeStr(t?.category, 50),
+              date: safeStr(t?.date, 20),
+            }))
+          : [],
       };
 
       const store = readUserStore(userId);

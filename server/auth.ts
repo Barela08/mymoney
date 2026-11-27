@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { query, isDatabaseAvailable } from './db.js';
+import { query, pool, isDatabaseAvailable } from './db.js';
 import { generateCryptoToken, hashToken } from './security.js';
 import type { IncomingMessage } from 'http';
 
@@ -370,6 +370,26 @@ export async function revokeUserSessionById(userId: string, sessionId: string): 
   return false;
 }
 
+const userSessionLocks = new Map<string, Promise<void>>();
+
+async function withUserSessionLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = userSessionLocks.get(userId) || Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  userSessionLocks.set(userId, prev.then(() => next).catch(() => next));
+  await prev.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (userSessionLocks.get(userId) === next) {
+      userSessionLocks.delete(userId);
+    }
+  }
+}
+
 export async function createSession(
   userId: string,
   opts: {
@@ -380,96 +400,152 @@ export async function createSession(
     replaceSessionId?: string;
   } = {}
 ): Promise<SessionInfo> {
-  if (opts.replaceSessionId) {
-    await revokeUserSessionById(userId, opts.replaceSessionId);
-  }
+  return withUserSessionLock(userId, async () => {
+    const sessionToken = generateCryptoToken(32);
+    const sessionTokenHash = hashToken(sessionToken);
+    const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
+    const expiresAt = new Date(Date.now() + duration);
 
-  const activeSessions = await listActiveSessionsForUser(userId);
-  if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
-    throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
-  }
+    // 1. Primary path: atomic PostgreSQL row-locked transaction preventing concurrent 4th-device bypass
+    if (isDatabaseAvailable()) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT id FROM public.app_users WHERE id = $1 FOR UPDATE', [userId]);
 
-  const sessionToken = generateCryptoToken(32);
-  const sessionTokenHash = hashToken(sessionToken);
-  const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
-  const expiresAt = new Date(Date.now() + duration);
+        if (opts.replaceSessionId) {
+          await client.query(
+            `UPDATE public.user_sessions
+             SET is_revoked = TRUE
+             WHERE id = $1 AND user_id = $2 AND is_revoked = FALSE`,
+            [opts.replaceSessionId, userId]
+          );
+        }
 
-  // 1. Primary path: direct PostgreSQL session persistence
-  if (isDatabaseAvailable()) {
+        await client.query(
+          `UPDATE public.user_sessions SET is_revoked = TRUE
+           WHERE user_id = $1 AND is_revoked = FALSE AND expires_at <= NOW()`,
+          [userId]
+        );
+
+        const activeRes = await client.query(
+          `SELECT id, session_token_hash, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at
+           FROM public.user_sessions
+           WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()
+           ORDER BY COALESCE(last_active_at, created_at) DESC`,
+          [userId]
+        );
+
+        if ((activeRes.rows?.length || 0) >= MAX_ACTIVE_SESSIONS) {
+          await client.query('ROLLBACK');
+          const mapped: ActiveSessionDisplay[] = (activeRes.rows || []).map((r: any) => {
+            const parsed = parseUserAgentSummary(r.user_agent);
+            return {
+              id: String(r.id),
+              deviceName: parsed.deviceName,
+              deviceType: parsed.deviceType,
+              browser: parsed.browser,
+              os: parsed.os,
+              ipAddress: r.ip_address ? String(r.ip_address) : null,
+              createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+              lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : null,
+              expiresAt: new Date(r.expires_at).toISOString(),
+              isCurrent: false,
+            };
+          });
+          throw new SessionLimitError(mapped, MAX_ACTIVE_SESSIONS);
+        }
+
+        const insRes = await client.query(
+          `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           RETURNING id`,
+          [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
+        );
+        await client.query('COMMIT');
+
+        if (insRes.rows[0]?.id) {
+          return {
+            sessionId: insRes.rows[0].id,
+            sessionToken,
+            userId,
+            expiresAt,
+          };
+        }
+      } catch (err: any) {
+        await client.query('ROLLBACK').catch(() => {});
+        if (err instanceof SessionLimitError) {
+          throw err;
+        }
+        console.warn('createSession PG transaction failed, attempting Supabase REST:', err?.message);
+      } finally {
+        client.release();
+      }
+    }
+
+    if (opts.replaceSessionId) {
+      await revokeUserSessionById(userId, opts.replaceSessionId);
+    }
+
+    const activeSessions = await listActiveSessionsForUser(userId);
+    if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
+      throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
+    }
+
+    // 2. Secondary path: Supabase HTTPS REST persistence into user_sessions
     try {
-      const res = await query(
-        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         RETURNING id`,
-        [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
-      );
+      const { url, key } = getAuthSupabaseRestConfig();
+      const nowIso = new Date().toISOString();
+      const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          session_token_hash: sessionTokenHash,
+          user_agent: opts.userAgent || null,
+          ip_address: opts.ipAddress || null,
+          expires_at: expiresAt.toISOString(),
+          last_active_at: nowIso,
+          is_revoked: false,
+        }),
+      });
 
-      if (res.rows[0]?.id) {
+      if (restRes.ok) {
+        const rows = await restRes.json().catch(() => []);
+        const createdId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : sessionTokenHash.slice(0, 16);
         return {
-          sessionId: res.rows[0].id,
+          sessionId: createdId,
           sessionToken,
           userId,
           expiresAt,
         };
       }
     } catch (err: any) {
-      console.warn('createSession PG insert failed, attempting Supabase REST:', err?.message);
+      console.warn('createSession Supabase REST insert notice:', err?.message);
     }
-  }
 
-  // 2. Secondary path: Supabase HTTPS REST persistence into user_sessions
-  try {
-    const { url, key } = getAuthSupabaseRestConfig();
-    const nowIso = new Date().toISOString();
-    const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Prefer: 'return=representation',
+    // 3. Cryptographic fallback: server-signed HMAC-SHA256 stateless token (never unsigned)
+    const signedToken = signFallbackSessionToken(
+      {
+        id: userId,
+        role: opts.user?.role || 'user',
+        email: opts.user?.email || '',
       },
-      body: JSON.stringify({
-        user_id: userId,
-        session_token_hash: sessionTokenHash,
-        user_agent: opts.userAgent || null,
-        ip_address: opts.ipAddress || null,
-        expires_at: expiresAt.toISOString(),
-        last_active_at: nowIso,
-        is_revoked: false,
-      }),
-    });
-
-    if (restRes.ok) {
-      const rows = await restRes.json().catch(() => []);
-      const createdId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : sessionTokenHash.slice(0, 16);
-      return {
-        sessionId: createdId,
-        sessionToken,
-        userId,
-        expiresAt,
-      };
-    }
-  } catch (err: any) {
-    console.warn('createSession Supabase REST insert notice:', err?.message);
-  }
-
-  // 3. Cryptographic fallback: server-signed HMAC-SHA256 stateless token (never unsigned)
-  const signedToken = signFallbackSessionToken(
-    {
-      id: userId,
-      role: opts.user?.role || 'user',
-      email: opts.user?.email || '',
-    },
-    expiresAt.getTime()
-  );
-  return {
-    sessionId: `hmac_${sessionTokenHash.slice(0, 16)}`,
-    sessionToken: signedToken,
-    userId,
-    expiresAt,
-  };
+      expiresAt.getTime()
+    );
+    return {
+      sessionId: `hmac_${sessionTokenHash.slice(0, 16)}`,
+      sessionToken: signedToken,
+      userId,
+      expiresAt,
+    };
+  });
 }
 
 export async function revokeSession(sessionToken: string): Promise<boolean> {

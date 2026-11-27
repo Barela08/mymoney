@@ -1,6 +1,8 @@
+import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
+import { authenticateRequest } from '../server/auth.js';
 
 // Parse .env if not loaded
 try {
@@ -35,6 +37,36 @@ const SMTP_CONFIG = {
   },
 };
 
+function escapeHtmlText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeResetHref(rawLink?: string): string {
+  const fallback = (process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site').replace(/\/+$/, '');
+  if (!rawLink) return fallback;
+  try {
+    const parsed = new URL(String(rawLink).trim());
+    if (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'))) {
+      return parsed.toString();
+    }
+  } catch {}
+  return fallback;
+}
+
+function hasValidInternalSecret(req: any): boolean {
+  const expected = (process.env.INTERNAL_API_SECRET || '').trim();
+  const provided = String(req.headers?.['x-internal-mail-secret'] || '').trim();
+  if (!expected || !provided) return false;
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 export async function sendPasswordResetEmail(payload: {
   email: string;
   name?: string;
@@ -42,6 +74,10 @@ export async function sendPasswordResetEmail(payload: {
   resetLink: string;
 }) {
   const { email, name, otp, resetLink } = payload;
+  const safeEmail = escapeHtmlText(email);
+  const safeName = escapeHtmlText(name || 'User');
+  const safeOtp = escapeHtmlText(otp);
+  const safeHref = escapeHtmlText(sanitizeResetHref(resetLink));
   const transporter = nodemailer.createTransport(SMTP_CONFIG);
 
   const htmlContent = `
@@ -72,10 +108,10 @@ export async function sendPasswordResetEmail(payload: {
                 <tr>
                   <td style="padding: 32px 28px;">
                     <p style="margin: 0 0 16px 0; font-size: 15px; color: #e2e8f0;">
-                      Hello ${name || 'User'},
+                      Hello ${safeName},
                     </p>
                     <p style="margin: 0 0 24px 0; font-size: 14px; color: #94a3b8; line-height: 1.6;">
-                      We received a request to reset your password for your <b>My Money Manager</b> account (${email}). Use the secure 6-digit OTP below or click the reset button.
+                      We received a request to reset your password for your <b>My Money Manager</b> account (${safeEmail}). Use the secure 6-digit OTP below or click the reset button.
                     </p>
 
                     <!-- OTP Box -->
@@ -84,7 +120,7 @@ export async function sendPasswordResetEmail(payload: {
                         Your One-Time Password (OTP)
                       </span>
                       <span style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #ffffff; font-family: monospace;">
-                        ${otp}
+                        ${safeOtp}
                       </span>
                       <span style="display: block; font-size: 11px; color: #64748b; margin-top: 6px;">
                         Valid for 15 minutes. Do not share this OTP with anyone.
@@ -93,7 +129,7 @@ export async function sendPasswordResetEmail(payload: {
 
                     <!-- 1-Click Button -->
                     <div style="text-align: center; margin-bottom: 24px;">
-                      <a href="${resetLink}" style="display: inline-block; background-color: #059669; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 28px; border-radius: 12px; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);">
+                      <a href="${safeHref}" style="display: inline-block; background-color: #059669; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 28px; border-radius: 12px; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);">
                         Reset Password Directly &rarr;
                       </a>
                     </div>
@@ -130,7 +166,7 @@ export async function sendPasswordResetEmail(payload: {
     from: '"My Money Manager" <hackifypro@gmail.com>',
     to: email,
     subject: 'Reset Your My Money Manager Password',
-    text: `Hello ${name || 'User'},\n\nWe received a request to reset your password for My Money Manager (${email}).\n\nYour 6-digit OTP is: ${otp}\nDirect reset link: ${resetLink}\n\nThis link is valid for 15 minutes. If you did not request this, please ignore this email.\n\nMy Money Manager Security Team`,
+    text: `Hello ${String(name || 'User').slice(0, 80)},\n\nWe received a request to reset your password for My Money Manager (${email}).\n\nYour 6-digit OTP is: ${otp}\nDirect reset link: ${sanitizeResetHref(resetLink)}\n\nThis link is valid for 15 minutes. If you did not request this, please ignore this email.\n\nMy Money Manager Security Team`,
     html: htmlContent,
   });
 }
@@ -159,6 +195,18 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Strictly block unauthenticated open-relay abuse
+  const isInternal = hasValidInternalSecret(req);
+  if (!isInternal) {
+    const authUser = await authenticateRequest(req).catch(() => null);
+    if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'superadmin')) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied: Administrator authentication required.',
+      });
+    }
+  }
+
   const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1';
 
   try {
@@ -168,6 +216,11 @@ export default async function handler(req: any, res: any) {
     }
 
     const normEmail = String(email).toLowerCase().trim();
+    const emailRe = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
+    if (!emailRe.test(normEmail) || normEmail.length > 254) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+
     const rateIp = checkEmailDispatchRateLimit(`send_reset_ip:${clientIp}`, 5, 15 * 60 * 1000);
     const rateAcct = checkEmailDispatchRateLimit(`send_reset_email:${normEmail}`, 3, 60 * 60 * 1000);
 
@@ -182,10 +235,15 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const info = await sendPasswordResetEmail({ email: normEmail, name, otp, resetLink });
+    const info = await sendPasswordResetEmail({
+      email: normEmail,
+      name: String(name || 'User').slice(0, 80),
+      otp: String(otp).slice(0, 12),
+      resetLink: sanitizeResetHref(resetLink),
+    });
     return res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error: any) {
-    console.error('Email dispatch error:', error);
-    return res.status(500).json({ error: error.message || 'Failed to dispatch email' });
+    console.error('Email dispatch error:', error?.message || error);
+    return res.status(500).json({ error: 'Failed to dispatch email' });
   }
 }

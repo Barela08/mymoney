@@ -107,6 +107,20 @@ function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
   res.end(JSON.stringify(data));
 }
 
+function escapeHtmlText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const PROTECTED_MASTER_ADMINS = new Set(['hackifypro@gmail.com', 'admin@mymoney.com']);
+function isProtectedMasterAdmin(email?: string | null): boolean {
+  return Boolean(email && PROTECTED_MASTER_ADMINS.has(String(email).trim().toLowerCase()));
+}
+
 // Parse request body safely (supports pre-parsed Vercel serverless req.body and raw HTTP stream)
 async function parseJsonBody(req: http.IncomingMessage): Promise<any> {
   const preParsed = (req as any).body;
@@ -773,7 +787,7 @@ export async function handleAdminApiRequest(
         to: emailLog.email,
         subject: emailLog.subject,
         text: `[Retry] ${emailLog.subject}`,
-        html: `<p>This is a redelivered message for: ${emailLog.subject}</p>`,
+        html: `<p>This is a redelivered message for: ${escapeHtmlText(emailLog.subject)}</p>`,
         emailType: emailLog.email_type || 'retry',
         recipientName: emailLog.recipient_name || 'User',
       });
@@ -1541,7 +1555,7 @@ export async function handleAdminApiRequest(
         const updated = await query(
           `UPDATE public.feedbacks 
            SET status = CASE WHEN $1::boolean THEN 'responded' ELSE status END,
-               admin_notes = CASE WHEN $2 THEN COALESCE(admin_notes || E'\n\n', '') || $2 ELSE admin_notes END,
+               admin_notes = CASE WHEN NULLIF($2, '') IS NOT NULL THEN COALESCE(admin_notes || E'\n\n', '') || $2 ELSE admin_notes END,
                reviewed_by = $3,
                reviewed_at = NOW(),
                updated_at = NOW()
@@ -2284,6 +2298,28 @@ export async function handleAdminApiRequest(
       const body = await parseJsonBody(req);
       const { permissions, description } = body;
 
+      if (roleId.toLowerCase() === 'superadmin' && auth.role !== 'superadmin') {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can modify the superadmin role.' });
+        return true;
+      }
+
+      let safePermissions: string[] | undefined;
+      if (permissions !== undefined) {
+        if (!Array.isArray(permissions) || permissions.length > 60) {
+          sendJson(res, 400, { success: false, message: 'Permissions must be a valid array.' });
+          return true;
+        }
+        safePermissions = permissions
+          .map((p: unknown) => String(p || '').trim())
+          .filter((p: string) => p.length > 0 && p.length <= 64 && /^[a-z0-9_.*]+$/.test(p));
+        if (safePermissions.includes('*') && auth.role !== 'superadmin') {
+          sendJson(res, 403, { success: false, message: 'Only a superadmin can assign wildcard (*) permissions.' });
+          return true;
+        }
+      }
+
+      const safeDesc = typeof description === 'string' ? description.trim().slice(0, 300) : undefined;
+
       if (isDatabaseAvailable()) {
         try {
           await query(
@@ -2292,7 +2328,7 @@ export async function handleAdminApiRequest(
                  description = COALESCE($2, description),
                  updated_at = NOW()
              WHERE id = $3`,
-            [JSON.stringify(permissions), description, roleId]
+            [safePermissions ? JSON.stringify(safePermissions) : null, safeDesc ?? null, roleId]
           );
           await logSecurityEvent('ADMIN_ROLE_PERMISSIONS_UPDATED', {
             userEmail: auth.authUser.email,
@@ -2303,7 +2339,7 @@ export async function handleAdminApiRequest(
         } catch {}
       }
 
-      await updateAdminRoleFallback(roleId, { permissions, description });
+      await updateAdminRoleFallback(roleId, { permissions: safePermissions, description: safeDesc });
 
       sendJson(res, 200, { success: true, message: 'Role permissions updated successfully.' });
       return true;
@@ -3717,62 +3753,96 @@ export async function handleAdminApiRequest(
       const body = await parseJsonBody(req);
       const { email, role, customPermissions } = body;
 
-      if (!email || !email.includes('@')) {
+      if (!email || !String(email).includes('@')) {
         sendJson(res, 400, { success: false, message: 'Valid email address is required.' });
         return true;
       }
 
-      const assignedRole = (role || 'support').toLowerCase().trim();
-      const trimmedEmail = email.trim();
+      const assignedRole = String(role || 'support').toLowerCase().trim();
+      const allowedStaffRoles = ['superadmin', 'admin', 'support', 'analyst', 'user'];
+      if (!allowedStaffRoles.includes(assignedRole)) {
+        sendJson(res, 400, { success: false, message: 'Invalid role specified.' });
+        return true;
+      }
+      if (assignedRole === 'superadmin' && auth.role !== 'superadmin') {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can assign superadmin privileges.' });
+        return true;
+      }
+
+      const safeCustomPerms = Array.isArray(customPermissions)
+        ? customPermissions
+            .slice(0, 50)
+            .map((p: unknown) => String(p || '').trim())
+            .filter((p: string) => p.length > 0 && p.length <= 64 && /^[a-z0-9_.*]+$/.test(p))
+        : [];
+      if (safeCustomPerms.includes('*') && auth.role !== 'superadmin') {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can grant wildcard (*) custom permissions.' });
+        return true;
+      }
+
+      const trimmedEmail = String(email).trim();
       let targetUser: any = null;
 
       if (isDatabaseAvailable()) {
         try {
           const userRes = await query('SELECT id, full_name, email, role FROM public.app_users WHERE LOWER(email) = LOWER($1)', [trimmedEmail]);
           targetUser = userRes.rows[0] || null;
-          if (targetUser) {
-            await query(`
-              UPDATE public.app_users 
-              SET role = $1,
-                  role_slug = $1,
-                  custom_permissions = $2,
-                  updated_at = NOW()
-              WHERE id = $3
-            `, [assignedRole, JSON.stringify(customPermissions || []), targetUser.id]);
-
-            await logSecurityEvent('ADMIN_ROLE_ASSIGNED', {
-              userEmail: auth.authUser.email,
-              actorRole: auth.role,
-              ipAddress: clientIp,
-              details: { targetUserId: targetUser.id, targetEmail: targetUser.email, assignedRole },
-            });
-          }
         } catch {}
       }
-
       if (!targetUser) {
         const fbUsers = await listAllAppUsersFallback();
         targetUser = fbUsers.find((u) => String(u.email || '').toLowerCase() === trimmedEmail.toLowerCase()) || null;
-        if (!targetUser) {
-          sendJson(res, 404, { success: false, message: 'User with this email is not registered. User must register before receiving admin credentials.' });
-          return true;
-        }
-        await Promise.all([
-          sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUser.id)}`, {
-            method: 'PATCH',
-            body: {
-              role: assignedRole,
-              role_slug: assignedRole,
-              custom_permissions: customPermissions || [],
-              updated_at: new Date().toISOString(),
-            },
-          }),
-          sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUser.id)}`, {
-            method: 'PATCH',
-            body: { role: assignedRole },
-          }),
-        ]);
       }
+      if (!targetUser) {
+        sendJson(res, 404, { success: false, message: 'User with this email is not registered. User must register before receiving admin credentials.' });
+        return true;
+      }
+      if (isProtectedMasterAdmin(targetUser.email)) {
+        sendJson(res, 403, { success: false, message: 'Protected master administrator role cannot be altered.' });
+        return true;
+      }
+      if (String(targetUser.role || '').toLowerCase() === 'superadmin' && auth.role !== 'superadmin') {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can modify another superadmin account.' });
+        return true;
+      }
+
+      const nextRoleSlug = assignedRole === 'user' ? null : assignedRole;
+      if (isDatabaseAvailable()) {
+        try {
+          await query(`
+            UPDATE public.app_users 
+            SET role = $1,
+                role_slug = $2,
+                custom_permissions = $3,
+                updated_at = NOW()
+            WHERE id = $4
+          `, [assignedRole, nextRoleSlug, JSON.stringify(safeCustomPerms), targetUser.id]);
+          await revokeAllUserSessions(targetUser.id).catch(() => 0);
+
+          await logSecurityEvent('ADMIN_ROLE_ASSIGNED', {
+            userEmail: auth.authUser.email,
+            actorRole: auth.role,
+            ipAddress: clientIp,
+            details: { targetUserId: targetUser.id, targetEmail: targetUser.email, assignedRole },
+          });
+        } catch {}
+      }
+
+      await Promise.all([
+        sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUser.id)}`, {
+          method: 'PATCH',
+          body: {
+            role: assignedRole,
+            role_slug: nextRoleSlug,
+            custom_permissions: safeCustomPerms,
+            updated_at: new Date().toISOString(),
+          },
+        }),
+        sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUser.id)}`, {
+          method: 'PATCH',
+          body: { role: assignedRole },
+        }),
+      ]);
 
       sendJson(res, 200, {
         success: true,
@@ -4381,7 +4451,7 @@ export async function handleAdminApiRequest(
         testResult = await sendAdminTestEmail({
           to: testRecipient,
           subject: 'SMTP Verification Success – My Money Manager by HackifyPro',
-          html: `<div style="font-family: sans-serif; padding: 20px;"><h2>SMTP Email Service Active</h2><p>Your transactional email server for <strong>My Money Manager (HackifyPro)</strong> is configured and delivering emails.</p><p><strong>Host:</strong> ${smtpSettings.host}:${smtpSettings.port}<br/><strong>Sender:</strong> ${smtpSettings.fromName} &lt;${smtpSettings.fromEmail}&gt;</p></div>`,
+          html: `<div style="font-family: sans-serif; padding: 20px;"><h2>SMTP Email Service Active</h2><p>Your transactional email server for <strong>My Money Manager (HackifyPro)</strong> is configured and delivering emails.</p><p><strong>Host:</strong> ${escapeHtmlText(smtpSettings.host)}:${escapeHtmlText(smtpSettings.port)}<br/><strong>Sender:</strong> ${escapeHtmlText(smtpSettings.fromName)} &lt;${escapeHtmlText(smtpSettings.fromEmail)}&gt;</p></div>`,
           recipientName: auth.authUser.full_name || 'Admin',
           emailType: 'smtp_verification_test',
         });
@@ -4411,7 +4481,7 @@ export async function handleAdminApiRequest(
       const result = await sendAdminTestEmail({
         to: recipient,
         subject: 'Live Email Dispatch Test – My Money Manager by HackifyPro',
-        html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;"><h2 style="color: #065f46;">HackifyPro SMTP Test Passed</h2><p>Feedback, complaint, support, transaction, Udhar, and broadcast emails will now be delivered automatically from <strong>${current.fromName}</strong>.</p><p style="font-size: 12px; color: #64748b;">Sent at ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p></div>`,
+        html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;"><h2 style="color: #065f46;">HackifyPro SMTP Test Passed</h2><p>Feedback, complaint, support, transaction, Udhar, and broadcast emails will now be delivered automatically from <strong>${escapeHtmlText(current.fromName)}</strong>.</p><p style="font-size: 12px; color: #64748b;">Sent at ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p></div>`,
         recipientName: auth.authUser.full_name || 'Administrator',
         emailType: 'admin_smtp_test',
       });
