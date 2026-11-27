@@ -17,6 +17,7 @@ export type OptionalConsentCategory =
   | 'cloud_sync'
   | 'ai_processing'
   | 'udhar_sharing'
+  | 'upi_qr'
   | 'analytics'
   | 'personalization'
   | 'marketing_updates';
@@ -25,6 +26,7 @@ export const OPTIONAL_CONSENT_CATEGORIES: readonly OptionalConsentCategory[] = [
   'cloud_sync',
   'ai_processing',
   'udhar_sharing',
+  'upi_qr',
   'analytics',
   'personalization',
   'marketing_updates',
@@ -73,6 +75,7 @@ export function createEmptyOptionalChoices(): OptionalConsentChoices {
     cloud_sync: false,
     ai_processing: false,
     udhar_sharing: false,
+    upi_qr: false,
     analytics: false,
     personalization: false,
     marketing_updates: false,
@@ -555,6 +558,57 @@ export const OPTIONAL_CONSENT_DEFINITIONS: readonly ConsentCategoryDefinition[] 
         retention: 'तुम्ही संमती मागे घेईपर्यंतच सक्रिय.',
         withdrawalProcedure:
           'Settings → Privacy → Manage Consent किंवा Notification Preferences मधून कधीही मागे घ्या.',
+      },
+    },
+  },
+  {
+    key: 'upi_qr',
+    defaultValue: false,
+    optional: true,
+    translations: {
+      en: {
+        title: 'Personal UPI QR Profile Storage',
+        shortDescription:
+          'Securely store your UPI ID, payee name, and optional payment note to generate personal Normal & Fixed Amount UPI QR codes.',
+        dataSummary: 'UPI ID (VPA), Payee Name, and optional default Payment Note (never UPI PIN or banking passwords)',
+        purposeDetail:
+          'Stores your UPI ID and payee details privately under your account so you can generate scannable Normal and Fixed Amount UPI payment request QR codes.',
+        dataCategories: [
+          'UPI ID (e.g., yourname@upi)',
+          'Payee Display Name',
+          'Optional Payment Note',
+        ],
+        howUsed:
+          'Used solely to encode local UPI payment request URIs (upi://pay?...) and render QR codes for you to download or share. Never exposed publicly in People Search and never triggers automatic balance changes.',
+        externalProcessors:
+          'Stored privately in your encrypted Supabase account record protected by Row-Level Security (RLS). Never shared with third parties.',
+        retention: 'Retained only until you edit, remove your UPI ID, or withdraw this consent.',
+        withdrawalProcedure:
+          'Withdraw anytime from Settings → Privacy → Manage Consent or by clicking Remove Saved UPI ID in the Dashboard UPI QR section.',
+      },
+      hi: {
+        title: 'व्यक्तिगत UPI QR प्रोफ़ाइल संग्रहण (Personal UPI QR Storage)',
+        shortDescription:
+          'व्यक्तिगत सामान्य और निश्चित राशि वाले UPI QR कोड बनाने के लिए अपनी UPI ID, प्राप्तकर्ता नाम और नोट सुरक्षित रूप से सेव करें।',
+        dataSummary: 'UPI ID, प्राप्तकर्ता नाम और वैकल्पिक भुगतान नोट (कभी भी UPI PIN या बैंकिंग पासवर्ड नहीं)',
+        purposeDetail: 'आपके खाते के अंतर्गत आपकी UPI ID सेव करने के लिए ताकि आप नॉर्मल और अमाउंट QR कोड बना सकें।',
+        dataCategories: ['UPI ID', 'प्राप्तकर्ता नाम', 'वैकल्पिक भुगतान नोट'],
+        howUsed: 'केवल आपके व्यक्तिगत UPI भुगतान अनुरोध QR कोड बनाने के लिए उपयोग किया जाता है। कभी सार्वजनिक रूप से साझा नहीं किया जाता।',
+        externalProcessors: 'RLS से सुरक्षित आपके निजी Supabase खाते में संग्रहीत।',
+        retention: 'केवल तब तक जब तक आप इसे हटाते नहीं हैं या सहमति वापस नहीं लेते।',
+        withdrawalProcedure: 'Settings → Privacy या Dashboard UPI QR सेक्शन से कभी भी हटाएं या सहमति वापस लें।',
+      },
+      mr: {
+        title: 'वैयक्तिक UPI QR प्रोफाइल संचयन (Personal UPI QR Storage)',
+        shortDescription:
+          'वैयक्तिक सामान्य आणि निश्चित रकमेचे UPI QR कोड तयार करण्यासाठी तुमचा UPI ID, नाव आणि टीप सुरक्षितपणे सेव्ह करा.',
+        dataSummary: 'UPI ID, प्राप्तकर्त्याचे नाव आणि पर्यायी टीप (कधीही UPI PIN किंवा बँकिंग पासवर्ड नाही)',
+        purposeDetail: 'तुमच्या खात्यात UPI ID सुरक्षित ठेवण्यासाठी जेणेकरून तुम्ही Normal आणि Amount QR कोड तयार करू शकाल.',
+        dataCategories: ['UPI ID', 'प्राप्तकर्त्याचे नाव', 'पर्यायी टीप'],
+        howUsed: 'फक्त तुमच्या वैयक्तिक UPI पेमेंट विनंती QR कोडसाठी वापरले जाते. कधीही सार्वजनिक केले जात नाही.',
+        externalProcessors: 'RLS ने सुरक्षित तुमच्या खाजगी Supabase खात्यात संग्रहित.',
+        retention: 'तुम्ही माहिती हटवेपर्यंत किंवा संमती मागे घेईपर्यंतच.',
+        withdrawalProcedure: 'Settings → Privacy किंवा Dashboard UPI QR मधून कधीही काढून टाका किंवा संमती मागे घ्या.',
       },
     },
   },

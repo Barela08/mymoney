@@ -39,6 +39,7 @@ export const EMPTY_CONSENT_CHOICES: ConsentChoices = {
   cloud_sync: false,
   ai_processing: false,
   udhar_sharing: false,
+  upi_qr: false,
   analytics: false,
   personalization: false,
   marketing_updates: false,

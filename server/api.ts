@@ -6343,6 +6343,131 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // =========================================================
+    // SECTION: PRIVATE USER UPI PROFILE APIS (STRICT OWNER-ONLY)
+    // =========================================================
+    if (pathname === '/api/upi-profile' && (method === 'GET' || method === 'PUT' || method === 'DELETE')) {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const UPI_ID_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+
+      if (method === 'GET') {
+        if (!isDatabaseAvailable()) {
+          sendJson(res, 200, { success: true, profile: null, offlineFallback: true });
+          return true;
+        }
+        try {
+          const r = await query(
+            `SELECT id, user_id, upi_id, payee_name, payment_note, created_at, updated_at
+             FROM public.user_upi_profiles
+             WHERE user_id = $1
+             LIMIT 1`,
+            [authUser.id]
+          );
+          sendJson(res, 200, { success: true, profile: r.rows[0] || null });
+        } catch (err: any) {
+          sendJson(res, 500, { success: false, message: err.message || 'Failed to fetch UPI profile.' });
+        }
+        return true;
+      }
+
+      if (method === 'PUT') {
+        const body = await readJsonBody(req);
+        const upiId = String(body.upiId || body.upi_id || '').trim();
+        const payeeName = String(body.payeeName || body.payee_name || '').trim().slice(0, 100);
+        const paymentNote = String(body.paymentNote || body.payment_note || '').trim().slice(0, 80);
+        const consentGranted = body.consentGranted === true;
+
+        if (!consentGranted) {
+          sendJson(res, 400, {
+            success: false,
+            message: 'Explicit consent is required before saving your UPI ID.',
+          });
+          return true;
+        }
+
+        if (!upiId || !UPI_ID_REGEX.test(upiId)) {
+          sendJson(res, 400, {
+            success: false,
+            message: 'Please enter a valid UPI ID (e.g. yourname@upi).',
+          });
+          return true;
+        }
+
+        if (!isDatabaseAvailable()) {
+          sendJson(res, 200, {
+            success: true,
+            offlineFallback: true,
+            profile: {
+              id: `local_${authUser.id}`,
+              user_id: authUser.id,
+              upi_id: upiId,
+              payee_name: payeeName,
+              payment_note: paymentNote,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          });
+          return true;
+        }
+
+        try {
+          const upsertRes = await query(
+            `INSERT INTO public.user_upi_profiles (user_id, upi_id, payee_name, payment_note, updated_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET
+               upi_id = EXCLUDED.upi_id,
+               payee_name = EXCLUDED.payee_name,
+               payment_note = EXCLUDED.payment_note,
+               updated_at = NOW()
+             RETURNING id, user_id, upi_id, payee_name, payment_note, created_at, updated_at`,
+            [authUser.id, upiId, payeeName || null, paymentNote || null]
+          );
+
+          await logSecurityEvent('UPI_PROFILE_UPDATED', {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            ipAddress: clientIp,
+            userAgent,
+            details: { hasPayeeName: Boolean(payeeName) },
+          });
+
+          sendJson(res, 200, {
+            success: true,
+            message: 'UPI ID saved securely.',
+            profile: upsertRes.rows[0],
+          });
+        } catch (err: any) {
+          sendJson(res, 500, { success: false, message: err.message || 'Failed to save UPI profile.' });
+        }
+        return true;
+      }
+
+      if (method === 'DELETE') {
+        if (!isDatabaseAvailable()) {
+          sendJson(res, 200, { success: true, offlineFallback: true });
+          return true;
+        }
+        try {
+          await query(`DELETE FROM public.user_upi_profiles WHERE user_id = $1`, [authUser.id]);
+          await logSecurityEvent('UPI_PROFILE_DELETED', {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            ipAddress: clientIp,
+            userAgent,
+          });
+          sendJson(res, 200, { success: true, message: 'Saved UPI ID removed.' });
+        } catch (err: any) {
+          sendJson(res, 500, { success: false, message: err.message || 'Failed to remove UPI profile.' });
+        }
+        return true;
+      }
+    }
+
+    // =========================================================
     // SECTION: USER NOTIFICATION CENTER & WEB PUSH APIS
     // =========================================================
 

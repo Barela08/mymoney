@@ -295,6 +295,22 @@ export const privacyConsentApi = {
   },
 
   /**
+   * Convenience wrapper for updating a category consent directly.
+   */
+  async updateCategoryConsent(
+    category: OptionalConsentCategory,
+    granted: boolean,
+    opts?: { source?: string; consentWording?: string; language?: ConsentLanguage }
+  ) {
+    return this.saveSingleConsent({
+      purpose: category,
+      status: granted ? 'granted' : 'withdrawn',
+      source: opts?.source || 'upi_qr',
+      language: opts?.language || 'en',
+    });
+  },
+
+  /**
    * Withdraws ALL optional consents in one action while keeping essential core records intact.
    */
   async withdrawAllOptional(params: {

@@ -91488,6 +91488,7 @@ var OPTIONAL_CONSENT_CATEGORIES = [
   "cloud_sync",
   "ai_processing",
   "udhar_sharing",
+  "upi_qr",
   "analytics",
   "personalization",
   "marketing_updates"
@@ -91497,6 +91498,7 @@ function createEmptyOptionalChoices() {
     cloud_sync: false,
     ai_processing: false,
     udhar_sharing: false,
+    upi_qr: false,
     analytics: false,
     personalization: false,
     marketing_updates: false
@@ -91520,6 +91522,7 @@ var ALLOWED_SOURCES = /* @__PURE__ */ new Set([
   "ai_assistant_prompt",
   "receipt_scanner_prompt",
   "udhar_sharing_prompt",
+  "upi_qr_setup",
   "notification_preferences",
   "help_support"
 ]);
@@ -99998,6 +100001,117 @@ async function handleApiRequest(req, res) {
         userAgent
       });
       if (handled) return true;
+    }
+    if (pathname === "/api/upi-profile" && (method === "GET" || method === "PUT" || method === "DELETE")) {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson5(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const UPI_ID_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+      if (method === "GET") {
+        if (!isDatabaseAvailable()) {
+          sendJson5(res, 200, { success: true, profile: null, offlineFallback: true });
+          return true;
+        }
+        try {
+          const r2 = await query(
+            `SELECT id, user_id, upi_id, payee_name, payment_note, created_at, updated_at
+             FROM public.user_upi_profiles
+             WHERE user_id = $1
+             LIMIT 1`,
+            [authUser.id]
+          );
+          sendJson5(res, 200, { success: true, profile: r2.rows[0] || null });
+        } catch (err) {
+          sendJson5(res, 500, { success: false, message: err.message || "Failed to fetch UPI profile." });
+        }
+        return true;
+      }
+      if (method === "PUT") {
+        const body = await readJsonBody(req);
+        const upiId = String(body.upiId || body.upi_id || "").trim();
+        const payeeName = String(body.payeeName || body.payee_name || "").trim().slice(0, 100);
+        const paymentNote = String(body.paymentNote || body.payment_note || "").trim().slice(0, 80);
+        const consentGranted = body.consentGranted === true;
+        if (!consentGranted) {
+          sendJson5(res, 400, {
+            success: false,
+            message: "Explicit consent is required before saving your UPI ID."
+          });
+          return true;
+        }
+        if (!upiId || !UPI_ID_REGEX.test(upiId)) {
+          sendJson5(res, 400, {
+            success: false,
+            message: "Please enter a valid UPI ID (e.g. yourname@upi)."
+          });
+          return true;
+        }
+        if (!isDatabaseAvailable()) {
+          sendJson5(res, 200, {
+            success: true,
+            offlineFallback: true,
+            profile: {
+              id: `local_${authUser.id}`,
+              user_id: authUser.id,
+              upi_id: upiId,
+              payee_name: payeeName,
+              payment_note: paymentNote,
+              created_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          });
+          return true;
+        }
+        try {
+          const upsertRes = await query(
+            `INSERT INTO public.user_upi_profiles (user_id, upi_id, payee_name, payment_note, updated_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET
+               upi_id = EXCLUDED.upi_id,
+               payee_name = EXCLUDED.payee_name,
+               payment_note = EXCLUDED.payment_note,
+               updated_at = NOW()
+             RETURNING id, user_id, upi_id, payee_name, payment_note, created_at, updated_at`,
+            [authUser.id, upiId, payeeName || null, paymentNote || null]
+          );
+          await logSecurityEvent("UPI_PROFILE_UPDATED", {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            ipAddress: clientIp,
+            userAgent,
+            details: { hasPayeeName: Boolean(payeeName) }
+          });
+          sendJson5(res, 200, {
+            success: true,
+            message: "UPI ID saved securely.",
+            profile: upsertRes.rows[0]
+          });
+        } catch (err) {
+          sendJson5(res, 500, { success: false, message: err.message || "Failed to save UPI profile." });
+        }
+        return true;
+      }
+      if (method === "DELETE") {
+        if (!isDatabaseAvailable()) {
+          sendJson5(res, 200, { success: true, offlineFallback: true });
+          return true;
+        }
+        try {
+          await query(`DELETE FROM public.user_upi_profiles WHERE user_id = $1`, [authUser.id]);
+          await logSecurityEvent("UPI_PROFILE_DELETED", {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            ipAddress: clientIp,
+            userAgent
+          });
+          sendJson5(res, 200, { success: true, message: "Saved UPI ID removed." });
+        } catch (err) {
+          sendJson5(res, 500, { success: false, message: err.message || "Failed to remove UPI profile." });
+        }
+        return true;
+      }
     }
     if (pathname === "/api/notifications" && method === "GET") {
       const authUser = await authenticateRequest(req);

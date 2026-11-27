@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  QrCode,
   ShieldCheck,
   Check,
   Minus,
@@ -47,6 +48,7 @@ const CATEGORY_ICONS: Record<OptionalConsentCategory, React.ComponentType<{ clas
   cloud_sync: Cloud,
   ai_processing: Cpu,
   udhar_sharing: Users,
+  upi_qr: QrCode,
   analytics: BarChart3,
   personalization: SlidersHorizontal,
   marketing_updates: Megaphone,

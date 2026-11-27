@@ -31,6 +31,7 @@ const ALLOWED_SOURCES = new Set<string>([
   'ai_assistant_prompt',
   'receipt_scanner_prompt',
   'udhar_sharing_prompt',
+  'upi_qr_setup',
   'notification_preferences',
   'help_support',
 ]);
