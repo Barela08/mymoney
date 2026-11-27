@@ -677,6 +677,32 @@ async function main() {
         name: 'Hacked',
       });
       assert.strictEqual(unauthEdit.status, 404);
+
+      // Two-sided Udhar create & two-sided Udhar delete
+      const twoWayTxRes = await apiCall(TOKEN_A, 'POST', '/api/udhar/transactions', {
+        counterpart_name: 'Bob Verma',
+        counterpart_user_id: USER_B_ID,
+        direction: 'gave',
+        amount: 750,
+        description: 'Two-sided sync check',
+      });
+      assert.ok(twoWayTxRes.status === 200 || twoWayTxRes.status === 201);
+      const createdId = twoWayTxRes.payload.transaction?.id;
+      assert.ok(createdId, 'Created transaction ID required');
+
+      const bothA1 = await apiCall(TOKEN_A, 'GET', '/api/udhar/transactions');
+      const bothB1 = await apiCall(TOKEN_B, 'GET', '/api/udhar/transactions');
+      assert.ok(bothA1.payload.transactions.some((t: any) => t.id === createdId && t.direction === 'gave'));
+      assert.ok(bothB1.payload.transactions.some((t: any) => t.link_id === twoWayTxRes.payload.transaction.link_id && t.direction === 'took'));
+
+      const delTxRes = await apiCall(TOKEN_A, 'DELETE', `/api/udhar/transactions/${encodeURIComponent(createdId)}`);
+      assert.strictEqual(delTxRes.status, 200);
+      assert.strictEqual(delTxRes.payload.success, true);
+
+      const bothA2 = await apiCall(TOKEN_A, 'GET', '/api/udhar/transactions');
+      const bothB2 = await apiCall(TOKEN_B, 'GET', '/api/udhar/transactions');
+      assert.ok(!bothA2.payload.transactions.some((t: any) => t.id === createdId), 'Deleted Udhar must disappear for User A');
+      assert.ok(!bothB2.payload.transactions.some((t: any) => t.link_id === twoWayTxRes.payload.transaction.link_id), 'Deleted Udhar must disappear for User B');
     });
 
     console.log(`\n================================================================`);
