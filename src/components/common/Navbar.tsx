@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Menu,
   User,
-  AlertTriangle,
   PlusCircle,
   Settings,
 } from 'lucide-react';
@@ -31,9 +30,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNotificationCenter,
   onOpenNotificationPreferences,
 }) => {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const {
-    maintenanceSettings,
     dynamicSections,
     appBranding,
   } = useExpense();
@@ -63,7 +61,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     recycle_bin: { title: 'Recycle Bin & Recovery', shortTitle: 'Recycle Bin', subtitle: 'Soft-deleted transactions & safety recovery' },
     help_support: { title: 'Help & Support', shortTitle: 'Help', subtitle: 'Feedback, complaints & customer care' },
     legal: { title: 'Legal & Privacy Center', shortTitle: 'Legal', subtitle: 'Terms of service, privacy policy & DPDP rights' },
-    admin: { title: 'Admin Master Control Center', shortTitle: 'Admin Control', subtitle: 'Complete multi-user management, transactions & platform settings' },
   };
 
   // Check if currentTab is a dynamic custom section
@@ -106,17 +103,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right: Only Account Controls — Settings and Profile */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          {/* Admin Maintenance Mode Indicator */}
-          {isAdmin && maintenanceSettings.isEnabled && (
-            <div
-              onClick={() => onSelectTab('admin')}
-              className="flex items-center gap-1.5 px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-medium text-xs rounded-xl cursor-pointer"
-              title="Maintenance Mode is Active! Normal users are blocked. Click to manage."
-            >
-              <AlertTriangle className="w-3.5 h-3.5 stroke-[1.75]" />
-              <span className="hidden sm:inline text-[11px] font-bold">Maintenance active</span>
-            </div>
-          )}
 
           {/* Real-time Network & Cloud Synchronization Indicator */}
           <SyncStatusIndicator />

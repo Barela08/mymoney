@@ -1389,12 +1389,22 @@ export async function handleUserAccountExtensions(
     });
 
     recordAdminNotification({
+      eventId: `new_user:${createdUser.id}`,
       eventType: 'new_user',
+      priority: 'normal',
       title: 'New User Registered (Google)',
       message: `${createdUser.full_name} (${createdUser.email}) signed up via Google.`,
       userId: createdUser.id,
       userEmail: createdUser.email,
-      metadata: { role: 'user', provider: 'google', registeredAt: new Date().toISOString() },
+      deepLink: `admin:users:${createdUser.id}`,
+      relatedEntityType: 'user',
+      relatedEntityId: createdUser.id,
+      metadata: {
+        role: 'user',
+        provider: 'google',
+        verificationStatus: Boolean(createdUser.email_verified),
+        registeredAt: createdUser.created_at || new Date().toISOString(),
+      },
     }).catch(() => {});
 
     await logSecurityEvent('GOOGLE_USER_REGISTERED', {

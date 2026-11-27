@@ -63,7 +63,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onAskAiPrompt,
 }) => {
   const { transactions, summary, deleteTransaction, restoreTransaction, isLoading } = useExpense();
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { isPushSupported, pushPermission, enablePush } = useNotifications();
   const toast = useToast();
 
@@ -496,26 +496,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Admin Quick Link */}
-      {isAdmin && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-xs font-extrabold bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200">
-              ADMIN
-            </span>
-            <span className="text-slate-700 dark:text-slate-300 font-medium">
-              Enterprise Security Administration is enabled for your account.
-            </span>
-          </div>
-          <button
-            onClick={() => onNavigate('admin')}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl font-bold transition-all cursor-pointer self-start sm:self-auto"
-          >
-            Open Admin Dashboard →
-          </button>
-        </div>
-      )}
 
       {/* State 24: First-Time User Onboarding Guide (shown when 0 transactions) */}
       <FirstTimeOnboarding onOpenAddModal={onOpenAddModal} />

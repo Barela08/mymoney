@@ -2047,4 +2047,204 @@ export async function updateSupportTicketStatusFallback(ticketId: string, status
   }
 }
 
+// ============================================================================
+// 9. ADMIN NOTIFICATIONS & USER STATS FALLBACK
+// ============================================================================
+
+export interface AdminNotificationFallbackRecord {
+  id: string;
+  event_id?: string | null;
+  event_type: string;
+  title: string;
+  message: string;
+  priority?: 'normal' | 'high' | 'urgent';
+  user_id?: string | null;
+  user_email?: string | null;
+  deep_link?: string | null;
+  related_entity_type?: string | null;
+  related_entity_id?: string | null;
+  metadata?: Record<string, any>;
+  is_read: boolean;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export async function hasAdminNotificationEventFallback(eventId: string): Promise<boolean> {
+  if (!eventId) return false;
+  const store = readJsonStore<{ notifications: AdminNotificationFallbackRecord[] }>(
+    'admin-notifications.json',
+    { notifications: [] }
+  );
+  if (
+    store.notifications.some(
+      (n) => n.event_id === eventId || n.metadata?.eventId === eventId
+    )
+  ) {
+    return true;
+  }
+  const sbRes = await sbRestRequest<any[]>(
+    `admin_notifications?metadata->>eventId=eq.${encodeURIComponent(eventId)}&select=id&limit=1`
+  );
+  return Boolean(sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0);
+}
+
+export async function recordAdminNotificationFallback(
+  entry: Omit<AdminNotificationFallbackRecord, 'id' | 'is_read' | 'created_at'> & {
+    id?: string;
+    is_read?: boolean;
+    created_at?: string;
+  }
+): Promise<AdminNotificationFallbackRecord> {
+  const now = entry.created_at || new Date().toISOString();
+  const metadata = {
+    ...(entry.metadata || {}),
+    ...(entry.event_id ? { eventId: entry.event_id } : {}),
+    ...(entry.priority ? { priority: entry.priority } : {}),
+    ...(entry.deep_link ? { deepLink: entry.deep_link } : {}),
+    ...(entry.related_entity_type ? { relatedEntityType: entry.related_entity_type } : {}),
+    ...(entry.related_entity_id ? { relatedEntityId: entry.related_entity_id } : {}),
+  };
+
+  const payload = {
+    event_type: entry.event_type,
+    title: entry.title,
+    message: entry.message,
+    user_id: entry.user_id || null,
+    user_email: entry.user_email || null,
+    metadata,
+    is_read: Boolean(entry.is_read),
+    created_at: now,
+  };
+
+  const sbRes = await sbRestRequest<any[]>('admin_notifications', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: payload,
+  });
+
+  const savedRow: AdminNotificationFallbackRecord =
+    sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]
+      ? {
+          ...sbRes.data[0],
+          event_id: entry.event_id || sbRes.data[0]?.metadata?.eventId || null,
+          priority: entry.priority || sbRes.data[0]?.metadata?.priority || 'normal',
+          deep_link: entry.deep_link || sbRes.data[0]?.metadata?.deepLink || null,
+          related_entity_type: entry.related_entity_type || sbRes.data[0]?.metadata?.relatedEntityType || null,
+          related_entity_id: entry.related_entity_id || sbRes.data[0]?.metadata?.relatedEntityId || null,
+        }
+      : {
+          id: entry.id || `anot_${crypto.randomBytes(6).toString('hex')}`,
+          event_id: entry.event_id || null,
+          priority: entry.priority || 'normal',
+          deep_link: entry.deep_link || null,
+          related_entity_type: entry.related_entity_type || null,
+          related_entity_id: entry.related_entity_id || null,
+          ...payload,
+        };
+
+  const store = readJsonStore<{ notifications: AdminNotificationFallbackRecord[] }>(
+    'admin-notifications.json',
+    { notifications: [] }
+  );
+  store.notifications = [
+    savedRow,
+    ...store.notifications.filter((n) => n.id !== savedRow.id),
+  ].slice(0, 300);
+  writeJsonStore('admin-notifications.json', store);
+
+  return savedRow;
+}
+
+export async function listAdminNotificationsFallback(
+  limit = 150
+): Promise<AdminNotificationFallbackRecord[]> {
+  const sbRes = await sbRestRequest<any[]>(
+    `admin_notifications?select=*&order=created_at.desc&limit=${Math.min(300, Math.max(10, limit))}`
+  );
+  const store = readJsonStore<{ notifications: AdminNotificationFallbackRecord[] }>(
+    'admin-notifications.json',
+    { notifications: [] }
+  );
+
+  const map = new Map<string, AdminNotificationFallbackRecord>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) {
+        map.set(String(row.id), {
+          ...row,
+          event_id: row.metadata?.eventId || null,
+          priority: row.metadata?.priority || 'normal',
+          deep_link: row.metadata?.deepLink || null,
+          related_entity_type: row.metadata?.relatedEntityType || null,
+          related_entity_id: row.metadata?.relatedEntityId || null,
+        });
+      }
+    }
+  }
+  for (const row of store.notifications) {
+    if (row?.id && !map.has(String(row.id))) {
+      map.set(String(row.id), row);
+    }
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, limit);
+}
+
+export async function markAdminNotificationReadFallback(id: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  await sbRestRequest(`admin_notifications?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { is_read: true, read_at: now },
+  }).catch(() => {});
+
+  const store = readJsonStore<{ notifications: AdminNotificationFallbackRecord[] }>(
+    'admin-notifications.json',
+    { notifications: [] }
+  );
+  let changed = false;
+  store.notifications = store.notifications.map((n) => {
+    if (n.id === id) {
+      changed = true;
+      return { ...n, is_read: true, read_at: now };
+    }
+    return n;
+  });
+  if (changed) writeJsonStore('admin-notifications.json', store);
+  return true;
+}
+
+export async function markAllAdminNotificationsReadFallback(): Promise<boolean> {
+  const now = new Date().toISOString();
+  await sbRestRequest('admin_notifications?is_read=eq.false', {
+    method: 'PATCH',
+    body: { is_read: true, read_at: now },
+  }).catch(() => {});
+
+  const store = readJsonStore<{ notifications: AdminNotificationFallbackRecord[] }>(
+    'admin-notifications.json',
+    { notifications: [] }
+  );
+  store.notifications = store.notifications.map((n) =>
+    n.is_read ? n : { ...n, is_read: true, read_at: now }
+  );
+  writeJsonStore('admin-notifications.json', store);
+  return true;
+}
+
+export async function countTransactionsByUserFallback(): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  const sbRes = await sbRestRequest<Array<{ user_id: string }>>(
+    'transactions?select=user_id&is_deleted=eq.false&limit=3000'
+  );
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.user_id) {
+        counts[row.user_id] = (counts[row.user_id] || 0) + 1;
+      }
+    }
+  }
+  return counts;
+}
 

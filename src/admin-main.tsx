@@ -1,17 +1,18 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
-import App from './App.tsx';
+import AdminApp from './components/admin/AdminApp.tsx';
 
 if (typeof window !== 'undefined') {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (path !== '/admin' && !window.location.hash.startsWith('#admin')) {
-    window.location.hash = '#admin';
+  const isSubdomain = (window.location.hostname || '').toLowerCase().startsWith('admin.');
+  if (!isSubdomain && path !== '/admin' && !path.startsWith('/admin/')) {
+    window.history.replaceState(null, '', '/admin' + window.location.search + window.location.hash);
   }
 }
 
 createRoot(document.getElementById('admin-root')!).render(
   <StrictMode>
-    <App />
+    <AdminApp />
   </StrictMode>
 );

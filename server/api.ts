@@ -621,8 +621,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const isValid = await verifyPassword(password, userRecord.password_hash);
       if (!isValid) {
+        let attempts = (userRecord.failed_login_attempts || 0) + 1;
         if (isDatabaseAvailable()) {
-          const attempts = (userRecord.failed_login_attempts || 0) + 1;
           const lockSql =
             attempts >= 5
               ? "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2"
@@ -633,6 +633,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           userId: userRecord.id,
           userEmail: email,
           ipAddress: clientIp,
+        }).catch(() => {});
+        const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+        recordAdminNotification({
+          eventType: 'security_alert',
+          priority: attempts >= 5 ? 'urgent' : 'high',
+          category: 'security',
+          relatedEntityType: 'user',
+          relatedEntityId: userRecord.id,
+          deepLink: 'admin:security',
+          dedupeKey: `adm-login-fail:${userRecord.id}:${bucket}`,
+          title: attempts >= 5 ? 'Admin Account Locked (Failed Logins)' : 'Failed Admin Login Attempt',
+          message: `Failed admin portal password attempt #${attempts} for ${email} from IP ${clientIp || 'unknown'}.`,
+          userId: userRecord.id,
+          userEmail: email,
+          metadata: { attempts, ipAddress: clientIp },
         }).catch(() => {});
         sendJson(res, 401, { success: false, message: 'Invalid administrator credentials.' });
         return true;
@@ -648,6 +663,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           userEmail: email,
           actorRole: effectiveRole,
           ipAddress: clientIp,
+        }).catch(() => {});
+        const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+        recordAdminNotification({
+          eventType: 'suspicious_activity',
+          priority: 'high',
+          category: 'security',
+          relatedEntityType: 'user',
+          relatedEntityId: userRecord.id,
+          deepLink: 'admin:security',
+          dedupeKey: `adm-denied:${userRecord.id}:${bucket}`,
+          title: 'Unauthorized Admin Portal Access Attempt',
+          message: `Non-admin account ${email} (role: ${effectiveRole}) attempted admin portal sign-in from ${clientIp || 'unknown'}.`,
+          userId: userRecord.id,
+          userEmail: email,
+          metadata: { role: effectiveRole, ipAddress: clientIp },
         }).catch(() => {});
         sendJson(res, 403, {
           success: false,
@@ -1084,6 +1114,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         await logSecurityEvent('LOGIN_FAILED_BAD_PASSWORD', { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {});
+        if (attempts >= 3) {
+          const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+          recordAdminNotification({
+            eventType: 'suspicious_activity',
+            priority: attempts >= 5 ? 'urgent' : 'high',
+            category: 'security',
+            relatedEntityType: 'user',
+            relatedEntityId: user.id,
+            deepLink: 'admin:security',
+            dedupeKey: `user-brute:${user.id}:${attempts >= 5 ? 'locked' : bucket}`,
+            title: attempts >= 5 ? 'User Account Locked (Brute Force Guard)' : 'Suspicious Repeated Failed Logins',
+            message: `${attempts} failed login attempt(s) for ${email} from IP ${clientIp || 'unknown'}.`,
+            userId: user.id,
+            userEmail: email,
+            metadata: { attempts, locked: attempts >= 5, ipAddress: clientIp },
+          }).catch(() => {});
+        }
         sendJson(res, 401, { success: false, message: 'Invalid email or password.' });
         return true;
       }
@@ -2012,14 +2059,24 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      // Fetch users robustly: Direct SQL (profiles + app_users) with HTTPS Supabase REST API fallback
+      const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      const qFilter = (urlObj.searchParams.get('q') || '').trim().toLowerCase();
+      const statusFilter = (urlObj.searchParams.get('status') || '').trim().toLowerCase();
+      const verifiedFilter = (urlObj.searchParams.get('verified') || '').trim().toLowerCase();
+      const roleFilter = (urlObj.searchParams.get('role') || '').trim().toLowerCase();
+      const regFrom = (urlObj.searchParams.get('regFrom') || '').trim();
+      const regTo = (urlObj.searchParams.get('regTo') || '').trim();
+      const pageParam = parseInt(urlObj.searchParams.get('page') || '0', 10);
+      const limitParam = parseInt(urlObj.searchParams.get('limit') || '0', 10);
+
+      // Fetch users robustly: Direct SQL (profiles + app_users + sessions + transaction counts + authorized balance grants)
       let users: any[] = [];
       if (isDatabaseAvailable()) {
         try {
           const usersRes = await query(
             `SELECT 
                 COALESCE(u.id, p.id) AS id,
-                COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
+                COALESCE(u.full_name, p.full_name, split_part(COALESCE(u.email, p.email), '@', 1)) AS full_name,
                 COALESCE(u.email, p.email) AS email,
                 u.phone,
                 COALESCE(u.role, p.role, 'user') AS role,
@@ -2031,12 +2088,37 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
                 COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
                 u.last_login_at,
                 COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
-                COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
+                COUNT(DISTINCT s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count,
+                GREATEST(u.last_login_at, MAX(s.last_active_at)) AS last_active_at,
+                COALESCE(tx.tx_count, 0) AS transaction_count,
+                CASE
+                  WHEN g.has_balance_grant THEN COALESCE(tx.net_balance, 0)
+                  ELSE NULL
+                END AS authorized_balance,
+                COALESCE(g.has_balance_grant, FALSE) AS balance_authorized
              FROM public.profiles p
              FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
              LEFT JOIN public.user_sessions s ON u.id = s.user_id
-             GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
-             ORDER BY created_at DESC`
+             LEFT JOIN LATERAL (
+               SELECT
+                 COUNT(*)::int AS tx_count,
+                 COALESCE(SUM(CASE WHEN t.transaction_type = 'income' THEN t.amount WHEN t.transaction_type = 'expense' THEN -t.amount ELSE 0 END), 0)::numeric(14,2) AS net_balance
+               FROM public.transactions t
+               WHERE t.user_id = COALESCE(u.id, p.id) AND t.is_deleted = FALSE
+             ) tx ON TRUE
+             LEFT JOIN LATERAL (
+               SELECT TRUE AS has_balance_grant
+               FROM public.financial_data_access_requests r
+               WHERE r.target_user_id = COALESCE(u.id, p.id)
+                 AND r.status = 'approved'
+                 AND r.expires_at > NOW()
+                 AND (r.requesting_admin_id = $1 OR $2 = 'superadmin')
+                 AND (r.data_scopes @> '["balance"]'::jsonb)
+               LIMIT 1
+             ) g ON TRUE
+             GROUP BY u.id, p.id, p.full_name, p.email, p.role, p.status, p.created_at, tx.tx_count, tx.net_balance, g.has_balance_grant
+             ORDER BY created_at DESC`,
+            [authUser.id, authUser.role]
           );
 
           if (usersRes.rows && usersRes.rows.length > 0) {
@@ -2047,16 +2129,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
               displayName: r.full_name,
               email: r.email,
               phone: r.phone || null,
+              avatarUrl: r.avatar_url || null,
               role: r.role,
               status: r.status,
-              emailVerified: r.email_verified,
-              forcePasswordReset: r.force_password_reset,
-              failedLoginAttempts: r.failed_login_attempts,
+              emailVerified: Boolean(r.email_verified),
+              forcePasswordReset: Boolean(r.force_password_reset),
+              failedLoginAttempts: Number(r.failed_login_attempts || 0),
               createdAt: r.created_at,
               lastLoginAt: r.last_login_at || null,
+              lastActiveAt: r.last_active_at || r.last_login_at || null,
               passwordChangedAt: r.password_changed_at,
               passwordStatus: 'Set (Encrypted Bcrypt Hash)',
-              activeSessionsCount: parseInt(r.active_sessions_count || '0'),
+              activeSessionsCount: parseInt(r.active_sessions_count || '0', 10),
+              transactionCount: parseInt(r.transaction_count || '0', 10),
+              balanceAuthorized: Boolean(r.balance_authorized),
+              availableBalance: r.balance_authorized && r.authorized_balance !== null ? Number(r.authorized_balance) : null,
             }));
           }
         } catch (dbErr) {
@@ -2084,16 +2171,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
                 displayName: p.full_name || (p.email ? p.email.split('@')[0] : 'User'),
                 email: p.email,
                 phone: p.phone || null,
+                avatarUrl: p.avatar_url || null,
                 role: p.role || 'user',
                 status: p.status || 'active',
-                emailVerified: true,
+                emailVerified: Boolean(p.email_verified ?? false),
                 forcePasswordReset: false,
                 failedLoginAttempts: 0,
                 createdAt: p.created_at,
                 lastLoginAt: null,
+                lastActiveAt: p.updated_at || null,
                 passwordChangedAt: p.created_at,
                 passwordStatus: 'Protected (Bcrypt Encrypted)',
-                activeSessionsCount: 1,
+                activeSessionsCount: 0,
+                transactionCount: 0,
+                balanceAuthorized: false,
+                availableBalance: null,
               });
             }
           }
@@ -2110,16 +2202,21 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
                 displayName: u.full_name || prev.displayName || (u.email ? u.email.split('@')[0] : 'User'),
                 email: u.email || prev.email,
                 phone: u.phone || prev.phone || null,
+                avatarUrl: u.avatar_url || prev.avatarUrl || null,
                 role: u.role || prev.role || 'user',
                 status: u.status || prev.status || 'active',
-                emailVerified: u.email_verified ?? prev.emailVerified ?? true,
+                emailVerified: Boolean(u.email_verified ?? prev.emailVerified ?? false),
                 forcePasswordReset: Boolean(u.force_password_reset),
                 failedLoginAttempts: Number(u.failed_login_attempts || 0),
                 createdAt: u.created_at || prev.createdAt,
                 lastLoginAt: u.last_login_at || null,
+                lastActiveAt: u.last_login_at || prev.lastActiveAt || null,
                 passwordChangedAt: u.password_changed_at || u.created_at || prev.createdAt,
                 passwordStatus: 'Set (Encrypted Bcrypt Hash)',
-                activeSessionsCount: prev.activeSessionsCount ?? 1,
+                activeSessionsCount: prev.activeSessionsCount ?? 0,
+                transactionCount: prev.transactionCount ?? 0,
+                balanceAuthorized: false,
+                availableBalance: null,
               });
             }
           }
@@ -2131,7 +2228,68 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
-      sendJson(res, 200, { success: true, users });
+      const nowMs = Date.now();
+      const startOfTodayMs = new Date().setHours(0, 0, 0, 0);
+      const sevenDaysAgoMs = nowMs - 7 * 24 * 60 * 60 * 1000;
+      const summary = {
+        totalUsers: users.length,
+        newToday: users.filter((u) => u.createdAt && new Date(u.createdAt).getTime() >= startOfTodayMs).length,
+        newWeek: users.filter((u) => u.createdAt && new Date(u.createdAt).getTime() >= sevenDaysAgoMs).length,
+        activeUsers: users.filter((u) => (u.status || 'active') === 'active').length,
+        inactiveUsers: users.filter((u) => u.status === 'deactivated' || u.status === 'inactive').length,
+        verifiedUsers: users.filter((u) => Boolean(u.emailVerified)).length,
+        unverifiedUsers: users.filter((u) => !u.emailVerified).length,
+        suspendedUsers: users.filter((u) => u.status === 'suspended').length,
+      };
+
+      let filteredUsers = users;
+      if (qFilter) {
+        filteredUsers = filteredUsers.filter((u) =>
+          `${u.fullName || ''} ${u.email || ''} ${u.id || ''} ${u.phone || ''}`.toLowerCase().includes(qFilter)
+        );
+      }
+      if (statusFilter && statusFilter !== 'all') {
+        filteredUsers = filteredUsers.filter((u) => String(u.status || 'active').toLowerCase() === statusFilter);
+      }
+      if (verifiedFilter === 'verified') {
+        filteredUsers = filteredUsers.filter((u) => Boolean(u.emailVerified));
+      } else if (verifiedFilter === 'unverified') {
+        filteredUsers = filteredUsers.filter((u) => !u.emailVerified);
+      }
+      if (roleFilter && roleFilter !== 'all') {
+        filteredUsers = filteredUsers.filter((u) => String(u.role || 'user').toLowerCase() === roleFilter);
+      }
+      if (regFrom) {
+        const fromMs = new Date(regFrom).getTime();
+        if (Number.isFinite(fromMs)) {
+          filteredUsers = filteredUsers.filter((u) => u.createdAt && new Date(u.createdAt).getTime() >= fromMs);
+        }
+      }
+      if (regTo) {
+        const toMs = new Date(regTo).getTime() + 24 * 60 * 60 * 1000 - 1;
+        if (Number.isFinite(toMs)) {
+          filteredUsers = filteredUsers.filter((u) => u.createdAt && new Date(u.createdAt).getTime() <= toMs);
+        }
+      }
+
+      const totalFiltered = filteredUsers.length;
+      let paginatedUsers = filteredUsers;
+      let pagination: { page: number; limit: number; total: number; totalPages: number } | undefined;
+      if (limitParam > 0) {
+        const safeLimit = Math.min(200, Math.max(1, limitParam));
+        const totalPages = Math.max(1, Math.ceil(totalFiltered / safeLimit));
+        const safePage = Math.min(totalPages, Math.max(1, pageParam || 1));
+        const start = (safePage - 1) * safeLimit;
+        paginatedUsers = filteredUsers.slice(start, start + safeLimit);
+        pagination = { page: safePage, limit: safeLimit, total: totalFiltered, totalPages };
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        users: paginatedUsers,
+        summary,
+        ...(pagination ? { pagination } : {}),
+      });
       return true;
     }
 
@@ -7356,15 +7514,44 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const sanitizeFeedbackForUser = (row: any) => {
+        const raw = typeof row?.admin_notes === 'string' ? row.admin_notes : '';
+        // Only expose explicit customer-facing email replies; strip all internal admin notes
+        const publicBlocks = raw
+          .split(/\n{2,}/)
+          .map((block: string) => block.trim())
+          .filter((block: string) => /^\[Admin Reply sent via Email by /i.test(block))
+          .map((block: string) =>
+            block.replace(/^\[Admin Reply sent via Email by ([^\]]+)\]:\s*/i, 'Reply from $1: ')
+          );
+        const publicReply = publicBlocks.length > 0 ? publicBlocks.join('\n\n') : null;
+        return {
+          id: row.id,
+          category: row.category,
+          subject: row.subject,
+          rating: row.rating,
+          message: row.message,
+          status: row.status,
+          admin_response: publicReply,
+          admin_notes: publicReply,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      };
+
       if (!isDatabaseAvailable()) {
         const [fbRes, tickets] = await Promise.all([
           listFeedbacksFallback({ userId: authUser.id }),
           listSupportTicketsFallback(authUser.id),
         ]);
+        const safeTickets = (tickets || []).map((t: any) => {
+          const { internal_notes: _hidden, ...rest } = t || {};
+          return rest;
+        });
         sendJson(res, 200, {
           success: true,
-          feedbacks: fbRes.feedbacks,
-          tickets,
+          feedbacks: (fbRes.feedbacks || []).map(sanitizeFeedbackForUser),
+          tickets: safeTickets,
         });
         return true;
       }
@@ -7388,7 +7575,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       sendJson(res, 200, {
         success: true,
-        feedbacks: feedbacksRes.rows,
+        feedbacks: feedbacksRes.rows.map(sanitizeFeedbackForUser),
         tickets: ticketsRes.rows,
       });
       return true;
@@ -7410,13 +7597,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           sendJson(res, 404, { success: false, message: 'Ticket not found or unauthorized.' });
           return true;
         }
+        const { internal_notes: _hidden, ...safeTicket } = ticket;
         const replies = await getSupportTicketRepliesFallback(ticketId, false);
-        sendJson(res, 200, { success: true, ticket, replies });
+        sendJson(res, 200, { success: true, ticket: safeTicket, replies });
         return true;
       }
 
       const ticketRes = await query(
-        `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
+        `SELECT id, ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at, resolved_at
+         FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
         [ticketId, authUser.id]
       );
 
@@ -8865,6 +9054,17 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     return true;
   } catch (err: any) {
     console.error(`[API Error] ${method} ${pathname}:`, err);
+    const bucket = Math.floor(Date.now() / (5 * 60 * 1000));
+    recordAdminNotification({
+      eventType: 'system_error',
+      priority: 'urgent',
+      category: 'security',
+      deepLink: 'admin:notifications',
+      dedupeKey: `sys-err:api:${method}:${pathname}:${bucket}`,
+      title: 'Server API Error (500)',
+      message: `Unhandled error on ${method} ${pathname}: ${String(err?.message || 'Internal error').slice(0, 120)}`,
+      metadata: { method, pathname, errorName: err?.name || 'Error' },
+    }).catch(() => {});
     sendJson(res, 500, {
       success: false,
       message: 'An internal server security error occurred. Please try again later.',

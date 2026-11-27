@@ -1035,10 +1035,10 @@ export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({ initialT
                       <p className="text-xs text-slate-700 dark:text-slate-300 italic">
                         &ldquo;{fb.message}&rdquo;
                       </p>
-                      {fb.admin_notes && (
+                      {(fb.admin_response || fb.admin_notes) && (
                         <div className="mt-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 text-xs text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
-                          <strong className="text-slate-800 dark:text-slate-200 block mb-0.5">Admin Response:</strong>
-                          {fb.admin_notes}
+                          <strong className="text-slate-800 dark:text-slate-200 block mb-0.5">Support Response:</strong>
+                          {fb.admin_response || fb.admin_notes}
                         </div>
                       )}
                     </div>

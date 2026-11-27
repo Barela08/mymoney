@@ -25,6 +25,7 @@ import crypto from 'crypto';
 import { query, isDatabaseAvailable } from './db.js';
 import { authenticateRequest, type AuthenticatedUser } from './auth.js';
 import { checkRateLimit, logSecurityEvent } from './security.js';
+import { recordAdminNotification } from './notificationService.js';
 import {
   PARSER_VERSION,
   UPI_EXPENSE_CATEGORIES,
@@ -534,6 +535,27 @@ export async function handleUpiDetectionRequest(
         isTestSample,
       },
     });
+
+    if (!isTestSample && ['failed', 'reversed', 'declined'].includes(String(saved.paymentStatus || '').toLowerCase())) {
+      recordAdminNotification({
+        eventType: 'payment_failed',
+        priority: 'high',
+        category: 'security',
+        relatedEntityType: 'upi_payment',
+        relatedEntityId: saved.id,
+        deepLink: 'admin:security',
+        dedupeKey: `payment-failed:${saved.id}`,
+        title: 'Failed Payment Verification Event',
+        message: `Payment ${saved.paymentStatus} detected via ${saved.sourceApp || 'UPI'} for user ${authUser.email || authUser.id}.`,
+        userId: authUser.id,
+        userEmail: authUser.email,
+        metadata: {
+          sourceApp: saved.sourceApp,
+          paymentStatus: saved.paymentStatus,
+          verificationStatus: saved.verificationStatus,
+        },
+      }).catch(() => {});
+    }
 
     const shouldShowPopup =
       !dedup.isDuplicate &&

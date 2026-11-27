@@ -34,6 +34,25 @@ function isAdminEntryRequest(urlStr: string | undefined, hostHeader: string | un
   return pathname === '/admin' || pathname.startsWith('/admin/');
 }
 
+function applyAdminAssetHeaders(req: { url?: string; headers: Record<string, any> }, res: { setHeader: (k: string, v: string) => void }): void {
+  const rawUrl = req.url || '';
+  const pathname = rawUrl.split('?')[0] || '/';
+  const host = (Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host || '').toLowerCase().split(':')[0];
+
+  if (host.startsWith('admin.') && pathname === '/admin-manifest.json') {
+    req.url = '/admin-subdomain-manifest.json';
+  }
+
+  if (pathname === '/admin-sw.js') {
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  } else if (pathname === '/admin-manifest.json' || pathname === '/admin-subdomain-manifest.json') {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  }
+}
+
 function backendApiPlugin(): Plugin {
   return {
     name: 'backend-api-plugin',
@@ -52,6 +71,7 @@ function backendApiPlugin(): Plugin {
           }
         }
 
+        applyAdminAssetHeaders(req, res);
         const host = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
         if (isAdminEntryRequest(req.url, host)) {
           req.url = '/admin.html';
@@ -60,8 +80,9 @@ function backendApiPlugin(): Plugin {
       });
     },
     configurePreviewServer(server) {
-      server.middlewares.use(async (req, _res, next) => {
+      server.middlewares.use(async (req, res, next) => {
         try {
+          applyAdminAssetHeaders(req, res);
           const host = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
           if (isAdminEntryRequest(req.url, host)) {
             req.url = '/admin.html';

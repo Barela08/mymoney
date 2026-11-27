@@ -83768,9 +83768,23 @@ function maskFinancialData(text, maskUdharDetails = false) {
   }
   return out;
 }
-function buildSafeDeepLinkUrl(deepLink) {
-  if (!deepLink || !deepLink.trim()) return "/";
-  const clean = deepLink.trim();
+function buildSafeDeepLinkUrl(deepLink, isAdmin = false, recordId) {
+  const clean = (deepLink || "").trim();
+  const looksLikeAdmin = isAdmin || clean === "admin" || clean.startsWith("admin:") || clean.startsWith("/admin");
+  if (looksLikeAdmin) {
+    let section = "notifications";
+    if (clean.startsWith("admin:")) {
+      section = clean.slice("admin:".length).trim() || "notifications";
+    } else if (clean.startsWith("/admin")) {
+      return clean;
+    } else if (clean && clean !== "admin") {
+      section = clean;
+    }
+    const safeSection = section.replace(/[^a-zA-Z0-9_-]/g, "") || "notifications";
+    const recordQuery = recordId ? `&id=${encodeURIComponent(recordId)}` : "";
+    return `/admin?tab=${encodeURIComponent(safeSection)}${recordQuery}#admin=${encodeURIComponent(safeSection)}`;
+  }
+  if (!clean) return "/";
   const pathRoutes = /* @__PURE__ */ new Set([
     "/ai-assistant",
     "/expense-calendar",
@@ -84469,30 +84483,43 @@ async function createNotification(params) {
         error_message: "Suppressed during quiet hours"
       });
     } else if (subs.length > 0 && (skipPreferenceCheck || prefs.push_enabled && categoryAllowed)) {
+      const isAdminNotif = Boolean(
+        params.isAdmin || deepLink && (deepLink === "admin" || deepLink.startsWith("admin:") || deepLink.startsWith("/admin"))
+      );
       const isUdharCategory = category === "udhar" || category === "repay" || category === "settlement";
-      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title, isUdharCategory) : title;
-      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message, isUdharCategory) : message;
-      const targetUrl = buildSafeDeepLinkUrl(deepLink);
+      const shouldMask = prefs.privacy_hide_amounts || isAdminNotif;
+      const pushTitle = shouldMask ? maskFinancialData(title, isUdharCategory) : title;
+      const pushBody = shouldMask ? maskFinancialData(message, isUdharCategory) : message;
+      const targetUrl = buildSafeDeepLinkUrl(
+        deepLink,
+        isAdminNotif,
+        params.recordId || relatedEntityId
+      );
       const timestamp = Date.now();
-      const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}-${notificationId || timestamp}`);
+      const notifTag = tag || (dedupeKey ? `${isAdminNotif ? "mm-adm" : "mm"}-${dedupeKey.slice(0, 80)}` : `${isAdminNotif ? "mm-adm" : "mm"}-${category}-${notificationId || timestamp}`);
       const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
+      const highPriority = params.priority === "urgent" || params.priority === "high" || category === "security" || type === "error";
       const pushPayload = JSON.stringify({
         title: pushTitle,
         body: pushBody,
-        icon: "/icon-192.png",
-        badge: "/notification-badge-96.png",
+        icon: isAdminNotif ? "/admin-notification-icon.png" : "/icon-192.png",
+        badge: isAdminNotif ? "/admin-badge-96.png" : "/notification-badge-96.png",
         tag: notifTag,
         category,
         type,
+        priority: params.priority || "normal",
         timestamp,
         renotify: true,
         silent: soundMuted,
         vibrate: soundMuted ? void 0 : [200, 80, 200],
         soundEnabled: !soundMuted,
-        requireInteraction: category === "security" || type === "error",
+        requireInteraction: highPriority,
         data: {
           url: targetUrl,
           notificationId: notificationId || null,
+          recordId: params.recordId || relatedEntityId || null,
+          isAdmin: isAdminNotif,
+          priority: params.priority || "normal",
           category,
           type,
           dedupeKey: dedupeKey || null,
@@ -84887,44 +84914,32 @@ async function notifyFeedbackSubmitted(userId, feedback) {
   });
 }
 async function notifyAdminNewFeedback(opts) {
-  try {
-    let adminRows = [];
-    if (isDatabaseAvailable()) {
-      try {
-        const adminsRes = await query(
-          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
-        );
-        adminRows = adminsRes.rows || [];
-      } catch {
-        adminRows = [];
-      }
+  const shortMsg = opts.message.length > 90 ? opts.message.slice(0, 90) + "\u2026" : opts.message;
+  const ratingText = `${Math.max(1, Math.min(5, opts.rating))}/5`;
+  await recordAdminNotification({
+    eventType: "feedback",
+    priority: opts.rating <= 2 ? "high" : "normal",
+    category: "feedback",
+    relatedEntityType: "feedback",
+    relatedEntityId: opts.feedbackDbId,
+    deepLink: "admin:feedback",
+    dedupeKey: `feedback:${opts.feedbackDbId || opts.feedbackId}`,
+    title: `New Feedback (${ratingText}) \xB7 ${opts.category || "General"}`,
+    message: `${opts.submitterName} (${opts.submitterEmail}) submitted feedback: "${shortMsg}"`,
+    userEmail: opts.submitterEmail,
+    metadata: {
+      feedbackId: opts.feedbackId,
+      feedbackDbId: opts.feedbackDbId,
+      submitterName: opts.submitterName,
+      submitterEmail: opts.submitterEmail,
+      rating: opts.rating,
+      feedbackCategory: opts.category || "General",
+      preview: shortMsg,
+      submittedAt: (/* @__PURE__ */ new Date()).toISOString()
     }
-    if (adminRows.length === 0) {
-      const fbUsers = await listAllAppUsersFallback();
-      adminRows = fbUsers.filter((u) => ["admin", "superadmin"].includes(String(u.role || "").toLowerCase())).map((u) => ({ id: u.id }));
-    }
-    if (adminRows.length === 0) return;
-    const stars = "\u2B50".repeat(Math.max(1, Math.min(5, opts.rating)));
-    const shortMsg = opts.message.length > 80 ? opts.message.slice(0, 80) + "\u2026" : opts.message;
-    for (const admin of adminRows) {
-      await createNotification({
-        userId: admin.id,
-        title: `New Feedback Received ${stars}`,
-        message: `${opts.submitterName} (${opts.submitterEmail}) left a ${opts.rating}-star review in "${opts.category || "General"}": "${shortMsg}"`,
-        category: "feedback",
-        type: "info",
-        relatedEntityType: "feedback",
-        relatedEntityId: opts.feedbackDbId,
-        deepLink: "admin:feedback",
-        channels: ["in_app", "push"],
-        skipPreferenceCheck: true
-      }).catch(
-        (e2) => console.warn(`[notifyAdminNewFeedback] Failed for admin ${admin.id}:`, e2?.message)
-      );
-    }
-  } catch (e2) {
-    console.warn("[notifyAdminNewFeedback] Error fetching admin list:", e2?.message);
-  }
+  }).catch(
+    (e2) => console.warn("[notifyAdminNewFeedback] Error recording admin notification:", e2?.message)
+  );
 }
 async function notifyComplaintSubmitted(userId, ticket) {
   const shortId = ticket.id.slice(0, 8);
@@ -84942,43 +84957,34 @@ async function notifyComplaintSubmitted(userId, ticket) {
   });
 }
 async function notifyAdminNewSupportTicket(opts) {
-  try {
-    let adminRows = [];
-    if (isDatabaseAvailable()) {
-      try {
-        const adminsRes = await query(
-          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
-        );
-        adminRows = adminsRes.rows || [];
-      } catch {
-        adminRows = [];
-      }
+  const isComplaint = opts.ticketType === "complaint";
+  const label = isComplaint ? "Complaint" : "Support Request";
+  const isFollowUp = Boolean(opts.isFollowUpReply) || opts.category === "User Follow-Up Reply" || opts.subject.startsWith("Reply on #");
+  const replyWindow = Math.floor(Date.now() / 15e3);
+  const dedupeKey = isFollowUp ? `ticket-reply:${opts.ticketId}:${replyWindow}` : `ticket:${opts.ticketId}`;
+  const preview = opts.description ? ` \u2014 "${opts.description.slice(0, 80)}${opts.description.length > 80 ? "\u2026" : ""}"` : "";
+  await recordAdminNotification({
+    eventType: isComplaint ? "complaint" : "support_ticket",
+    priority: opts.priority || (isComplaint ? "high" : "normal"),
+    category: isComplaint ? "complaints" : "support",
+    relatedEntityType: "support_ticket",
+    relatedEntityId: opts.ticketId,
+    deepLink: isComplaint ? "admin:complaints" : "admin:support",
+    dedupeKey,
+    title: isFollowUp ? `${label} Update #${opts.ticketNumber}` : `New ${label} #${opts.ticketNumber}`,
+    message: `${opts.submitterName} (${opts.submitterEmail}) [${opts.category || "General"}]: "${opts.subject}"${preview}`,
+    userEmail: opts.submitterEmail,
+    metadata: {
+      ticketId: opts.ticketId,
+      ticketNumber: opts.ticketNumber,
+      ticketType: opts.ticketType,
+      submitterName: opts.submitterName,
+      submitterEmail: opts.submitterEmail,
+      ticketCategory: opts.category || "General",
+      subject: opts.subject,
+      submittedAt: (/* @__PURE__ */ new Date()).toISOString()
     }
-    if (adminRows.length === 0) {
-      const fbUsers = await listAllAppUsersFallback();
-      adminRows = fbUsers.filter((u) => ["admin", "superadmin"].includes(String(u.role || "").toLowerCase())).map((u) => ({ id: u.id }));
-    }
-    if (adminRows.length === 0) return;
-    const label = opts.ticketType === "complaint" ? "Complaint" : "Support Ticket";
-    for (const admin of adminRows) {
-      await createNotification({
-        userId: admin.id,
-        title: `New ${label} #${opts.ticketNumber}`,
-        message: `${opts.submitterName} (${opts.submitterEmail}): "${opts.subject}" [${opts.category || "General"}]`,
-        category: opts.ticketType,
-        type: opts.ticketType === "complaint" ? "warning" : "info",
-        relatedEntityType: "support_ticket",
-        relatedEntityId: opts.ticketId,
-        deepLink: "admin:support",
-        channels: ["in_app", "push"],
-        skipPreferenceCheck: true
-      }).catch(
-        (e2) => console.warn(`[notifyAdminNewSupportTicket] Failed for admin ${admin.id}:`, e2?.message)
-      );
-    }
-  } catch (e2) {
-    console.warn("[notifyAdminNewSupportTicket] Error:", e2?.message);
-  }
+  }).catch((e2) => console.warn("[notifyAdminNewSupportTicket] Error:", e2?.message));
 }
 async function notifyAdminTicketReply(userId, ticket) {
   const shortId = ticket.id.slice(0, 8);
@@ -85446,6 +85452,60 @@ async function getAdminInstalledDevices(filters) {
   return list;
 }
 var localAdminNotifications = [];
+var localAdminDedupeKeys = /* @__PURE__ */ new Map();
+function resolveAdminNotifFile() {
+  try {
+    const dir = resolveWritablePushDir();
+    const resolved = path9.resolve(dir, "admin-notifications.json");
+    if (!resolved.startsWith(dir + path9.sep)) return null;
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+function readAdminNotifStore() {
+  const file = resolveAdminNotifFile();
+  if (file) {
+    try {
+      if (fs11.existsSync(file)) {
+        const parsed = JSON.parse(fs11.readFileSync(file, "utf8"));
+        return {
+          notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+          dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === "object" ? parsed.dedupeKeys : {}
+        };
+      }
+    } catch {
+    }
+  }
+  return {
+    notifications: [...localAdminNotifications],
+    dedupeKeys: Object.fromEntries(localAdminDedupeKeys.entries())
+  };
+}
+function writeAdminNotifStore(store) {
+  const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1e3;
+  const prunedKeys = {};
+  for (const [k, ts] of Object.entries(store.dedupeKeys || {})) {
+    if (typeof ts === "number" && ts >= cutoff) {
+      prunedKeys[k] = ts;
+    }
+  }
+  store.dedupeKeys = prunedKeys;
+  store.notifications = store.notifications.slice(0, 300);
+  localAdminNotifications.length = 0;
+  localAdminNotifications.push(...store.notifications);
+  localAdminDedupeKeys.clear();
+  for (const [k, ts] of Object.entries(prunedKeys)) {
+    localAdminDedupeKeys.set(k, ts);
+  }
+  const file = resolveAdminNotifFile();
+  if (file) {
+    try {
+      fs11.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
+    } catch {
+    }
+  }
+}
 var localAdminPreferences = {
   alert_new_user_registration: true,
   alert_app_installation: true,
@@ -85457,39 +85517,182 @@ var localAdminPreferences = {
   quiet_hours_end: "07:00",
   delivery_channel: "push_and_inapp"
 };
+function inferAdminCategory(eventType, explicit) {
+  if (explicit) return explicit;
+  switch (eventType) {
+    case "new_user":
+      return "new_users";
+    case "feedback":
+      return "feedback";
+    case "complaint":
+      return "complaints";
+    case "support_ticket":
+      return "support";
+    case "security_alert":
+    case "suspicious_activity":
+    case "payment_failed":
+    case "system_error":
+    case "critical_alert":
+      return "security";
+    case "pwa_install":
+    case "push_failure":
+    default:
+      return "system";
+  }
+}
+function inferAdminPriority(eventType, explicit) {
+  if (explicit) return explicit;
+  switch (eventType) {
+    case "system_error":
+    case "critical_alert":
+    case "suspicious_activity":
+      return "urgent";
+    case "security_alert":
+    case "payment_failed":
+    case "complaint":
+      return "high";
+    case "new_user":
+    case "feedback":
+    case "support_ticket":
+      return "normal";
+    default:
+      return "low";
+  }
+}
+function inferAdminDeepLink(eventType, explicit) {
+  if (explicit) return explicit;
+  switch (eventType) {
+    case "new_user":
+      return "admin:users";
+    case "feedback":
+      return "admin:feedback";
+    case "complaint":
+      return "admin:complaints";
+    case "support_ticket":
+      return "admin:support";
+    case "security_alert":
+    case "suspicious_activity":
+    case "payment_failed":
+      return "admin:security";
+    case "system_error":
+    case "critical_alert":
+    case "pwa_install":
+    case "push_failure":
+    default:
+      return "admin:notifications";
+  }
+}
+function normalizeAdminRow(row) {
+  const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  const eventType = row?.event_type || "security_alert";
+  return {
+    id: String(row.id),
+    event_type: eventType,
+    category: row.category || meta.category || inferAdminCategory(eventType),
+    priority: row.priority || meta.priority || inferAdminPriority(eventType),
+    title: String(row.title || "Admin Notification"),
+    message: String(row.message || ""),
+    user_id: row.user_id || null,
+    user_email: row.user_email || null,
+    related_entity_type: row.related_entity_type || meta.relatedEntityType || null,
+    related_entity_id: row.related_entity_id || meta.relatedEntityId || row.user_id || null,
+    deep_link: row.deep_link || meta.deepLink || inferAdminDeepLink(eventType),
+    dedupe_key: row.dedupe_key || meta.dedupeKey || null,
+    metadata: meta,
+    is_read: Boolean(row.is_read),
+    read_at: row.read_at || null,
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
 async function recordAdminNotification(params) {
   const { eventType, title, message, userId, userEmail, metadata = {} } = params;
-  const localRecord = {
-    id: `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+  const priority = inferAdminPriority(eventType, params.priority);
+  const category = inferAdminCategory(eventType, params.category);
+  const deepLink = inferAdminDeepLink(eventType, params.deepLink);
+  const relatedEntityType = params.relatedEntityType || (userId ? "user" : void 0);
+  const relatedEntityId = params.relatedEntityId || userId;
+  const dedupeKey = params.dedupeKey;
+  const store = readAdminNotifStore();
+  if (dedupeKey) {
+    if (store.dedupeKeys[dedupeKey] || localAdminDedupeKeys.has(dedupeKey)) {
+      return true;
+    }
+    if (isDatabaseAvailable()) {
+      try {
+        const dupRes = await query(
+          `SELECT id FROM public.admin_notifications WHERE metadata->>'dedupeKey' = $1 LIMIT 1`,
+          [dedupeKey]
+        );
+        if (dupRes.rows.length > 0) {
+          store.dedupeKeys[dedupeKey] = Date.now();
+          writeAdminNotifStore(store);
+          return true;
+        }
+      } catch {
+      }
+    }
+  }
+  const enrichedMeta = {
+    ...metadata,
+    priority,
+    category,
+    deepLink,
+    relatedEntityType: relatedEntityType || null,
+    relatedEntityId: relatedEntityId || null,
+    ...dedupeKey ? { dedupeKey } : {}
+  };
+  let insertedId = null;
+  if (isDatabaseAvailable()) {
+    try {
+      const insRes = await query(
+        `INSERT INTO public.admin_notifications
+         (event_type, title, message, user_id, user_email, metadata, is_read, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
+         RETURNING id`,
+        [eventType, title, message, userId || null, userEmail || null, JSON.stringify(enrichedMeta)]
+      );
+      insertedId = insRes.rows[0]?.id || null;
+    } catch {
+      insertedId = null;
+    }
+  }
+  const localRecord = normalizeAdminRow({
+    id: insertedId || `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     event_type: eventType,
+    category,
+    priority,
     title,
     message,
-    user_id: userId,
-    user_email: userEmail,
-    metadata,
+    user_id: userId || null,
+    user_email: userEmail || null,
+    related_entity_type: relatedEntityType || null,
+    related_entity_id: relatedEntityId || null,
+    deep_link: deepLink,
+    dedupe_key: dedupeKey || null,
+    metadata: enrichedMeta,
     is_read: false,
     created_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  localAdminNotifications.unshift(localRecord);
-  try {
-    await query(
-      `INSERT INTO public.admin_notifications
-       (event_type, title, message, user_id, user_email, metadata, is_read, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())`,
-      [eventType, title, message, userId || null, userEmail || null, JSON.stringify(metadata)]
-    );
-  } catch {
+  });
+  store.notifications = [
+    localRecord,
+    ...store.notifications.filter((n) => n.id !== localRecord.id)
+  ];
+  if (dedupeKey) {
+    store.dedupeKeys[dedupeKey] = Date.now();
   }
+  writeAdminNotifStore(store);
   const prefs = await getAdminNotificationPreferences();
-  const isAlertEnabled = eventType === "new_user" && prefs.alert_new_user_registration || eventType === "pwa_install" && prefs.alert_app_installation || eventType === "support_ticket" && prefs.alert_support_ticket || eventType === "critical_alert" && prefs.alert_critical_security || eventType === "push_failure" && prefs.alert_push_failure;
+  const isAlertEnabled = eventType === "new_user" && prefs.alert_new_user_registration !== false || eventType === "pwa_install" && prefs.alert_app_installation !== false || (eventType === "feedback" || eventType === "complaint" || eventType === "support_ticket") && prefs.alert_support_ticket !== false || (eventType === "security_alert" || eventType === "suspicious_activity" || eventType === "payment_failed" || eventType === "system_error" || eventType === "critical_alert") && prefs.alert_critical_security !== false || eventType === "push_failure" && prefs.alert_push_failure !== false;
   if (!isAlertEnabled) {
     return true;
   }
+  const isSecurityOrCritical = eventType === "security_alert" || eventType === "suspicious_activity" || eventType === "payment_failed" || eventType === "system_error" || eventType === "critical_alert";
+  const notifCategory = eventType === "feedback" ? "feedback" : eventType === "complaint" ? "complaint" : eventType === "support_ticket" ? "support" : isSecurityOrCritical ? "security" : "system";
   try {
     let adminRows = [];
     if (isDatabaseAvailable()) {
       const admins = await query(
-        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
+        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin') AND (status IS NULL OR status = 'active')`
       );
       adminRows = admins.rows || [];
     }
@@ -85500,13 +85703,19 @@ async function recordAdminNotification(params) {
     for (const a of adminRows) {
       createNotification({
         userId: a.id,
-        title: `[Admin Alert] ${title}`,
+        title,
         message,
-        category: "security",
-        type: eventType === "critical_alert" ? "error" : "info",
+        category: notifCategory,
+        type: priority === "urgent" || eventType === "system_error" || eventType === "payment_failed" ? "error" : priority === "high" ? "warning" : "info",
+        relatedEntityType: relatedEntityType || eventType,
+        relatedEntityId: relatedEntityId || localRecord.id,
+        recordId: relatedEntityId || localRecord.id,
+        deepLink,
+        dedupeKey: dedupeKey ? `adm:${dedupeKey}:${a.id}` : void 0,
         channels: prefs.delivery_channel === "inapp_only" ? ["in_app"] : ["in_app", "push"],
-        deepLink: "admin",
-        skipPreferenceCheck: true
+        skipPreferenceCheck: true,
+        isAdmin: true,
+        priority
       }).catch(() => {
       });
     }
@@ -85514,45 +85723,86 @@ async function recordAdminNotification(params) {
   }
   return true;
 }
-async function getAdminNotifications(limit = 50) {
-  try {
-    const res = await query(
-      `SELECT * FROM public.admin_notifications
-       ORDER BY created_at DESC
-       LIMIT $1`,
-      [limit]
-    );
-    if (res.rows && res.rows.length > 0) {
-      return res.rows;
+async function getAdminNotifications(limitOrOpts = 50) {
+  const opts = typeof limitOrOpts === "number" ? { limit: limitOrOpts } : limitOrOpts || {};
+  const limit = Math.min(300, Math.max(1, opts.limit || 100));
+  const merged = /* @__PURE__ */ new Map();
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `SELECT * FROM public.admin_notifications
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [Math.max(limit, 200)]
+      );
+      for (const r2 of res.rows || []) {
+        const norm = normalizeAdminRow(r2);
+        merged.set(norm.id, norm);
+      }
+    } catch {
     }
-  } catch {
   }
-  return localAdminNotifications.slice(0, limit);
+  const localStore = readAdminNotifStore();
+  for (const r2 of localStore.notifications) {
+    const norm = normalizeAdminRow(r2);
+    if (!merged.has(norm.id)) {
+      merged.set(norm.id, norm);
+    }
+  }
+  let items = Array.from(merged.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+  if (opts.category && opts.category !== "all") {
+    items = items.filter((n) => n.category === opts.category);
+  }
+  if (opts.priority && opts.priority !== "all") {
+    items = items.filter((n) => n.priority === opts.priority);
+  }
+  if (opts.unreadOnly) {
+    items = items.filter((n) => !n.is_read);
+  }
+  if (opts.q && opts.q.trim()) {
+    const needle = opts.q.trim().toLowerCase();
+    items = items.filter(
+      (n) => n.title.toLowerCase().includes(needle) || n.message.toLowerCase().includes(needle) || String(n.user_email || "").toLowerCase().includes(needle) || String(n.related_entity_id || "").toLowerCase().includes(needle) || String(n.event_type || "").toLowerCase().includes(needle)
+    );
+  }
+  return items.slice(0, limit);
 }
 async function markAdminNotificationRead(id) {
-  try {
-    await query(
-      `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
-      [id]
-    );
-  } catch {
-    const found = localAdminNotifications.find((n) => n.id === id);
-    if (found) {
-      found.is_read = true;
-      found.read_at = (/* @__PURE__ */ new Date()).toISOString();
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
+        [id]
+      );
+    } catch {
     }
+  }
+  const store = readAdminNotifStore();
+  const idx = store.notifications.findIndex((n) => n.id === id);
+  if (idx >= 0) {
+    store.notifications[idx].is_read = true;
+    store.notifications[idx].read_at = (/* @__PURE__ */ new Date()).toISOString();
+    writeAdminNotifStore(store);
   }
   return true;
 }
 async function markAllAdminNotificationsRead() {
-  try {
-    await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
-  } catch {
-    localAdminNotifications.forEach((n) => {
-      n.is_read = true;
-      n.read_at = (/* @__PURE__ */ new Date()).toISOString();
-    });
+  if (isDatabaseAvailable()) {
+    try {
+      await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
+    } catch {
+    }
   }
+  const store = readAdminNotifStore();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  store.notifications = store.notifications.map((n) => ({
+    ...n,
+    is_read: true,
+    read_at: n.read_at || now
+  }));
+  writeAdminNotifStore(store);
   return true;
 }
 async function getAdminNotificationPreferences(adminId) {
@@ -86935,6 +87185,7 @@ ${noteLine}` : noteLine;
       const emptyMetrics = {
         total: 0,
         open: 0,
+        under_review: 0,
         in_progress: 0,
         waiting_user: 0,
         resolved: 0,
@@ -86982,6 +87233,7 @@ ${noteLine}` : noteLine;
               SELECT
                 COUNT(*)::int as total,
                 COUNT(CASE WHEN status = 'open' THEN 1 END)::int as open,
+                COUNT(CASE WHEN status = 'under_review' THEN 1 END)::int as under_review,
                 COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int as in_progress,
                 COUNT(CASE WHEN status = 'waiting_user' THEN 1 END)::int as waiting_user,
                 COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int as resolved,
@@ -87017,6 +87269,7 @@ ${noteLine}` : noteLine;
         metrics: {
           total: tickets.length,
           open: tickets.filter((t2) => t2.status === "open").length,
+          under_review: tickets.filter((t2) => t2.status === "under_review").length,
           in_progress: tickets.filter((t2) => t2.status === "in_progress").length,
           waiting_user: tickets.filter((t2) => t2.status === "waiting_user").length,
           resolved: tickets.filter((t2) => t2.status === "resolved").length,
@@ -88066,30 +88319,63 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "notifications.manage");
       if (!auth) return true;
       const body = await parseJsonBody(req);
-      const testTitle = body.title || "Test Push Notification";
-      const testMessage = body.message || "This is a test notification from My Money Manager Admin Control Center.";
-      const deepLink = body.deep_link || "dashboard";
+      const testTitle = body.title || "Admin Mobile Push Test";
+      const testMessage = body.message || "Web Push delivery is active for My Money Manager Admin. Clicking this alert opens the Admin Notifications Center.";
+      const deepLink = body.deep_link || "admin:notifications";
       const resPush = await createNotification({
         userId: auth.authUser.id,
-        title: `[Test] ${testTitle}`,
+        title: testTitle,
         message: testMessage,
-        category: "general",
+        category: "security",
         type: "info",
         deepLink,
         channels: ["in_app", "push"],
-        skipPreferenceCheck: true
+        skipPreferenceCheck: true,
+        isAdmin: true,
+        priority: "normal"
       });
       sendJson(res, 200, {
         success: resPush.success,
-        message: resPush.success ? "Test notification successfully dispatched to your administrator account." : "Could not send test push notification. Check if push is enabled on this browser."
+        pushDelivered: resPush.pushDelivered,
+        pushFailed: resPush.pushFailed,
+        deviceCount: resPush.deviceCount,
+        message: resPush.pushDelivered > 0 ? `Test push delivered to ${resPush.pushDelivered} subscribed device(s).` : resPush.deviceCount === 0 ? "In-app test alert saved. Enable Web Push on this device to receive lock-screen notifications." : "In-app alert saved, but browser push delivery failed. Check notification permissions or re-subscribe."
       });
       return true;
     }
     if (pathname === "/api/admin/system/notifications" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "dashboard.view");
       if (!auth) return true;
-      const notifs = await getAdminNotifications(100);
-      sendJson(res, 200, { success: true, notifications: notifs });
+      const urlObj = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+      const category = (urlObj.searchParams.get("category") || "").trim();
+      const priority = (urlObj.searchParams.get("priority") || "").trim();
+      const unreadOnly = urlObj.searchParams.get("unread_only") === "true";
+      const q = (urlObj.searchParams.get("q") || "").trim();
+      const limit = Math.min(300, Math.max(1, parseInt(urlObj.searchParams.get("limit") || "150", 10) || 150));
+      const allNotifs = await getAdminNotifications({ limit: 300 });
+      const countsByCategory = {
+        all: allNotifs.length,
+        unread: allNotifs.filter((n) => !n.is_read).length,
+        new_users: allNotifs.filter((n) => n.category === "new_users").length,
+        feedback: allNotifs.filter((n) => n.category === "feedback").length,
+        complaints: allNotifs.filter((n) => n.category === "complaints").length,
+        support: allNotifs.filter((n) => n.category === "support").length,
+        security: allNotifs.filter((n) => n.category === "security").length,
+        system: allNotifs.filter((n) => n.category === "system").length
+      };
+      const filtered = await getAdminNotifications({
+        limit,
+        category: category || void 0,
+        priority: priority || void 0,
+        unreadOnly,
+        q: q || void 0
+      });
+      sendJson(res, 200, {
+        success: true,
+        notifications: filtered,
+        unreadCount: countsByCategory.unread,
+        countsByCategory
+      });
       return true;
     }
     const adminNotifReadMatch = pathname.match(/^\/api\/admin\/system\/notifications\/([a-zA-Z0-9_-]+)\/read$/);
@@ -89577,6 +89863,18 @@ ${noteLine}` : noteLine;
     return false;
   } catch (err) {
     console.error(`[Admin API Error] ${method} ${pathname}:`, err);
+    const bucket = Math.floor(Date.now() / (5 * 60 * 1e3));
+    recordAdminNotification({
+      eventType: "system_error",
+      priority: "urgent",
+      category: "security",
+      deepLink: "admin:notifications",
+      dedupeKey: `sys-err:admin:${method}:${pathname}:${bucket}`,
+      title: "Admin Console System Error",
+      message: `Unhandled error on ${method} ${pathname}: ${String(err?.message || "Internal error").slice(0, 120)}`,
+      metadata: { method, pathname, errorName: err?.name || "Error" }
+    }).catch(() => {
+    });
     sendJson(res, 500, {
       success: false,
       message: "An internal server error occurred while processing administrative operation."
@@ -97956,6 +98254,27 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
         isTestSample
       }
     });
+    if (!isTestSample && ["failed", "reversed", "declined"].includes(String(saved.paymentStatus || "").toLowerCase())) {
+      recordAdminNotification({
+        eventType: "payment_failed",
+        priority: "high",
+        category: "security",
+        relatedEntityType: "upi_payment",
+        relatedEntityId: saved.id,
+        deepLink: "admin:security",
+        dedupeKey: `payment-failed:${saved.id}`,
+        title: "Failed Payment Verification Event",
+        message: `Payment ${saved.paymentStatus} detected via ${saved.sourceApp || "UPI"} for user ${authUser.email || authUser.id}.`,
+        userId: authUser.id,
+        userEmail: authUser.email,
+        metadata: {
+          sourceApp: saved.sourceApp,
+          paymentStatus: saved.paymentStatus,
+          verificationStatus: saved.verificationStatus
+        }
+      }).catch(() => {
+      });
+    }
     const shouldShowPopup = !dedup.isDuplicate && saved.categorizationStatus === "pending" && (isTestSample || settings.autoPopupEnabled);
     sendJson5(res, 200, {
       success: true,
@@ -98603,8 +98922,8 @@ async function handleApiRequest(req, res) {
       }
       const isValid = await verifyPassword(password, userRecord.password_hash);
       if (!isValid) {
+        let attempts = (userRecord.failed_login_attempts || 0) + 1;
         if (isDatabaseAvailable()) {
-          const attempts = (userRecord.failed_login_attempts || 0) + 1;
           const lockSql = attempts >= 5 ? "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2" : "UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2";
           await query(lockSql, [attempts, userRecord.id]).catch(() => {
           });
@@ -98613,6 +98932,22 @@ async function handleApiRequest(req, res) {
           userId: userRecord.id,
           userEmail: email,
           ipAddress: clientIp
+        }).catch(() => {
+        });
+        const bucket = Math.floor(Date.now() / (10 * 60 * 1e3));
+        recordAdminNotification({
+          eventType: "security_alert",
+          priority: attempts >= 5 ? "urgent" : "high",
+          category: "security",
+          relatedEntityType: "user",
+          relatedEntityId: userRecord.id,
+          deepLink: "admin:security",
+          dedupeKey: `adm-login-fail:${userRecord.id}:${bucket}`,
+          title: attempts >= 5 ? "Admin Account Locked (Failed Logins)" : "Failed Admin Login Attempt",
+          message: `Failed admin portal password attempt #${attempts} for ${email} from IP ${clientIp || "unknown"}.`,
+          userId: userRecord.id,
+          userEmail: email,
+          metadata: { attempts, ipAddress: clientIp }
         }).catch(() => {
         });
         sendJson6(res, 401, { success: false, message: "Invalid administrator credentials." });
@@ -98625,6 +98960,22 @@ async function handleApiRequest(req, res) {
           userEmail: email,
           actorRole: effectiveRole,
           ipAddress: clientIp
+        }).catch(() => {
+        });
+        const bucket = Math.floor(Date.now() / (10 * 60 * 1e3));
+        recordAdminNotification({
+          eventType: "suspicious_activity",
+          priority: "high",
+          category: "security",
+          relatedEntityType: "user",
+          relatedEntityId: userRecord.id,
+          deepLink: "admin:security",
+          dedupeKey: `adm-denied:${userRecord.id}:${bucket}`,
+          title: "Unauthorized Admin Portal Access Attempt",
+          message: `Non-admin account ${email} (role: ${effectiveRole}) attempted admin portal sign-in from ${clientIp || "unknown"}.`,
+          userId: userRecord.id,
+          userEmail: email,
+          metadata: { role: effectiveRole, ipAddress: clientIp }
         }).catch(() => {
         });
         sendJson6(res, 403, {
@@ -98968,6 +99319,24 @@ async function handleApiRequest(req, res) {
         }
         await logSecurityEvent("LOGIN_FAILED_BAD_PASSWORD", { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {
         });
+        if (attempts >= 3) {
+          const bucket = Math.floor(Date.now() / (10 * 60 * 1e3));
+          recordAdminNotification({
+            eventType: "suspicious_activity",
+            priority: attempts >= 5 ? "urgent" : "high",
+            category: "security",
+            relatedEntityType: "user",
+            relatedEntityId: user.id,
+            deepLink: "admin:security",
+            dedupeKey: `user-brute:${user.id}:${attempts >= 5 ? "locked" : bucket}`,
+            title: attempts >= 5 ? "User Account Locked (Brute Force Guard)" : "Suspicious Repeated Failed Logins",
+            message: `${attempts} failed login attempt(s) for ${email} from IP ${clientIp || "unknown"}.`,
+            userId: user.id,
+            userEmail: email,
+            metadata: { attempts, locked: attempts >= 5, ipAddress: clientIp }
+          }).catch(() => {
+          });
+        }
         sendJson6(res, 401, { success: false, message: "Invalid email or password." });
         return true;
       }
@@ -99752,13 +100121,22 @@ async function handleApiRequest(req, res) {
         sendRateLimitExceeded(res, rate);
         return true;
       }
+      const urlObj = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+      const qFilter = (urlObj.searchParams.get("q") || "").trim().toLowerCase();
+      const statusFilter = (urlObj.searchParams.get("status") || "").trim().toLowerCase();
+      const verifiedFilter = (urlObj.searchParams.get("verified") || "").trim().toLowerCase();
+      const roleFilter = (urlObj.searchParams.get("role") || "").trim().toLowerCase();
+      const regFrom = (urlObj.searchParams.get("regFrom") || "").trim();
+      const regTo = (urlObj.searchParams.get("regTo") || "").trim();
+      const pageParam = parseInt(urlObj.searchParams.get("page") || "0", 10);
+      const limitParam = parseInt(urlObj.searchParams.get("limit") || "0", 10);
       let users = [];
       if (isDatabaseAvailable()) {
         try {
           const usersRes = await query(
             `SELECT 
                 COALESCE(u.id, p.id) AS id,
-                COALESCE(u.full_name, split_part(p.email, '@', 1)) AS full_name,
+                COALESCE(u.full_name, p.full_name, split_part(COALESCE(u.email, p.email), '@', 1)) AS full_name,
                 COALESCE(u.email, p.email) AS email,
                 u.phone,
                 COALESCE(u.role, p.role, 'user') AS role,
@@ -99770,12 +100148,37 @@ async function handleApiRequest(req, res) {
                 COALESCE(u.created_at, p.created_at, NOW()) AS created_at,
                 u.last_login_at,
                 COALESCE(u.password_changed_at, p.created_at, NOW()) AS password_changed_at,
-                COUNT(s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count
+                COUNT(DISTINCT s.id) FILTER (WHERE s.is_revoked = FALSE AND s.expires_at > NOW()) AS active_sessions_count,
+                GREATEST(u.last_login_at, MAX(s.last_active_at)) AS last_active_at,
+                COALESCE(tx.tx_count, 0) AS transaction_count,
+                CASE
+                  WHEN g.has_balance_grant THEN COALESCE(tx.net_balance, 0)
+                  ELSE NULL
+                END AS authorized_balance,
+                COALESCE(g.has_balance_grant, FALSE) AS balance_authorized
              FROM public.profiles p
              FULL OUTER JOIN public.app_users u ON LOWER(p.email) = LOWER(u.email)
              LEFT JOIN public.user_sessions s ON u.id = s.user_id
-             GROUP BY u.id, p.id, p.email, p.role, p.status, p.created_at
-             ORDER BY created_at DESC`
+             LEFT JOIN LATERAL (
+               SELECT
+                 COUNT(*)::int AS tx_count,
+                 COALESCE(SUM(CASE WHEN t.transaction_type = 'income' THEN t.amount WHEN t.transaction_type = 'expense' THEN -t.amount ELSE 0 END), 0)::numeric(14,2) AS net_balance
+               FROM public.transactions t
+               WHERE t.user_id = COALESCE(u.id, p.id) AND t.is_deleted = FALSE
+             ) tx ON TRUE
+             LEFT JOIN LATERAL (
+               SELECT TRUE AS has_balance_grant
+               FROM public.financial_data_access_requests r
+               WHERE r.target_user_id = COALESCE(u.id, p.id)
+                 AND r.status = 'approved'
+                 AND r.expires_at > NOW()
+                 AND (r.requesting_admin_id = $1 OR $2 = 'superadmin')
+                 AND (r.data_scopes @> '["balance"]'::jsonb)
+               LIMIT 1
+             ) g ON TRUE
+             GROUP BY u.id, p.id, p.full_name, p.email, p.role, p.status, p.created_at, tx.tx_count, tx.net_balance, g.has_balance_grant
+             ORDER BY created_at DESC`,
+            [authUser.id, authUser.role]
           );
           if (usersRes.rows && usersRes.rows.length > 0) {
             users = usersRes.rows.map((r2) => ({
@@ -99785,16 +100188,21 @@ async function handleApiRequest(req, res) {
               displayName: r2.full_name,
               email: r2.email,
               phone: r2.phone || null,
+              avatarUrl: r2.avatar_url || null,
               role: r2.role,
               status: r2.status,
-              emailVerified: r2.email_verified,
-              forcePasswordReset: r2.force_password_reset,
-              failedLoginAttempts: r2.failed_login_attempts,
+              emailVerified: Boolean(r2.email_verified),
+              forcePasswordReset: Boolean(r2.force_password_reset),
+              failedLoginAttempts: Number(r2.failed_login_attempts || 0),
               createdAt: r2.created_at,
               lastLoginAt: r2.last_login_at || null,
+              lastActiveAt: r2.last_active_at || r2.last_login_at || null,
               passwordChangedAt: r2.password_changed_at,
               passwordStatus: "Set (Encrypted Bcrypt Hash)",
-              activeSessionsCount: parseInt(r2.active_sessions_count || "0")
+              activeSessionsCount: parseInt(r2.active_sessions_count || "0", 10),
+              transactionCount: parseInt(r2.transaction_count || "0", 10),
+              balanceAuthorized: Boolean(r2.balance_authorized),
+              availableBalance: r2.balance_authorized && r2.authorized_balance !== null ? Number(r2.authorized_balance) : null
             }));
           }
         } catch (dbErr) {
@@ -99819,16 +100227,21 @@ async function handleApiRequest(req, res) {
                 displayName: p.full_name || (p.email ? p.email.split("@")[0] : "User"),
                 email: p.email,
                 phone: p.phone || null,
+                avatarUrl: p.avatar_url || null,
                 role: p.role || "user",
                 status: p.status || "active",
-                emailVerified: true,
+                emailVerified: Boolean(p.email_verified ?? false),
                 forcePasswordReset: false,
                 failedLoginAttempts: 0,
                 createdAt: p.created_at,
                 lastLoginAt: null,
+                lastActiveAt: p.updated_at || null,
                 passwordChangedAt: p.created_at,
                 passwordStatus: "Protected (Bcrypt Encrypted)",
-                activeSessionsCount: 1
+                activeSessionsCount: 0,
+                transactionCount: 0,
+                balanceAuthorized: false,
+                availableBalance: null
               });
             }
           }
@@ -99845,16 +100258,21 @@ async function handleApiRequest(req, res) {
                 displayName: u.full_name || prev.displayName || (u.email ? u.email.split("@")[0] : "User"),
                 email: u.email || prev.email,
                 phone: u.phone || prev.phone || null,
+                avatarUrl: u.avatar_url || prev.avatarUrl || null,
                 role: u.role || prev.role || "user",
                 status: u.status || prev.status || "active",
-                emailVerified: u.email_verified ?? prev.emailVerified ?? true,
+                emailVerified: Boolean(u.email_verified ?? prev.emailVerified ?? false),
                 forcePasswordReset: Boolean(u.force_password_reset),
                 failedLoginAttempts: Number(u.failed_login_attempts || 0),
                 createdAt: u.created_at || prev.createdAt,
                 lastLoginAt: u.last_login_at || null,
+                lastActiveAt: u.last_login_at || prev.lastActiveAt || null,
                 passwordChangedAt: u.password_changed_at || u.created_at || prev.createdAt,
                 passwordStatus: "Set (Encrypted Bcrypt Hash)",
-                activeSessionsCount: prev.activeSessionsCount ?? 1
+                activeSessionsCount: prev.activeSessionsCount ?? 0,
+                transactionCount: prev.transactionCount ?? 0,
+                balanceAuthorized: false,
+                availableBalance: null
               });
             }
           }
@@ -99865,7 +100283,65 @@ async function handleApiRequest(req, res) {
           console.error("Supabase REST fallback error:", apiErr);
         }
       }
-      sendJson6(res, 200, { success: true, users });
+      const nowMs = Date.now();
+      const startOfTodayMs = (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0);
+      const sevenDaysAgoMs = nowMs - 7 * 24 * 60 * 60 * 1e3;
+      const summary = {
+        totalUsers: users.length,
+        newToday: users.filter((u) => u.createdAt && new Date(u.createdAt).getTime() >= startOfTodayMs).length,
+        newWeek: users.filter((u) => u.createdAt && new Date(u.createdAt).getTime() >= sevenDaysAgoMs).length,
+        activeUsers: users.filter((u) => (u.status || "active") === "active").length,
+        inactiveUsers: users.filter((u) => u.status === "deactivated" || u.status === "inactive").length,
+        verifiedUsers: users.filter((u) => Boolean(u.emailVerified)).length,
+        unverifiedUsers: users.filter((u) => !u.emailVerified).length,
+        suspendedUsers: users.filter((u) => u.status === "suspended").length
+      };
+      let filteredUsers = users;
+      if (qFilter) {
+        filteredUsers = filteredUsers.filter(
+          (u) => `${u.fullName || ""} ${u.email || ""} ${u.id || ""} ${u.phone || ""}`.toLowerCase().includes(qFilter)
+        );
+      }
+      if (statusFilter && statusFilter !== "all") {
+        filteredUsers = filteredUsers.filter((u) => String(u.status || "active").toLowerCase() === statusFilter);
+      }
+      if (verifiedFilter === "verified") {
+        filteredUsers = filteredUsers.filter((u) => Boolean(u.emailVerified));
+      } else if (verifiedFilter === "unverified") {
+        filteredUsers = filteredUsers.filter((u) => !u.emailVerified);
+      }
+      if (roleFilter && roleFilter !== "all") {
+        filteredUsers = filteredUsers.filter((u) => String(u.role || "user").toLowerCase() === roleFilter);
+      }
+      if (regFrom) {
+        const fromMs = new Date(regFrom).getTime();
+        if (Number.isFinite(fromMs)) {
+          filteredUsers = filteredUsers.filter((u) => u.createdAt && new Date(u.createdAt).getTime() >= fromMs);
+        }
+      }
+      if (regTo) {
+        const toMs = new Date(regTo).getTime() + 24 * 60 * 60 * 1e3 - 1;
+        if (Number.isFinite(toMs)) {
+          filteredUsers = filteredUsers.filter((u) => u.createdAt && new Date(u.createdAt).getTime() <= toMs);
+        }
+      }
+      const totalFiltered = filteredUsers.length;
+      let paginatedUsers = filteredUsers;
+      let pagination;
+      if (limitParam > 0) {
+        const safeLimit = Math.min(200, Math.max(1, limitParam));
+        const totalPages = Math.max(1, Math.ceil(totalFiltered / safeLimit));
+        const safePage = Math.min(totalPages, Math.max(1, pageParam || 1));
+        const start = (safePage - 1) * safeLimit;
+        paginatedUsers = filteredUsers.slice(start, start + safeLimit);
+        pagination = { page: safePage, limit: safeLimit, total: totalFiltered, totalPages };
+      }
+      sendJson6(res, 200, {
+        success: true,
+        users: paginatedUsers,
+        summary,
+        ...pagination ? { pagination } : {}
+      });
       return true;
     }
     const statusMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_-]+)\/status$/);
@@ -104378,15 +104854,38 @@ async function handleApiRequest(req, res) {
         sendJson6(res, 401, { success: false, message: "Authentication required. Please log in." });
         return true;
       }
+      const sanitizeFeedbackForUser = (row) => {
+        const raw = typeof row?.admin_notes === "string" ? row.admin_notes : "";
+        const publicBlocks = raw.split(/\n{2,}/).map((block) => block.trim()).filter((block) => /^\[Admin Reply sent via Email by /i.test(block)).map(
+          (block) => block.replace(/^\[Admin Reply sent via Email by ([^\]]+)\]:\s*/i, "Reply from $1: ")
+        );
+        const publicReply = publicBlocks.length > 0 ? publicBlocks.join("\n\n") : null;
+        return {
+          id: row.id,
+          category: row.category,
+          subject: row.subject,
+          rating: row.rating,
+          message: row.message,
+          status: row.status,
+          admin_response: publicReply,
+          admin_notes: publicReply,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        };
+      };
       if (!isDatabaseAvailable()) {
         const [fbRes, tickets] = await Promise.all([
           listFeedbacksFallback({ userId: authUser.id }),
           listSupportTicketsFallback(authUser.id)
         ]);
+        const safeTickets = (tickets || []).map((t2) => {
+          const { internal_notes: _hidden, ...rest } = t2 || {};
+          return rest;
+        });
         sendJson6(res, 200, {
           success: true,
-          feedbacks: fbRes.feedbacks,
-          tickets
+          feedbacks: (fbRes.feedbacks || []).map(sanitizeFeedbackForUser),
+          tickets: safeTickets
         });
         return true;
       }
@@ -104408,7 +104907,7 @@ async function handleApiRequest(req, res) {
       ]);
       sendJson6(res, 200, {
         success: true,
-        feedbacks: feedbacksRes.rows,
+        feedbacks: feedbacksRes.rows.map(sanitizeFeedbackForUser),
         tickets: ticketsRes.rows
       });
       return true;
@@ -104427,12 +104926,14 @@ async function handleApiRequest(req, res) {
           sendJson6(res, 404, { success: false, message: "Ticket not found or unauthorized." });
           return true;
         }
+        const { internal_notes: _hidden, ...safeTicket } = ticket;
         const replies = await getSupportTicketRepliesFallback(ticketId, false);
-        sendJson6(res, 200, { success: true, ticket, replies });
+        sendJson6(res, 200, { success: true, ticket: safeTicket, replies });
         return true;
       }
       const ticketRes = await query(
-        `SELECT * FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
+        `SELECT id, ticket_number, user_id, user_name, user_email, ticket_type, category, subject, description, priority, status, attachment_url, created_at, updated_at, resolved_at
+         FROM public.support_tickets WHERE id = $1 AND user_id = $2`,
         [ticketId, authUser.id]
       );
       if (ticketRes.rows.length === 0) {
@@ -105633,6 +106134,18 @@ async function handleApiRequest(req, res) {
     return true;
   } catch (err) {
     console.error(`[API Error] ${method} ${pathname}:`, err);
+    const bucket = Math.floor(Date.now() / (5 * 60 * 1e3));
+    recordAdminNotification({
+      eventType: "system_error",
+      priority: "urgent",
+      category: "security",
+      deepLink: "admin:notifications",
+      dedupeKey: `sys-err:api:${method}:${pathname}:${bucket}`,
+      title: "Server API Error (500)",
+      message: `Unhandled error on ${method} ${pathname}: ${String(err?.message || "Internal error").slice(0, 120)}`,
+      metadata: { method, pathname, errorName: err?.name || "Error" }
+    }).catch(() => {
+    });
     sendJson6(res, 500, {
       success: false,
       message: "An internal server security error occurred. Please try again later."
