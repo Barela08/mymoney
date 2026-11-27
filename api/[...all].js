@@ -89701,7 +89701,7 @@ async function connectUserRest(authUser, body) {
     return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
   }
   const targetRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified`
+    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified`
   );
   if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
     return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
@@ -90628,7 +90628,7 @@ async function resolveQrRest(authUser, body) {
     };
   }
   const userRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified&limit=1`
+    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified&limit=1`
   );
   if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
     return {
@@ -97051,8 +97051,8 @@ async function handleApiRequest(req, res) {
       try {
         const rowsRes = await query(
           `SELECT uc.id, uc.user_a_id, uc.user_b_id, uc.status, uc.created_at,
-                  ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.is_verified, TRUE) AS a_verified,
-                  ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.is_verified, TRUE) AS b_verified
+                  ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.email_verified, TRUE) AS a_verified,
+                  ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.email_verified, TRUE) AS b_verified
            FROM public.user_connections uc
            LEFT JOIN public.app_users ua ON uc.user_a_id = ua.id
            LEFT JOIN public.app_users ub ON uc.user_b_id = ub.id

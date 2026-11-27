@@ -2924,8 +2924,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       try {
         const rowsRes = await query(
           `SELECT uc.id, uc.user_a_id, uc.user_b_id, uc.status, uc.created_at,
-                  ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.is_verified, TRUE) AS a_verified,
-                  ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.is_verified, TRUE) AS b_verified
+                  ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.email_verified, TRUE) AS a_verified,
+                  ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.email_verified, TRUE) AS b_verified
            FROM public.user_connections uc
            LEFT JOIN public.app_users ua ON uc.user_a_id = ua.id
            LEFT JOIN public.app_users ub ON uc.user_b_id = ub.id
@@ -3378,13 +3378,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           ) AND LENGTH(REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g')) >= 10`;
           queryParams = [authUser.id, classified.digitsOnly, classified.last10Digits];
         } else {
-          whereMatchSql = `(LOWER(u.full_name) LIKE $2 OR LOWER(COALESCE(u.username, '')) LIKE $2)`;
+          whereMatchSql = `(LOWER(u.full_name) LIKE $2 OR LOWER(COALESCE(u.email, '')) LIKE $2)`;
           queryParams = [authUser.id, `%${classified.normalized}%`];
         }
 
         const usersRes = await query(
-          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username,
-             COALESCE(u.is_verified, TRUE) AS is_verified,
+          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url,
+             COALESCE(u.email_verified, TRUE) AS is_verified,
              (
                SELECT uc.status FROM public.user_connections uc
                WHERE (uc.user_a_id = $1 AND uc.user_b_id = u.id)
