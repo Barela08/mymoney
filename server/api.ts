@@ -18,7 +18,18 @@ import {
   sendRateLimitExceeded,
   RATE_LIMITS,
   logSecurityEvent,
+  extractClientIp,
+  getOrIssueDeviceId,
+  checkActiveRestrictionsAsync,
+  recordViolationAndMaybeRestrictAsync,
 } from './security.js';
+import {
+  cachedRead,
+  tryAcquireConcurrencySlot,
+  releaseConcurrencySlot,
+  getConcurrencyMetrics,
+  appCache,
+} from './cache.js';
 import {
   createSession,
   revokeSession,
@@ -273,13 +284,9 @@ function sendJson(res: ServerResponse, statusCode: number, data: any, headers: R
   res.end(payload);
 }
 
-// Helper: get client IP address
+// Helper: get client IP address (proxy-aware IPv4/IPv6)
 function getClientIp(req: IncomingMessage): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.socket.remoteAddress || '127.0.0.1';
+  return extractClientIp(req);
 }
 
 // Helper: set session cookie
@@ -474,6 +481,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
   }
 
   const clientIp = getClientIp(req);
+  const { deviceId } = getOrIssueDeviceId(req, res);
   const userAgent = (req.headers['user-agent'] as string) || '';
   const requestOrigin = (req.headers['origin'] as string) || '';
   const hostHeader = String(req.headers['x-forwarded-host'] || req.headers['host'] || '').split(',')[0].trim();
@@ -546,16 +554,85 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       success: true,
       status: 'ok',
       databaseAvailable: isDatabaseAvailable(),
+      concurrency: getConcurrencyMetrics(),
+      cache: appCache.getStats(),
       timestamp: new Date().toISOString(),
     });
     return true;
   }
 
-  // Public non-secret site configuration (all public Control Center modules, never secrets)
+  // Concurrency backpressure & multi-dimensional cooldown gate
+  const isPriorityRoute =
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/api/udhar/transactions') ||
+    pathname.startsWith('/api/transactions');
+  const slot = tryAcquireConcurrencySlot(isPriorityRoute);
+  if (!slot.allowed) {
+    res.setHeader('Retry-After', String(slot.retryAfterSec || 3));
+    sendJson(res, 503, {
+      success: false,
+      code: 'SERVER_BUSY',
+      retryAfter: slot.retryAfterSec || 3,
+      message: 'Server is handling high traffic. Please retry in a few seconds.',
+    });
+    return true;
+  }
+
+  try {
+    // Check active progressive cooldown on IP, Device, or IP+Device (except admin security release)
+    if (!pathname.startsWith('/api/admin/security/')) {
+      const activeRestriction = await checkActiveRestrictionsAsync([
+        `ip_device:${clientIp}:${deviceId}`,
+        `device:${deviceId}`,
+        `ip:${clientIp}`,
+      ]);
+      if (activeRestriction && activeRestriction.restrictedUntil) {
+        const retryAfterSec = Math.max(1, Math.ceil((activeRestriction.restrictedUntil - Date.now()) / 1000));
+        sendRateLimitExceeded(
+          res,
+          {
+            retryAfterSec,
+            operation: activeRestriction.reason,
+            violationLevel: activeRestriction.violationLevel,
+          },
+          `Temporarily restricted (Level ${activeRestriction.violationLevel}). Please retry in ${Math.ceil(retryAfterSec / 60)} minute(s).`
+        );
+        return true;
+      }
+    }
+
+    // General Token Bucket protection for read/write API bursts
+    if (method === 'GET' && pathname !== '/api/public/site-config/stream') {
+      const [ipRead, devRead] = await Promise.all([
+        checkRateLimitAsync(`read:ip:${clientIp}`, RATE_LIMITS.GENERAL_READ_IP.max, RATE_LIMITS.GENERAL_READ_IP.windowMs, RATE_LIMITS.GENERAL_READ_IP.op),
+        checkRateLimitAsync(`read:device:${deviceId}`, RATE_LIMITS.GENERAL_READ_DEVICE.max, RATE_LIMITS.GENERAL_READ_DEVICE.windowMs, RATE_LIMITS.GENERAL_READ_DEVICE.op),
+      ]);
+      if (!ipRead.allowed || !devRead.allowed) {
+        const violated = !ipRead.allowed ? ipRead : devRead;
+        await recordViolationAndMaybeRestrictAsync({
+          dimension: 'ip_device',
+          identifier: `${clientIp}:${deviceId}`,
+          reason: 'api.read.burst',
+          threshold: 4,
+        });
+        sendRateLimitExceeded(res, violated);
+        return true;
+      }
+    }
+
+  // Public non-secret site configuration (cached with in-flight deduplication, never secrets)
   if (pathname === '/api/public/site-config' && method === 'GET') {
     try {
-      const payload = await getPublicSiteConfigPayload();
-      sendJson(res, 200, payload);
+      const { value: payload, cacheStatus } = await cachedRead(
+        'public:site_config',
+        60_000,
+        () => getPublicSiteConfigPayload(),
+        120_000
+      );
+      sendJson(res, 200, payload, {
+        'Cache-Control': 'public, max-age=60, stale-while-revalidate=120',
+        'X-Cache': cacheStatus,
+      });
     } catch {
       const [maintenance, appPopup] = await Promise.all([
         getMaintenanceSettings().catch(() => ({ isEnabled: false })),
@@ -1544,17 +1621,35 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const password = body.password || '';
       const rememberMe = Boolean(body.rememberMe);
 
-      // Rate limiting: 15 attempts / 15m per IP; 5 attempts / 15m per account
-      const rateIp = await checkRateLimitAsync(`login:ip:${clientIp}`, RATE_LIMITS.LOGIN_IP.max, RATE_LIMITS.LOGIN_IP.windowMs, RATE_LIMITS.LOGIN_IP.op);
-      if (!rateIp.allowed) {
-        sendRateLimitExceeded(res, rateIp);
+      // Rate limiting: 15 attempts / 15m per IP & Device; 5 attempts / 15m per account
+      const [rateIp, rateDev] = await Promise.all([
+        checkRateLimitAsync(`login:ip:${clientIp}`, RATE_LIMITS.LOGIN_IP.max, RATE_LIMITS.LOGIN_IP.windowMs, RATE_LIMITS.LOGIN_IP.op),
+        checkRateLimitAsync(`login:device:${deviceId}`, RATE_LIMITS.LOGIN_IP.max, RATE_LIMITS.LOGIN_IP.windowMs, RATE_LIMITS.LOGIN_IP.op),
+      ]);
+      if (!rateIp.allowed || !rateDev.allowed) {
+        const violated = !rateIp.allowed ? rateIp : rateDev;
+        const restr = await recordViolationAndMaybeRestrictAsync({
+          dimension: 'ip_device',
+          identifier: `${clientIp}:${deviceId}`,
+          reason: 'auth.login.burst',
+          threshold: 2,
+          metadata: { email: email || undefined },
+        });
+        sendRateLimitExceeded(res, { ...violated, violationLevel: restr?.violationLevel });
         return true;
       }
 
       if (email) {
         const rateAcct = await checkRateLimitAsync(`login:account:${email}`, RATE_LIMITS.LOGIN_ACCOUNT.max, RATE_LIMITS.LOGIN_ACCOUNT.windowMs, RATE_LIMITS.LOGIN_ACCOUNT.op);
         if (!rateAcct.allowed) {
-          sendRateLimitExceeded(res, rateAcct);
+          const restr = await recordViolationAndMaybeRestrictAsync({
+            dimension: 'ip_device',
+            identifier: `${clientIp}:${deviceId}`,
+            reason: 'auth.login.account_burst',
+            threshold: 2,
+            metadata: { email },
+          });
+          sendRateLimitExceeded(res, { ...rateAcct, violationLevel: restr?.violationLevel });
           return true;
         }
       }
@@ -1638,6 +1733,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           }).catch(() => {});
         }
 
+        await recordViolationAndMaybeRestrictAsync({
+          dimension: 'ip_device',
+          identifier: `${clientIp}:${deviceId}`,
+          reason: 'auth.login.bad_password',
+          threshold: 5,
+          metadata: { userId: user.id, email },
+        });
         await logSecurityEvent('LOGIN_FAILED_BAD_PASSWORD', { userId: user.id, userEmail: email, ipAddress: clientIp }).catch(() => {});
         sendJson(res, 401, { success: false, message: 'Invalid email or password.' });
         return true;
@@ -10341,5 +10443,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       message: 'An internal server security error occurred. Please try again later.',
     });
     return true;
+  }
+  } finally {
+    releaseConcurrencySlot();
   }
 }

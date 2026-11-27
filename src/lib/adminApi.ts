@@ -162,6 +162,17 @@ export const adminClient = {
     });
   },
 
+  async getSecurityOverview() {
+    return adminRequest('/api/admin/security/overview', { method: 'GET' });
+  },
+
+  async releaseSecurityRestriction(restrictionKey: string, reason?: string) {
+    return adminRequest('/api/admin/security/restrictions/release', {
+      method: 'POST',
+      body: JSON.stringify({ restrictionKey, reason }),
+    });
+  },
+
   // 4. Account Lifecycle & Deletions
   async getAccountDeletions() {
     return adminRequest('/api/admin/deletions', { method: 'GET' });
