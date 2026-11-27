@@ -52,7 +52,6 @@ const RecurringBillsSection = lazy(() => import('./components/bills/RecurringBil
 const NotificationsSection = lazy(() => import('./components/notifications/NotificationsSection').then(m => ({ default: m.NotificationsSection })));
 const AiAssistantSection = lazy(() => import('./components/ai/AiAssistantSection').then(m => ({ default: m.AiAssistantSection })));
 const ExpenseCalendarSection = lazy(() => import('./components/calendar/ExpenseCalendarSection').then(m => ({ default: m.ExpenseCalendarSection })));
-const SmartAlertsSection = lazy(() => import('./components/alerts/SmartAlertsSection').then(m => ({ default: m.SmartAlertsSection })));
 const ReceiptScannerSection = lazy(() => import('./components/receipts/ReceiptScannerSection').then(m => ({ default: m.ReceiptScannerSection })));
 const NetWorthSection = lazy(() => import('./components/net-worth/NetWorthSection').then(m => ({ default: m.NetWorthSection })));
 const SafeToSpendSection = lazy(() => import('./components/safe-to-spend/SafeToSpendSection').then(m => ({ default: m.SafeToSpendSection })));
@@ -71,7 +70,8 @@ const PATH_TO_TAB: Record<string, NavTab> = {
   '/bills': 'recurring_bills',
   '/ai-assistant': 'ai_assistant',
   '/expense-calendar': 'expense_calendar',
-  '/smart-alerts': 'smart_alerts',
+  '/smart-alerts': 'notifications',
+  '/notifications': 'notifications',
   '/receipt-scanner': 'receipt_scanner',
   '/net-worth': 'net_worth',
   '/safe-to-spend': 'safe_to_spend',
@@ -91,7 +91,8 @@ const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   recurring_bills: '/bills',
   ai_assistant: '/ai-assistant',
   expense_calendar: '/expense-calendar',
-  smart_alerts: '/smart-alerts',
+  smart_alerts: '/notifications',
+  notifications: '/notifications',
   receipt_scanner: '/receipt-scanner',
   net_worth: '/net-worth',
   safe_to_spend: '/safe-to-spend',
@@ -142,7 +143,9 @@ const MainContent: React.FC = () => {
         hash === '#manage-consent' ||
         hash === '#appearance' ||
         hash === '#notifications' ||
-        hash === '#language'
+        hash === '#language' ||
+        hash === '#app-install' ||
+        hash === '#install'
       ) {
         return 'settings';
       }
@@ -246,7 +249,9 @@ const MainContent: React.FC = () => {
         hash === '#manage-consent' ||
         hash === '#appearance' ||
         hash === '#notifications' ||
-        hash === '#language'
+        hash === '#language' ||
+        hash === '#app-install' ||
+        hash === '#install'
       ) {
         setCurrentTab('settings');
       } else if (hash === '#profile') {
@@ -561,8 +566,12 @@ return (
                     />
                   )}
 
-                  {currentTab === 'smart_alerts' && (
-                    <SmartAlertsSection onSelectTab={setCurrentTab} />
+                  {(currentTab === 'smart_alerts' || currentTab === 'notifications') && (
+                    <NotificationsSection
+                      initialFilter={currentTab === 'smart_alerts' ? 'alerts' : 'all'}
+                      onNavigate={setCurrentTab}
+                      onOpenPreferences={() => setIsNotifPrefsOpen(true)}
+                    />
                   )}
 
                   {currentTab === 'receipt_scanner' && (
@@ -630,13 +639,6 @@ return (
 
                   {currentTab === 'recurring_bills' && (
                     <RecurringBillsSection />
-                  )}
-
-                  {currentTab === 'notifications' && (
-                    <NotificationsSection
-                      onNavigate={setCurrentTab}
-                      onOpenPreferences={() => setIsNotifPrefsOpen(true)}
-                    />
                   )}
 
                   {/* Custom Dynamic Sections */}

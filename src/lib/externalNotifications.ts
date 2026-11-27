@@ -18,6 +18,11 @@ export interface ExternalNotificationPayload {
   quietHoursStart?: string;
   quietHoursEnd?: string;
   forceSound?: boolean;
+  privacyHideAmounts?: boolean;
+}
+
+function maskLockScreenSensitiveText(text: string): string {
+  return String(text || '').replace(/(?:₹|INR|Rs\.?|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, '₹••••');
 }
 
 function sanitizeUrl(raw?: string): string {
@@ -109,11 +114,14 @@ export async function showExternalNotification(payload: ExternalNotificationPayl
   const targetUrl = sanitizeUrl(payload.url);
   const tag = payload.tag || `mm-ext-${payload.notificationId || Date.now()}`;
   const isSilent = !shouldPlaySound;
+  const hideAmounts = payload.privacyHideAmounts !== false;
+  const displayTitle = hideAmounts ? maskLockScreenSensitiveText(payload.title) : payload.title;
+  const displayBody = hideAmounts ? maskLockScreenSensitiveText(payload.body) : payload.body;
 
   const options: NotificationOptions & { vibrate?: number[]; renotify?: boolean } = {
-    body: payload.body,
+    body: displayBody,
     icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    badge: '/notification-badge-96.png',
     tag,
     renotify: true,
     silent: isSilent,
@@ -131,7 +139,7 @@ export async function showExternalNotification(payload: ExternalNotificationPayl
     try {
       const reg = await resolveSwRegistration();
       if (reg && typeof reg.showNotification === 'function') {
-        await reg.showNotification(payload.title, options);
+        await reg.showNotification(displayTitle, options);
         osNotificationShown = true;
         return { soundPlayed, osNotificationShown };
       }
@@ -140,10 +148,10 @@ export async function showExternalNotification(payload: ExternalNotificationPayl
         navigator.serviceWorker.controller.postMessage({
           type: 'SHOW_EXTERNAL_NOTIFICATION',
           payload: {
-            title: payload.title,
-            body: payload.body,
+            title: displayTitle,
+            body: displayBody,
             icon: '/icon-192.png',
-            badge: '/icon-192.png',
+            badge: '/notification-badge-96.png',
             tag,
             silent: isSilent,
             requireInteraction: options.requireInteraction,
@@ -159,7 +167,7 @@ export async function showExternalNotification(payload: ExternalNotificationPayl
   }
 
   try {
-    const nativeNotif = new Notification(payload.title, options);
+    const nativeNotif = new Notification(displayTitle, options);
     nativeNotif.onclick = () => {
       try {
         window.focus();

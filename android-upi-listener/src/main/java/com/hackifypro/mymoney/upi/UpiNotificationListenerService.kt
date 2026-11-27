@@ -159,10 +159,19 @@ class UpiNotificationListenerService : NotificationListenerService() {
         val rupeesDisplay = "₹${"%.2f".format(tx.amountPaise / 100.0).removeSuffix(".00")}"
         val merchantPart = tx.merchantName?.let { " to $it" }.orEmpty()
 
+        val publicFallback = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("My Money Manager")
+            .setContentText("New UPI transaction detected. Unlock to categorize.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Automatic Expense Detected · $rupeesDisplay")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("My Money Manager · Expense Detected ($rupeesDisplay)")
             .setContentText("Paid$merchantPart via ${tx.sourceApp}. Tap to pick a category.")
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicFallback)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)

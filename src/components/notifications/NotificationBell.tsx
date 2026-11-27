@@ -36,6 +36,7 @@ export const NotificationBell: React.FC<Props> = ({
   const {
     notifications,
     unreadCount,
+    totalUnreadCount,
     isPushSupported,
     pushPermission,
     enablePush,
@@ -140,13 +141,13 @@ export const NotificationBell: React.FC<Props> = ({
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
         className="relative h-9 w-9 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-800 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-        title="Notifications"
-        aria-label="Open notifications"
+        title="Notifications & Alerts"
+        aria-label="Open notifications and alerts"
       >
         <Bell className="w-4 h-4 stroke-[1.75]" />
-        {unreadCount > 0 && (
+        {totalUnreadCount > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white font-medium text-xs tabular-nums flex items-center justify-center ring-2 ring-white dark:ring-slate-900 leading-none">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
           </span>
         )}
       </button>
@@ -166,11 +167,11 @@ export const NotificationBell: React.FC<Props> = ({
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Notifications
+                Notifications &amp; Alerts
               </span>
-              {unreadCount > 0 && (
+              {totalUnreadCount > 0 && (
                 <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-md text-xs font-bold">
-                  {unreadCount} new
+                  {totalUnreadCount} new
                 </span>
               )}
             </div>
@@ -298,7 +299,7 @@ export const NotificationBell: React.FC<Props> = ({
               }}
               className="text-emerald-600 dark:text-emerald-400 hover:underline font-bold text-xs flex items-center gap-1 cursor-pointer"
             >
-              <span>View All Notifications</span>
+              <span>View Notifications &amp; Alerts</span>
               <ExternalLink className="w-3 h-3" />
             </button>
             <button

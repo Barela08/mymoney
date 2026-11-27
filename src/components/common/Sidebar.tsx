@@ -8,10 +8,7 @@ import {
   Users,
   BarChart3,
   ListOrdered,
-  Settings,
   QrCode,
-  Sun,
-  Moon,
   PlusCircle,
   LogOut,
   Shield,
@@ -24,11 +21,9 @@ import {
   Plane,
   Car,
   Sparkles,
-  AlertTriangle,
   Utensils,
   Coffee,
   HelpCircle,
-  MessageSquare,
   Calculator,
   ShieldCheck,
   Scale,
@@ -43,8 +38,8 @@ import {
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { formatINR } from '../../lib/dateUtils';
-import { SUPPORT_CONTACT } from '../../config/contact';
 import { ThemeToggle } from './ThemeToggle';
 
 export type NavTab =
@@ -106,8 +101,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenHelpModal,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings, appBranding } = useExpense();
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
+  const { totalUnreadCount } = useNotifications();
 
   // Find enabled custom sections that aren't the standard 5 (home, room, food, other, people)
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -137,7 +133,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'Money Management',
+      title: 'Transactions & Udhar',
       items: [
         {
           id: 'add_transaction_cta' as NavTab,
@@ -155,11 +151,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'Financial Planning',
+      title: 'Reports & Planning',
       items: [
         { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
         { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
         { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
+        { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
       ],
     },
     {
@@ -170,31 +167,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
         { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
-        { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
         { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
       ],
     },
     {
-      title: 'Smart Features',
+      title: 'AI & Smart Features',
       items: [
         { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-        { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
         { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
       ],
     },
     {
-      title: 'Account & Support',
+      title: 'Notifications & Alerts',
+      items: [
+        {
+          id: 'notifications' as NavTab,
+          label: 'Notifications & Alerts',
+          icon: Bell,
+          badgeNum: totalUnreadCount > 0 ? totalUnreadCount : undefined,
+        },
+      ],
+    },
+    {
+      title: 'Account & Privacy',
       items: [
         { id: 'profile' as NavTab, label: 'My Account', icon: User },
-        { id: 'settings' as NavTab, label: 'Settings', icon: Settings },
-        { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
+        { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale },
+      ],
+    },
+    {
+      title: 'Help & Support',
+      items: [
         {
           id: 'help_support' as NavTab,
           label: 'Help & Feedback',
           icon: HelpCircle,
           onClick: onOpenHelpModal ? () => onOpenHelpModal('help') : undefined,
         },
-        { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale },
       ],
     },
     ...(isAdmin ? [{
@@ -260,7 +269,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {group.items.map((item) => {
-              const isActive = currentTab === item.id;
+              const isActive =
+                currentTab === item.id ||
+                (item.id === 'notifications' && currentTab === 'smart_alerts');
               const Icon = item.icon;
               const isAdminItem = item.id === 'admin';
 

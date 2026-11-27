@@ -75,10 +75,10 @@
       ]
     },
     {
-      "name": "Smart Alerts",
+      "name": "Notifications & Alerts",
       "short_name": "Alerts",
-      "description": "Review budget and bill alerts",
-      "url": "/smart-alerts",
+      "description": "Review notifications, budget and bill alerts",
+      "url": "/notifications",
       "icons": [
         {
           "src": "/icon-192.png",

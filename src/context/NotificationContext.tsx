@@ -12,6 +12,9 @@ import { useAuth } from './AuthContext';
 interface NotificationContextType {
   notifications: UserNotification[];
   unreadCount: number;
+  smartAlertsUnreadCount: number;
+  totalUnreadCount: number;
+  setSmartAlertsUnreadCount: (count: number) => void;
   isLoading: boolean;
   preferences: NotificationPreferences | null;
   isPushSupported: boolean;
@@ -35,6 +38,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [smartAlertsUnreadCount, setSmartAlertsUnreadCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [isPushSupported, setIsPushSupported] = useState<boolean>(false);
@@ -166,6 +170,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                   quietHoursEnabled: prefs?.quiet_hours_enabled,
                   quietHoursStart: prefs?.quiet_hours_start,
                   quietHoursEnd: prefs?.quiet_hours_end,
+                  privacyHideAmounts: prefs?.privacy_hide_amounts ?? true,
                 });
               }
             }
@@ -416,11 +421,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return ok || extRes.osNotificationShown || extRes.soundPlayed;
   };
 
+  const totalUnreadCount = unreadCount + smartAlertsUnreadCount;
+
   return (
     <NotificationContext.Provider
       value={{
         notifications,
         unreadCount,
+        smartAlertsUnreadCount,
+        totalUnreadCount,
+        setSmartAlertsUnreadCount,
         isLoading,
         preferences,
         isPushSupported,

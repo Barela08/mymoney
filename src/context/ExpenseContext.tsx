@@ -135,9 +135,9 @@ const DEFAULT_MAINTENANCE: MaintenanceSettings = {
 const DEFAULT_APP_POPUP: AppDownloadPopupSettings = {
   enabled: true,
   downloadUrl: '/#install',
-  title: 'Get the My Money Manager App',
-  description: 'Install our fast, offline-ready app for instant expense tracking & UPI alerts.',
-  buttonLabel: 'Download App',
+  title: 'Install My Money Manager',
+  description: 'Install the app for a faster experience and easy access from your home screen.',
+  buttonLabel: 'Install Now',
 };
 
 const DEFAULT_BRANDING: AppBrandingSettings = {

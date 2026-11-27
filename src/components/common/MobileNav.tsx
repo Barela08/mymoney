@@ -9,12 +9,9 @@ import {
   Users,
   BarChart3,
   ListOrdered,
-  Settings,
   User,
   X,
   Plus,
-  Sun,
-  Moon,
   LogOut,
   Shield,
   Trash2,
@@ -41,11 +38,12 @@ import {
   Landmark,
   Receipt,
   QrCode,
+  Scale,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { useExpense } from '../../context/ExpenseContext';
-import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
 import { ThemeToggle } from './ThemeToggle';
@@ -84,8 +82,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onOpenHelpModal,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, appBranding } = useExpense();
-  const { theme, toggleTheme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
+  const { totalUnreadCount } = useNotifications();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
 
@@ -115,34 +113,77 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     count?: number;
   }
 
-  const navItems: MobileNavItem[] = [
-    { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, count: summary.totalTransactionsCount },
-    { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
-    { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
-    { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
-    { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
-    { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
-    { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
-    { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
-    { id: 'net_worth' as NavTab, label: 'Net Worth Tracker', icon: Landmark },
-    { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
-    { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
-    { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-    { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
-    { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
-    ...customSections.map((sec) => ({
-      id: sec.id as NavTab,
-      label: sec.name,
-      icon: iconMap[sec.icon] || FolderKanban,
-    })),
-    { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
-    { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
-    { id: 'profile' as NavTab, label: 'My Account', icon: User },
-    { id: 'settings' as NavTab, label: 'Settings', icon: Settings },
-    { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
-    { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: ShieldCheck },
-    ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
+  interface MobileNavGroup {
+    title: string;
+    items: MobileNavItem[];
+  }
+
+  const navGroups: MobileNavGroup[] = [
+    {
+      title: 'Overview & Ledger',
+      items: [
+        { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, count: summary.totalTransactionsCount },
+        { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
+        ...customSections.map((sec) => ({
+          id: sec.id as NavTab,
+          label: sec.name,
+          icon: iconMap[sec.icon] || FolderKanban,
+        })),
+      ],
+    },
+    {
+      title: 'Financial Tools',
+      items: [
+        { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
+        { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
+        { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
+        { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
+        { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
+        { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
+      ],
+    },
+    {
+      title: 'Reports & Planning',
+      items: [
+        { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
+        { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
+        { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
+        { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
+      ],
+    },
+    {
+      title: 'AI & Smart Features',
+      items: [
+        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
+        { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
+      ],
+    },
+    {
+      title: 'Notifications & Alerts',
+      items: [
+        {
+          id: 'notifications' as NavTab,
+          label: 'Notifications & Alerts',
+          icon: Bell,
+          count: totalUnreadCount > 0 ? totalUnreadCount : undefined,
+        },
+      ],
+    },
+    {
+      title: 'Account & Privacy',
+      items: [
+        { id: 'profile' as NavTab, label: 'My Account', icon: User },
+        { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale },
+      ],
+    },
+    {
+      title: 'Help & Support',
+      items: [
+        { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
+        ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
+      ],
+    },
   ];
 
   const handleSelect = (tab: NavTab) => {
@@ -269,32 +310,46 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         </div>
 
         {/* Navigation list */}
-        <div className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = currentTab === item.id;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleSelect(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
-                </div>
-                {item.count !== undefined && (
-                  <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <div className="flex-1 px-3 py-2 space-y-4 overflow-y-auto">
+          {navGroups.map((group) => (
+            <div key={group.title} className="space-y-1">
+              <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                {group.title}
+              </div>
+              {group.items.map((item) => {
+                const isActive =
+                  currentTab === item.id ||
+                  (item.id === 'notifications' && currentTab === 'smart_alerts');
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
+                      isActive
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className="ml-2 text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0">
+                        {item.badge}
+                      </span>
+                    )}
+                    {item.count !== undefined && (
+                      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
 
         {/* Drawer Footer */}
@@ -589,15 +644,15 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             onClick={() => setIsMoreSheetOpen(false)}
             className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden animate-fade-in"
           />
-          <div className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-2xl shadow-xl p-5 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] max-h-[85vh] overflow-y-auto lg:hidden animate-slide-up space-y-4">
+          <div className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-2xl shadow-xl p-5 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] max-h-[82vh] overflow-y-auto lg:hidden animate-slide-up space-y-4">
             <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
 
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className="font-semibold text-base text-slate-900 dark:text-slate-100">
-                  More features
+                  More Features
                 </h3>
-                <p className="text-xs text-slate-500">Quick access to all tools & settings</p>
+                <p className="text-xs text-slate-500">Organized financial tools, alerts &amp; account</p>
               </div>
               <button
                 onClick={() => setIsMoreSheetOpen(false)}
@@ -608,154 +663,169 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               </button>
             </div>
 
-            {/* Grid of features */}
-            <div className="grid grid-cols-4 gap-2.5 pt-1">
-              {/* AI Assistant */}
+            {/* Unified Notifications & Alerts Highlight Card */}
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Notifications &amp; Alerts
+              </p>
               <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('ai_assistant');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 stroke-[1.75]" />
-                <span className="text-xs font-medium">AI Chat</span>
-              </button>
-
-              {/* Receipt OCR */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('receipt_scanner');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">OCR</span>
-              </button>
-
-              {/* Calendar */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('expense_calendar');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Calendar</span>
-              </button>
-
-              {/* Safe-to-Spend */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('safe_to_spend');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Safe</span>
-              </button>
-
-              {/* Net Worth */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('net_worth');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Net Worth</span>
-              </button>
-
-              {/* Smart Alerts */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('smart_alerts');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Smart Insights</span>
-              </button>
-
-              {/* Budget */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('budget');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <PieChart className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Budget</span>
-              </button>
-
-              {/* Savings Goals */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('savings_goals');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Target className="w-4 h-4 text-teal-600 dark:text-teal-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Goals</span>
-              </button>
-
-              {/* Recurring Bills */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('recurring_bills');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Bills</span>
-              </button>
-
-              {/* Calculator */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('calculator');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <Calculator className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Calc</span>
-              </button>
-
-              {/* Notifications */}
-              <button
+                type="button"
                 onClick={() => {
                   setIsMoreSheetOpen(false);
                   onSelectTab('notifications');
                 }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
+                className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                  currentTab === 'notifications' || currentTab === 'smart_alerts'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200/70 dark:border-slate-700/70 text-slate-800 dark:text-slate-100'
+                }`}
               >
-                <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">Alerts</span>
-              </button>
-
-              {/* Unified My Account (Profile + Settings + Security + Devices) */}
-              <button
-                onClick={() => {
-                  setIsMoreSheetOpen(false);
-                  onSelectTab('profile');
-                }}
-                className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.99] transition-colors text-center gap-1.5 cursor-pointer"
-              >
-                <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                <span className="text-xs font-medium">My Account</span>
+                <div className="flex items-center gap-3 min-w-0 text-left">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Bell className="w-4 h-4 stroke-[2]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold truncate">Notifications &amp; Alerts</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      Activity, reminders, security &amp; smart budget alerts
+                    </p>
+                  </div>
+                </div>
+                {totalUnreadCount > 0 && (
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold tabular-nums shrink-0">
+                    {totalUnreadCount}
+                  </span>
+                )}
               </button>
             </div>
 
-            {/* Unified Add Transaction & Tools Shortcut in More Sheet */}
+            {/* Financial Tools */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Financial Tools
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('expense_calendar');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Calendar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('safe_to_spend');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Safe Spend</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('net_worth');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Net Worth</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('calculator');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <Calculator className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Calculator</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Reports & Planning */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Reports &amp; Planning
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('budget');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <PieChart className="w-4 h-4 text-purple-600 dark:text-purple-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Monthly Budget</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('savings_goals');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <Target className="w-4 h-4 text-teal-600 dark:text-teal-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Savings Goals</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('recurring_bills');
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-center gap-1.5 cursor-pointer"
+                >
+                  <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[1.75]" />
+                  <span className="text-[11px] font-medium">Recurring Bills</span>
+                </button>
+              </div>
+            </div>
+
+            {/* AI & Smart Features */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                AI &amp; Smart Features
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('ai_assistant');
+                  }}
+                  className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 active:scale-[0.98] transition-colors text-xs font-semibold cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 stroke-[1.75]" />
+                  <span>AI Money Assistant</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('receipt_scanner');
+                  }}
+                  className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-xs font-semibold cursor-pointer"
+                >
+                  <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                  <span>Receipt Scanner (OCR)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Account & Privacy + Help & Support */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
               <button
                 type="button"
@@ -769,8 +839,34 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 <span>+ Add Transaction</span>
               </button>
 
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 pt-1">
+                Account, Privacy &amp; Support
+              </p>
               <div className="grid grid-cols-2 gap-1.5">
                 <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('profile');
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>My Account</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMoreSheetOpen(false);
+                    onSelectTab('legal');
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  <Scale className="w-4 h-4 text-blue-500" />
+                  <span>Privacy &amp; Legal</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setIsMoreSheetOpen(false);
                     onSelectTab('recycle_bin');
@@ -781,34 +877,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   <span>Recycle Bin</span>
                 </button>
                 <button
-                  onClick={() => {
-                    setIsMoreSheetOpen(false);
-                    onSelectTab('settings');
-                  }}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 text-slate-500" />
-                  <span>Settings</span>
-                </button>
-                <button
+                  type="button"
                   onClick={() => {
                     setIsMoreSheetOpen(false);
                     if (onOpenHelpModal) onOpenHelpModal('help');
+                    else onSelectTab('help_support');
                   }}
                   className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
                   <HelpCircle className="w-4 h-4 text-emerald-500" />
                   <span>Help &amp; Support</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setIsMoreSheetOpen(false);
-                    onSelectTab('legal');
-                  }}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
-                >
-                  <ShieldCheck className="w-4 h-4 text-blue-500" />
-                  <span>Privacy Policy</span>
                 </button>
               </div>
             </div>

@@ -51,12 +51,27 @@ interface PwaInstallContextType {
   activeModalCount: number;
   setModalsSuppressed: (suppressed: boolean) => void;
   isBannerVisible: boolean;
+  /** User preference to mute repeating 1-minute automatic install reminders */
+  autoPromptDisabled: boolean;
+  setAutoPromptDisabled: (disabled: boolean) => void;
+  /** Incrementing signal used by Settings -> Reopen Install Popup */
+  reopenInstallPopupSignal: number;
+  reopenInstallPopup: () => void;
 }
 
 const PwaInstallContext = createContext<PwaInstallContextType | undefined>(undefined);
 
 const DISMISSED_STORAGE_KEY = 'my_money_pwa_install_dismissed_at';
 const SESSION_DISMISSED_KEY = 'my_money_pwa_install_session_dismissed';
+const AUTO_PROMPT_DISABLED_KEY = 'mm_pwa_auto_prompt_disabled';
+
+function readAutoPromptDisabled(): boolean {
+  try {
+    return localStorage.getItem(AUTO_PROMPT_DISABLED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 function readPersistedDismissedAt(): number | null {
   try {
@@ -128,6 +143,10 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
   const [activeModalCount, setActiveModalCount] = useState<number>(0);
+  const [autoPromptDisabled, setAutoPromptDisabledState] = useState<boolean>(() =>
+    readAutoPromptDisabled()
+  );
+  const [reopenInstallPopupSignal, setReopenInstallPopupSignal] = useState<number>(0);
 
   const [sessionDismissed, setSessionDismissed] = useState<boolean>(() => readSessionDismissed());
   const [persistedDismissedAt, setPersistedDismissedAt] = useState<number | null>(() =>
@@ -276,6 +295,30 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setActiveModalCount((prev) => (suppressed ? prev + 1 : Math.max(0, prev - 1)));
   }, []);
 
+  const setAutoPromptDisabled = useCallback((disabled: boolean) => {
+    setAutoPromptDisabledState(disabled);
+    try {
+      localStorage.setItem(AUTO_PROMPT_DISABLED_KEY, String(disabled));
+    } catch {}
+  }, []);
+
+  const reopenInstallPopup = useCallback(() => {
+    if (isInstalled) return;
+    setAutoPromptDisabledState(false);
+    setSessionDismissed(false);
+    setPersistedDismissedAt(null);
+    try {
+      localStorage.setItem(AUTO_PROMPT_DISABLED_KEY, 'false');
+      sessionStorage.removeItem(SESSION_DISMISSED_KEY);
+      localStorage.removeItem(DISMISSED_STORAGE_KEY);
+      sessionStorage.removeItem('my_money_popup_auth_dismissed');
+      sessionStorage.removeItem('my_money_popup_auth_dismissed_at');
+      sessionStorage.removeItem('my_money_popup_app_dismissed');
+      sessionStorage.removeItem('my_money_popup_app_dismissed_at');
+    } catch {}
+    setReopenInstallPopupSignal((n) => n + 1);
+  }, [isInstalled]);
+
   const triggerInstallPrompt = useCallback(async (): Promise<InstallPromptResult> => {
     if (isInstalled) {
       return { status: 'already_installed' };
@@ -338,6 +381,10 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         activeModalCount,
         setModalsSuppressed,
         isBannerVisible,
+        autoPromptDisabled,
+        setAutoPromptDisabled,
+        reopenInstallPopupSignal,
+        reopenInstallPopup,
       }}
     >
       {children}

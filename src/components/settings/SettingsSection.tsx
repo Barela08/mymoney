@@ -19,12 +19,18 @@ import {
   Shield,
   Layers,
   Sparkles,
+  Smartphone,
+  EyeOff,
+  Share,
+  MoreVertical,
+  RotateCcw,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { AccountDeletionSection } from '../profile/AccountDeletionSection';
 import { LegalCenterSection } from '../legal/LegalCenterSection';
@@ -34,6 +40,7 @@ import { UpiAutoDetectionSettings } from '../upi/UpiAutoDetectionSettings';
 
 export type SettingsTabId =
   | 'appearance'
+  | 'install'
   | 'language'
   | 'notifications'
   | 'privacy'
@@ -57,17 +64,32 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   const { theme, setTheme } = useTheme();
   const { user, logoutAllDevices } = useAuth();
   const {
+    preferences,
+    updatePreferences,
     isPushSupported,
     isPushSubscribed,
     pushPermission,
     enablePush,
     sendTestPush,
   } = useNotifications();
+  const {
+    isInstalled,
+    isInstallable,
+    compatibility,
+    triggerInstallPrompt,
+    openInstallModal,
+    reopenInstallPopup,
+    autoPromptDisabled,
+    setAutoPromptDisabled,
+  } = usePwaInstall();
   const toast = useToast();
+
+  const [isInstallingApp, setIsInstallingApp] = useState(false);
 
   const [activeTab, setActiveTab] = useState<SettingsTabId>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash;
+      if (hash === '#app-install' || hash === '#install') return 'install';
       if (hash === '#auto-detection') return 'privacy';
       if (hash === '#privacy' || hash === '#manage-consent') return 'privacy';
       if (hash === '#delete-account') return 'deletion';
@@ -83,7 +105,9 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
     if (typeof window === 'undefined') return;
     const syncHash = () => {
       const hash = window.location.hash;
-      if (hash === '#auto-detection' || hash === '#privacy' || hash === '#manage-consent') {
+      if (hash === '#app-install' || hash === '#install') {
+        setActiveTab('install');
+      } else if (hash === '#auto-detection' || hash === '#privacy' || hash === '#manage-consent') {
         setActiveTab('privacy');
       } else if (hash === '#delete-account') {
         setActiveTab('deletion');
@@ -293,6 +317,20 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveTab('install')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'install'
+              ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+          data-testid="settings-tab-app-install"
+        >
+          <Smartphone className="w-3.5 h-3.5" />
+          <span>App Installation</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('language')}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'language'
@@ -443,6 +481,226 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
                   Deep slate and emerald palette for reduced eye strain and extended battery life.
                 </p>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 1B: Permanent App Installation Section */}
+      {activeTab === 'install' && (
+        <div className="space-y-6" data-testid="settings-app-install-section">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
+            <div className="flex items-start justify-between flex-wrap gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3.5">
+                <img
+                  src="/icon-192.png"
+                  alt="My Money Manager App Icon"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
+                  className="w-12 h-12 rounded-2xl object-cover border border-emerald-500/30 bg-black shrink-0"
+                />
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100">
+                    App Installation (PWA)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Install My Money Manager for standalone full-screen speed, offline shell &amp; home screen access
+                  </p>
+                </div>
+              </div>
+
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                  isInstalled
+                    ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                {isInstalled ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Installed (Standalone App)</span>
+                  </>
+                ) : (
+                  <>
+                    <Laptop className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Not Installed · Browser Mode</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* Browser Compatibility & Status Card */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 space-y-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Detected Environment
+                </p>
+                <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {compatibility.deviceLabel}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  OS: {compatibility.osLabel} · Browser: {compatibility.browserLabel}
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 space-y-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Installation Method
+                </p>
+                <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {isInstalled
+                    ? 'App Active on Device'
+                    : isInstallable
+                    ? '1-Click Native Browser Install Ready'
+                    : compatibility.supportsManualInstall
+                    ? 'Manual Home Screen / Dock Install Supported'
+                    : 'Browser Menu Install'}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {isInstalled
+                    ? 'Duplicate installation prompts are automatically disabled.'
+                    : isInstallable
+                    ? 'Click Install Now below to trigger your browser install dialog.'
+                    : 'Follow the step-by-step instructions below or reopen the install prompt.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Primary Actions */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="button"
+                disabled={isInstalled || isInstallingApp}
+                onClick={async () => {
+                  if (isInstalled || isInstallingApp) return;
+                  setIsInstallingApp(true);
+                  try {
+                    const res = await triggerInstallPrompt();
+                    if (res.status === 'accepted') {
+                      toast.success('Installing App', 'My Money Manager is being added to your device.');
+                    } else if (res.status === 'dismissed') {
+                      toast.info('Install Cancelled', 'You can install anytime here in Settings.');
+                    } else if (res.status === 'manual_guide' || res.status === 'unavailable') {
+                      openInstallModal();
+                    }
+                  } finally {
+                    setIsInstallingApp(false);
+                  }
+                }}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  isInstalled
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer disabled:opacity-60'
+                }`}
+              >
+                <Download className="w-4 h-4" />
+                <span>
+                  {isInstalled
+                    ? 'Already Installed'
+                    : isInstallingApp
+                    ? 'Opening Prompt...'
+                    : 'Install Now'}
+                </span>
+              </button>
+
+              {!isInstalled && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    reopenInstallPopup();
+                    toast.success(
+                      'Install Popup Reopened',
+                      'The bottom-right install prompt is now visible again.'
+                    );
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reopen Install Popup</span>
+                </button>
+              )}
+            </div>
+
+            {/* Auto-Reminder Preference */}
+            {!isInstalled && (
+              <div className="flex items-center justify-between p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 gap-4">
+                <div>
+                  <p className="font-bold text-xs text-slate-900 dark:text-slate-100">
+                    Automatic 1-Minute Install Reminders
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Re-show the Install My Money Manager prompt every 1 minute after Cancel until installed
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextDisabled = !autoPromptDisabled;
+                    setAutoPromptDisabled(nextDisabled);
+                    toast.success(
+                      'Reminder Setting Updated',
+                      nextDisabled
+                        ? 'Automatic install popup reminders paused. You can install anytime from here.'
+                        : 'Automatic 1-minute install reminders enabled.'
+                    );
+                  }}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
+                    !autoPromptDisabled
+                      ? 'bg-emerald-600 justify-end'
+                      : 'bg-slate-300 dark:bg-slate-700 justify-start'
+                  }`}
+                  aria-label="Toggle automatic install reminders"
+                >
+                  <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+                </button>
+              </div>
+            )}
+
+            {/* Manual Install Instructions (Android Chrome, iPhone Safari, Desktop) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                  <Smartphone className="w-4 h-4 text-emerald-600" />
+                  <span>Android (Chrome)</span>
+                </div>
+                <ol className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 list-decimal list-inside leading-relaxed">
+                  <li>
+                    Tap browser menu (<MoreVertical className="w-3 h-3 inline text-slate-500" />) at top-right.
+                  </li>
+                  <li>
+                    Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.
+                  </li>
+                  <li>Confirm <strong>Install</strong> to add the app icon.</li>
+                </ol>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                  <Smartphone className="w-4 h-4 text-blue-600" />
+                  <span>iPhone / iPad (Safari)</span>
+                </div>
+                <ol className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 list-decimal list-inside leading-relaxed">
+                  <li>
+                    Tap <strong>Share</strong> (<Share className="w-3 h-3 inline text-blue-500" />) in Safari toolbar.
+                  </li>
+                  <li>
+                    Select <strong>Add to Home Screen</strong>.
+                  </li>
+                  <li>Tap <strong>Add</strong> and launch from Home Screen.</li>
+                </ol>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                  <Laptop className="w-4 h-4 text-indigo-600" />
+                  <span>Desktop (Chrome / Edge)</span>
+                </div>
+                <ol className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 list-decimal list-inside leading-relaxed">
+                  <li>Click the <strong>Install</strong> icon inside the right side of the address bar.</li>
+                  <li>Or open browser menu &rarr; <strong>Save and share &rarr; Install page as app</strong>.</li>
+                  <li>Launch directly from Desktop or Dock.</li>
+                </ol>
+              </div>
             </div>
           </div>
         </div>
@@ -603,6 +861,46 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
                     dailyRecapEnabled ? 'bg-emerald-600 justify-end' : 'bg-slate-300 dark:bg-slate-700 justify-start'
                   }`}
                   aria-label="Toggle daily recap"
+                >
+                  <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3.5 rounded-2xl border border-emerald-200/70 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 transition-colors">
+                <div className="flex items-start gap-2.5 pr-3">
+                  <EyeOff className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-bold text-xs text-slate-900 dark:text-slate-100">
+                      Lock-Screen Financial Privacy Mode
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Hide ₹ amounts and Udhar counterparty details on lock-screen &amp; OS push notification previews
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const current = preferences?.privacy_hide_amounts ?? true;
+                    const next = !current;
+                    try {
+                      await updatePreferences({ privacy_hide_amounts: next });
+                      toast.success(
+                        'Privacy Updated',
+                        next
+                          ? 'Financial amounts & Udhar details hidden on lock-screen notifications.'
+                          : 'Full amounts will be shown in push notifications.'
+                      );
+                    } catch {
+                      toast.error('Save Failed', 'Could not update lock-screen privacy setting.');
+                    }
+                  }}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
+                    (preferences?.privacy_hide_amounts ?? true)
+                      ? 'bg-emerald-600 justify-end'
+                      : 'bg-slate-300 dark:bg-slate-700 justify-start'
+                  }`}
+                  aria-label="Toggle lock-screen financial privacy"
                 >
                   <div className="w-4 h-4 rounded-full bg-white shadow-md" />
                 </button>

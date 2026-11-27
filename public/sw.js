@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-money-pwa-v2.0.1';
+const CACHE_NAME = 'my-money-pwa-v2.1.0';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -9,6 +9,8 @@ const PRECACHE_ASSETS = [
   '/icon-192.png',
   '/icon-512.png',
   '/icon-512-maskable.png',
+  '/apple-touch-icon.png',
+  '/notification-badge-96.png',
 ];
 
 // Install: Cache critical app shell and activate cleanly
@@ -190,7 +192,7 @@ self.addEventListener('push', (event) => {
     title: 'My Money Manager',
     body: 'You have a new financial update.',
     icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    badge: '/notification-badge-96.png',
     tag: uniquePushTag,
     category: 'general',
     timestamp: Date.now(),
@@ -203,12 +205,13 @@ self.addEventListener('push', (event) => {
     try {
       const parsed = event.data.json();
       if (parsed && typeof parsed === 'object') {
+        const rawBadge = typeof parsed.badge === 'string' && parsed.badge.startsWith('/') ? parsed.badge : '';
         payload = {
           ...defaults,
           title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim().slice(0, 140) : defaults.title,
           body: typeof parsed.body === 'string' && parsed.body.trim() ? parsed.body.trim().slice(0, 320) : defaults.body,
           icon: typeof parsed.icon === 'string' && parsed.icon.startsWith('/') ? parsed.icon : defaults.icon,
-          badge: typeof parsed.badge === 'string' && parsed.badge.startsWith('/') ? parsed.badge : defaults.badge,
+          badge: rawBadge && rawBadge !== '/icon-192.png' ? rawBadge : defaults.badge,
           tag: typeof parsed.tag === 'string' && parsed.tag.trim() ? parsed.tag.trim().slice(0, 120) : uniquePushTag,
           category: typeof parsed.category === 'string' ? parsed.category : defaults.category,
           timestamp: typeof parsed.timestamp === 'number' && Number.isFinite(parsed.timestamp) ? parsed.timestamp : Date.now(),
@@ -289,7 +292,7 @@ self.addEventListener('message', (event) => {
     self.registration.showNotification(title, {
       body,
       icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      badge: '/notification-badge-96.png',
       tag: typeof p.tag === 'string' && p.tag.trim() ? p.tag.trim().slice(0, 120) : `mm-ext-${Date.now()}`,
       renotify: true,
       silent: isSilent,

@@ -83735,8 +83735,12 @@ function isCurrentTimeInQuietHours(startTime, endTime, nowDate = /* @__PURE__ */
     return false;
   }
 }
-function maskFinancialData(text) {
-  return text.replace(/(?:₹|INR|Rs\.?|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, "\u20B9\u2022\u2022\u2022\u2022");
+function maskFinancialData(text, maskUdharDetails = false) {
+  let out = String(text || "").replace(/(?:₹|INR|Rs\.?|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, "\u20B9\u2022\u2022\u2022\u2022");
+  if (maskUdharDetails) {
+    out = out.replace(/^([A-Z][a-zA-Z0-9 ._-]{1,40}?)\s+(requested|recorded|settled|sent|paid|accepted|added)\b/g, "A contact $2").replace(/\b(to|from|with|for)\s+([A-Z][a-zA-Z0-9 ._-]{1,40}?)(?=[.,!?]|$|\s+via|\s+is|\s+recorded|\s+completed|\s+logged)/g, "$1 a contact").replace(/\bby\s+([A-Z][a-zA-Z0-9 ._-]{1,40}?)(?=[.,!?]|$)/g, "by a contact");
+  }
+  return out;
 }
 function buildSafeDeepLinkUrl(deepLink) {
   if (!deepLink || !deepLink.trim()) return "/";
@@ -83745,6 +83749,7 @@ function buildSafeDeepLinkUrl(deepLink) {
     "/ai-assistant",
     "/expense-calendar",
     "/smart-alerts",
+    "/notifications",
     "/receipt-scanner",
     "/net-worth",
     "/safe-to-spend"
@@ -84438,8 +84443,9 @@ async function createNotification(params) {
         error_message: "Suppressed during quiet hours"
       });
     } else if (subs.length > 0 && (skipPreferenceCheck || prefs.push_enabled && categoryAllowed)) {
-      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title) : title;
-      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message) : message;
+      const isUdharCategory = category === "udhar" || category === "repay" || category === "settlement";
+      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title, isUdharCategory) : title;
+      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message, isUdharCategory) : message;
       const targetUrl = buildSafeDeepLinkUrl(deepLink);
       const timestamp = Date.now();
       const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}-${notificationId || timestamp}`);
@@ -84448,7 +84454,7 @@ async function createNotification(params) {
         title: pushTitle,
         body: pushBody,
         icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        badge: "/notification-badge-96.png",
         tag: notifTag,
         category,
         type,

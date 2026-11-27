@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, X, Smartphone } from 'lucide-react';
 import { useExpense, sanitizeLogoUrl } from '../../context/ExpenseContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
@@ -17,31 +17,11 @@ const AUTH_SESSION_DISMISSED_KEY = 'my_money_popup_auth_dismissed';
 const APP_SESSION_DISMISSED_KEY = 'my_money_popup_app_dismissed';
 const AUTH_DISMISSED_AT_KEY = 'my_money_popup_auth_dismissed_at';
 const APP_DISMISSED_AT_KEY = 'my_money_popup_app_dismissed_at';
-const SESSION_START_KEY = 'my_money_page_visit_start';
 
 export const POPUP_REPROMPT_DELAY_MS = 60_000;
 
 export function getInitialVisitWaitMs(): number {
-  if (typeof window === 'undefined') return 0;
-  if (window.location?.hash === '#install') return 0;
-  try {
-    const rawStart = sessionStorage.getItem(SESSION_START_KEY);
-    const now = Date.now();
-    if (!rawStart) {
-      sessionStorage.setItem(SESSION_START_KEY, String(now));
-      return POPUP_REPROMPT_DELAY_MS;
-    }
-    const start = parseInt(rawStart, 10);
-    if (Number.isFinite(start)) {
-      const elapsed = now - start;
-      if (elapsed < POPUP_REPROMPT_DELAY_MS) {
-        return POPUP_REPROMPT_DELAY_MS - elapsed;
-      }
-    }
-    return 0;
-  } catch {
-    return 0;
-  }
+  return 0;
 }
 
 // Legacy keys to clean up so users are not blocked by old 7-day cookie
@@ -96,7 +76,7 @@ export function markAppAsDownloaded(): void {
 /**
  * Temporarily dismisses the popup for the current view and starts a 1-minute cooldown:
  * - If cancelled on login/auth view, dismisses ONLY for the auth view.
- * - Reappears automatically after POPUP_REPROMPT_DELAY_MS (60 seconds) if not installed.
+ * - Reappears automatically after POPUP_REPROMPT_DELAY_MS (60 seconds) of visible browser usage if not installed.
  */
 export function dismissPopupForCurrentView(isAuthView: boolean, now: number = Date.now()): void {
   if (typeof window === 'undefined') return;
@@ -129,7 +109,7 @@ export function clearDismissalForView(isAuthView: boolean): void {
  */
 export function getPopupRemainingCooldownMs(isAuthView: boolean, now: number = Date.now()): number {
   if (typeof window === 'undefined') return 0;
-  if (window.location?.hash === '#install') return 0;
+  if (window.location?.hash === '#install' || window.location?.hash === '#app-install') return 0;
 
   const flagKey = isAuthView ? AUTH_SESSION_DISMISSED_KEY : APP_SESSION_DISMISSED_KEY;
   const atKey = isAuthView ? AUTH_DISMISSED_AT_KEY : APP_DISMISSED_AT_KEY;
@@ -165,6 +145,29 @@ export function getPopupRemainingCooldownMs(isAuthView: boolean, now: number = D
  */
 export function isDismissedForView(isAuthView: boolean, now: number = Date.now()): boolean {
   return getPopupRemainingCooldownMs(isAuthView, now) > 0;
+}
+
+/**
+ * Pure helper evaluating whether the automatic install popup should be suppressed right now.
+ */
+export function shouldSuppressInstallPopup(params: {
+  isAdminRoute: boolean;
+  isMaintenanceBlocked: boolean;
+  isEnabled: boolean;
+  isInstalled: boolean;
+  isHidden: boolean;
+  isModalOpen: boolean;
+  isScannerActive: boolean;
+  activeModalCount: number;
+  autoPromptDisabled: boolean;
+  forceShow?: boolean;
+}): boolean {
+  if (params.isAdminRoute || params.isMaintenanceBlocked || !params.isEnabled) return true;
+  if (params.isInstalled) return true;
+  if (params.isModalOpen || params.isScannerActive || params.activeModalCount > 0) return true;
+  if (params.forceShow) return false;
+  if (params.autoPromptDisabled || params.isHidden) return true;
+  return false;
 }
 
 /**
@@ -210,7 +213,16 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   hasBottomMobileNav,
 }) => {
   const { appPopupSettings, appBranding } = useExpense();
-  const { triggerInstallPrompt, openInstallModal, isInstalled } = usePwaInstall();
+  const {
+    triggerInstallPrompt,
+    openInstallModal,
+    isInstalled,
+    isModalOpen,
+    isScannerActive,
+    activeModalCount,
+    autoPromptDisabled,
+    reopenInstallPopupSignal,
+  } = usePwaInstall();
   const { user } = useAuth();
 
   const isAuthView = !user;
@@ -227,78 +239,142 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
 
   const [isHidden, setIsHidden] = useState<boolean>(computeIsHidden);
   const [dismissTick, setDismissTick] = useState<number>(0);
+  const [hasMountSettled, setHasMountSettled] = useState<boolean>(false);
+  const [forceVisible, setForceVisible] = useState<boolean>(false);
+  const remainingVisibleMsRef = useRef<number>(0);
 
-  // On mount: clean up legacy 7-day dismissals
+  // Clean up legacy 7-day dismissals on mount + brief 600ms settle so initial render doesn't flicker
   useEffect(() => {
     cleanupLegacyDismissals();
+    const timer = window.setTimeout(() => {
+      setHasMountSettled(true);
+    }, 600);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  // Re-evaluate visibility:
-  // 1. If installed: permanently hidden.
-  // 2. If cancelled: wait 60s cooldown before reappearing.
-  // 3. If new visitor session: wait 60s after arrival before displaying.
-  // 4. Once displayed: stays visible until user explicitly clicks Cancel or Install (never auto-hides).
+  // Reopen immediately whenever user triggers "Reopen Install Popup" from Settings
+  useEffect(() => {
+    if (reopenInstallPopupSignal > 0 && !isAppDownloadedOrInstalled(isInstalled)) {
+      clearDismissalForView(isAuthView);
+      remainingVisibleMsRef.current = 0;
+      setForceVisible(true);
+      setIsHidden(false);
+    }
+  }, [reopenInstallPopupSignal, isInstalled, isAuthView]);
+
+  // Lifecycle effect:
+  // 1. If installed/downloaded: permanently stop showing.
+  // 2. If user dismissed (Cancel): wait 1 minute (60s) of active/visible tab time, pausing when tab is hidden.
+  // 3. On initial visit when not dismissed: show as soon as mount settles.
   useEffect(() => {
     if (isAppDownloadedOrInstalled(isInstalled)) {
+      remainingVisibleMsRef.current = 0;
+      setForceVisible(false);
+      setIsHidden(true);
+      return;
+    }
+
+    if (autoPromptDisabled && !forceVisible) {
       setIsHidden(true);
       return;
     }
 
     const cooldownMs = getPopupRemainingCooldownMs(isAuthView);
-    if (cooldownMs > 0) {
-      setIsHidden(true);
-      const timer = window.setTimeout(() => {
+    if (cooldownMs <= 0 || forceVisible) {
+      remainingVisibleMsRef.current = 0;
+      setIsHidden(false);
+      return;
+    }
+
+    setIsHidden(true);
+    remainingVisibleMsRef.current = cooldownMs;
+
+    let lastVisibleTickAt =
+      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? null : Date.now();
+
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        lastVisibleTickAt = null;
+        return;
+      }
+
+      const now = Date.now();
+      const delta = lastVisibleTickAt !== null ? Math.max(0, now - lastVisibleTickAt) : 1000;
+      lastVisibleTickAt = now;
+      remainingVisibleMsRef.current = Math.max(0, remainingVisibleMsRef.current - delta);
+
+      if (remainingVisibleMsRef.current <= 0) {
         clearDismissalForView(isAuthView);
         setIsHidden(false);
-      }, cooldownMs);
-      return () => window.clearTimeout(timer);
-    }
+        window.clearInterval(intervalId);
+      }
+    }, 1000);
 
-    const initialWaitMs = getInitialVisitWaitMs();
-    if (initialWaitMs > 0) {
-      setIsHidden(true);
-      const timer = window.setTimeout(() => {
-        setIsHidden(false);
-      }, initialWaitMs);
-      return () => window.clearTimeout(timer);
-    }
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        lastVisibleTickAt = Date.now();
+      } else {
+        lastVisibleTickAt = null;
+      }
+    };
 
-    setIsHidden(false);
-  }, [isInstalled, isAuthView, dismissTick]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isInstalled, isAuthView, dismissTick, autoPromptDisabled, forceVisible]);
 
-  // Popup is visible by default unless explicitly disabled by admin, suppressed after cancel cooldown, or already installed
   const isEnabled = appPopupSettings?.enabled !== false;
 
-  if (isAdminRoute || isMaintenanceBlocked || !isEnabled || isHidden) {
+  if (
+    !hasMountSettled ||
+    shouldSuppressInstallPopup({
+      isAdminRoute,
+      isMaintenanceBlocked,
+      isEnabled,
+      isInstalled: isAppDownloadedOrInstalled(isInstalled),
+      isHidden,
+      isModalOpen,
+      isScannerActive,
+      activeModalCount,
+      autoPromptDisabled,
+      forceShow: forceVisible,
+    })
+  ) {
     return null;
   }
 
   const safeHref = sanitizeDownloadHref(appPopupSettings?.downloadUrl);
-  const isInternalInstallAction = safeHref === '/#install' || safeHref === '#install';
+  const isInternalInstallAction =
+    safeHref === '/#install' || safeHref === '#install' || safeHref === '/#app-install';
   const isExternal = /^https?:\/\//i.test(safeHref);
 
   const handleDismiss = () => {
+    setForceVisible(false);
     dismissPopupForCurrentView(isAuthView);
+    remainingVisibleMsRef.current = POPUP_REPROMPT_DELAY_MS;
     setIsHidden(true);
     setDismissTick((t) => t + 1);
   };
 
-  const handleDownloadClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleInstallClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (isInternalInstallAction) {
       e.preventDefault();
+      setForceVisible(false);
       try {
         const result = await triggerInstallPrompt();
         if (result.status === 'accepted' || result.status === 'already_installed') {
           markAppAsDownloaded();
           setIsHidden(true);
         } else if (result.status === 'dismissed') {
-          // User cancelled native install dialog without downloading: hide and re-show in 1 minute
+          // User declined browser install prompt: do NOT mark installed; reappear after 1 min
           dismissPopupForCurrentView(isAuthView);
+          remainingVisibleMsRef.current = POPUP_REPROMPT_DELAY_MS;
           setIsHidden(true);
           setDismissTick((t) => t + 1);
         } else {
-          // Manual guide / native prompt unavailable yet: open install instructions modal
-          // without marking as downloaded and without permanently hiding the popup
+          // Native beforeinstallprompt unavailable (e.g. iOS Safari or manual browser): open guide modal
           openInstallModal();
         }
       } catch (err) {
@@ -306,7 +382,6 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
         openInstallModal();
       }
     } else {
-      // External store or APK download link
       markAppAsDownloaded();
       setIsHidden(true);
     }
@@ -315,9 +390,26 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   const appTitle = appBranding?.appName?.trim() || 'My Money Manager';
   const appLogo = sanitizeLogoUrl(appBranding?.logoUrl);
 
+  const rawPopupTitle = appPopupSettings?.title?.trim();
+  const displayTitle =
+    !rawPopupTitle || rawPopupTitle === 'Get the My Money Manager App'
+      ? 'Install My Money Manager'
+      : rawPopupTitle;
+
+  const rawPopupDesc = appPopupSettings?.description?.trim();
+  const displayDesc =
+    !rawPopupDesc ||
+    rawPopupDesc === 'Install our fast, offline-ready app for instant expense tracking & UPI alerts.'
+      ? 'Install the app for a faster experience and easy access from your home screen.'
+      : rawPopupDesc;
+
+  const rawBtnLabel = appPopupSettings?.buttonLabel?.trim();
+  const displayBtnLabel = !rawBtnLabel || rawBtnLabel === 'Download App' ? 'Install Now' : rawBtnLabel;
+
   return (
     <aside
-      aria-label="Download App"
+      aria-label="Install My Money Manager"
+      data-testid="pwa-auto-install-popup"
       className={`fixed right-3 sm:right-6 z-40 w-[calc(100vw-1.5rem)] max-w-sm transition-all ${
         hasBottomMobileNav
           ? 'bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-6'
@@ -331,9 +423,9 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
               src={appLogo}
               alt={`${appTitle} by HackifyPro`}
               onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = '/logo.jpg';
+                (e.currentTarget as HTMLImageElement).src = '/icon-192.png';
               }}
-              className="w-12 h-12 rounded-xl object-cover border border-emerald-500/30 shadow-sm bg-white"
+              className="w-12 h-12 rounded-xl object-cover border border-emerald-500/30 shadow-sm bg-black"
             />
             <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow">
               <Smartphone className="w-3 h-3" />
@@ -345,18 +437,17 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
               {appTitle} · HackifyPro
             </p>
             <h4 className="text-sm font-black text-slate-900 dark:text-white leading-snug mt-0.5">
-              {appPopupSettings?.title || 'Get the My Money Manager App'}
+              {displayTitle}
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-1">
-              {appPopupSettings?.description ||
-                'Install our fast, offline-ready app for instant expense tracking & UPI alerts.'}
+              {displayDesc}
             </p>
           </div>
 
           <button
             type="button"
             onClick={handleDismiss}
-            aria-label="Close app download popup"
+            aria-label="Close install popup"
             className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -376,11 +467,11 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
             href={safeHref}
             target={isExternal ? '_blank' : undefined}
             rel={isExternal ? 'noopener noreferrer' : undefined}
-            onClick={handleDownloadClick}
+            onClick={handleInstallClick}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/25 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{appPopupSettings?.buttonLabel || 'Download App'}</span>
+            <span>{displayBtnLabel}</span>
           </a>
         </div>
       </div>

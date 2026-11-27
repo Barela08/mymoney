@@ -4,11 +4,13 @@ import {
   User,
   AlertTriangle,
   PlusCircle,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
 import { NavTab } from './Sidebar';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -25,6 +27,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMobileMenu,
   onOpenAddModal,
   onSelectTab,
+  onOpenHelpModal,
+  onOpenNotificationCenter,
+  onOpenNotificationPreferences,
 }) => {
   const { user, isAdmin } = useAuth();
   const {
@@ -36,10 +41,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   const titles: Record<string, { title: string; subtitle: string; shortTitle: string }> = {
     dashboard: { title: 'Dashboard', shortTitle: 'Dashboard', subtitle: 'Overview & Main Financial Sections' },
     profile: { title: 'Profile & Account', shortTitle: 'Profile', subtitle: 'Personal credentials, active sessions & security' },
-    settings: { title: 'Application Settings', shortTitle: 'Settings', subtitle: 'Appearance, language, notifications & privacy' },
+    settings: { title: 'Application Settings', shortTitle: 'Settings', subtitle: 'Appearance, language, app install, notifications & privacy' },
     ai_assistant: { title: 'AI Money Assistant', shortTitle: 'AI Assistant', subtitle: 'Conversational financial advisor grounded in your real data' },
     expense_calendar: { title: 'Expense Calendar', shortTitle: 'Calendar', subtitle: 'Daily, weekly & monthly spending heatmap and ledger' },
-    smart_alerts: { title: 'Smart Financial Alerts', shortTitle: 'Smart Alerts', subtitle: 'Budget thresholds, upcoming bills, anomalies & Udhar reminders' },
+    smart_alerts: { title: 'Notifications & Alerts', shortTitle: 'Alerts', subtitle: 'Notifications, reminders, security alerts & smart thresholds' },
     receipt_scanner: { title: 'Receipt Scanner (OCR)', shortTitle: 'Receipt OCR', subtitle: 'Scan receipts & review extracted details before saving' },
     net_worth: { title: 'Net Worth Tracker', shortTitle: 'Net Worth', subtitle: 'Assets minus liabilities with real snapshot history' },
     safe_to_spend: { title: 'Safe-to-Spend Calculator', shortTitle: 'Safe-to-Spend', subtitle: 'True spendable cash after upcoming bills & protected reserves' },
@@ -51,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     budget: { title: 'Budget Planner', shortTitle: 'Budgets', subtitle: 'Category-wise limits & spend tracking' },
     savings_goals: { title: 'Savings Goals', shortTitle: 'Savings', subtitle: 'Target amounts & progress milestones' },
     recurring_bills: { title: 'Recurring Bills', shortTitle: 'Bills', subtitle: 'Subscriptions, rent, power & dues' },
-    notifications: { title: 'Notification Center', shortTitle: 'Alerts', subtitle: 'Budget warnings & transaction activity' },
+    notifications: { title: 'Notifications & Alerts', shortTitle: 'Alerts', subtitle: 'Notifications, reminders, security alerts & smart thresholds' },
     calculator: { title: 'Calculator', shortTitle: 'Calculator', subtitle: 'GST, Offer & Split Calculations' },
     reports: { title: 'Reports & Analytics', shortTitle: 'Reports', subtitle: 'Expense charts & cashflow trends' },
     all_transactions: { title: 'All Transactions Ledger', shortTitle: 'All Ledger', subtitle: 'Searchable master ledger' },
@@ -130,6 +135,39 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="sm:hidden">Add</span>
             </button>
           )}
+
+          {/* Notification Bell */}
+          <NotificationBell
+            onSelectTab={onSelectTab}
+            onOpenFullCenter={() =>
+              onOpenNotificationCenter ? onOpenNotificationCenter() : onSelectTab('notifications')
+            }
+            onOpenPreferences={() =>
+              onOpenNotificationPreferences
+                ? onOpenNotificationPreferences()
+                : onSelectTab('settings')
+            }
+            onOpenHelpModal={onOpenHelpModal}
+          />
+
+          {/* Compact Header Settings Gear Icon (Desktop + Mobile) */}
+          <button
+            type="button"
+            onClick={() => onSelectTab('settings')}
+            className={`relative h-9 w-9 flex items-center justify-center rounded-xl border transition-colors cursor-pointer group focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+              currentTab === 'settings'
+                ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                : 'border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Settings"
+            aria-label="Open settings"
+            data-testid="header-settings-button"
+          >
+            <Settings className="w-4 h-4 stroke-[1.75]" />
+            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm z-50 hidden sm:block">
+              Settings
+            </span>
+          </button>
 
           {/* Single My Account / Profile Icon */}
           <button

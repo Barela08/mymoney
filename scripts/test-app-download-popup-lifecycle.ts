@@ -56,6 +56,8 @@ const {
   clearDismissalForView,
   getPopupRemainingCooldownMs,
   isDismissedForView,
+  getInitialVisitWaitMs,
+  shouldSuppressInstallPopup,
   POPUP_REPROMPT_DELAY_MS,
 } = await import('../src/components/common/AppDownloadPopup.js');
 
@@ -74,9 +76,10 @@ function assert(condition: boolean, msg: string) {
 
 console.log('=== App Download Popup Lifecycle Test Suite ===\n');
 
-// Test 1: Initially, new visitor should NOT be considered downloaded/installed
+// Test 1: Initially, new visitor should NOT be considered downloaded/installed and should see popup promptly
 assert(!isAppDownloadedOrInstalled(false), 'New visitor is not marked as downloaded/installed');
 assert(POPUP_REPROMPT_DELAY_MS === 60_000, 'Reprompt cooldown is exactly 1 minute (60,000ms)');
+assert(getInitialVisitWaitMs() === 0, 'Initial visit does NOT artificially delay popup by 60 seconds');
 
 // Test 2: If user cancels on Login page (auth view = true)
 const t0 = 1_700_000_000_000;
@@ -109,15 +112,103 @@ delete mockSessionStorage['my_money_popup_auth_dismissed'];
 assert(!isAppDownloadedOrInstalled(false), 'On new session without download, app is not downloaded');
 assert(!mockSessionStorage['my_money_popup_app_dismissed'], 'On new session, popup can appear again');
 
-// Test 6: When user actually downloads or installs the app
+// Test 6: Active modal / scanner suppression & Settings Reopen behavior
+assert(
+  !shouldSuppressInstallPopup({
+    isAdminRoute: false,
+    isMaintenanceBlocked: false,
+    isEnabled: true,
+    isInstalled: false,
+    isHidden: false,
+    isModalOpen: false,
+    isScannerActive: false,
+    activeModalCount: 0,
+    autoPromptDisabled: false,
+  }),
+  'Popup displays cleanly when no modal/scanner is open and app is not installed'
+);
+assert(
+  shouldSuppressInstallPopup({
+    isAdminRoute: false,
+    isMaintenanceBlocked: false,
+    isEnabled: true,
+    isInstalled: false,
+    isHidden: false,
+    isModalOpen: false,
+    isScannerActive: false,
+    activeModalCount: 1,
+    autoPromptDisabled: false,
+  }),
+  'Popup is suppressed while active modal/payment form is open'
+);
+assert(
+  shouldSuppressInstallPopup({
+    isAdminRoute: false,
+    isMaintenanceBlocked: false,
+    isEnabled: true,
+    isInstalled: false,
+    isHidden: false,
+    isModalOpen: false,
+    isScannerActive: true,
+    activeModalCount: 0,
+    autoPromptDisabled: false,
+  }),
+  'Popup is suppressed while QR scanner is active'
+);
+assert(
+  shouldSuppressInstallPopup({
+    isAdminRoute: false,
+    isMaintenanceBlocked: false,
+    isEnabled: true,
+    isInstalled: false,
+    isHidden: false,
+    isModalOpen: false,
+    isScannerActive: false,
+    activeModalCount: 0,
+    autoPromptDisabled: true,
+  }),
+  'Popup respects user auto-reminder disable toggle'
+);
+assert(
+  !shouldSuppressInstallPopup({
+    isAdminRoute: false,
+    isMaintenanceBlocked: false,
+    isEnabled: true,
+    isInstalled: false,
+    isHidden: true,
+    isModalOpen: false,
+    isScannerActive: false,
+    activeModalCount: 0,
+    autoPromptDisabled: true,
+    forceShow: true,
+  }),
+  'Settings Reopen Install Popup overrides cooldown when no blocking modal is open'
+);
+
+// Test 7: When user actually downloads or installs the app
 markAppAsDownloaded();
 assert(isAppDownloadedOrInstalled(false), 'After downloading, isAppDownloadedOrInstalled is TRUE');
 assert(mockLocalStorage['my_money_app_downloaded_confirmed'] === 'true', 'Persistent download flag saved to localStorage');
 assert(mockCookies.includes('mymoney_app_downloaded=downloaded'), 'Persistent download cookie saved');
 
-// Test 7: Downloaded user in subsequent sessions or auth pages never sees the popup
+// Test 8: Downloaded user in subsequent sessions or auth pages never sees the popup
 assert(isAppDownloadedOrInstalled(false), 'Downloaded user is permanently suppressed even on new session');
 assert(isAppDownloadedOrInstalled(true), 'Standalone/PWA-installed user is permanently suppressed');
+assert(
+  shouldSuppressInstallPopup({
+    isAdminRoute: false,
+    isMaintenanceBlocked: false,
+    isEnabled: true,
+    isInstalled: true,
+    isHidden: false,
+    isModalOpen: false,
+    isScannerActive: false,
+    activeModalCount: 0,
+    autoPromptDisabled: false,
+    forceShow: true,
+  }),
+  'Installed app is ALWAYS suppressed even if forceShow is passed'
+);
 
 console.log(`\nResults: ${passed} passed, ${failed} failed\n`);
 

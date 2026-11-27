@@ -327,10 +327,17 @@ export function isCurrentTimeInQuietHours(
 }
 
 /**
- * Mask monetary values (₹500, ₹10,000, INR 2500) for lock-screen privacy mode
+ * Mask monetary values (₹500, ₹10,000, INR 2500) and private Udhar details for lock-screen privacy mode
  */
-export function maskFinancialData(text: string): string {
-  return text.replace(/(?:₹|INR|Rs\.?|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, '₹••••');
+export function maskFinancialData(text: string, maskUdharDetails: boolean = false): string {
+  let out = String(text || '').replace(/(?:₹|INR|Rs\.?|\$)\s*[0-9,]+(?:\.[0-9]+)?/gi, '₹••••');
+  if (maskUdharDetails) {
+    out = out
+      .replace(/^([A-Z][a-zA-Z0-9 ._-]{1,40}?)\s+(requested|recorded|settled|sent|paid|accepted|added)\b/g, 'A contact $2')
+      .replace(/\b(to|from|with|for)\s+([A-Z][a-zA-Z0-9 ._-]{1,40}?)(?=[.,!?]|$|\s+via|\s+is|\s+recorded|\s+completed|\s+logged)/g, '$1 a contact')
+      .replace(/\bby\s+([A-Z][a-zA-Z0-9 ._-]{1,40}?)(?=[.,!?]|$)/g, 'by a contact');
+  }
+  return out;
 }
 
 /**
@@ -343,6 +350,7 @@ export function buildSafeDeepLinkUrl(deepLink?: string): string {
     '/ai-assistant',
     '/expense-calendar',
     '/smart-alerts',
+    '/notifications',
     '/receipt-scanner',
     '/net-worth',
     '/safe-to-spend',
@@ -1172,8 +1180,9 @@ export async function createNotification(params: CreateNotificationParams): Prom
       subs.length > 0 &&
       (skipPreferenceCheck || (prefs.push_enabled && categoryAllowed))
     ) {
-      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title) : title;
-      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message) : message;
+      const isUdharCategory = category === 'udhar' || category === 'repay' || category === 'settlement';
+      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title, isUdharCategory) : title;
+      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message, isUdharCategory) : message;
       const targetUrl = buildSafeDeepLinkUrl(deepLink);
       const timestamp = Date.now();
       const notifTag =
@@ -1187,7 +1196,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
         title: pushTitle,
         body: pushBody,
         icon: '/icon-192.png',
-        badge: '/icon-192.png',
+        badge: '/notification-badge-96.png',
         tag: notifTag,
         category,
         type,
