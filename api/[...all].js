@@ -3439,8 +3439,8 @@ var require_split2 = __commonJS({
         self2.push(val);
       }
     }
-    function noop2(incoming) {
-      return incoming;
+    function noop2(incoming2) {
+      return incoming2;
     }
     function split(matcher, mapper, options) {
       matcher = matcher || /\r?\n/;
@@ -12545,9 +12545,9 @@ var require_interceptor = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js
+// node_modules/gaxios/node_modules/agent-base/dist/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js"(exports) {
+  "node_modules/gaxios/node_modules/agent-base/dist/helpers.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -12615,9 +12615,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js
+// node_modules/gaxios/node_modules/agent-base/dist/index.js
 var require_dist2 = __commonJS({
-  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js"(exports) {
+  "node_modules/gaxios/node_modules/agent-base/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -57445,13 +57445,13 @@ var InteractionWebRTCTransport = class {
       const handleIncomingDataChannel = (event) => {
         if (this.connectGeneration !== generation)
           return;
-        const incoming = event === null || event === void 0 ? void 0 : event.channel;
-        if (!incoming)
+        const incoming2 = event === null || event === void 0 ? void 0 : event.channel;
+        if (!incoming2)
           return;
-        if (incoming.label !== void 0 && incoming.label !== "" && incoming.label !== DEFAULT_WEBRTC_DATA_CHANNEL_LABEL) {
+        if (incoming2.label !== void 0 && incoming2.label !== "" && incoming2.label !== DEFAULT_WEBRTC_DATA_CHANNEL_LABEL) {
           return;
         }
-        attachDataChannel(incoming);
+        attachDataChannel(incoming2);
       };
       const handlePeerConnectionState = () => {
         if (localClosing || this.connectGeneration !== generation)
@@ -83891,7 +83891,7 @@ function createDefaultSiteControlCenterConfig() {
       }
     },
     homepage: {
-      showHero: true,
+      showHero: false,
       heroBadge: "Trusted Personal Finance & Shared Udhaar Ledger",
       heroHeading: "Master Every Rupee, Room Split & Udhaar Seamlessly",
       heroSubheading: "Real-time shared People & Udhaar sync, instant QR connections, UPI auto-detection, smart AI insights, and offline-ready PWA experience.",
@@ -83938,11 +83938,11 @@ function createDefaultSiteControlCenterConfig() {
     footer: {
       copyrightText: "\xA9 2026 My Money Manager by HackifyPro. All rights reserved.",
       supportEmail: "hackifypro@gmail.com",
-      supportPhone: "+91 9669412829",
+      supportPhone: "+919669412829",
       companyName: "HackifyPro Technologies",
       address: "India",
       showLegalLinks: true,
-      showSocialLinks: true,
+      showSocialLinks: false,
       socialLinks: {
         github: "https://github.com/Barela08/mymoney",
         twitter: "",
@@ -83994,7 +83994,7 @@ function createDefaultSiteControlCenterConfig() {
       reportsEnabled: true,
       supportDeskEnabled: true,
       legalCenterEnabled: true,
-      publicWelcomeHeroEnabled: true
+      publicWelcomeHeroEnabled: false
     },
     pwa: {
       userAppInstallEnabled: true,
@@ -84138,11 +84138,11 @@ function normalizeSiteControlCenterConfig(raw) {
     defaultTheme: ["light", "dark", "system"].includes(webRaw.defaultTheme) ? webRaw.defaultTheme : def.branding.website.defaultTheme
   };
   const templatesRaw = Array.isArray(r2.notifications?.templates) ? r2.notifications.templates : def.notifications.templates;
-  const normalizeBoolMap = (incoming, base2) => {
+  const normalizeBoolMap = (incoming2, base2) => {
     const out = { ...base2 };
-    if (incoming && typeof incoming === "object") {
+    if (incoming2 && typeof incoming2 === "object") {
       for (const key of Object.keys(base2)) {
-        if (typeof incoming[key] === "boolean") out[key] = incoming[key];
+        if (typeof incoming2[key] === "boolean") out[key] = incoming2[key];
       }
     }
     return out;
@@ -92233,4119 +92233,10 @@ import path11 from "path";
 import crypto22 from "crypto";
 
 // server/supabaseRestUdhar.ts
-import crypto18 from "crypto";
-
-// src/lib/sharedUdharEngine.ts
-function roundMoney(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-}
-function normalizeSearchQuery(raw) {
-  if (!raw || typeof raw !== "string") return "";
-  return raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-}
-function classifyLiveSearchQuery(raw) {
-  const normalized2 = normalizeSearchQuery(raw);
-  const digitsOnly = normalized2.replace(/\D/g, "");
-  const last10Digits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
-  if (!normalized2 || normalized2.length < 2) {
-    return { mode: "too_short", normalized: normalized2, digitsOnly, last10Digits };
-  }
-  if (normalized2.includes("@")) {
-    const emailStrictRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-    if (emailStrictRegex.test(normalized2)) {
-      return { mode: "email_exact", normalized: normalized2, digitsOnly, last10Digits };
-    }
-    return { mode: "email_incomplete", normalized: normalized2, digitsOnly, last10Digits };
-  }
-  const looksLikePhone = /^[+\d][\d\s\-().]*$/.test(normalized2) && digitsOnly.length >= 4;
-  if (looksLikePhone) {
-    if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
-      return { mode: "phone_exact", normalized: normalized2, digitsOnly, last10Digits };
-    }
-    return { mode: "phone_incomplete", normalized: normalized2, digitsOnly, last10Digits };
-  }
-  return { mode: "name", normalized: normalized2, digitsOnly, last10Digits };
-}
-function isUpiPaymentQr(raw) {
-  const trimmed = (raw || "").trim().toLowerCase();
-  return trimmed.startsWith("upi://pay") || trimmed.startsWith("upi://collect") || trimmed.startsWith("upi://mandate");
-}
-function maskEmailForPrivacy(email) {
-  if (!email || !email.includes("@")) return "***@***";
-  const [local, domain] = email.trim().split("@");
-  if (!local || !domain) return "***@***";
-  if (local.length <= 2) return `${local.charAt(0)}***@${domain}`;
-  return `${local.charAt(0)}***${local.charAt(local.length - 1)}@${domain}`;
-}
-function maskPhoneForPrivacy(phone) {
-  if (!phone) return null;
-  const clean = phone.replace(/[\s\-()]/g, "");
-  if (clean.length < 6) return "****";
-  return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
-}
-function parseQrPayload(raw) {
-  const trimmed = (raw || "").trim();
-  if (!trimmed) {
-    return { valid: false, errorCode: "EMPTY_QR", error: "Empty QR code detected." };
-  }
-  if (isUpiPaymentQr(trimmed)) {
-    return {
-      valid: false,
-      isUpiPaymentQr: true,
-      errorCode: "UPI_QR_NOT_PAIRING",
-      error: "This is a UPI payment QR code, not a My Money Manager Udhar pairing QR. Please scan your friend's Udhar Pairing QR."
-    };
-  }
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && (parsed.app === "my-money" || parsed.type === "udhar-pair")) {
-        const token = typeof parsed.token === "string" ? parsed.token.trim() : void 0;
-        const code = typeof parsed.code === "string" ? parsed.code.trim().toUpperCase() : void 0;
-        if (token || code) {
-          const result = { valid: true, kind: "json" };
-          if (token !== void 0) result.token = token;
-          if (code !== void 0) result.code = code;
-          return result;
-        }
-      }
-      return {
-        valid: false,
-        errorCode: "INVALID_QR",
-        error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine account pairing QR."
-      };
-    } catch {
-      return {
-        valid: false,
-        errorCode: "MALFORMED_QR",
-        error: "Malformed QR payload. Please scan a genuine My Money Manager Udhar pairing QR."
-      };
-    }
-  }
-  const pairLinkMatch = trimmed.match(/(?:[#?&]pair=)([A-Za-z0-9_-]{6,64})/i);
-  if (pairLinkMatch && pairLinkMatch[1]) {
-    const val = pairLinkMatch[1].trim();
-    if (/^MM-[A-Z0-9]{4,}$/i.test(val)) {
-      return { valid: true, kind: "pair_url", code: val.toUpperCase() };
-    }
-    if (/^[0-9a-fA-F]{64}$/.test(val)) {
-      return { valid: true, kind: "pair_url", token: val };
-    }
-    return { valid: true, kind: "pair_url", code: val.toUpperCase() };
-  }
-  const normalizedCode = trimmed.replace(/\s+/g, "").toUpperCase();
-  if (/^MM-[A-Z0-9]{4,16}$/.test(normalizedCode)) {
-    return { valid: true, kind: "pair_code", code: normalizedCode };
-  }
-  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return { valid: true, kind: "hex_token", token: trimmed };
-  }
-  return {
-    valid: false,
-    errorCode: "INVALID_QR",
-    error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine pairing QR generated inside My Money Manager."
-  };
-}
-function calculateRepaymentApplication(input) {
-  if (input.udharStatus === "pending_confirmation") {
-    return { valid: false, error: "Waiting for recipient confirmation before repayments can be recorded." };
-  }
-  if (input.udharStatus === "rejected") {
-    return { valid: false, error: "Cannot record repayment on a rejected Udhar request." };
-  }
-  if (input.udharStatus === "deleted") {
-    return { valid: false, error: "Cannot record repayment on a deleted Udhar." };
-  }
-  if (input.udharStatus === "cancelled") {
-    return { valid: false, error: "Cannot record repayment on a cancelled Udhar." };
-  }
-  if (input.udharStatus === "disputed") {
-    return { valid: false, error: "Cannot record repayment while Udhar is disputed. Resolve the dispute first." };
-  }
-  if (input.udharStatus === "settled") {
-    return { valid: false, error: "This Udhar is already fully settled." };
-  }
-  const repayAmt = roundMoney(input.repayAmount);
-  if (!Number.isFinite(repayAmt) || repayAmt <= 0) {
-    return { valid: false, error: "Repayment amount must be greater than \u20B90." };
-  }
-  const remaining = roundMoney(Math.max(0, input.originalAmount - input.confirmedPaidAmount));
-  if (remaining <= 0.01) {
-    return { valid: false, error: "This Udhar has no remaining balance to repay." };
-  }
-  const effectiveRemaining = input.isShared && input.actorRole === "borrower" ? roundMoney(Math.max(0, remaining - Math.max(0, input.pendingRepaymentsAmount))) : remaining;
-  if (repayAmt > effectiveRemaining + 0.01) {
-    if (input.isShared && input.actorRole === "borrower" && input.pendingRepaymentsAmount > 0) {
-      return {
-        valid: false,
-        error: `Amount (\u20B9${repayAmt}) exceeds available remaining balance (\u20B9${effectiveRemaining}) after accounting for \u20B9${roundMoney(input.pendingRepaymentsAmount)} already pending lender confirmation.`
-      };
-    }
-    return {
-      valid: false,
-      error: `Repayment amount (\u20B9${repayAmt}) cannot exceed remaining balance (\u20B9${remaining}).`
-    };
-  }
-  const repaymentStatus = input.isShared && input.actorRole === "borrower" ? "pending_confirmation" : "confirmed";
-  if (repaymentStatus === "pending_confirmation") {
-    return {
-      valid: true,
-      repaymentStatus,
-      nextPaidAmount: roundMoney(input.confirmedPaidAmount),
-      nextRemainingAmount: remaining,
-      nextUdharStatus: "confirmed",
-      isSettled: false
-    };
-  }
-  const nextPaidAmount = roundMoney(input.confirmedPaidAmount + repayAmt);
-  const nextRemainingAmount = roundMoney(Math.max(0, input.originalAmount - nextPaidAmount));
-  const isSettled = nextRemainingAmount <= 0.01;
-  return {
-    valid: true,
-    repaymentStatus: "confirmed",
-    nextPaidAmount: isSettled ? roundMoney(input.originalAmount) : nextPaidAmount,
-    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
-    nextUdharStatus: isSettled ? "settled" : "confirmed",
-    isSettled
-  };
-}
-function validateUdharEdit(current, updates) {
-  if (current.status === "cancelled" || current.status === "rejected" || current.status === "deleted") {
-    return { valid: false, error: "Rejected, cancelled, or deleted Udhar records cannot be edited." };
-  }
-  const reason = (updates.reason_for_edit || "").trim();
-  if (reason.length < 3) {
-    return { valid: false, error: "Please provide a clear reason (at least 3 characters) for editing this record." };
-  }
-  const nextOriginalAmount = updates.amount !== void 0 ? roundMoney(updates.amount) : roundMoney(current.original_amount);
-  if (!Number.isFinite(nextOriginalAmount) || nextOriginalAmount <= 0) {
-    return { valid: false, error: "Total amount must be greater than \u20B90." };
-  }
-  const paid = roundMoney(Math.max(0, current.paid_amount));
-  if (nextOriginalAmount + 0.01 < paid) {
-    return {
-      valid: false,
-      error: `New amount (\u20B9${nextOriginalAmount}) cannot be less than already confirmed repayments (\u20B9${paid}).`
-    };
-  }
-  const nextRemainingAmount = roundMoney(Math.max(0, nextOriginalAmount - paid));
-  const isSettled = nextRemainingAmount <= 0.01;
-  const changes = [];
-  if (roundMoney(current.original_amount) !== nextOriginalAmount) {
-    changes.push({
-      changed_field: "amount",
-      previous_value: String(roundMoney(current.original_amount)),
-      new_value: String(nextOriginalAmount)
-    });
-  }
-  if (updates.transaction_date && updates.transaction_date !== current.transaction_date) {
-    changes.push({
-      changed_field: "transaction_date",
-      previous_value: current.transaction_date,
-      new_value: updates.transaction_date
-    });
-  }
-  if (updates.due_date !== void 0 && (updates.due_date || null) !== (current.due_date || null)) {
-    changes.push({
-      changed_field: "due_date",
-      previous_value: current.due_date || null,
-      new_value: updates.due_date || null
-    });
-  }
-  if (updates.category !== void 0 && (updates.category || null) !== (current.category || null)) {
-    changes.push({
-      changed_field: "category",
-      previous_value: current.category || null,
-      new_value: updates.category || null
-    });
-  }
-  if (updates.payment_method !== void 0 && (updates.payment_method || null) !== (current.payment_method || null)) {
-    changes.push({
-      changed_field: "payment_method",
-      previous_value: current.payment_method || null,
-      new_value: updates.payment_method || null
-    });
-  }
-  if (updates.description !== void 0 && (updates.description || null) !== (current.description || null)) {
-    changes.push({
-      changed_field: "description",
-      previous_value: current.description || null,
-      new_value: updates.description || null
-    });
-  }
-  if (updates.notes !== void 0 && (updates.notes || null) !== (current.notes || null)) {
-    changes.push({
-      changed_field: "notes",
-      previous_value: current.notes || null,
-      new_value: updates.notes || null
-    });
-  }
-  return {
-    valid: true,
-    nextOriginalAmount,
-    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
-    nextStatus: isSettled ? "settled" : "confirmed",
-    isSettled,
-    changes
-  };
-}
-function isActiveRepayment(repayment) {
-  if (!repayment) return false;
-  if (repayment.deleted_at) return false;
-  return repayment.status !== "deleted" && repayment.status !== "cancelled";
-}
-function normalizeUdharLifecycleStatus(row) {
-  const { meta } = unpackStructuredNote(row?.notes);
-  if (row?.deleted_at || row?.status === "deleted" || meta.lifecycle_status === "deleted") {
-    return "deleted";
-  }
-  if (row?.status === "rejected" || meta.lifecycle_status === "rejected" || Boolean(row?.rejected_by || meta.rejected_by)) {
-    return "rejected";
-  }
-  if (row?.status === "cancelled" || meta.lifecycle_status === "cancelled" || Boolean(row?.cancelled_at || meta.cancelled_at)) {
-    return "cancelled";
-  }
-  if (row?.status === "disputed") return "disputed";
-  if (row?.status === "settled") return "settled";
-  if (row?.status === "pending_confirmation") return "pending_confirmation";
-  return "confirmed";
-}
-function canAcceptUdhar(udhar, actorUserId) {
-  const lifecycle = normalizeUdharLifecycleStatus(udhar);
-  if (lifecycle === "deleted") {
-    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
-  }
-  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
-    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to respond to this Udhar request." };
-  }
-  if (udhar.is_initiator) {
-    return { allowed: false, httpStatus: 403, code: "SELF_APPROVAL_BLOCKED", reason: "Only the recipient can accept this Udhar request." };
-  }
-  if (lifecycle === "rejected") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "Rejected Udhar requests cannot be accepted." };
-  }
-  if (lifecycle === "cancelled") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request was cancelled by the sender." };
-  }
-  if (lifecycle !== "pending_confirmation") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "This Udhar transaction is already confirmed." };
-  }
-  return { allowed: true };
-}
-function canRejectUdhar(udhar, actorUserId) {
-  const lifecycle = normalizeUdharLifecycleStatus(udhar);
-  if (lifecycle === "deleted") {
-    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
-  }
-  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
-    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to reject this Udhar request." };
-  }
-  if (udhar.is_initiator) {
-    return { allowed: false, httpStatus: 403, code: "SELF_REJECT_BLOCKED", reason: "Use Cancel Request to cancel a request you sent." };
-  }
-  if (lifecycle === "rejected") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "This Udhar request was already rejected." };
-  }
-  if (lifecycle === "cancelled") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request was already cancelled by the sender." };
-  }
-  if (lifecycle !== "pending_confirmation") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "Confirmed transactions cannot be rejected." };
-  }
-  return { allowed: true };
-}
-function canSenderCancelUdhar(udhar, actorUserId) {
-  const lifecycle = normalizeUdharLifecycleStatus(udhar);
-  if (lifecycle === "deleted") {
-    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
-  }
-  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
-    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to cancel this Udhar request." };
-  }
-  if (!udhar.is_initiator) {
-    return { allowed: false, httpStatus: 403, code: "SENDER_ONLY", reason: "Only the sender can cancel a pending request. Recipients can Reject it." };
-  }
-  if (lifecycle === "cancelled") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request is already cancelled." };
-  }
-  if (lifecycle === "rejected") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "This request has already been rejected by the recipient." };
-  }
-  if (lifecycle !== "pending_confirmation") {
-    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "Already accepted requests cannot be cancelled as pending requests." };
-  }
-  return { allowed: true };
-}
-function canCancelUdhar(udhar) {
-  const lifecycle = normalizeUdharLifecycleStatus(udhar);
-  if (lifecycle === "deleted" || Boolean(udhar.deleted_at) || udhar.status === "cancelled") {
-    return {
-      allowed: false,
-      httpStatus: 404,
-      code: "ALREADY_DELETED",
-      reason: "This Udhar is already deleted."
-    };
-  }
-  if (lifecycle === "disputed") {
-    return {
-      allowed: false,
-      httpStatus: 409,
-      code: "DISPUTED",
-      reason: "Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history."
-    };
-  }
-  const isShared = Boolean(udhar.is_shared ?? udhar.counterpart_user_id);
-  if (udhar.direction === "took" && isShared) {
-    const activeRepayments = Array.isArray(udhar.repayments) ? udhar.repayments.filter((r2) => isActiveRepayment(r2)) : [];
-    let isFullySettled = false;
-    if (udhar.original_amount !== void 0 && activeRepayments.length > 0) {
-      const recalc = recalculateUdharFromRepayments({
-        originalAmount: udhar.original_amount,
-        repayments: activeRepayments.map((r2) => ({
-          amount: r2.amount ?? 0,
-          status: r2.status,
-          deleted_at: r2.deleted_at
-        })),
-        currentStatus: udhar.status
-      });
-      isFullySettled = recalc.isSettled && lifecycle === "settled";
-    } else if (lifecycle === "settled") {
-      const orig = roundMoney(parseFloat(String(udhar.original_amount ?? 0)) || 0);
-      const cur = roundMoney(parseFloat(String(udhar.current_balance ?? 0)) || 0);
-      const paid = roundMoney(parseFloat(String(udhar.paid_amount ?? orig)) || 0);
-      if (orig > 0) {
-        isFullySettled = cur <= 0.01 && paid >= orig - 0.01;
-      } else {
-        isFullySettled = cur <= 0.01;
-      }
-    }
-    if (!isFullySettled) {
-      return {
-        allowed: false,
-        httpStatus: 403,
-        code: "BORROWER_REQUIRES_SETTLEMENT",
-        reason: "You can delete this transaction after it is fully settled."
-      };
-    }
-  }
-  return { allowed: true };
-}
-function canDeleteRepayment(params) {
-  const { isShared, direction, actorUserId, repayment } = params;
-  if (!isActiveRepayment(repayment)) {
-    return { allowed: false, httpStatus: 404, reason: "This repayment has already been deleted." };
-  }
-  if (repayment.status === "disputed") {
-    return {
-      allowed: false,
-      httpStatus: 409,
-      reason: "Disputed repayments cannot be deleted directly. Resolve the dispute first."
-    };
-  }
-  const isLenderOrManual = !isShared || direction === "gave";
-  if (isLenderOrManual) {
-    return { allowed: true };
-  }
-  const isOwnPendingClaim = repayment.status === "pending_confirmation" && Boolean(actorUserId) && repayment.recorded_by_user_id === actorUserId;
-  if (isOwnPendingClaim) {
-    return { allowed: true };
-  }
-  return {
-    allowed: false,
-    httpStatus: 403,
-    reason: "Only the lender can delete confirmed or lender-recorded repayments."
-  };
-}
-function recalculateUdharFromRepayments(params) {
-  const originalAmount = roundMoney(parseFloat(String(params.originalAmount)) || 0);
-  const activeConfirmedSum = (params.repayments || []).filter((r2) => isActiveRepayment(r2) && r2.status === "confirmed").reduce((sum, r2) => sum + (parseFloat(String(r2.amount)) || 0), 0);
-  const paidAmount = roundMoney(Math.min(originalAmount, Math.max(0, activeConfirmedSum)));
-  const rawRemaining = roundMoney(Math.max(0, originalAmount - paidAmount));
-  const isSettled = rawRemaining <= 0.01 && originalAmount > 0;
-  const remainingBalance = isSettled ? 0 : rawRemaining;
-  const prev = params.currentStatus;
-  let nextStatus = "confirmed";
-  if (prev === "cancelled") {
-    nextStatus = "cancelled";
-  } else if (prev === "disputed") {
-    nextStatus = "disputed";
-  } else if (isSettled) {
-    nextStatus = "settled";
-  } else if (prev === "pending_confirmation") {
-    nextStatus = "pending_confirmation";
-  } else {
-    nextStatus = "confirmed";
-  }
-  return {
-    originalAmount,
-    paidAmount,
-    remainingBalance,
-    isSettled,
-    nextStatus
-  };
-}
-function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
-  let totalGiven = 0;
-  let totalTaken = 0;
-  let youWillReceive = 0;
-  let youWillPay = 0;
-  let settledAmount = 0;
-  let overdueAmount = 0;
-  let activeCount = 0;
-  let settledCount = 0;
-  let pendingRepaymentCount = 0;
-  let pendingConfirmationCount = 0;
-  let pendingGivenAmount = 0;
-  let pendingReceivedAmount = 0;
-  let rejectedCount = 0;
-  let cancelledCount = 0;
-  for (const tx of items) {
-    const lifecycle = normalizeUdharLifecycleStatus(tx);
-    if (lifecycle === "deleted") continue;
-    if (lifecycle === "rejected") {
-      rejectedCount += 1;
-      continue;
-    }
-    if (lifecycle === "cancelled") {
-      cancelledCount += 1;
-      continue;
-    }
-    const orig = parseFloat(String(tx.original_amount)) || 0;
-    if (lifecycle === "pending_confirmation") {
-      pendingConfirmationCount += 1;
-      if (tx.direction === "gave") pendingGivenAmount += orig;
-      else pendingReceivedAmount += orig;
-      continue;
-    }
-    const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = lifecycle === "settled" || cur <= 0.01;
-    if (tx.direction === "gave") {
-      totalGiven += orig;
-      if (!isSettled) {
-        youWillReceive += cur;
-        activeCount += 1;
-      } else {
-        settledCount += 1;
-      }
-    } else {
-      totalTaken += orig;
-      if (!isSettled) {
-        youWillPay += cur;
-        activeCount += 1;
-      } else {
-        settledCount += 1;
-      }
-    }
-    settledAmount += Math.max(0, orig - cur);
-    if (tx.due_date && tx.due_date < todayStr && !isSettled && cur > 0) {
-      overdueAmount += cur;
-    }
-    if (Array.isArray(tx.repayments)) {
-      pendingRepaymentCount += tx.repayments.filter(
-        (r2) => isActiveRepayment(r2) && r2.status === "pending_confirmation"
-      ).length;
-    }
-  }
-  const netBalance = roundMoney(youWillReceive - youWillPay);
-  return {
-    totalGiven: roundMoney(totalGiven),
-    totalTaken: roundMoney(totalTaken),
-    youWillReceive: roundMoney(youWillReceive),
-    youWillPay: roundMoney(youWillPay),
-    netBalance,
-    settledAmount: roundMoney(settledAmount),
-    overdueAmount: roundMoney(overdueAmount),
-    activeCount,
-    settledCount,
-    pendingRepaymentCount,
-    pendingConfirmationCount,
-    pendingGivenAmount: roundMoney(pendingGivenAmount),
-    pendingReceivedAmount: roundMoney(pendingReceivedAmount),
-    pendingTotalAmount: roundMoney(pendingGivenAmount + pendingReceivedAmount),
-    rejectedCount,
-    cancelledCount
-  };
-}
-function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
-  const base2 = calculatePersonLedgerSummary(items, todayStr);
-  const connectedKeys = /* @__PURE__ */ new Set();
-  const manualKeys = /* @__PURE__ */ new Set();
-  for (const c of contacts) {
-    if (c.linked_user_id) {
-      connectedKeys.add(c.linked_user_id);
-    } else if (c.name) {
-      manualKeys.add(c.name.trim().toLowerCase());
-    }
-  }
-  const activePeopleSet = /* @__PURE__ */ new Set();
-  let pendingConfirmationsCount = 0;
-  for (const tx of items) {
-    const lifecycle = normalizeUdharLifecycleStatus(tx);
-    if (lifecycle === "deleted" || lifecycle === "rejected" || lifecycle === "cancelled") continue;
-    if (tx.counterpart_user_id) {
-      connectedKeys.add(tx.counterpart_user_id);
-    }
-    if (lifecycle === "pending_confirmation") {
-      pendingConfirmationsCount += 1;
-      continue;
-    }
-    const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = lifecycle === "settled" || cur <= 0.01;
-    if (!isSettled && cur > 0.01) {
-      const personKey = tx.counterpart_user_id || (tx.counterpart_name || "").trim().toLowerCase();
-      if (personKey) activePeopleSet.add(personKey);
-    }
-    if (Array.isArray(tx.repayments)) {
-      pendingConfirmationsCount += tx.repayments.filter(
-        (r2) => isActiveRepayment(r2) && r2.status === "pending_confirmation"
-      ).length;
-    }
-  }
-  return {
-    totalLent: base2.totalGiven,
-    totalBorrowed: base2.totalTaken,
-    outstandingReceivable: base2.youWillReceive,
-    outstandingPayable: base2.youWillPay,
-    netBalance: base2.netBalance,
-    settledAmount: base2.settledAmount,
-    overdueAmount: base2.overdueAmount,
-    totalConnectedPeople: connectedKeys.size,
-    totalManualPeople: manualKeys.size,
-    peopleWithActiveUdhar: activePeopleSet.size,
-    pendingConfirmationsCount,
-    pendingUdharRequestsCount: base2.pendingConfirmationCount,
-    pendingUdharAmount: base2.pendingTotalAmount
-  };
-}
-var META_MARKER = "\n<!--MM_META:";
-var META_END = "-->";
-function packStructuredNote(plainNote, meta) {
-  const cleanNote = (plainNote || "").trim();
-  const filteredMeta = {};
-  if (meta.category && meta.category.trim()) filteredMeta.category = meta.category.trim();
-  if (meta.payment_method && meta.payment_method.trim()) filteredMeta.payment_method = meta.payment_method.trim();
-  if (meta.description && meta.description.trim()) filteredMeta.description = meta.description.trim();
-  if (meta.transaction_ref && meta.transaction_ref.trim()) filteredMeta.transaction_ref = meta.transaction_ref.trim();
-  if (meta.repayment_time && meta.repayment_time.trim()) filteredMeta.repayment_time = meta.repayment_time.trim();
-  if (meta.attachment_url && meta.attachment_url.trim()) filteredMeta.attachment_url = meta.attachment_url.trim();
-  if (meta.creation_method) filteredMeta.creation_method = meta.creation_method;
-  if (meta.lifecycle_status) filteredMeta.lifecycle_status = meta.lifecycle_status;
-  if (meta.accepted_by && meta.accepted_by.trim()) filteredMeta.accepted_by = meta.accepted_by.trim();
-  if (meta.rejected_by && meta.rejected_by.trim()) filteredMeta.rejected_by = meta.rejected_by.trim();
-  if (meta.cancelled_by && meta.cancelled_by.trim()) filteredMeta.cancelled_by = meta.cancelled_by.trim();
-  if (meta.responded_at && meta.responded_at.trim()) filteredMeta.responded_at = meta.responded_at.trim();
-  if (meta.cancelled_at && meta.cancelled_at.trim()) filteredMeta.cancelled_at = meta.cancelled_at.trim();
-  if (meta.rejection_reason && meta.rejection_reason.trim()) filteredMeta.rejection_reason = meta.rejection_reason.trim();
-  if (Object.keys(filteredMeta).length === 0) {
-    return cleanNote || null;
-  }
-  return `${cleanNote}${META_MARKER}${JSON.stringify(filteredMeta)}${META_END}`.trim();
-}
-function unpackStructuredNote(rawNote) {
-  if (!rawNote || typeof rawNote !== "string") {
-    return { note: "", meta: {} };
-  }
-  const idx = rawNote.indexOf(META_MARKER);
-  if (idx === -1) {
-    return { note: rawNote.trim(), meta: {} };
-  }
-  const endIdx = rawNote.indexOf(META_END, idx + META_MARKER.length);
-  if (endIdx === -1) {
-    return { note: rawNote.trim(), meta: {} };
-  }
-  const notePart = rawNote.slice(0, idx).trim();
-  const jsonPart = rawNote.slice(idx + META_MARKER.length, endIdx);
-  try {
-    const parsed = JSON.parse(jsonPart);
-    if (parsed && typeof parsed === "object") {
-      return { note: notePart, meta: parsed };
-    }
-  } catch {
-  }
-  return { note: rawNote.trim(), meta: {} };
-}
-var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isValidUuid(value) {
-  if (!value || typeof value !== "string") return false;
-  return UUID_REGEX.test(value.trim());
-}
-function parseConnectionRequestKey(rawKey) {
-  const raw = (rawKey || "").trim();
-  if (!raw) {
-    return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
-  }
-  if (isValidUuid(raw)) {
-    return { valid: true, kind: "uuid", raw, uuid: raw, requesterUserId: null, targetUserId: null };
-  }
-  const parts = raw.split(":").map((p) => p.trim()).filter(Boolean);
-  if (parts.length === 2 && isValidUuid(parts[0]) && isValidUuid(parts[1])) {
-    return {
-      valid: true,
-      kind: "composite",
-      raw,
-      uuid: null,
-      requesterUserId: parts[0],
-      targetUserId: parts[1]
-    };
-  }
-  return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
-}
-
-// server/supabaseRestUdhar.ts
-var DEFAULT_SUPABASE_URL2 = "https://frgrfajnrzqwnevhlrio.supabase.co";
-var DEFAULT_SUPABASE_KEY2 = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
-function getRestConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL2).replace(/\/+$/, "");
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY2;
-  return { url, key };
-}
-async function sbRest(path12, options = {}) {
-  const { url, key } = getRestConfig();
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    Accept: "application/json"
-  };
-  if (options.body !== void 0) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (options.prefer) {
-    headers["Prefer"] = options.prefer;
-  }
-  const response = await fetch(`${url}/rest/v1/${path12}`, {
-    method: options.method || "GET",
-    headers,
-    body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
-  });
-  const text = await response.text();
-  let parsed = null;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-  if (!response.ok) {
-    const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
-    return { ok: false, status: response.status, data: null, error: errMsg };
-  }
-  return { ok: true, status: response.status, data: parsed };
-}
-function enrichTransactionRow(row, userMap, repayments, editHistory) {
-  const orig = parseFloat(row.original_amount) || 0;
-  const cur = parseFloat(row.current_balance) || 0;
-  const computedPaid = Math.max(0, roundMoney(orig - cur));
-  const { note, meta } = unpackStructuredNote(row.notes);
-  const counterpart = row.counterpart_user_id ? userMap.get(row.counterpart_user_id) : null;
-  const lifecycleStatus = normalizeUdharLifecycleStatus(row);
-  return {
-    ...row,
-    status: lifecycleStatus,
-    creation_method: row.creation_method || meta.creation_method || "manual",
-    accepted_by: row.accepted_by || meta.accepted_by || null,
-    rejected_by: row.rejected_by || meta.rejected_by || null,
-    cancelled_by: row.cancelled_by || meta.cancelled_by || null,
-    responded_at: row.responded_at || meta.responded_at || null,
-    cancelled_at: row.cancelled_at || meta.cancelled_at || null,
-    rejection_reason: row.rejection_reason || meta.rejection_reason || null,
-    counterpart_registered_name: counterpart?.full_name || row.counterpart_registered_name || null,
-    counterpart_email: counterpart?.email || row.counterpart_email || null,
-    counterpart_avatar: counterpart?.avatar_url || row.counterpart_avatar || null,
-    paid_amount: row.paid_amount !== null && row.paid_amount !== void 0 ? parseFloat(row.paid_amount) : computedPaid,
-    category: row.category || meta.category || "Personal Loan",
-    payment_method: row.payment_method || meta.payment_method || "UPI",
-    description: row.description || meta.description || null,
-    clean_notes: note || null,
-    notes: note || null,
-    attachment_url: row.attachment_url || meta.attachment_url || null,
-    repayments: repayments.filter((rep) => isActiveRepayment(rep)).map((rep) => {
-      const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
-      const recorder = rep.recorded_by_user_id ? userMap.get(rep.recorded_by_user_id) : null;
-      return {
-        ...rep,
-        recorded_by_name: recorder?.full_name || rep.recorded_by_name || null,
-        notes: repNote || null,
-        transaction_ref: rep.transaction_ref || repMeta.transaction_ref || null,
-        repayment_time: rep.repayment_time || repMeta.repayment_time || null,
-        attachment_url: rep.attachment_url || repMeta.attachment_url || null
-      };
-    }),
-    edit_history: editHistory.map((h2) => {
-      const editor = h2.edited_by_user_id ? userMap.get(h2.edited_by_user_id) : null;
-      return {
-        ...h2,
-        edited_by_name: editor?.full_name || h2.edited_by_name || null
-      };
-    })
-  };
-}
-async function fetchUsersByIds(ids) {
-  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
-  const map2 = /* @__PURE__ */ new Map();
-  if (uniqueIds.length === 0) return map2;
-  const inList = uniqueIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
-  let res = await sbRest(
-    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role,is_verified,username`
-  );
-  if (!res.ok && res.status === 400) {
-    res = await sbRest(
-      `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role`
-    );
-  }
-  if (res.ok && Array.isArray(res.data)) {
-    for (const u of res.data) {
-      map2.set(u.id, u);
-    }
-  }
-  return map2;
-}
-async function isBlockedBetween(userAId, userBId) {
-  const res = await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(userAId)},user_b_id.eq.${encodeURIComponent(userBId)}),and(user_a_id.eq.${encodeURIComponent(userBId)},user_b_id.eq.${encodeURIComponent(userAId)}))&select=status`
-  );
-  if (!res.ok || !Array.isArray(res.data)) return false;
-  return res.data.some((c) => c.status === "blocked");
-}
-async function upsertUserConnectionRest(userAId, userBId, status, meta) {
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const baseBody = { user_a_id: userAId, user_b_id: userBId, status };
-  const cleanMeta = {};
-  if (meta) {
-    for (const [k, v] of Object.entries(meta)) {
-      if (v !== void 0) cleanMeta[k] = v;
-    }
-    cleanMeta.updated_at = nowIso;
-  }
-  const fullBody = { ...baseBody, ...cleanMeta };
-  let res = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: fullBody
-  });
-  if (!res.ok && res.status === 400 && Object.keys(cleanMeta).length > 0 && !String(res.error || "").includes("23514")) {
-    res = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=representation",
-      body: baseBody
-    });
-  }
-  if (res.ok) return res;
-  const errText = String(res.error || "");
-  if (errText.includes("user_connections_status_check") || errText.includes("23514")) {
-    return res;
-  }
-  const existing = await sbRest(
-    `user_connections?user_a_id=eq.${encodeURIComponent(userAId)}&user_b_id=eq.${encodeURIComponent(userBId)}&select=id,status&limit=1`
-  );
-  if (existing.ok && existing.data && existing.data.length > 0) {
-    let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: { status, ...cleanMeta }
-    });
-    if (!patchRes.ok && patchRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(patchRes.error || "").includes("23514")) {
-      patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: { status }
-      });
-    }
-    return patchRes;
-  }
-  let insRes = await sbRest("user_connections", {
-    method: "POST",
-    prefer: "return=representation",
-    body: fullBody
-  });
-  if (!insRes.ok && insRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(insRes.error || "").includes("23514")) {
-    insRes = await sbRest("user_connections", {
-      method: "POST",
-      prefer: "return=representation",
-      body: baseBody
-    });
-  }
-  return insRes;
-}
-async function upsertUdharContactRest(payload) {
-  const cleanName = payload.name.trim();
-  const normalizedName = cleanName.toLowerCase();
-  const cleanPayload = { ...payload, name: cleanName };
-  if (cleanPayload.linked_user_id) {
-    const byLink = await sbRest(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&linked_user_id=eq.${encodeURIComponent(cleanPayload.linked_user_id)}&limit=1`
-    );
-    if (byLink.ok && byLink.data && byLink.data.length > 0) {
-      const existing = byLink.data[0];
-      return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existing.id)}`, {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: {
-          ...cleanPayload,
-          email: cleanPayload.email ?? existing.email ?? null,
-          phone: cleanPayload.phone ?? existing.phone ?? null,
-          photo_url: cleanPayload.photo_url ?? existing.photo_url ?? null,
-          notes: cleanPayload.notes ?? existing.notes ?? null
-        }
-      });
-    }
-  }
-  const allForUser = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&select=id,name,email,phone,photo_url,notes,linked_user_id`
-  );
-  if (allForUser.ok && Array.isArray(allForUser.data)) {
-    const matchedByName = allForUser.data.find(
-      (c) => (c.name || "").trim().toLowerCase() === normalizedName && (!cleanPayload.linked_user_id || !c.linked_user_id || c.linked_user_id === cleanPayload.linked_user_id)
-    );
-    if (matchedByName) {
-      return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(matchedByName.id)}`, {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: {
-          ...cleanPayload,
-          email: cleanPayload.email ?? matchedByName.email ?? null,
-          phone: cleanPayload.phone ?? matchedByName.phone ?? null,
-          photo_url: cleanPayload.photo_url ?? matchedByName.photo_url ?? null,
-          notes: cleanPayload.notes ?? matchedByName.notes ?? null,
-          linked_user_id: cleanPayload.linked_user_id || matchedByName.linked_user_id || null
-        }
-      });
-    }
-  }
-  const res = await sbRest("udhar_contacts?on_conflict=user_id,name", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: cleanPayload
-  });
-  if (res.ok && res.data && res.data.length > 0) {
-    return res;
-  }
-  return sbRest("udhar_contacts", {
-    method: "POST",
-    prefer: "return=representation",
-    body: cleanPayload
-  });
-}
-async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend", opts) {
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const connMeta = {
-    relationship_type: relationshipType || "Friend",
-    requested_via: opts?.requestedVia || "search",
-    connection_method: opts?.connectionMethod || "SEARCH",
-    consented_at: nowIso,
-    responded_at: nowIso,
-    deleted_at: null,
-    deleted_by: null,
-    cancelled_at: null
-  };
-  const [connAB, connBA] = await Promise.all([
-    upsertUserConnectionRest(authUser.id, targetUser.id, "connected", connMeta),
-    upsertUserConnectionRest(targetUser.id, authUser.id, "connected", connMeta)
-  ]);
-  if (!connAB.ok && !connBA.ok) {
-    return {
-      ok: false,
-      error: connAB.error || connBA.error || "Failed to establish connection record."
-    };
-  }
-  const connectionId = connAB.data?.[0]?.id || connBA.data?.[0]?.id || null;
-  const targetName = (targetUser.full_name || targetUser.email?.split("@")[0] || "User").trim();
-  const myName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  const existingMine = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetUser.id)}&limit=1`
-  );
-  let mineRes;
-  if (existingMine.ok && existingMine.data && existingMine.data.length > 0) {
-    mineRes = await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
-      method: "PATCH",
-      body: {
-        name: targetName,
-        email: targetUser.email || existingMine.data[0].email || null,
-        phone: targetUser.phone || existingMine.data[0].phone || null,
-        photo_url: targetUser.avatar_url || existingMine.data[0].photo_url || null,
-        relationship_type: relationshipType || existingMine.data[0].relationship_type || "Friend",
-        updated_at: nowIso
-      }
-    });
-  } else {
-    mineRes = await upsertUdharContactRest({
-      user_id: authUser.id,
-      name: targetName,
-      email: targetUser.email || null,
-      phone: targetUser.phone || null,
-      photo_url: targetUser.avatar_url || null,
-      relationship_type: relationshipType || "Friend",
-      linked_user_id: targetUser.id,
-      updated_at: nowIso
-    });
-  }
-  if (!mineRes.ok) {
-    return {
-      ok: false,
-      error: mineRes.error || "Failed to save connected contact."
-    };
-  }
-  const existingTheirs = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(targetUser.id)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (existingTheirs.ok && existingTheirs.data && existingTheirs.data.length > 0) {
-    await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existingTheirs.data[0].id)}`, {
-      method: "PATCH",
-      body: {
-        name: myName,
-        email: authUser.email || existingTheirs.data[0].email || null,
-        phone: authUser.phone || existingTheirs.data[0].phone || null,
-        photo_url: authUser.avatar_url || existingTheirs.data[0].photo_url || null,
-        updated_at: nowIso
-      }
-    }).catch(() => {
-    });
-  } else {
-    await upsertUdharContactRest({
-      user_id: targetUser.id,
-      name: myName,
-      email: authUser.email || null,
-      phone: authUser.phone || null,
-      photo_url: authUser.avatar_url || null,
-      relationship_type: relationshipType || "Friend",
-      linked_user_id: authUser.id,
-      updated_at: nowIso
-    }).catch(() => {
-    });
-  }
-  return { ok: true, connectionId };
-}
-async function createTargetedNotificationRest(params) {
-  if (!params.targetUserId || params.targetUserId === "all") return;
-  const notifType = params.type === "udhar_connection_request" || params.type === "udhar_request" || params.type === "repayment_pending" ? "info" : params.type === "udhar_rejected" || params.type === "repayment_rejected" || params.type === "udhar_request_cancelled" || params.type === "udhar_deleted" ? "warning" : "success";
-  await Promise.all([
-    sbRest("notifications", {
-      method: "POST",
-      prefer: "return=minimal",
-      body: {
-        title: params.title,
-        message: params.message,
-        type: params.type,
-        target_user_id: params.targetUserId,
-        actor_user_id: params.actorUserId,
-        related_entity_id: params.relatedEntityId || null,
-        is_active: true
-      }
-    }).catch(() => {
-    }),
-    createNotification({
-      userId: params.targetUserId,
-      title: params.title,
-      message: params.message,
-      category: params.category || "udhar",
-      type: notifType,
-      relatedEntityType: "udhar",
-      relatedEntityId: params.relatedEntityId || void 0,
-      deepLink: params.deepLink || "people",
-      dedupeKey: params.dedupeKey,
-      metadata: {
-        actionType: params.type,
-        relatedEntityId: params.relatedEntityId || null,
-        linkId: params.relatedEntityId || null,
-        actorUserId: params.actorUserId,
-        ...params.metadata || {}
-      },
-      channels: ["in_app", "push"]
-    }).catch(() => {
-    })
-  ]);
-}
-async function deactivateUdharNotificationsRest(linkId, txId) {
-  if (!linkId && !txId) return;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const tasks = [];
-  if (linkId) {
-    tasks.push(
-      sbRest(`notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { is_active: false }
-      }).catch(() => {
-      }),
-      sbRest(`user_notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { is_deleted: true, deleted_at: nowIso }
-      }).catch(() => {
-      }),
-      sbRest(`user_notifications?metadata->>relatedEntityId=eq.${encodeURIComponent(linkId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { is_deleted: true, deleted_at: nowIso }
-      }).catch(() => {
-      }),
-      sbRest(`user_notifications?metadata->>linkId=eq.${encodeURIComponent(linkId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { is_deleted: true, deleted_at: nowIso }
-      }).catch(() => {
-      })
-    );
-  }
-  if (txId) {
-    tasks.push(
-      sbRest(`notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { is_active: false }
-      }).catch(() => {
-      }),
-      sbRest(`user_notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { is_deleted: true, deleted_at: nowIso }
-      }).catch(() => {
-      })
-    );
-  }
-  tasks.push(purgeUdharNotificationsFallback(linkId, txId).catch(() => {
-  }));
-  await Promise.all(tasks);
-}
-async function searchUsersRest(authUser, rawQuery) {
-  const classified = classifyLiveSearchQuery(rawQuery);
-  if (classified.mode === "too_short") {
-    return { status: 200, body: { success: true, users: [], searchMode: "too_short" } };
-  }
-  if (classified.mode === "email_incomplete") {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        users: [],
-        searchMode: "email_incomplete",
-        hint: "Enter the complete email address to find a user."
-      }
-    };
-  }
-  if (classified.mode === "phone_incomplete") {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        users: [],
-        searchMode: "phone_incomplete",
-        hint: "Enter a complete 10-digit mobile number to search."
-      }
-    };
-  }
-  const escaped = classified.normalized.replace(/[%*,()]/g, "");
-  const buildQueryPath = (includeOptionalCols) => {
-    const selectCols = includeOptionalCols ? "id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role" : "id,full_name,email,phone,avatar_url,status,deletion_status,role";
-    if (classified.mode === "email_exact") {
-      return `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=${selectCols}&limit=5`;
-    }
-    if (classified.mode === "phone_exact") {
-      const tail = classified.last10Digits;
-      return `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=${selectCols}&limit=15`;
-    }
-    const orClauses = includeOptionalCols ? [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`] : [`full_name.ilike.*${escaped}*`];
-    return `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=${selectCols}&order=full_name.asc&limit=20`;
-  };
-  let usersRes = await sbRest(buildQueryPath(true));
-  if (!usersRes.ok && usersRes.status === 400) {
-    usersRes = await sbRest(buildQueryPath(false));
-  }
-  if (!usersRes.ok) {
-    return {
-      status: 503,
-      body: {
-        success: false,
-        code: "DIRECTORY_UNAVAILABLE",
-        message: "Unable to reach user directory right now. Please retry."
-      }
-    };
-  }
-  let activeUsers = (usersRes.data || []).filter((u) => isDiscoverableNormalUser(u));
-  if (classified.mode === "email_exact") {
-    activeUsers = activeUsers.filter(
-      (u) => (u.email || "").trim().toLowerCase() === classified.normalized
-    );
-  } else if (classified.mode === "phone_exact") {
-    activeUsers = activeUsers.filter((u) => {
-      const userDigits = String(u.phone || "").replace(/\D/g, "");
-      if (userDigits.length < 10) return false;
-      return userDigits === classified.digitsOnly || userDigits.slice(-10) === classified.last10Digits;
-    });
-  }
-  const [connRes, contactsRes] = await Promise.all([
-    sbRest(
-      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status`
-    ),
-    sbRest(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=linked_user_id`
-    )
-  ]);
-  const statusByUserId = /* @__PURE__ */ new Map();
-  if (connRes.ok && Array.isArray(connRes.data)) {
-    for (const c of connRes.data) {
-      const isOutgoing = c.user_a_id === authUser.id;
-      const otherId = isOutgoing ? c.user_b_id : c.user_a_id;
-      if (!otherId) continue;
-      const prev = statusByUserId.get(otherId)?.status;
-      if (c.status === "blocked" || prev === "blocked") {
-        statusByUserId.set(otherId, { status: "blocked", requestId: c.id });
-      } else if (c.status === "connected" || prev === "connected") {
-        statusByUserId.set(otherId, { status: "connected", requestId: c.id });
-      } else if (c.status === "pending") {
-        statusByUserId.set(otherId, {
-          status: isOutgoing ? "pending" : "incoming_pending",
-          requestId: c.id
-        });
-      }
-    }
-  }
-  const linkedContactSet = /* @__PURE__ */ new Set();
-  if (contactsRes.ok && Array.isArray(contactsRes.data)) {
-    for (const ct of contactsRes.data) {
-      if (ct.linked_user_id) linkedContactSet.add(ct.linked_user_id);
-    }
-  }
-  const sanitized = activeUsers.filter((u) => statusByUserId.get(u.id)?.status !== "blocked").slice(0, 15).map((u) => {
-    const isSelf = u.id === authUser.id;
-    const connEntry = statusByUserId.get(u.id);
-    const isConnected = !isSelf && (connEntry?.status === "connected" || linkedContactSet.has(u.id));
-    const connectionStatus = isSelf ? "self" : isConnected ? "connected" : connEntry?.status === "pending" ? "pending" : connEntry?.status === "incoming_pending" ? "incoming_pending" : "none";
-    const showContactHint = isConnected || isSelf;
-    return {
-      id: u.id,
-      displayName: u.full_name || u.username || "My Money User",
-      fullName: u.full_name || u.username || "My Money User",
-      username: u.username || null,
-      accountIndicator: "My Money Manager Account",
-      emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : void 0,
-      phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
-      avatarUrl: u.avatar_url || null,
-      isSelf,
-      isVerified: Boolean(u.is_verified ?? true),
-      connectionStatus,
-      requestId: connEntry?.requestId || null,
-      isAlreadyConnected: isConnected,
-      isSavedContact: linkedContactSet.has(u.id)
-    };
-  });
-  return { status: 200, body: { success: true, users: sanitized, searchMode: classified.mode } };
-}
-async function connectUserRest(authUser, body) {
-  const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
-  const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
-  const requestedVia = (body.requestedVia || body.source || "search").trim();
-  if (!targetUserId) {
-    return { status: 400, body: { success: false, code: "MISSING_TARGET", message: "Target user ID is required." } };
-  }
-  if (targetUserId === authUser.id) {
-    return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
-  }
-  let targetRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified`
-  );
-  if (!targetRes.ok && targetRes.status === 400) {
-    targetRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
-    );
-  }
-  if (!targetRes.ok) {
-    return { status: 503, body: { success: false, code: "DIRECTORY_UNAVAILABLE", message: "Unable to verify target account right now. Please retry." } };
-  }
-  if (!targetRes.data || targetRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
-  }
-  const target = targetRes.data[0];
-  if (!isDiscoverableNormalUser(target)) {
-    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is not eligible for Udhar connections." } };
-  }
-  if (await isBlockedBetween(authUser.id, targetUserId)) {
-    return { status: 403, body: { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." } };
-  }
-  const pairRes = await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
-  );
-  if (!pairRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to inspect connection state right now. Please retry." } };
-  }
-  const pairRows = Array.isArray(pairRes.data) ? pairRes.data : [];
-  const targetName = (target.full_name || target.email?.split("@")[0] || "User").trim();
-  const requesterName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
-  if (pairRows.some((r2) => r2.status === "connected")) {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "connected",
-        alreadyConnected: true,
-        message: `You are already connected with ${targetName}.`,
-        connectedUser: {
-          id: target.id,
-          name: targetName,
-          displayName: targetName,
-          fullName: targetName,
-          avatarUrl: target.avatar_url || null,
-          isVerified: Boolean(target.is_verified ?? true)
-        }
-      }
-    };
-  }
-  const incomingPending = pairRows.find(
-    (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
-  );
-  if (incomingPending) {
-    return acceptConnectionRequestRest(authUser, incomingPending.id || targetUserId);
-  }
-  const outgoingPending = pairRows.find(
-    (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
-  );
-  if (outgoingPending) {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "pending",
-        alreadyPending: true,
-        deduplicated: true,
-        requestId: outgoingPending.id || `${authUser.id}:${targetUserId}`,
-        message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
-        connectedUser: {
-          id: target.id,
-          name: targetName,
-          displayName: targetName,
-          fullName: targetName,
-          avatarUrl: target.avatar_url || null,
-          isVerified: Boolean(target.is_verified ?? true)
-        }
-      }
-    };
-  }
-  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, "pending", {
-    relationship_type: relationshipType,
-    requested_via: requestedVia,
-    connection_method: "SEARCH",
-    responded_at: null,
-    consented_at: null,
-    cancelled_at: null,
-    deleted_at: null,
-    deleted_by: null
-  });
-  if (!insRes.ok) {
-    const errText = String(insRes.error || "");
-    console.error("[connectUserRest failed]:", insRes.status, errText);
-    return {
-      status: 503,
-      body: {
-        success: false,
-        code: "REQUEST_FAILED",
-        message: "Unable to send connection request right now. Please try again."
-      }
-    };
-  }
-  const requestId = insRes.data?.[0]?.id || `${authUser.id}:${targetUserId}`;
-  await createTargetedNotificationRest({
-    targetUserId: target.id,
-    actorUserId: authUser.id,
-    title: "Udhar Connection Request",
-    message: `${requesterName} wants to connect with you on My Money Manager Udhar.`,
-    type: "udhar_connection_request",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: String(requestId),
-    metadata: {
-      actionType: "udhar_connection_request",
-      requestId: String(requestId),
-      connectionId: String(requestId),
-      requesterId: authUser.id,
-      requesterUserId: authUser.id,
-      receiverId: target.id,
-      requesterName,
-      requesterAvatar: authUser.avatar_url || null,
-      requestedVia,
-      connectionMethod: "SEARCH",
-      relationshipType,
-      requestStatus: "pending"
-    }
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "pending",
-      connectionMethod: "SEARCH",
-      alreadyConnected: false,
-      alreadyPending: false,
-      requestId: String(requestId),
-      message: `Connection request sent to ${targetName}. You'll be connected once they accept.`,
-      connectedUser: {
-        id: target.id,
-        name: targetName,
-        displayName: targetName,
-        fullName: targetName,
-        avatarUrl: target.avatar_url || null,
-        isVerified: Boolean(target.is_verified ?? true)
-      }
-    }
-  };
-}
-async function getConnectionRequestsRest(authUser) {
-  let connRes = await sbRest(
-    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,relationship_type,requested_via,connection_method,created_at,updated_at,responded_at&order=created_at.desc`
-  );
-  if (!connRes.ok && connRes.status === 400) {
-    connRes = await sbRest(
-      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
-    );
-  }
-  if (!connRes.ok) {
-    return { status: 503, body: { success: false, message: "Unable to load connection requests right now." } };
-  }
-  const rows = connRes.data || [];
-  const otherIds = rows.map((r2) => r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(otherIds);
-  const incoming = [];
-  const outgoing = [];
-  const connectedMap = /* @__PURE__ */ new Map();
-  for (const r2 of rows) {
-    if (r2.status === "pending") {
-      if (r2.user_b_id === authUser.id) {
-        const u = userMap.get(r2.user_a_id);
-        incoming.push({
-          id: r2.id,
-          direction: "incoming",
-          requesterUserId: r2.user_a_id,
-          displayName: u?.full_name || "My Money User",
-          avatarUrl: u?.avatar_url || null,
-          isVerified: Boolean(u?.is_verified ?? true),
-          status: "pending",
-          relationshipType: r2.relationship_type || "Friend",
-          requestedVia: r2.requested_via || "search",
-          connectionMethod: r2.connection_method || "SEARCH",
-          createdAt: r2.created_at
-        });
-      } else if (r2.user_a_id === authUser.id) {
-        const u = userMap.get(r2.user_b_id);
-        outgoing.push({
-          id: r2.id,
-          direction: "outgoing",
-          targetUserId: r2.user_b_id,
-          displayName: u?.full_name || "My Money User",
-          avatarUrl: u?.avatar_url || null,
-          isVerified: Boolean(u?.is_verified ?? true),
-          status: "pending",
-          relationshipType: r2.relationship_type || "Friend",
-          requestedVia: r2.requested_via || "search",
-          connectionMethod: r2.connection_method || "SEARCH",
-          createdAt: r2.created_at
-        });
-      }
-    } else if (r2.status === "connected") {
-      const otherId = r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id;
-      if (otherId && !connectedMap.has(otherId)) {
-        const u = userMap.get(otherId);
-        connectedMap.set(otherId, {
-          id: r2.id,
-          userId: otherId,
-          displayName: u?.full_name || "My Money User",
-          avatarUrl: u?.avatar_url || null,
-          isVerified: Boolean(u?.is_verified ?? true),
-          status: "connected",
-          relationshipType: r2.relationship_type || "Friend",
-          connectionMethod: r2.connection_method || "SEARCH",
-          createdAt: r2.created_at
-        });
-      }
-    }
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      incoming,
-      outgoing,
-      connected: Array.from(connectedMap.values())
-    }
-  };
-}
-async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
-  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
-  if (!parsedKey.valid) {
-    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
-  }
-  let queryPath = "";
-  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
-    const encoded = encodeURIComponent(parsedKey.uuid);
-    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
-  } else if (parsedKey.kind === "composite" && parsedKey.requesterUserId) {
-    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
-  }
-  const reqRes = await sbRest(queryPath);
-  if (!reqRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
-  }
-  if (!reqRes.data || reqRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
-  }
-  const pendingRow = reqRes.data[0];
-  const requesterId = pendingRow.user_a_id;
-  const userMap = await fetchUsersByIds([requesterId]);
-  const requester = userMap.get(requesterId);
-  if (!requester || requester.status !== "active") {
-    return { status: 404, body: { success: false, message: "Requester account is no longer active." } };
-  }
-  const syncRes = await ensureConnectionAndReciprocalContactsRest(
-    authUser,
-    requester,
-    pendingRow.relationship_type || "Friend",
-    {
-      connectionMethod: pendingRow.connection_method || "SEARCH",
-      requestedVia: pendingRow.requested_via || "search"
-    }
-  );
-  if (!syncRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: syncRes.error || "Failed to finalize connection." } };
-  }
-  await updateConnectionRequestNotificationsState({
-    requestId: String(pendingRow.id),
-    requesterId: requester.id,
-    receiverId: authUser.id,
-    status: "accepted"
-  }).catch(() => {
-  });
-  const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  const requesterName = (requester.full_name || requester.email?.split("@")[0] || "Friend").trim();
-  await createTargetedNotificationRest({
-    targetUserId: requester.id,
-    actorUserId: authUser.id,
-    title: "Connection Request Accepted",
-    message: `${acceptorName} accepted your connection request. Added to your Saved People.`,
-    type: "connection_accepted",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: authUser.id,
-    metadata: {
-      actionType: "udhar_connection_accepted",
-      acceptorId: authUser.id,
-      acceptorName,
-      acceptorAvatar: authUser.avatar_url || null,
-      connectionId: syncRes.connectionId || String(pendingRow.id)
-    }
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "connected",
-      message: `Connected with ${requesterName}! Added to your Saved People.`,
-      connectedUser: {
-        id: requester.id,
-        name: requesterName,
-        displayName: requesterName,
-        fullName: requesterName,
-        avatarUrl: requester.avatar_url || null,
-        isVerified: Boolean(requester.is_verified ?? true)
-      }
-    }
-  };
-}
-async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
-  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
-  if (!parsedKey.valid) {
-    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
-  }
-  let queryPath = "";
-  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
-    const encoded = encodeURIComponent(parsedKey.uuid);
-    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
-  } else if (parsedKey.kind === "composite" && parsedKey.requesterUserId) {
-    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
-  }
-  const reqRes = await sbRest(queryPath);
-  if (!reqRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
-  }
-  if (!reqRes.data || reqRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
-  }
-  const pendingRow = reqRes.data[0];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-    method: "PATCH",
-    body: { status: "rejected", responded_at: nowIso, updated_at: nowIso }
-  });
-  if (!patchRes.ok && patchRes.status === 400) {
-    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-      method: "PATCH",
-      body: { status: "rejected" }
-    });
-  }
-  if (!patchRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to decline request right now." } };
-  }
-  await updateConnectionRequestNotificationsState({
-    requestId: String(pendingRow.id),
-    requesterId: pendingRow.user_a_id,
-    receiverId: authUser.id,
-    status: "rejected"
-  }).catch(() => {
-  });
-  const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  await createTargetedNotificationRest({
-    targetUserId: pendingRow.user_a_id,
-    actorUserId: authUser.id,
-    title: "Connection Request Declined",
-    message: `${rejectorName} declined your My Money Manager Udhar connection request.`,
-    type: "connection_rejected",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: String(pendingRow.id)
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "rejected",
-      message: "Connection request declined. No active connection was created."
-    }
-  };
-}
-async function cancelConnectionRequestRest(authUser, requestIdOrUserId) {
-  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
-  if (!parsedKey.valid) {
-    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
-  }
-  let queryPath = "";
-  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
-    const encoded = encodeURIComponent(parsedKey.uuid);
-    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_b_id.eq.${encoded})&limit=1`;
-  } else if (parsedKey.kind === "composite" && parsedKey.targetUserId) {
-    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&user_b_id=eq.${encodeURIComponent(parsedKey.targetUserId)}&status=eq.pending&limit=1`;
-  } else {
-    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&id=eq.${encodeURIComponent(requestIdOrUserId.trim())}&limit=1`;
-  }
-  const reqRes = await sbRest(queryPath);
-  if (!reqRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify pending request right now." } };
-  }
-  if (!reqRes.data || reqRes.data.length === 0) {
-    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending outgoing connection request not found." } };
-  }
-  const pendingRow = reqRes.data[0];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-    method: "PATCH",
-    body: { status: "cancelled", cancelled_at: nowIso, updated_at: nowIso }
-  });
-  if (!patchRes.ok && patchRes.status === 400 && !String(patchRes.error || "").includes("23514")) {
-    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-      method: "PATCH",
-      body: { status: "cancelled" }
-    });
-  }
-  if (!patchRes.ok && String(patchRes.error || "").includes("23514")) {
-    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
-      method: "DELETE"
-    });
-  }
-  if (!patchRes.ok) {
-    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to cancel connection request right now." } };
-  }
-  await updateConnectionRequestNotificationsState({
-    requestId: String(pendingRow.id),
-    requesterId: authUser.id,
-    receiverId: pendingRow.user_b_id,
-    status: "cancelled"
-  }).catch(() => {
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "cancelled",
-      requestId: String(pendingRow.id),
-      message: "Connection request cancelled."
-    }
-  };
-}
-async function removeSavedConnectionRest(authUser, targetOrContactId) {
-  const rawId = (targetOrContactId || "").trim();
-  if (!rawId) {
-    return { status: 400, body: { success: false, message: "Contact or peer user ID is required." } };
-  }
-  let contactRow = null;
-  let peerUserId = null;
-  if (rawId.startsWith("conn_")) {
-    peerUserId = rawId.slice(5).trim() || null;
-  } else {
-    const ownedContactRes = await sbRest(
-      `udhar_contacts?id=eq.${encodeURIComponent(rawId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-    );
-    if (ownedContactRes.ok && ownedContactRes.data && ownedContactRes.data.length > 0) {
-      contactRow = ownedContactRes.data[0];
-      peerUserId = contactRow.linked_user_id || null;
-    } else {
-      peerUserId = rawId;
-    }
-  }
-  if (!contactRow && !peerUserId) {
-    return { status: 404, body: { success: false, message: "Saved connection not found." } };
-  }
-  if (!contactRow && peerUserId) {
-    const [peerContactsRes, peerConnsRes] = await Promise.all([
-      sbRest(
-        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}&limit=1`
-      ),
-      sbRest(
-        `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
-      )
-    ]);
-    const hasContact = Boolean(peerContactsRes.ok && peerContactsRes.data && peerContactsRes.data.length > 0);
-    const hasConnection = Boolean(
-      peerConnsRes.ok && peerConnsRes.data && peerConnsRes.data.some((c) => c.status !== "deleted")
-    );
-    if (!hasContact && !hasConnection) {
-      return { status: 404, body: { success: false, message: "Saved connection not found." } };
-    }
-  }
-  if (contactRow?.id) {
-    const delOwn = await sbRest(
-      `udhar_contacts?id=eq.${encodeURIComponent(contactRow.id)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
-      { method: "DELETE" }
-    );
-    if (!delOwn.ok) {
-      return { status: 500, body: { success: false, message: delOwn.error || "Failed to remove saved contact." } };
-    }
-  }
-  if (peerUserId && peerUserId !== authUser.id) {
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    await Promise.all([
-      sbRest(
-        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}`,
-        { method: "DELETE" }
-      ).catch(() => {
-      }),
-      sbRest(
-        `udhar_contacts?user_id=eq.${encodeURIComponent(peerUserId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`,
-        { method: "DELETE" }
-      ).catch(() => {
-      })
-    ]);
-    const connPatchFilter = `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`;
-    let connDelRes = await sbRest(connPatchFilter, {
-      method: "PATCH",
-      body: { status: "deleted", deleted_at: nowIso, deleted_by: authUser.id, updated_at: nowIso }
-    });
-    if (!connDelRes.ok && connDelRes.status === 400 && !String(connDelRes.error || "").includes("23514")) {
-      connDelRes = await sbRest(connPatchFilter, {
-        method: "PATCH",
-        body: { status: "deleted" }
-      });
-    }
-    if (!connDelRes.ok && String(connDelRes.error || "").includes("23514")) {
-      await sbRest(connPatchFilter, { method: "DELETE" }).catch(() => {
-      });
-    }
-    await Promise.all([
-      updateConnectionRequestNotificationsState({
-        requesterId: authUser.id,
-        receiverId: peerUserId,
-        status: "cancelled"
-      }).catch(() => {
-      }),
-      updateConnectionRequestNotificationsState({
-        requesterId: peerUserId,
-        receiverId: authUser.id,
-        status: "cancelled"
-      }).catch(() => {
-      })
-    ]);
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      removed: true,
-      twoSided: Boolean(peerUserId && peerUserId !== authUser.id),
-      peerUserId,
-      preservedTransactions: true,
-      message: "Connection removed from Saved People. Existing Udhaar history remains preserved."
-    }
-  };
-}
-async function disconnectUserRest(authUser, targetUserId) {
-  const targetId = (targetUserId || "").trim();
-  if (!targetId) {
-    return { status: 400, body: { success: false, message: "Target user ID is required." } };
-  }
-  const removal = await removeSavedConnectionRest(authUser, targetId);
-  if (removal.status !== 200) {
-    return removal;
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "disconnected",
-      twoSided: true,
-      preservedTransactions: true,
-      message: "Connection removed from both Saved People lists. Existing Udhar transaction history has been preserved."
-    }
-  };
-}
-async function getPrivacyConsentsRest(authUser) {
-  let res = await sbRest(
-    `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,consent_status,action,policy_version,consent_wording,granted_at,withdrawn_at,source,audit_metadata,created_at,updated_at&order=created_at.desc&limit=200`
-  );
-  if (!res.ok && res.status === 400) {
-    res = await sbRest(
-      `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,action,policy_version,consent_wording,created_at,updated_at&order=created_at.desc&limit=200`
-    );
-  }
-  if (!res.ok) {
-    return {
-      status: 503,
-      body: {
-        success: false,
-        message: res.error || "Could not load saved privacy choices from Supabase."
-      }
-    };
-  }
-  const history = res.data || [];
-  const latestByCategory = {};
-  for (const row of history) {
-    if (!latestByCategory[row.purpose]) {
-      const effectiveStatus = row.consent_status || row.status;
-      latestByCategory[row.purpose] = {
-        category: row.purpose,
-        purpose: row.purpose,
-        status: effectiveStatus,
-        consent_status: effectiveStatus,
-        policyVersion: row.policy_version,
-        consentedAt: row.granted_at || (effectiveStatus === "granted" ? row.created_at : null),
-        grantedAt: row.granted_at || (effectiveStatus === "granted" ? row.created_at : null),
-        revokedAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? row.created_at : null),
-        withdrawnAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? row.created_at : null),
-        source: row.source || null,
-        updatedAt: row.created_at
-      };
-    }
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      consents: latestByCategory,
-      history,
-      policyVersion: "v2.1 \u2014 DPDP Act 2023 & Rules 2025"
-    }
-  };
-}
-async function recordPrivacyConsentRest(authUser, body) {
-  const purpose = (body.category || body.purpose || "").trim();
-  const status = body.status === "withdrawn" ? "withdrawn" : "granted";
-  if (!purpose) {
-    return { status: 400, body: { success: false, message: "Consent category is required." } };
-  }
-  const policyVersion = (body.policyVersion || "v2.1 \u2014 DPDP Act 2023 & Rules 2025").trim();
-  const wording = (body.wording || `User explicitly ${status} consent for ${purpose}.`).trim();
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const extendedRow = {
-    user_id: authUser.id,
-    user_email: authUser.email,
-    purpose,
-    status,
-    consent_status: status,
-    action: status,
-    policy_version: policyVersion,
-    consent_wording: wording,
-    granted_at: status === "granted" ? nowIso : null,
-    withdrawn_at: status === "withdrawn" ? nowIso : null,
-    source: body.source || "privacy_choices_modal",
-    audit_metadata: body.auditMetadata || {},
-    idempotency_key: body.idempotencyKey || null,
-    created_at: nowIso,
-    updated_at: nowIso
-  };
-  let ins = await sbRest("user_consents", {
-    method: "POST",
-    prefer: "return=representation",
-    body: extendedRow
-  });
-  if (!ins.ok && ins.status === 400) {
-    ins = await sbRest("user_consents", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: authUser.id,
-        user_email: authUser.email,
-        purpose,
-        status,
-        action: status,
-        policy_version: policyVersion,
-        consent_wording: wording,
-        created_at: nowIso,
-        updated_at: nowIso
-      }
-    });
-  }
-  if (!ins.ok && ins.status === 409 && body.idempotencyKey) {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        category: purpose,
-        status,
-        deduplicated: true,
-        consent: { purpose, status, policy_version: policyVersion, created_at: nowIso }
-      }
-    };
-  }
-  if (!ins.ok) {
-    return {
-      status: 503,
-      body: {
-        success: false,
-        message: ins.error || "Could not save consent preference to Supabase right now."
-      }
-    };
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      category: purpose,
-      status,
-      consent: ins.data?.[0] || { purpose, status, policy_version: policyVersion, created_at: nowIso }
-    }
-  };
-}
-async function recordPrivacyConsentBatchRest(authUser, entries) {
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const extendedRows = entries.map((e2) => ({
-    user_id: authUser.id,
-    user_email: authUser.email,
-    purpose: e2.purpose,
-    status: e2.status,
-    consent_status: e2.status,
-    action: e2.status,
-    policy_version: e2.policyVersion,
-    consent_wording: e2.wording,
-    granted_at: e2.status === "granted" ? nowIso : null,
-    withdrawn_at: e2.status === "withdrawn" ? nowIso : null,
-    source: e2.source,
-    audit_metadata: e2.auditMetadata || {},
-    idempotency_key: e2.idempotencyKey,
-    created_at: nowIso,
-    updated_at: nowIso
-  }));
-  let ins = await sbRest("user_consents", {
-    method: "POST",
-    prefer: "return=representation",
-    body: extendedRows
-  });
-  if (!ins.ok && ins.status === 400) {
-    const legacyRows = entries.map((e2) => ({
-      user_id: authUser.id,
-      user_email: authUser.email,
-      purpose: e2.purpose,
-      status: e2.status,
-      action: e2.status,
-      policy_version: e2.policyVersion,
-      consent_wording: e2.wording,
-      created_at: nowIso,
-      updated_at: nowIso
-    }));
-    ins = await sbRest("user_consents", {
-      method: "POST",
-      prefer: "return=representation",
-      body: legacyRows
-    });
-  }
-  if (!ins.ok && ins.status === 409) {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        deduplicated: true,
-        records: extendedRows
-      }
-    };
-  }
-  if (!ins.ok) {
-    return {
-      status: 503,
-      body: {
-        success: false,
-        message: ins.error || "Could not save your privacy choices to Supabase right now."
-      }
-    };
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      records: ins.data || extendedRows
-    }
-  };
-}
-async function buildMergedDirectoryForUserRest(authUser, activeTxs = []) {
-  const [contactsRes, connsRes] = await Promise.all([
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
-    sbRest(
-      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&status=eq.connected`
-    )
-  ]);
-  if (!contactsRes.ok) {
-    return { ok: false, error: contactsRes.error || "Failed to load contacts." };
-  }
-  const rawContacts = contactsRes.data || [];
-  const connectedPeerIds = /* @__PURE__ */ new Set();
-  if (connsRes.ok && Array.isArray(connsRes.data)) {
-    for (const conn of connsRes.data) {
-      const peerId = conn.user_a_id === authUser.id ? conn.user_b_id : conn.user_a_id;
-      if (peerId && peerId !== authUser.id) {
-        connectedPeerIds.add(peerId);
-      }
-    }
-  }
-  const allUserIds = Array.from(
-    /* @__PURE__ */ new Set([
-      ...rawContacts.map((r2) => r2.linked_user_id).filter(Boolean),
-      ...Array.from(connectedPeerIds)
-    ])
-  );
-  const userMap = await fetchUsersByIds(allUserIds);
-  const deduped = [];
-  const seenLinkedIds = /* @__PURE__ */ new Set();
-  const seenUnlinkedNames = /* @__PURE__ */ new Set();
-  for (const c of rawContacts) {
-    const linkedId = c.linked_user_id || null;
-    const normName = (c.name || "").trim().toLowerCase();
-    if (linkedId) {
-      if (seenLinkedIds.has(linkedId)) continue;
-      seenLinkedIds.add(linkedId);
-    } else if (normName) {
-      if (seenUnlinkedNames.has(normName)) continue;
-      seenUnlinkedNames.add(normName);
-    }
-    deduped.push(c);
-  }
-  for (const peerId of connectedPeerIds) {
-    if (seenLinkedIds.has(peerId)) continue;
-    const u = userMap.get(peerId);
-    if (!u || !isDiscoverableNormalUser(u)) continue;
-    seenLinkedIds.add(peerId);
-    deduped.push({
-      id: `conn_${peerId}`,
-      user_id: authUser.id,
-      name: (u.full_name || u.email?.split("@")[0] || "Connected User").trim(),
-      email: u.email ? maskEmailForPrivacy(u.email) : null,
-      phone: null,
-      photo_url: u.avatar_url || null,
-      relationship_type: "Friend",
-      notes: null,
-      linked_user_id: peerId,
-      created_at: (/* @__PURE__ */ new Date()).toISOString(),
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-    });
-  }
-  deduped.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-  return { ok: true, contacts: deduped, userMap };
-}
-async function getContactsRest(authUser) {
-  const txRes = await sbRest(
-    `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`
-  );
-  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted") : [];
-  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
-  if (!merged.ok) {
-    return { status: 503, body: { success: false, message: "Failed to load contacts." } };
-  }
-  const contacts = merged.contacts.map((c) => {
-    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
-    return {
-      ...c,
-      linked_user_name: u?.full_name || null,
-      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
-      linked_user_avatar: u?.avatar_url || null,
-      is_registered: Boolean(c.linked_user_id)
-    };
-  });
-  return { status: 200, body: { success: true, contacts } };
-}
-async function getContactsWithBalancesRest(authUser) {
-  const txRes = await sbRest(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`);
-  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted") : [];
-  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
-  if (!merged.ok) {
-    return { status: 503, body: { success: false, message: "Failed to load people contacts." } };
-  }
-  const parsedContacts = merged.contacts.map((c) => {
-    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
-    const matchingTxs = activeTxs.filter((t2) => {
-      if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
-      if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
-        return true;
-      }
-      return false;
-    });
-    let totalGiven = 0;
-    let totalTaken = 0;
-    let receivable = 0;
-    let payable = 0;
-    let lastDate = null;
-    let pendingCount = 0;
-    let pendingRequestsCount = 0;
-    let pendingRequestsAmount = 0;
-    let pendingGivenAmount = 0;
-    let pendingReceivedAmount = 0;
-    let rejectedCount = 0;
-    for (const t2 of matchingTxs) {
-      const lifecycle = normalizeUdharLifecycleStatus(t2);
-      if (lifecycle === "deleted") continue;
-      if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
-        lastDate = t2.transaction_date;
-      }
-      if (lifecycle === "rejected") {
-        rejectedCount += 1;
-        continue;
-      }
-      if (lifecycle === "cancelled") continue;
-      const orig = parseFloat(t2.original_amount) || 0;
-      if (lifecycle === "pending_confirmation") {
-        pendingRequestsCount += 1;
-        pendingRequestsAmount += orig;
-        if (t2.direction === "gave") pendingGivenAmount += orig;
-        else pendingReceivedAmount += orig;
-        continue;
-      }
-      const cur = parseFloat(t2.current_balance) || 0;
-      const isSettled = lifecycle === "settled" || cur <= 0.01;
-      if (t2.direction === "gave") {
-        totalGiven += orig;
-        if (!isSettled) receivable += cur;
-      } else {
-        totalTaken += orig;
-        if (!isSettled) payable += cur;
-      }
-      if (!isSettled && cur > 0.01) pendingCount += 1;
-    }
-    return {
-      ...c,
-      linked_user_name: u?.full_name || null,
-      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
-      linked_user_avatar: u?.avatar_url || null,
-      total_given: roundMoney(totalGiven),
-      total_taken: roundMoney(totalTaken),
-      outstanding_receivable: roundMoney(receivable),
-      outstanding_payable: roundMoney(payable),
-      net_balance: roundMoney(receivable - payable),
-      last_transaction_date: lastDate,
-      total_transactions_count: matchingTxs.length,
-      pending_transactions_count: pendingCount,
-      pending_requests_count: pendingRequestsCount,
-      pending_requests_amount: roundMoney(pendingRequestsAmount),
-      pending_given_amount: roundMoney(pendingGivenAmount),
-      pending_received_amount: roundMoney(pendingReceivedAmount),
-      rejected_count: rejectedCount,
-      is_registered: Boolean(c.linked_user_id)
-    };
-  });
-  return { status: 200, body: { success: true, contacts: parsedContacts } };
-}
-async function saveContactRest(authUser, body) {
-  const name2 = (body.name || "").trim();
-  const email = (body.email || "").trim().toLowerCase();
-  const phone = (body.phone || "").trim();
-  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
-  const notes = (body.notes || "").trim();
-  const photoUrl = (body.photo_url || body.photoUrl || "").trim() || null;
-  const requestedLinkedUserId = (body.linked_user_id || body.linkedUserId || "").trim() || null;
-  if (!name2) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
-  if (requestedLinkedUserId) {
-    if (requestedLinkedUserId === authUser.id) {
-      return { status: 400, body: { success: false, message: "You cannot add yourself as a contact." } };
-    }
-    const pairRes = await sbRest(
-      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(requestedLinkedUserId)}),and(user_a_id.eq.${encodeURIComponent(requestedLinkedUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
-    );
-    const isAlreadyConnected = Boolean(
-      pairRes.ok && pairRes.data && pairRes.data.some((r2) => r2.status === "connected")
-    );
-    if (!isAlreadyConnected) {
-      return connectUserRest(authUser, {
-        targetUserId: requestedLinkedUserId,
-        relationshipType,
-        requestedVia: "search"
-      });
-    }
-    const targetRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
-    );
-    if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
-      return { status: 404, body: { success: false, message: "Selected user account was not found." } };
-    }
-    const target = targetRes.data[0];
-    const nowIso2 = (/* @__PURE__ */ new Date()).toISOString();
-    const upsertRes2 = await upsertUdharContactRest({
-      user_id: authUser.id,
-      name: target.full_name || name2,
-      email: target.email || null,
-      phone: target.phone || null,
-      photo_url: target.avatar_url || photoUrl,
-      relationship_type: relationshipType,
-      notes: notes || null,
-      linked_user_id: target.id,
-      updated_at: nowIso2
-    });
-    if (!upsertRes2.ok || !upsertRes2.data || upsertRes2.data.length === 0) {
-      return { status: 500, body: { success: false, message: upsertRes2.error || "Failed to save contact." } };
-    }
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "connected",
-        contact: upsertRes2.data[0],
-        reciprocallyLinked: true
-      }
-    };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const payload = {
-    user_id: authUser.id,
-    name: name2,
-    email: email || null,
-    phone: phone || null,
-    photo_url: photoUrl,
-    relationship_type: relationshipType,
-    notes: notes || null,
-    linked_user_id: null,
-    updated_at: nowIso
-  };
-  const upsertRes = await upsertUdharContactRest(payload);
-  if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
-    return { status: 500, body: { success: false, message: upsertRes.error || "Failed to save contact." } };
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      contact: upsertRes.data[0],
-      reciprocallyLinked: false
-    }
-  };
-}
-async function updateContactRest(authUser, contactId, body) {
-  const name2 = (body.name || "").trim();
-  const email = (body.email || "").trim().toLowerCase();
-  const phone = (body.phone || "").trim();
-  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
-  const notes = (body.notes || "").trim();
-  const photoUrl = body.photo_url !== void 0 ? body.photo_url || null : void 0;
-  if (!name2) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
-  const existingRes = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!existingRes.ok || !existingRes.data || existingRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Contact not found." } };
-  }
-  const existing = existingRes.data[0];
-  const patchBody = {
-    name: name2,
-    email: email || null,
-    phone: phone || null,
-    relationship_type: relationshipType,
-    notes: notes || null,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  if (photoUrl !== void 0) patchBody.photo_url = photoUrl;
-  const updRes = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: patchBody
-    }
-  );
-  if (!updRes.ok || !updRes.data || updRes.data.length === 0) {
-    return { status: 500, body: { success: false, message: updRes.error || "Failed to update contact." } };
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      contact: updRes.data[0],
-      reciprocallyLinked: Boolean(existing.linked_user_id)
-    }
-  };
-}
-async function deleteContactRest(authUser, contactId) {
-  return removeSavedConnectionRest(authUser, contactId);
-}
-async function linkContactRest(authUser, contactId, registeredUserId) {
-  if (!registeredUserId) {
-    return { status: 400, body: { success: false, message: "Target registered user ID is required." } };
-  }
-  if (registeredUserId === authUser.id) {
-    return { status: 400, body: { success: false, message: "You cannot link a contact to your own account." } };
-  }
-  const [contactRes, targetRes, pairRes] = await Promise.all([
-    sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
-    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`),
-    sbRest(
-      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(registeredUserId)}),and(user_a_id.eq.${encodeURIComponent(registeredUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
-    )
-  ]);
-  if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Contact not found." } };
-  }
-  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Registered user not found." } };
-  }
-  const contact = contactRes.data[0];
-  const target = targetRes.data[0];
-  if (!isDiscoverableNormalUser(target)) {
-    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is not eligible for Udhar connections." } };
-  }
-  if (await isBlockedBetween(authUser.id, target.id)) {
-    return { status: 403, body: { success: false, message: "Cannot link with a blocked account." } };
-  }
-  const isAlreadyConnected = Boolean(
-    pairRes.ok && pairRes.data && pairRes.data.some((c) => c.status === "connected")
-  );
-  if (!isAlreadyConnected) {
-    const reqResult = await connectUserRest(authUser, {
-      targetUserId: target.id,
-      relationshipType: contact.relationship_type || "Friend",
-      requestedVia: "search"
-    });
-    return {
-      status: reqResult.status,
-      body: {
-        ...reqResult.body,
-        pendingApproval: reqResult.body.status === "pending"
-      }
-    };
-  }
-  await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`, {
-    method: "PATCH",
-    body: {
-      linked_user_id: target.id,
-      email: target.email || contact.email || null,
-      phone: target.phone || contact.phone || null,
-      photo_url: target.avatar_url || contact.photo_url || null,
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-    }
-  });
-  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || "Friend", {
-    connectionMethod: "SEARCH",
-    requestedVia: "search"
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "connected",
-      message: `Successfully linked ${contact.name} with verified account ${target.full_name}.`
-    }
-  };
-}
-async function getMyQrRest(authUser) {
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const existing = await sbRest(
-    `qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false&expires_at=gt.${encodeURIComponent(nowIso)}&order=created_at.desc&limit=1`
-  );
-  let pairingToken = "";
-  let pairingCode = "";
-  let expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
-  if (existing.ok && existing.data && existing.data.length > 0) {
-    pairingToken = existing.data[0].pairing_token;
-    pairingCode = existing.data[0].pairing_code;
-    expiresAt = existing.data[0].expires_at || expiresAt;
-  } else {
-    pairingToken = crypto18.randomBytes(32).toString("hex");
-    pairingCode = `MM-${crypto18.randomBytes(3).toString("hex").toUpperCase()}`;
-    const ins = await sbRest("qr_pairing_tokens", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: authUser.id,
-        pairing_token: pairingToken,
-        pairing_code: pairingCode,
-        is_single_use: false,
-        used: false,
-        expires_at: expiresAt
-      }
-    });
-    if (!ins.ok) {
-      return {
-        status: 503,
-        body: { success: false, message: "Unable to persist your unique QR identity right now. Please retry." }
-      };
-    }
-  }
-  const qrPayload = JSON.stringify({
-    app: "my-money",
-    v: 2,
-    type: "udhar-pair",
-    token: pairingToken,
-    code: pairingCode,
-    exp: new Date(expiresAt).getTime()
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      pairingToken,
-      pairingCode,
-      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
-      avatarUrl: authUser.avatar_url || null,
-      qrData: qrPayload,
-      expiresAt
-    }
-  };
-}
-async function regenerateQrRest(authUser) {
-  await sbRest(`qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false`, {
-    method: "PATCH",
-    body: { used: true }
-  });
-  const pairingToken = crypto18.randomBytes(32).toString("hex");
-  const pairingCode = `MM-${crypto18.randomBytes(3).toString("hex").toUpperCase()}`;
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
-  const ins = await sbRest("qr_pairing_tokens", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      user_id: authUser.id,
-      pairing_token: pairingToken,
-      pairing_code: pairingCode,
-      is_single_use: false,
-      used: false,
-      expires_at: expiresAt
-    }
-  });
-  if (!ins.ok) {
-    return {
-      status: 503,
-      body: { success: false, message: "Could not regenerate QR code right now. Please try again." }
-    };
-  }
-  const qrPayload = JSON.stringify({
-    app: "my-money",
-    v: 2,
-    type: "udhar-pair",
-    token: pairingToken,
-    code: pairingCode,
-    exp: new Date(expiresAt).getTime()
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: "Fresh QR code generated successfully. Previous codes have been revoked.",
-      pairingToken,
-      pairingCode,
-      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
-      avatarUrl: authUser.avatar_url || null,
-      qrData: qrPayload,
-      expiresAt
-    }
-  };
-}
-async function resolveQrRest(authUser, body) {
-  let targetToken = (body.pairingToken || "").trim();
-  let targetCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
-  const rawData = (body.qrData || "").trim();
-  if (rawData) {
-    const parsed = parseQrPayload(rawData);
-    if (!parsed.valid) {
-      return {
-        status: 400,
-        body: {
-          success: false,
-          code: parsed.errorCode || "INVALID_QR",
-          message: parsed.error || "Invalid QR format."
-        }
-      };
-    }
-    if (parsed.token) targetToken = parsed.token;
-    if (parsed.code) targetCode = parsed.code;
-  }
-  if (!targetToken && !targetCode) {
-    return {
-      status: 400,
-      body: { success: false, code: "INVALID_QR", message: "No valid QR pairing token or code provided." }
-    };
-  }
-  const filter = targetToken && targetCode ? `or=(pairing_token.eq.${encodeURIComponent(targetToken)},pairing_code.eq.${encodeURIComponent(targetCode)})` : targetToken ? `pairing_token=eq.${encodeURIComponent(targetToken)}` : `pairing_code=eq.${encodeURIComponent(targetCode)}`;
-  const tokRes = await sbRest(`qr_pairing_tokens?${filter}&order=created_at.desc&limit=1`);
-  if (!tokRes.ok) {
-    return { status: 503, body: { success: false, code: "SERVICE_UNAVAILABLE", message: "Unable to verify QR code right now. Please retry." } };
-  }
-  if (!tokRes.data || tokRes.data.length === 0) {
-    return {
-      status: 404,
-      body: {
-        success: false,
-        code: "NOT_FOUND",
-        message: "Pairing code or QR not recognized. Ask your friend to share their latest My Money Manager Udhar Pairing QR."
-      }
-    };
-  }
-  const qrRecord = tokRes.data[0];
-  if (qrRecord.used || qrRecord.is_single_use && qrRecord.used_at) {
-    return {
-      status: 410,
-      body: {
-        success: false,
-        code: "QR_REVOKED",
-        message: "This pairing QR has already been used or revoked. Ask your friend to share their new Udhar Pairing QR."
-      }
-    };
-  }
-  if (qrRecord.expires_at && new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
-    return {
-      status: 410,
-      body: {
-        success: false,
-        code: "QR_EXPIRED",
-        message: "This pairing QR has expired. Ask your friend to tap Reset QR to generate a fresh code."
-      }
-    };
-  }
-  if (qrRecord.user_id === authUser.id) {
-    return {
-      status: 400,
-      body: {
-        success: false,
-        code: "SELF_CONNECTION",
-        message: "This is your own Udhar pairing QR. You cannot pair with yourself."
-      }
-    };
-  }
-  const userRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified&limit=1`
-  );
-  if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
-    return {
-      status: 404,
-      body: { success: false, code: "NOT_FOUND", message: "Account not found." }
-    };
-  }
-  const owner = userRes.data[0];
-  if (!isDiscoverableNormalUser(owner)) {
-    return {
-      status: 403,
-      body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is unavailable for Udhar connections." }
-    };
-  }
-  if (await isBlockedBetween(authUser.id, owner.id)) {
-    return {
-      status: 403,
-      body: { success: false, code: "BLOCKED", message: "You cannot connect with this account." }
-    };
-  }
-  const connRes = await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(owner.id)}),and(user_a_id.eq.${encodeURIComponent(owner.id)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
-  );
-  const connRows = connRes.ok && Array.isArray(connRes.data) ? connRes.data : [];
-  const isAlreadyConnected = connRows.some((c) => c.status === "connected");
-  const outgoingPending = connRows.find((c) => c.user_a_id === authUser.id && c.status === "pending");
-  const incomingPending = connRows.find((c) => c.user_b_id === authUser.id && c.status === "pending");
-  const connectionStatus = isAlreadyConnected ? "connected" : outgoingPending ? "pending" : incomingPending ? "incoming_pending" : "none";
-  return {
-    status: 200,
-    body: {
-      success: true,
-      owner: {
-        id: owner.id,
-        displayName: owner.full_name || "My Money User",
-        fullName: owner.full_name || "My Money User",
-        accountIndicator: "My Money Manager Account",
-        emailMasked: isAlreadyConnected ? maskEmailForPrivacy(owner.email) : void 0,
-        phoneMasked: isAlreadyConnected ? maskPhoneForPrivacy(owner.phone) : null,
-        avatarUrl: owner.avatar_url || null,
-        isVerified: Boolean(owner.is_verified ?? true)
-      },
-      pairingToken: qrRecord.pairing_token,
-      pairingCode: qrRecord.pairing_code,
-      isAlreadyConnected,
-      connectionStatus,
-      requestId: outgoingPending?.id || incomingPending?.id || null
-    }
-  };
-}
-async function connectQrRest(authUser, body) {
-  const resolved = await resolveQrRest(authUser, body);
-  if (resolved.status !== 200 || !resolved.body.success) {
-    return resolved;
-  }
-  const rawMethod = String(body.connectionMethod || body.entryMethod || "").trim().toUpperCase();
-  const connectionMethod = rawMethod === "CONFIRMATION_CODE" || rawMethod === "CODE" || !body.qrData && !body.pairingToken && Boolean(body.pairingCode) ? "CONFIRMATION_CODE" : "QR_CODE";
-  const owner = resolved.body.owner;
-  const targetId = owner.id;
-  const targetName = (owner.fullName || owner.displayName || "User").trim();
-  const relationshipType = (body.relationshipType || "Friend").trim();
-  const targetRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(targetId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,is_verified&limit=1`
-  );
-  const targetUser = targetRes.ok && targetRes.data && targetRes.data[0] || {
-    id: targetId,
-    full_name: targetName,
-    email: null,
-    phone: null,
-    avatar_url: owner.avatarUrl || null,
-    is_verified: owner.isVerified
-  };
-  if (resolved.body.isAlreadyConnected) {
-    await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
-      connectionMethod,
-      requestedVia: connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr"
-    }).catch(() => {
-    });
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "connected",
-        alreadyConnected: true,
-        connectionMethod,
-        title: "Already Connected",
-        message: "Already Connected",
-        connectedUser: {
-          id: targetUser.id,
-          name: targetName,
-          displayName: targetName,
-          fullName: targetName,
-          avatarUrl: targetUser.avatar_url || null,
-          isVerified: Boolean(targetUser.is_verified ?? true)
-        }
-      }
-    };
-  }
-  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
-    connectionMethod,
-    requestedVia: connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr"
-  });
-  if (!syncRes.ok) {
-    return {
-      status: 503,
-      body: {
-        success: false,
-        code: "REQUEST_FAILED",
-        message: syncRes.error || "Unable to save connection right now. Please retry."
-      }
-    };
-  }
-  await Promise.all([
-    updateConnectionRequestNotificationsState({
-      requestId: resolved.body.requestId || null,
-      requesterId: authUser.id,
-      receiverId: targetId,
-      status: "accepted"
-    }).catch(() => {
-    }),
-    updateConnectionRequestNotificationsState({
-      requestId: resolved.body.requestId || null,
-      requesterId: targetId,
-      receiverId: authUser.id,
-      status: "accepted"
-    }).catch(() => {
-    })
-  ]);
-  if (resolved.body.pairingToken) {
-    await sbRest(
-      `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolved.body.pairingToken)}&is_single_use=eq.true`,
-      {
-        method: "PATCH",
-        body: { used: true, used_at: (/* @__PURE__ */ new Date()).toISOString() }
-      }
-    ).catch(() => {
-    });
-  }
-  const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  await notifyQrConnected({
-    userAId: authUser.id,
-    userAName: actorName,
-    userAAvatar: authUser.avatar_url || null,
-    userBId: targetUser.id,
-    userBName: targetName,
-    connectionMethod,
-    connectionId: syncRes.connectionId || null
-  }).catch(() => {
-  });
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "connected",
-      alreadyConnected: false,
-      connectionMethod,
-      title: "Connection Added Successfully",
-      message: `${targetName} has been added to your Saved People.`,
-      connectionId: syncRes.connectionId || null,
-      connectedUser: {
-        id: targetUser.id,
-        name: targetName,
-        displayName: targetName,
-        fullName: targetName,
-        avatarUrl: targetUser.avatar_url || null,
-        isVerified: Boolean(targetUser.is_verified ?? true)
-      }
-    }
-  };
-}
-async function getUdharTransactionsRest(authUser) {
-  const [txRes, contactsRes] = await Promise.all([
-    sbRest(
-      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&order=transaction_date.desc,created_at.desc`
-    ),
-    sbRest(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=name,linked_user_id`
-    )
-  ]);
-  if (!txRes.ok) {
-    return { status: 503, body: { success: false, message: "Unable to load Udhar ledger right now." } };
-  }
-  const rawTxs = (txRes.data || []).filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted");
-  const linkIds = Array.from(new Set(rawTxs.map((t2) => t2.link_id).filter(Boolean)));
-  const txIds = rawTxs.map((t2) => t2.id).filter(Boolean);
-  let repaymentsRows = [];
-  let historyRows = [];
-  if (linkIds.length > 0) {
-    const inLinks = linkIds.map((id) => `"${String(id).replace(/"/g, "")}"`).join(",");
-    const [repRes, histRes] = await Promise.all([
-      sbRest(
-        `udhar_repayments?link_id=in.(${encodeURIComponent(inLinks)})&order=repayment_date.desc,created_at.desc`
-      ),
-      sbRest(
-        `udhar_edit_history?link_id=in.(${encodeURIComponent(inLinks)})&order=created_at.desc`
-      )
-    ]);
-    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data.filter((r2) => isActiveRepayment(r2));
-    if (histRes.ok && Array.isArray(histRes.data)) historyRows = histRes.data;
-  }
-  const allUserIds = [
-    ...rawTxs.map((t2) => t2.counterpart_user_id),
-    ...repaymentsRows.map((r2) => r2.recorded_by_user_id),
-    ...historyRows.map((h2) => h2.edited_by_user_id)
-  ].filter(Boolean);
-  const userMap = await fetchUsersByIds(allUserIds);
-  const repByLink = /* @__PURE__ */ new Map();
-  const repByTx = /* @__PURE__ */ new Map();
-  for (const r2 of repaymentsRows) {
-    if (r2.link_id) {
-      if (!repByLink.has(r2.link_id)) repByLink.set(r2.link_id, []);
-      repByLink.get(r2.link_id).push(r2);
-    }
-    if (r2.udhar_id) {
-      if (!repByTx.has(r2.udhar_id)) repByTx.set(r2.udhar_id, []);
-      repByTx.get(r2.udhar_id).push(r2);
-    }
-  }
-  const histByLink = /* @__PURE__ */ new Map();
-  for (const h2 of historyRows) {
-    if (!histByLink.has(h2.link_id)) histByLink.set(h2.link_id, []);
-    histByLink.get(h2.link_id).push(h2);
-  }
-  const transactions = rawTxs.map((row) => {
-    const reps = row.link_id && repByLink.get(row.link_id) || repByTx.get(row.id) || [];
-    const hist = row.link_id && histByLink.get(row.link_id) || [];
-    return enrichTransactionRow(row, userMap, reps, hist);
-  });
-  const contacts = contactsRes.ok && Array.isArray(contactsRes.data) ? contactsRes.data : [];
-  const summary = calculatePeopleDashboardSummary(transactions, contacts);
-  return {
-    status: 200,
-    body: {
-      success: true,
-      transactions,
-      summary,
-      count: txIds.length
-    }
-  };
-}
-async function createUdharTransactionRest(authUser, body) {
-  let counterpartName = (body.counterpart_name || body.person_name || "").trim();
-  const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || "").trim() || null;
-  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
-  const pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
-  const qrDataRaw = (body.qrData || body.qr_data || "").trim();
-  const direction = body.direction;
-  const amount = roundMoney(parseFloat(body.amount));
-  const txDate = body.transaction_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const dueDate = body.due_date || body.dueDate || null;
-  const plainNotes = (body.notes || "").trim();
-  const category = (body.category || "Personal Loan").trim();
-  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
-  const description = (body.description || "").trim();
-  const attachmentUrl = body.attachment_url || null;
-  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
-  if (!["gave", "took"].includes(direction)) {
-    return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { status: 400, body: { success: false, message: "Amount must be greater than \u20B90." } };
-  }
-  if (idempotencyKey) {
-    const dupCheck = await sbRest(
-      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
-    );
-    if (dupCheck.ok && dupCheck.data && dupCheck.data.length > 0) {
-      const existing = dupCheck.data[0];
-      return {
-        status: 200,
-        body: {
-          success: true,
-          deduplicated: true,
-          message: "Udhar already recorded.",
-          transaction: enrichTransactionRow(existing, /* @__PURE__ */ new Map(), [], []),
-          isLinked: Boolean(existing.counterpart_user_id)
-        }
-      };
-    }
-  }
-  let registeredUser = null;
-  let verifiedCreationMethod = "manual";
-  let singleUseTokenRecordId = null;
-  if (qrToken || pairingCode || qrDataRaw) {
-    const resolved = await resolveQrRest(authUser, {
-      qrData: qrDataRaw || void 0,
-      pairingToken: qrToken || void 0,
-      pairingCode: pairingCode || void 0
-    });
-    if (resolved.status !== 200 || !resolved.body?.success || !resolved.body?.owner?.id) {
-      return resolved;
-    }
-    const ownerId = resolved.body.owner.id;
-    const uRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(ownerId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
-    );
-    if (!uRes.ok || !uRes.data || uRes.data.length === 0) {
-      return { status: 404, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account not found." } };
-    }
-    registeredUser = uRes.data[0];
-    if (!isDiscoverableNormalUser(registeredUser)) {
-      return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is unavailable for shared Udhar." } };
-    }
-    if (await isBlockedBetween(authUser.id, registeredUser.id)) {
-      return { status: 403, body: { success: false, code: "BLOCKED", message: "Cannot create shared Udhar with a blocked user." } };
-    }
-    counterpartName = registeredUser.full_name || resolved.body.owner.fullName || counterpartName || "Friend";
-    verifiedCreationMethod = qrToken || qrDataRaw && qrDataRaw.startsWith("{") ? "qr" : "code";
-    const resolvedToken = resolved.body.pairingToken;
-    if (resolvedToken) {
-      const tokCheck = await sbRest(
-        `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolvedToken)}&select=id,is_single_use&limit=1`
-      );
-      if (tokCheck.ok && tokCheck.data?.[0]?.is_single_use) {
-        singleUseTokenRecordId = tokCheck.data[0].id;
-      }
-    }
-  } else if (counterpartUserId && counterpartUserId !== authUser.id) {
-    const uRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
-    );
-    if (uRes.ok && uRes.data && uRes.data.length > 0) {
-      const u = uRes.data[0];
-      if (!isDiscoverableNormalUser(u)) {
-        return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for shared Udhar connections." } };
-      }
-      if (await isBlockedBetween(authUser.id, u.id)) {
-        return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
-      }
-      registeredUser = u;
-      counterpartName = counterpartName || registeredUser.full_name;
-    }
-  }
-  if (!counterpartName) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
-  const linkId = crypto18.randomUUID();
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (registeredUser) {
-    const isInstantQr = verifiedCreationMethod === "qr" || verifiedCreationMethod === "code";
-    const initialLifecycle = isInstantQr ? "confirmed" : "pending_confirmation";
-    const initialConfirmStatus = isInstantQr ? "confirmed" : "pending";
-    const packedNotes = packStructuredNote(plainNotes, {
-      category,
-      payment_method: paymentMethod,
-      description: description || void 0,
-      attachment_url: attachmentUrl || void 0,
-      creation_method: verifiedCreationMethod,
-      lifecycle_status: initialLifecycle,
-      accepted_by: isInstantQr ? registeredUser.id : void 0,
-      responded_at: isInstantQr ? nowIso : void 0
-    });
-    const counterpartDirection = direction === "gave" ? "took" : "gave";
-    const userARow = {
-      link_id: linkId,
-      user_id: authUser.id,
-      counterpart_user_id: registeredUser.id,
-      counterpart_name: registeredUser.full_name,
-      direction,
-      original_amount: amount,
-      current_balance: amount,
-      paid_amount: 0,
-      transaction_date: txDate,
-      due_date: dueDate || null,
-      notes: packedNotes,
-      attachment_url: attachmentUrl,
-      status: initialLifecycle,
-      confirmation_status: initialConfirmStatus,
-      is_initiator: true,
-      idempotency_key: idempotencyKey,
-      created_at: nowIso,
-      updated_at: nowIso
-    };
-    const userBRow = {
-      link_id: linkId,
-      user_id: registeredUser.id,
-      counterpart_user_id: authUser.id,
-      counterpart_name: authUser.full_name,
-      direction: counterpartDirection,
-      original_amount: amount,
-      current_balance: amount,
-      paid_amount: 0,
-      transaction_date: txDate,
-      due_date: dueDate || null,
-      notes: packedNotes,
-      attachment_url: attachmentUrl,
-      status: initialLifecycle,
-      confirmation_status: initialConfirmStatus,
-      is_initiator: false,
-      idempotency_key: idempotencyKey ? `${idempotencyKey}:counterpart` : null,
-      created_at: nowIso,
-      updated_at: nowIso
-    };
-    const insertRes = await sbRest("udhar_transactions", {
-      method: "POST",
-      prefer: "return=representation",
-      body: [userARow, userBRow]
-    });
-    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
-      return { status: 500, body: { success: false, message: insertRes.error || "Failed to create shared Udhar." } };
-    }
-    if (singleUseTokenRecordId) {
-      await sbRest(`qr_pairing_tokens?id=eq.${encodeURIComponent(singleUseTokenRecordId)}`, {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: { used: true, used_by_user_id: authUser.id, used_at: nowIso }
-      }).catch(() => {
-      });
-    }
-    const createdUserA = insertRes.data.find((r2) => r2.user_id === authUser.id) || insertRes.data[0];
-    await ensureConnectionAndReciprocalContactsRest(authUser, registeredUser, "Friend");
-    if (isInstantQr) {
-      const viaLabel = verifiedCreationMethod === "qr" ? "QR code" : "confirmation code";
-      await Promise.all([
-        createTargetedNotificationRest({
-          targetUserId: registeredUser.id,
-          actorUserId: authUser.id,
-          title: `Instant Udhar Confirmed via ${viaLabel}`,
-          message: `${authUser.full_name} added a confirmed Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
-          type: "udhar_qr_confirmed",
-          relatedEntityId: linkId,
-          dedupeKey: `udhar_qr_rec_${linkId}`,
-          metadata: {
-            actionType: "udhar_qr_confirmed",
-            linkId,
-            udharId: createdUserA.id,
-            senderName: authUser.full_name,
-            amount,
-            direction: counterpartDirection,
-            creationMethod: verifiedCreationMethod
-          }
-        }),
-        createTargetedNotificationRest({
-          targetUserId: authUser.id,
-          actorUserId: authUser.id,
-          title: `Udhar Added via ${viaLabel}`,
-          message: `Your Udhar of \u20B9${amount.toLocaleString("en-IN")} with ${registeredUser.full_name} was confirmed immediately.`,
-          type: "udhar_qr_confirmed",
-          relatedEntityId: linkId,
-          dedupeKey: `udhar_qr_init_${linkId}`,
-          metadata: {
-            actionType: "udhar_qr_confirmed",
-            linkId,
-            udharId: createdUserA.id,
-            counterpartName: registeredUser.full_name,
-            amount,
-            direction,
-            creationMethod: verifiedCreationMethod
-          }
-        })
-      ]);
-    } else {
-      const dirHuman = direction === "gave" ? "gave you (You Borrowed)" : "borrowed from you (You Gave)";
-      await createTargetedNotificationRest({
-        targetUserId: registeredUser.id,
-        actorUserId: authUser.id,
-        title: "New Udhaar Confirmation Request",
-        message: `${authUser.full_name} added an Udhaar request of \u20B9${amount.toLocaleString("en-IN")} (${dirHuman}). Please review and confirm.`,
-        type: "udhar_request",
-        relatedEntityId: linkId,
-        dedupeKey: `udhar_req_${linkId}`,
-        metadata: {
-          actionType: "udhar_confirmation_request",
-          linkId,
-          udharId: createdUserA.id,
-          requesterUserId: authUser.id,
-          requesterName: authUser.full_name,
-          requesterAvatar: authUser.avatar_url || null,
-          amount,
-          direction: counterpartDirection,
-          description: description || plainNotes || null,
-          transactionDate: txDate,
-          creationMethod: "manual"
-        }
-      });
-    }
-    const userMap = /* @__PURE__ */ new Map([[registeredUser.id, registeredUser]]);
-    return {
-      status: 201,
-      body: {
-        success: true,
-        requiresConfirmation: !isInstantQr,
-        creationMethod: verifiedCreationMethod,
-        message: isInstantQr ? `Udhaar added successfully.` : `Udhaar request sent to ${registeredUser.full_name}. Waiting for recipient confirmation.`,
-        transaction: enrichTransactionRow(createdUserA, userMap, [], []),
-        isLinked: true
-      }
-    };
-  } else {
-    const packedNotes = packStructuredNote(plainNotes, {
-      category,
-      payment_method: paymentMethod,
-      description: description || void 0,
-      attachment_url: attachmentUrl || void 0,
-      creation_method: "manual",
-      lifecycle_status: "confirmed"
-    });
-    const singleRow = {
-      link_id: linkId,
-      user_id: authUser.id,
-      counterpart_user_id: null,
-      counterpart_name: counterpartName,
-      direction,
-      original_amount: amount,
-      current_balance: amount,
-      paid_amount: 0,
-      transaction_date: txDate,
-      due_date: dueDate || null,
-      notes: packedNotes,
-      attachment_url: attachmentUrl,
-      status: "confirmed",
-      confirmation_status: "confirmed",
-      is_initiator: true,
-      idempotency_key: idempotencyKey,
-      created_at: nowIso,
-      updated_at: nowIso
-    };
-    const insertRes = await sbRest("udhar_transactions", {
-      method: "POST",
-      prefer: "return=representation",
-      body: singleRow
-    });
-    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
-      return { status: 500, body: { success: false, message: insertRes.error || "Failed to record local Udhar." } };
-    }
-    await sbRest("udhar_contacts?on_conflict=user_id,name", {
-      method: "POST",
-      prefer: "resolution=ignore-duplicates,return=minimal",
-      body: {
-        user_id: authUser.id,
-        name: counterpartName,
-        relationship_type: "Friend",
-        linked_user_id: null,
-        updated_at: nowIso
-      }
-    }).catch(() => {
-    });
-    return {
-      status: 201,
-      body: {
-        success: true,
-        requiresConfirmation: false,
-        creationMethod: "manual",
-        message: `Local Udhar recorded for ${counterpartName}.`,
-        transaction: enrichTransactionRow(insertRes.data[0], /* @__PURE__ */ new Map(), [], []),
-        isLinked: false
-      }
-    };
-  }
-}
-async function createUdharViaQrRest(authUser, body) {
-  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
-  const pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
-  const qrDataRaw = (body.qrData || body.qr_data || "").trim();
-  if (!qrToken && !pairingCode && !qrDataRaw) {
-    return {
-      status: 400,
-      body: { success: false, code: "QR_OR_CODE_REQUIRED", message: "A valid QR token or confirmation code is required." }
-    };
-  }
-  return createUdharTransactionRest(authUser, body);
-}
-async function confirmUdharTransactionRest(authUser, txId) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const guard = canAcceptUdhar(tx, authUser.id);
-  if (!guard.allowed) {
-    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const { note, meta } = unpackStructuredNote(tx.notes);
-  const updatedPackedNotes = packStructuredNote(note, {
-    ...meta,
-    lifecycle_status: "confirmed",
-    accepted_by: authUser.id,
-    responded_at: nowIso
-  });
-  const patchRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        status: "confirmed",
-        confirmation_status: "confirmed",
-        notes: updatedPackedNotes,
-        updated_at: nowIso
-      }
-    }
-  );
-  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
-    return {
-      status: 409,
-      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been accepted, rejected, or cancelled." }
-    };
-  }
-  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: "Udhaar Request Accepted",
-      message: `${authUser.full_name} accepted your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both balances are now updated.`,
-      type: "udhar_accepted",
-      relatedEntityId: tx.link_id,
-      dedupeKey: `udhar_acc_${tx.link_id}`,
-      metadata: {
-        actionType: "udhar_accepted",
-        linkId: tx.link_id,
-        udharId: tx.id,
-        acceptedBy: authUser.id,
-        amount: parseFloat(tx.original_amount) || 0
-      }
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: "Udhaar request accepted successfully.",
-      status: "confirmed"
-    }
-  };
-}
-async function rejectUdharTransactionRest(authUser, txId, reason) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const guard = canRejectUdhar(tx, authUser.id);
-  if (!guard.allowed) {
-    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 400) : "Rejected by recipient";
-  const { note, meta } = unpackStructuredNote(tx.notes);
-  const updatedPackedNotes = packStructuredNote(note, {
-    ...meta,
-    lifecycle_status: "rejected",
-    rejected_by: authUser.id,
-    responded_at: nowIso,
-    rejection_reason: cleanReason
-  });
-  let patchRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        status: "rejected",
-        confirmation_status: "rejected",
-        current_balance: 0,
-        paid_amount: 0,
-        notes: updatedPackedNotes,
-        updated_at: nowIso
-      }
-    }
-  );
-  if (!patchRes.ok && (patchRes.status === 400 || String(patchRes.error || "").includes("23514"))) {
-    patchRes = await sbRest(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
-      {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: {
-          status: "cancelled",
-          current_balance: 0,
-          paid_amount: 0,
-          notes: updatedPackedNotes,
-          updated_at: nowIso
-        }
-      }
-    );
-  }
-  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
-    return {
-      status: 409,
-      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been handled." }
-    };
-  }
-  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: "Udhaar Request Rejected",
-      message: `${authUser.full_name} rejected your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
-      type: "udhar_rejected",
-      relatedEntityId: tx.link_id,
-      dedupeKey: `udhar_rej_${tx.link_id}`,
-      metadata: {
-        actionType: "udhar_rejected",
-        linkId: tx.link_id,
-        udharId: tx.id,
-        rejectedBy: authUser.id,
-        reason: cleanReason
-      }
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "rejected",
-      message: "You rejected this Udhaar request."
-    }
-  };
-}
-async function cancelUdharRequestRest(authUser, txId, reason) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const guard = canSenderCancelUdhar(tx, authUser.id);
-  if (!guard.allowed) {
-    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 400) : "Cancelled by sender";
-  const { note, meta } = unpackStructuredNote(tx.notes);
-  const updatedPackedNotes = packStructuredNote(note, {
-    ...meta,
-    lifecycle_status: "cancelled",
-    cancelled_by: authUser.id,
-    cancelled_at: nowIso,
-    rejection_reason: cleanReason
-  });
-  const patchRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        status: "cancelled",
-        current_balance: 0,
-        paid_amount: 0,
-        notes: updatedPackedNotes,
-        updated_at: nowIso
-      }
-    }
-  );
-  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
-    return {
-      status: 409,
-      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been responded to or cancelled." }
-    };
-  }
-  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: "Udhaar Request Cancelled",
-      message: `${authUser.full_name} cancelled their pending Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
-      type: "udhar_request_cancelled",
-      relatedEntityId: tx.link_id,
-      dedupeKey: `udhar_canc_${tx.link_id}`,
-      metadata: {
-        actionType: "udhar_request_cancelled",
-        linkId: tx.link_id,
-        udharId: tx.id,
-        cancelledBy: authUser.id
-      }
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      status: "cancelled",
-      message: "Pending Udhaar request cancelled."
-    }
-  };
-}
-async function disputeUdharTransactionRest(authUser, txId, reason) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      status: "disputed",
-      confirmation_status: "disputed",
-      dispute_reason: reason,
-      disputed_at: nowIso,
-      disputed_by: authUser.id,
-      updated_at: nowIso
-    }
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Disputed by ${authUser.full_name}`,
-      message: `${authUser.full_name} flagged an Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}: "${reason}"`,
-      type: "udhar_disputed",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return { status: 200, body: { success: true, message: "Transaction marked as disputed." } };
-}
-async function repayUdharRest(authUser, txId, body) {
-  const repayAmount = roundMoney(parseFloat(body.amount));
-  const repayDate = body.repayment_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const repayTime = (body.repayment_time || body.repaymentTime || "").trim();
-  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
-  const transactionRef = (body.transaction_ref || body.transactionRef || "").trim();
-  const attachmentUrl = (body.attachment_url || body.attachmentUrl || "").trim();
-  const plainNotes = (body.notes || "").trim();
-  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (idempotencyKey) {
-    const dupRep = await sbRest(
-      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
-    );
-    if (dupRep.ok && dupRep.data && dupRep.data.length > 0) {
-      return {
-        status: 200,
-        body: {
-          success: true,
-          deduplicated: true,
-          repayment: dupRep.data[0],
-          isPendingConfirmation: dupRep.data[0].status === "pending_confirmation",
-          remainingBalance: parseFloat(tx.current_balance) || 0,
-          isSettled: tx.status === "settled",
-          message: "Repayment already recorded."
-        }
-      };
-    }
-  }
-  const existingRepsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
-  );
-  const existingReps = existingRepsRes.ok && Array.isArray(existingRepsRes.data) ? existingRepsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
-  const confirmedPaid = roundMoney(
-    existingReps.filter((r2) => r2.status === "confirmed").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const pendingRepayments = roundMoney(
-    existingReps.filter((r2) => r2.status === "pending_confirmation").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const lifecycle = normalizeUdharLifecycleStatus(tx);
-  const calc = calculateRepaymentApplication({
-    originalAmount: parseFloat(tx.original_amount) || 0,
-    confirmedPaidAmount: confirmedPaid,
-    pendingRepaymentsAmount: pendingRepayments,
-    repayAmount,
-    isShared: Boolean(tx.counterpart_user_id),
-    actorRole: tx.direction === "gave" ? "lender" : "borrower",
-    udharStatus: lifecycle
-  });
-  if (!calc.valid) {
-    return { status: 400, body: { success: false, message: calc.error || "Invalid repayment." } };
-  }
-  const packedNote = packStructuredNote(plainNotes, {
-    transaction_ref: transactionRef || void 0,
-    repayment_time: repayTime || void 0,
-    attachment_url: attachmentUrl || void 0
-  });
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const insertRep = await sbRest("udhar_repayments", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      link_id: tx.link_id,
-      udhar_id: tx.id,
-      recorded_by_user_id: authUser.id,
-      amount: repayAmount,
-      repayment_date: repayDate,
-      payment_method: paymentMethod,
-      notes: packedNote,
-      status: calc.repaymentStatus,
-      idempotency_key: idempotencyKey,
-      confirmed_at: calc.repaymentStatus === "confirmed" ? nowIso : null,
-      confirmed_by: calc.repaymentStatus === "confirmed" ? authUser.id : null
-    }
-  });
-  if (!insertRep.ok || !insertRep.data || insertRep.data.length === 0) {
-    return { status: 500, body: { success: false, message: insertRep.error || "Failed to record repayment." } };
-  }
-  if (calc.repaymentStatus === "confirmed") {
-    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-      method: "PATCH",
-      body: {
-        current_balance: calc.nextRemainingAmount,
-        paid_amount: calc.nextPaidAmount,
-        status: calc.nextUdharStatus,
-        settled_at: calc.isSettled ? nowIso : tx.settled_at,
-        updated_at: nowIso
-      }
-    });
-  }
-  if (tx.counterpart_user_id) {
-    if (calc.repaymentStatus === "pending_confirmation") {
-      await createTargetedNotificationRest({
-        targetUserId: tx.counterpart_user_id,
-        actorUserId: authUser.id,
-        title: `Repayment Confirmation Needed: ${authUser.full_name}`,
-        message: `${authUser.full_name} reported a repayment of \u20B9${repayAmount.toLocaleString("en-IN")} via ${paymentMethod}. Please confirm receipt.`,
-        type: "repayment_pending",
-        relatedEntityId: tx.link_id
-      });
-    } else {
-      await createTargetedNotificationRest({
-        targetUserId: tx.counterpart_user_id,
-        actorUserId: authUser.id,
-        title: calc.isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
-        message: `${authUser.full_name} confirmed a repayment of \u20B9${repayAmount.toLocaleString("en-IN")}. Remaining balance: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
-        type: calc.isSettled ? "settlement" : "repayment",
-        relatedEntityId: tx.link_id
-      });
-    }
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      repayment: insertRep.data[0],
-      isPendingConfirmation: calc.repaymentStatus === "pending_confirmation",
-      remainingBalance: calc.nextRemainingAmount,
-      isSettled: calc.isSettled,
-      message: calc.repaymentStatus === "pending_confirmation" ? `Payment of \u20B9${repayAmount.toLocaleString("en-IN")} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.` : calc.isSettled ? "Full repayment recorded! Udhar is now completely settled." : `Repayment of \u20B9${repayAmount.toLocaleString("en-IN")} recorded. Remaining: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`
-    }
-  };
-}
-async function confirmRepaymentRest(authUser, repaymentId) {
-  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
-  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  const rep = repRes.data[0];
-  if (!isActiveRepayment(rep)) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  if (rep.status === "confirmed") {
-    return { status: 400, body: { success: false, message: "This repayment is already confirmed." } };
-  }
-  const txRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.direction !== "gave") {
-    return { status: 403, body: { success: false, message: "Only the lender can confirm receipt of repayment." } };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
-    method: "PATCH",
-    body: { status: "confirmed", confirmed_at: nowIso, confirmed_by: authUser.id, rejection_reason: null }
-  });
-  const allRepsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
-  );
-  const activeConfirmedReps = (allRepsRes.data || []).filter((r2) => isActiveRepayment(r2));
-  const totalConfirmed = roundMoney(
-    activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const origAmt = parseFloat(tx.original_amount) || 0;
-  const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmed));
-  const isSettled = newBalance <= 0.01;
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      current_balance: isSettled ? 0 : newBalance,
-      paid_amount: isSettled ? origAmt : totalConfirmed,
-      status: isSettled ? "settled" : "confirmed",
-      settled_at: isSettled ? nowIso : tx.settled_at,
-      updated_at: nowIso
-    }
-  });
-  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
-    await createTargetedNotificationRest({
-      targetUserId: rep.recorded_by_user_id,
-      actorUserId: authUser.id,
-      title: `Repayment Confirmed by ${authUser.full_name}`,
-      message: `${authUser.full_name} confirmed receiving \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Remaining balance: \u20B9${(isSettled ? 0 : newBalance).toLocaleString("en-IN")}.`,
-      type: "repayment_confirmed",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} confirmed!`,
-      remainingBalance: isSettled ? 0 : newBalance,
-      isSettled
-    }
-  };
-}
-async function rejectRepaymentRest(authUser, repaymentId, reason) {
-  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
-  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  const rep = repRes.data[0];
-  if (!isActiveRepayment(rep)) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  const txRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.direction !== "gave") {
-    return { status: 403, body: { success: false, message: "Only the lender can reject a repayment claim." } };
-  }
-  await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
-    method: "PATCH",
-    body: {
-      status: "rejected",
-      rejection_reason: reason,
-      confirmed_at: (/* @__PURE__ */ new Date()).toISOString(),
-      confirmed_by: authUser.id
-    }
-  });
-  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
-    await createTargetedNotificationRest({
-      targetUserId: rep.recorded_by_user_id,
-      actorUserId: authUser.id,
-      title: "Repayment Claim Rejected",
-      message: `${authUser.full_name} rejected your payment claim of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}: "${reason}".`,
-      type: "repayment_rejected",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return { status: 200, body: { success: true, message: "Repayment claim rejected.", rejectionReason: reason } };
-}
-async function editUdharRest(authUser, txId, body) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.counterpart_user_id && tx.direction === "took") {
-    return {
-      status: 403,
-      body: {
-        success: false,
-        message: "Only the lender who gave the money can edit this Udhar transaction."
-      }
-    };
-  }
-  const repsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
-  );
-  const activeConfirmedReps = (repsRes.data || []).filter((r2) => isActiveRepayment(r2));
-  const confirmedPaid = roundMoney(
-    activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
-  );
-  const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
-  const lifecycle = normalizeUdharLifecycleStatus(tx);
-  const editReason = (body.reason_for_edit || body.reason || body.edit_reason || "").trim();
-  const validation = validateUdharEdit(
-    {
-      original_amount: parseFloat(tx.original_amount) || 0,
-      paid_amount: confirmedPaid,
-      status: lifecycle,
-      notes: prevPlainNote,
-      transaction_date: tx.transaction_date,
-      due_date: tx.due_date,
-      category: prevMeta.category || "Personal Loan",
-      payment_method: prevMeta.payment_method || "UPI",
-      description: prevMeta.description || null
-    },
-    {
-      amount: body.amount !== void 0 ? parseFloat(body.amount) : void 0,
-      notes: body.notes !== void 0 ? (body.notes || "").trim() : void 0,
-      transaction_date: body.transaction_date || body.date || void 0,
-      due_date: body.due_date !== void 0 ? body.due_date : body.dueDate !== void 0 ? body.dueDate : void 0,
-      category: body.category !== void 0 ? body.category : void 0,
-      payment_method: body.payment_method !== void 0 ? body.payment_method : void 0,
-      description: body.description !== void 0 ? body.description : void 0,
-      reason_for_edit: editReason
-    }
-  );
-  if (!validation.valid) {
-    return { status: 400, body: { success: false, message: validation.error || "Invalid edit." } };
-  }
-  const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
-  const nextPackedNotes = packStructuredNote(nextPlainNote, {
-    ...prevMeta,
-    category: body.category !== void 0 ? body.category : prevMeta.category,
-    payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
-    description: body.description !== void 0 ? body.description : prevMeta.description,
-    attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url,
-    lifecycle_status: lifecycle === "pending_confirmation" ? "pending_confirmation" : validation.nextStatus
-  });
-  const nextDate = body.transaction_date || body.date || tx.transaction_date;
-  const nextDueDate = body.due_date !== void 0 ? body.due_date || null : body.dueDate !== void 0 ? body.dueDate || null : tx.due_date;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRest("udhar_edit_history", {
-    method: "POST",
-    prefer: "return=minimal",
-    body: {
-      udhar_id: tx.id,
-      link_id: tx.link_id,
-      edited_by_user_id: authUser.id,
-      previous_amount: parseFloat(tx.original_amount) || 0,
-      new_amount: validation.nextOriginalAmount,
-      previous_notes: prevPlainNote || null,
-      new_notes: nextPlainNote || null,
-      previous_date: tx.transaction_date,
-      new_date: nextDate,
-      previous_due_date: tx.due_date || null,
-      new_due_date: nextDueDate,
-      reason_for_edit: editReason
-    }
-  });
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      original_amount: validation.nextOriginalAmount,
-      current_balance: validation.nextRemainingAmount,
-      paid_amount: confirmedPaid,
-      status: lifecycle === "pending_confirmation" ? "pending_confirmation" : validation.nextStatus,
-      notes: nextPackedNotes,
-      transaction_date: nextDate,
-      due_date: nextDueDate,
-      last_edited_at: nowIso,
-      last_edited_by: authUser.id,
-      edit_reason: editReason,
-      updated_at: nowIso
-    }
-  });
-  if (tx.counterpart_user_id) {
-    const targetUserId = tx.user_id === authUser.id ? tx.counterpart_user_id : tx.user_id;
-    await createTargetedNotificationRest({
-      targetUserId,
-      actorUserId: authUser.id,
-      title: `Udhar Edited by ${authUser.full_name}`,
-      message: `${authUser.full_name} updated Udhar details (${editReason}). Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
-      type: "udhar_edited",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Udhar updated across both accounts. Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
-      remainingBalance: validation.nextRemainingAmount,
-      isSettled: validation.isSettled,
-      changes: validation.changes
-    }
-  };
-}
-async function settleUdharRest(authUser, txId, body) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.counterpart_user_id && tx.direction === "took") {
-    return {
-      status: 403,
-      body: {
-        success: false,
-        message: "Only the lender can mark a shared Udhar as settled. As the borrower, record a repayment for lender confirmation."
-      }
-    };
-  }
-  const lifecycle = normalizeUdharLifecycleStatus(tx);
-  const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
-  if (lifecycle === "pending_confirmation") {
-    return { status: 409, body: { success: false, message: "Waiting for recipient confirmation before settling." } };
-  }
-  if (lifecycle === "settled" || currentBal <= 0.01) {
-    return { status: 400, body: { success: false, message: "This transaction is already settled." } };
-  }
-  if (lifecycle === "rejected" || lifecycle === "cancelled" || lifecycle === "deleted") {
-    return { status: 400, body: { success: false, message: "Cannot settle a rejected, cancelled, or deleted transaction." } };
-  }
-  if (lifecycle === "disputed") {
-    return { status: 409, body: { success: false, message: "Cannot settle a disputed transaction. Resolve the dispute first." } };
-  }
-  const settleDate = body.settlement_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const paymentMethod = (body.payment_method || "UPI").trim();
-  const notes = (body.notes || "Settled in full").trim();
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  let patchRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,rejected,pending_confirmation)`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        current_balance: 0,
-        paid_amount: parseFloat(tx.original_amount) || 0,
-        status: "settled",
-        settled_at: nowIso,
-        settled_by: authUser.id,
-        updated_at: nowIso
-      }
-    }
-  );
-  if (!patchRes.ok && patchRes.status === 400) {
-    patchRes = await sbRest(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,pending_confirmation)`,
-      {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: {
-          current_balance: 0,
-          paid_amount: parseFloat(tx.original_amount) || 0,
-          status: "settled",
-          settled_at: nowIso,
-          updated_at: nowIso
-        }
-      }
-    );
-  }
-  if (!patchRes.ok) {
-    return { status: 503, body: { success: false, message: patchRes.error || "Failed to settle transaction." } };
-  }
-  if (!Array.isArray(patchRes.data) || patchRes.data.length === 0) {
-    return { status: 409, body: { success: false, message: "This transaction has already been settled or modified." } };
-  }
-  await sbRest("udhar_repayments", {
-    method: "POST",
-    prefer: "return=minimal",
-    body: {
-      link_id: tx.link_id,
-      udhar_id: tx.id,
-      recorded_by_user_id: authUser.id,
-      amount: currentBal,
-      repayment_date: settleDate,
-      payment_method: paymentMethod,
-      notes,
-      status: "confirmed",
-      confirmed_at: nowIso,
-      confirmed_by: authUser.id
-    }
-  });
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Settled with ${authUser.full_name}`,
-      message: `${authUser.full_name} marked the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")} as fully settled.`,
-      type: "settlement",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Udhar with ${tx.counterpart_name} settled in full.`,
-      isSettled: true,
-      settledAt: nowIso,
-      settledBy: authUser.id
-    }
-  };
-}
-async function cancelUdharRest(authUser, txId, reason) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`);
-  const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
-  const recalc = recalculateUdharFromRepayments({
-    originalAmount: tx.original_amount,
-    repayments,
-    currentStatus: tx.status
-  });
-  const baseLifecycle = normalizeUdharLifecycleStatus(tx);
-  const effectiveStatus = baseLifecycle === "deleted" || baseLifecycle === "cancelled" || baseLifecycle === "rejected" ? baseLifecycle : baseLifecycle === "disputed" ? "disputed" : baseLifecycle === "pending_confirmation" ? "pending_confirmation" : repayments.length > 0 ? recalc.nextStatus : baseLifecycle;
-  const guard = canCancelUdhar({
-    status: effectiveStatus,
-    deleted_at: tx.deleted_at,
-    notes: tx.notes,
-    direction: tx.direction,
-    is_shared: Boolean(tx.counterpart_user_id),
-    counterpart_user_id: tx.counterpart_user_id,
-    original_amount: tx.original_amount,
-    paid_amount: repayments.length > 0 ? recalc.paidAmount : tx.paid_amount,
-    current_balance: repayments.length > 0 ? recalc.remainingBalance : tx.current_balance,
-    settled_at: tx.settled_at,
-    repayments
-  });
-  if (!guard.allowed) {
-    return {
-      status: guard.httpStatus || 409,
-      body: { success: false, code: guard.code, message: guard.reason }
-    };
-  }
-  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const { note: prevNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
-  const deletedPackedNotes = packStructuredNote(prevNote, {
-    ...prevMeta,
-    lifecycle_status: "deleted",
-    cancelled_at: nowIso,
-    cancelled_by: authUser.id
-  });
-  let softDelRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&deleted_at=is.null&status=not.in.(disputed)`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        status: "cancelled",
-        current_balance: 0,
-        paid_amount: 0,
-        notes: deletedPackedNotes,
-        deleted_at: nowIso,
-        deleted_by: authUser.id,
-        deletion_reason: cleanReason,
-        updated_at: nowIso
-      }
-    }
-  );
-  if (!softDelRes.ok && softDelRes.status === 400) {
-    softDelRes = await sbRest(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
-      {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: {
-          status: "cancelled",
-          current_balance: 0,
-          paid_amount: 0,
-          notes: deletedPackedNotes,
-          updated_at: nowIso
-        }
-      }
-    );
-  }
-  if (!softDelRes.ok) {
-    return { status: 503, body: { success: false, message: softDelRes.error || "Failed to delete transaction." } };
-  }
-  if (!Array.isArray(softDelRes.data) || softDelRes.data.length === 0) {
-    return { status: 409, body: { success: false, message: "This transaction has already been deleted or cannot be deleted in its current state." } };
-  }
-  if (repayments.length > 0) {
-    const repDelRes = await sbRest(
-      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`,
-      {
-        method: "PATCH",
-        prefer: "return=minimal",
-        body: {
-          status: "deleted",
-          deleted_at: nowIso,
-          deleted_by: authUser.id,
-          deletion_reason: cleanReason || "Parent Udhar deleted"
-        }
-      }
-    );
-    if (!repDelRes.ok && repDelRes.status === 400) {
-      await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-        method: "DELETE",
-        prefer: "return=minimal"
-      });
-    }
-  }
-  await deactivateUdharNotificationsRest(tx.link_id, tx.id);
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Deleted by ${authUser.full_name}`,
-      message: `${authUser.full_name} permanently deleted the shared Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both accounts have been updated.`,
-      type: "udhar_deleted",
-      dedupeKey: `udhar_del_${tx.link_id}`,
-      metadata: {
-        actionType: "udhar_deleted",
-        deletedLinkId: tx.link_id,
-        deletedTxId: tx.id,
-        amount: parseFloat(tx.original_amount) || 0
-      }
-    }).catch(() => {
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      deletedTransactionId: tx.id,
-      linkId: tx.link_id,
-      originalAmount: tx.original_amount,
-      direction: tx.direction,
-      counterpartUserId: tx.counterpart_user_id || null,
-      deletionReason: cleanReason,
-      deletedAt: nowIso,
-      deletedBy: authUser.id,
-      message: "Udhar entry deleted successfully for both participants. Totals have been recalculated."
-    }
-  };
-}
-async function deleteRepaymentRest(authUser, repaymentId, reason) {
-  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
-  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Repayment record not found." } };
-  }
-  const rep = repRes.data[0];
-  const txRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Associated Udhar transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.status === "cancelled" || tx.deleted_at) {
-    return { status: 409, body: { success: false, message: "Associated Udhar has already been deleted." } };
-  }
-  if (tx.status === "disputed") {
-    return { status: 409, body: { success: false, message: "Cannot delete repayments on a disputed Udhar. Resolve the dispute first." } };
-  }
-  const guard = canDeleteRepayment({
-    isShared: Boolean(tx.counterpart_user_id),
-    direction: tx.direction,
-    actorUserId: authUser.id,
-    repayment: rep
-  });
-  if (!guard.allowed) {
-    return { status: guard.httpStatus || 403, body: { success: false, message: guard.reason || "Not authorized to delete this repayment." } };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
-  let repDelRes = await sbRest(
-    `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        status: "deleted",
-        deleted_at: nowIso,
-        deleted_by: authUser.id,
-        deletion_reason: cleanReason
-      }
-    }
-  );
-  if (!repDelRes.ok && repDelRes.status === 400) {
-    repDelRes = await sbRest(
-      `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
-      {
-        method: "DELETE",
-        prefer: "return=representation"
-      }
-    );
-  }
-  if (!repDelRes.ok) {
-    return { status: 503, body: { success: false, message: repDelRes.error || "Failed to delete repayment." } };
-  }
-  const remainingRepsRes = await sbRest(
-    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
-  );
-  const remainingReps = remainingRepsRes.ok && Array.isArray(remainingRepsRes.data) ? remainingRepsRes.data.filter((r2) => r2.id !== repaymentId && isActiveRepayment(r2)) : [];
-  const recalc = recalculateUdharFromRepayments({
-    originalAmount: tx.original_amount,
-    repayments: remainingReps,
-    currentStatus: tx.status
-  });
-  let parentUpdateRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        paid_amount: recalc.paidAmount,
-        current_balance: recalc.remainingBalance,
-        status: recalc.nextStatus,
-        settled_at: recalc.isSettled ? tx.settled_at || nowIso : null,
-        settled_by: recalc.isSettled ? tx.settled_by || authUser.id : null,
-        updated_at: nowIso
-      }
-    }
-  );
-  if (!parentUpdateRes.ok && parentUpdateRes.status === 400) {
-    parentUpdateRes = await sbRest(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
-      {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: {
-          paid_amount: recalc.paidAmount,
-          current_balance: recalc.remainingBalance,
-          status: recalc.nextStatus,
-          settled_at: recalc.isSettled ? tx.settled_at || nowIso : null,
-          updated_at: nowIso
-        }
-      }
-    );
-  }
-  if (!parentUpdateRes.ok) {
-    return { status: 503, body: { success: false, message: parentUpdateRes.error || "Failed to recalculate Udhar balance." } };
-  }
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Repayment Deleted by ${authUser.full_name}`,
-      message: `${authUser.full_name} deleted a repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Updated balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`,
-      type: "repayment_deleted",
-      relatedEntityId: tx.link_id
-    });
-  }
-  return {
-    status: 200,
-    body: {
-      success: true,
-      deletedRepaymentId: repaymentId,
-      transactionId: tx.id,
-      linkId: tx.link_id,
-      paidAmount: recalc.paidAmount,
-      remainingBalance: recalc.remainingBalance,
-      udharStatus: recalc.nextStatus,
-      isSettled: recalc.isSettled,
-      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} deleted. Remaining balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`
-    }
-  };
-}
-async function getUdharHistoryRest(authUser, txId) {
-  const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
-  );
-  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const tx = txRes.data[0];
-  if (tx.status === "cancelled" || Boolean(tx.deleted_at)) {
-    return { status: 404, body: { success: false, message: "Transaction not found." } };
-  }
-  const [repsRes, histRes] = await Promise.all([
-    sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),
-    sbRest(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`)
-  ]);
-  const reps = (repsRes.data || []).filter((r2) => isActiveRepayment(r2));
-  const hist = histRes.data || [];
-  const userIds = [
-    tx.counterpart_user_id,
-    ...reps.map((r2) => r2.recorded_by_user_id),
-    ...hist.map((h2) => h2.edited_by_user_id)
-  ].filter(Boolean);
-  const userMap = await fetchUsersByIds(userIds);
-  const enriched = enrichTransactionRow(tx, userMap, reps, hist);
-  return {
-    status: 200,
-    body: {
-      success: true,
-      transaction: enriched,
-      editHistory: enriched.edit_history,
-      repayments: enriched.repayments
-    }
-  };
-}
-
-// src/lib/privacyConsent.ts
-var PRIVACY_POLICY_VERSION = "v2.1 \u2014 DPDP Act 2023 & Rules 2025";
-var PRIVACY_POLICY_LAST_UPDATED = "2026-11-25";
-var OPTIONAL_CONSENT_CATEGORIES = [
-  "cloud_sync",
-  "ai_processing",
-  "udhar_sharing",
-  "upi_qr",
-  "analytics",
-  "personalization",
-  "marketing_updates"
-];
-function createEmptyOptionalChoices() {
-  return {
-    cloud_sync: false,
-    ai_processing: false,
-    udhar_sharing: false,
-    upi_qr: false,
-    analytics: false,
-    personalization: false,
-    marketing_updates: false
-  };
-}
-var EMPTY_OPTIONAL_CONSENT_CHOICES = Object.freeze(
-  createEmptyOptionalChoices()
-);
-function isValidOptionalConsentCategory(value) {
-  return OPTIONAL_CONSENT_CATEGORIES.includes(value);
-}
+import crypto21 from "crypto";
 
 // server/userAccountExtensions.ts
-import crypto21 from "crypto";
+import crypto20 from "crypto";
 
 // src/lib/upiQrUtils.ts
 var UPI_CONSENT_PURPOSE = "upi_qr_storage";
@@ -96389,7 +92280,7 @@ function sanitizeUpiText(raw, maxLen) {
 }
 
 // server/webauthn.ts
-import crypto19 from "crypto";
+import crypto18 from "crypto";
 var CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 var challengeStore = /* @__PURE__ */ new Map();
 function pruneChallenges() {
@@ -96408,8 +92299,8 @@ function bufferToBase64Url(buf) {
 }
 function issueWebAuthnChallenge(params) {
   pruneChallenges();
-  const challengeId = crypto19.randomBytes(16).toString("hex");
-  const challenge = bufferToBase64Url(crypto19.randomBytes(32));
+  const challengeId = crypto18.randomBytes(16).toString("hex");
+  const challenge = bufferToBase64Url(crypto18.randomBytes(32));
   const expiresAt = Date.now() + CHALLENGE_TTL_MS;
   challengeStore.set(challengeId, {
     challenge,
@@ -96530,7 +92421,7 @@ function coseKeyMapToSpkiPem(coseMap) {
     if (!Buffer.isBuffer(x2) || !Buffer.isBuffer(y)) {
       throw new Error("Invalid COSE EC2 public key coordinates");
     }
-    const keyObj = crypto19.createPublicKey({
+    const keyObj = crypto18.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -96550,7 +92441,7 @@ function coseKeyMapToSpkiPem(coseMap) {
     if (!Buffer.isBuffer(n) || !Buffer.isBuffer(e2)) {
       throw new Error("Invalid COSE RSA public key components");
     }
-    const keyObj = crypto19.createPublicKey({
+    const keyObj = crypto18.createPublicKey({
       key: {
         kty: "RSA",
         n: bufferToBase64Url(n),
@@ -96587,8 +92478,8 @@ function extractCredentialFromAttestation(params) {
     throw new Error("Invalid authenticatorData in attestationObject.");
   }
   const rpIdHash = authData.subarray(0, 32);
-  const expectedRpIdHash = crypto19.createHash("sha256").update(params.expectedRpId).digest();
-  if (!crypto19.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+  const expectedRpIdHash = crypto18.createHash("sha256").update(params.expectedRpId).digest();
+  if (!crypto18.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
     throw new Error("WebAuthn RP ID hash verification failed.");
   }
   const flags = authData[32];
@@ -96614,7 +92505,7 @@ function extractCredentialFromAttestation(params) {
   } catch (err) {
     if (params.publicKeySpkiBase64) {
       const der = base64UrlToBuffer(params.publicKeySpkiBase64);
-      const pubKey = crypto19.createPublicKey({ key: der, format: "der", type: "spki" });
+      const pubKey = crypto18.createPublicKey({ key: der, format: "der", type: "spki" });
       publicKeySpki = pubKey.export({ type: "spki", format: "pem" }).toString();
       algorithm = pubKey.asymmetricKeyType === "rsa" ? -257 : -7;
     } else {
@@ -96644,8 +92535,8 @@ function verifyPasskeyAssertion(params) {
       return { valid: false, newCounter: params.previousCounter, error: "Malformed authenticatorData." };
     }
     const rpIdHash = authDataBuf.subarray(0, 32);
-    const expectedRpIdHash = crypto19.createHash("sha256").update(params.expectedRpId).digest();
-    if (!crypto19.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+    const expectedRpIdHash = crypto18.createHash("sha256").update(params.expectedRpId).digest();
+    if (!crypto18.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
       return { valid: false, newCounter: params.previousCounter, error: "Passkey RP ID mismatch." };
     }
     const flags = authDataBuf[32];
@@ -96660,11 +92551,11 @@ function verifyPasskeyAssertion(params) {
         error: "Passkey signCount replay check failed. Please re-register this passkey."
       };
     }
-    const clientDataHash = crypto19.createHash("sha256").update(clientDataBuf).digest();
+    const clientDataHash = crypto18.createHash("sha256").update(clientDataBuf).digest();
     const signedData = Buffer.concat([authDataBuf, clientDataHash]);
     const sigBuf = base64UrlToBuffer(params.signature);
-    const publicKey = crypto19.createPublicKey(params.publicKeySpki);
-    const ok = crypto19.verify("sha256", signedData, publicKey, sigBuf);
+    const publicKey = crypto18.createPublicKey(params.publicKeySpki);
+    const ok = crypto18.verify("sha256", signedData, publicKey, sigBuf);
     if (!ok) {
       return { valid: false, newCounter: params.previousCounter, error: "Passkey cryptographic signature invalid." };
     }
@@ -96705,7 +92596,7 @@ function resolveRpContext(reqHeaders) {
 }
 
 // server/firebaseVerify.ts
-import crypto20 from "crypto";
+import crypto19 from "crypto";
 var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 var cachedCerts = null;
 var cachedCertsExpiresAt = 0;
@@ -96748,7 +92639,7 @@ function verifyFirebaseJwtWithKey(idToken, publicKeyOrCert, expectedProjectId, n
   }
   const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, "utf8");
   const signature = base64UrlToBuffer2(sigB64);
-  const verified = crypto20.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
+  const verified = crypto19.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
   if (!verified) {
     throw new Error("Firebase ID token signature verification failed.");
   }
@@ -96818,7 +92709,7 @@ function getSbConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
   return { url, key };
 }
-async function sbRest2(path12, opts = {}) {
+async function sbRest(path12, opts = {}) {
   const { url, key } = getSbConfig();
   const headers = {
     apikey: key,
@@ -96907,7 +92798,7 @@ async function getUserPrivateMeta(userId) {
     } catch {
     }
   }
-  const rest = await sbRest2(`app_users?id=eq.${encodeURIComponent(userId)}&select=custom_permissions&limit=1`);
+  const rest = await sbRest(`app_users?id=eq.${encodeURIComponent(userId)}&select=custom_permissions&limit=1`);
   const meta = rest.data?.[0]?.custom_permissions;
   if (meta && typeof meta === "object" && !Array.isArray(meta)) return { ...meta };
   return {};
@@ -96926,7 +92817,7 @@ async function setUserPrivateMeta(userId, updater) {
     } catch {
     }
   }
-  const res = await sbRest2(`app_users?id=eq.${encodeURIComponent(userId)}`, {
+  const res = await sbRest(`app_users?id=eq.${encodeURIComponent(userId)}`, {
     method: "PATCH",
     body: { custom_permissions: next, updated_at: nowIso }
   });
@@ -96956,7 +92847,7 @@ async function getSavedUpiProfileForUser(userId) {
     } catch {
     }
   }
-  const rest = await sbRest2(
+  const rest = await sbRest(
     `user_upi_profiles?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id,upi_id,payee_name,payment_note,created_at,updated_at&limit=1`
   );
   if (rest.ok) {
@@ -97017,7 +92908,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
     } catch {
     }
   }
-  const rest = await sbRest2("user_upi_profiles?on_conflict=user_id", {
+  const rest = await sbRest("user_upi_profiles?on_conflict=user_id", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
     body: {
@@ -97041,7 +92932,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
     };
   }
   let savedRecord = {
-    id: crypto21.randomUUID(),
+    id: crypto20.randomUUID(),
     userId,
     upiId: payload.upiId,
     payeeName: payload.payeeName,
@@ -97052,7 +92943,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
   await setUserPrivateMeta(userId, (prev) => {
     const existing = prev.__upi_profile;
     savedRecord = {
-      id: existing?.id || crypto21.randomUUID(),
+      id: existing?.id || crypto20.randomUUID(),
       userId,
       upiId: payload.upiId,
       payeeName: payload.payeeName,
@@ -97071,7 +92962,7 @@ async function clearSavedUpiProfileForUser(userId) {
     } catch {
     }
   }
-  await sbRest2(`user_upi_profiles?user_id=eq.${encodeURIComponent(userId)}`, { method: "DELETE" }).catch(() => {
+  await sbRest(`user_upi_profiles?user_id=eq.${encodeURIComponent(userId)}`, { method: "DELETE" }).catch(() => {
   });
   await setUserPrivateMeta(userId, (prev) => {
     const next = { ...prev };
@@ -97191,7 +93082,7 @@ async function findIdentityByProviderUid(provider, providerUid) {
     } catch {
     }
   }
-  const rest = await sbRest2(
+  const rest = await sbRest(
     `user_auth_identities?provider=eq.${encodeURIComponent(provider)}&provider_uid=eq.${encodeURIComponent(providerUid)}&limit=1`
   );
   if (rest.ok) {
@@ -97207,7 +93098,7 @@ async function findIdentityByProviderUid(provider, providerUid) {
       linkedAt: row.linked_at
     };
   }
-  const scan = await sbRest2("app_users?select=id,custom_permissions&limit=1000");
+  const scan = await sbRest("app_users?select=id,custom_permissions&limit=1000");
   if (scan.ok && Array.isArray(scan.data)) {
     for (const u of scan.data) {
       const list = Array.isArray(u.custom_permissions?.__auth_identities) ? u.custom_permissions.__auth_identities : [];
@@ -97237,7 +93128,7 @@ async function listIdentitiesForUser(userId) {
     } catch {
     }
   }
-  const rest = await sbRest2(
+  const rest = await sbRest(
     `user_auth_identities?user_id=eq.${encodeURIComponent(userId)}&order=linked_at.desc`
   );
   if (rest.ok && Array.isArray(rest.data)) {
@@ -97280,7 +93171,7 @@ async function saveIdentityForUser(userId, provider, providerUid, providerEmail,
     } catch {
     }
   }
-  const rest = await sbRest2("user_auth_identities", {
+  const rest = await sbRest("user_auth_identities", {
     method: "POST",
     prefer: "return=representation",
     body: {
@@ -97305,7 +93196,7 @@ async function saveIdentityForUser(userId, provider, providerUid, providerEmail,
     };
   }
   const record = {
-    id: crypto21.randomUUID(),
+    id: crypto20.randomUUID(),
     userId,
     provider,
     providerUid,
@@ -97330,7 +93221,7 @@ async function deleteGoogleIdentityForUser(userId) {
     } catch {
     }
   }
-  await sbRest2(
+  await sbRest(
     `user_auth_identities?user_id=eq.${encodeURIComponent(userId)}&provider=eq.google_firebase`,
     { method: "DELETE" }
   ).catch(() => {
@@ -97367,7 +93258,7 @@ async function listPasskeysForUser(userId) {
     } catch {
     }
   }
-  const rest = await sbRest2(
+  const rest = await sbRest(
     `user_passkeys?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc`
   );
   if (rest.ok && Array.isArray(rest.data)) {
@@ -97414,7 +93305,7 @@ async function findPasskeyByCredentialId(credentialId) {
     } catch {
     }
   }
-  const rest = await sbRest2(
+  const rest = await sbRest(
     `user_passkeys?credential_id=eq.${encodeURIComponent(credentialId)}&limit=1`
   );
   if (rest.ok) {
@@ -97433,7 +93324,7 @@ async function findPasskeyByCredentialId(credentialId) {
       lastUsedAt: row.last_used_at || null
     };
   }
-  const scan = await sbRest2("app_users?select=id,custom_permissions&limit=1000");
+  const scan = await sbRest("app_users?select=id,custom_permissions&limit=1000");
   if (scan.ok && Array.isArray(scan.data)) {
     for (const u of scan.data) {
       const list = Array.isArray(u.custom_permissions?.__passkeys) ? u.custom_permissions.__passkeys : [];
@@ -97471,7 +93362,7 @@ async function savePasskeyForUser(pk) {
     } catch {
     }
   }
-  const rest = await sbRest2("user_passkeys", {
+  const rest = await sbRest("user_passkeys", {
     method: "POST",
     prefer: "return=representation",
     body: {
@@ -97501,7 +93392,7 @@ async function savePasskeyForUser(pk) {
   }
   const created = {
     ...pk,
-    id: crypto21.randomUUID(),
+    id: crypto20.randomUUID(),
     createdAt: nowIso,
     lastUsedAt: null
   };
@@ -97523,7 +93414,7 @@ async function updatePasskeyUsage(passkey, newCounter) {
     } catch {
     }
   }
-  const rest = await sbRest2(`user_passkeys?credential_id=eq.${encodeURIComponent(passkey.credentialId)}`, {
+  const rest = await sbRest(`user_passkeys?credential_id=eq.${encodeURIComponent(passkey.credentialId)}`, {
     method: "PATCH",
     body: { counter: newCounter, last_used_at: nowIso }
   });
@@ -97551,7 +93442,7 @@ async function deletePasskeyForUser(userId, passkeyId) {
     } catch {
     }
   }
-  const rest = await sbRest2(
+  const rest = await sbRest(
     `user_passkeys?id=eq.${encodeURIComponent(passkeyId)}&user_id=eq.${encodeURIComponent(userId)}`,
     { method: "DELETE", prefer: "return=representation" }
   );
@@ -97573,7 +93464,7 @@ async function fetchUserRowById(userId) {
     } catch {
     }
   }
-  const rest = await sbRest2(`app_users?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`);
+  const rest = await sbRest(`app_users?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`);
   return rest.ok && rest.data?.[0] ? rest.data[0] : null;
 }
 async function fetchUserRowByEmail(email) {
@@ -97585,7 +93476,7 @@ async function fetchUserRowByEmail(email) {
     } catch {
     }
   }
-  const rest = await sbRest2(`app_users?email=ilike.${encodeURIComponent(norm)}&select=*&limit=1`);
+  const rest = await sbRest(`app_users?email=ilike.${encodeURIComponent(norm)}&select=*&limit=1`);
   return rest.ok && rest.data?.[0] ? rest.data[0] : null;
 }
 async function userHasPasswordAuth(userRow) {
@@ -97734,7 +93625,7 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
         });
         return true;
       }
-      const dupRest = await sbRest2(
+      const dupRest = await sbRest(
         `app_users?username=eq.${encodeURIComponent(rawUsername)}&id=neq.${encodeURIComponent(authUser.id)}&select=id&limit=1`
       );
       if (dupRest.ok && Array.isArray(dupRest.data) && dupRest.data.length > 0) {
@@ -97772,7 +93663,7 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       };
       if (phone) patchPayload.phone = phone;
       if (rawUsername) patchPayload.username = rawUsername;
-      const restUpd = await sbRest2(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
+      const restUpd = await sbRest(`app_users?id=eq.${encodeURIComponent(authUser.id)}`, {
         method: "PATCH",
         prefer: "return=representation",
         body: patchPayload
@@ -97930,7 +93821,7 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       });
       return true;
     }
-    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto21.randomBytes(24).toString("hex")}`;
+    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto20.randomBytes(24).toString("hex")}`;
     const initialName = verified.name || verified.email.split("@")[0] || "User";
     const initialMeta = { __profile_completed: false };
     let createdUser = null;
@@ -97955,7 +93846,7 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       }
     }
     if (!createdUser) {
-      const ins = await sbRest2("app_users", {
+      const ins = await sbRest("app_users", {
         method: "POST",
         prefer: "return=representation",
         body: {
@@ -98380,6 +94271,4322 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
     return true;
   }
   return false;
+}
+
+// src/lib/sharedUdharEngine.ts
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+function normalizeSearchQuery(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  return raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+function classifyLiveSearchQuery(raw) {
+  const normalized2 = normalizeSearchQuery(raw);
+  const digitsOnly = normalized2.replace(/\D/g, "");
+  const last10Digits = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+  if (!normalized2 || normalized2.length < 2) {
+    return { mode: "too_short", normalized: normalized2, digitsOnly, last10Digits };
+  }
+  if (normalized2.includes("@")) {
+    const emailStrictRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (emailStrictRegex.test(normalized2)) {
+      return { mode: "email_exact", normalized: normalized2, digitsOnly, last10Digits };
+    }
+    return { mode: "email_incomplete", normalized: normalized2, digitsOnly, last10Digits };
+  }
+  const looksLikePhone = /^[+\d][\d\s\-().]*$/.test(normalized2) && digitsOnly.length >= 4;
+  if (looksLikePhone) {
+    if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+      return { mode: "phone_exact", normalized: normalized2, digitsOnly, last10Digits };
+    }
+    return { mode: "phone_incomplete", normalized: normalized2, digitsOnly, last10Digits };
+  }
+  return { mode: "name", normalized: normalized2, digitsOnly, last10Digits };
+}
+function isUpiPaymentQr(raw) {
+  const trimmed = (raw || "").trim().toLowerCase();
+  return trimmed.startsWith("upi://pay") || trimmed.startsWith("upi://collect") || trimmed.startsWith("upi://mandate");
+}
+function maskEmailForPrivacy(email) {
+  if (!email || !email.includes("@")) return "***@***";
+  const [local, domain] = email.trim().split("@");
+  if (!local || !domain) return "***@***";
+  if (local.length <= 2) return `${local.charAt(0)}***@${domain}`;
+  return `${local.charAt(0)}***${local.charAt(local.length - 1)}@${domain}`;
+}
+function maskPhoneForPrivacy(phone) {
+  if (!phone) return null;
+  const clean = phone.replace(/[\s\-()]/g, "");
+  if (clean.length < 6) return "****";
+  return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
+}
+function parseQrPayload(raw) {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) {
+    return { valid: false, errorCode: "EMPTY_QR", error: "Empty QR code detected." };
+  }
+  if (isUpiPaymentQr(trimmed)) {
+    return {
+      valid: false,
+      isUpiPaymentQr: true,
+      errorCode: "UPI_QR_NOT_PAIRING",
+      error: "This is a UPI payment QR code, not a My Money Manager Udhar pairing QR. Please scan your friend's Udhar Pairing QR."
+    };
+  }
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && (parsed.app === "my-money" || parsed.type === "udhar-pair")) {
+        const token = typeof parsed.token === "string" ? parsed.token.trim() : void 0;
+        const code = typeof parsed.code === "string" ? parsed.code.trim().toUpperCase() : void 0;
+        if (token || code) {
+          const result = { valid: true, kind: "json" };
+          if (token !== void 0) result.token = token;
+          if (code !== void 0) result.code = code;
+          return result;
+        }
+      }
+      return {
+        valid: false,
+        errorCode: "INVALID_QR",
+        error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine account pairing QR."
+      };
+    } catch {
+      return {
+        valid: false,
+        errorCode: "MALFORMED_QR",
+        error: "Malformed QR payload. Please scan a genuine My Money Manager Udhar pairing QR."
+      };
+    }
+  }
+  const pairLinkMatch = trimmed.match(/(?:[#?&]pair=)([A-Za-z0-9_-]{6,64})/i);
+  if (pairLinkMatch && pairLinkMatch[1]) {
+    const val = pairLinkMatch[1].trim();
+    if (/^MM-[A-Z0-9]{4,}$/i.test(val)) {
+      return { valid: true, kind: "pair_url", code: val.toUpperCase() };
+    }
+    if (/^[0-9a-fA-F]{64}$/.test(val)) {
+      return { valid: true, kind: "pair_url", token: val };
+    }
+    return { valid: true, kind: "pair_url", code: val.toUpperCase() };
+  }
+  const normalizedCode = trimmed.replace(/\s+/g, "").toUpperCase();
+  if (/^MM-[A-Z0-9]{4,16}$/.test(normalizedCode)) {
+    return { valid: true, kind: "pair_code", code: normalizedCode };
+  }
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return { valid: true, kind: "hex_token", token: trimmed };
+  }
+  return {
+    valid: false,
+    errorCode: "INVALID_QR",
+    error: "Not a valid My Money Manager QR code for Udhar pairing. Please scan a genuine pairing QR generated inside My Money Manager."
+  };
+}
+function calculateRepaymentApplication(input) {
+  if (input.udharStatus === "pending_confirmation") {
+    return { valid: false, error: "Waiting for recipient confirmation before repayments can be recorded." };
+  }
+  if (input.udharStatus === "rejected") {
+    return { valid: false, error: "Cannot record repayment on a rejected Udhar request." };
+  }
+  if (input.udharStatus === "deleted") {
+    return { valid: false, error: "Cannot record repayment on a deleted Udhar." };
+  }
+  if (input.udharStatus === "cancelled") {
+    return { valid: false, error: "Cannot record repayment on a cancelled Udhar." };
+  }
+  if (input.udharStatus === "disputed") {
+    return { valid: false, error: "Cannot record repayment while Udhar is disputed. Resolve the dispute first." };
+  }
+  if (input.udharStatus === "settled") {
+    return { valid: false, error: "This Udhar is already fully settled." };
+  }
+  const repayAmt = roundMoney(input.repayAmount);
+  if (!Number.isFinite(repayAmt) || repayAmt <= 0) {
+    return { valid: false, error: "Repayment amount must be greater than \u20B90." };
+  }
+  const remaining = roundMoney(Math.max(0, input.originalAmount - input.confirmedPaidAmount));
+  if (remaining <= 0.01) {
+    return { valid: false, error: "This Udhar has no remaining balance to repay." };
+  }
+  const effectiveRemaining = input.isShared && input.actorRole === "borrower" ? roundMoney(Math.max(0, remaining - Math.max(0, input.pendingRepaymentsAmount))) : remaining;
+  if (repayAmt > effectiveRemaining + 0.01) {
+    if (input.isShared && input.actorRole === "borrower" && input.pendingRepaymentsAmount > 0) {
+      return {
+        valid: false,
+        error: `Amount (\u20B9${repayAmt}) exceeds available remaining balance (\u20B9${effectiveRemaining}) after accounting for \u20B9${roundMoney(input.pendingRepaymentsAmount)} already pending lender confirmation.`
+      };
+    }
+    return {
+      valid: false,
+      error: `Repayment amount (\u20B9${repayAmt}) cannot exceed remaining balance (\u20B9${remaining}).`
+    };
+  }
+  const repaymentStatus = input.isShared && input.actorRole === "borrower" ? "pending_confirmation" : "confirmed";
+  if (repaymentStatus === "pending_confirmation") {
+    return {
+      valid: true,
+      repaymentStatus,
+      nextPaidAmount: roundMoney(input.confirmedPaidAmount),
+      nextRemainingAmount: remaining,
+      nextUdharStatus: "confirmed",
+      isSettled: false
+    };
+  }
+  const nextPaidAmount = roundMoney(input.confirmedPaidAmount + repayAmt);
+  const nextRemainingAmount = roundMoney(Math.max(0, input.originalAmount - nextPaidAmount));
+  const isSettled = nextRemainingAmount <= 0.01;
+  return {
+    valid: true,
+    repaymentStatus: "confirmed",
+    nextPaidAmount: isSettled ? roundMoney(input.originalAmount) : nextPaidAmount,
+    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
+    nextUdharStatus: isSettled ? "settled" : "confirmed",
+    isSettled
+  };
+}
+function validateUdharEdit(current, updates) {
+  if (current.status === "cancelled" || current.status === "rejected" || current.status === "deleted") {
+    return { valid: false, error: "Rejected, cancelled, or deleted Udhar records cannot be edited." };
+  }
+  const reason = (updates.reason_for_edit || "").trim();
+  if (reason.length < 3) {
+    return { valid: false, error: "Please provide a clear reason (at least 3 characters) for editing this record." };
+  }
+  const nextOriginalAmount = updates.amount !== void 0 ? roundMoney(updates.amount) : roundMoney(current.original_amount);
+  if (!Number.isFinite(nextOriginalAmount) || nextOriginalAmount <= 0) {
+    return { valid: false, error: "Total amount must be greater than \u20B90." };
+  }
+  const paid = roundMoney(Math.max(0, current.paid_amount));
+  if (nextOriginalAmount + 0.01 < paid) {
+    return {
+      valid: false,
+      error: `New amount (\u20B9${nextOriginalAmount}) cannot be less than already confirmed repayments (\u20B9${paid}).`
+    };
+  }
+  const nextRemainingAmount = roundMoney(Math.max(0, nextOriginalAmount - paid));
+  const isSettled = nextRemainingAmount <= 0.01;
+  const changes = [];
+  if (roundMoney(current.original_amount) !== nextOriginalAmount) {
+    changes.push({
+      changed_field: "amount",
+      previous_value: String(roundMoney(current.original_amount)),
+      new_value: String(nextOriginalAmount)
+    });
+  }
+  if (updates.transaction_date && updates.transaction_date !== current.transaction_date) {
+    changes.push({
+      changed_field: "transaction_date",
+      previous_value: current.transaction_date,
+      new_value: updates.transaction_date
+    });
+  }
+  if (updates.due_date !== void 0 && (updates.due_date || null) !== (current.due_date || null)) {
+    changes.push({
+      changed_field: "due_date",
+      previous_value: current.due_date || null,
+      new_value: updates.due_date || null
+    });
+  }
+  if (updates.category !== void 0 && (updates.category || null) !== (current.category || null)) {
+    changes.push({
+      changed_field: "category",
+      previous_value: current.category || null,
+      new_value: updates.category || null
+    });
+  }
+  if (updates.payment_method !== void 0 && (updates.payment_method || null) !== (current.payment_method || null)) {
+    changes.push({
+      changed_field: "payment_method",
+      previous_value: current.payment_method || null,
+      new_value: updates.payment_method || null
+    });
+  }
+  if (updates.description !== void 0 && (updates.description || null) !== (current.description || null)) {
+    changes.push({
+      changed_field: "description",
+      previous_value: current.description || null,
+      new_value: updates.description || null
+    });
+  }
+  if (updates.notes !== void 0 && (updates.notes || null) !== (current.notes || null)) {
+    changes.push({
+      changed_field: "notes",
+      previous_value: current.notes || null,
+      new_value: updates.notes || null
+    });
+  }
+  return {
+    valid: true,
+    nextOriginalAmount,
+    nextRemainingAmount: isSettled ? 0 : nextRemainingAmount,
+    nextStatus: isSettled ? "settled" : "confirmed",
+    isSettled,
+    changes
+  };
+}
+function isActiveRepayment(repayment) {
+  if (!repayment) return false;
+  if (repayment.deleted_at) return false;
+  return repayment.status !== "deleted" && repayment.status !== "cancelled";
+}
+function normalizeUdharLifecycleStatus(row) {
+  const { meta } = unpackStructuredNote(row?.notes);
+  if (row?.deleted_at || row?.status === "deleted" || meta.lifecycle_status === "deleted") {
+    return "deleted";
+  }
+  if (row?.status === "rejected" || meta.lifecycle_status === "rejected" || Boolean(row?.rejected_by || meta.rejected_by)) {
+    return "rejected";
+  }
+  if (row?.status === "cancelled" || meta.lifecycle_status === "cancelled" || Boolean(row?.cancelled_at || meta.cancelled_at)) {
+    return "cancelled";
+  }
+  if (row?.status === "disputed") return "disputed";
+  if (row?.status === "settled") return "settled";
+  if (row?.status === "pending_confirmation") return "pending_confirmation";
+  return "confirmed";
+}
+function canAcceptUdhar(udhar, actorUserId) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted") {
+    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to respond to this Udhar request." };
+  }
+  if (udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: "SELF_APPROVAL_BLOCKED", reason: "Only the recipient can accept this Udhar request." };
+  }
+  if (lifecycle === "rejected") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "Rejected Udhar requests cannot be accepted." };
+  }
+  if (lifecycle === "cancelled") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request was cancelled by the sender." };
+  }
+  if (lifecycle !== "pending_confirmation") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "This Udhar transaction is already confirmed." };
+  }
+  return { allowed: true };
+}
+function canRejectUdhar(udhar, actorUserId) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted") {
+    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to reject this Udhar request." };
+  }
+  if (udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: "SELF_REJECT_BLOCKED", reason: "Use Cancel Request to cancel a request you sent." };
+  }
+  if (lifecycle === "rejected") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "This Udhar request was already rejected." };
+  }
+  if (lifecycle === "cancelled") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request was already cancelled by the sender." };
+  }
+  if (lifecycle !== "pending_confirmation") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "Confirmed transactions cannot be rejected." };
+  }
+  return { allowed: true };
+}
+function canSenderCancelUdhar(udhar, actorUserId) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted") {
+    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to cancel this Udhar request." };
+  }
+  if (!udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: "SENDER_ONLY", reason: "Only the sender can cancel a pending request. Recipients can Reject it." };
+  }
+  if (lifecycle === "cancelled") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request is already cancelled." };
+  }
+  if (lifecycle === "rejected") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "This request has already been rejected by the recipient." };
+  }
+  if (lifecycle !== "pending_confirmation") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "Already accepted requests cannot be cancelled as pending requests." };
+  }
+  return { allowed: true };
+}
+function canCancelUdhar(udhar) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted" || Boolean(udhar.deleted_at)) {
+    return {
+      allowed: false,
+      httpStatus: 404,
+      code: "ALREADY_DELETED",
+      reason: "This Udhar is already deleted."
+    };
+  }
+  if (lifecycle === "disputed") {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      code: "DISPUTED",
+      reason: "Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history."
+    };
+  }
+  return { allowed: true };
+}
+function canDeleteRepayment(params) {
+  const { isShared, direction, actorUserId, repayment } = params;
+  if (!isActiveRepayment(repayment)) {
+    return { allowed: false, httpStatus: 404, reason: "This repayment has already been deleted." };
+  }
+  if (repayment.status === "disputed") {
+    return {
+      allowed: false,
+      httpStatus: 409,
+      reason: "Disputed repayments cannot be deleted directly. Resolve the dispute first."
+    };
+  }
+  const isLenderOrManual = !isShared || direction === "gave";
+  if (isLenderOrManual) {
+    return { allowed: true };
+  }
+  const isOwnPendingClaim = repayment.status === "pending_confirmation" && Boolean(actorUserId) && repayment.recorded_by_user_id === actorUserId;
+  if (isOwnPendingClaim) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    httpStatus: 403,
+    reason: "Only the lender can delete confirmed or lender-recorded repayments."
+  };
+}
+function recalculateUdharFromRepayments(params) {
+  const originalAmount = roundMoney(parseFloat(String(params.originalAmount)) || 0);
+  const activeConfirmedSum = (params.repayments || []).filter((r2) => isActiveRepayment(r2) && r2.status === "confirmed").reduce((sum, r2) => sum + (parseFloat(String(r2.amount)) || 0), 0);
+  const paidAmount = roundMoney(Math.min(originalAmount, Math.max(0, activeConfirmedSum)));
+  const rawRemaining = roundMoney(Math.max(0, originalAmount - paidAmount));
+  const isSettled = rawRemaining <= 0.01 && originalAmount > 0;
+  const remainingBalance = isSettled ? 0 : rawRemaining;
+  const prev = params.currentStatus;
+  let nextStatus = "confirmed";
+  if (prev === "cancelled") {
+    nextStatus = "cancelled";
+  } else if (prev === "disputed") {
+    nextStatus = "disputed";
+  } else if (isSettled) {
+    nextStatus = "settled";
+  } else if (prev === "pending_confirmation") {
+    nextStatus = "pending_confirmation";
+  } else {
+    nextStatus = "confirmed";
+  }
+  return {
+    originalAmount,
+    paidAmount,
+    remainingBalance,
+    isSettled,
+    nextStatus
+  };
+}
+function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
+  let totalGiven = 0;
+  let totalTaken = 0;
+  let youWillReceive = 0;
+  let youWillPay = 0;
+  let settledAmount = 0;
+  let overdueAmount = 0;
+  let activeCount = 0;
+  let settledCount = 0;
+  let pendingRepaymentCount = 0;
+  let pendingConfirmationCount = 0;
+  let pendingGivenAmount = 0;
+  let pendingReceivedAmount = 0;
+  let rejectedCount = 0;
+  let cancelledCount = 0;
+  for (const tx of items) {
+    const lifecycle = normalizeUdharLifecycleStatus(tx);
+    if (lifecycle === "deleted") continue;
+    if (lifecycle === "rejected") {
+      rejectedCount += 1;
+      continue;
+    }
+    if (lifecycle === "cancelled") {
+      cancelledCount += 1;
+      continue;
+    }
+    const orig = parseFloat(String(tx.original_amount)) || 0;
+    if (lifecycle === "pending_confirmation") {
+      pendingConfirmationCount += 1;
+      if (tx.direction === "gave") pendingGivenAmount += orig;
+      else pendingReceivedAmount += orig;
+      continue;
+    }
+    const cur = parseFloat(String(tx.current_balance)) || 0;
+    const isSettled = lifecycle === "settled" || cur <= 0.01;
+    if (tx.direction === "gave") {
+      totalGiven += orig;
+      if (!isSettled) {
+        youWillReceive += cur;
+        activeCount += 1;
+      } else {
+        settledCount += 1;
+      }
+    } else {
+      totalTaken += orig;
+      if (!isSettled) {
+        youWillPay += cur;
+        activeCount += 1;
+      } else {
+        settledCount += 1;
+      }
+    }
+    settledAmount += Math.max(0, orig - cur);
+    if (tx.due_date && tx.due_date < todayStr && !isSettled && cur > 0) {
+      overdueAmount += cur;
+    }
+    if (Array.isArray(tx.repayments)) {
+      pendingRepaymentCount += tx.repayments.filter(
+        (r2) => isActiveRepayment(r2) && r2.status === "pending_confirmation"
+      ).length;
+    }
+  }
+  const netBalance = roundMoney(youWillReceive - youWillPay);
+  return {
+    totalGiven: roundMoney(totalGiven),
+    totalTaken: roundMoney(totalTaken),
+    youWillReceive: roundMoney(youWillReceive),
+    youWillPay: roundMoney(youWillPay),
+    netBalance,
+    settledAmount: roundMoney(settledAmount),
+    overdueAmount: roundMoney(overdueAmount),
+    activeCount,
+    settledCount,
+    pendingRepaymentCount,
+    pendingConfirmationCount,
+    pendingGivenAmount: roundMoney(pendingGivenAmount),
+    pendingReceivedAmount: roundMoney(pendingReceivedAmount),
+    pendingTotalAmount: roundMoney(pendingGivenAmount + pendingReceivedAmount),
+    rejectedCount,
+    cancelledCount
+  };
+}
+function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
+  const base2 = calculatePersonLedgerSummary(items, todayStr);
+  const connectedKeys = /* @__PURE__ */ new Set();
+  const manualKeys = /* @__PURE__ */ new Set();
+  for (const c of contacts) {
+    if (c.linked_user_id) {
+      connectedKeys.add(c.linked_user_id);
+    } else if (c.name) {
+      manualKeys.add(c.name.trim().toLowerCase());
+    }
+  }
+  const activePeopleSet = /* @__PURE__ */ new Set();
+  let pendingConfirmationsCount = 0;
+  for (const tx of items) {
+    const lifecycle = normalizeUdharLifecycleStatus(tx);
+    if (lifecycle === "deleted" || lifecycle === "rejected" || lifecycle === "cancelled") continue;
+    if (tx.counterpart_user_id) {
+      connectedKeys.add(tx.counterpart_user_id);
+    }
+    if (lifecycle === "pending_confirmation") {
+      pendingConfirmationsCount += 1;
+      continue;
+    }
+    const cur = parseFloat(String(tx.current_balance)) || 0;
+    const isSettled = lifecycle === "settled" || cur <= 0.01;
+    if (!isSettled && cur > 0.01) {
+      const personKey = tx.counterpart_user_id || (tx.counterpart_name || "").trim().toLowerCase();
+      if (personKey) activePeopleSet.add(personKey);
+    }
+    if (Array.isArray(tx.repayments)) {
+      pendingConfirmationsCount += tx.repayments.filter(
+        (r2) => isActiveRepayment(r2) && r2.status === "pending_confirmation"
+      ).length;
+    }
+  }
+  return {
+    totalLent: base2.totalGiven,
+    totalBorrowed: base2.totalTaken,
+    outstandingReceivable: base2.youWillReceive,
+    outstandingPayable: base2.youWillPay,
+    netBalance: base2.netBalance,
+    settledAmount: base2.settledAmount,
+    overdueAmount: base2.overdueAmount,
+    totalConnectedPeople: connectedKeys.size,
+    totalManualPeople: manualKeys.size,
+    peopleWithActiveUdhar: activePeopleSet.size,
+    pendingConfirmationsCount,
+    pendingUdharRequestsCount: base2.pendingConfirmationCount,
+    pendingUdharAmount: base2.pendingTotalAmount
+  };
+}
+var META_MARKER = "\n<!--MM_META:";
+var META_END = "-->";
+function packStructuredNote(plainNote, meta) {
+  const cleanNote = (plainNote || "").trim();
+  const filteredMeta = {};
+  if (meta.category && meta.category.trim()) filteredMeta.category = meta.category.trim();
+  if (meta.payment_method && meta.payment_method.trim()) filteredMeta.payment_method = meta.payment_method.trim();
+  if (meta.description && meta.description.trim()) filteredMeta.description = meta.description.trim();
+  if (meta.transaction_ref && meta.transaction_ref.trim()) filteredMeta.transaction_ref = meta.transaction_ref.trim();
+  if (meta.repayment_time && meta.repayment_time.trim()) filteredMeta.repayment_time = meta.repayment_time.trim();
+  if (meta.attachment_url && meta.attachment_url.trim()) filteredMeta.attachment_url = meta.attachment_url.trim();
+  if (meta.creation_method) filteredMeta.creation_method = meta.creation_method;
+  if (meta.lifecycle_status) filteredMeta.lifecycle_status = meta.lifecycle_status;
+  if (meta.accepted_by && meta.accepted_by.trim()) filteredMeta.accepted_by = meta.accepted_by.trim();
+  if (meta.rejected_by && meta.rejected_by.trim()) filteredMeta.rejected_by = meta.rejected_by.trim();
+  if (meta.cancelled_by && meta.cancelled_by.trim()) filteredMeta.cancelled_by = meta.cancelled_by.trim();
+  if (meta.responded_at && meta.responded_at.trim()) filteredMeta.responded_at = meta.responded_at.trim();
+  if (meta.cancelled_at && meta.cancelled_at.trim()) filteredMeta.cancelled_at = meta.cancelled_at.trim();
+  if (meta.rejection_reason && meta.rejection_reason.trim()) filteredMeta.rejection_reason = meta.rejection_reason.trim();
+  if (Object.keys(filteredMeta).length === 0) {
+    return cleanNote || null;
+  }
+  return `${cleanNote}${META_MARKER}${JSON.stringify(filteredMeta)}${META_END}`.trim();
+}
+function unpackStructuredNote(rawNote) {
+  if (!rawNote || typeof rawNote !== "string") {
+    return { note: "", meta: {} };
+  }
+  const idx = rawNote.indexOf(META_MARKER);
+  if (idx === -1) {
+    return { note: rawNote.trim(), meta: {} };
+  }
+  const endIdx = rawNote.indexOf(META_END, idx + META_MARKER.length);
+  if (endIdx === -1) {
+    return { note: rawNote.trim(), meta: {} };
+  }
+  const notePart = rawNote.slice(0, idx).trim();
+  const jsonPart = rawNote.slice(idx + META_MARKER.length, endIdx);
+  try {
+    const parsed = JSON.parse(jsonPart);
+    if (parsed && typeof parsed === "object") {
+      return { note: notePart, meta: parsed };
+    }
+  } catch {
+  }
+  return { note: rawNote.trim(), meta: {} };
+}
+var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUuid(value) {
+  if (!value || typeof value !== "string") return false;
+  return UUID_REGEX.test(value.trim());
+}
+function parseConnectionRequestKey(rawKey) {
+  const raw = (rawKey || "").trim();
+  if (!raw) {
+    return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
+  }
+  if (isValidUuid(raw)) {
+    return { valid: true, kind: "uuid", raw, uuid: raw, requesterUserId: null, targetUserId: null };
+  }
+  const parts = raw.split(":").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 2 && isValidUuid(parts[0]) && isValidUuid(parts[1])) {
+    return {
+      valid: true,
+      kind: "composite",
+      raw,
+      uuid: null,
+      requesterUserId: parts[0],
+      targetUserId: parts[1]
+    };
+  }
+  return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
+}
+
+// server/supabaseRestUdhar.ts
+var DEFAULT_SUPABASE_URL2 = "https://frgrfajnrzqwnevhlrio.supabase.co";
+var DEFAULT_SUPABASE_KEY2 = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+function getRestConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL2).replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY2;
+  return { url, key };
+}
+async function sbRest2(path12, options = {}) {
+  const { url, key } = getRestConfig();
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    Accept: "application/json"
+  };
+  if (options.body !== void 0) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (options.prefer) {
+    headers["Prefer"] = options.prefer;
+  }
+  const response = await fetch(`${url}/rest/v1/${path12}`, {
+    method: options.method || "GET",
+    headers,
+    body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
+  });
+  const text = await response.text();
+  let parsed = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
+  if (!response.ok) {
+    const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
+    return { ok: false, status: response.status, data: null, error: errMsg };
+  }
+  return { ok: true, status: response.status, data: parsed };
+}
+function enrichTransactionRow(row, userMap2, repayments, editHistory) {
+  const orig = parseFloat(row.original_amount) || 0;
+  const cur = parseFloat(row.current_balance) || 0;
+  const computedPaid = Math.max(0, roundMoney(orig - cur));
+  const { note, meta } = unpackStructuredNote(row.notes);
+  const counterpart = row.counterpart_user_id ? userMap2.get(row.counterpart_user_id) : null;
+  const lifecycleStatus = normalizeUdharLifecycleStatus(row);
+  return {
+    ...row,
+    status: lifecycleStatus,
+    creation_method: row.creation_method || meta.creation_method || "manual",
+    accepted_by: row.accepted_by || meta.accepted_by || null,
+    rejected_by: row.rejected_by || meta.rejected_by || null,
+    cancelled_by: row.cancelled_by || meta.cancelled_by || null,
+    responded_at: row.responded_at || meta.responded_at || null,
+    cancelled_at: row.cancelled_at || meta.cancelled_at || null,
+    rejection_reason: row.rejection_reason || meta.rejection_reason || null,
+    counterpart_registered_name: counterpart?.full_name || row.counterpart_registered_name || null,
+    counterpart_email: counterpart?.email || row.counterpart_email || null,
+    counterpart_avatar: counterpart?.avatar_url || row.counterpart_avatar || null,
+    paid_amount: row.paid_amount !== null && row.paid_amount !== void 0 ? parseFloat(row.paid_amount) : computedPaid,
+    category: row.category || meta.category || "Personal Loan",
+    payment_method: row.payment_method || meta.payment_method || "UPI",
+    description: row.description || meta.description || null,
+    clean_notes: note || null,
+    notes: note || null,
+    attachment_url: row.attachment_url || meta.attachment_url || null,
+    repayments: repayments.filter((rep) => isActiveRepayment(rep)).map((rep) => {
+      const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
+      const recorder = rep.recorded_by_user_id ? userMap2.get(rep.recorded_by_user_id) : null;
+      return {
+        ...rep,
+        recorded_by_name: recorder?.full_name || rep.recorded_by_name || null,
+        notes: repNote || null,
+        transaction_ref: rep.transaction_ref || repMeta.transaction_ref || null,
+        repayment_time: rep.repayment_time || repMeta.repayment_time || null,
+        attachment_url: rep.attachment_url || repMeta.attachment_url || null
+      };
+    }),
+    edit_history: editHistory.map((h2) => {
+      const editor = h2.edited_by_user_id ? userMap2.get(h2.edited_by_user_id) : null;
+      return {
+        ...h2,
+        edited_by_name: editor?.full_name || h2.edited_by_name || null
+      };
+    })
+  };
+}
+async function fetchUsersByIds(ids) {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  const map2 = /* @__PURE__ */ new Map();
+  if (uniqueIds.length === 0) return map2;
+  const inList = uniqueIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+  let res = await sbRest2(
+    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role,is_verified,username`
+  );
+  if (!res.ok && res.status === 400) {
+    res = await sbRest2(
+      `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,role`
+    );
+  }
+  if (res.ok && Array.isArray(res.data)) {
+    for (const u of res.data) {
+      map2.set(u.id, u);
+    }
+  }
+  return map2;
+}
+async function isBlockedBetween(userAId, userBId) {
+  const res = await sbRest2(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(userAId)},user_b_id.eq.${encodeURIComponent(userBId)}),and(user_a_id.eq.${encodeURIComponent(userBId)},user_b_id.eq.${encodeURIComponent(userAId)}))&select=status`
+  );
+  if (!res.ok || !Array.isArray(res.data)) return false;
+  return res.data.some((c) => c.status === "blocked");
+}
+async function upsertUserConnectionRest(userAId, userBId, status, meta) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const baseBody = { user_a_id: userAId, user_b_id: userBId, status };
+  const cleanMeta = {};
+  if (meta) {
+    for (const [k, v] of Object.entries(meta)) {
+      if (v !== void 0) cleanMeta[k] = v;
+    }
+    cleanMeta.updated_at = nowIso;
+  }
+  const fullBody = { ...baseBody, ...cleanMeta };
+  let res = await sbRest2("user_connections?on_conflict=user_a_id,user_b_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: fullBody
+  });
+  if (!res.ok && res.status === 400 && Object.keys(cleanMeta).length > 0 && !String(res.error || "").includes("23514")) {
+    res = await sbRest2("user_connections?on_conflict=user_a_id,user_b_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: baseBody
+    });
+  }
+  if (res.ok) return res;
+  const errText = String(res.error || "");
+  if (errText.includes("user_connections_status_check") || errText.includes("23514")) {
+    return res;
+  }
+  const existing = await sbRest2(
+    `user_connections?user_a_id=eq.${encodeURIComponent(userAId)}&user_b_id=eq.${encodeURIComponent(userBId)}&select=id,status&limit=1`
+  );
+  if (existing.ok && existing.data && existing.data.length > 0) {
+    let patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: { status, ...cleanMeta }
+    });
+    if (!patchRes.ok && patchRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(patchRes.error || "").includes("23514")) {
+      patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: { status }
+      });
+    }
+    return patchRes;
+  }
+  let insRes = await sbRest2("user_connections", {
+    method: "POST",
+    prefer: "return=representation",
+    body: fullBody
+  });
+  if (!insRes.ok && insRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(insRes.error || "").includes("23514")) {
+    insRes = await sbRest2("user_connections", {
+      method: "POST",
+      prefer: "return=representation",
+      body: baseBody
+    });
+  }
+  return insRes;
+}
+async function upsertUdharContactRest(payload) {
+  const cleanName = payload.name.trim();
+  const normalizedName = cleanName.toLowerCase();
+  const cleanPayload = { ...payload, name: cleanName };
+  if (cleanPayload.linked_user_id) {
+    const byLink = await sbRest2(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&linked_user_id=eq.${encodeURIComponent(cleanPayload.linked_user_id)}&limit=1`
+    );
+    if (byLink.ok && byLink.data && byLink.data.length > 0) {
+      const existing = byLink.data[0];
+      return sbRest2(`udhar_contacts?id=eq.${encodeURIComponent(existing.id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          ...cleanPayload,
+          email: cleanPayload.email ?? existing.email ?? null,
+          phone: cleanPayload.phone ?? existing.phone ?? null,
+          photo_url: cleanPayload.photo_url ?? existing.photo_url ?? null,
+          notes: cleanPayload.notes ?? existing.notes ?? null
+        }
+      });
+    }
+  }
+  const allForUser = await sbRest2(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&select=id,name,email,phone,photo_url,notes,linked_user_id`
+  );
+  if (allForUser.ok && Array.isArray(allForUser.data)) {
+    const matchedByName = allForUser.data.find(
+      (c) => (c.name || "").trim().toLowerCase() === normalizedName && (!cleanPayload.linked_user_id || !c.linked_user_id || c.linked_user_id === cleanPayload.linked_user_id)
+    );
+    if (matchedByName) {
+      return sbRest2(`udhar_contacts?id=eq.${encodeURIComponent(matchedByName.id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          ...cleanPayload,
+          email: cleanPayload.email ?? matchedByName.email ?? null,
+          phone: cleanPayload.phone ?? matchedByName.phone ?? null,
+          photo_url: cleanPayload.photo_url ?? matchedByName.photo_url ?? null,
+          notes: cleanPayload.notes ?? matchedByName.notes ?? null,
+          linked_user_id: cleanPayload.linked_user_id || matchedByName.linked_user_id || null
+        }
+      });
+    }
+  }
+  const res = await sbRest2("udhar_contacts?on_conflict=user_id,name", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: cleanPayload
+  });
+  if (res.ok && res.data && res.data.length > 0) {
+    return res;
+  }
+  return sbRest2("udhar_contacts", {
+    method: "POST",
+    prefer: "return=representation",
+    body: cleanPayload
+  });
+}
+async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend", opts) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const connMeta = {
+    relationship_type: relationshipType || "Friend",
+    requested_via: opts?.requestedVia || "search",
+    connection_method: opts?.connectionMethod || "SEARCH",
+    consented_at: nowIso,
+    responded_at: nowIso,
+    deleted_at: null,
+    deleted_by: null,
+    cancelled_at: null
+  };
+  const [connAB, connBA] = await Promise.all([
+    upsertUserConnectionRest(authUser.id, targetUser.id, "connected", connMeta),
+    upsertUserConnectionRest(targetUser.id, authUser.id, "connected", connMeta)
+  ]);
+  if (!connAB.ok && !connBA.ok) {
+    return {
+      ok: false,
+      error: connAB.error || connBA.error || "Failed to establish connection record."
+    };
+  }
+  const connectionId = connAB.data?.[0]?.id || connBA.data?.[0]?.id || null;
+  const targetName = (targetUser.full_name || targetUser.email?.split("@")[0] || "User").trim();
+  const myName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  const existingMine = await sbRest2(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetUser.id)}&limit=1`
+  );
+  let mineRes;
+  if (existingMine.ok && existingMine.data && existingMine.data.length > 0) {
+    mineRes = await sbRest2(`udhar_contacts?id=eq.${encodeURIComponent(existingMine.data[0].id)}`, {
+      method: "PATCH",
+      body: {
+        name: targetName,
+        email: targetUser.email || existingMine.data[0].email || null,
+        phone: targetUser.phone || existingMine.data[0].phone || null,
+        photo_url: targetUser.avatar_url || existingMine.data[0].photo_url || null,
+        relationship_type: relationshipType || existingMine.data[0].relationship_type || "Friend",
+        updated_at: nowIso
+      }
+    });
+  } else {
+    mineRes = await upsertUdharContactRest({
+      user_id: authUser.id,
+      name: targetName,
+      email: targetUser.email || null,
+      phone: targetUser.phone || null,
+      photo_url: targetUser.avatar_url || null,
+      relationship_type: relationshipType || "Friend",
+      linked_user_id: targetUser.id,
+      updated_at: nowIso
+    });
+  }
+  if (!mineRes.ok) {
+    return {
+      ok: false,
+      error: mineRes.error || "Failed to save connected contact."
+    };
+  }
+  const existingTheirs = await sbRest2(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(targetUser.id)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (existingTheirs.ok && existingTheirs.data && existingTheirs.data.length > 0) {
+    await sbRest2(`udhar_contacts?id=eq.${encodeURIComponent(existingTheirs.data[0].id)}`, {
+      method: "PATCH",
+      body: {
+        name: myName,
+        email: authUser.email || existingTheirs.data[0].email || null,
+        phone: authUser.phone || existingTheirs.data[0].phone || null,
+        photo_url: authUser.avatar_url || existingTheirs.data[0].photo_url || null,
+        updated_at: nowIso
+      }
+    }).catch(() => {
+    });
+  } else {
+    await upsertUdharContactRest({
+      user_id: targetUser.id,
+      name: myName,
+      email: authUser.email || null,
+      phone: authUser.phone || null,
+      photo_url: authUser.avatar_url || null,
+      relationship_type: relationshipType || "Friend",
+      linked_user_id: authUser.id,
+      updated_at: nowIso
+    }).catch(() => {
+    });
+  }
+  return { ok: true, connectionId };
+}
+async function createTargetedNotificationRest(params) {
+  if (!params.targetUserId || params.targetUserId === "all") return;
+  const notifType = params.type === "udhar_connection_request" || params.type === "udhar_request" || params.type === "repayment_pending" ? "info" : params.type === "udhar_rejected" || params.type === "repayment_rejected" || params.type === "udhar_request_cancelled" || params.type === "udhar_deleted" ? "warning" : "success";
+  await Promise.all([
+    sbRest2("notifications", {
+      method: "POST",
+      prefer: "return=minimal",
+      body: {
+        title: params.title,
+        message: params.message,
+        type: params.type,
+        target_user_id: params.targetUserId,
+        actor_user_id: params.actorUserId,
+        related_entity_id: params.relatedEntityId || null,
+        is_active: true
+      }
+    }).catch(() => {
+    }),
+    createNotification({
+      userId: params.targetUserId,
+      title: params.title,
+      message: params.message,
+      category: params.category || "udhar",
+      type: notifType,
+      relatedEntityType: "udhar",
+      relatedEntityId: params.relatedEntityId || void 0,
+      deepLink: params.deepLink || "people",
+      dedupeKey: params.dedupeKey,
+      metadata: {
+        actionType: params.type,
+        relatedEntityId: params.relatedEntityId || null,
+        linkId: params.relatedEntityId || null,
+        actorUserId: params.actorUserId,
+        ...params.metadata || {}
+      },
+      channels: ["in_app", "push"]
+    }).catch(() => {
+    })
+  ]);
+}
+async function deactivateUdharNotificationsRest(linkId, txId) {
+  if (!linkId && !txId) return;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const tasks = [];
+  if (linkId) {
+    tasks.push(
+      sbRest2(`notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_active: false }
+      }).catch(() => {
+      }),
+      sbRest2(`user_notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      }),
+      sbRest2(`user_notifications?metadata->>relatedEntityId=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      }),
+      sbRest2(`user_notifications?metadata->>linkId=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      })
+    );
+  }
+  if (txId) {
+    tasks.push(
+      sbRest2(`notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_active: false }
+      }).catch(() => {
+      }),
+      sbRest2(`user_notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      })
+    );
+  }
+  tasks.push(purgeUdharNotificationsFallback(linkId, txId).catch(() => {
+  }));
+  await Promise.all(tasks);
+}
+async function searchUsersRest(authUser, rawQuery) {
+  const classified = classifyLiveSearchQuery(rawQuery);
+  if (classified.mode === "too_short") {
+    return { status: 200, body: { success: true, users: [], searchMode: "too_short" } };
+  }
+  if (classified.mode === "email_incomplete") {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        users: [],
+        searchMode: "email_incomplete",
+        hint: "Enter the complete email address to find a user."
+      }
+    };
+  }
+  if (classified.mode === "phone_incomplete") {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        users: [],
+        searchMode: "phone_incomplete",
+        hint: "Enter a complete 10-digit mobile number to search."
+      }
+    };
+  }
+  const escaped = classified.normalized.replace(/[%*,()]/g, "");
+  const buildQueryPath = (includeOptionalCols) => {
+    const selectCols = includeOptionalCols ? "id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role" : "id,full_name,email,phone,avatar_url,status,deletion_status,role";
+    if (classified.mode === "email_exact") {
+      return `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=${selectCols}&limit=5`;
+    }
+    if (classified.mode === "phone_exact") {
+      const tail = classified.last10Digits;
+      return `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=${selectCols}&limit=15`;
+    }
+    const orClauses = includeOptionalCols ? [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`] : [`full_name.ilike.*${escaped}*`];
+    return `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=${selectCols}&order=full_name.asc&limit=20`;
+  };
+  let usersRes = await sbRest2(buildQueryPath(true));
+  if (!usersRes.ok && usersRes.status === 400) {
+    usersRes = await sbRest2(buildQueryPath(false));
+  }
+  if (!usersRes.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        code: "DIRECTORY_UNAVAILABLE",
+        message: "Unable to reach user directory right now. Please retry."
+      }
+    };
+  }
+  let activeUsers = (usersRes.data || []).filter((u) => isDiscoverableNormalUser(u));
+  if (classified.mode === "email_exact") {
+    activeUsers = activeUsers.filter(
+      (u) => (u.email || "").trim().toLowerCase() === classified.normalized
+    );
+  } else if (classified.mode === "phone_exact") {
+    activeUsers = activeUsers.filter((u) => {
+      const userDigits = String(u.phone || "").replace(/\D/g, "");
+      if (userDigits.length < 10) return false;
+      return userDigits === classified.digitsOnly || userDigits.slice(-10) === classified.last10Digits;
+    });
+  }
+  const [connRes, contactsRes] = await Promise.all([
+    sbRest2(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status`
+    ),
+    sbRest2(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=linked_user_id`
+    )
+  ]);
+  const statusByUserId = /* @__PURE__ */ new Map();
+  if (connRes.ok && Array.isArray(connRes.data)) {
+    for (const c of connRes.data) {
+      const isOutgoing = c.user_a_id === authUser.id;
+      const otherId = isOutgoing ? c.user_b_id : c.user_a_id;
+      if (!otherId) continue;
+      const prev = statusByUserId.get(otherId)?.status;
+      if (c.status === "blocked" || prev === "blocked") {
+        statusByUserId.set(otherId, { status: "blocked", requestId: c.id });
+      } else if (c.status === "connected" || prev === "connected") {
+        statusByUserId.set(otherId, { status: "connected", requestId: c.id });
+      } else if (c.status === "pending") {
+        statusByUserId.set(otherId, {
+          status: isOutgoing ? "pending" : "incoming_pending",
+          requestId: c.id
+        });
+      }
+    }
+  }
+  const linkedContactSet = /* @__PURE__ */ new Set();
+  if (contactsRes.ok && Array.isArray(contactsRes.data)) {
+    for (const ct of contactsRes.data) {
+      if (ct.linked_user_id) linkedContactSet.add(ct.linked_user_id);
+    }
+  }
+  const sanitized = activeUsers.filter((u) => statusByUserId.get(u.id)?.status !== "blocked").slice(0, 15).map((u) => {
+    const isSelf = u.id === authUser.id;
+    const connEntry = statusByUserId.get(u.id);
+    const isConnected = !isSelf && (connEntry?.status === "connected" || linkedContactSet.has(u.id));
+    const connectionStatus = isSelf ? "self" : isConnected ? "connected" : connEntry?.status === "pending" ? "pending" : connEntry?.status === "incoming_pending" ? "incoming_pending" : "none";
+    const showContactHint = isConnected || isSelf;
+    return {
+      id: u.id,
+      displayName: u.full_name || u.username || "My Money User",
+      fullName: u.full_name || u.username || "My Money User",
+      username: u.username || null,
+      accountIndicator: "My Money Manager Account",
+      emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : void 0,
+      phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
+      avatarUrl: u.avatar_url || null,
+      isSelf,
+      isVerified: Boolean(u.is_verified ?? true),
+      connectionStatus,
+      requestId: connEntry?.requestId || null,
+      isAlreadyConnected: isConnected,
+      isSavedContact: linkedContactSet.has(u.id)
+    };
+  });
+  return { status: 200, body: { success: true, users: sanitized, searchMode: classified.mode } };
+}
+var fallbackPendingRequests = /* @__PURE__ */ new Map();
+async function connectUserRest(authUser, body) {
+  const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
+  const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
+  const requestedVia = (body.requestedVia || body.source || "search").trim();
+  if (!targetUserId) {
+    return { status: 400, body: { success: false, code: "MISSING_TARGET", message: "Target user ID is required." } };
+  }
+  if (targetUserId === authUser.id) {
+    return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
+  }
+  let targetRes = await sbRest2(
+    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified`
+  );
+  if (!targetRes.ok && targetRes.status === 400) {
+    targetRes = await sbRest2(
+      `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
+    );
+  }
+  if (!targetRes.ok) {
+    return { status: 503, body: { success: false, code: "DIRECTORY_UNAVAILABLE", message: "Unable to verify target account right now. Please retry." } };
+  }
+  if (!targetRes.data || targetRes.data.length === 0) {
+    return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
+  }
+  const target = targetRes.data[0];
+  if (!isDiscoverableNormalUser(target)) {
+    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is not eligible for Udhar connections." } };
+  }
+  if (await isBlockedBetween(authUser.id, targetUserId)) {
+    return { status: 403, body: { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." } };
+  }
+  const pairRes = await sbRest2(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
+  );
+  if (!pairRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to inspect connection state right now. Please retry." } };
+  }
+  const pairRows = Array.isArray(pairRes.data) ? pairRes.data : [];
+  const targetName = (target.full_name || target.email?.split("@")[0] || "User").trim();
+  const requesterName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
+  if (pairRows.some((r2) => r2.status === "connected")) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "connected",
+        alreadyConnected: true,
+        message: `You are already connected with ${targetName}.`,
+        connectedUser: {
+          id: target.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: target.avatar_url || null,
+          isVerified: Boolean(target.is_verified ?? true)
+        }
+      }
+    };
+  }
+  const incomingFallback = fallbackPendingRequests.get(`${targetUserId}:${authUser.id}`);
+  const incomingPending = pairRows.find(
+    (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
+  ) || (incomingFallback ? { id: incomingFallback.id } : void 0);
+  if (incomingPending) {
+    return acceptConnectionRequestRest(authUser, incomingPending.id || targetUserId);
+  }
+  const outgoingFallback = fallbackPendingRequests.get(`${authUser.id}:${targetUserId}`);
+  const outgoingPending = pairRows.find(
+    (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
+  ) || (outgoingFallback ? { id: outgoingFallback.id } : void 0);
+  if (outgoingPending) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "pending",
+        alreadyPending: true,
+        deduplicated: true,
+        requestId: outgoingPending.id || `${authUser.id}:${targetUserId}`,
+        message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
+        connectedUser: {
+          id: target.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: target.avatar_url || null,
+          isVerified: Boolean(target.is_verified ?? true)
+        }
+      }
+    };
+  }
+  await sbRest2(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&status=in.(deleted,rejected,cancelled)`,
+    { method: "DELETE" }
+  ).catch(() => {
+  });
+  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, "pending", {
+    relationship_type: relationshipType,
+    requested_via: requestedVia,
+    connection_method: "SEARCH",
+    responded_at: null,
+    consented_at: null,
+    cancelled_at: null,
+    deleted_at: null,
+    deleted_by: null
+  });
+  let requestId;
+  if (!insRes.ok) {
+    const errText = String(insRes.error || "");
+    if (errText.includes("user_connections_status_check") || errText.includes("23514")) {
+      const fallbackId = `${authUser.id}:${targetUserId}`;
+      fallbackPendingRequests.set(fallbackId, {
+        id: fallbackId,
+        user_a_id: authUser.id,
+        user_b_id: targetUserId,
+        relationship_type: relationshipType,
+        requested_via: requestedVia,
+        connection_method: "SEARCH",
+        created_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      requestId = fallbackId;
+    } else {
+      console.error("[connectUserRest failed]:", insRes.status, errText);
+      return {
+        status: 503,
+        body: {
+          success: false,
+          code: "REQUEST_FAILED",
+          message: "Unable to send connection request right now. Please try again."
+        }
+      };
+    }
+  } else {
+    requestId = insRes.data?.[0]?.id || `${authUser.id}:${targetUserId}`;
+  }
+  await createTargetedNotificationRest({
+    targetUserId: target.id,
+    actorUserId: authUser.id,
+    title: "Udhar Connection Request",
+    message: `${requesterName} wants to connect with you on My Money Manager Udhar.`,
+    type: "udhar_connection_request",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: String(requestId),
+    metadata: {
+      actionType: "udhar_connection_request",
+      requestId: String(requestId),
+      connectionId: String(requestId),
+      requesterId: authUser.id,
+      requesterUserId: authUser.id,
+      receiverId: target.id,
+      requesterName,
+      requesterAvatar: authUser.avatar_url || null,
+      requestedVia,
+      connectionMethod: "SEARCH",
+      relationshipType,
+      requestStatus: "pending"
+    }
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "pending",
+      connectionMethod: "SEARCH",
+      alreadyConnected: false,
+      alreadyPending: false,
+      requestId: String(requestId),
+      message: `Connection request sent to ${targetName}. You'll be connected once they accept.`,
+      connectedUser: {
+        id: target.id,
+        name: targetName,
+        displayName: targetName,
+        fullName: targetName,
+        avatarUrl: target.avatar_url || null,
+        isVerified: Boolean(target.is_verified ?? true)
+      }
+    }
+  };
+}
+async function getConnectionRequestsRest(authUser) {
+  let connRes = await sbRest2(
+    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,relationship_type,requested_via,connection_method,created_at,updated_at,responded_at&order=created_at.desc`
+  );
+  if (!connRes.ok && connRes.status === 400) {
+    connRes = await sbRest2(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
+    );
+  }
+  if (!connRes.ok) {
+    return { status: 503, body: { success: false, message: "Unable to load connection requests right now." } };
+  }
+  const rows = [...connRes.data || []];
+  for (const fb of fallbackPendingRequests.values()) {
+    if ((fb.user_a_id === authUser.id || fb.user_b_id === authUser.id) && !rows.some((r2) => r2.user_a_id === fb.user_a_id && r2.user_b_id === fb.user_b_id)) {
+      rows.push({ ...fb, status: "pending" });
+    }
+  }
+  const otherIds = rows.map((r2) => r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id).filter(Boolean);
+  const userMap2 = await fetchUsersByIds(otherIds);
+  const incoming2 = [];
+  const outgoing2 = [];
+  const connectedMap = /* @__PURE__ */ new Map();
+  for (const r2 of rows) {
+    if (r2.status === "pending") {
+      if (r2.user_b_id === authUser.id) {
+        const u = userMap2.get(r2.user_a_id);
+        incoming2.push({
+          id: r2.id,
+          direction: "incoming",
+          requesterUserId: r2.user_a_id,
+          displayName: u?.full_name || "My Money User",
+          avatarUrl: u?.avatar_url || null,
+          isVerified: Boolean(u?.is_verified ?? true),
+          status: "pending",
+          relationshipType: r2.relationship_type || "Friend",
+          requestedVia: r2.requested_via || "search",
+          connectionMethod: r2.connection_method || "SEARCH",
+          createdAt: r2.created_at
+        });
+      } else if (r2.user_a_id === authUser.id) {
+        const u = userMap2.get(r2.user_b_id);
+        outgoing2.push({
+          id: r2.id,
+          direction: "outgoing",
+          targetUserId: r2.user_b_id,
+          displayName: u?.full_name || "My Money User",
+          avatarUrl: u?.avatar_url || null,
+          isVerified: Boolean(u?.is_verified ?? true),
+          status: "pending",
+          relationshipType: r2.relationship_type || "Friend",
+          requestedVia: r2.requested_via || "search",
+          connectionMethod: r2.connection_method || "SEARCH",
+          createdAt: r2.created_at
+        });
+      }
+    } else if (r2.status === "connected") {
+      const otherId = r2.user_a_id === authUser.id ? r2.user_b_id : r2.user_a_id;
+      if (otherId && !connectedMap.has(otherId)) {
+        const u = userMap2.get(otherId);
+        connectedMap.set(otherId, {
+          id: r2.id,
+          userId: otherId,
+          displayName: u?.full_name || "My Money User",
+          avatarUrl: u?.avatar_url || null,
+          isVerified: Boolean(u?.is_verified ?? true),
+          status: "connected",
+          relationshipType: r2.relationship_type || "Friend",
+          connectionMethod: r2.connection_method || "SEARCH",
+          createdAt: r2.created_at
+        });
+      }
+    }
+  }
+  for (const r2 of fallbackPendingRequests.values()) {
+    if (r2.user_b_id === authUser.id) {
+      const u = userMap2.get(r2.user_a_id);
+      incoming2.push({
+        id: r2.id,
+        direction: "incoming",
+        requesterUserId: r2.user_a_id,
+        displayName: u?.full_name || "My Money User",
+        avatarUrl: u?.avatar_url || null,
+        isVerified: Boolean(u?.is_verified ?? true),
+        status: "pending",
+        relationshipType: r2.relationship_type || "Friend",
+        requestedVia: r2.requested_via || "search",
+        connectionMethod: r2.connection_method || "SEARCH",
+        createdAt: r2.created_at
+      });
+    } else if (r2.user_a_id === authUser.id) {
+      const u = userMap2.get(r2.user_b_id);
+      outgoing2.push({
+        id: r2.id,
+        direction: "outgoing",
+        targetUserId: r2.user_b_id,
+        displayName: u?.full_name || "My Money User",
+        avatarUrl: u?.avatar_url || null,
+        isVerified: Boolean(u?.is_verified ?? true),
+        status: "pending",
+        relationshipType: r2.relationship_type || "Friend",
+        requestedVia: r2.requested_via || "search",
+        connectionMethod: r2.connection_method || "SEARCH",
+        createdAt: r2.created_at
+      });
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      incoming: incoming2,
+      outgoing: outgoing2,
+      connected: Array.from(connectedMap.values())
+    }
+  };
+}
+async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
+  }
+  let queryPath = "";
+  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === "composite" && parsedKey.requesterUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
+  }
+  const reqRes = await sbRest2(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
+  }
+  let pendingRow = reqRes.data?.[0];
+  if (!pendingRow) {
+    for (const fb of fallbackPendingRequests.values()) {
+      if (fb.user_b_id === authUser.id && (fb.id === requestIdOrUserId || parsedKey.kind === "composite" && fb.user_a_id === parsedKey.requesterUserId || parsedKey.kind === "uuid" && fb.user_a_id === parsedKey.uuid)) {
+        pendingRow = { ...fb, status: "pending" };
+        break;
+      }
+    }
+  }
+  if (!pendingRow) {
+    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
+  }
+  fallbackPendingRequests.delete(`${pendingRow.user_a_id}:${authUser.id}`);
+  const requesterId = pendingRow.user_a_id;
+  const userMap2 = await fetchUsersByIds([requesterId]);
+  const requester = userMap2.get(requesterId);
+  if (!requester || requester.status !== "active") {
+    return { status: 404, body: { success: false, message: "Requester account is no longer active." } };
+  }
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(
+    authUser,
+    requester,
+    pendingRow.relationship_type || "Friend",
+    {
+      connectionMethod: pendingRow.connection_method || "SEARCH",
+      requestedVia: pendingRow.requested_via || "search"
+    }
+  );
+  if (!syncRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: syncRes.error || "Failed to finalize connection." } };
+  }
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: requester.id,
+    receiverId: authUser.id,
+    status: "accepted"
+  }).catch(() => {
+  });
+  const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  const requesterName = (requester.full_name || requester.email?.split("@")[0] || "Friend").trim();
+  await createTargetedNotificationRest({
+    targetUserId: requester.id,
+    actorUserId: authUser.id,
+    title: "Connection Request Accepted",
+    message: `${acceptorName} accepted your connection request. Added to your Saved People.`,
+    type: "connection_accepted",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: authUser.id,
+    metadata: {
+      actionType: "udhar_connection_accepted",
+      acceptorId: authUser.id,
+      acceptorName,
+      acceptorAvatar: authUser.avatar_url || null,
+      connectionId: syncRes.connectionId || String(pendingRow.id)
+    }
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "connected",
+      message: `Connected with ${requesterName}! Added to your Saved People.`,
+      connectedUser: {
+        id: requester.id,
+        name: requesterName,
+        displayName: requesterName,
+        fullName: requesterName,
+        avatarUrl: requester.avatar_url || null,
+        isVerified: Boolean(requester.is_verified ?? true)
+      }
+    }
+  };
+}
+async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
+  }
+  let queryPath = "";
+  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_a_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === "composite" && parsedKey.requesterUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(parsedKey.requesterUserId)}&user_b_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&limit=1`;
+  }
+  const reqRes = await sbRest2(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify connection request right now." } };
+  }
+  let pendingRow = reqRes.data?.[0];
+  if (!pendingRow) {
+    for (const fb of fallbackPendingRequests.values()) {
+      if (fb.user_b_id === authUser.id && (fb.id === requestIdOrUserId || parsedKey.kind === "composite" && fb.user_a_id === parsedKey.requesterUserId || parsedKey.kind === "uuid" && fb.user_a_id === parsedKey.uuid)) {
+        pendingRow = { ...fb, status: "pending" };
+        break;
+      }
+    }
+  }
+  if (!pendingRow) {
+    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
+  }
+  fallbackPendingRequests.delete(`${pendingRow.user_a_id}:${authUser.id}`);
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  let patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+    method: "PATCH",
+    body: { status: "rejected", responded_at: nowIso, updated_at: nowIso }
+  });
+  if (!patchRes.ok && patchRes.status === 400) {
+    patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: "PATCH",
+      body: { status: "rejected" }
+    });
+  }
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to decline request right now." } };
+  }
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: pendingRow.user_a_id,
+    receiverId: authUser.id,
+    status: "rejected"
+  }).catch(() => {
+  });
+  const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  await createTargetedNotificationRest({
+    targetUserId: pendingRow.user_a_id,
+    actorUserId: authUser.id,
+    title: "Connection Request Declined",
+    message: `${rejectorName} declined your My Money Manager Udhar connection request.`,
+    type: "connection_rejected",
+    category: "udhar",
+    deepLink: "people",
+    relatedEntityId: String(pendingRow.id)
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "rejected",
+      message: "Connection request declined. No active connection was created."
+    }
+  };
+}
+async function cancelConnectionRequestRest(authUser, requestIdOrUserId) {
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
+  }
+  let queryPath = "";
+  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_b_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === "composite" && parsedKey.targetUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&user_b_id=eq.${encodeURIComponent(parsedKey.targetUserId)}&status=eq.pending&limit=1`;
+  } else {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&id=eq.${encodeURIComponent(requestIdOrUserId.trim())}&limit=1`;
+  }
+  const reqRes = await sbRest2(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify pending request right now." } };
+  }
+  let pendingRow = reqRes.data?.[0];
+  let isFallbackOnly = false;
+  if (!pendingRow) {
+    for (const fb of fallbackPendingRequests.values()) {
+      if (fb.user_a_id === authUser.id && (fb.id === requestIdOrUserId || parsedKey.kind === "composite" && fb.user_b_id === parsedKey.targetUserId || parsedKey.kind === "uuid" && fb.user_b_id === parsedKey.uuid)) {
+        pendingRow = { ...fb, status: "pending" };
+        isFallbackOnly = true;
+        break;
+      }
+    }
+  }
+  if (!pendingRow) {
+    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending outgoing connection request not found." } };
+  }
+  fallbackPendingRequests.delete(`${authUser.id}:${pendingRow.user_b_id}`);
+  if (!isFallbackOnly) {
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    let patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: "PATCH",
+      body: { status: "cancelled", cancelled_at: nowIso, updated_at: nowIso }
+    });
+    if (!patchRes.ok && patchRes.status === 400 && !String(patchRes.error || "").includes("23514")) {
+      patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+        method: "PATCH",
+        body: { status: "cancelled" }
+      });
+    }
+    if (!patchRes.ok && (String(patchRes.error || "").includes("user_connections_status_check") || String(patchRes.error || "").includes("23514"))) {
+      patchRes = await sbRest2(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+        method: "DELETE"
+      });
+    }
+    if (!patchRes.ok) {
+      return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to cancel connection request right now." } };
+    }
+  }
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: authUser.id,
+    receiverId: pendingRow.user_b_id,
+    status: "cancelled"
+  }).catch(() => {
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "cancelled",
+      requestId: String(pendingRow.id),
+      message: "Connection request cancelled."
+    }
+  };
+}
+async function removeSavedConnectionRest(authUser, targetOrContactId) {
+  const rawId = (targetOrContactId || "").trim();
+  if (!rawId) {
+    return { status: 400, body: { success: false, message: "Contact or peer user ID is required." } };
+  }
+  let contactRow = null;
+  let peerUserId = null;
+  if (rawId.startsWith("conn_")) {
+    peerUserId = rawId.slice(5).trim() || null;
+  } else {
+    const ownedContactRes = await sbRest2(
+      `udhar_contacts?id=eq.${encodeURIComponent(rawId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+    );
+    if (ownedContactRes.ok && ownedContactRes.data && ownedContactRes.data.length > 0) {
+      contactRow = ownedContactRes.data[0];
+      peerUserId = contactRow.linked_user_id || null;
+    } else {
+      peerUserId = rawId;
+    }
+  }
+  if (!contactRow && !peerUserId) {
+    return { status: 404, body: { success: false, message: "Saved connection not found." } };
+  }
+  if (!contactRow && peerUserId) {
+    const [peerContactsRes, peerConnsRes] = await Promise.all([
+      sbRest2(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}&limit=1`
+      ),
+      sbRest2(
+        `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+      )
+    ]);
+    const hasContact = Boolean(peerContactsRes.ok && peerContactsRes.data && peerContactsRes.data.length > 0);
+    const hasConnection = Boolean(
+      peerConnsRes.ok && peerConnsRes.data && peerConnsRes.data.some((c) => c.status !== "deleted")
+    );
+    if (!hasContact && !hasConnection) {
+      return { status: 404, body: { success: false, message: "Saved connection not found." } };
+    }
+  }
+  if (contactRow?.id) {
+    const delOwn = await sbRest2(
+      `udhar_contacts?id=eq.${encodeURIComponent(contactRow.id)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+      { method: "DELETE" }
+    );
+    if (!delOwn.ok) {
+      return { status: 500, body: { success: false, message: delOwn.error || "Failed to remove saved contact." } };
+    }
+  }
+  if (peerUserId && peerUserId !== authUser.id) {
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    await Promise.all([
+      sbRest2(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}`,
+        { method: "DELETE" }
+      ).catch(() => {
+      }),
+      sbRest2(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(peerUserId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`,
+        { method: "DELETE" }
+      ).catch(() => {
+      })
+    ]);
+    const isStatusConstraintErr = (msg) => msg.includes("user_connections_status_check") || msg.includes("23514");
+    const connPatchFilter = `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`;
+    let connDelRes = await sbRest2(connPatchFilter, {
+      method: "PATCH",
+      body: { status: "deleted", deleted_at: nowIso, deleted_by: authUser.id, updated_at: nowIso }
+    });
+    if (!connDelRes.ok && connDelRes.status === 400 && !isStatusConstraintErr(String(connDelRes.error || ""))) {
+      connDelRes = await sbRest2(connPatchFilter, {
+        method: "PATCH",
+        body: { status: "deleted" }
+      });
+    }
+    if (!connDelRes.ok && isStatusConstraintErr(String(connDelRes.error || ""))) {
+      await sbRest2(connPatchFilter, { method: "DELETE" }).catch(() => {
+      });
+    }
+    await Promise.all([
+      updateConnectionRequestNotificationsState({
+        requesterId: authUser.id,
+        receiverId: peerUserId,
+        status: "cancelled"
+      }).catch(() => {
+      }),
+      updateConnectionRequestNotificationsState({
+        requesterId: peerUserId,
+        receiverId: authUser.id,
+        status: "cancelled"
+      }).catch(() => {
+      })
+    ]);
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      removed: true,
+      twoSided: Boolean(peerUserId && peerUserId !== authUser.id),
+      peerUserId,
+      preservedTransactions: true,
+      message: "Connection removed from Saved People. Existing Udhaar history remains preserved."
+    }
+  };
+}
+async function disconnectUserRest(authUser, targetUserId) {
+  const targetId = (targetUserId || "").trim();
+  if (!targetId) {
+    return { status: 400, body: { success: false, message: "Target user ID is required." } };
+  }
+  const removal = await removeSavedConnectionRest(authUser, targetId);
+  if (removal.status !== 200) {
+    return removal;
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "disconnected",
+      twoSided: true,
+      preservedTransactions: true,
+      message: "Connection removed from both Saved People lists. Existing Udhar transaction history has been preserved."
+    }
+  };
+}
+async function getPrivacyConsentsRest(authUser) {
+  let res = await sbRest2(
+    `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,consent_status,action,policy_version,consent_wording,granted_at,withdrawn_at,source,audit_metadata,created_at,updated_at&order=created_at.desc&limit=200`
+  );
+  if (!res.ok && res.status === 400) {
+    res = await sbRest2(
+      `user_consents?user_id=eq.${encodeURIComponent(authUser.id)}&select=id,user_id,purpose,status,action,policy_version,consent_wording,created_at,updated_at&order=created_at.desc&limit=200`
+    );
+  }
+  if (!res.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: res.error || "Could not load saved privacy choices from Supabase."
+      }
+    };
+  }
+  const history = res.data || [];
+  const latestByCategory = {};
+  for (const row of history) {
+    if (!latestByCategory[row.purpose]) {
+      const effectiveStatus = row.consent_status || row.status;
+      latestByCategory[row.purpose] = {
+        category: row.purpose,
+        purpose: row.purpose,
+        status: effectiveStatus,
+        consent_status: effectiveStatus,
+        policyVersion: row.policy_version,
+        consentedAt: row.granted_at || (effectiveStatus === "granted" ? row.created_at : null),
+        grantedAt: row.granted_at || (effectiveStatus === "granted" ? row.created_at : null),
+        revokedAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? row.created_at : null),
+        withdrawnAt: row.withdrawn_at || (effectiveStatus === "withdrawn" ? row.created_at : null),
+        source: row.source || null,
+        updatedAt: row.created_at
+      };
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      consents: latestByCategory,
+      history,
+      policyVersion: "v2.1 \u2014 DPDP Act 2023 & Rules 2025"
+    }
+  };
+}
+async function recordPrivacyConsentRest(authUser, body) {
+  const purpose = (body.category || body.purpose || "").trim();
+  const status = body.status === "withdrawn" ? "withdrawn" : "granted";
+  if (!purpose) {
+    return { status: 400, body: { success: false, message: "Consent category is required." } };
+  }
+  const policyVersion = (body.policyVersion || "v2.1 \u2014 DPDP Act 2023 & Rules 2025").trim();
+  const wording = (body.wording || `User explicitly ${status} consent for ${purpose}.`).trim();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const extendedRow = {
+    user_id: authUser.id,
+    user_email: authUser.email,
+    purpose,
+    status,
+    consent_status: status,
+    action: status,
+    policy_version: policyVersion,
+    consent_wording: wording,
+    granted_at: status === "granted" ? nowIso : null,
+    withdrawn_at: status === "withdrawn" ? nowIso : null,
+    source: body.source || "privacy_choices_modal",
+    audit_metadata: body.auditMetadata || {},
+    idempotency_key: body.idempotencyKey || null,
+    created_at: nowIso,
+    updated_at: nowIso
+  };
+  let ins = await sbRest2("user_consents", {
+    method: "POST",
+    prefer: "return=representation",
+    body: extendedRow
+  });
+  if (!ins.ok && ins.status === 400) {
+    ins = await sbRest2("user_consents", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: authUser.id,
+        user_email: authUser.email,
+        purpose,
+        status,
+        action: status,
+        policy_version: policyVersion,
+        consent_wording: wording,
+        created_at: nowIso,
+        updated_at: nowIso
+      }
+    });
+  }
+  if (!ins.ok && ins.status === 409 && body.idempotencyKey) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        category: purpose,
+        status,
+        deduplicated: true,
+        consent: { purpose, status, policy_version: policyVersion, created_at: nowIso }
+      }
+    };
+  }
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: ins.error || "Could not save consent preference to Supabase right now."
+      }
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      category: purpose,
+      status,
+      consent: ins.data?.[0] || { purpose, status, policy_version: policyVersion, created_at: nowIso }
+    }
+  };
+}
+async function recordPrivacyConsentBatchRest(authUser, entries) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const extendedRows = entries.map((e2) => ({
+    user_id: authUser.id,
+    user_email: authUser.email,
+    purpose: e2.purpose,
+    status: e2.status,
+    consent_status: e2.status,
+    action: e2.status,
+    policy_version: e2.policyVersion,
+    consent_wording: e2.wording,
+    granted_at: e2.status === "granted" ? nowIso : null,
+    withdrawn_at: e2.status === "withdrawn" ? nowIso : null,
+    source: e2.source,
+    audit_metadata: e2.auditMetadata || {},
+    idempotency_key: e2.idempotencyKey,
+    created_at: nowIso,
+    updated_at: nowIso
+  }));
+  let ins = await sbRest2("user_consents", {
+    method: "POST",
+    prefer: "return=representation",
+    body: extendedRows
+  });
+  if (!ins.ok && ins.status === 400) {
+    const legacyRows = entries.map((e2) => ({
+      user_id: authUser.id,
+      user_email: authUser.email,
+      purpose: e2.purpose,
+      status: e2.status,
+      action: e2.status,
+      policy_version: e2.policyVersion,
+      consent_wording: e2.wording,
+      created_at: nowIso,
+      updated_at: nowIso
+    }));
+    ins = await sbRest2("user_consents", {
+      method: "POST",
+      prefer: "return=representation",
+      body: legacyRows
+    });
+  }
+  if (!ins.ok && ins.status === 409) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        deduplicated: true,
+        records: extendedRows
+      }
+    };
+  }
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        message: ins.error || "Could not save your privacy choices to Supabase right now."
+      }
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      records: ins.data || extendedRows
+    }
+  };
+}
+async function buildMergedDirectoryForUserRest(authUser, activeTxs = []) {
+  const [contactsRes, connsRes] = await Promise.all([
+    sbRest2(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
+    sbRest2(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&status=eq.connected`
+    )
+  ]);
+  if (!contactsRes.ok) {
+    return { ok: false, error: contactsRes.error || "Failed to load contacts." };
+  }
+  const rawContacts = contactsRes.data || [];
+  const connectedPeerIds = /* @__PURE__ */ new Set();
+  if (connsRes.ok && Array.isArray(connsRes.data)) {
+    for (const conn of connsRes.data) {
+      const peerId = conn.user_a_id === authUser.id ? conn.user_b_id : conn.user_a_id;
+      if (peerId && peerId !== authUser.id) {
+        connectedPeerIds.add(peerId);
+      }
+    }
+  }
+  const allUserIds = Array.from(
+    /* @__PURE__ */ new Set([
+      ...rawContacts.map((r2) => r2.linked_user_id).filter(Boolean),
+      ...Array.from(connectedPeerIds)
+    ])
+  );
+  const userMap2 = await fetchUsersByIds(allUserIds);
+  const deduped = [];
+  const seenLinkedIds = /* @__PURE__ */ new Set();
+  const seenUnlinkedNames = /* @__PURE__ */ new Set();
+  for (const c of rawContacts) {
+    const linkedId = c.linked_user_id || null;
+    const normName = (c.name || "").trim().toLowerCase();
+    if (linkedId) {
+      if (seenLinkedIds.has(linkedId)) continue;
+      seenLinkedIds.add(linkedId);
+    } else if (normName) {
+      if (seenUnlinkedNames.has(normName)) continue;
+      seenUnlinkedNames.add(normName);
+    }
+    deduped.push(c);
+  }
+  for (const peerId of connectedPeerIds) {
+    if (seenLinkedIds.has(peerId)) continue;
+    const u = userMap2.get(peerId);
+    if (!u || !isDiscoverableNormalUser(u)) continue;
+    seenLinkedIds.add(peerId);
+    deduped.push({
+      id: `conn_${peerId}`,
+      user_id: authUser.id,
+      name: (u.full_name || u.email?.split("@")[0] || "Connected User").trim(),
+      email: u.email ? maskEmailForPrivacy(u.email) : null,
+      phone: null,
+      photo_url: u.avatar_url || null,
+      relationship_type: "Friend",
+      notes: null,
+      linked_user_id: peerId,
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  deduped.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  return { ok: true, contacts: deduped, userMap: userMap2 };
+}
+async function getContactsRest(authUser) {
+  const txRes = await sbRest2(
+    `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`
+  );
+  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted") : [];
+  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
+  if (!merged.ok) {
+    return { status: 503, body: { success: false, message: "Failed to load contacts." } };
+  }
+  const contacts = merged.contacts.map((c) => {
+    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
+    return {
+      ...c,
+      linked_user_name: u?.full_name || null,
+      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
+      linked_user_avatar: u?.avatar_url || null,
+      is_registered: Boolean(c.linked_user_id)
+    };
+  });
+  return { status: 200, body: { success: true, contacts } };
+}
+async function getContactsWithBalancesRest(authUser) {
+  const txRes = await sbRest2(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`);
+  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted") : [];
+  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
+  if (!merged.ok) {
+    return { status: 503, body: { success: false, message: "Failed to load people contacts." } };
+  }
+  const parsedContacts = merged.contacts.map((c) => {
+    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
+    const matchingTxs = activeTxs.filter((t2) => {
+      if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
+      if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+    let totalGiven = 0;
+    let totalTaken = 0;
+    let receivable = 0;
+    let payable = 0;
+    let lastDate = null;
+    let pendingCount = 0;
+    let pendingRequestsCount = 0;
+    let pendingRequestsAmount = 0;
+    let pendingGivenAmount = 0;
+    let pendingReceivedAmount = 0;
+    let rejectedCount = 0;
+    for (const t2 of matchingTxs) {
+      const lifecycle = normalizeUdharLifecycleStatus(t2);
+      if (lifecycle === "deleted") continue;
+      if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
+        lastDate = t2.transaction_date;
+      }
+      if (lifecycle === "rejected") {
+        rejectedCount += 1;
+        continue;
+      }
+      if (lifecycle === "cancelled") continue;
+      const orig = parseFloat(t2.original_amount) || 0;
+      if (lifecycle === "pending_confirmation") {
+        pendingRequestsCount += 1;
+        pendingRequestsAmount += orig;
+        if (t2.direction === "gave") pendingGivenAmount += orig;
+        else pendingReceivedAmount += orig;
+        continue;
+      }
+      const cur = parseFloat(t2.current_balance) || 0;
+      const isSettled = lifecycle === "settled" || cur <= 0.01;
+      if (t2.direction === "gave") {
+        totalGiven += orig;
+        if (!isSettled) receivable += cur;
+      } else {
+        totalTaken += orig;
+        if (!isSettled) payable += cur;
+      }
+      if (!isSettled && cur > 0.01) pendingCount += 1;
+    }
+    return {
+      ...c,
+      linked_user_name: u?.full_name || null,
+      linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
+      linked_user_avatar: u?.avatar_url || null,
+      total_given: roundMoney(totalGiven),
+      total_taken: roundMoney(totalTaken),
+      outstanding_receivable: roundMoney(receivable),
+      outstanding_payable: roundMoney(payable),
+      net_balance: roundMoney(receivable - payable),
+      last_transaction_date: lastDate,
+      total_transactions_count: matchingTxs.length,
+      pending_transactions_count: pendingCount,
+      pending_requests_count: pendingRequestsCount,
+      pending_requests_amount: roundMoney(pendingRequestsAmount),
+      pending_given_amount: roundMoney(pendingGivenAmount),
+      pending_received_amount: roundMoney(pendingReceivedAmount),
+      rejected_count: rejectedCount,
+      is_registered: Boolean(c.linked_user_id)
+    };
+  });
+  return { status: 200, body: { success: true, contacts: parsedContacts } };
+}
+async function saveContactRest(authUser, body) {
+  const name2 = (body.name || "").trim();
+  const email = (body.email || "").trim().toLowerCase();
+  const phone = (body.phone || "").trim();
+  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
+  const notes = (body.notes || "").trim();
+  const photoUrl = (body.photo_url || body.photoUrl || "").trim() || null;
+  const requestedLinkedUserId = (body.linked_user_id || body.linkedUserId || "").trim() || null;
+  if (!name2) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
+  if (requestedLinkedUserId) {
+    if (requestedLinkedUserId === authUser.id) {
+      return { status: 400, body: { success: false, message: "You cannot add yourself as a contact." } };
+    }
+    const pairRes = await sbRest2(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(requestedLinkedUserId)}),and(user_a_id.eq.${encodeURIComponent(requestedLinkedUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+    );
+    const isAlreadyConnected = Boolean(
+      pairRes.ok && pairRes.data && pairRes.data.some((r2) => r2.status === "connected")
+    );
+    if (!isAlreadyConnected) {
+      return connectUserRest(authUser, {
+        targetUserId: requestedLinkedUserId,
+        relationshipType,
+        requestedVia: "search"
+      });
+    }
+    const targetRes = await sbRest2(
+      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
+    );
+    if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+      return { status: 404, body: { success: false, message: "Selected user account was not found." } };
+    }
+    const target = targetRes.data[0];
+    const nowIso2 = (/* @__PURE__ */ new Date()).toISOString();
+    const upsertRes2 = await upsertUdharContactRest({
+      user_id: authUser.id,
+      name: target.full_name || name2,
+      email: target.email || null,
+      phone: target.phone || null,
+      photo_url: target.avatar_url || photoUrl,
+      relationship_type: relationshipType,
+      notes: notes || null,
+      linked_user_id: target.id,
+      updated_at: nowIso2
+    });
+    if (!upsertRes2.ok || !upsertRes2.data || upsertRes2.data.length === 0) {
+      return { status: 500, body: { success: false, message: upsertRes2.error || "Failed to save contact." } };
+    }
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "connected",
+        contact: upsertRes2.data[0],
+        reciprocallyLinked: true
+      }
+    };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const payload = {
+    user_id: authUser.id,
+    name: name2,
+    email: email || null,
+    phone: phone || null,
+    photo_url: photoUrl,
+    relationship_type: relationshipType,
+    notes: notes || null,
+    linked_user_id: null,
+    updated_at: nowIso
+  };
+  const upsertRes = await upsertUdharContactRest(payload);
+  if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
+    return { status: 500, body: { success: false, message: upsertRes.error || "Failed to save contact." } };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      contact: upsertRes.data[0],
+      reciprocallyLinked: false
+    }
+  };
+}
+async function updateContactRest(authUser, contactId, body) {
+  const name2 = (body.name || "").trim();
+  const email = (body.email || "").trim().toLowerCase();
+  const phone = (body.phone || "").trim();
+  const relationshipType = (body.relationship_type || body.relationshipType || "Friend").trim();
+  const notes = (body.notes || "").trim();
+  const photoUrl = body.photo_url !== void 0 ? body.photo_url || null : void 0;
+  if (!name2) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
+  const existingRes = await sbRest2(
+    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!existingRes.ok || !existingRes.data || existingRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Contact not found." } };
+  }
+  const existing = existingRes.data[0];
+  const patchBody = {
+    name: name2,
+    email: email || null,
+    phone: phone || null,
+    relationship_type: relationshipType,
+    notes: notes || null,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (photoUrl !== void 0) patchBody.photo_url = photoUrl;
+  const updRes = await sbRest2(
+    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: patchBody
+    }
+  );
+  if (!updRes.ok || !updRes.data || updRes.data.length === 0) {
+    return { status: 500, body: { success: false, message: updRes.error || "Failed to update contact." } };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      contact: updRes.data[0],
+      reciprocallyLinked: Boolean(existing.linked_user_id)
+    }
+  };
+}
+async function deleteContactRest(authUser, contactId) {
+  return removeSavedConnectionRest(authUser, contactId);
+}
+async function linkContactRest(authUser, contactId, registeredUserId) {
+  if (!registeredUserId) {
+    return { status: 400, body: { success: false, message: "Target registered user ID is required." } };
+  }
+  if (registeredUserId === authUser.id) {
+    return { status: 400, body: { success: false, message: "You cannot link a contact to your own account." } };
+  }
+  const [contactRes, targetRes, pairRes] = await Promise.all([
+    sbRest2(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
+    sbRest2(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`),
+    sbRest2(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(registeredUserId)}),and(user_a_id.eq.${encodeURIComponent(registeredUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+    )
+  ]);
+  if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Contact not found." } };
+  }
+  if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Registered user not found." } };
+  }
+  const contact = contactRes.data[0];
+  const target = targetRes.data[0];
+  if (!isDiscoverableNormalUser(target)) {
+    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is not eligible for Udhar connections." } };
+  }
+  if (await isBlockedBetween(authUser.id, target.id)) {
+    return { status: 403, body: { success: false, message: "Cannot link with a blocked account." } };
+  }
+  const isAlreadyConnected = Boolean(
+    pairRes.ok && pairRes.data && pairRes.data.some((c) => c.status === "connected")
+  );
+  if (!isAlreadyConnected) {
+    const reqResult = await connectUserRest(authUser, {
+      targetUserId: target.id,
+      relationshipType: contact.relationship_type || "Friend",
+      requestedVia: "search"
+    });
+    return {
+      status: reqResult.status,
+      body: {
+        ...reqResult.body,
+        pendingApproval: reqResult.body.status === "pending"
+      }
+    };
+  }
+  await sbRest2(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`, {
+    method: "PATCH",
+    body: {
+      linked_user_id: target.id,
+      email: target.email || contact.email || null,
+      phone: target.phone || contact.phone || null,
+      photo_url: target.avatar_url || contact.photo_url || null,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    }
+  });
+  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || "Friend", {
+    connectionMethod: "SEARCH",
+    requestedVia: "search"
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "connected",
+      message: `Successfully linked ${contact.name} with verified account ${target.full_name}.`
+    }
+  };
+}
+async function getMyQrRest(authUser) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = await sbRest2(
+    `qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false&expires_at=gt.${encodeURIComponent(nowIso)}&order=created_at.desc&limit=1`
+  );
+  let pairingToken = "";
+  let pairingCode = "";
+  let expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
+  if (existing.ok && existing.data && existing.data.length > 0) {
+    pairingToken = existing.data[0].pairing_token;
+    pairingCode = existing.data[0].pairing_code;
+    expiresAt = existing.data[0].expires_at || expiresAt;
+  } else {
+    pairingToken = crypto21.randomBytes(32).toString("hex");
+    pairingCode = `MM-${crypto21.randomBytes(3).toString("hex").toUpperCase()}`;
+    const ins = await sbRest2("qr_pairing_tokens", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: authUser.id,
+        pairing_token: pairingToken,
+        pairing_code: pairingCode,
+        is_single_use: false,
+        used: false,
+        expires_at: expiresAt
+      }
+    });
+    if (!ins.ok) {
+      return {
+        status: 503,
+        body: { success: false, message: "Unable to persist your unique QR identity right now. Please retry." }
+      };
+    }
+  }
+  const qrPayload = JSON.stringify({
+    app: "my-money",
+    v: 2,
+    type: "udhar-pair",
+    token: pairingToken,
+    code: pairingCode,
+    exp: new Date(expiresAt).getTime()
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      pairingToken,
+      pairingCode,
+      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
+      avatarUrl: authUser.avatar_url || null,
+      qrData: qrPayload,
+      expiresAt
+    }
+  };
+}
+async function regenerateQrRest(authUser) {
+  await sbRest2(`qr_pairing_tokens?user_id=eq.${encodeURIComponent(authUser.id)}&used=eq.false`, {
+    method: "PATCH",
+    body: { used: true }
+  });
+  const pairingToken = crypto21.randomBytes(32).toString("hex");
+  const pairingCode = `MM-${crypto21.randomBytes(3).toString("hex").toUpperCase()}`;
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
+  const ins = await sbRest2("qr_pairing_tokens", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      user_id: authUser.id,
+      pairing_token: pairingToken,
+      pairing_code: pairingCode,
+      is_single_use: false,
+      used: false,
+      expires_at: expiresAt
+    }
+  });
+  if (!ins.ok) {
+    return {
+      status: 503,
+      body: { success: false, message: "Could not regenerate QR code right now. Please try again." }
+    };
+  }
+  const qrPayload = JSON.stringify({
+    app: "my-money",
+    v: 2,
+    type: "udhar-pair",
+    token: pairingToken,
+    code: pairingCode,
+    exp: new Date(expiresAt).getTime()
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: "Fresh QR code generated successfully. Previous codes have been revoked.",
+      pairingToken,
+      pairingCode,
+      publicName: authUser.full_name || authUser.email?.split("@")[0] || "User",
+      avatarUrl: authUser.avatar_url || null,
+      qrData: qrPayload,
+      expiresAt
+    }
+  };
+}
+async function resolveQrRest(authUser, body) {
+  let targetToken = (body.pairingToken || "").trim();
+  let targetCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+  const rawData = (body.qrData || "").trim();
+  if (rawData) {
+    const parsed = parseQrPayload(rawData);
+    if (!parsed.valid) {
+      return {
+        status: 400,
+        body: {
+          success: false,
+          code: parsed.errorCode || "INVALID_QR",
+          message: parsed.error || "Invalid QR format."
+        }
+      };
+    }
+    if (parsed.token) targetToken = parsed.token;
+    if (parsed.code) targetCode = parsed.code;
+  }
+  if (!targetToken && !targetCode) {
+    return {
+      status: 400,
+      body: { success: false, code: "INVALID_QR", message: "No valid QR pairing token or code provided." }
+    };
+  }
+  const filter = targetToken && targetCode ? `or=(pairing_token.eq.${encodeURIComponent(targetToken)},pairing_code.eq.${encodeURIComponent(targetCode)})` : targetToken ? `pairing_token=eq.${encodeURIComponent(targetToken)}` : `pairing_code=eq.${encodeURIComponent(targetCode)}`;
+  const tokRes = await sbRest2(`qr_pairing_tokens?${filter}&order=created_at.desc&limit=1`);
+  if (!tokRes.ok) {
+    return { status: 503, body: { success: false, code: "SERVICE_UNAVAILABLE", message: "Unable to verify QR code right now. Please retry." } };
+  }
+  if (!tokRes.data || tokRes.data.length === 0) {
+    return {
+      status: 404,
+      body: {
+        success: false,
+        code: "NOT_FOUND",
+        message: "Pairing code or QR not recognized. Ask your friend to share their latest My Money Manager Udhar Pairing QR."
+      }
+    };
+  }
+  const qrRecord = tokRes.data[0];
+  if (qrRecord.used || qrRecord.is_single_use && qrRecord.used_at) {
+    return {
+      status: 410,
+      body: {
+        success: false,
+        code: "QR_REVOKED",
+        message: "This pairing QR has already been used or revoked. Ask your friend to share their new Udhar Pairing QR."
+      }
+    };
+  }
+  if (qrRecord.expires_at && new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
+    return {
+      status: 410,
+      body: {
+        success: false,
+        code: "QR_EXPIRED",
+        message: "This pairing QR has expired. Ask your friend to tap Reset QR to generate a fresh code."
+      }
+    };
+  }
+  if (qrRecord.user_id === authUser.id) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        code: "SELF_CONNECTION",
+        message: "This is your own Udhar pairing QR. You cannot pair with yourself."
+      }
+    };
+  }
+  const userRes = await sbRest2(
+    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified&limit=1`
+  );
+  if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
+    return {
+      status: 404,
+      body: { success: false, code: "NOT_FOUND", message: "Account not found." }
+    };
+  }
+  const owner = userRes.data[0];
+  if (!isDiscoverableNormalUser(owner)) {
+    return {
+      status: 403,
+      body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is unavailable for Udhar connections." }
+    };
+  }
+  if (await isBlockedBetween(authUser.id, owner.id)) {
+    return {
+      status: 403,
+      body: { success: false, code: "BLOCKED", message: "You cannot connect with this account." }
+    };
+  }
+  const connRes = await sbRest2(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(owner.id)}),and(user_a_id.eq.${encodeURIComponent(owner.id)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,user_a_id,user_b_id,status`
+  );
+  const connRows = connRes.ok && Array.isArray(connRes.data) ? connRes.data : [];
+  const isAlreadyConnected = connRows.some((c) => c.status === "connected");
+  const outgoingPending = connRows.find((c) => c.user_a_id === authUser.id && c.status === "pending");
+  const incomingPending = connRows.find((c) => c.user_b_id === authUser.id && c.status === "pending");
+  const connectionStatus = isAlreadyConnected ? "connected" : outgoingPending ? "pending" : incomingPending ? "incoming_pending" : "none";
+  return {
+    status: 200,
+    body: {
+      success: true,
+      owner: {
+        id: owner.id,
+        displayName: owner.full_name || "My Money User",
+        fullName: owner.full_name || "My Money User",
+        accountIndicator: "My Money Manager Account",
+        emailMasked: isAlreadyConnected ? maskEmailForPrivacy(owner.email) : void 0,
+        phoneMasked: isAlreadyConnected ? maskPhoneForPrivacy(owner.phone) : null,
+        avatarUrl: owner.avatar_url || null,
+        isVerified: Boolean(owner.is_verified ?? true)
+      },
+      pairingToken: qrRecord.pairing_token,
+      pairingCode: qrRecord.pairing_code,
+      isAlreadyConnected,
+      connectionStatus,
+      requestId: outgoingPending?.id || incomingPending?.id || null
+    }
+  };
+}
+async function connectQrRest(authUser, body) {
+  const resolved = await resolveQrRest(authUser, body);
+  if (resolved.status !== 200 || !resolved.body.success) {
+    return resolved;
+  }
+  const rawMethod = String(body.connectionMethod || body.entryMethod || "").trim().toUpperCase();
+  const connectionMethod = rawMethod === "CONFIRMATION_CODE" || rawMethod === "CODE" || !body.qrData && !body.pairingToken && Boolean(body.pairingCode) ? "CONFIRMATION_CODE" : "QR_CODE";
+  const owner = resolved.body.owner;
+  const targetId = owner.id;
+  const targetName = (owner.fullName || owner.displayName || "User").trim();
+  const relationshipType = (body.relationshipType || "Friend").trim();
+  const targetRes = await sbRest2(
+    `app_users?id=eq.${encodeURIComponent(targetId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,is_verified&limit=1`
+  );
+  const targetUser = targetRes.ok && targetRes.data && targetRes.data[0] || {
+    id: targetId,
+    full_name: targetName,
+    email: null,
+    phone: null,
+    avatar_url: owner.avatarUrl || null,
+    is_verified: owner.isVerified
+  };
+  if (resolved.body.isAlreadyConnected) {
+    await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
+      connectionMethod,
+      requestedVia: connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr"
+    }).catch(() => {
+    });
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "connected",
+        alreadyConnected: true,
+        connectionMethod,
+        title: "Already Connected",
+        message: "Already Connected",
+        connectedUser: {
+          id: targetUser.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: targetUser.avatar_url || null,
+          isVerified: Boolean(targetUser.is_verified ?? true)
+        }
+      }
+    };
+  }
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
+    connectionMethod,
+    requestedVia: connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr"
+  });
+  if (!syncRes.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        code: "REQUEST_FAILED",
+        message: syncRes.error || "Unable to save connection right now. Please retry."
+      }
+    };
+  }
+  await Promise.all([
+    updateConnectionRequestNotificationsState({
+      requestId: resolved.body.requestId || null,
+      requesterId: authUser.id,
+      receiverId: targetId,
+      status: "accepted"
+    }).catch(() => {
+    }),
+    updateConnectionRequestNotificationsState({
+      requestId: resolved.body.requestId || null,
+      requesterId: targetId,
+      receiverId: authUser.id,
+      status: "accepted"
+    }).catch(() => {
+    })
+  ]);
+  if (resolved.body.pairingToken) {
+    await sbRest2(
+      `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolved.body.pairingToken)}&is_single_use=eq.true`,
+      {
+        method: "PATCH",
+        body: { used: true, used_at: (/* @__PURE__ */ new Date()).toISOString() }
+      }
+    ).catch(() => {
+    });
+  }
+  const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  await notifyQrConnected({
+    userAId: authUser.id,
+    userAName: actorName,
+    userAAvatar: authUser.avatar_url || null,
+    userBId: targetUser.id,
+    userBName: targetName,
+    connectionMethod,
+    connectionId: syncRes.connectionId || null
+  }).catch(() => {
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "connected",
+      alreadyConnected: false,
+      connectionMethod,
+      title: "Connection Added Successfully",
+      message: `${targetName} has been added to your Saved People.`,
+      connectionId: syncRes.connectionId || null,
+      connectedUser: {
+        id: targetUser.id,
+        name: targetName,
+        displayName: targetName,
+        fullName: targetName,
+        avatarUrl: targetUser.avatar_url || null,
+        isVerified: Boolean(targetUser.is_verified ?? true)
+      }
+    }
+  };
+}
+async function getUdharTransactionsRest(authUser) {
+  const [txRes, contactsRes] = await Promise.all([
+    sbRest2(
+      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&order=transaction_date.desc,created_at.desc`
+    ),
+    sbRest2(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&select=name,linked_user_id`
+    )
+  ]);
+  if (!txRes.ok) {
+    return { status: 503, body: { success: false, message: "Unable to load Udhar ledger right now." } };
+  }
+  const rawTxs = (txRes.data || []).filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted");
+  const linkIds = Array.from(new Set(rawTxs.map((t2) => t2.link_id).filter(Boolean)));
+  const txIds = rawTxs.map((t2) => t2.id).filter(Boolean);
+  let repaymentsRows = [];
+  let historyRows = [];
+  if (linkIds.length > 0) {
+    const inLinks = linkIds.map((id) => `"${String(id).replace(/"/g, "")}"`).join(",");
+    const [repRes, histRes] = await Promise.all([
+      sbRest2(
+        `udhar_repayments?link_id=in.(${encodeURIComponent(inLinks)})&order=repayment_date.desc,created_at.desc`
+      ),
+      sbRest2(
+        `udhar_edit_history?link_id=in.(${encodeURIComponent(inLinks)})&order=created_at.desc`
+      )
+    ]);
+    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data.filter((r2) => isActiveRepayment(r2));
+    if (histRes.ok && Array.isArray(histRes.data)) historyRows = histRes.data;
+  }
+  const allUserIds = [
+    ...rawTxs.map((t2) => t2.counterpart_user_id),
+    ...repaymentsRows.map((r2) => r2.recorded_by_user_id),
+    ...historyRows.map((h2) => h2.edited_by_user_id)
+  ].filter(Boolean);
+  const userMap2 = await fetchUsersByIds(allUserIds);
+  const repByLink = /* @__PURE__ */ new Map();
+  const repByTx = /* @__PURE__ */ new Map();
+  for (const r2 of repaymentsRows) {
+    if (r2.link_id) {
+      if (!repByLink.has(r2.link_id)) repByLink.set(r2.link_id, []);
+      repByLink.get(r2.link_id).push(r2);
+    }
+    if (r2.udhar_id) {
+      if (!repByTx.has(r2.udhar_id)) repByTx.set(r2.udhar_id, []);
+      repByTx.get(r2.udhar_id).push(r2);
+    }
+  }
+  const histByLink = /* @__PURE__ */ new Map();
+  for (const h2 of historyRows) {
+    if (!histByLink.has(h2.link_id)) histByLink.set(h2.link_id, []);
+    histByLink.get(h2.link_id).push(h2);
+  }
+  const transactions = rawTxs.map((row) => {
+    const reps = row.link_id && repByLink.get(row.link_id) || repByTx.get(row.id) || [];
+    const hist = row.link_id && histByLink.get(row.link_id) || [];
+    return enrichTransactionRow(row, userMap2, reps, hist);
+  });
+  const contacts = contactsRes.ok && Array.isArray(contactsRes.data) ? contactsRes.data : [];
+  const summary = calculatePeopleDashboardSummary(transactions, contacts);
+  return {
+    status: 200,
+    body: {
+      success: true,
+      transactions,
+      summary,
+      count: txIds.length
+    }
+  };
+}
+async function createUdharTransactionRest(authUser, body) {
+  let counterpartName = (body.counterpart_name || body.person_name || "").trim();
+  const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || "").trim() || null;
+  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
+  const pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+  const qrDataRaw = (body.qrData || body.qr_data || "").trim();
+  const direction = body.direction;
+  const amount = roundMoney(parseFloat(body.amount));
+  const txDate = body.transaction_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const dueDate = body.due_date || body.dueDate || null;
+  const plainNotes = (body.notes || "").trim();
+  const category = (body.category || "Personal Loan").trim();
+  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
+  const description = (body.description || "").trim();
+  const attachmentUrl = body.attachment_url || null;
+  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
+  if (!["gave", "took"].includes(direction)) {
+    return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { status: 400, body: { success: false, message: "Amount must be greater than \u20B90." } };
+  }
+  if (idempotencyKey) {
+    const dupCheck = await sbRest2(
+      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
+    );
+    if (dupCheck.ok && dupCheck.data && dupCheck.data.length > 0) {
+      const existing = dupCheck.data[0];
+      return {
+        status: 200,
+        body: {
+          success: true,
+          deduplicated: true,
+          message: "Udhar already recorded.",
+          transaction: enrichTransactionRow(existing, /* @__PURE__ */ new Map(), [], []),
+          isLinked: Boolean(existing.counterpart_user_id)
+        }
+      };
+    }
+  }
+  let registeredUser = null;
+  let verifiedCreationMethod = "manual";
+  let singleUseTokenRecordId = null;
+  if (qrToken || pairingCode || qrDataRaw) {
+    const resolved = await resolveQrRest(authUser, {
+      qrData: qrDataRaw || void 0,
+      pairingToken: qrToken || void 0,
+      pairingCode: pairingCode || void 0
+    });
+    if (resolved.status !== 200 || !resolved.body?.success || !resolved.body?.owner?.id) {
+      return resolved;
+    }
+    const ownerId = resolved.body.owner.id;
+    const uRes = await sbRest2(
+      `app_users?id=eq.${encodeURIComponent(ownerId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
+    );
+    if (!uRes.ok || !uRes.data || uRes.data.length === 0) {
+      return { status: 404, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account not found." } };
+    }
+    registeredUser = uRes.data[0];
+    if (!isDiscoverableNormalUser(registeredUser)) {
+      return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is unavailable for shared Udhar." } };
+    }
+    if (await isBlockedBetween(authUser.id, registeredUser.id)) {
+      return { status: 403, body: { success: false, code: "BLOCKED", message: "Cannot create shared Udhar with a blocked user." } };
+    }
+    counterpartName = registeredUser.full_name || resolved.body.owner.fullName || counterpartName || "Friend";
+    verifiedCreationMethod = qrToken || qrDataRaw && qrDataRaw.startsWith("{") ? "qr" : "code";
+    const resolvedToken = resolved.body.pairingToken;
+    if (resolvedToken) {
+      const tokCheck = await sbRest2(
+        `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolvedToken)}&select=id,is_single_use&limit=1`
+      );
+      if (tokCheck.ok && tokCheck.data?.[0]?.is_single_use) {
+        singleUseTokenRecordId = tokCheck.data[0].id;
+      }
+    }
+  } else if (counterpartUserId && counterpartUserId !== authUser.id) {
+    const uRes = await sbRest2(
+      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
+    );
+    if (uRes.ok && uRes.data && uRes.data.length > 0) {
+      const u = uRes.data[0];
+      if (!isDiscoverableNormalUser(u)) {
+        return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for shared Udhar connections." } };
+      }
+      if (await isBlockedBetween(authUser.id, u.id)) {
+        return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
+      }
+      registeredUser = u;
+      counterpartName = counterpartName || registeredUser.full_name;
+    }
+  }
+  if (!counterpartName) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
+  const linkId = crypto21.randomUUID();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (registeredUser) {
+    const isInstantQr = verifiedCreationMethod === "qr" || verifiedCreationMethod === "code";
+    const initialLifecycle = isInstantQr ? "confirmed" : "pending_confirmation";
+    const initialConfirmStatus = isInstantQr ? "confirmed" : "pending";
+    const packedNotes = packStructuredNote(plainNotes, {
+      category,
+      payment_method: paymentMethod,
+      description: description || void 0,
+      attachment_url: attachmentUrl || void 0,
+      creation_method: verifiedCreationMethod,
+      lifecycle_status: initialLifecycle,
+      accepted_by: isInstantQr ? registeredUser.id : void 0,
+      responded_at: isInstantQr ? nowIso : void 0
+    });
+    const counterpartDirection = direction === "gave" ? "took" : "gave";
+    const userARow = {
+      link_id: linkId,
+      user_id: authUser.id,
+      counterpart_user_id: registeredUser.id,
+      counterpart_name: registeredUser.full_name,
+      direction,
+      original_amount: amount,
+      current_balance: amount,
+      paid_amount: 0,
+      transaction_date: txDate,
+      due_date: dueDate || null,
+      notes: packedNotes,
+      attachment_url: attachmentUrl,
+      status: initialLifecycle,
+      confirmation_status: initialConfirmStatus,
+      is_initiator: true,
+      idempotency_key: idempotencyKey,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const userBRow = {
+      link_id: linkId,
+      user_id: registeredUser.id,
+      counterpart_user_id: authUser.id,
+      counterpart_name: authUser.full_name,
+      direction: counterpartDirection,
+      original_amount: amount,
+      current_balance: amount,
+      paid_amount: 0,
+      transaction_date: txDate,
+      due_date: dueDate || null,
+      notes: packedNotes,
+      attachment_url: attachmentUrl,
+      status: initialLifecycle,
+      confirmation_status: initialConfirmStatus,
+      is_initiator: false,
+      idempotency_key: idempotencyKey ? `${idempotencyKey}:counterpart` : null,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const insertRes = await sbRest2("udhar_transactions", {
+      method: "POST",
+      prefer: "return=representation",
+      body: [userARow, userBRow]
+    });
+    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: insertRes.error || "Failed to create shared Udhar." } };
+    }
+    if (singleUseTokenRecordId) {
+      await sbRest2(`qr_pairing_tokens?id=eq.${encodeURIComponent(singleUseTokenRecordId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { used: true, used_by_user_id: authUser.id, used_at: nowIso }
+      }).catch(() => {
+      });
+    }
+    const createdUserA = insertRes.data.find((r2) => r2.user_id === authUser.id) || insertRes.data[0];
+    await ensureConnectionAndReciprocalContactsRest(authUser, registeredUser, "Friend");
+    if (isInstantQr) {
+      const viaLabel = verifiedCreationMethod === "qr" ? "QR code" : "confirmation code";
+      await Promise.all([
+        createTargetedNotificationRest({
+          targetUserId: registeredUser.id,
+          actorUserId: authUser.id,
+          title: `Instant Udhar Confirmed via ${viaLabel}`,
+          message: `${authUser.full_name} added a confirmed Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+          type: "udhar_qr_confirmed",
+          relatedEntityId: linkId,
+          dedupeKey: `udhar_qr_rec_${linkId}`,
+          metadata: {
+            actionType: "udhar_qr_confirmed",
+            linkId,
+            udharId: createdUserA.id,
+            senderName: authUser.full_name,
+            amount,
+            direction: counterpartDirection,
+            creationMethod: verifiedCreationMethod
+          }
+        }),
+        createTargetedNotificationRest({
+          targetUserId: authUser.id,
+          actorUserId: authUser.id,
+          title: `Udhar Added via ${viaLabel}`,
+          message: `Your Udhar of \u20B9${amount.toLocaleString("en-IN")} with ${registeredUser.full_name} was confirmed immediately.`,
+          type: "udhar_qr_confirmed",
+          relatedEntityId: linkId,
+          dedupeKey: `udhar_qr_init_${linkId}`,
+          metadata: {
+            actionType: "udhar_qr_confirmed",
+            linkId,
+            udharId: createdUserA.id,
+            counterpartName: registeredUser.full_name,
+            amount,
+            direction,
+            creationMethod: verifiedCreationMethod
+          }
+        })
+      ]);
+    } else {
+      const dirHuman = direction === "gave" ? "gave you (You Borrowed)" : "borrowed from you (You Gave)";
+      await createTargetedNotificationRest({
+        targetUserId: registeredUser.id,
+        actorUserId: authUser.id,
+        title: "New Udhaar Confirmation Request",
+        message: `${authUser.full_name} added an Udhaar request of \u20B9${amount.toLocaleString("en-IN")} (${dirHuman}). Please review and confirm.`,
+        type: "udhar_request",
+        relatedEntityId: linkId,
+        dedupeKey: `udhar_req_${linkId}`,
+        metadata: {
+          actionType: "udhar_confirmation_request",
+          linkId,
+          udharId: createdUserA.id,
+          requesterUserId: authUser.id,
+          requesterName: authUser.full_name,
+          requesterAvatar: authUser.avatar_url || null,
+          amount,
+          direction: counterpartDirection,
+          description: description || plainNotes || null,
+          transactionDate: txDate,
+          creationMethod: "manual"
+        }
+      });
+    }
+    const userMap2 = /* @__PURE__ */ new Map([[registeredUser.id, registeredUser]]);
+    return {
+      status: 201,
+      body: {
+        success: true,
+        requiresConfirmation: !isInstantQr,
+        creationMethod: verifiedCreationMethod,
+        message: isInstantQr ? `Udhaar added successfully.` : `Udhaar request sent to ${registeredUser.full_name}. Waiting for recipient confirmation.`,
+        transaction: enrichTransactionRow(createdUserA, userMap2, [], []),
+        isLinked: true
+      }
+    };
+  } else {
+    const packedNotes = packStructuredNote(plainNotes, {
+      category,
+      payment_method: paymentMethod,
+      description: description || void 0,
+      attachment_url: attachmentUrl || void 0,
+      creation_method: "manual",
+      lifecycle_status: "confirmed"
+    });
+    const singleRow = {
+      link_id: linkId,
+      user_id: authUser.id,
+      counterpart_user_id: null,
+      counterpart_name: counterpartName,
+      direction,
+      original_amount: amount,
+      current_balance: amount,
+      paid_amount: 0,
+      transaction_date: txDate,
+      due_date: dueDate || null,
+      notes: packedNotes,
+      attachment_url: attachmentUrl,
+      status: "confirmed",
+      confirmation_status: "confirmed",
+      is_initiator: true,
+      idempotency_key: idempotencyKey,
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+    const insertRes = await sbRest2("udhar_transactions", {
+      method: "POST",
+      prefer: "return=representation",
+      body: singleRow
+    });
+    if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: insertRes.error || "Failed to record local Udhar." } };
+    }
+    await sbRest2("udhar_contacts?on_conflict=user_id,name", {
+      method: "POST",
+      prefer: "resolution=ignore-duplicates,return=minimal",
+      body: {
+        user_id: authUser.id,
+        name: counterpartName,
+        relationship_type: "Friend",
+        linked_user_id: null,
+        updated_at: nowIso
+      }
+    }).catch(() => {
+    });
+    return {
+      status: 201,
+      body: {
+        success: true,
+        requiresConfirmation: false,
+        creationMethod: "manual",
+        message: `Local Udhar recorded for ${counterpartName}.`,
+        transaction: enrichTransactionRow(insertRes.data[0], /* @__PURE__ */ new Map(), [], []),
+        isLinked: false
+      }
+    };
+  }
+}
+async function createUdharViaQrRest(authUser, body) {
+  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
+  const pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+  const qrDataRaw = (body.qrData || body.qr_data || "").trim();
+  if (!qrToken && !pairingCode && !qrDataRaw) {
+    return {
+      status: 400,
+      body: { success: false, code: "QR_OR_CODE_REQUIRED", message: "A valid QR token or confirmation code is required." }
+    };
+  }
+  return createUdharTransactionRest(authUser, body);
+}
+async function confirmUdharTransactionRest(authUser, txId) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const guard = canAcceptUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: "confirmed",
+    accepted_by: authUser.id,
+    responded_at: nowIso
+  });
+  const patchRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "confirmed",
+        confirmation_status: "confirmed",
+        notes: updatedPackedNotes,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been accepted, rejected, or cancelled." }
+    };
+  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: "Udhaar Request Accepted",
+      message: `${authUser.full_name} accepted your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both balances are now updated.`,
+      type: "udhar_accepted",
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_acc_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_accepted",
+        linkId: tx.link_id,
+        udharId: tx.id,
+        acceptedBy: authUser.id,
+        amount: parseFloat(tx.original_amount) || 0
+      }
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: "Udhaar request accepted successfully.",
+      status: "confirmed"
+    }
+  };
+}
+async function rejectUdharTransactionRest(authUser, txId, reason) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const guard = canRejectUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 400) : "Rejected by recipient";
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: "rejected",
+    rejected_by: authUser.id,
+    responded_at: nowIso,
+    rejection_reason: cleanReason
+  });
+  let patchRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "rejected",
+        confirmation_status: "rejected",
+        current_balance: 0,
+        paid_amount: 0,
+        notes: updatedPackedNotes,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok && (patchRes.status === 400 || String(patchRes.error || "").includes("23514"))) {
+    patchRes = await sbRest2(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          status: "cancelled",
+          current_balance: 0,
+          paid_amount: 0,
+          notes: updatedPackedNotes,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been handled." }
+    };
+  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: "Udhaar Request Rejected",
+      message: `${authUser.full_name} rejected your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      type: "udhar_rejected",
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_rej_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_rejected",
+        linkId: tx.link_id,
+        udharId: tx.id,
+        rejectedBy: authUser.id,
+        reason: cleanReason
+      }
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "rejected",
+      message: "You rejected this Udhaar request."
+    }
+  };
+}
+async function cancelUdharRequestRest(authUser, txId, reason) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const guard = canSenderCancelUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 400) : "Cancelled by sender";
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: "cancelled",
+    cancelled_by: authUser.id,
+    cancelled_at: nowIso,
+    rejection_reason: cleanReason
+  });
+  const patchRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "cancelled",
+        current_balance: 0,
+        paid_amount: 0,
+        notes: updatedPackedNotes,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been responded to or cancelled." }
+    };
+  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: "Udhaar Request Cancelled",
+      message: `${authUser.full_name} cancelled their pending Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      type: "udhar_request_cancelled",
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_canc_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_request_cancelled",
+        linkId: tx.link_id,
+        udharId: tx.id,
+        cancelledBy: authUser.id
+      }
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "cancelled",
+      message: "Pending Udhaar request cancelled."
+    }
+  };
+}
+async function disputeUdharTransactionRest(authUser, txId, reason) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest2(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      status: "disputed",
+      confirmation_status: "disputed",
+      dispute_reason: reason,
+      disputed_at: nowIso,
+      disputed_by: authUser.id,
+      updated_at: nowIso
+    }
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Disputed by ${authUser.full_name}`,
+      message: `${authUser.full_name} flagged an Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}: "${reason}"`,
+      type: "udhar_disputed",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return { status: 200, body: { success: true, message: "Transaction marked as disputed." } };
+}
+async function repayUdharRest(authUser, txId, body) {
+  const repayAmount = roundMoney(parseFloat(body.amount));
+  const repayDate = body.repayment_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const repayTime = (body.repayment_time || body.repaymentTime || "").trim();
+  const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
+  const transactionRef = (body.transaction_ref || body.transactionRef || "").trim();
+  const attachmentUrl = (body.attachment_url || body.attachmentUrl || "").trim();
+  const plainNotes = (body.notes || "").trim();
+  const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (idempotencyKey) {
+    const dupRep = await sbRest2(
+      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
+    );
+    if (dupRep.ok && dupRep.data && dupRep.data.length > 0) {
+      return {
+        status: 200,
+        body: {
+          success: true,
+          deduplicated: true,
+          repayment: dupRep.data[0],
+          isPendingConfirmation: dupRep.data[0].status === "pending_confirmation",
+          remainingBalance: parseFloat(tx.current_balance) || 0,
+          isSettled: tx.status === "settled",
+          message: "Repayment already recorded."
+        }
+      };
+    }
+  }
+  const existingRepsRes = await sbRest2(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
+  );
+  const existingReps = existingRepsRes.ok && Array.isArray(existingRepsRes.data) ? existingRepsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
+  const confirmedPaid = roundMoney(
+    existingReps.filter((r2) => r2.status === "confirmed").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const pendingRepayments = roundMoney(
+    existingReps.filter((r2) => r2.status === "pending_confirmation").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
+  const calc = calculateRepaymentApplication({
+    originalAmount: parseFloat(tx.original_amount) || 0,
+    confirmedPaidAmount: confirmedPaid,
+    pendingRepaymentsAmount: pendingRepayments,
+    repayAmount,
+    isShared: Boolean(tx.counterpart_user_id),
+    actorRole: tx.direction === "gave" ? "lender" : "borrower",
+    udharStatus: lifecycle
+  });
+  if (!calc.valid) {
+    return { status: 400, body: { success: false, message: calc.error || "Invalid repayment." } };
+  }
+  const packedNote = packStructuredNote(plainNotes, {
+    transaction_ref: transactionRef || void 0,
+    repayment_time: repayTime || void 0,
+    attachment_url: attachmentUrl || void 0
+  });
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const insertRep = await sbRest2("udhar_repayments", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      link_id: tx.link_id,
+      udhar_id: tx.id,
+      recorded_by_user_id: authUser.id,
+      amount: repayAmount,
+      repayment_date: repayDate,
+      payment_method: paymentMethod,
+      notes: packedNote,
+      status: calc.repaymentStatus,
+      idempotency_key: idempotencyKey,
+      confirmed_at: calc.repaymentStatus === "confirmed" ? nowIso : null,
+      confirmed_by: calc.repaymentStatus === "confirmed" ? authUser.id : null
+    }
+  });
+  if (!insertRep.ok || !insertRep.data || insertRep.data.length === 0) {
+    return { status: 500, body: { success: false, message: insertRep.error || "Failed to record repayment." } };
+  }
+  if (calc.repaymentStatus === "confirmed") {
+    await sbRest2(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+      method: "PATCH",
+      body: {
+        current_balance: calc.nextRemainingAmount,
+        paid_amount: calc.nextPaidAmount,
+        status: calc.nextUdharStatus,
+        settled_at: calc.isSettled ? nowIso : tx.settled_at,
+        updated_at: nowIso
+      }
+    });
+  }
+  if (tx.counterpart_user_id) {
+    if (calc.repaymentStatus === "pending_confirmation") {
+      await createTargetedNotificationRest({
+        targetUserId: tx.counterpart_user_id,
+        actorUserId: authUser.id,
+        title: `Repayment Confirmation Needed: ${authUser.full_name}`,
+        message: `${authUser.full_name} reported a repayment of \u20B9${repayAmount.toLocaleString("en-IN")} via ${paymentMethod}. Please confirm receipt.`,
+        type: "repayment_pending",
+        relatedEntityId: tx.link_id
+      });
+    } else {
+      await createTargetedNotificationRest({
+        targetUserId: tx.counterpart_user_id,
+        actorUserId: authUser.id,
+        title: calc.isSettled ? `Udhar Settled with ${authUser.full_name}` : `Repayment Recorded by ${authUser.full_name}`,
+        message: `${authUser.full_name} confirmed a repayment of \u20B9${repayAmount.toLocaleString("en-IN")}. Remaining balance: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
+        type: calc.isSettled ? "settlement" : "repayment",
+        relatedEntityId: tx.link_id
+      });
+    }
+  }
+  for (const r2 of fallbackPendingRequests.values()) {
+    if (r2.user_b_id === authUser.id) {
+      const u = userMap.get(r2.user_a_id);
+      incoming.push({
+        id: r2.id,
+        direction: "incoming",
+        requesterUserId: r2.user_a_id,
+        displayName: u?.full_name || "My Money User",
+        avatarUrl: u?.avatar_url || null,
+        isVerified: Boolean(u?.is_verified ?? true),
+        status: "pending",
+        relationshipType: r2.relationship_type || "Friend",
+        requestedVia: r2.requested_via || "search",
+        connectionMethod: r2.connection_method || "SEARCH",
+        createdAt: r2.created_at
+      });
+    } else if (r2.user_a_id === authUser.id) {
+      const u = userMap.get(r2.user_b_id);
+      outgoing.push({
+        id: r2.id,
+        direction: "outgoing",
+        targetUserId: r2.user_b_id,
+        displayName: u?.full_name || "My Money User",
+        avatarUrl: u?.avatar_url || null,
+        isVerified: Boolean(u?.is_verified ?? true),
+        status: "pending",
+        relationshipType: r2.relationship_type || "Friend",
+        requestedVia: r2.requested_via || "search",
+        connectionMethod: r2.connection_method || "SEARCH",
+        createdAt: r2.created_at
+      });
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      repayment: insertRep.data[0],
+      isPendingConfirmation: calc.repaymentStatus === "pending_confirmation",
+      remainingBalance: calc.nextRemainingAmount,
+      isSettled: calc.isSettled,
+      message: calc.repaymentStatus === "pending_confirmation" ? `Payment of \u20B9${repayAmount.toLocaleString("en-IN")} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.` : calc.isSettled ? "Full repayment recorded! Udhar is now completely settled." : `Repayment of \u20B9${repayAmount.toLocaleString("en-IN")} recorded. Remaining: \u20B9${(calc.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`
+    }
+  };
+}
+async function confirmRepaymentRest(authUser, repaymentId) {
+  const repRes = await sbRest2(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const rep = repRes.data[0];
+  if (!isActiveRepayment(rep)) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  if (rep.status === "confirmed") {
+    return { status: 400, body: { success: false, message: "This repayment is already confirmed." } };
+  }
+  const txRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.direction !== "gave") {
+    return { status: 403, body: { success: false, message: "Only the lender can confirm receipt of repayment." } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest2(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
+    method: "PATCH",
+    body: { status: "confirmed", confirmed_at: nowIso, confirmed_by: authUser.id, rejection_reason: null }
+  });
+  const allRepsRes = await sbRest2(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
+  );
+  const activeConfirmedReps = (allRepsRes.data || []).filter((r2) => isActiveRepayment(r2));
+  const totalConfirmed = roundMoney(
+    activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const origAmt = parseFloat(tx.original_amount) || 0;
+  const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmed));
+  const isSettled = newBalance <= 0.01;
+  await sbRest2(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      current_balance: isSettled ? 0 : newBalance,
+      paid_amount: isSettled ? origAmt : totalConfirmed,
+      status: isSettled ? "settled" : "confirmed",
+      settled_at: isSettled ? nowIso : tx.settled_at,
+      updated_at: nowIso
+    }
+  });
+  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
+    await createTargetedNotificationRest({
+      targetUserId: rep.recorded_by_user_id,
+      actorUserId: authUser.id,
+      title: `Repayment Confirmed by ${authUser.full_name}`,
+      message: `${authUser.full_name} confirmed receiving \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Remaining balance: \u20B9${(isSettled ? 0 : newBalance).toLocaleString("en-IN")}.`,
+      type: "repayment_confirmed",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} confirmed!`,
+      remainingBalance: isSettled ? 0 : newBalance,
+      isSettled
+    }
+  };
+}
+async function rejectRepaymentRest(authUser, repaymentId, reason) {
+  const repRes = await sbRest2(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const rep = repRes.data[0];
+  if (!isActiveRepayment(rep)) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const txRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Associated Udhar not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.direction !== "gave") {
+    return { status: 403, body: { success: false, message: "Only the lender can reject a repayment claim." } };
+  }
+  await sbRest2(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`, {
+    method: "PATCH",
+    body: {
+      status: "rejected",
+      rejection_reason: reason,
+      confirmed_at: (/* @__PURE__ */ new Date()).toISOString(),
+      confirmed_by: authUser.id
+    }
+  });
+  if (rep.recorded_by_user_id && rep.recorded_by_user_id !== authUser.id) {
+    await createTargetedNotificationRest({
+      targetUserId: rep.recorded_by_user_id,
+      actorUserId: authUser.id,
+      title: "Repayment Claim Rejected",
+      message: `${authUser.full_name} rejected your payment claim of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}: "${reason}".`,
+      type: "repayment_rejected",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return { status: 200, body: { success: true, message: "Repayment claim rejected.", rejectionReason: reason } };
+}
+async function editUdharRest(authUser, txId, body) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.counterpart_user_id && tx.direction === "took") {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: "Only the lender who gave the money can edit this Udhar transaction."
+      }
+    };
+  }
+  const repsRes = await sbRest2(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
+  );
+  const activeConfirmedReps = (repsRes.data || []).filter((r2) => isActiveRepayment(r2));
+  const confirmedPaid = roundMoney(
+    activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+  );
+  const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
+  const editReason = (body.reason_for_edit || body.reason || body.edit_reason || "").trim();
+  const validation = validateUdharEdit(
+    {
+      original_amount: parseFloat(tx.original_amount) || 0,
+      paid_amount: confirmedPaid,
+      status: lifecycle,
+      notes: prevPlainNote,
+      transaction_date: tx.transaction_date,
+      due_date: tx.due_date,
+      category: prevMeta.category || "Personal Loan",
+      payment_method: prevMeta.payment_method || "UPI",
+      description: prevMeta.description || null
+    },
+    {
+      amount: body.amount !== void 0 ? parseFloat(body.amount) : void 0,
+      notes: body.notes !== void 0 ? (body.notes || "").trim() : void 0,
+      transaction_date: body.transaction_date || body.date || void 0,
+      due_date: body.due_date !== void 0 ? body.due_date : body.dueDate !== void 0 ? body.dueDate : void 0,
+      category: body.category !== void 0 ? body.category : void 0,
+      payment_method: body.payment_method !== void 0 ? body.payment_method : void 0,
+      description: body.description !== void 0 ? body.description : void 0,
+      reason_for_edit: editReason
+    }
+  );
+  if (!validation.valid) {
+    return { status: 400, body: { success: false, message: validation.error || "Invalid edit." } };
+  }
+  const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
+  const nextPackedNotes = packStructuredNote(nextPlainNote, {
+    ...prevMeta,
+    category: body.category !== void 0 ? body.category : prevMeta.category,
+    payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
+    description: body.description !== void 0 ? body.description : prevMeta.description,
+    attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url,
+    lifecycle_status: lifecycle === "pending_confirmation" ? "pending_confirmation" : validation.nextStatus
+  });
+  const nextDate = body.transaction_date || body.date || tx.transaction_date;
+  const nextDueDate = body.due_date !== void 0 ? body.due_date || null : body.dueDate !== void 0 ? body.dueDate || null : tx.due_date;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRest2("udhar_edit_history", {
+    method: "POST",
+    prefer: "return=minimal",
+    body: {
+      udhar_id: tx.id,
+      link_id: tx.link_id,
+      edited_by_user_id: authUser.id,
+      previous_amount: parseFloat(tx.original_amount) || 0,
+      new_amount: validation.nextOriginalAmount,
+      previous_notes: prevPlainNote || null,
+      new_notes: nextPlainNote || null,
+      previous_date: tx.transaction_date,
+      new_date: nextDate,
+      previous_due_date: tx.due_date || null,
+      new_due_date: nextDueDate,
+      reason_for_edit: editReason
+    }
+  });
+  await sbRest2(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+    method: "PATCH",
+    body: {
+      original_amount: validation.nextOriginalAmount,
+      current_balance: validation.nextRemainingAmount,
+      paid_amount: confirmedPaid,
+      status: lifecycle === "pending_confirmation" ? "pending_confirmation" : validation.nextStatus,
+      notes: nextPackedNotes,
+      transaction_date: nextDate,
+      due_date: nextDueDate,
+      last_edited_at: nowIso,
+      last_edited_by: authUser.id,
+      edit_reason: editReason,
+      updated_at: nowIso
+    }
+  });
+  if (tx.counterpart_user_id) {
+    const targetUserId = tx.user_id === authUser.id ? tx.counterpart_user_id : tx.user_id;
+    await createTargetedNotificationRest({
+      targetUserId,
+      actorUserId: authUser.id,
+      title: `Udhar Edited by ${authUser.full_name}`,
+      message: `${authUser.full_name} updated Udhar details (${editReason}). Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
+      type: "udhar_edited",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Udhar updated across both accounts. Remaining balance: \u20B9${(validation.nextRemainingAmount ?? 0).toLocaleString("en-IN")}.`,
+      remainingBalance: validation.nextRemainingAmount,
+      isSettled: validation.isSettled,
+      changes: validation.changes
+    }
+  };
+}
+async function settleUdharRest(authUser, txId, body) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.counterpart_user_id && tx.direction === "took") {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: "Only the lender can mark a shared Udhar as settled. As the borrower, record a repayment for lender confirmation."
+      }
+    };
+  }
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
+  const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
+  if (lifecycle === "pending_confirmation") {
+    return { status: 409, body: { success: false, message: "Waiting for recipient confirmation before settling." } };
+  }
+  if (lifecycle === "settled" || currentBal <= 0.01) {
+    return { status: 400, body: { success: false, message: "This transaction is already settled." } };
+  }
+  if (lifecycle === "rejected" || lifecycle === "cancelled" || lifecycle === "deleted") {
+    return { status: 400, body: { success: false, message: "Cannot settle a rejected, cancelled, or deleted transaction." } };
+  }
+  if (lifecycle === "disputed") {
+    return { status: 409, body: { success: false, message: "Cannot settle a disputed transaction. Resolve the dispute first." } };
+  }
+  const settleDate = body.settlement_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const paymentMethod = (body.payment_method || "UPI").trim();
+  const notes = (body.notes || "Settled in full").trim();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  let patchRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,rejected,pending_confirmation)`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        current_balance: 0,
+        paid_amount: parseFloat(tx.original_amount) || 0,
+        status: "settled",
+        settled_at: nowIso,
+        settled_by: authUser.id,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok && patchRes.status === 400) {
+    patchRes = await sbRest2(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,pending_confirmation)`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          current_balance: 0,
+          paid_amount: parseFloat(tx.original_amount) || 0,
+          status: "settled",
+          settled_at: nowIso,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, message: patchRes.error || "Failed to settle transaction." } };
+  }
+  if (!Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return { status: 409, body: { success: false, message: "This transaction has already been settled or modified." } };
+  }
+  await sbRest2("udhar_repayments", {
+    method: "POST",
+    prefer: "return=minimal",
+    body: {
+      link_id: tx.link_id,
+      udhar_id: tx.id,
+      recorded_by_user_id: authUser.id,
+      amount: currentBal,
+      repayment_date: settleDate,
+      payment_method: paymentMethod,
+      notes,
+      status: "confirmed",
+      confirmed_at: nowIso,
+      confirmed_by: authUser.id
+    }
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Settled with ${authUser.full_name}`,
+      message: `${authUser.full_name} marked the Udhar of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")} as fully settled.`,
+      type: "settlement",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: `Udhar with ${tx.counterpart_name} settled in full.`,
+      isSettled: true,
+      settledAt: nowIso,
+      settledBy: authUser.id
+    }
+  };
+}
+async function cancelUdharRest(authUser, txId, reason) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const repsRes = await sbRest2(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`);
+  const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: tx.original_amount,
+    repayments,
+    currentStatus: tx.status
+  });
+  const baseLifecycle = normalizeUdharLifecycleStatus(tx);
+  const effectiveStatus = baseLifecycle === "deleted" || baseLifecycle === "cancelled" || baseLifecycle === "rejected" ? baseLifecycle : baseLifecycle === "disputed" ? "disputed" : baseLifecycle === "pending_confirmation" ? "pending_confirmation" : repayments.length > 0 ? recalc.nextStatus : baseLifecycle;
+  const guard = canCancelUdhar({
+    status: effectiveStatus,
+    deleted_at: tx.deleted_at,
+    notes: tx.notes,
+    direction: tx.direction,
+    is_shared: Boolean(tx.counterpart_user_id),
+    counterpart_user_id: tx.counterpart_user_id,
+    original_amount: tx.original_amount,
+    paid_amount: repayments.length > 0 ? recalc.paidAmount : tx.paid_amount,
+    current_balance: repayments.length > 0 ? recalc.remainingBalance : tx.current_balance,
+    settled_at: tx.settled_at,
+    repayments
+  });
+  if (!guard.allowed) {
+    return {
+      status: guard.httpStatus || 409,
+      body: { success: false, code: guard.code, message: guard.reason }
+    };
+  }
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const { note: prevNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const deletedPackedNotes = packStructuredNote(prevNote, {
+    ...prevMeta,
+    lifecycle_status: "deleted",
+    cancelled_at: nowIso,
+    cancelled_by: authUser.id
+  });
+  let softDelRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&deleted_at=is.null&status=not.in.(disputed)`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "cancelled",
+        current_balance: 0,
+        paid_amount: 0,
+        notes: deletedPackedNotes,
+        deleted_at: nowIso,
+        deleted_by: authUser.id,
+        deletion_reason: cleanReason,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!softDelRes.ok && softDelRes.status === 400) {
+    softDelRes = await sbRest2(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(disputed)`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          status: "cancelled",
+          current_balance: 0,
+          paid_amount: 0,
+          notes: deletedPackedNotes,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!softDelRes.ok) {
+    return { status: 503, body: { success: false, message: softDelRes.error || "Failed to delete transaction." } };
+  }
+  if (!Array.isArray(softDelRes.data) || softDelRes.data.length === 0) {
+    return { status: 409, body: { success: false, message: "This transaction has already been deleted or cannot be deleted in its current state." } };
+  }
+  if (repayments.length > 0) {
+    const repDelRes = await sbRest2(
+      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`,
+      {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: {
+          status: "deleted",
+          deleted_at: nowIso,
+          deleted_by: authUser.id,
+          deletion_reason: cleanReason || "Parent Udhar deleted"
+        }
+      }
+    );
+    if (!repDelRes.ok && repDelRes.status === 400) {
+      await sbRest2(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+        method: "DELETE",
+        prefer: "return=minimal"
+      });
+    }
+  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id);
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Deleted by ${authUser.full_name}`,
+      message: `${authUser.full_name} permanently deleted the shared Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both accounts have been updated.`,
+      type: "udhar_deleted",
+      dedupeKey: `udhar_del_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_deleted",
+        deletedLinkId: tx.link_id,
+        deletedTxId: tx.id,
+        amount: parseFloat(tx.original_amount) || 0
+      }
+    }).catch(() => {
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      deletedTransactionId: tx.id,
+      linkId: tx.link_id,
+      originalAmount: tx.original_amount,
+      direction: tx.direction,
+      counterpartUserId: tx.counterpart_user_id || null,
+      deletionReason: cleanReason,
+      deletedAt: nowIso,
+      deletedBy: authUser.id,
+      message: "Udhar entry deleted successfully for both participants. Totals have been recalculated."
+    }
+  };
+}
+async function deleteRepaymentRest(authUser, repaymentId, reason) {
+  const repRes = await sbRest2(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const rep = repRes.data[0];
+  const txRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Associated Udhar transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.status === "cancelled" || tx.deleted_at) {
+    return { status: 409, body: { success: false, message: "Associated Udhar has already been deleted." } };
+  }
+  if (tx.status === "disputed") {
+    return { status: 409, body: { success: false, message: "Cannot delete repayments on a disputed Udhar. Resolve the dispute first." } };
+  }
+  const guard = canDeleteRepayment({
+    isShared: Boolean(tx.counterpart_user_id),
+    direction: tx.direction,
+    actorUserId: authUser.id,
+    repayment: rep
+  });
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, message: guard.reason || "Not authorized to delete this repayment." } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
+  let repDelRes = await sbRest2(
+    `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "deleted",
+        deleted_at: nowIso,
+        deleted_by: authUser.id,
+        deletion_reason: cleanReason
+      }
+    }
+  );
+  if (!repDelRes.ok && repDelRes.status === 400) {
+    repDelRes = await sbRest2(
+      `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
+      {
+        method: "DELETE",
+        prefer: "return=representation"
+      }
+    );
+  }
+  if (!repDelRes.ok) {
+    return { status: 503, body: { success: false, message: repDelRes.error || "Failed to delete repayment." } };
+  }
+  const remainingRepsRes = await sbRest2(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
+  );
+  const remainingReps = remainingRepsRes.ok && Array.isArray(remainingRepsRes.data) ? remainingRepsRes.data.filter((r2) => r2.id !== repaymentId && isActiveRepayment(r2)) : [];
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: tx.original_amount,
+    repayments: remainingReps,
+    currentStatus: tx.status
+  });
+  let parentUpdateRes = await sbRest2(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        paid_amount: recalc.paidAmount,
+        current_balance: recalc.remainingBalance,
+        status: recalc.nextStatus,
+        settled_at: recalc.isSettled ? tx.settled_at || nowIso : null,
+        settled_by: recalc.isSettled ? tx.settled_by || authUser.id : null,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!parentUpdateRes.ok && parentUpdateRes.status === 400) {
+    parentUpdateRes = await sbRest2(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          paid_amount: recalc.paidAmount,
+          current_balance: recalc.remainingBalance,
+          status: recalc.nextStatus,
+          settled_at: recalc.isSettled ? tx.settled_at || nowIso : null,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!parentUpdateRes.ok) {
+    return { status: 503, body: { success: false, message: parentUpdateRes.error || "Failed to recalculate Udhar balance." } };
+  }
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Repayment Deleted by ${authUser.full_name}`,
+      message: `${authUser.full_name} deleted a repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Updated balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`,
+      type: "repayment_deleted",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      deletedRepaymentId: repaymentId,
+      transactionId: tx.id,
+      linkId: tx.link_id,
+      paidAmount: recalc.paidAmount,
+      remainingBalance: recalc.remainingBalance,
+      udharStatus: recalc.nextStatus,
+      isSettled: recalc.isSettled,
+      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} deleted. Remaining balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`
+    }
+  };
+}
+async function getUdharHistoryRest(authUser, txId) {
+  const txRes = await sbRest2(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.status === "cancelled" || Boolean(tx.deleted_at)) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const [repsRes, histRes] = await Promise.all([
+    sbRest2(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),
+    sbRest2(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`)
+  ]);
+  const reps = (repsRes.data || []).filter((r2) => isActiveRepayment(r2));
+  const hist = histRes.data || [];
+  const userIds = [
+    tx.counterpart_user_id,
+    ...reps.map((r2) => r2.recorded_by_user_id),
+    ...hist.map((h2) => h2.edited_by_user_id)
+  ].filter(Boolean);
+  const userMap2 = await fetchUsersByIds(userIds);
+  const enriched = enrichTransactionRow(tx, userMap2, reps, hist);
+  return {
+    status: 200,
+    body: {
+      success: true,
+      transaction: enriched,
+      editHistory: enriched.edit_history,
+      repayments: enriched.repayments
+    }
+  };
+}
+async function getPersonUpiProfileRest(authUser, identifier) {
+  const cleanId = (identifier || "").trim();
+  if (!cleanId) {
+    return { status: 400, body: { success: false, message: "Person identifier is required." } };
+  }
+  let targetUserId = null;
+  let targetUserName = null;
+  let targetUserAvatar = null;
+  if (cleanId !== authUser.id) {
+    const directUsers = await fetchUsersByIds([cleanId]);
+    if (directUsers.has(cleanId)) {
+      const u = directUsers.get(cleanId);
+      targetUserId = u.id;
+      targetUserName = u.full_name || u.displayName || u.email?.split("@")[0] || "Recipient";
+      targetUserAvatar = u.avatar_url || null;
+    }
+  }
+  if (!targetUserId) {
+    const contactRes = await sbRest2(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&or=(id.eq.${encodeURIComponent(cleanId)},name.eq.${encodeURIComponent(cleanId)})&select=id,name,linked_user_id,photo_url&limit=1`
+    );
+    if (contactRes.ok && contactRes.data && contactRes.data.length > 0) {
+      const contact = contactRes.data[0];
+      targetUserName = contact.name;
+      targetUserAvatar = contact.photo_url || null;
+      if (contact.linked_user_id && contact.linked_user_id !== authUser.id) {
+        targetUserId = contact.linked_user_id;
+        const linkedUsers = await fetchUsersByIds([contact.linked_user_id]);
+        if (linkedUsers.has(contact.linked_user_id)) {
+          const lu = linkedUsers.get(contact.linked_user_id);
+          targetUserName = lu.full_name || contact.name;
+          targetUserAvatar = lu.avatar_url || contact.photo_url || null;
+        }
+      }
+    }
+  }
+  if (!targetUserId) {
+    const txRes = await sbRest2(
+      `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}&counterpart_name=eq.${encodeURIComponent(cleanId)}&counterpart_user_id=not.is.null&select=counterpart_user_id,counterpart_name&limit=1`
+    );
+    if (txRes.ok && txRes.data && txRes.data.length > 0) {
+      const cpId = txRes.data[0].counterpart_user_id;
+      if (cpId && cpId !== authUser.id) {
+        targetUserId = cpId;
+        targetUserName = txRes.data[0].counterpart_name;
+      }
+    }
+  }
+  if (!targetUserId) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        hasUpi: false,
+        message: "UPI ID not available.",
+        recipientName: targetUserName || cleanId,
+        isManualContact: true
+      }
+    };
+  }
+  if (targetUserId === authUser.id) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        message: "Cannot view recipient UPI QR for your own account."
+      }
+    };
+  }
+  const targetUserObj = { id: targetUserId };
+  const [upiProfile, consentInfo] = await Promise.all([
+    getSavedUpiProfileForUser(targetUserId),
+    getLatestUpiConsentInfo(targetUserObj).catch(() => ({ status: "granted" }))
+  ]);
+  if (consentInfo && consentInfo.status === "withdrawn") {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        hasUpi: false,
+        message: "UPI ID not available.",
+        recipientName: targetUserName,
+        targetUserId
+      }
+    };
+  }
+  if (!upiProfile || !upiProfile.upiId || !upiProfile.upiId.trim()) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        hasUpi: false,
+        message: "UPI ID not available.",
+        recipientName: targetUserName,
+        targetUserId
+      }
+    };
+  }
+  const upiIdTrimmed = upiProfile.upiId.trim();
+  const payeeName = (upiProfile.payeeName || targetUserName || "Recipient").trim();
+  return {
+    status: 200,
+    body: {
+      success: true,
+      hasUpi: true,
+      upiId: upiIdTrimmed,
+      payeeName,
+      paymentNote: upiProfile.paymentNote || "",
+      targetUserId,
+      recipientName: targetUserName,
+      avatarUrl: targetUserAvatar
+    }
+  };
+}
+
+// src/lib/privacyConsent.ts
+var PRIVACY_POLICY_VERSION = "v2.1 \u2014 DPDP Act 2023 & Rules 2025";
+var PRIVACY_POLICY_LAST_UPDATED = "2026-11-25";
+var OPTIONAL_CONSENT_CATEGORIES = [
+  "cloud_sync",
+  "ai_processing",
+  "udhar_sharing",
+  "upi_qr",
+  "analytics",
+  "personalization",
+  "marketing_updates"
+];
+function createEmptyOptionalChoices() {
+  return {
+    cloud_sync: false,
+    ai_processing: false,
+    udhar_sharing: false,
+    upi_qr: false,
+    analytics: false,
+    personalization: false,
+    marketing_updates: false
+  };
+}
+var EMPTY_OPTIONAL_CONSENT_CHOICES = Object.freeze(
+  createEmptyOptionalChoices()
+);
+function isValidOptionalConsentCategory(value) {
+  return OPTIONAL_CONSENT_CATEGORIES.includes(value);
 }
 
 // server/privacyConsentApi.ts
@@ -100990,60 +101197,60 @@ function parseUpiNotification(input, enabledApps) {
   const parser = PARSER_REGISTRY[appConfig.parserKey] || GenericUpiNotificationParser;
   return parser.parse(input, appConfig);
 }
-function deduplicateDetectedTransaction(incoming, existingList) {
-  const incomingTime = new Date(incoming.notificationTimestamp).getTime();
-  const incomingMerchant = (incoming.merchantName || "").trim().toLowerCase();
+function deduplicateDetectedTransaction(incoming2, existingList) {
+  const incomingTime = new Date(incoming2.notificationTimestamp).getTime();
+  const incomingMerchant = (incoming2.merchantName || "").trim().toLowerCase();
   for (const existing of existingList) {
-    if (incoming.upiTransactionId && existing.upiTransactionId) {
-      if (incoming.upiTransactionId.toLowerCase() === existing.upiTransactionId.toLowerCase()) {
+    if (incoming2.upiTransactionId && existing.upiTransactionId) {
+      if (incoming2.upiTransactionId.toLowerCase() === existing.upiTransactionId.toLowerCase()) {
         return {
           isDuplicate: true,
           matchReason: "upi_transaction_id",
           matchedRecord: existing,
-          mergedRecord: mergeDetectedMetadata(existing, incoming)
+          mergedRecord: mergeDetectedMetadata(existing, incoming2)
         };
       }
       continue;
     }
-    if (incoming.utrNumber && existing.utrNumber) {
-      if (incoming.utrNumber.toLowerCase() === existing.utrNumber.toLowerCase()) {
+    if (incoming2.utrNumber && existing.utrNumber) {
+      if (incoming2.utrNumber.toLowerCase() === existing.utrNumber.toLowerCase()) {
         return {
           isDuplicate: true,
           matchReason: "utr_number",
           matchedRecord: existing,
-          mergedRecord: mergeDetectedMetadata(existing, incoming)
+          mergedRecord: mergeDetectedMetadata(existing, incoming2)
         };
       }
       continue;
     }
-    if (incoming.rrn && existing.rrn) {
-      if (incoming.rrn.toLowerCase() === existing.rrn.toLowerCase()) {
+    if (incoming2.rrn && existing.rrn) {
+      if (incoming2.rrn.toLowerCase() === existing.rrn.toLowerCase()) {
         return {
           isDuplicate: true,
           matchReason: "rrn",
           matchedRecord: existing,
-          mergedRecord: mergeDetectedMetadata(existing, incoming)
+          mergedRecord: mergeDetectedMetadata(existing, incoming2)
         };
       }
       continue;
     }
     const existingTime = new Date(existing.notificationTimestamp).getTime();
     const diffMs = Math.abs(incomingTime - existingTime);
-    if (incoming.rawDataHash === existing.rawDataHash && diffMs <= 12e4) {
+    if (incoming2.rawDataHash === existing.rawDataHash && diffMs <= 12e4) {
       return {
         isDuplicate: true,
         matchReason: "exact_notification_hash",
         matchedRecord: existing,
-        mergedRecord: mergeDetectedMetadata(existing, incoming)
+        mergedRecord: mergeDetectedMetadata(existing, incoming2)
       };
     }
-    const hasConflictingRef = incoming.upiTransactionId && existing.upiTransactionId && incoming.upiTransactionId !== existing.upiTransactionId || incoming.utrNumber && existing.utrNumber && incoming.utrNumber !== existing.utrNumber || incoming.rrn && existing.rrn && incoming.rrn !== existing.rrn;
-    if (!hasConflictingRef && diffMs <= 15e3 && incoming.sourcePackage === existing.sourcePackage && incoming.amountPaise === existing.amountPaise && incomingMerchant === (existing.merchantName || "").trim().toLowerCase()) {
+    const hasConflictingRef = incoming2.upiTransactionId && existing.upiTransactionId && incoming2.upiTransactionId !== existing.upiTransactionId || incoming2.utrNumber && existing.utrNumber && incoming2.utrNumber !== existing.utrNumber || incoming2.rrn && existing.rrn && incoming2.rrn !== existing.rrn;
+    if (!hasConflictingRef && diffMs <= 15e3 && incoming2.sourcePackage === existing.sourcePackage && incoming2.amountPaise === existing.amountPaise && incomingMerchant === (existing.merchantName || "").trim().toLowerCase()) {
       return {
         isDuplicate: true,
         matchReason: "short_window_fingerprint",
         matchedRecord: existing,
-        mergedRecord: mergeDetectedMetadata(existing, incoming)
+        mergedRecord: mergeDetectedMetadata(existing, incoming2)
       };
     }
   }
@@ -101051,19 +101258,19 @@ function deduplicateDetectedTransaction(incoming, existingList) {
     isDuplicate: false,
     matchReason: null,
     matchedRecord: null,
-    mergedRecord: incoming
+    mergedRecord: incoming2
   };
 }
-function mergeDetectedMetadata(existing, incoming) {
+function mergeDetectedMetadata(existing, incoming2) {
   return {
     ...existing,
-    merchantName: existing.merchantName || incoming.merchantName,
-    upiId: existing.upiId || incoming.upiId,
-    upiTransactionId: existing.upiTransactionId || incoming.upiTransactionId,
-    utrNumber: existing.utrNumber || incoming.utrNumber,
-    rrn: existing.rrn || incoming.rrn,
-    detectionConfidence: Math.max(existing.detectionConfidence, incoming.detectionConfidence),
-    verificationStatus: existing.verificationStatus === "verified" || incoming.verificationStatus === "verified" ? "verified" : existing.verificationStatus,
+    merchantName: existing.merchantName || incoming2.merchantName,
+    upiId: existing.upiId || incoming2.upiId,
+    upiTransactionId: existing.upiTransactionId || incoming2.upiTransactionId,
+    utrNumber: existing.utrNumber || incoming2.utrNumber,
+    rrn: existing.rrn || incoming2.rrn,
+    detectionConfidence: Math.max(existing.detectionConfidence, incoming2.detectionConfidence),
+    verificationStatus: existing.verificationStatus === "verified" || incoming2.verificationStatus === "verified" ? "verified" : existing.verificationStatus,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
 }
@@ -104604,20 +104811,37 @@ async function handleApiRequest(req, res) {
             );
           }
         }
-        await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-          [sourceUser.id, targetUserId]
-        ).catch(() => {
-        });
-        await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-          [targetUserId, sourceUser.id]
-        ).catch(() => {
-        });
+        try {
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status, consented_at, responded_at, deleted_at, deleted_by, cancelled_at, updated_at)
+             VALUES ($1, $2, 'connected', NOW(), NOW(), NULL, NULL, NULL, NOW())
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+             SET status = 'connected', consented_at = COALESCE(public.user_connections.consented_at, NOW()), responded_at = NOW(), deleted_at = NULL, deleted_by = NULL, cancelled_at = NULL, updated_at = NOW()`,
+            [sourceUser.id, targetUserId]
+          );
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status, consented_at, responded_at, deleted_at, deleted_by, cancelled_at, updated_at)
+             VALUES ($1, $2, 'connected', NOW(), NOW(), NULL, NULL, NULL, NOW())
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+             SET status = 'connected', consented_at = COALESCE(public.user_connections.consented_at, NOW()), responded_at = NOW(), deleted_at = NULL, deleted_by = NULL, cancelled_at = NULL, updated_at = NOW()`,
+            [targetUserId, sourceUser.id]
+          );
+        } catch {
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [sourceUser.id, targetUserId]
+          ).catch(() => {
+          });
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [targetUserId, sourceUser.id]
+          ).catch(() => {
+          });
+        }
         await query(
           `UPDATE public.udhar_transactions 
            SET counterpart_user_id = $1, updated_at = NOW() 
@@ -104708,6 +104932,13 @@ async function handleApiRequest(req, res) {
           }
         };
       }
+      await query(
+        `DELETE FROM public.user_connections
+         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+           AND status IN ('deleted', 'rejected', 'cancelled')`,
+        [authUser.id, targetUserId]
+      ).catch(() => {
+      });
       let insRes;
       try {
         insRes = await query(
@@ -104825,27 +105056,24 @@ async function handleApiRequest(req, res) {
       const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
       try {
         await query(
-          `UPDATE public.user_connections SET status = 'connected', consented_at = NOW(), responded_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          `UPDATE public.user_connections
+           SET status = 'connected', consented_at = NOW(), responded_at = NOW(), deleted_at = NULL, deleted_by = NULL, cancelled_at = NULL, updated_at = NOW()
+           WHERE id = $1`,
           [pending.id]
         );
       } catch {
         await query(`UPDATE public.user_connections SET status = 'connected' WHERE id = $1`, [pending.id]);
       }
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [authUser.id, requesterId]
-      ).catch(() => {
-      });
-      await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'Friend', $6, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE
-         SET linked_user_id = EXCLUDED.linked_user_id,
-             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-             updated_at = NOW()`,
-        [authUser.id, requesterName, pending.email, pending.phone, pending.avatar_url, requesterId]
+      await ensureReciprocalContact(
+        authUser.id,
+        {
+          id: requesterId,
+          full_name: requesterName,
+          email: pending.email,
+          phone: pending.phone,
+          avatar_url: pending.avatar_url
+        },
+        "Friend"
       );
       await ensureReciprocalContact(requesterId, authUser, "Friend");
       await updateConnectionRequestNotificationsState({
@@ -105543,6 +105771,18 @@ async function handleApiRequest(req, res) {
       });
       return true;
     }
+    const personUpiMatch = pathname.match(/^\/api\/(?:udhar\/people|people|udhar\/contacts)\/([^/]+)\/upi-profile$/);
+    if (personUpiMatch && method === "GET") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const identifier = decodeURIComponent(personUpiMatch[1]).trim();
+      const restRes = await getPersonUpiProfileRest(authUser, identifier);
+      sendJson6(res, restRes.status, restRes.body);
+      return true;
+    }
     if ((pathname === "/api/udhar/connections/connect" || pathname === "/api/udhar/connections/request") && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -105614,13 +105854,13 @@ async function handleApiRequest(req, res) {
             [authUser.id]
           );
         }
-        const incoming = [];
-        const outgoing = [];
+        const incoming2 = [];
+        const outgoing2 = [];
         const connectedMap = /* @__PURE__ */ new Map();
         for (const r2 of rowsRes.rows) {
           if (r2.status === "pending") {
             if (r2.user_b_id === authUser.id) {
-              incoming.push({
+              incoming2.push({
                 id: r2.id,
                 direction: "incoming",
                 requesterUserId: r2.user_a_id,
@@ -105634,7 +105874,7 @@ async function handleApiRequest(req, res) {
                 createdAt: r2.created_at
               });
             } else if (r2.user_a_id === authUser.id) {
-              outgoing.push({
+              outgoing2.push({
                 id: r2.id,
                 direction: "outgoing",
                 targetUserId: r2.user_b_id,
@@ -105668,8 +105908,8 @@ async function handleApiRequest(req, res) {
         }
         sendJson6(res, 200, {
           success: true,
-          incoming,
-          outgoing,
+          incoming: incoming2,
+          outgoing: outgoing2,
           connected: Array.from(connectedMap.values())
         });
         return true;
@@ -105680,14 +105920,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
     }
-    const connAcceptMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/accept$/);
+    const connAcceptMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)\/accept$/);
     if (connAcceptMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const key = connAcceptMatch[1];
+      const key = decodeURIComponent(connAcceptMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
         sendJson6(res, restRes.status, restRes.body);
@@ -105704,14 +105944,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
     }
-    const connRejectMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/reject$/);
+    const connRejectMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)\/reject$/);
     if (connRejectMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const key = connRejectMatch[1];
+      const key = decodeURIComponent(connRejectMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
         sendJson6(res, restRes.status, restRes.body);
@@ -105728,14 +105968,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
     }
-    const connCancelMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/cancel$/);
+    const connCancelMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)\/cancel$/);
     if (connCancelMatch && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
         return true;
       }
-      const key = connCancelMatch[1];
+      const key = decodeURIComponent(connCancelMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await cancelConnectionRequestRest(authUser, key);
         sendJson6(res, restRes.status, restRes.body);
@@ -106338,6 +106578,18 @@ async function handleApiRequest(req, res) {
         const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split("@")[0] || "Friend").trim();
         const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
         if (existingConn.rows.some((r2) => r2.status === "connected")) {
+          await ensureReciprocalContact(
+            authUser.id,
+            {
+              id: targetUserId,
+              full_name: targetDisplayName,
+              email: tokenRecord.email,
+              phone: tokenRecord.phone,
+              avatar_url: tokenRecord.avatar_url
+            },
+            relationshipType
+          );
+          await ensureReciprocalContact(targetUserId, authUser, relationshipType);
           sendJson6(res, 200, {
             success: true,
             status: "connected",
@@ -106410,14 +106662,16 @@ async function handleApiRequest(req, res) {
           ).catch(() => {
           });
         }
-        await query(
-          `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (user_id, name) DO UPDATE
-           SET linked_user_id = EXCLUDED.linked_user_id,
-               photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-               updated_at = NOW()`,
-          [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
+        await ensureReciprocalContact(
+          authUser.id,
+          {
+            id: targetUserId,
+            full_name: targetDisplayName,
+            email: tokenRecord.email,
+            phone: tokenRecord.phone,
+            avatar_url: tokenRecord.avatar_url
+          },
+          relationshipType
         );
         await ensureReciprocalContact(targetUserId, authUser, relationshipType);
         const pendingRow = existingConn.rows.find((r2) => r2.status === "pending");
@@ -108063,7 +108317,7 @@ async function handleApiRequest(req, res) {
           const upd = await client.query(
             `UPDATE public.udhar_transactions
              SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
-             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             WHERE link_id = $1 AND status <> 'disputed' AND COALESCE(notes, '') NOT LIKE '%"lifecycle_status":"deleted"%'
              RETURNING id`,
             [tx.link_id, deletedPackedNotes]
           );
@@ -108093,49 +108347,57 @@ async function handleApiRequest(req, res) {
             [tx.link_id]
           );
         }
-        await client.query(
-          `UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`,
-          [tx.link_id, tx.id]
-        ).catch(() => {
-        });
-        await client.query(
-          `UPDATE public.user_notifications
-           SET is_deleted = TRUE, deleted_at = NOW()
-           WHERE related_entity_id = $1
-              OR related_entity_id = $2
-              OR metadata->>'relatedEntityId' = $1
-              OR metadata->>'linkId' = $1
-              OR metadata->>'udharId' = $2`,
-          [tx.link_id, tx.id]
-        ).catch(() => {
-        });
+        await Promise.all([
+          client.query(
+            `UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`,
+            [tx.link_id, tx.id]
+          ).catch(() => {
+          }),
+          client.query(
+            `UPDATE public.user_notifications
+             SET is_deleted = TRUE, deleted_at = NOW()
+             WHERE related_entity_id = $1
+                OR related_entity_id = $2
+                OR metadata->>'relatedEntityId' = $1
+                OR metadata->>'linkId' = $1
+                OR metadata->>'udharId' = $2`,
+            [tx.link_id, tx.id]
+          ).catch(() => {
+          })
+        ]);
         await client.query("COMMIT");
-        if (tx.counterpart_user_id) {
-          createNotification({
-            userId: tx.counterpart_user_id,
-            title: `Udhar Deleted by ${authUser.full_name}`,
-            message: `${authUser.full_name} permanently deleted the shared Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both accounts have been updated.`,
-            category: "udhar",
-            type: "info",
-            deepLink: "people",
-            dedupeKey: `udhar_del_${tx.link_id}`,
-            metadata: { actionType: "udhar_deleted", deletedLinkId: tx.link_id, deletedTxId: tx.id },
-            channels: ["in_app", "push"]
+        const postCommitTasks = [
+          logSecurityEvent("UDHAR_DELETED", {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            details: {
+              txId,
+              linkId: tx.link_id,
+              direction: tx.direction,
+              counterpartUserId: tx.counterpart_user_id || null,
+              originalAmount: tx.original_amount,
+              reason: cleanReason
+            }
           }).catch(() => {
-          });
+          })
+        ];
+        if (tx.counterpart_user_id) {
+          postCommitTasks.push(
+            createNotification({
+              userId: tx.counterpart_user_id,
+              title: `Udhar Deleted by ${authUser.full_name}`,
+              message: `${authUser.full_name} permanently deleted the shared Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both accounts have been updated.`,
+              category: "udhar",
+              type: "info",
+              deepLink: "people",
+              dedupeKey: `udhar_del_${tx.link_id}`,
+              metadata: { actionType: "udhar_deleted", deletedLinkId: tx.link_id, deletedTxId: tx.id },
+              channels: ["in_app", "push"]
+            }).catch(() => {
+            })
+          );
         }
-        await logSecurityEvent("UDHAR_DELETED", {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: {
-            txId,
-            linkId: tx.link_id,
-            direction: tx.direction,
-            counterpartUserId: tx.counterpart_user_id || null,
-            originalAmount: tx.original_amount,
-            reason: cleanReason
-          }
-        });
+        void Promise.all(postCommitTasks);
         sendJson6(res, 200, {
           success: true,
           deletedTransactionId: tx.id,

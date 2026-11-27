@@ -221,6 +221,8 @@ export interface AppIdentityBranding {
   tagline: string;
   description: string;
   logoUrl: string;
+  lightLogoUrl?: string;
+  darkLogoUrl?: string;
   faviconUrl: string;
   pwaIconUrl: string;
   primaryColor: string;
@@ -233,6 +235,7 @@ export interface AppIdentityBranding {
   dashboardHeading: string;
   splashHeadline: string;
   splashTagline: string;
+  headerBrandText?: string;
 }
 
 export interface WebsiteBrandingConfig {
@@ -364,6 +367,18 @@ export interface AppPwaSettings {
   showDownloadPopup: boolean;
   autoPromptDelaySeconds: number;
   offlineFallbackEnabled: boolean;
+  userPromptTitle?: string;
+  userPromptDescription?: string;
+  userInstallButtonText?: string;
+  userHelpText?: string;
+  adminPromptTitle?: string;
+  adminPromptDescription?: string;
+  adminInstallButtonText?: string;
+  adminHelpText?: string;
+  staffPromptTitle?: string;
+  staffPromptDescription?: string;
+  staffInstallButtonText?: string;
+  staffHelpText?: string;
 }
 
 export interface NotificationTemplateRule {

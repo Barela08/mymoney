@@ -12,9 +12,12 @@ function isMyStaffEntryRequest(urlStr: string | undefined): boolean {
     pathname.startsWith('/node_modules/') ||
     pathname.startsWith('/@') ||
     pathname === '/mystaff-sw.js' ||
+    pathname === '/staff-sw.js' ||
     pathname === '/mystaff-manifest.json' ||
+    pathname === '/staff-manifest.json' ||
     pathname === '/mystaff-offline.html' ||
-    pathname === '/mystaff.html'
+    pathname === '/mystaff.html' ||
+    pathname === '/staff.html'
   ) {
     return false;
   }
@@ -24,7 +27,12 @@ function isMyStaffEntryRequest(urlStr: string | undefined): boolean {
     return false;
   }
 
-  return pathname === '/mystaff' || pathname.startsWith('/mystaff/');
+  return (
+    pathname === '/mystaff' ||
+    pathname.startsWith('/mystaff/') ||
+    pathname === '/staff' ||
+    pathname.startsWith('/staff/')
+  );
 }
 
 function isAdminEntryRequest(urlStr: string | undefined, hostHeader: string | undefined): boolean {
@@ -178,6 +186,7 @@ export default defineConfig({
         myadmin: path.resolve(__dirname, 'myadmin.html'),
         mystaff: path.resolve(__dirname, 'mystaff.html'),
         admin: path.resolve(__dirname, 'admin.html'),
+        staff: path.resolve(__dirname, 'staff.html'),
       },
       output: {
         manualChunks(id) {

@@ -14,6 +14,7 @@ import {
   UserMinus,
   ShieldCheck,
   AlertCircle,
+  QrCode,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -22,6 +23,7 @@ import {
   SearchUserResult,
 } from '../../lib/udharDeletionApi';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { PersonUpiQrModal } from './PersonUpiQrModal';
 
 interface SavedPeopleManagerModalProps {
   isOpen: boolean;
@@ -44,6 +46,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [contactsError, setContactsError] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState<string>('');
+  const [selectedContactForUpi, setSelectedContactForUpi] = useState<UdharContact | null>(null);
 
   // Add / Edit Modal
   const [editingContact, setEditingContact] = useState<UdharContact | null>(null);
@@ -1153,6 +1156,14 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                           )}
                           <button
                             type="button"
+                            onClick={() => setSelectedContactForUpi(c)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 cursor-pointer"
+                            title={`View ${c.name}'s UPI QR & Pay`}
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenEdit(c)}
                             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                             title="Edit contact details"
@@ -1203,6 +1214,22 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
         onConfirm={confirmDeleteContact}
         onCancel={() => !isDeletingContact && setPendingDeleteContact(null)}
       />
+
+      {/* Contact's UPI QR & Direct Payment Modal */}
+      {selectedContactForUpi && (
+        <PersonUpiQrModal
+          isOpen={Boolean(selectedContactForUpi)}
+          onClose={() => setSelectedContactForUpi(null)}
+          personName={selectedContactForUpi.name}
+          contactId={selectedContactForUpi.id}
+          linkedUserId={selectedContactForUpi.linked_user_id}
+          suggestedAmount={
+            selectedContactForUpi.net_balance && Number(selectedContactForUpi.net_balance) < -0.01
+              ? Math.abs(Number(selectedContactForUpi.net_balance))
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 };

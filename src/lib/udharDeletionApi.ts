@@ -198,6 +198,8 @@ export interface UdharTransactionItem {
   link_id: string;
   user_id: string;
   counterpart_user_id?: string | null;
+  lender_user_id?: string | null;
+  borrower_user_id?: string | null;
   counterpart_name: string;
   counterpart_registered_name?: string | null;
   counterpart_email?: string | null;
@@ -348,6 +350,23 @@ export const udharDeletionApi = {
 
   async getContactsWithBalances(): Promise<{ success: boolean; contacts: UdharContact[] }> {
     return apiRequest('/api/udhar/contacts/with-balances', { method: 'GET' });
+  },
+
+  async getPersonUpiProfile(identifier: string): Promise<{
+    success: boolean;
+    hasUpi: boolean;
+    upiId?: string;
+    payeeName?: string;
+    paymentNote?: string;
+    targetUserId?: string;
+    recipientName?: string;
+    avatarUrl?: string | null;
+    isManualContact?: boolean;
+    message?: string;
+  }> {
+    return apiRequest(`/api/udhar/people/${encodeURIComponent(identifier)}/upi-profile`, {
+      method: 'GET',
+    });
   },
 
   async inviteContact(contactId: string): Promise<{

@@ -75,7 +75,21 @@
       ]
     },
     {
+      "source": "/staff-sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
       "source": "/mystaff-manifest.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/staff-manifest.json",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
         { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
@@ -104,6 +118,8 @@
     },
     { "source": "/mystaff", "destination": "/mystaff.html" },
     { "source": "/mystaff/(.*)", "destination": "/mystaff.html" },
+    { "source": "/staff", "destination": "/mystaff.html" },
+    { "source": "/staff/(.*)", "destination": "/mystaff.html" },
     { "source": "/myadmin", "destination": "/myadmin.html" },
     { "source": "/myadmin/(.*)", "destination": "/myadmin.html" },
     { "source": "/admin", "destination": "/myadmin.html" },

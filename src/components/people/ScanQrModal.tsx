@@ -90,6 +90,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   // Multi-camera & Torch capabilities
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [supportsTorch, setSupportsTorch] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
   const [isScanningPaused, setIsScanningPaused] = useState<boolean>(false);
@@ -111,6 +112,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const autoResolvedCodeRef = useRef<string | null>(null);
   const streamGenerationRef = useRef<number>(0);
   const lastDecodeAtRef = useRef<number>(0);
+  const lastScannedPayloadRef = useRef<{ data: string; at: number } | null>(null);
 
   useEffect(() => {
     setScannerActive(isOpen);
@@ -287,7 +289,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     [toast]
   );
 
-  // Frame scanning loop
+  // Frame scanning loop (downscaled to max 640px for fast mobile/PWA QR decoding)
   const scanFrame = useCallback(function tick() {
     if (!isScanningActiveRef.current || !videoRef.current || !canvasRef.current) return;
 
@@ -295,31 +297,36 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    if (ctx && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
+    if (ctx && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
       const now = performance.now();
-      if (now - lastDecodeAtRef.current < 140) {
+      if (now - lastDecodeAtRef.current < 120) {
         animFrameRef.current = requestAnimationFrame(tick);
         return;
       }
       lastDecodeAtRef.current = now;
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      // Try standard orientation first
-      let code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert',
+      const maxDim = Math.max(video.videoWidth, video.videoHeight);
+      const scale = maxDim > 640 ? 640 / maxDim : 1;
+      const targetW = Math.max(1, Math.round(video.videoWidth * scale));
+      const targetH = Math.max(1, Math.round(video.videoHeight * scale));
+
+      if (canvas.width !== targetW) canvas.width = targetW;
+      if (canvas.height !== targetH) canvas.height = targetH;
+
+      ctx.drawImage(video, 0, 0, targetW, targetH);
+
+      const imageData = ctx.getImageData(0, 0, targetW, targetH);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'attemptBoth',
       });
-      // Fallback for high-contrast / inverted QR codes
-      if (!code || !code.data) {
-        code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'onlyInvert',
-        });
-      }
 
       if (code && code.data) {
+        const last = lastScannedPayloadRef.current;
+        if (last && last.data === code.data && Date.now() - last.at < 2000) {
+          animFrameRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        lastScannedPayloadRef.current = { data: code.data, at: Date.now() };
         stopCamera();
         void resolveRawInput(code.data);
         return;
@@ -332,7 +339,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   // Start camera with progressive fallback and race protection.
   // Only a real getUserMedia failure is reported as a camera problem.
   const startCamera = useCallback(
-    async (deviceIdOverride?: string | null) => {
+    async (deviceIdOverride?: string | null, facingModeOverride?: 'environment' | 'user') => {
       stopCamera();
       const generation = streamGenerationRef.current;
       setCameraError(null);
@@ -352,12 +359,13 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       if (!navigator.mediaDevices?.getUserMedia) {
         setCameraStatus('unavailable');
         setCameraError(
-          'Live camera scanning is not supported in this browser. Use "Upload" or "Pair Code" below.'
+          'Live camera scanning is not supported in this browser. Use "Upload" or "Pair Code" instead.'
         );
         return;
       }
 
       const targetDeviceId = deviceIdOverride !== undefined ? deviceIdOverride : currentDeviceId;
+      const targetFacing = facingModeOverride || facingMode;
 
       try {
         let stream: MediaStream | null = null;
@@ -366,12 +374,15 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           stream = await navigator.mediaDevices.getUserMedia({
             audio: false,
             video: targetDeviceId
-              ? { deviceId: { exact: targetDeviceId }, width: { ideal: 720 }, height: { ideal: 720 } }
-              : { facingMode: { ideal: 'environment' }, width: { ideal: 720 }, height: { ideal: 720 } },
+              ? { deviceId: { exact: targetDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+              : { facingMode: { ideal: targetFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
           });
         } catch {
           try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment' } });
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: { facingMode: targetFacing },
+            });
           } catch {
             stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
           }
@@ -459,7 +470,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         setCameraStatus(isPermissionDenied ? 'denied' : isNotFound ? 'unavailable' : 'error');
       }
     },
-    [currentDeviceId, stopCamera, refreshDevices, scanFrame]
+    [currentDeviceId, facingMode, stopCamera, refreshDevices, scanFrame]
   );
 
   const togglePauseScanning = useCallback(() => {
@@ -495,9 +506,9 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     }
   }, [isOpen, initialPairCode, stopCamera, resolveRawInput]);
 
-  // Manage camera lifecycle based on modal open & active tab
+  // Manage camera lifecycle based on modal open, active tab, and scan state
   useEffect(() => {
-    if (isOpen && !resolvedOwner) {
+    if (isOpen && !resolvedOwner && !upiDetails) {
       if (activeTab === 'camera' && !initialPairCode) {
         startCamera();
       } else {
@@ -507,15 +518,21 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       stopCamera();
     }
     return () => stopCamera();
-  }, [isOpen, activeTab, resolvedOwner, initialPairCode]);
+  }, [isOpen, activeTab, resolvedOwner, upiDetails, initialPairCode]);
 
   const handleSwitchCamera = () => {
-    if (videoDevices.length <= 1) return;
-    const currentIndex = videoDevices.findIndex((d) => d.deviceId === currentDeviceId);
-    const nextDevice = videoDevices[(currentIndex + 1) % videoDevices.length];
-    const newId = nextDevice?.deviceId || null;
-    setCurrentDeviceId(newId);
-    void startCamera(newId);
+    if (videoDevices.length > 1) {
+      const currentIndex = videoDevices.findIndex((d) => d.deviceId === currentDeviceId);
+      const nextDevice = videoDevices[(currentIndex + 1) % videoDevices.length];
+      const newId = nextDevice?.deviceId || null;
+      setCurrentDeviceId(newId);
+      void startCamera(newId);
+      return;
+    }
+    const nextFacing = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextFacing);
+    setCurrentDeviceId(null);
+    void startCamera(null, nextFacing);
   };
 
   const handleSelectCamera = (deviceId: string) => {
@@ -1055,7 +1072,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               </button>
             </div>
           </div>
-        ) : (
+        ) : !upiDetails ? (
           /* State 3: Scan Methods (Camera, Upload, Code) */
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl text-xs font-bold">
@@ -1112,7 +1129,9 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                 <div className="relative aspect-square max-w-[280px] mx-auto bg-slate-950 rounded-3xl overflow-hidden border-2 border-slate-800 shadow-inner flex items-center justify-center">
                   <video
                     ref={videoRef}
-                    className={`w-full h-full object-cover ${cameraStatus === 'active' ? 'block' : 'hidden'}`}
+                    className={`w-full h-full object-cover transition-opacity duration-200 ${
+                      cameraStatus === 'active' ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    }`}
                     muted
                     playsInline
                   />
@@ -1120,21 +1139,37 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
                   {/* Fallback Viewport when camera is not streaming */}
                   {cameraStatus !== 'active' && (
-                    <div className="flex flex-col items-center justify-center text-center p-6 space-y-2">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 space-y-2.5">
                       {cameraStatus === 'starting' ? (
                         <>
                           <div className="w-12 h-12 rounded-2xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 animate-pulse">
                             <Camera className="w-6 h-6" />
                           </div>
-                          <p className="text-xs font-semibold text-slate-300">Connecting camera...</p>
+                          <p className="text-xs font-semibold text-slate-300">Starting camera...</p>
                         </>
                       ) : (
                         <>
                           <div className="w-12 h-12 rounded-2xl bg-amber-950/60 border border-amber-500/30 flex items-center justify-center text-amber-400">
                             <CameraOff className="w-6 h-6" />
                           </div>
-                          <p className="text-xs font-semibold text-slate-300">Camera not active</p>
-                          <p className="text-[11px] text-slate-500">Allow permissions or use Upload / Pair Code below</p>
+                          <p className="text-xs font-semibold text-slate-300">
+                            {cameraStatus === 'denied'
+                              ? 'Camera Permission Blocked'
+                              : cameraStatus === 'unavailable'
+                                ? 'Camera Unavailable'
+                                : 'Camera Stopped'}
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            {cameraError || 'Tap Start Camera or use Upload / Pair Code below'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void startCamera()}
+                            className="mt-1 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Play className="w-3.5 h-3.5" />
+                            <span>Start Camera</span>
+                          </button>
                         </>
                       )}
                     </div>
@@ -1187,17 +1222,24 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                           )}
                         </button>
                       )}
-                      {videoDevices.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={handleSwitchCamera}
-                          className="p-2 rounded-xl bg-slate-900/70 text-white hover:bg-slate-900 backdrop-blur-md transition-all cursor-pointer"
-                          title="Switch Camera"
-                          aria-label="Switch Camera"
-                        >
-                          <SwitchCamera className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={handleSwitchCamera}
+                        className="p-2 rounded-xl bg-slate-900/70 text-white hover:bg-slate-900 backdrop-blur-md transition-all cursor-pointer"
+                        title="Switch Front/Back Camera"
+                        aria-label="Switch Camera"
+                      >
+                        <SwitchCamera className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="p-2 rounded-xl bg-rose-600/85 text-white hover:bg-rose-600 backdrop-blur-md transition-all cursor-pointer"
+                        title="Stop Camera"
+                        aria-label="Stop Camera"
+                      >
+                        <CameraOff className="w-4 h-4" />
+                      </button>
                     </div>
                   )}
 
@@ -1364,7 +1406,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               </form>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

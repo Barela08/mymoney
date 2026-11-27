@@ -45,6 +45,7 @@ import {
 import { SettleUdharModal } from './SettleUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
 import { UdharDetailModal } from './UdharDetailModal';
+import { PersonUpiQrModal } from './PersonUpiQrModal';
 
 interface PersonDetailsViewProps {
   person: PersonSummary;
@@ -77,6 +78,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   >('all');
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
+  const [isUpiQrModalOpen, setIsUpiQrModalOpen] = useState(false);
   const [selectedTxForRepay, setSelectedTxForRepay] = useState<UdharTransactionItem | null>(null);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<UdharTransactionItem | null>(null);
   const [expandedRepayments, setExpandedRepayments] = useState<Record<string, boolean>>({});
@@ -172,6 +174,27 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   const isSettled = Math.abs(balance) < 0.01;
   const isOwedToYou = balance > 0; // You will get
 
+  const resolvedTargetUserId = useMemo(() => {
+    if (person.linkedUserId) return person.linkedUserId;
+    const found = personUdharTxs.find(
+      (t) =>
+        t.counterpart_user_id ||
+        (t.lender_user_id !== user?.id ? t.lender_user_id : t.borrower_user_id !== user?.id ? t.borrower_user_id : null)
+    );
+    if (found) {
+      if (found.counterpart_user_id) return found.counterpart_user_id;
+      return found.lender_user_id !== user?.id ? found.lender_user_id : found.borrower_user_id;
+    }
+    return null;
+  }, [person.linkedUserId, personUdharTxs, user?.id]);
+
+  const suggestedPaymentAmount = useMemo(() => {
+    if (!isOwedToYou && !isSettled && Math.abs(balance) > 0.01) {
+      return Math.abs(balance);
+    }
+    return null;
+  }, [isOwedToYou, isSettled, balance]);
+
   const handleSettleConfirm = async (notes?: string) => {
     try {
       setIsSettling(true);
@@ -233,17 +256,25 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
         const res = await udharDeletionApi.cancelUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Deleted', res.message || 'Udhar entry deleted and totals recalculated.');
-          if (onRefreshUdhar) await onRefreshUdhar();
-          await refreshTransactions();
-          await refreshNotifications();
+          setPendingConfirmAction(null);
+          void Promise.all([
+            onRefreshUdhar ? onRefreshUdhar() : Promise.resolve(),
+            refreshTransactions(),
+            refreshNotifications(),
+          ]);
+          return;
         }
       } else if (pendingConfirmAction.type === 'delete_repayment') {
         const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
         if (res.success) {
           toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
-          if (onRefreshUdhar) await onRefreshUdhar();
-          await refreshTransactions();
-          await refreshNotifications();
+          setPendingConfirmAction(null);
+          void Promise.all([
+            onRefreshUdhar ? onRefreshUdhar() : Promise.resolve(),
+            refreshTransactions(),
+            refreshNotifications(),
+          ]);
+          return;
         }
       } else if (pendingConfirmAction.type === 'reject_request') {
         const res = await udharDeletionApi.rejectUdharTransaction(
@@ -429,14 +460,9 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.history.pushState(null, '', '/upi-qr');
-                  window.dispatchEvent(new PopStateEvent('popstate'));
-                }
-              }}
+              onClick={() => setIsUpiQrModalOpen(true)}
               className="px-3.5 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white active:scale-95 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-              title="Open UPI QR Generator for fast payment"
+              title={`View ${person.name}'s UPI QR code and pay directly`}
             >
               <QrCode className="w-4 h-4" />
               <span>UPI QR</span>
@@ -1001,6 +1027,16 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
           }}
         />
       )}
+
+      {/* Recipient Profile Owner's UPI QR & Direct Payment Modal */}
+      <PersonUpiQrModal
+        isOpen={isUpiQrModalOpen}
+        onClose={() => setIsUpiQrModalOpen(false)}
+        personName={person.name}
+        contactId={person.contactId}
+        linkedUserId={resolvedTargetUserId}
+        suggestedAmount={suggestedPaymentAmount}
+      />
 
       {/* Styled In-App Confirmation Modal (Replaces native confirm()) */}
       {pendingConfirmAction && (

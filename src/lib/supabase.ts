@@ -407,17 +407,21 @@ export async function permanentDeleteTransactionFromSupabase(id: string): Promis
 }
 
 /**
- * Permanent hard delete for multiple transactions: Irreversibly delete transactions
+ * Permanent hard delete for multiple transactions: Irreversibly delete transactions in safe batches
  */
 export async function permanentDeleteTransactionsFromSupabase(ids: string[]): Promise<void> {
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase client is not configured.');
   if (!ids || ids.length === 0) return;
 
-  const { error } = await client.from('transactions').delete().in('id', ids);
-  if (error) {
-    console.error('Error permanently deleting transactions from Supabase:', error);
-    throw error;
+  const BATCH_SIZE = 200;
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const batch = ids.slice(i, i + BATCH_SIZE);
+    const { error } = await client.from('transactions').delete().in('id', batch);
+    if (error) {
+      console.error('Error permanently deleting transactions from Supabase:', error);
+      throw error;
+    }
   }
 }
 

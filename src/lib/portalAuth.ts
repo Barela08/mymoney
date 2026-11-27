@@ -101,8 +101,12 @@ export function getPortalScopeFromLocation(
   if (
     cleanPath === '/mystaff' ||
     cleanPath.startsWith('/mystaff/') ||
+    cleanPath === '/staff' ||
+    cleanPath.startsWith('/staff/') ||
     cleanHash === '#mystaff' ||
-    cleanHash.startsWith('#mystaff=')
+    cleanHash.startsWith('#mystaff=') ||
+    cleanHash === '#staff' ||
+    cleanHash.startsWith('#staff=')
   ) {
     return 'mystaff';
   }

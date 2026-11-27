@@ -233,17 +233,17 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         const res = await udharDeletionApi.cancelUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Deleted', res.message || 'Udhar entry deleted and totals recalculated.');
-          await fetchUdharData();
-          await refreshTransactions();
-          await refreshNotifications();
+          setPendingConfirmAction(null);
+          void Promise.all([fetchUdharData(), refreshTransactions(), refreshNotifications()]);
+          return;
         }
       } else if (pendingConfirmAction.type === 'delete_repayment') {
         const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
         if (res.success) {
           toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
-          await fetchUdharData();
-          await refreshTransactions();
-          await refreshNotifications();
+          setPendingConfirmAction(null);
+          void Promise.all([fetchUdharData(), refreshTransactions(), refreshNotifications()]);
+          return;
         }
       } else if (pendingConfirmAction.type === 'reject_request') {
         const res = await udharDeletionApi.rejectUdharTransaction(

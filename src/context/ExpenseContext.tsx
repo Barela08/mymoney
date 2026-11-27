@@ -1493,8 +1493,32 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (personTxs.length === 0) return true;
 
-    for (const tx of personTxs) {
-      await deleteTransaction(tx.id);
+    const ids = personTxs.map((tx) => tx.id);
+    const idSet = new Set(ids);
+    const nowIso = new Date().toISOString();
+
+    setAllTransactions((prev) => {
+      const updated = prev.map((t) =>
+        idSet.has(t.id) ? { ...t, is_deleted: true, deleted_at: nowIso } : t
+      );
+      persistLocally(updated);
+      return updated;
+    });
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+          const batch = ids.slice(i, i + BATCH_SIZE);
+          await supabase
+            .from('transactions')
+            .update({ is_deleted: true, deleted_at: nowIso })
+            .in('id', batch);
+        }
+      } catch (err: any) {
+        console.warn('Supabase batch soft-delete notice:', err.message);
+      }
     }
     return true;
   };

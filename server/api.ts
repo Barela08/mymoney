@@ -177,6 +177,7 @@ import {
   cancelUdharRest,
   deleteRepaymentRest,
   getUdharHistoryRest,
+  getPersonUpiProfileRest,
 } from './supabaseRestUdhar.js';
 
 async function syncSupabaseAuthPassword(email: string, newPassword: string): Promise<void> {
@@ -4691,6 +4692,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
+    // 10B. GET PERSON'S UPI PROFILE: GET /api/udhar/people/:identifier/upi-profile
+    const personUpiMatch = pathname.match(/^\/api\/(?:udhar\/people|people|udhar\/contacts)\/([^/]+)\/upi-profile$/);
+    if (personUpiMatch && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const identifier = decodeURIComponent(personUpiMatch[1]).trim();
+      const restRes = await getPersonUpiProfileRest(authUser, identifier);
+      sendJson(res, restRes.status, restRes.body);
+      return true;
+    }
+
     // 10C. CONSENT-BASED CONNECTION REQUEST: POST /api/udhar/connections/connect or /api/udhar/connections/request
     if (
       (pathname === '/api/udhar/connections/connect' || pathname === '/api/udhar/connections/request') &&
@@ -4844,7 +4859,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // 10E. ACCEPT CONNECTION REQUEST: POST /api/udhar/connections/:id/accept
-    const connAcceptMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/accept$/);
+    const connAcceptMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)\/accept$/);
     if (connAcceptMatch && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -4852,7 +4867,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const key = connAcceptMatch[1];
+      const key = decodeURIComponent(connAcceptMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -4872,7 +4887,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // 10F. REJECT CONNECTION REQUEST: POST /api/udhar/connections/:id/reject
-    const connRejectMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/reject$/);
+    const connRejectMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)\/reject$/);
     if (connRejectMatch && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -4880,7 +4895,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const key = connRejectMatch[1];
+      const key = decodeURIComponent(connRejectMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -4900,7 +4915,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // 10F-2. CANCEL OUTGOING CONNECTION REQUEST: POST /api/udhar/connections/:id/cancel
-    const connCancelMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/cancel$/);
+    const connCancelMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:%-]+)\/cancel$/);
     if (connCancelMatch && method === 'POST') {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -4908,7 +4923,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const key = connCancelMatch[1];
+      const key = decodeURIComponent(connCancelMatch[1]);
       if (!isDatabaseAvailable()) {
         const restRes = await cancelConnectionRequestRest(authUser, key);
         sendJson(res, restRes.status, restRes.body);
@@ -7615,50 +7630,57 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           );
         }
 
-        // Deactivate notifications tied to this deleted Udhar so neither user retains stale alerts
-        await client.query(
-          `UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`,
-          [tx.link_id, tx.id]
-        ).catch(() => {});
-        await client.query(
-          `UPDATE public.user_notifications
-           SET is_deleted = TRUE, deleted_at = NOW()
-           WHERE related_entity_id = $1
-              OR related_entity_id = $2
-              OR metadata->>'relatedEntityId' = $1
-              OR metadata->>'linkId' = $1
-              OR metadata->>'udharId' = $2`,
-          [tx.link_id, tx.id]
-        ).catch(() => {});
+        // Deactivate notifications tied to this deleted Udhar in parallel
+        await Promise.all([
+          client.query(
+            `UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`,
+            [tx.link_id, tx.id]
+          ).catch(() => {}),
+          client.query(
+            `UPDATE public.user_notifications
+             SET is_deleted = TRUE, deleted_at = NOW()
+             WHERE related_entity_id = $1
+                OR related_entity_id = $2
+                OR metadata->>'relatedEntityId' = $1
+                OR metadata->>'linkId' = $1
+                OR metadata->>'udharId' = $2`,
+            [tx.link_id, tx.id]
+          ).catch(() => {}),
+        ]);
 
         await client.query('COMMIT');
 
+        // Dispatch counterpart notification & security audit log asynchronously after commit
+        const postCommitTasks: Promise<any>[] = [
+          logSecurityEvent('UDHAR_DELETED', {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            details: {
+              txId,
+              linkId: tx.link_id,
+              direction: tx.direction,
+              counterpartUserId: tx.counterpart_user_id || null,
+              originalAmount: tx.original_amount,
+              reason: cleanReason,
+            },
+          }).catch(() => {}),
+        ];
         if (tx.counterpart_user_id) {
-          createNotification({
-            userId: tx.counterpart_user_id,
-            title: `Udhar Deleted by ${authUser.full_name}`,
-            message: `${authUser.full_name} permanently deleted the shared Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}. Both accounts have been updated.`,
-            category: 'udhar',
-            type: 'info',
-            deepLink: 'people',
-            dedupeKey: `udhar_del_${tx.link_id}`,
-            metadata: { actionType: 'udhar_deleted', deletedLinkId: tx.link_id, deletedTxId: tx.id },
-            channels: ['in_app', 'push'],
-          }).catch(() => {});
+          postCommitTasks.push(
+            createNotification({
+              userId: tx.counterpart_user_id,
+              title: `Udhar Deleted by ${authUser.full_name}`,
+              message: `${authUser.full_name} permanently deleted the shared Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}. Both accounts have been updated.`,
+              category: 'udhar',
+              type: 'info',
+              deepLink: 'people',
+              dedupeKey: `udhar_del_${tx.link_id}`,
+              metadata: { actionType: 'udhar_deleted', deletedLinkId: tx.link_id, deletedTxId: tx.id },
+              channels: ['in_app', 'push'],
+            }).catch(() => {})
+          );
         }
-
-        await logSecurityEvent('UDHAR_DELETED', {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: {
-            txId,
-            linkId: tx.link_id,
-            direction: tx.direction,
-            counterpartUserId: tx.counterpart_user_id || null,
-            originalAmount: tx.original_amount,
-            reason: cleanReason,
-          },
-        });
+        void Promise.all(postCommitTasks);
 
         sendJson(res, 200, {
           success: true,

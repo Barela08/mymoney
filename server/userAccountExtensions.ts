@@ -409,7 +409,7 @@ interface UpiConsentInfo {
   policyVersion: string | null;
 }
 
-async function getLatestUpiConsentInfo(authUser: AuthenticatedUser): Promise<UpiConsentInfo> {
+export async function getLatestUpiConsentInfo(authUser: AuthenticatedUser): Promise<UpiConsentInfo> {
   if (isDatabaseAvailable()) {
     try {
       const r = await query(
