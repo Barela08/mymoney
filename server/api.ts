@@ -23,6 +23,7 @@ import {
   createSession,
   revokeSession,
   revokeAllUserSessions,
+  revokeOtherUserSessions,
   authenticateRequest,
   sanitizeUserOutput,
   isDiscoverableNormalUser,
@@ -870,8 +871,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         title: 'New User Registered',
         message: `${newUser.full_name} (${email}) created a new account.`,
         userId: newUser.id,
+        userName: newUser.full_name,
         userEmail: email,
-        metadata: { role: 'user', registeredAt: new Date().toISOString() },
+        registeredAt: newUser.created_at || new Date().toISOString(),
+        registrationStatus: newUser.status || 'active',
+        dedupeKey: `new_user:${newUser.id}`,
+        metadata: { role: 'user', provider: 'email', registeredAt: newUser.created_at || new Date().toISOString() },
       }).catch(() => {});
 
       await logSecurityEvent('USER_REGISTER_SUCCESS', {
@@ -1096,6 +1101,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 4. LOGOUT ALL DEVICES: POST /api/auth/logout-all-devices
     // ---------------------------------------------------------
     if (pathname === '/api/auth/logout-all-devices' && method === 'POST') {
+      const rate = await checkRateLimitAsync(`session_mgmt:ip:${clientIp}`, 30, 60 * 1000, 'auth.sessions.manage');
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
@@ -1119,6 +1130,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 4A. LIST ACTIVE SESSIONS: GET /api/auth/sessions
     // ---------------------------------------------------------
     if (pathname === '/api/auth/sessions' && method === 'GET') {
+      const rate = await checkRateLimitAsync(`session_read:ip:${clientIp}`, RATE_LIMITS.SESSION_REFRESH.max, RATE_LIMITS.SESSION_REFRESH.windowMs, RATE_LIMITS.SESSION_REFRESH.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });
@@ -1137,9 +1154,56 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // ---------------------------------------------------------
-    // 4B. REVOKE SINGLE SESSION (REMOTE LOGOUT): DELETE /api/auth/sessions/:id
+    // 4B. LOGOUT FROM ALL OTHER DEVICES: POST /api/auth/sessions/revoke-others
+    // ---------------------------------------------------------
+    if (pathname === '/api/auth/sessions/revoke-others' && method === 'POST') {
+      const rate = await checkRateLimitAsync(`session_mgmt:ip:${clientIp}`, 30, 60 * 1000, 'auth.sessions.manage');
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const token = extractSessionToken(req);
+      const revokedCount = await revokeOtherUserSessions(authUser.id, token);
+
+      await logSecurityEvent('USER_SESSIONS_REVOKE_OTHERS', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        metadata: { revokedCount },
+      }).catch(() => {});
+
+      const remaining = await listActiveSessionsForUser(authUser.id, token);
+      sendJson(res, 200, {
+        success: true,
+        revokedCount,
+        message:
+          revokedCount > 0
+            ? `Logged out from ${revokedCount} other device${revokedCount === 1 ? '' : 's'}. Your current session remains active.`
+            : 'No other active devices were signed in.',
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: remaining.length,
+        sessions: remaining,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
+    // 4C. REVOKE SINGLE SESSION (REMOTE LOGOUT): DELETE /api/auth/sessions/:id
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/auth/sessions/') && method === 'DELETE') {
+      const rate = await checkRateLimitAsync(`session_mgmt:ip:${clientIp}`, 30, 60 * 1000, 'auth.sessions.manage');
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson(res, 401, { success: false, message: 'Authentication required.' });

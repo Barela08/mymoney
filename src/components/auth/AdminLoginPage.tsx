@@ -9,10 +9,14 @@ import {
   ArrowLeft,
   AlertCircle,
   ShieldCheck,
+  Laptop,
+  Smartphone,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
+import type { ActiveDeviceSession } from '../../lib/authApi';
 
 interface AdminLoginPageProps {
   onReturnHome?: () => void;
@@ -29,6 +33,12 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [maxSessionsPrompt, setMaxSessionsPrompt] = useState<{
+    sessions: ActiveDeviceSession[];
+    maxSessions: number;
+  } | null>(null);
+  const [showManageDevices, setShowManageDevices] = useState(false);
+  const [confirmReplaceSession, setConfirmReplaceSession] = useState<ActiveDeviceSession | null>(null);
 
   const handleReturnHome = () => {
     if (onReturnHome) {
@@ -45,6 +55,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setMaxSessionsPrompt(null);
+    setShowManageDevices(false);
+    setConfirmReplaceSession(null);
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
@@ -64,6 +77,12 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
       } else {
         const msg = res.message || 'Invalid administrator credentials.';
         setErrorMessage(msg);
+        if (res.code === 'MAX_SESSIONS_REACHED' && Array.isArray(res.activeSessions)) {
+          setMaxSessionsPrompt({
+            sessions: res.activeSessions,
+            maxSessions: res.maxSessions || 3,
+          });
+        }
         toast.error('Admin Login Failed', msg);
       }
     } catch (err: any) {
@@ -138,6 +157,113 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
             >
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed font-medium">{errorMessage}</p>
+            </div>
+          )}
+
+          {maxSessionsPrompt && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3 text-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-amber-300">
+                    Active on {maxSessionsPrompt.sessions.length} / {maxSessionsPrompt.maxSessions} Devices
+                  </p>
+                  <p className="text-[11px] text-amber-200/80 mt-0.5">
+                    Manage active admin devices to free up a slot.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManageDevices((prev) => !prev);
+                    setConfirmReplaceSession(null);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold shrink-0 cursor-pointer"
+                >
+                  {showManageDevices ? 'Hide Devices' : 'Manage My Devices'}
+                </button>
+              </div>
+
+              {showManageDevices && (
+                <div className="space-y-2 pt-2 border-t border-amber-500/20">
+                  {maxSessionsPrompt.sessions.map((sess) => {
+                    const isConfirming = confirmReplaceSession?.id === sess.id;
+                    return (
+                      <div
+                        key={sess.id}
+                        className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {sess.deviceType === 'mobile' ? (
+                              <Smartphone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            ) : (
+                              <Laptop className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold text-white truncate">{sess.deviceName}</p>
+                              <p className="text-[10px] text-slate-400 truncate">
+                                {sess.browser} · {sess.os}
+                              </p>
+                            </div>
+                          </div>
+                          {!isConfirming && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmReplaceSession(sess)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold shrink-0 cursor-pointer"
+                            >
+                              <LogOut className="w-3 h-3" />
+                              <span>Log Out Device</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {isConfirming && (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-rose-950/50 border border-rose-500/30">
+                            <p className="text-[10.5px] text-rose-200">
+                              Log out <strong>{sess.deviceName}</strong> and sign in here?
+                            </p>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setConfirmReplaceSession(null)}
+                                className="px-2 py-1 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isSubmitting}
+                                onClick={async () => {
+                                  setErrorMessage(null);
+                                  setIsSubmitting(true);
+                                  try {
+                                    const retry = await adminLogin(email.trim().toLowerCase(), password, rememberMe, sess.id);
+                                    if (retry.success) {
+                                      setMaxSessionsPrompt(null);
+                                      setShowManageDevices(false);
+                                      setConfirmReplaceSession(null);
+                                      toast.success('Admin Authenticated', 'Replaced older session and signed in.');
+                                    } else {
+                                      setErrorMessage(retry.message || 'Admin login failed.');
+                                      setConfirmReplaceSession(null);
+                                    }
+                                  } finally {
+                                    setIsSubmitting(false);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
+                              >
+                                Confirm Log Out &amp; Sign In
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

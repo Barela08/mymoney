@@ -288,6 +288,19 @@ export const authApi = {
     });
   },
 
+  async revokeOtherSessions(): Promise<{
+    success: boolean;
+    revokedCount: number;
+    message: string;
+    maxSessions: number;
+    activeCount: number;
+    sessions: ActiveDeviceSession[];
+  }> {
+    return await request('/api/auth/sessions/revoke-others', {
+      method: 'POST',
+    });
+  },
+
   async getMe(): Promise<{ success: boolean; user: AuthUser }> {
     try {
       const res = await request('/api/auth/me', { method: 'GET' });

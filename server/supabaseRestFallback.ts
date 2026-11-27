@@ -867,17 +867,17 @@ export const DEFAULT_EMAIL_TEMPLATES = [
     slug: 'welcome-email',
     name: 'Welcome & Account Verification',
     category: 'authentication',
-    subject: 'Welcome to {{app_name}}! Your Account is Active',
+    subject: 'Welcome to {{app_name}} – Your Financial Journey Starts Here!',
     variables: ['user_name', 'user_email', 'app_name', 'company_name', 'login_url', 'support_email', 'support_phone', 'date'],
     text_content:
-      'Hi {{user_name}},\n\nWelcome to {{app_name}} by {{company_name}}! Your account ({{user_email}}) has been created successfully on {{date}}.\n\nLogin here: {{login_url}}\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team',
+      'Hi {{user_name}},\n\nThank you for joining {{app_name}} by {{company_name}}! Track your income, manage expenses, explore transaction management, UPI QR payments, Udhar ledger tracking, and financial reports.\n\nOpen Dashboard / Login: {{login_url}}\nNeed assistance? Contact {{support_email}}.\n\nWarm regards,\nTeam {{app_name}} · A product of {{company_name}}',
     html_content:
-      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Welcome to {{app_name}}!</h2><p style="margin: 6px 0 0; font-size: 12px; color: #a7f3d0;">by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account (<strong>{{user_email}}</strong>) is now active as of {{date}}.</p><p style="text-align: center; margin: 24px 0;"><a href="{{login_url}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Open {{app_name}}</a></p><p style="font-size: 12px; color: #64748b;">Need help? Reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>',
+      '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Welcome to {{app_name}}!</h2><p style="margin: 6px 0 0; font-size: 12px; color: #a7f3d0;">A product of {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Thank you for joining {{app_name}}! Track your income &amp; expenses and unlock transaction management, UPI QR payments, Udhar ledger tracking, and financial reports.</p><p style="text-align: center; margin: 24px 0;"><a href="{{login_url}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Open Dashboard</a></p><p style="font-size: 12px; color: #64748b;">Need help? Reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>',
     is_active: true,
     is_custom: false,
     is_customized: false,
     version: 1,
-    updated_at: '2026-11-25T00:00:00.000Z',
+    updated_at: '2026-11-27T00:00:00.000Z',
   },
   {
     id: 'tmpl_password_reset',
@@ -1367,35 +1367,98 @@ export async function recordEmailLogFallback(entry: {
   user_id?: string | null;
   email: string;
   email_type: string;
+  idempotency_key?: string | null;
   recipient_name?: string;
   subject: string;
   status: 'sent' | 'failed' | 'pending' | 'retrying' | string;
   attempts?: number;
   last_error?: string | null;
   trigger_event?: string;
+  upsert_idempotency?: boolean;
 }): Promise<any> {
   const now = new Date().toISOString();
+  const store = readJsonStore<{ logs: any[] }>('email-logs.json', { logs: [] });
+  const existingByKey = entry.idempotency_key
+    ? store.logs.find((l) => l.idempotency_key === entry.idempotency_key)
+    : undefined;
+
   const row = {
-    id: entry.id || crypto.randomUUID(),
-    user_id: entry.user_id || null,
+    id: (entry.upsert_idempotency && existingByKey?.id) || entry.id || crypto.randomUUID(),
+    user_id: entry.user_id ?? existingByKey?.user_id ?? null,
     email: entry.email,
     email_type: entry.email_type,
+    idempotency_key: entry.idempotency_key ?? existingByKey?.idempotency_key ?? null,
     recipient_name: entry.recipient_name || '',
     subject: entry.subject,
     status: entry.status,
-    attempts: entry.attempts ?? 1,
+    attempts: entry.attempts ?? existingByKey?.attempts ?? 1,
     max_attempts: 3,
-    last_error: entry.last_error || null,
+    last_error: entry.last_error ?? null,
     trigger_event: entry.trigger_event || entry.email_type,
-    sent_at: entry.status === 'sent' ? now : null,
-    created_at: now,
+    sent_at: entry.status === 'sent' ? now : existingByKey?.sent_at || null,
+    created_at: existingByKey?.created_at || now,
     updated_at: now,
   };
 
-  const store = readJsonStore<{ logs: any[] }>('email-logs.json', { logs: [] });
-  store.logs = [row, ...store.logs.filter((l) => l.id !== row.id)].slice(0, 200);
+  store.logs = [
+    row,
+    ...store.logs.filter(
+      (l) => l.id !== row.id && !(entry.upsert_idempotency && entry.idempotency_key && l.idempotency_key === entry.idempotency_key)
+    ),
+  ].slice(0, 300);
   writeJsonStore('email-logs.json', store);
+
+  if (entry.idempotency_key) {
+    await sbRestRequest('email_dispatch_logs', {
+      method: 'POST',
+      prefer: entry.upsert_idempotency ? 'resolution=merge-duplicates' : 'return=minimal',
+      body: {
+        id: row.id,
+        user_id: row.user_id,
+        email: row.email,
+        email_type: row.email_type,
+        idempotency_key: row.idempotency_key,
+        recipient_name: row.recipient_name || null,
+        subject: row.subject,
+        status: row.status,
+        attempts: row.attempts,
+        max_attempts: row.max_attempts,
+        last_error: row.last_error,
+        trigger_event: row.trigger_event,
+        sent_at: row.sent_at,
+      },
+    }).catch(() => {});
+  }
+
   return row;
+}
+
+export async function getEmailLogByIdempotencyKeyFallback(idempotencyKey: string): Promise<any | null> {
+  if (!idempotencyKey) return null;
+  const store = readJsonStore<{ logs: any[] }>('email-logs.json', { logs: [] });
+  const localMatch = store.logs.find((l) => l.idempotency_key === idempotencyKey);
+  if (localMatch) return localMatch;
+
+  const sbRes = await sbRestRequest<any[]>(
+    `email_dispatch_logs?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&select=*&limit=1`
+  );
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+    return sbRes.data[0];
+  }
+  return null;
+}
+
+export async function getWelcomeEmailLogFallback(userIdOrEmail: string): Promise<any | null> {
+  const raw = String(userIdOrEmail || '').trim();
+  if (!raw) return null;
+  const isEmail = raw.includes('@');
+  const logs = await listEmailLogsFallback();
+  const match = logs.find((l) => {
+    if (l.email_type !== 'welcome_email') return false;
+    if (isEmail) return String(l.email || '').toLowerCase() === raw.toLowerCase();
+    return l.user_id === raw;
+  });
+  return match || null;
 }
 
 export async function listEmailLogsFallback(status?: string): Promise<any[]> {
@@ -1683,9 +1746,230 @@ export async function listUserActivityFallback(userId: string, userEmail?: strin
 
 export async function listUserSessionsFallback(userId: string): Promise<any[]> {
   const sbRes = await sbRestRequest<any[]>(
-    `user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`
+    `user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id,session_token_hash,user_agent,ip_address,expires_at,is_revoked,revoked_at,created_at,last_active_at&order=created_at.desc&limit=50`
   );
-  return sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  const map = new Map<string, any>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const r of sbRes.data) {
+      if (r?.id) map.set(String(r.id), r);
+    }
+  }
+  for (const r of store.sessions) {
+    if (r?.id && r.user_id === userId && !map.has(String(r.id))) {
+      map.set(String(r.id), r);
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+
+export async function createUserSessionFallback(entry: {
+  id: string;
+  user_id: string;
+  session_token_hash: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  expires_at: string;
+  device_name?: string;
+  device_type?: string;
+  browser?: string;
+  os?: string;
+}): Promise<any> {
+  const nowIso = new Date().toISOString();
+  const row = {
+    id: entry.id,
+    user_id: entry.user_id,
+    session_token_hash: entry.session_token_hash,
+    user_agent: entry.user_agent,
+    ip_address: entry.ip_address,
+    expires_at: entry.expires_at,
+    last_active_at: nowIso,
+    created_at: nowIso,
+    is_revoked: false,
+    revoked_at: null,
+    status: 'active',
+    device_name: entry.device_name || null,
+    device_type: entry.device_type || null,
+    browser: entry.browser || null,
+    os: entry.os || null,
+  };
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  store.sessions = [row, ...store.sessions.filter((s) => s.id !== row.id)].slice(0, 500);
+  writeJsonStore('user-sessions.json', store);
+  return row;
+}
+
+export async function findSessionByTokenHashFallback(tokenHash: string): Promise<any | null> {
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  return store.sessions.find((s) => s.session_token_hash === tokenHash) || null;
+}
+
+export async function revokeSessionByHashFallback(tokenHash: string): Promise<boolean> {
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  let changed = false;
+  const nowIso = new Date().toISOString();
+  store.sessions = store.sessions.map((s) => {
+    if (s.session_token_hash === tokenHash && !s.is_revoked) {
+      changed = true;
+      return { ...s, is_revoked: true, status: 'revoked', revoked_at: nowIso };
+    }
+    return s;
+  });
+  if (changed) writeJsonStore('user-sessions.json', store);
+  return changed;
+}
+
+export async function revokeUserSessionByIdFallback(userId: string, sessionId: string): Promise<boolean> {
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  let changed = false;
+  const nowIso = new Date().toISOString();
+  store.sessions = store.sessions.map((s) => {
+    if (s.id === sessionId && s.user_id === userId && !s.is_revoked) {
+      changed = true;
+      return { ...s, is_revoked: true, status: 'revoked', revoked_at: nowIso };
+    }
+    return s;
+  });
+  if (changed) writeJsonStore('user-sessions.json', store);
+  return changed;
+}
+
+export async function revokeAllUserSessionsFallback(
+  userId: string,
+  exceptTokenHash?: string | null
+): Promise<number> {
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  let count = 0;
+  const nowIso = new Date().toISOString();
+  store.sessions = store.sessions.map((s) => {
+    if (
+      s.user_id === userId &&
+      !s.is_revoked &&
+      (!exceptTokenHash || s.session_token_hash !== exceptTokenHash)
+    ) {
+      count++;
+      return { ...s, is_revoked: true, status: 'revoked', revoked_at: nowIso };
+    }
+    return s;
+  });
+  if (count > 0) writeJsonStore('user-sessions.json', store);
+  return count;
+}
+
+export async function touchSessionByIdFallback(sessionId: string): Promise<void> {
+  const store = readJsonStore<{ sessions: any[] }>('user-sessions.json', { sessions: [] });
+  const idx = store.sessions.findIndex((s) => s.id === sessionId);
+  if (idx >= 0) {
+    store.sessions[idx] = { ...store.sessions[idx], last_active_at: new Date().toISOString() };
+    writeJsonStore('user-sessions.json', store);
+  }
+}
+
+export async function listAdminNotificationsFallback(limit = 100): Promise<any[]> {
+  const store = readJsonStore<{ notifications: any[] }>('admin-notifications.json', { notifications: [] });
+  const sbRes = await sbRestRequest<any[]>(
+    `admin_notifications?select=*&order=created_at.desc&limit=${Math.max(1, Math.min(limit, 200))}`
+  );
+  const map = new Map<string, any>();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const r of sbRes.data) {
+      if (r?.id) map.set(String(r.id), r);
+    }
+  }
+  for (const r of store.notifications) {
+    if (r?.id) {
+      const existing = map.get(String(r.id));
+      map.set(String(r.id), existing ? { ...r, ...existing, is_read: existing.is_read || r.is_read } : r);
+    }
+  }
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, limit);
+}
+
+export async function recordAdminNotificationFallback(entry: {
+  id: string;
+  dedupe_key?: string;
+  event_type: string;
+  title: string;
+  message: string;
+  user_id?: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  registered_at?: string | null;
+  registration_status?: string | null;
+  metadata?: Record<string, any>;
+  is_read?: boolean;
+  read_at?: string | null;
+  created_at: string;
+}): Promise<{ record: any; deduplicated: boolean }> {
+  const store = readJsonStore<{ notifications: any[] }>('admin-notifications.json', { notifications: [] });
+  if (entry.dedupe_key) {
+    const existing = store.notifications.find((n) => n.dedupe_key === entry.dedupe_key);
+    if (existing) {
+      return { record: existing, deduplicated: true };
+    }
+  }
+  store.notifications = [entry, ...store.notifications].slice(0, 300);
+  writeJsonStore('admin-notifications.json', store);
+
+  await sbRestRequest('admin_notifications', {
+    method: 'POST',
+    prefer: 'return=minimal',
+    body: {
+      id: entry.id,
+      event_type: entry.event_type,
+      title: entry.title,
+      message: entry.message,
+      user_id: entry.user_id || null,
+      user_email: entry.user_email || null,
+      metadata: entry.metadata || {},
+      is_read: false,
+      created_at: entry.created_at,
+    },
+  }).catch(() => {});
+
+  return { record: entry, deduplicated: false };
+}
+
+export async function markAdminNotificationReadFallback(id: string): Promise<boolean> {
+  const store = readJsonStore<{ notifications: any[] }>('admin-notifications.json', { notifications: [] });
+  const nowIso = new Date().toISOString();
+  let updated = false;
+  store.notifications = store.notifications.map((n) => {
+    if (n.id === id) {
+      updated = true;
+      return { ...n, is_read: true, status: 'read', read_at: n.read_at || nowIso };
+    }
+    return n;
+  });
+  if (updated) writeJsonStore('admin-notifications.json', store);
+  await sbRestRequest(`admin_notifications?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { is_read: true, read_at: nowIso },
+  }).catch(() => {});
+  return updated;
+}
+
+export async function markAllAdminNotificationsReadFallback(): Promise<number> {
+  const store = readJsonStore<{ notifications: any[] }>('admin-notifications.json', { notifications: [] });
+  const nowIso = new Date().toISOString();
+  let count = 0;
+  store.notifications = store.notifications.map((n) => {
+    if (!n.is_read) {
+      count++;
+      return { ...n, is_read: true, status: 'read', read_at: n.read_at || nowIso };
+    }
+    return n;
+  });
+  if (count > 0) writeJsonStore('admin-notifications.json', store);
+  await sbRestRequest('admin_notifications?is_read=eq.false', {
+    method: 'PATCH',
+    body: { is_read: true, read_at: nowIso },
+  }).catch(() => {});
+  return count;
 }
 
 const DEFAULT_ADMIN_ROLES = [

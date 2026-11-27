@@ -1390,11 +1390,15 @@ export async function handleUserAccountExtensions(
 
     recordAdminNotification({
       eventType: 'new_user',
-      title: 'New User Registered (Google)',
+      title: 'New User Registered',
       message: `${createdUser.full_name} (${createdUser.email}) signed up via Google.`,
       userId: createdUser.id,
+      userName: createdUser.full_name,
       userEmail: createdUser.email,
-      metadata: { role: 'user', provider: 'google', registeredAt: new Date().toISOString() },
+      registeredAt: createdUser.created_at || new Date().toISOString(),
+      registrationStatus: createdUser.status || 'active',
+      dedupeKey: `new_user:${createdUser.id}`,
+      metadata: { role: 'user', provider: 'google', registeredAt: createdUser.created_at || new Date().toISOString() },
     }).catch(() => {});
 
     await logSecurityEvent('GOOGLE_USER_REGISTERED', {

@@ -2911,7 +2911,8 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const notifs = await getAdminNotifications(100);
-      sendJson(res, 200, { success: true, notifications: notifs });
+      const unreadCount = notifs.filter((n) => !n.is_read).length;
+      sendJson(res, 200, { success: true, notifications: notifs, unreadCount });
       return true;
     }
 

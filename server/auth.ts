@@ -1,6 +1,15 @@
 import crypto from 'crypto';
-import { query, isDatabaseAvailable } from './db.js';
+import { query, pool, isDatabaseAvailable } from './db.js';
 import { generateCryptoToken, hashToken } from './security.js';
+import {
+  listUserSessionsFallback,
+  createUserSessionFallback,
+  findSessionByTokenHashFallback,
+  revokeSessionByHashFallback,
+  revokeUserSessionByIdFallback,
+  revokeAllUserSessionsFallback,
+  touchSessionByIdFallback,
+} from './supabaseRestFallback.js';
 import type { IncomingMessage } from 'http';
 
 export interface AuthenticatedUser {
@@ -36,9 +45,11 @@ export interface ActiveSessionDisplay {
   browser: string;
   os: string;
   ipAddress: string | null;
+  status: 'active' | 'revoked' | 'expired';
   createdAt: string;
   lastActiveAt: string | null;
   expiresAt: string;
+  revokedAt?: string | null;
   isCurrent: boolean;
 }
 
@@ -228,6 +239,54 @@ export function verifyFallbackSessionToken(
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const REMEMBER_ME_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
+const userSessionLocks = new Map<string, Promise<unknown>>();
+
+async function withUserSessionLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = userSessionLocks.get(userId) || Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  userSessionLocks.set(userId, prev.then(() => next));
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (userSessionLocks.get(userId) === next) {
+      userSessionLocks.delete(userId);
+    }
+  }
+}
+
+function mapSessionRowsToDisplay(rows: any[], currentHash: string | null): ActiveSessionDisplay[] {
+  const nowMs = Date.now();
+  return rows
+    .filter((r) => !r.is_revoked && r.expires_at && new Date(r.expires_at).getTime() > nowMs)
+    .sort((a, b) => {
+      const aTime = new Date(a.last_active_at || a.created_at || 0).getTime();
+      const bTime = new Date(b.last_active_at || b.created_at || 0).getTime();
+      return bTime - aTime;
+    })
+    .map((r) => {
+      const parsed = parseUserAgentSummary(r.user_agent);
+      return {
+        id: String(r.id),
+        deviceName: r.device_name || parsed.deviceName,
+        deviceType: r.device_type || parsed.deviceType,
+        browser: r.browser || parsed.browser,
+        os: r.os || parsed.os,
+        ipAddress: r.ip_address ? String(r.ip_address) : null,
+        status: 'active' as const,
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : null,
+        expiresAt: new Date(r.expires_at).toISOString(),
+        revokedAt: r.revoked_at ? new Date(r.revoked_at).toISOString() : null,
+        isCurrent: Boolean(currentHash && r.session_token_hash === currentHash),
+      };
+    });
+}
+
 export async function listActiveSessionsForUser(
   userId: string,
   currentSessionToken?: string | null
@@ -238,35 +297,8 @@ export async function listActiveSessionsForUser(
       ? hashToken(currentSessionToken)
       : null;
 
-  const mapRows = (rows: any[]): ActiveSessionDisplay[] => {
-    const nowMs = Date.now();
-    return rows
-      .filter((r) => !r.is_revoked && r.expires_at && new Date(r.expires_at).getTime() > nowMs)
-      .sort((a, b) => {
-        const aTime = new Date(a.last_active_at || a.created_at || 0).getTime();
-        const bTime = new Date(b.last_active_at || b.created_at || 0).getTime();
-        return bTime - aTime;
-      })
-      .map((r) => {
-        const parsed = parseUserAgentSummary(r.user_agent);
-        return {
-          id: String(r.id),
-          deviceName: parsed.deviceName,
-          deviceType: parsed.deviceType,
-          browser: parsed.browser,
-          os: parsed.os,
-          ipAddress: r.ip_address ? String(r.ip_address) : null,
-          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-          lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : null,
-          expiresAt: new Date(r.expires_at).toISOString(),
-          isCurrent: Boolean(currentHash && r.session_token_hash === currentHash),
-        };
-      });
-  };
-
   if (isDatabaseAvailable()) {
     try {
-      // Opportunistically mark expired sessions revoked so they never linger
       await query(
         `UPDATE public.user_sessions SET is_revoked = TRUE
          WHERE user_id = $1 AND is_revoked = FALSE AND expires_at <= NOW()`,
@@ -280,53 +312,30 @@ export async function listActiveSessionsForUser(
          ORDER BY COALESCE(last_active_at, created_at) DESC`,
         [userId]
       );
-      return mapRows(res.rows || []);
+      return mapSessionRowsToDisplay(res.rows || [], currentHash);
     } catch (err: any) {
-      console.warn('listActiveSessionsForUser PG query failed, attempting Supabase REST:', err?.message);
+      console.warn('listActiveSessionsForUser PG query failed, attempting Supabase/local fallback:', err?.message);
     }
   }
 
-  try {
-    const { url, key } = getAuthSupabaseRestConfig();
-    const restRes = await fetch(
-      `${url}/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false&select=id,session_token_hash,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`,
-      {
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          Accept: 'application/json',
-        },
-      }
-    );
-    if (restRes.ok) {
-      const rows = await restRes.json().catch(() => []);
-      if (Array.isArray(rows)) {
-        const nowMs = Date.now();
-        for (const r of rows) {
-          if (r?.id && r?.expires_at && new Date(r.expires_at).getTime() <= nowMs) {
-            fetch(`${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(r.id)}`, {
-              method: 'PATCH',
-              headers: {
-                apikey: key,
-                Authorization: `Bearer ${key}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ is_revoked: true }),
-            }).catch(() => {});
-          }
-        }
-        return mapRows(rows);
-      }
+  const fbRows = await listUserSessionsFallback(userId).catch(() => []);
+  const nowMs = Date.now();
+  const { url, key } = getAuthSupabaseRestConfig();
+  for (const r of fbRows) {
+    if (r?.id && !r.is_revoked && r?.expires_at && new Date(r.expires_at).getTime() <= nowMs) {
+      fetch(`${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(r.id)}`, {
+        method: 'PATCH',
+        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_revoked: true }),
+      }).catch(() => {});
     }
-  } catch (err: any) {
-    console.warn('listActiveSessionsForUser Supabase REST notice:', err?.message);
   }
-
-  return [];
+  return mapSessionRowsToDisplay(fbRows, currentHash);
 }
 
 export async function revokeUserSessionById(userId: string, sessionId: string): Promise<boolean> {
   if (!userId || !sessionId) return false;
+  let revoked = false;
 
   if (isDatabaseAvailable()) {
     try {
@@ -337,9 +346,9 @@ export async function revokeUserSessionById(userId: string, sessionId: string): 
          RETURNING id`,
         [sessionId, userId]
       );
-      return (res.rowCount ?? 0) > 0;
+      if ((res.rowCount ?? 0) > 0) revoked = true;
     } catch (err: any) {
-      console.warn('revokeUserSessionById PG update failed, attempting Supabase REST:', err?.message);
+      console.warn('revokeUserSessionById PG update failed, attempting fallback:', err?.message);
     }
   }
 
@@ -361,13 +370,71 @@ export async function revokeUserSessionById(userId: string, sessionId: string): 
     );
     if (restRes.ok) {
       const rows = await restRes.json().catch(() => []);
-      return Array.isArray(rows) && rows.length > 0;
+      if (Array.isArray(rows) && rows.length > 0) revoked = true;
     }
-  } catch (err: any) {
-    console.warn('revokeUserSessionById Supabase REST notice:', err?.message);
+  } catch {}
+
+  const localRevoked = await revokeUserSessionByIdFallback(userId, sessionId).catch(() => false);
+  return revoked || localRevoked;
+}
+
+export async function revokeOtherUserSessions(
+  userId: string,
+  currentSessionToken: string | null
+): Promise<number> {
+  if (!userId) return 0;
+  const currentHash =
+    currentSessionToken && !currentSessionToken.startsWith('mmf1.') && !currentSessionToken.startsWith('direct_')
+      ? hashToken(currentSessionToken)
+      : null;
+
+  let totalRevoked = 0;
+
+  if (isDatabaseAvailable()) {
+    try {
+      const res = currentHash
+        ? await query(
+            `UPDATE public.user_sessions
+             SET is_revoked = TRUE
+             WHERE user_id = $1 AND is_revoked = FALSE AND session_token_hash <> $2`,
+            [userId, currentHash]
+          )
+        : await query(
+            `UPDATE public.user_sessions
+             SET is_revoked = TRUE
+             WHERE user_id = $1 AND is_revoked = FALSE`,
+            [userId]
+          );
+      totalRevoked += res.rowCount ?? 0;
+    } catch (err: any) {
+      console.warn('revokeOtherUserSessions PG update failed:', err?.message);
+    }
   }
 
-  return false;
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const filter = currentHash
+      ? `user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false&session_token_hash=neq.${encodeURIComponent(currentHash)}`
+      : `user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false`;
+    const restRes = await fetch(`${url}/rest/v1/user_sessions?${filter}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({ is_revoked: true }),
+    });
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      if (Array.isArray(rows) && totalRevoked === 0) totalRevoked += rows.length;
+    }
+  } catch {}
+
+  const localCount = await revokeAllUserSessionsFallback(userId, currentHash).catch(() => 0);
+  return Math.max(totalRevoked, localCount);
 }
 
 export async function createSession(
@@ -380,96 +447,152 @@ export async function createSession(
     replaceSessionId?: string;
   } = {}
 ): Promise<SessionInfo> {
-  if (opts.replaceSessionId) {
-    await revokeUserSessionById(userId, opts.replaceSessionId);
-  }
+  return withUserSessionLock(userId, async () => {
+    const sessionToken = generateCryptoToken(32);
+    const sessionTokenHash = hashToken(sessionToken);
+    const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
+    const expiresAt = new Date(Date.now() + duration);
+    const parsedUa = parseUserAgentSummary(opts.userAgent);
 
-  const activeSessions = await listActiveSessionsForUser(userId);
-  if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
-    throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
-  }
+    // 1. Primary atomic path: PostgreSQL transaction + advisory lock
+    if (isDatabaseAvailable()) {
+      const client = await pool.connect().catch(() => null);
+      if (client) {
+        try {
+          await client.query('BEGIN');
+          await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [userId]);
+          await client.query(
+            `UPDATE public.user_sessions SET is_revoked = TRUE
+             WHERE user_id = $1 AND is_revoked = FALSE AND expires_at <= NOW()`,
+            [userId]
+          );
+          if (opts.replaceSessionId) {
+            await client.query(
+              `UPDATE public.user_sessions SET is_revoked = TRUE
+               WHERE id = $1 AND user_id = $2 AND is_revoked = FALSE`,
+              [opts.replaceSessionId, userId]
+            );
+          }
+          const activeRes = await client.query(
+            `SELECT id, session_token_hash, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at
+             FROM public.user_sessions
+             WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()
+             ORDER BY COALESCE(last_active_at, created_at) DESC`,
+            [userId]
+          );
+          const activeList = mapSessionRowsToDisplay(activeRes.rows || [], null);
+          if (activeList.length >= MAX_ACTIVE_SESSIONS) {
+            await client.query('ROLLBACK');
+            throw new SessionLimitError(activeList, MAX_ACTIVE_SESSIONS);
+          }
+          const insertRes = await client.query(
+            `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             RETURNING id`,
+            [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
+          );
+          await client.query('COMMIT');
+          if (insertRes.rows[0]?.id) {
+            return {
+              sessionId: String(insertRes.rows[0].id),
+              sessionToken,
+              userId,
+              expiresAt,
+            };
+          }
+        } catch (err: any) {
+          await client.query('ROLLBACK').catch(() => {});
+          if (err instanceof SessionLimitError) throw err;
+          console.warn('createSession PG transaction failed, falling back to REST/local store:', err?.message);
+        } finally {
+          client.release();
+        }
+      }
+    }
 
-  const sessionToken = generateCryptoToken(32);
-  const sessionTokenHash = hashToken(sessionToken);
-  const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
-  const expiresAt = new Date(Date.now() + duration);
+    // 2. Non-PG path (serialized by per-user mutex above): check replace & enforce max 3
+    if (opts.replaceSessionId) {
+      await revokeUserSessionById(userId, opts.replaceSessionId);
+    }
 
-  // 1. Primary path: direct PostgreSQL session persistence
-  if (isDatabaseAvailable()) {
+    const activeSessions = await listActiveSessionsForUser(userId);
+    if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
+      throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
+    }
+
+    // 2a. Secondary path: Supabase HTTPS REST persistence into user_sessions
     try {
-      const res = await query(
-        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         RETURNING id`,
-        [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
-      );
+      const { url, key } = getAuthSupabaseRestConfig();
+      const nowIso = new Date().toISOString();
+      const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          session_token_hash: sessionTokenHash,
+          user_agent: opts.userAgent || null,
+          ip_address: opts.ipAddress || null,
+          expires_at: expiresAt.toISOString(),
+          last_active_at: nowIso,
+          is_revoked: false,
+        }),
+      });
 
-      if (res.rows[0]?.id) {
+      if (restRes.ok) {
+        const rows = await restRes.json().catch(() => []);
+        const createdId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : crypto.randomUUID();
+        // Also mirror into local session store for deterministic immediate lookup/revocation
+        await createUserSessionFallback({
+          id: createdId,
+          user_id: userId,
+          session_token_hash: sessionTokenHash,
+          user_agent: opts.userAgent || null,
+          ip_address: opts.ipAddress || null,
+          expires_at: expiresAt.toISOString(),
+          device_name: parsedUa.deviceName,
+          device_type: parsedUa.deviceType,
+          browser: parsedUa.browser,
+          os: parsedUa.os,
+        }).catch(() => {});
         return {
-          sessionId: res.rows[0].id,
+          sessionId: createdId,
           sessionToken,
           userId,
           expiresAt,
         };
       }
     } catch (err: any) {
-      console.warn('createSession PG insert failed, attempting Supabase REST:', err?.message);
+      console.warn('createSession Supabase REST insert notice:', err?.message);
     }
-  }
 
-  // 2. Secondary path: Supabase HTTPS REST persistence into user_sessions
-  try {
-    const { url, key } = getAuthSupabaseRestConfig();
-    const nowIso = new Date().toISOString();
-    const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        session_token_hash: sessionTokenHash,
-        user_agent: opts.userAgent || null,
-        ip_address: opts.ipAddress || null,
-        expires_at: expiresAt.toISOString(),
-        last_active_at: nowIso,
-        is_revoked: false,
-      }),
+    // 3. Persistent runtime-store tracked session (supports full device listing & immediate revocation!)
+    const localId = crypto.randomUUID();
+    await createUserSessionFallback({
+      id: localId,
+      user_id: userId,
+      session_token_hash: sessionTokenHash,
+      user_agent: opts.userAgent || null,
+      ip_address: opts.ipAddress || null,
+      expires_at: expiresAt.toISOString(),
+      device_name: parsedUa.deviceName,
+      device_type: parsedUa.deviceType,
+      browser: parsedUa.browser,
+      os: parsedUa.os,
     });
 
-    if (restRes.ok) {
-      const rows = await restRes.json().catch(() => []);
-      const createdId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : sessionTokenHash.slice(0, 16);
-      return {
-        sessionId: createdId,
-        sessionToken,
-        userId,
-        expiresAt,
-      };
-    }
-  } catch (err: any) {
-    console.warn('createSession Supabase REST insert notice:', err?.message);
-  }
-
-  // 3. Cryptographic fallback: server-signed HMAC-SHA256 stateless token (never unsigned)
-  const signedToken = signFallbackSessionToken(
-    {
-      id: userId,
-      role: opts.user?.role || 'user',
-      email: opts.user?.email || '',
-    },
-    expiresAt.getTime()
-  );
-  return {
-    sessionId: `hmac_${sessionTokenHash.slice(0, 16)}`,
-    sessionToken: signedToken,
-    userId,
-    expiresAt,
-  };
+    return {
+      sessionId: localId,
+      sessionToken,
+      userId,
+      expiresAt,
+    };
+  });
 }
 
 export async function revokeSession(sessionToken: string): Promise<boolean> {
@@ -477,6 +600,7 @@ export async function revokeSession(sessionToken: string): Promise<boolean> {
     return false;
   }
   const tokenHash = hashToken(sessionToken);
+  let revoked = false;
 
   if (isDatabaseAvailable()) {
     try {
@@ -484,7 +608,7 @@ export async function revokeSession(sessionToken: string): Promise<boolean> {
         `UPDATE public.user_sessions SET is_revoked = TRUE WHERE session_token_hash = $1`,
         [tokenHash]
       );
-      return (res.rowCount ?? 0) > 0;
+      if ((res.rowCount ?? 0) > 0) revoked = true;
     } catch (err: any) {
       console.warn('revokeSession PG update failed, attempting Supabase REST:', err?.message);
     }
@@ -505,20 +629,22 @@ export async function revokeSession(sessionToken: string): Promise<boolean> {
         body: JSON.stringify({ is_revoked: true }),
       }
     );
-    return restRes.ok;
-  } catch {
-    return false;
-  }
+    if (restRes.ok) revoked = true;
+  } catch {}
+
+  const localRevoked = await revokeSessionByHashFallback(tokenHash).catch(() => false);
+  return revoked || localRevoked;
 }
 
 export async function revokeAllUserSessions(userId: string): Promise<number> {
+  let count = 0;
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
         `UPDATE public.user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE`,
         [userId]
       );
-      return res.rowCount ?? 0;
+      count = Math.max(count, res.rowCount ?? 0);
     } catch (err: any) {
       console.warn('revokeAllUserSessions PG update failed, attempting Supabase REST:', err?.message);
     }
@@ -542,10 +668,12 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
     );
     if (restRes.ok) {
       const rows = await restRes.json().catch(() => []);
-      return Array.isArray(rows) ? rows.length : 1;
+      if (Array.isArray(rows)) count = Math.max(count, rows.length);
     }
   } catch {}
-  return 0;
+
+  const localCount = await revokeAllUserSessionsFallback(userId, null).catch(() => 0);
+  return Math.max(count, localCount);
 }
 
 // Extract session token from Authorization header or Cookie header
@@ -785,6 +913,19 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
         }
       }
     } catch {}
+
+    const localSession = await findSessionByTokenHashFallback(tokenHash).catch(() => null);
+    if (localSession && !localSession.is_revoked) {
+      if (new Date(localSession.expires_at) >= new Date()) {
+        const user = await resolveActiveUserById(localSession.user_id);
+        if (user) {
+          touchSessionByIdFallback(localSession.id).catch(() => {});
+          return user;
+        }
+      } else {
+        await revokeSessionByHashFallback(tokenHash).catch(() => {});
+      }
+    }
     return null;
   }
 

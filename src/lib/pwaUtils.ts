@@ -31,6 +31,47 @@ export interface DismissalStateInput {
 }
 
 export const DEFAULT_DISMISS_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+export const ACTIVE_REMINDER_DELAY_MS = 60 * 1000; // 60 seconds active-page wait
+
+export interface ActiveReminderState {
+  accumulatedMs: number;
+  visibleSinceMs: number | null;
+}
+
+export function getActiveElapsedMs(state: ActiveReminderState, nowMs: number = Date.now()): number {
+  const runningDelta =
+    state.visibleSinceMs !== null && Number.isFinite(state.visibleSinceMs)
+      ? Math.max(0, nowMs - state.visibleSinceMs)
+      : 0;
+  return Math.max(0, state.accumulatedMs + runningDelta);
+}
+
+export function transitionActiveReminderVisibility(
+  state: ActiveReminderState,
+  isVisible: boolean,
+  nowMs: number = Date.now()
+): ActiveReminderState {
+  if (isVisible) {
+    if (state.visibleSinceMs !== null) return state;
+    return {
+      accumulatedMs: state.accumulatedMs,
+      visibleSinceMs: nowMs,
+    };
+  }
+  const accumulatedMs = getActiveElapsedMs(state, nowMs);
+  return {
+    accumulatedMs,
+    visibleSinceMs: null,
+  };
+}
+
+export function isActiveReminderDue(
+  state: ActiveReminderState,
+  nowMs: number = Date.now(),
+  delayMs: number = ACTIVE_REMINDER_DELAY_MS
+): boolean {
+  return getActiveElapsedMs(state, nowMs) >= delayMs;
+}
 
 /**
  * Detect browser + OS + PWA install capability from User-Agent.
@@ -139,8 +180,8 @@ export function isRunningStandalone(): boolean {
 
 /**
  * Evaluates whether promotional install prompt suggestions should stay suppressed.
- * Note: This ONLY affects automatic suggestions, never the manual top-right header entry point
- * when installation remains available and the app is not installed.
+ * Dismissal during a visit hides the reminder for that visit while still allowing
+ * future visits (when sessionDismissed is false) to re-arm if still uninstalled.
  */
 export function isInstallSuggestionSuppressed(input: DismissalStateInput): boolean {
   if (input.sessionDismissed) return true;

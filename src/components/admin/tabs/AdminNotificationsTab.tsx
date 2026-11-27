@@ -19,9 +19,16 @@ import { adminClient } from '../../../lib/adminApi';
 import { useToast } from '../../../context/ToastContext';
 import { ConfirmModal } from '../../common/ConfirmModal';
 
-export const AdminNotificationsTab: React.FC = () => {
+interface AdminNotificationsTabProps {
+  onOpenUser?: (userId: string) => void;
+}
+
+export const AdminNotificationsTab: React.FC<AdminNotificationsTabProps> = ({ onOpenUser }) => {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<'campaigns' | 'banners'>('campaigns');
+  const [activeTab, setActiveTab] = useState<'registrations' | 'campaigns' | 'banners'>('registrations');
+  const [systemNotifications, setSystemNotifications] = useState<any[]>([]);
+  const [unreadSystemCount, setUnreadSystemCount] = useState(0);
+  const [registrationFilter, setRegistrationFilter] = useState<'all' | 'unread'>('all');
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
@@ -157,21 +164,53 @@ export const AdminNotificationsTab: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [cRes, bRes, aRes, uRes] = await Promise.all([
+      const [cRes, bRes, aRes, uRes, sRes] = await Promise.all([
         adminClient.getCampaigns().catch(() => ({ success: false, campaigns: [] })),
         adminClient.getNotifications().catch(() => ({ success: false, notifications: [] })),
         adminClient.getNotificationAnalytics().catch(() => ({ success: false })),
         adminClient.getUsers('', 'all').catch(() => ({ success: false, users: [] })),
+        adminClient.getAdminNotifications().catch(() => ({ success: false, notifications: [], unreadCount: 0 })),
       ]);
 
       if (cRes.success) setCampaigns(cRes.campaigns || []);
       if (bRes.success) setBanners(bRes.notifications || []);
       if (aRes.success) setAnalytics(aRes);
       if (uRes.success) setUsersList(uRes.users || []);
+      if (sRes.success && Array.isArray(sRes.notifications)) {
+        setSystemNotifications(sRes.notifications);
+        setUnreadSystemCount(
+          typeof sRes.unreadCount === 'number'
+            ? sRes.unreadCount
+            : sRes.notifications.filter((n: any) => !n.is_read).length
+        );
+      }
     } catch (err: any) {
       toast.error('Data Load Failed', err.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleMarkSystemRead = async (id: string) => {
+    try {
+      await adminClient.markAdminNotificationRead(id);
+      setSystemNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: true, status: 'read' } : n))
+      );
+      setUnreadSystemCount((c) => Math.max(0, c - 1));
+    } catch (err: any) {
+      toast.error('Action Failed', err.message);
+    }
+  };
+
+  const handleMarkAllSystemRead = async () => {
+    try {
+      await adminClient.markAllAdminNotificationsRead();
+      setSystemNotifications((prev) => prev.map((n) => ({ ...n, is_read: true, status: 'read' })));
+      setUnreadSystemCount(0);
+      toast.success('All Marked Read', 'All admin notifications marked as read.');
+    } catch (err: any) {
+      toast.error('Action Failed', err.message);
     }
   };
 
@@ -389,7 +428,23 @@ export const AdminNotificationsTab: React.FC = () => {
 
       {/* Action Header & Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveTab('registrations')}
+            data-testid="admin-tab-registrations"
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'registrations'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span>Registration &amp; System Alerts ({systemNotifications.length})</span>
+            {unreadSystemCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white">
+                {unreadSystemCount}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setActiveTab('campaigns')}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
@@ -438,6 +493,119 @@ export const AdminNotificationsTab: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Registration & System Notification History */}
+      {activeTab === 'registrations' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRegistrationFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer ${
+                  registrationFilter === 'all'
+                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                All History ({systemNotifications.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegistrationFilter('unread')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer ${
+                  registrationFilter === 'unread'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                Unread ({unreadSystemCount})
+              </button>
+            </div>
+            {unreadSystemCount > 0 && (
+              <button
+                type="button"
+                onClick={handleMarkAllSystemRead}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold cursor-pointer"
+              >
+                Mark All Read
+              </button>
+            )}
+          </div>
+
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {systemNotifications.filter((n) => (registrationFilter === 'unread' ? !n.is_read : true)).length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-400">
+                No registration or system notifications found.
+              </div>
+            ) : (
+              systemNotifications
+                .filter((n) => (registrationFilter === 'unread' ? !n.is_read : true))
+                .map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => {
+                      if (!n.is_read) void handleMarkSystemRead(n.id);
+                      if (n.user_id && onOpenUser) onOpenUser(n.user_id);
+                    }}
+                    className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+                      n.user_id && onOpenUser ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50' : ''
+                    } ${!n.is_read ? 'bg-emerald-50/40 dark:bg-emerald-950/15' : ''}`}
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!n.is_read && <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />}
+                        <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                          {n.title}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          {n.registration_status || n.event_type || 'event'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">{n.message}</p>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                        {n.user_name && <span>Name: <strong className="text-slate-600 dark:text-slate-300">{n.user_name}</strong></span>}
+                        {n.user_email && <span>Email: <strong className="font-mono text-slate-600 dark:text-slate-300">{n.user_email}</strong></span>}
+                        {n.user_id && <span>User ID: <strong className="font-mono text-slate-600 dark:text-slate-300">{n.user_id}</strong></span>}
+                        <span>
+                          Registered: {new Date(n.registered_at || n.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!n.is_read && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleMarkSystemRead(n.id);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                        >
+                          Mark Read
+                        </button>
+                      )}
+                      {n.user_id && onOpenUser && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!n.is_read) void handleMarkSystemRead(n.id);
+                            onOpenUser(n.user_id);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          View User
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Campaigns Table */}
       {activeTab === 'campaigns' && (

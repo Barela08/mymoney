@@ -7,6 +7,8 @@ import { logSecurityEvent } from './security.js';
 import {
   recordEmailLogFallback,
   updateEmailLogFallback,
+  getEmailLogByIdempotencyKeyFallback,
+  getWelcomeEmailLogFallback,
   listAllAppUsersFallback,
 } from './supabaseRestFallback.js';
 import {
@@ -167,12 +169,14 @@ async function createDispatchLogRecord(params: {
     user_id: params.userId || null,
     email: params.email || '(none)',
     email_type: params.emailType,
+    idempotency_key: params.idempotencyKey,
     recipient_name: params.recipientName || '',
     subject: params.subject,
     status: params.status || 'pending',
     attempts: 0,
     last_error: params.lastError || null,
     trigger_event: params.triggerEvent,
+    upsert_idempotency: params.upsertIdempotency,
   }).catch(() => null);
 
   return fbRow?.id || `fb_${params.emailType}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -665,6 +669,8 @@ async function executeEmailDispatch(
  * 5. Embeds official logo.jpg from project via CID attachment and supports configured external logo.
  * 6. Includes plain-text fallback.
  */
+const welcomeInFlightLocks = new Map<string, Promise<WelcomeEmailResult>>();
+
 export async function sendWelcomeEmail(
   email: string,
   providedName?: string,
@@ -676,148 +682,176 @@ export async function sendWelcomeEmail(
     return { success: false, status: 'failed', message: 'Invalid recipient email address' };
   }
 
-  try {
-    // 1. Fetch user's name directly from trusted backend database record
-    let trustedName = (providedName || '').trim();
-    let resolvedUserId = userId;
+  const lockKey = `welcome:${userId || normalizedEmail}`;
+  const inFlight = welcomeInFlightLocks.get(lockKey);
+  if (inFlight && !forceResend) {
+    return inFlight;
+  }
 
-    const uMatch = await lookupRegisteredUser({ userId: resolvedUserId, email: normalizedEmail });
-    if (uMatch) {
-      trustedName = uMatch.full_name || trustedName;
-      resolvedUserId = uMatch.id || resolvedUserId;
-    }
+  const runner = (async (): Promise<WelcomeEmailResult> => {
+    try {
+      // 1. Fetch user's name directly from trusted backend database record
+      let trustedName = (providedName || '').trim();
+      let resolvedUserId = userId;
 
-    // 2. Idempotency Check: Prevent duplicate welcome emails
-    const idempotencyKey = `welcome:${resolvedUserId || normalizedEmail}`;
+      const uMatch = await lookupRegisteredUser({ userId: resolvedUserId, email: normalizedEmail });
+      if (uMatch) {
+        trustedName = uMatch.full_name || trustedName;
+        resolvedUserId = uMatch.id || resolvedUserId;
+      }
 
-    if (!forceResend && isDatabaseAvailable()) {
-      try {
-        const existingLog = await query(
-          'SELECT id, status, attempts FROM public.email_dispatch_logs WHERE idempotency_key = $1',
-          [idempotencyKey]
-        );
+      // 2. Idempotency Check across both PostgreSQL and fallback/REST store
+      const idempotencyKey = `welcome:${resolvedUserId || normalizedEmail}`;
 
-        if (existingLog.rows.length > 0) {
-          const log = existingLog.rows[0];
-          if (log.status === 'sent') {
-            console.log(`[Welcome Email Idempotency] Email already sent for ${normalizedEmail} (Log ID: ${log.id}). Skipping duplicate.`);
+      if (!forceResend) {
+        let existingLog: any = null;
+        if (isDatabaseAvailable()) {
+          try {
+            const existingRes = await query(
+              'SELECT id, status, attempts FROM public.email_dispatch_logs WHERE idempotency_key = $1',
+              [idempotencyKey]
+            );
+            existingLog = existingRes.rows[0] || null;
+          } catch (logErr) {
+            console.warn('[Welcome Email Idempotency Query Warn]:', sanitizeErrorMessage(logErr));
+          }
+        }
+        if (!existingLog) {
+          existingLog = await getEmailLogByIdempotencyKeyFallback(idempotencyKey).catch(() => null);
+        }
+
+        if (existingLog) {
+          if (existingLog.status === 'sent') {
             return {
               success: true,
               status: 'skipped_duplicate',
-              logId: log.id,
-              attempts: log.attempts,
+              logId: existingLog.id,
+              attempts: existingLog.attempts,
               message: 'Welcome email was already sent successfully.',
             };
           }
-          if (log.status === 'pending' || log.status === 'retrying') {
-            console.log(`[Welcome Email Idempotency] Email is currently in progress (${log.status}) for ${normalizedEmail}.`);
+          if (existingLog.status === 'pending' || existingLog.status === 'retrying') {
             return {
               success: true,
-              status: log.status,
-              logId: log.id,
-              attempts: log.attempts,
-              message: `Welcome email delivery is currently in progress (${log.status}).`,
+              status: existingLog.status,
+              logId: existingLog.id,
+              attempts: existingLog.attempts,
+              message: `Welcome email delivery is currently in progress (${existingLog.status}).`,
             };
           }
         }
-      } catch (logErr) {
-        console.warn('[Welcome Email Idempotency Query Warn]:', logErr);
       }
-    }
 
-    // 3. Prepare Logo Attachment
-    const attachments: any[] = [];
-    const logoFilePath = path.resolve(process.cwd(), 'public', 'logo.jpg');
-    let logoSrc = 'cid:app_logo';
+      // 3. Prepare Logo Attachment
+      const attachments: any[] = [];
+      const logoFilePath = path.resolve(process.cwd(), 'public', 'logo.jpg');
+      let logoSrc = 'cid:app_logo';
 
-    if (APP_CONFIG.appLogoUrl && APP_CONFIG.appLogoUrl.startsWith('http') && !APP_CONFIG.appLogoUrl.includes('localhost')) {
-      logoSrc = APP_CONFIG.appLogoUrl;
-    } else if (fs.existsSync(logoFilePath)) {
-      attachments.push({
-        filename: 'logo.jpg',
-        path: logoFilePath,
-        cid: 'app_logo',
-        contentDisposition: 'inline',
+      if (APP_CONFIG.appLogoUrl && APP_CONFIG.appLogoUrl.startsWith('http') && !APP_CONFIG.appLogoUrl.includes('localhost')) {
+        logoSrc = APP_CONFIG.appLogoUrl;
+      } else if (fs.existsSync(logoFilePath)) {
+        attachments.push({
+          filename: 'logo.jpg',
+          path: logoFilePath,
+          cid: 'app_logo',
+          contentDisposition: 'inline',
+        });
+        logoSrc = 'cid:app_logo';
+      }
+
+      // 4. Generate Email Content (respects Admin customized template if saved)
+      const defaultWelcome = generateWelcomeEmail({
+        userName: trustedName,
+        userEmail: normalizedEmail,
+        logoSrc,
+        loginUrl: APP_CONFIG.appLoginUrl,
+        supportEmail: APP_CONFIG.supportEmail,
+        supportPhone: APP_CONFIG.supportPhone,
       });
-      logoSrc = 'cid:app_logo';
+      const customWelcome = await getRenderedCustomTemplateIfActive('welcome-email', {
+        user_name: trustedName,
+        user_email: normalizedEmail,
+      });
+      const emailData = customWelcome || defaultWelcome;
+
+      // 5. Create or Update Dispatch Record
+      const logId = await createDispatchLogRecord({
+        userId: resolvedUserId || null,
+        email: normalizedEmail,
+        emailType: 'welcome_email',
+        idempotencyKey,
+        recipientName: trustedName || null,
+        subject: emailData.subject,
+        triggerEvent: 'user_registration',
+        upsertIdempotency: true,
+      });
+
+      // 6. Execute Dispatch (Attempt 1)
+      const success = await executeEmailDispatch(
+        logId,
+        normalizedEmail,
+        emailData.subject,
+        emailData.html,
+        emailData.text,
+        attachments,
+        1,
+        3,
+        resolvedUserId
+      );
+
+      return {
+        success,
+        status: success ? 'sent' : 'retrying',
+        logId,
+        attempts: 1,
+        message: success ? 'Welcome email delivered successfully.' : 'Welcome email queued for delivery / retry.',
+      };
+    } catch (err: any) {
+      const safeErr = sanitizeErrorMessage(err);
+      console.error(`[Welcome Email Error] Recipient: ${normalizedEmail}:`, safeErr);
+      return {
+        success: false,
+        status: 'failed',
+        message: 'Failed to initiate welcome email dispatch',
+        error: safeErr,
+      };
+    } finally {
+      welcomeInFlightLocks.delete(lockKey);
     }
+  })();
 
-    // 4. Generate Email Content (respects Admin customized template if saved)
-    const defaultWelcome = generateWelcomeEmail({
-      userName: trustedName,
-      userEmail: normalizedEmail,
-      logoSrc,
-      loginUrl: APP_CONFIG.appLoginUrl,
-      supportEmail: APP_CONFIG.supportEmail,
-      supportPhone: APP_CONFIG.supportPhone,
-    });
-    const customWelcome = await getRenderedCustomTemplateIfActive('welcome-email', {
-      user_name: trustedName,
-      user_email: normalizedEmail,
-    });
-    const emailData = customWelcome || defaultWelcome;
-
-    // 5. Create or Update Dispatch Record
-    const logId = await createDispatchLogRecord({
-      userId: resolvedUserId || null,
-      email: normalizedEmail,
-      emailType: 'welcome_email',
-      idempotencyKey,
-      recipientName: trustedName || null,
-      subject: emailData.subject,
-      triggerEvent: 'user_registration',
-      upsertIdempotency: true,
-    });
-
-    // 6. Execute Dispatch (Attempt 1)
-    const success = await executeEmailDispatch(
-      logId,
-      normalizedEmail,
-      emailData.subject,
-      emailData.html,
-      emailData.text,
-      attachments,
-      1,
-      3,
-      resolvedUserId
-    );
-
-    return {
-      success,
-      status: success ? 'sent' : 'retrying',
-      logId,
-      attempts: 1,
-      message: success ? 'Welcome email delivered successfully.' : 'Welcome email queued for delivery / retry.',
-    };
-  } catch (err: any) {
-    const safeErr = sanitizeErrorMessage(err);
-    console.error(`[Welcome Email Error] Recipient: ${normalizedEmail}:`, safeErr);
-    return {
-      success: false,
-      status: 'failed',
-      message: 'Failed to initiate welcome email dispatch',
-      error: safeErr,
-    };
+  if (!forceResend) {
+    welcomeInFlightLocks.set(lockKey, runner);
   }
+  return runner;
 }
 
 /**
  * Retrieves delivery status for a user's welcome email
  */
 export async function getWelcomeEmailDeliveryStatus(userIdOrEmail: string): Promise<any> {
-  const isEmail = userIdOrEmail.includes('@');
-  const sql = isEmail
-    ? `SELECT id, user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, sent_at, created_at, updated_at
-       FROM public.email_dispatch_logs
-       WHERE LOWER(email) = LOWER($1) AND email_type = 'welcome_email'
-       ORDER BY created_at DESC LIMIT 1`
-    : `SELECT id, user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, sent_at, created_at, updated_at
-       FROM public.email_dispatch_logs
-       WHERE user_id = $1 AND email_type = 'welcome_email'
-       ORDER BY created_at DESC LIMIT 1`;
+  const clean = String(userIdOrEmail || '').trim();
+  if (!clean) return null;
+  if (isDatabaseAvailable()) {
+    try {
+      const isEmail = clean.includes('@');
+      const sql = isEmail
+        ? `SELECT id, user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, sent_at, created_at, updated_at
+           FROM public.email_dispatch_logs
+           WHERE LOWER(email) = LOWER($1) AND email_type = 'welcome_email'
+           ORDER BY created_at DESC LIMIT 1`
+        : `SELECT id, user_id, email, email_type, idempotency_key, recipient_name, subject, status, attempts, max_attempts, last_error, sent_at, created_at, updated_at
+           FROM public.email_dispatch_logs
+           WHERE user_id = $1 AND email_type = 'welcome_email'
+           ORDER BY created_at DESC LIMIT 1`;
 
-  const res = await query(sql, [userIdOrEmail]);
-  return res.rows[0] || null;
+      const res = await query(sql, [clean]);
+      if (res.rows[0]) return res.rows[0];
+    } catch {
+      // fall through to fallback
+    }
+  }
+  return await getWelcomeEmailLogFallback(clean);
 }
 
 // -------------------------------------------------------------

@@ -54,6 +54,14 @@ interface AuthContextType {
   ) => Promise<{ success: boolean; message?: string; errors?: string[] }>;
   logout: () => Promise<void>;
   logoutAllDevices: () => Promise<void>;
+  revokeOtherSessions: () => Promise<{
+    success: boolean;
+    revokedCount: number;
+    message: string;
+    maxSessions: number;
+    activeCount: number;
+    sessions: ActiveDeviceSession[];
+  }>;
   requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordReset: (token: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message: string }>;
   changePassword: (currentPassword: string, newPassword: string, confirmNewPassword: string) => Promise<{ success: boolean; message: string }>;
@@ -313,7 +321,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           code: 'MAX_SESSIONS_REACHED',
           message:
             err.message ||
-            'Maximum 3 concurrent logins allowed per account. Please log out from one device first.',
+            'You have reached the maximum limit of 3 active devices. Please log out from an existing device before signing in here.',
           maxSessions: err?.data?.maxSessions || 3,
           activeSessions: err?.data?.activeSessions || [],
         };
@@ -574,6 +582,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Revoke all other active sessions while keeping current session active
+  const revokeOtherSessions = async () => {
+    return await authApi.revokeOtherSessions();
+  };
+
   // Forgot password
   const requestPasswordReset = async (email: string) => {
     try {
@@ -819,6 +832,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         logoutAllDevices,
+        revokeOtherSessions,
         requestPasswordReset,
         completePasswordReset,
         changePassword,
