@@ -27,6 +27,88 @@ export interface SessionInfo {
   expiresAt: Date;
 }
 
+export const MAX_ACTIVE_SESSIONS = 3;
+
+export interface ActiveSessionDisplay {
+  id: string;
+  deviceName: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
+  browser: string;
+  os: string;
+  ipAddress: string | null;
+  createdAt: string;
+  lastActiveAt: string | null;
+  expiresAt: string;
+  isCurrent: boolean;
+}
+
+export class SessionLimitError extends Error {
+  public readonly code = 'MAX_SESSIONS_REACHED';
+  public readonly status = 409;
+  public readonly maxSessions: number;
+  public readonly activeSessions: ActiveSessionDisplay[];
+
+  constructor(activeSessions: ActiveSessionDisplay[], maxSessions: number = MAX_ACTIVE_SESSIONS) {
+    super(
+      `Maximum ${maxSessions} concurrent logins allowed per account. Please log out from one of your active devices to continue.`
+    );
+    this.name = 'SessionLimitError';
+    this.maxSessions = maxSessions;
+    this.activeSessions = activeSessions;
+  }
+}
+
+export function parseUserAgentSummary(userAgent?: string | null): {
+  deviceName: string;
+  browser: string;
+  os: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
+} {
+  const ua = String(userAgent || '').trim();
+  if (!ua) {
+    return {
+      deviceName: 'Unknown Browser',
+      browser: 'Unknown Browser',
+      os: 'Unknown OS',
+      deviceType: 'desktop',
+    };
+  }
+
+  let browser = 'Web Browser';
+  if (/Edg\//i.test(ua)) browser = 'Microsoft Edge';
+  else if (/OPR\/|Opera/i.test(ua)) browser = 'Opera';
+  else if (/SamsungBrowser/i.test(ua)) browser = 'Samsung Internet';
+  else if (/Firefox\/|FxiOS\//i.test(ua)) browser = 'Firefox';
+  else if (/CriOS\/|Chrome\//i.test(ua) && !/Edg\//i.test(ua)) browser = 'Chrome';
+  else if (/Safari\//i.test(ua) && !/Chrome\/|CriOS\//i.test(ua)) browser = 'Safari';
+  else if (/node|undici|curl|playwright|vitest/i.test(ua)) browser = 'API / App Client';
+
+  let os = 'Unknown OS';
+  let deviceType: 'mobile' | 'tablet' | 'desktop' = 'desktop';
+
+  if (/iPad/i.test(ua)) {
+    os = 'iPadOS';
+    deviceType = 'tablet';
+  } else if (/iPhone|iPod/i.test(ua)) {
+    os = 'iOS (iPhone)';
+    deviceType = 'mobile';
+  } else if (/Android/i.test(ua)) {
+    os = 'Android';
+    deviceType = /Mobile/i.test(ua) ? 'mobile' : 'tablet';
+  } else if (/Windows NT/i.test(ua)) {
+    os = 'Windows';
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    os = 'macOS';
+  } else if (/CrOS/i.test(ua)) {
+    os = 'ChromeOS';
+  } else if (/Linux/i.test(ua)) {
+    os = 'Linux';
+  }
+
+  const deviceName = os === 'Unknown OS' ? browser : `${browser} on ${os}`;
+  return { deviceName, browser, os, deviceType };
+}
+
 const MASTER_ADMIN_EMAILS = new Set(['hackifypro@gmail.com', 'admin@mymoney.com']);
 const NON_DISCOVERABLE_ROLES = new Set(['admin', 'superadmin', 'support', 'analyst']);
 
@@ -146,6 +228,148 @@ export function verifyFallbackSessionToken(
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const REMEMBER_ME_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
+export async function listActiveSessionsForUser(
+  userId: string,
+  currentSessionToken?: string | null
+): Promise<ActiveSessionDisplay[]> {
+  if (!userId) return [];
+  const currentHash =
+    currentSessionToken && !currentSessionToken.startsWith('mmf1.') && !currentSessionToken.startsWith('direct_')
+      ? hashToken(currentSessionToken)
+      : null;
+
+  const mapRows = (rows: any[]): ActiveSessionDisplay[] => {
+    const nowMs = Date.now();
+    return rows
+      .filter((r) => !r.is_revoked && r.expires_at && new Date(r.expires_at).getTime() > nowMs)
+      .sort((a, b) => {
+        const aTime = new Date(a.last_active_at || a.created_at || 0).getTime();
+        const bTime = new Date(b.last_active_at || b.created_at || 0).getTime();
+        return bTime - aTime;
+      })
+      .map((r) => {
+        const parsed = parseUserAgentSummary(r.user_agent);
+        return {
+          id: String(r.id),
+          deviceName: parsed.deviceName,
+          deviceType: parsed.deviceType,
+          browser: parsed.browser,
+          os: parsed.os,
+          ipAddress: r.ip_address ? String(r.ip_address) : null,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : null,
+          expiresAt: new Date(r.expires_at).toISOString(),
+          isCurrent: Boolean(currentHash && r.session_token_hash === currentHash),
+        };
+      });
+  };
+
+  if (isDatabaseAvailable()) {
+    try {
+      // Opportunistically mark expired sessions revoked so they never linger
+      await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE
+         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at <= NOW()`,
+        [userId]
+      ).catch(() => {});
+
+      const res = await query(
+        `SELECT id, session_token_hash, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at
+         FROM public.user_sessions
+         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()
+         ORDER BY COALESCE(last_active_at, created_at) DESC`,
+        [userId]
+      );
+      return mapRows(res.rows || []);
+    } catch (err: any) {
+      console.warn('listActiveSessionsForUser PG query failed, attempting Supabase REST:', err?.message);
+    }
+  }
+
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false&select=id,session_token_hash,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      if (Array.isArray(rows)) {
+        const nowMs = Date.now();
+        for (const r of rows) {
+          if (r?.id && r?.expires_at && new Date(r.expires_at).getTime() <= nowMs) {
+            fetch(`${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(r.id)}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: key,
+                Authorization: `Bearer ${key}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ is_revoked: true }),
+            }).catch(() => {});
+          }
+        }
+        return mapRows(rows);
+      }
+    }
+  } catch (err: any) {
+    console.warn('listActiveSessionsForUser Supabase REST notice:', err?.message);
+  }
+
+  return [];
+}
+
+export async function revokeUserSessionById(userId: string, sessionId: string): Promise<boolean> {
+  if (!userId || !sessionId) return false;
+
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions
+         SET is_revoked = TRUE
+         WHERE id = $1 AND user_id = $2 AND is_revoked = FALSE
+         RETURNING id`,
+        [sessionId, userId]
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch (err: any) {
+      console.warn('revokeUserSessionById PG update failed, attempting Supabase REST:', err?.message);
+    }
+  }
+
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(sessionId)}&user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ is_revoked: true }),
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      return Array.isArray(rows) && rows.length > 0;
+    }
+  } catch (err: any) {
+    console.warn('revokeUserSessionById Supabase REST notice:', err?.message);
+  }
+
+  return false;
+}
+
 export async function createSession(
   userId: string,
   opts: {
@@ -153,8 +377,18 @@ export async function createSession(
     userAgent?: string;
     ipAddress?: string;
     user?: { role?: string; email?: string };
+    replaceSessionId?: string;
   } = {}
 ): Promise<SessionInfo> {
+  if (opts.replaceSessionId) {
+    await revokeUserSessionById(userId, opts.replaceSessionId);
+  }
+
+  const activeSessions = await listActiveSessionsForUser(userId);
+  if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
+    throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
+  }
+
   const sessionToken = generateCryptoToken(32);
   const sessionTokenHash = hashToken(sessionToken);
   const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
@@ -164,8 +398,8 @@ export async function createSession(
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
-        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
          RETURNING id`,
         [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
       );
@@ -186,6 +420,7 @@ export async function createSession(
   // 2. Secondary path: Supabase HTTPS REST persistence into user_sessions
   try {
     const { url, key } = getAuthSupabaseRestConfig();
+    const nowIso = new Date().toISOString();
     const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
       method: 'POST',
       headers: {
@@ -201,6 +436,7 @@ export async function createSession(
         user_agent: opts.userAgent || null,
         ip_address: opts.ipAddress || null,
         expires_at: expiresAt.toISOString(),
+        last_active_at: nowIso,
         is_revoked: false,
       }),
     });
@@ -521,7 +757,30 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
         if (Array.isArray(sessRows) && sessRows.length > 0) {
           const s = sessRows[0];
           if (new Date(s.expires_at) >= new Date()) {
-            return await resolveUserViaSupabaseRest(s.user_id);
+            const user = await resolveUserViaSupabaseRest(s.user_id);
+            if (user && s.id) {
+              fetch(`${supabaseUrl}/rest/v1/user_sessions?id=eq.${encodeURIComponent(s.id)}`, {
+                method: 'PATCH',
+                headers: {
+                  apikey: supabaseKey,
+                  Authorization: `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ last_active_at: new Date().toISOString() }),
+              }).catch(() => {});
+            }
+            return user;
+          }
+          if (s.id) {
+            fetch(`${supabaseUrl}/rest/v1/user_sessions?id=eq.${encodeURIComponent(s.id)}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ is_revoked: true }),
+            }).catch(() => {});
           }
         }
       }

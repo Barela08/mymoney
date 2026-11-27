@@ -34839,6 +34839,62 @@ async function logSecurityEvent(eventType, opts = {}) {
 
 // server/auth.ts
 import crypto3 from "crypto";
+var MAX_ACTIVE_SESSIONS = 3;
+var SessionLimitError = class extends Error {
+  code = "MAX_SESSIONS_REACHED";
+  status = 409;
+  maxSessions;
+  activeSessions;
+  constructor(activeSessions, maxSessions = MAX_ACTIVE_SESSIONS) {
+    super(
+      `Maximum ${maxSessions} concurrent logins allowed per account. Please log out from one of your active devices to continue.`
+    );
+    this.name = "SessionLimitError";
+    this.maxSessions = maxSessions;
+    this.activeSessions = activeSessions;
+  }
+};
+function parseUserAgentSummary(userAgent) {
+  const ua = String(userAgent || "").trim();
+  if (!ua) {
+    return {
+      deviceName: "Unknown Browser",
+      browser: "Unknown Browser",
+      os: "Unknown OS",
+      deviceType: "desktop"
+    };
+  }
+  let browser = "Web Browser";
+  if (/Edg\//i.test(ua)) browser = "Microsoft Edge";
+  else if (/OPR\/|Opera/i.test(ua)) browser = "Opera";
+  else if (/SamsungBrowser/i.test(ua)) browser = "Samsung Internet";
+  else if (/Firefox\/|FxiOS\//i.test(ua)) browser = "Firefox";
+  else if (/CriOS\/|Chrome\//i.test(ua) && !/Edg\//i.test(ua)) browser = "Chrome";
+  else if (/Safari\//i.test(ua) && !/Chrome\/|CriOS\//i.test(ua)) browser = "Safari";
+  else if (/node|undici|curl|playwright|vitest/i.test(ua)) browser = "API / App Client";
+  let os7 = "Unknown OS";
+  let deviceType = "desktop";
+  if (/iPad/i.test(ua)) {
+    os7 = "iPadOS";
+    deviceType = "tablet";
+  } else if (/iPhone|iPod/i.test(ua)) {
+    os7 = "iOS (iPhone)";
+    deviceType = "mobile";
+  } else if (/Android/i.test(ua)) {
+    os7 = "Android";
+    deviceType = /Mobile/i.test(ua) ? "mobile" : "tablet";
+  } else if (/Windows NT/i.test(ua)) {
+    os7 = "Windows";
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    os7 = "macOS";
+  } else if (/CrOS/i.test(ua)) {
+    os7 = "ChromeOS";
+  } else if (/Linux/i.test(ua)) {
+    os7 = "Linux";
+  }
+  const deviceName = os7 === "Unknown OS" ? browser : `${browser} on ${os7}`;
+  return { deviceName, browser, os: os7, deviceType };
+}
 var MASTER_ADMIN_EMAILS = /* @__PURE__ */ new Set(["hackifypro@gmail.com", "admin@mymoney.com"]);
 var NON_DISCOVERABLE_ROLES = /* @__PURE__ */ new Set(["admin", "superadmin", "support", "analyst"]);
 function isMasterAdminAccountEmail(email) {
@@ -34905,7 +34961,138 @@ function verifyFallbackSessionToken(token) {
 }
 var SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1e3;
 var REMEMBER_ME_LIFETIME_MS = 30 * 24 * 60 * 60 * 1e3;
+async function listActiveSessionsForUser(userId, currentSessionToken) {
+  if (!userId) return [];
+  const currentHash = currentSessionToken && !currentSessionToken.startsWith("mmf1.") && !currentSessionToken.startsWith("direct_") ? hashToken(currentSessionToken) : null;
+  const mapRows = (rows) => {
+    const nowMs = Date.now();
+    return rows.filter((r2) => !r2.is_revoked && r2.expires_at && new Date(r2.expires_at).getTime() > nowMs).sort((a, b) => {
+      const aTime = new Date(a.last_active_at || a.created_at || 0).getTime();
+      const bTime = new Date(b.last_active_at || b.created_at || 0).getTime();
+      return bTime - aTime;
+    }).map((r2) => {
+      const parsed = parseUserAgentSummary(r2.user_agent);
+      return {
+        id: String(r2.id),
+        deviceName: parsed.deviceName,
+        deviceType: parsed.deviceType,
+        browser: parsed.browser,
+        os: parsed.os,
+        ipAddress: r2.ip_address ? String(r2.ip_address) : null,
+        createdAt: r2.created_at ? new Date(r2.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+        lastActiveAt: r2.last_active_at ? new Date(r2.last_active_at).toISOString() : null,
+        expiresAt: new Date(r2.expires_at).toISOString(),
+        isCurrent: Boolean(currentHash && r2.session_token_hash === currentHash)
+      };
+    });
+  };
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE
+         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at <= NOW()`,
+        [userId]
+      ).catch(() => {
+      });
+      const res = await query(
+        `SELECT id, session_token_hash, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at
+         FROM public.user_sessions
+         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()
+         ORDER BY COALESCE(last_active_at, created_at) DESC`,
+        [userId]
+      );
+      return mapRows(res.rows || []);
+    } catch (err) {
+      console.warn("listActiveSessionsForUser PG query failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false&select=id,session_token_hash,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json"
+        }
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      if (Array.isArray(rows)) {
+        const nowMs = Date.now();
+        for (const r2 of rows) {
+          if (r2?.id && r2?.expires_at && new Date(r2.expires_at).getTime() <= nowMs) {
+            fetch(`${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(r2.id)}`, {
+              method: "PATCH",
+              headers: {
+                apikey: key,
+                Authorization: `Bearer ${key}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ is_revoked: true })
+            }).catch(() => {
+            });
+          }
+        }
+        return mapRows(rows);
+      }
+    }
+  } catch (err) {
+    console.warn("listActiveSessionsForUser Supabase REST notice:", err?.message);
+  }
+  return [];
+}
+async function revokeUserSessionById(userId, sessionId) {
+  if (!userId || !sessionId) return false;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions
+         SET is_revoked = TRUE
+         WHERE id = $1 AND user_id = $2 AND is_revoked = FALSE
+         RETURNING id`,
+        [sessionId, userId]
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      console.warn("revokeUserSessionById PG update failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(sessionId)}&user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify({ is_revoked: true })
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      return Array.isArray(rows) && rows.length > 0;
+    }
+  } catch (err) {
+    console.warn("revokeUserSessionById Supabase REST notice:", err?.message);
+  }
+  return false;
+}
 async function createSession(userId, opts = {}) {
+  if (opts.replaceSessionId) {
+    await revokeUserSessionById(userId, opts.replaceSessionId);
+  }
+  const activeSessions = await listActiveSessionsForUser(userId);
+  if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
+    throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
+  }
   const sessionToken = generateCryptoToken(32);
   const sessionTokenHash = hashToken(sessionToken);
   const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
@@ -34913,8 +35100,8 @@ async function createSession(userId, opts = {}) {
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
-        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
          RETURNING id`,
         [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
       );
@@ -34932,6 +35119,7 @@ async function createSession(userId, opts = {}) {
   }
   try {
     const { url, key } = getAuthSupabaseRestConfig();
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
       method: "POST",
       headers: {
@@ -34947,6 +35135,7 @@ async function createSession(userId, opts = {}) {
         user_agent: opts.userAgent || null,
         ip_address: opts.ipAddress || null,
         expires_at: expiresAt.toISOString(),
+        last_active_at: nowIso,
         is_revoked: false
       })
     });
@@ -35230,7 +35419,32 @@ async function authenticateRequest(req) {
         if (Array.isArray(sessRows) && sessRows.length > 0) {
           const s2 = sessRows[0];
           if (new Date(s2.expires_at) >= /* @__PURE__ */ new Date()) {
-            return await resolveUserViaSupabaseRest(s2.user_id);
+            const user = await resolveUserViaSupabaseRest(s2.user_id);
+            if (user && s2.id) {
+              fetch(`${supabaseUrl}/rest/v1/user_sessions?id=eq.${encodeURIComponent(s2.id)}`, {
+                method: "PATCH",
+                headers: {
+                  apikey: supabaseKey,
+                  Authorization: `Bearer ${supabaseKey}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ last_active_at: (/* @__PURE__ */ new Date()).toISOString() })
+              }).catch(() => {
+              });
+            }
+            return user;
+          }
+          if (s2.id) {
+            fetch(`${supabaseUrl}/rest/v1/user_sessions?id=eq.${encodeURIComponent(s2.id)}`, {
+              method: "PATCH",
+              headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ is_revoked: true })
+            }).catch(() => {
+            });
           }
         }
       }
@@ -85255,6 +85469,27 @@ async function saveAdminNotificationPreferences(payload, adminId) {
   }
   return localAdminPreferences;
 }
+async function dispatchNewUserWelcomeNotification(params) {
+  const firstName = String(params.fullName || "").trim().split(/\s+/)[0] || String(params.email || "").split("@")[0] || "Friend";
+  return createNotification({
+    userId: params.userId,
+    title: "Welcome to My Money Manager!",
+    message: `Hi ${firstName}, your account is ready! Start tracking daily expenses, managing room budgets, scanning receipts, and settling Udhar via QR.`,
+    category: "system",
+    type: "success",
+    relatedEntityType: "user_registration",
+    relatedEntityId: params.userId,
+    deepLink: "dashboard",
+    dedupeKey: `welcome_in_app:${params.userId}`,
+    channels: ["in_app"],
+    skipPreferenceCheck: true,
+    metadata: {
+      event: "welcome_signup",
+      provider: params.provider || "email",
+      email: String(params.email || "").toLowerCase().trim()
+    }
+  });
+}
 
 // server/adminApi.ts
 function sendJson(res, statusCode, data) {
@@ -93724,12 +93959,35 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
         sendJson2(res, 403, { success: false, message: "Your account is not active. Please contact support." });
         return true;
       }
-      const session2 = await createSession(userRow.id, {
-        rememberMe: true,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: userRow.role, email: userRow.email }
-      });
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session2;
+      try {
+        session2 = await createSession(userRow.id, {
+          rememberMe: true,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: userRow.role, email: userRow.email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("GOOGLE_LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: userRow.id,
+            userEmail: userRow.email,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson2(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       setSessionCookie(res, session2.sessionToken, session2.expiresAt);
       const outUser2 = sanitizeUserOutput(userRow);
       sendJson2(res, 200, {
@@ -93803,6 +94061,26 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       user: { role: "user", email: createdUser.email }
     });
     setSessionCookie(res, session.sessionToken, session.expiresAt);
+    await dispatchNewUserWelcomeNotification({
+      userId: createdUser.id,
+      fullName: createdUser.full_name,
+      email: createdUser.email,
+      provider: "google"
+    }).catch((err) => {
+      console.error("[Google Welcome In-App Notification Error]:", err);
+    });
+    sendWelcomeEmail(createdUser.email, createdUser.full_name, createdUser.id).catch((err) => {
+      console.error("[Google Welcome Email Error]:", err);
+    });
+    recordAdminNotification({
+      eventType: "new_user",
+      title: "New User Registered (Google)",
+      message: `${createdUser.full_name} (${createdUser.email}) signed up via Google.`,
+      userId: createdUser.id,
+      userEmail: createdUser.email,
+      metadata: { role: "user", provider: "google", registeredAt: (/* @__PURE__ */ new Date()).toISOString() }
+    }).catch(() => {
+    });
     await logSecurityEvent("GOOGLE_USER_REGISTERED", {
       userId: createdUser.id,
       userEmail: createdUser.email,
@@ -94082,12 +94360,35 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       return true;
     }
     await updatePasskeyUsage(stored, check.newCounter);
-    const session = await createSession(userRow.id, {
-      rememberMe: true,
-      userAgent,
-      ipAddress: clientIp,
-      user: { role: userRow.role, email: userRow.email }
-    });
+    const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+    let session;
+    try {
+      session = await createSession(userRow.id, {
+        rememberMe: true,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: userRow.role, email: userRow.email },
+        replaceSessionId
+      });
+    } catch (sessionErr) {
+      if (sessionErr instanceof SessionLimitError) {
+        await logSecurityEvent("PASSKEY_LOGIN_BLOCKED_MAX_SESSIONS", {
+          userId: userRow.id,
+          userEmail: userRow.email,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson2(res, 409, {
+          success: false,
+          code: sessionErr.code,
+          message: sessionErr.message,
+          maxSessions: sessionErr.maxSessions,
+          activeSessions: sessionErr.activeSessions
+        });
+        return true;
+      }
+      throw sessionErr;
+    }
     setSessionCookie(res, session.sessionToken, session.expiresAt);
     await logSecurityEvent("PASSKEY_LOGIN_SUCCESS", {
       userId: userRow.id,
@@ -97806,12 +98107,36 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      const session = await createSession(userRecord.id, {
-        rememberMe,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: effectiveRole, email }
-      });
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session;
+      try {
+        session = await createSession(userRecord.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: effectiveRole, email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("ADMIN_LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRole,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson6(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       const sessionToken = session.sessionToken;
       const expiresAt = session.expiresAt;
       setSessionCookie2(res, sessionToken, expiresAt);
@@ -97971,6 +98296,14 @@ async function handleApiRequest(req, res) {
         user: { role: "user", email }
       });
       setSessionCookie2(res, session.sessionToken, session.expiresAt);
+      await dispatchNewUserWelcomeNotification({
+        userId: newUser.id,
+        fullName: newUser.full_name,
+        email,
+        provider: "email"
+      }).catch((err) => {
+        console.error("[Welcome In-App Notification Error]:", err);
+      });
       sendWelcomeEmail(email, newUser.full_name, newUser.id).catch((err) => {
         console.error("[Welcome Email Background Error]:", err);
       });
@@ -98109,12 +98442,36 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      const session = await createSession(user.id, {
-        rememberMe,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: user.role, email }
-      });
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session;
+      try {
+        session = await createSession(user.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: user.role, email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: user.id,
+            userEmail: email,
+            actorRole: user.role,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson6(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       setSessionCookie2(res, session.sessionToken, session.expiresAt);
       await resetRateLimitAsync(`login:ip:${clientIp}`);
       await resetRateLimitAsync(`login:account:${email}`);
@@ -98135,7 +98492,7 @@ async function handleApiRequest(req, res) {
     }
     if (pathname === "/api/auth/logout" && method === "POST") {
       const authUser = await authenticateRequest(req);
-      const token = (req.headers["authorization"]?.slice(7) || "").trim();
+      const token = extractSessionToken(req);
       if (token) {
         await revokeSession(token);
       }
@@ -98162,6 +98519,70 @@ async function handleApiRequest(req, res) {
       sendJson6(res, 200, { success: true, message: "All active sessions on all devices have been revoked." });
       return true;
     }
+    if (pathname === "/api/auth/sessions" && method === "GET") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const token = extractSessionToken(req);
+      const sessions = await listActiveSessionsForUser(authUser.id, token);
+      sendJson6(res, 200, {
+        success: true,
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: sessions.length,
+        sessions
+      });
+      return true;
+    }
+    if (pathname.startsWith("/api/auth/sessions/") && method === "DELETE") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const sessionId = decodeURIComponent(pathname.slice("/api/auth/sessions/".length)).trim();
+      if (!sessionId || !/^[a-zA-Z0-9_-]{4,100}$/.test(sessionId)) {
+        sendJson6(res, 400, { success: false, message: "Invalid session ID." });
+        return true;
+      }
+      const token = extractSessionToken(req);
+      const beforeSessions = await listActiveSessionsForUser(authUser.id, token);
+      const targetSession = beforeSessions.find((s2) => s2.id === sessionId);
+      if (!targetSession) {
+        sendJson6(res, 404, { success: false, message: "Active session not found." });
+        return true;
+      }
+      const revoked = await revokeUserSessionById(authUser.id, sessionId);
+      if (!revoked) {
+        sendJson6(res, 404, { success: false, message: "Active session not found or already logged out." });
+        return true;
+      }
+      if (targetSession.isCurrent) {
+        clearSessionCookie(res);
+      }
+      await logSecurityEvent("USER_SESSION_REVOKED", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        metadata: {
+          revokedSessionId: sessionId,
+          deviceName: targetSession.deviceName,
+          revokedCurrent: targetSession.isCurrent
+        }
+      }).catch(() => {
+      });
+      const remaining = await listActiveSessionsForUser(authUser.id, targetSession.isCurrent ? null : token);
+      sendJson6(res, 200, {
+        success: true,
+        message: targetSession.isCurrent ? "Current session logged out successfully." : `${targetSession.deviceName} has been logged out remotely.`,
+        revokedCurrent: targetSession.isCurrent,
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: remaining.length,
+        sessions: remaining
+      });
+      return true;
+    }
     if (pathname === "/api/auth/me" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -98183,12 +98604,8 @@ async function handleApiRequest(req, res) {
         }
         let activeSessionsCount = 1;
         try {
-          const sessRes = await query(
-            `SELECT COUNT(*) as count FROM public.user_sessions 
-             WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()`,
-            [authUser.id]
-          );
-          activeSessionsCount = parseInt(sessRes.rows[0]?.count || "1");
+          const activeList = await listActiveSessionsForUser(authUser.id, extractSessionToken(req));
+          activeSessionsCount = activeList.length || 1;
         } catch {
           activeSessionsCount = 1;
         }

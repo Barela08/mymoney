@@ -91,7 +91,10 @@ async function postJson(url: string, body: Record<string, any> = {}) {
   });
   const data = await res.json().catch(() => ({ success: false, message: 'Unexpected server response.' }));
   if (!res.ok) {
-    throw new Error(data?.message || `Passkey request failed (${res.status})`);
+    const err = new Error(data?.message || `Passkey request failed (${res.status})`);
+    (err as any).status = res.status;
+    (err as any).data = data;
+    throw err;
   }
   return data;
 }
@@ -167,7 +170,10 @@ export async function registerPasskeyOnDevice(deviceName?: string): Promise<{
   });
 }
 
-export async function loginWithPasskeyOnDevice(email?: string): Promise<{
+export async function loginWithPasskeyOnDevice(
+  email?: string,
+  replaceSessionId?: string
+): Promise<{
   success: boolean;
   message: string;
   user: any;
@@ -213,6 +219,7 @@ export async function loginWithPasskeyOnDevice(email?: string): Promise<{
 
   return postJson('/api/auth/passkey/login/verify', {
     challengeId: start.challengeId,
+    ...(replaceSessionId ? { replaceSessionId } : {}),
     id: arrayBufferToBase64Url(credential.rawId),
     rawId: arrayBufferToBase64Url(credential.rawId),
     response: {

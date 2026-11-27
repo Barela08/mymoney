@@ -2622,3 +2622,40 @@ export async function saveAdminNotificationPreferences(payload: any, adminId?: s
 
   return localAdminPreferences;
 }
+
+/**
+ * Dispatches an immediate, deduplicated in-app Welcome Notification
+ * whenever a new user registers via Email/Password or Google Sign-In.
+ */
+export async function dispatchNewUserWelcomeNotification(params: {
+  userId: string;
+  fullName?: string | null;
+  email: string;
+  provider?: 'email' | 'google';
+}): Promise<{ success: boolean; notificationId?: string; deduplicated?: boolean }> {
+  const firstName =
+    String(params.fullName || '')
+      .trim()
+      .split(/\s+/)[0] ||
+    String(params.email || '').split('@')[0] ||
+    'Friend';
+
+  return createNotification({
+    userId: params.userId,
+    title: 'Welcome to My Money Manager!',
+    message: `Hi ${firstName}, your account is ready! Start tracking daily expenses, managing room budgets, scanning receipts, and settling Udhar via QR.`,
+    category: 'system',
+    type: 'success',
+    relatedEntityType: 'user_registration',
+    relatedEntityId: params.userId,
+    deepLink: 'dashboard',
+    dedupeKey: `welcome_in_app:${params.userId}`,
+    channels: ['in_app'],
+    skipPreferenceCheck: true,
+    metadata: {
+      event: 'welcome_signup',
+      provider: params.provider || 'email',
+      email: String(params.email || '').toLowerCase().trim(),
+    },
+  });
+}

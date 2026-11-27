@@ -53,6 +53,10 @@ const {
   isAppDownloadedOrInstalled,
   markAppAsDownloaded,
   dismissPopupForCurrentView,
+  clearDismissalForView,
+  getPopupRemainingCooldownMs,
+  isDismissedForView,
+  POPUP_REPROMPT_DELAY_MS,
 } = await import('../src/components/common/AppDownloadPopup.js');
 
 let passed = 0;
@@ -72,22 +76,34 @@ console.log('=== App Download Popup Lifecycle Test Suite ===\n');
 
 // Test 1: Initially, new visitor should NOT be considered downloaded/installed
 assert(!isAppDownloadedOrInstalled(false), 'New visitor is not marked as downloaded/installed');
+assert(POPUP_REPROMPT_DELAY_MS === 60_000, 'Reprompt cooldown is exactly 1 minute (60,000ms)');
 
 // Test 2: If user cancels on Login page (auth view = true)
-dismissPopupForCurrentView(true);
+const t0 = 1_700_000_000_000;
+dismissPopupForCurrentView(true, t0);
 assert(mockSessionStorage['my_money_popup_auth_dismissed'] === 'true', 'Cancelling on login page sets auth view dismissal');
 assert(!mockSessionStorage['my_money_popup_app_dismissed'], 'Cancelling on login page does NOT dismiss dashboard view');
 assert(!isAppDownloadedOrInstalled(false), 'Cancelling does NOT mark app as downloaded');
+assert(isDismissedForView(true, t0 + 59_000), 'Auth popup stays hidden at 59s after cancel');
+assert(getPopupRemainingCooldownMs(true, t0 + 30_000) === 30_000, 'Remaining cooldown at 30s is exactly 30,000ms');
+assert(!isDismissedForView(true, t0 + 60_000), 'Auth popup automatically clears dismissal and reappears at 60s (1 min)');
 
 // Test 3: After login (dashboard view = false), popup should NOT be suppressed by the login dismiss
-const isDismissedOnDashboard = mockSessionStorage['my_money_popup_app_dismissed'] === 'true';
+dismissPopupForCurrentView(true, t0);
+const isDismissedOnDashboard = isDismissedForView(false, t0 + 5_000);
 assert(!isDismissedOnDashboard, 'Dashboard view is NOT suppressed after user logged in from login page cancellation');
 
-// Test 4: If user cancels on Dashboard
-dismissPopupForCurrentView(false);
+// Test 4: If user cancels on Dashboard, hides for 60s then re-appears automatically
+dismissPopupForCurrentView(false, t0);
 assert(mockSessionStorage['my_money_popup_app_dismissed'] === 'true', 'Cancelling on dashboard sets dashboard view dismissal');
+assert(isDismissedForView(false, t0 + 45_000), 'Dashboard popup remains hidden at 45s after cancel');
+assert(getPopupRemainingCooldownMs(false, t0 + 45_000) === 15_000, 'Remaining dashboard cooldown at 45s is 15,000ms');
+assert(!isDismissedForView(false, t0 + 60_000), 'Dashboard popup automatically reappears after 1 minute (60s)');
 
-// Test 5: If user reloads or starts a new session without downloading
+// Test 5: Clear dismissal helper & fresh session without download
+dismissPopupForCurrentView(false, t0);
+clearDismissalForView(false);
+assert(!isDismissedForView(false, t0 + 1_000), 'clearDismissalForView clears dismissal immediately');
 delete mockSessionStorage['my_money_popup_app_dismissed'];
 delete mockSessionStorage['my_money_popup_auth_dismissed'];
 assert(!isAppDownloadedOrInstalled(false), 'On new session without download, app is not downloaded');
@@ -101,6 +117,7 @@ assert(mockCookies.includes('mymoney_app_downloaded=downloaded'), 'Persistent do
 
 // Test 7: Downloaded user in subsequent sessions or auth pages never sees the popup
 assert(isAppDownloadedOrInstalled(false), 'Downloaded user is permanently suppressed even on new session');
+assert(isAppDownloadedOrInstalled(true), 'Standalone/PWA-installed user is permanently suppressed');
 
 console.log(`\nResults: ${passed} passed, ${failed} failed\n`);
 

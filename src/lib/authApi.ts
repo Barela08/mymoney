@@ -42,6 +42,19 @@ export interface SecurityMethodsData {
   }>;
 }
 
+export interface ActiveDeviceSession {
+  id: string;
+  deviceName: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
+  browser: string;
+  os: string;
+  ipAddress: string | null;
+  createdAt: string;
+  lastActiveAt: string | null;
+  expiresAt: string;
+  isCurrent: boolean;
+}
+
 const TOKEN_KEY = 'my_money_auth_token';
 const USER_KEY = 'my_money_auth_user';
 
@@ -126,6 +139,20 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   }
 
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      token &&
+      typeof window !== 'undefined' &&
+      !endpoint.startsWith('/api/auth/login') &&
+      !endpoint.startsWith('/api/admin/auth/login') &&
+      !endpoint.startsWith('/api/auth/register') &&
+      !endpoint.startsWith('/api/auth/google') &&
+      !endpoint.startsWith('/api/auth/passkey/login')
+    ) {
+      setStoredSessionToken(null);
+      setStoredAuthUser(null);
+      window.dispatchEvent(new CustomEvent('mymoney:session-revoked', { detail: { message: data?.message } }));
+    }
     if (data?.code === 'MAINTENANCE_MODE' && typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('mymoney:maintenance-detected', {
@@ -167,7 +194,10 @@ export const authApi = {
     return data;
   },
 
-  async loginWithGoogle(idToken: string): Promise<{
+  async loginWithGoogle(
+    idToken: string,
+    replaceSessionId?: string
+  ): Promise<{
     success: boolean;
     message?: string;
     isNewUser?: boolean;
@@ -177,7 +207,7 @@ export const authApi = {
   }> {
     const data = await request('/api/auth/google', {
       method: 'POST',
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify(replaceSessionId ? { idToken, replaceSessionId } : { idToken }),
     });
     if (data.sessionToken) {
       setStoredSessionToken(data.sessionToken);
@@ -190,6 +220,7 @@ export const authApi = {
     email: string;
     password: string;
     rememberMe?: boolean;
+    replaceSessionId?: string;
   }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
     const data = await request('/api/auth/login', {
       method: 'POST',
@@ -206,6 +237,7 @@ export const authApi = {
     email: string;
     password: string;
     rememberMe?: boolean;
+    replaceSessionId?: string;
   }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
     const data = await request('/api/admin/auth/login', {
       method: 'POST',
@@ -232,6 +264,28 @@ export const authApi = {
     } catch {} finally {
       setStoredSessionToken(null);
     }
+  },
+
+  async getActiveSessions(): Promise<{
+    success: boolean;
+    maxSessions: number;
+    activeCount: number;
+    sessions: ActiveDeviceSession[];
+  }> {
+    return await request('/api/auth/sessions', { method: 'GET' });
+  },
+
+  async revokeSession(sessionId: string): Promise<{
+    success: boolean;
+    message: string;
+    revokedCurrent: boolean;
+    maxSessions: number;
+    activeCount: number;
+    sessions: ActiveDeviceSession[];
+  }> {
+    return await request(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    });
   },
 
   async getMe(): Promise<{ success: boolean; user: AuthUser }> {

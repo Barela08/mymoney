@@ -26,6 +26,11 @@ import {
   authenticateRequest,
   sanitizeUserOutput,
   isDiscoverableNormalUser,
+  MAX_ACTIVE_SESSIONS,
+  SessionLimitError,
+  listActiveSessionsForUser,
+  revokeUserSessionById,
+  extractSessionToken,
 } from './auth.js';
 import {
   sendPasswordResetEmail,
@@ -76,6 +81,7 @@ import {
   processScheduledCampaigns,
   recordDeviceInstallation,
   recordAdminNotification,
+  dispatchNewUserWelcomeNotification,
 } from './notificationService.js';
 import {
   insertFeedbackFallback,
@@ -582,12 +588,39 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }).catch(() => {});
       }
 
-      const session = await createSession(userRecord.id, {
-        rememberMe,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: effectiveRole, email },
-      });
+      const replaceSessionId =
+        typeof body.replaceSessionId === 'string' && body.replaceSessionId.trim()
+          ? body.replaceSessionId.trim()
+          : undefined;
+
+      let session;
+      try {
+        session = await createSession(userRecord.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: effectiveRole, email },
+          replaceSessionId,
+        });
+      } catch (sessionErr: any) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent('ADMIN_LOGIN_BLOCKED_MAX_SESSIONS', {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRole,
+            ipAddress: clientIp,
+          }).catch(() => {});
+          sendJson(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions,
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       const sessionToken = session.sessionToken;
       const expiresAt = session.expiresAt;
 
@@ -817,7 +850,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       });
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
-      // Async send welcome email (non-blocking, trusted user record from DB, idempotent)
+      // Immediately deliver in-app welcome notification & dispatch welcome email via SMTP
+      await dispatchNewUserWelcomeNotification({
+        userId: newUser.id,
+        fullName: newUser.full_name,
+        email,
+        provider: 'email',
+      }).catch((err) => {
+        console.error('[Welcome In-App Notification Error]:', err);
+      });
+
       sendWelcomeEmail(email, newUser.full_name, newUser.id).catch((err) => {
         console.error('[Welcome Email Background Error]:', err);
       });
@@ -977,12 +1019,39 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       // Create server-verified session (PG -> Supabase REST user_sessions -> HMAC-SHA256 fallback)
-      const session = await createSession(user.id, {
-        rememberMe,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: user.role, email },
-      });
+      const replaceSessionId =
+        typeof body.replaceSessionId === 'string' && body.replaceSessionId.trim()
+          ? body.replaceSessionId.trim()
+          : undefined;
+
+      let session;
+      try {
+        session = await createSession(user.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: user.role, email },
+          replaceSessionId,
+        });
+      } catch (sessionErr: any) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent('LOGIN_BLOCKED_MAX_SESSIONS', {
+            userId: user.id,
+            userEmail: email,
+            actorRole: user.role,
+            ipAddress: clientIp,
+          }).catch(() => {});
+          sendJson(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions,
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       setSessionCookie(res, session.sessionToken, session.expiresAt);
 
       await resetRateLimitAsync(`login:ip:${clientIp}`);
@@ -1009,7 +1078,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // ---------------------------------------------------------
     if (pathname === '/api/auth/logout' && method === 'POST') {
       const authUser = await authenticateRequest(req);
-      const token = (req.headers['authorization']?.slice(7) || '').trim();
+      const token = extractSessionToken(req);
       if (token) {
         await revokeSession(token);
       }
@@ -1047,6 +1116,86 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // ---------------------------------------------------------
+    // 4A. LIST ACTIVE SESSIONS: GET /api/auth/sessions
+    // ---------------------------------------------------------
+    if (pathname === '/api/auth/sessions' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const token = extractSessionToken(req);
+      const sessions = await listActiveSessionsForUser(authUser.id, token);
+      sendJson(res, 200, {
+        success: true,
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: sessions.length,
+        sessions,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
+    // 4B. REVOKE SINGLE SESSION (REMOTE LOGOUT): DELETE /api/auth/sessions/:id
+    // ---------------------------------------------------------
+    if (pathname.startsWith('/api/auth/sessions/') && method === 'DELETE') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const sessionId = decodeURIComponent(pathname.slice('/api/auth/sessions/'.length)).trim();
+      if (!sessionId || !/^[a-zA-Z0-9_-]{4,100}$/.test(sessionId)) {
+        sendJson(res, 400, { success: false, message: 'Invalid session ID.' });
+        return true;
+      }
+
+      const token = extractSessionToken(req);
+      const beforeSessions = await listActiveSessionsForUser(authUser.id, token);
+      const targetSession = beforeSessions.find((s) => s.id === sessionId);
+      if (!targetSession) {
+        sendJson(res, 404, { success: false, message: 'Active session not found.' });
+        return true;
+      }
+
+      const revoked = await revokeUserSessionById(authUser.id, sessionId);
+      if (!revoked) {
+        sendJson(res, 404, { success: false, message: 'Active session not found or already logged out.' });
+        return true;
+      }
+
+      if (targetSession.isCurrent) {
+        clearSessionCookie(res);
+      }
+
+      await logSecurityEvent('USER_SESSION_REVOKED', {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        metadata: {
+          revokedSessionId: sessionId,
+          deviceName: targetSession.deviceName,
+          revokedCurrent: targetSession.isCurrent,
+        },
+      }).catch(() => {});
+
+      const remaining = await listActiveSessionsForUser(authUser.id, targetSession.isCurrent ? null : token);
+      sendJson(res, 200, {
+        success: true,
+        message: targetSession.isCurrent
+          ? 'Current session logged out successfully.'
+          : `${targetSession.deviceName} has been logged out remotely.`,
+        revokedCurrent: targetSession.isCurrent,
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: remaining.length,
+        sessions: remaining,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
     // 5. CURRENT USER: GET /api/auth/me
     // ---------------------------------------------------------
     if (pathname === '/api/auth/me' && method === 'GET') {
@@ -1074,15 +1223,10 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           return true;
         }
 
-        // Count active sessions with defensive catch
         let activeSessionsCount = 1;
         try {
-          const sessRes = await query(
-            `SELECT COUNT(*) as count FROM public.user_sessions 
-             WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()`,
-            [authUser.id]
-          );
-          activeSessionsCount = parseInt(sessRes.rows[0]?.count || '1');
+          const activeList = await listActiveSessionsForUser(authUser.id, extractSessionToken(req));
+          activeSessionsCount = activeList.length || 1;
         } catch {
           activeSessionsCount = 1;
         }

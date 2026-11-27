@@ -107,6 +107,16 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
 
   useEffect(() => {
     fetchProfileData();
+    const onSessionsChanged = (ev: Event) => {
+      const count = (ev as CustomEvent<{ count?: number }>).detail?.count;
+      if (typeof count === 'number') {
+        setProfile((prev) => (prev ? { ...prev, activeSessionsCount: count } : prev));
+      } else {
+        void fetchProfileData();
+      }
+    };
+    window.addEventListener('mymoney:sessions-changed', onSessionsChanged);
+    return () => window.removeEventListener('mymoney:sessions-changed', onSessionsChanged);
   }, []);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -385,7 +395,7 @@ export const UserProfileSection: React.FC<UserProfileSectionProps> = ({
               <span className="text-slate-500">Active Device Sessions</span>
               <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
                 <Laptop className="w-3.5 h-3.5" />
-                <span>{activeSessionsCount} active session{activeSessionsCount > 1 ? 's' : ''}</span>
+                <span>{activeSessionsCount} / 3 active</span>
               </span>
             </div>
 

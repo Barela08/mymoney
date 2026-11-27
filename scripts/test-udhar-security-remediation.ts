@@ -439,20 +439,24 @@ test('API Routes: unauthenticated access to internal reset email, cron deletion,
 });
 
 test('Auth Session Creation: createSession never issues unsigned direct_ tokens', async () => {
-  const { createSession } = await import('../server/auth');
+  const { createSession, revokeSession } = await import('../server/auth');
   const session = await createSession('33333333-3333-4333-8333-333333333333', {
     rememberMe: false,
     userAgent: 'node-test',
     ipAddress: '127.0.0.1',
     user: { role: 'user', email: 'session-test@example.com' },
   });
-  assert.ok(session.sessionToken && session.sessionToken.length >= 32);
-  assert.equal(session.sessionToken.startsWith('direct_'), false);
-  // If HMAC fallback was used, it must verify cryptographically
-  if (session.sessionToken.startsWith('mmf1.')) {
-    const verified = verifyFallbackSessionToken(session.sessionToken);
-    assert.ok(verified);
-    assert.equal(verified?.userId, '33333333-3333-4333-8333-333333333333');
+  try {
+    assert.ok(session.sessionToken && session.sessionToken.length >= 32);
+    assert.equal(session.sessionToken.startsWith('direct_'), false);
+    // If HMAC fallback was used, it must verify cryptographically
+    if (session.sessionToken.startsWith('mmf1.')) {
+      const verified = verifyFallbackSessionToken(session.sessionToken);
+      assert.ok(verified);
+      assert.equal(verified?.userId, '33333333-3333-4333-8333-333333333333');
+    }
+  } finally {
+    await revokeSession(session.sessionToken).catch(() => {});
   }
 });
 

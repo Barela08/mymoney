@@ -153,12 +153,21 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const persistConfirmedInstallFlag = () => {
+      try {
+        localStorage.setItem('my_money_app_downloaded_confirmed', 'true');
+        const secureFlag = window.location?.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `mymoney_app_downloaded=downloaded; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax${secureFlag}`;
+      } catch {}
+    };
+
     const updateStandalone = () => {
       const standalone = isRunningStandalone();
       if (standalone) {
         setIsInstalled(true);
         setDeferredPrompt(null);
         setIsModalOpen(false);
+        persistConfirmedInstallFlag();
       }
     };
 
@@ -175,6 +184,7 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           if (Array.isArray(apps) && apps.length > 0) {
             setIsInstalled(true);
             setDeferredPrompt(null);
+            persistConfirmedInstallFlag();
           }
         })
         .catch(() => {});
@@ -186,6 +196,7 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setIsInstalled(true);
         setDeferredPrompt(null);
         setIsModalOpen(false);
+        persistConfirmedInstallFlag();
       }
     };
 
@@ -200,6 +211,7 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setIsInstalled(true);
       setDeferredPrompt(null);
       setIsModalOpen(false);
+      persistConfirmedInstallFlag();
       syncDeviceRegistration(true);
     };
 

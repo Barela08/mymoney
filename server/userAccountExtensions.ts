@@ -20,8 +20,14 @@ import {
   authenticateRequest,
   createSession,
   sanitizeUserOutput,
+  SessionLimitError,
   type AuthenticatedUser,
 } from './auth.js';
+import { sendWelcomeEmail } from './email.js';
+import {
+  dispatchNewUserWelcomeNotification,
+  recordAdminNotification,
+} from './notificationService.js';
 import {
   logSecurityEvent,
   normalizeEmail,
@@ -1255,12 +1261,38 @@ export async function handleUserAccountExtensions(
         sendJson(res, 403, { success: false, message: 'Your account is not active. Please contact support.' });
         return true;
       }
-      const session = await createSession(userRow.id, {
-        rememberMe: true,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: userRow.role, email: userRow.email },
-      });
+      const replaceSessionId =
+        typeof body.replaceSessionId === 'string' && body.replaceSessionId.trim()
+          ? body.replaceSessionId.trim()
+          : undefined;
+
+      let session;
+      try {
+        session = await createSession(userRow.id, {
+          rememberMe: true,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: userRow.role, email: userRow.email },
+          replaceSessionId,
+        });
+      } catch (sessionErr: any) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent('GOOGLE_LOGIN_BLOCKED_MAX_SESSIONS', {
+            userId: userRow.id,
+            userEmail: userRow.email,
+            ipAddress: clientIp,
+          }).catch(() => {});
+          sendJson(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions,
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       setSessionCookie(res, session.sessionToken, session.expiresAt);
       const outUser = sanitizeUserOutput(userRow);
       sendJson(res, 200, {
@@ -1341,6 +1373,29 @@ export async function handleUserAccountExtensions(
       user: { role: 'user', email: createdUser.email },
     });
     setSessionCookie(res, session.sessionToken, session.expiresAt);
+
+    // Immediately deliver in-app welcome notification, SMTP welcome email, and admin alert
+    await dispatchNewUserWelcomeNotification({
+      userId: createdUser.id,
+      fullName: createdUser.full_name,
+      email: createdUser.email,
+      provider: 'google',
+    }).catch((err) => {
+      console.error('[Google Welcome In-App Notification Error]:', err);
+    });
+
+    sendWelcomeEmail(createdUser.email, createdUser.full_name, createdUser.id).catch((err) => {
+      console.error('[Google Welcome Email Error]:', err);
+    });
+
+    recordAdminNotification({
+      eventType: 'new_user',
+      title: 'New User Registered (Google)',
+      message: `${createdUser.full_name} (${createdUser.email}) signed up via Google.`,
+      userId: createdUser.id,
+      userEmail: createdUser.email,
+      metadata: { role: 'user', provider: 'google', registeredAt: new Date().toISOString() },
+    }).catch(() => {});
 
     await logSecurityEvent('GOOGLE_USER_REGISTERED', {
       userId: createdUser.id,
@@ -1667,12 +1722,38 @@ export async function handleUserAccountExtensions(
 
     await updatePasskeyUsage(stored, check.newCounter);
 
-    const session = await createSession(userRow.id, {
-      rememberMe: true,
-      userAgent,
-      ipAddress: clientIp,
-      user: { role: userRow.role, email: userRow.email },
-    });
+    const replaceSessionId =
+      typeof body.replaceSessionId === 'string' && body.replaceSessionId.trim()
+        ? body.replaceSessionId.trim()
+        : undefined;
+
+    let session;
+    try {
+      session = await createSession(userRow.id, {
+        rememberMe: true,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: userRow.role, email: userRow.email },
+        replaceSessionId,
+      });
+    } catch (sessionErr: any) {
+      if (sessionErr instanceof SessionLimitError) {
+        await logSecurityEvent('PASSKEY_LOGIN_BLOCKED_MAX_SESSIONS', {
+          userId: userRow.id,
+          userEmail: userRow.email,
+          ipAddress: clientIp,
+        }).catch(() => {});
+        sendJson(res, 409, {
+          success: false,
+          code: sessionErr.code,
+          message: sessionErr.message,
+          maxSessions: sessionErr.maxSessions,
+          activeSessions: sessionErr.activeSessions,
+        });
+        return true;
+      }
+      throw sessionErr;
+    }
     setSessionCookie(res, session.sessionToken, session.expiresAt);
 
     await logSecurityEvent('PASSKEY_LOGIN_SUCCESS', {
