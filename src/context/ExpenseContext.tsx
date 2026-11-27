@@ -42,6 +42,7 @@ import {
 } from '../lib/security';
 import { udharDeletionApi, UdharContact } from '../lib/udharDeletionApi';
 import { adminClient } from '../lib/adminApi';
+import { getCurrentPortalScope } from '../lib/portalAuth';
 
 interface ExpenseContextType {
   transactions: Transaction[];
@@ -247,17 +248,39 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
-  // Live-sync browser tab title and favicon whenever Admin updates App Branding or Logo
+  // Live-sync browser tab title and favicon while isolating /myadmin and /mystaff portal identities
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const title = appBranding.appName?.trim() || 'My Money Manager';
-    const sub = appBranding.subTitle?.trim() || 'by HackifyPro';
-    document.title = sub ? `${title} — ${sub}` : title;
-    const safeLogo = sanitizeLogoUrl(appBranding.logoUrl);
-    const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (favicon) {
-      favicon.href = safeLogo;
-    }
+    const syncTitleAndFavicon = () => {
+      const scope = getCurrentPortalScope();
+      const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (scope === 'myadmin') {
+        document.title = 'My Money Manager Admin — HackifyPro';
+        if (favicon) favicon.href = '/admin-favicon.png';
+        return;
+      }
+      if (scope === 'mystaff') {
+        document.title = 'My Money Manager Staff — HackifyPro';
+        if (favicon) favicon.href = '/staff-favicon.png';
+        return;
+      }
+      const title = appBranding.appName?.trim() || 'My Money Manager';
+      const sub = appBranding.subTitle?.trim() || 'by HackifyPro';
+      document.title = sub ? `${title} — ${sub}` : title;
+      const safeLogo = sanitizeLogoUrl(appBranding.logoUrl);
+      if (favicon) {
+        favicon.href = safeLogo;
+      }
+    };
+    syncTitleAndFavicon();
+    window.addEventListener('popstate', syncTitleAndFavicon);
+    window.addEventListener('hashchange', syncTitleAndFavicon);
+    window.addEventListener('mymoney:portal-change', syncTitleAndFavicon);
+    return () => {
+      window.removeEventListener('popstate', syncTitleAndFavicon);
+      window.removeEventListener('hashchange', syncTitleAndFavicon);
+      window.removeEventListener('mymoney:portal-change', syncTitleAndFavicon);
+    };
   }, [appBranding.appName, appBranding.subTitle, appBranding.logoUrl]);
 
   const [notifications, setNotifications] = useState<BroadcastNotification[]>([]);

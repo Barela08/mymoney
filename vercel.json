@@ -52,23 +52,60 @@
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
         { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
       ]
+    },
+    {
+      "source": "/myadmin-sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/myadmin-manifest.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/mystaff-sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/mystaff-manifest.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
     }
   ],
   "rewrites": [
     { "source": "/api/send-reset-email", "destination": "/api/send-reset-email" },
     { "source": "/api/(.*)", "destination": "/api/[...all]?all=$1" },
     {
+      "source": "/myadmin-manifest.json",
+      "has": [{ "type": "host", "value": "admin.nileshbarela.site" }],
+      "destination": "/admin-subdomain-manifest.json"
+    },
+    {
       "source": "/admin-manifest.json",
       "has": [{ "type": "host", "value": "admin.nileshbarela.site" }],
       "destination": "/admin-subdomain-manifest.json"
     },
     {
-      "source": "/((?!api/|assets/|admin-|sw\\.js|manifest\\.json|logo\\.jpg|icon-|apple-touch-icon|notification-badge|offline\\.html|favicon|icons\\.svg).*)",
+      "source": "/((?!api/|assets/|myadmin-|admin-|mystaff-|staff-|sw\\.js|manifest\\.json|logo\\.jpg|icon-|apple-touch-icon|notification-badge|offline\\.html|favicon|icons\\.svg).*)",
       "has": [{ "type": "host", "value": "admin.nileshbarela.site" }],
-      "destination": "/admin.html"
+      "destination": "/myadmin.html"
     },
-    { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/admin/(.*)", "destination": "/admin.html" },
+    { "source": "/mystaff", "destination": "/mystaff.html" },
+    { "source": "/mystaff/(.*)", "destination": "/mystaff.html" },
+    { "source": "/myadmin", "destination": "/myadmin.html" },
+    { "source": "/myadmin/(.*)", "destination": "/myadmin.html" },
+    { "source": "/admin", "destination": "/myadmin.html" },
+    { "source": "/admin/(.*)", "destination": "/myadmin.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

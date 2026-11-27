@@ -9,7 +9,9 @@ export interface AuthenticatedUser {
   email: string;
   username?: string | null;
   phone?: string | null;
-  role: 'user' | 'admin' | 'superadmin';
+  role: 'user' | 'admin' | 'superadmin' | 'support' | 'analyst' | string;
+  role_slug?: string | null;
+  custom_permissions?: any;
   status: 'active' | 'suspended' | 'deactivated';
   email_verified: boolean;
   avatar_url?: string | null;
@@ -123,6 +125,7 @@ export function isMasterAdminAccountEmail(email?: string | null): boolean {
  */
 export function isDiscoverableNormalUser(user: {
   role?: string | null;
+  role_slug?: string | null;
   email?: string | null;
   status?: string | null;
   deletion_status?: string | null;
@@ -132,7 +135,9 @@ export function isDiscoverableNormalUser(user: {
   if (user.deletion_status && String(user.deletion_status).toLowerCase().trim() !== 'none') return false;
   if (isMasterAdminAccountEmail(user.email)) return false;
   const normalizedRole = String(user.role || 'user').toLowerCase().trim();
+  const normalizedSlug = String(user.role_slug || '').toLowerCase().trim();
   if (NON_DISCOVERABLE_ROLES.has(normalizedRole) || normalizedRole !== 'user') return false;
+  if (normalizedSlug && normalizedSlug !== 'user') return false;
   return true;
 }
 
@@ -664,6 +669,8 @@ function mapRowToAuthenticatedUser(row: any): AuthenticatedUser {
     username: row.username || null,
     phone: row.phone,
     role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
+    role_slug: isMasterAdmin ? 'superadmin' : (row.role_slug || null),
+    custom_permissions: row.custom_permissions,
     status: row.status,
     email_verified: row.email_verified,
     avatar_url: row.avatar_url,
@@ -759,7 +766,7 @@ async function resolveActiveUserById(userId: string): Promise<AuthenticatedUser 
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
-        `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+        `SELECT id, full_name, email, phone, role, role_slug, custom_permissions, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
          FROM public.app_users WHERE id = $1`,
         [userId]
       );
@@ -803,7 +810,7 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
       if (isDatabaseAvailable()) {
         try {
           const byEmailRes = await query(
-            `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+            `SELECT id, full_name, email, phone, role, role_slug, custom_permissions, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
              FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1`,
             [verified.email]
           );
@@ -880,6 +887,8 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
           u.email,
           u.phone,
           u.role,
+          u.role_slug,
+          u.custom_permissions,
           u.status,
           u.email_verified,
           u.avatar_url,
@@ -914,26 +923,7 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
     // Update session last active time
     query(`UPDATE public.user_sessions SET last_active_at = NOW() WHERE id = $1`, [row.session_id]).catch(() => {});
 
-    const isMasterAdmin = Boolean(
-      row.email &&
-      (row.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-       row.email.toLowerCase().trim() === 'admin@mymoney.com')
-    );
-
-    return {
-      id: row.id,
-      full_name: row.full_name,
-      email: row.email,
-      phone: row.phone,
-      role: isMasterAdmin ? 'superadmin' : (row.role || 'user'),
-      status: row.status,
-      email_verified: row.email_verified,
-      avatar_url: row.avatar_url,
-      force_password_reset: row.force_password_reset,
-      created_at: row.created_at,
-      last_login_at: row.last_login_at,
-      password_changed_at: row.password_changed_at,
-    };
+    return mapRowToAuthenticatedUser(row);
   } catch (err: any) {
     console.warn('authenticateRequest query failed, attempting Supabase REST fallback:', err.message);
     return await resolveSessionViaSupabaseRest();
@@ -941,8 +931,9 @@ export async function authenticateRequest(req: IncomingMessage): Promise<Authent
 }
 
 export function sanitizeUserOutput(user: AuthenticatedUser & { custom_permissions?: any }) {
+  const isMasterAdmin = isMasterAdminAccountEmail(user.email);
   const metaCompleted =
-    user?.custom_permissions && typeof user.custom_permissions === 'object'
+    user?.custom_permissions && typeof user.custom_permissions === 'object' && !Array.isArray(user.custom_permissions)
       ? user.custom_permissions.__profile_completed
       : undefined;
   const profileCompleted =
@@ -952,6 +943,10 @@ export function sanitizeUserOutput(user: AuthenticatedUser & { custom_permission
       ? metaCompleted
       : true;
 
+  const staffPermissions = Array.isArray(user.custom_permissions)
+    ? user.custom_permissions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+
   return {
     id: user.id,
     uid: user.id, // compatibility alias
@@ -960,7 +955,9 @@ export function sanitizeUserOutput(user: AuthenticatedUser & { custom_permission
     email: user.email,
     username: user.username || null,
     phone: user.phone || null,
-    role: user.role,
+    role: isMasterAdmin ? 'superadmin' : user.role,
+    role_slug: isMasterAdmin ? 'superadmin' : (user.role_slug || null),
+    staff_permissions: staffPermissions,
     status: user.status,
     email_verified: user.email_verified,
     avatar_url: user.avatar_url || null,

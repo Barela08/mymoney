@@ -20,9 +20,11 @@ import { udharDeletionApi } from './lib/udharDeletionApi';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
 import { AdminLoginPage } from './components/auth/AdminLoginPage';
+import { StaffLoginPage } from './components/auth/StaffLoginPage';
 import { AppDownloadPopup } from './components/common/AppDownloadPopup';
 import { TransactionCategory, TransactionSubcategory } from './types';
 import { AlertTriangle } from 'lucide-react';
+import { getPortalScopeFromLocation } from './lib/portalAuth';
 import { PwaInstallProvider, usePwaInstall } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
@@ -38,6 +40,7 @@ import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const StaffDashboard = lazy(() => import('./components/staff/StaffDashboard').then(m => ({ default: m.StaffDashboard })));
 const LegalCenterSection = lazy(() => import('./components/legal/LegalCenterSection').then(m => ({ default: m.LegalCenterSection })));
 const CalculatorSection = lazy(() => import('./components/calculator/CalculatorSection').then(m => ({ default: m.CalculatorSection })));
 const ReportsSection = lazy(() => import('./components/reports/ReportsSection').then(m => ({ default: m.ReportsSection })));
@@ -61,6 +64,7 @@ const CompleteProfileScreen = lazy(() => import('./components/auth/CompleteProfi
 const AddUdharModal = lazy(() => import('./components/people/AddUdharModal').then(m => ({ default: m.AddUdharModal })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
+  '/myadmin': 'admin',
   '/admin': 'admin',
   '/transactions': 'all_transactions',
   '/people': 'people',
@@ -82,7 +86,7 @@ const PATH_TO_TAB: Record<string, NavTab> = {
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
-  admin: '/admin',
+  admin: '/myadmin',
   all_transactions: '/transactions',
   people: '/people',
   reports: '/reports',
@@ -109,7 +113,7 @@ const SectionFallback: React.FC = () => (
 );
 
 const MainContent: React.FC = () => {
-  const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
+  const { user, isAdmin, isStaff, isLoading, isRecoveryMode } = useAuth();
   const { maintenanceSettings, refreshSiteConfig, dynamicSections, refreshTransactions, appBranding } = useExpense();
   const toast = useToast();
 
@@ -127,13 +131,28 @@ const MainContent: React.FC = () => {
       pathname: window.location.pathname.replace(/\/+$/, '') || '/',
       hash: window.location.hash || '',
     });
+    window.dispatchEvent(new Event('mymoney:portal-change'));
+  };
+
+  const navigatePortalPath = (targetPath: '/' | '/myadmin' | '/mystaff') => {
+    if (typeof window !== 'undefined') {
+      window.location.href = targetPath;
+    }
   };
 
   const [currentTab, setCurrentTabState] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
       const hash = window.location.hash;
-      if (p === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+      if (
+        p === '/myadmin' ||
+        p.startsWith('/myadmin/') ||
+        p === '/admin' ||
+        hash === '#myadmin' ||
+        hash.startsWith('#myadmin=') ||
+        hash === '#admin' ||
+        hash.startsWith('#admin=')
+      ) {
         return 'admin';
       }
       if (hash === '#privacy-policy') return 'legal';
@@ -186,7 +205,16 @@ const MainContent: React.FC = () => {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
       const h = window.location.hash || '';
       setRouteLocation({ pathname: p, hash: h });
-      if (p === '/admin' || h === '#admin' || h.startsWith('#admin=')) {
+      window.dispatchEvent(new Event('mymoney:portal-change'));
+      if (
+        p === '/myadmin' ||
+        p.startsWith('/myadmin/') ||
+        p === '/admin' ||
+        h === '#myadmin' ||
+        h.startsWith('#myadmin=') ||
+        h === '#admin' ||
+        h.startsWith('#admin=')
+      ) {
         setCurrentTabState('admin');
       } else {
         setCurrentTabState(PATH_TO_TAB[p] || 'dashboard');
@@ -210,9 +238,21 @@ const MainContent: React.FC = () => {
       const hash = window.location.hash;
       const path = window.location.pathname.replace(/\/+$/, '') || '/';
       setRouteLocation({ pathname: path, hash });
+      window.dispatchEvent(new Event('mymoney:portal-change'));
 
-      if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+      if (
+        path === '/myadmin' ||
+        path.startsWith('/myadmin/') ||
+        path === '/admin' ||
+        hash === '#myadmin' ||
+        hash.startsWith('#myadmin=') ||
+        hash === '#admin' ||
+        hash.startsWith('#admin=')
+      ) {
         setCurrentTabState('admin');
+        return;
+      }
+      if (path === '/mystaff' || path.startsWith('/mystaff/') || hash === '#mystaff' || hash.startsWith('#mystaff=')) {
         return;
       }
 
@@ -380,81 +420,97 @@ const MainContent: React.FC = () => {
     );
   }
 
-  const isAdminRoute =
-    routeLocation.pathname === '/admin' ||
-    routeLocation.hash === '#admin' ||
-    routeLocation.hash.startsWith('#admin=');
-// Separate Admin Portal Route (/admin) — Always accessible even during Maintenance Mode
-if (isAdminRoute) {
-if (!user) {
-return (
-<AdminLoginPage
-onReturnHome={() => {
-if (typeof window !== 'undefined') {
-window.history.pushState(null, '', '/');
-if (window.location.hash.startsWith('#admin')) {
-window.location.hash = '';
-}
-}
-setRouteLocation({ pathname: '/', hash: '' });
-setCurrentTabState('dashboard');
-}}
-/>
-);
-}
+  const portalScope = getPortalScopeFromLocation(
+    routeLocation.pathname,
+    routeLocation.hash,
+    typeof window !== 'undefined' ? window.location.hostname : ''
+  );
+  const isStaffRoute = portalScope === 'mystaff';
+  const isAdminRoute = portalScope === 'myadmin';
 
-// Role Enforcement: Non-admin users are strictly blocked with 403 Forbidden
-if (user && !isAdmin) {
-return (
-<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
-<div className="max-w-md w-full bg-slate-900 border border-rose-500/30 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
-<div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto ring-8 ring-rose-500/5">
-<AlertTriangle className="w-8 h-8" />
-</div>
-<div className="space-y-2">
-<h2 className="text-xl font-black text-white">403 Forbidden: Access Denied</h2>
-<p className="text-xs text-slate-400 leading-relaxed">
-You do not have administrative privileges to access the Admin Control Center.
-This incident has been logged for security.
-</p>
-</div>
-<button
-onClick={() => {
-if (typeof window !== 'undefined') {
-window.history.pushState(null, '', '/');
-if (window.location.hash.startsWith('#admin')) {
-window.location.hash = '';
-}
-}
-setRouteLocation({ pathname: '/', hash: '' });
-setCurrentTabState('dashboard');
-}}
-className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-emerald-900/30 cursor-pointer"
->
-Return to Safe Dashboard
-</button>
-</div>
-</div>
-);
-}
+  // Separate Staff Portal Route (/mystaff) — Strictly isolated Staff Login & Operations Desk
+  if (isStaffRoute) {
+    if (!user) {
+      return (
+        <>
+          <StaffLoginPage
+            onReturnHome={() => navigatePortalPath('/')}
+            onGoToAdmin={() => navigatePortalPath('/myadmin')}
+          />
+          <AppDownloadPopup
+            portalScope="mystaff"
+            isAdminRoute={false}
+            isMaintenanceBlocked={false}
+            hasBottomMobileNav={false}
+          />
+        </>
+      );
+    }
 
-return (
-<Suspense fallback={<SectionFallback />}>
-<AdminDashboard
-          onExit={() => {
-            if (typeof window !== 'undefined') {
-              if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
-                window.history.pushState(null, '', '/');
-              }
-              if (window.location.hash.startsWith('#admin')) {
-                window.location.hash = '';
-              }
-            }
-            setRouteLocation({ pathname: '/', hash: '' });
-            setCurrentTab('dashboard');
-          }}
+    return (
+      <>
+        <Suspense fallback={<SectionFallback />}>
+          <StaffDashboard
+            onExit={() => navigatePortalPath('/')}
+            onGoToAdmin={() => navigatePortalPath('/myadmin')}
+          />
+        </Suspense>
+        <AppDownloadPopup
+          portalScope="mystaff"
+          isAdminRoute={false}
+          isMaintenanceBlocked={false}
+          hasBottomMobileNav={false}
         />
-      </Suspense>
+      </>
+    );
+  }
+
+  // Separate Admin Portal Route (/myadmin) — Always accessible even during Maintenance Mode
+  if (isAdminRoute) {
+    if (!user) {
+      return (
+        <>
+          <AdminLoginPage
+            onReturnHome={() => navigatePortalPath('/')}
+            onGoToStaff={() => navigatePortalPath('/mystaff')}
+          />
+          <AppDownloadPopup
+            portalScope="myadmin"
+            isAdminRoute={false}
+            isMaintenanceBlocked={false}
+            hasBottomMobileNav={false}
+          />
+        </>
+      );
+    }
+
+    // Role Enforcement: Non-admin users (including Staff) cannot enter Admin Control Center
+    if (user && !isAdmin) {
+      return (
+        <Suspense fallback={<SectionFallback />}>
+          <AdminDashboard
+            onExit={() => navigatePortalPath('/')}
+            onGoToStaff={() => navigatePortalPath('/mystaff')}
+          />
+        </Suspense>
+      );
+    }
+
+    return (
+      <>
+        <Suspense fallback={<SectionFallback />}>
+          <AdminDashboard
+            onExit={() => navigatePortalPath('/')}
+            onGoToStaff={() => navigatePortalPath('/mystaff')}
+          />
+        </Suspense>
+        <AppDownloadPopup
+          portalScope="myadmin"
+          isAdminRoute={false}
+          isMaintenanceBlocked={false}
+          hasBottomMobileNav={false}
+        />
+      </>
     );
   }
 
@@ -533,15 +589,17 @@ return (
           <AdminDashboard
             onExit={() => {
               if (typeof window !== 'undefined') {
-                if (window.location.pathname === '/admin') {
+                const curPath = window.location.pathname.replace(/\/+$/, '') || '/';
+                if (curPath === '/admin' || curPath === '/myadmin') {
                   window.history.pushState(null, '', '/');
                 }
-                if (window.location.hash.startsWith('#admin')) {
+                if (window.location.hash.startsWith('#admin') || window.location.hash.startsWith('#myadmin')) {
                   window.location.hash = '';
                 }
               }
               setCurrentTab('dashboard');
             }}
+            onGoToStaff={() => navigatePortalPath('/mystaff')}
           />
         </Suspense>
       ) : (
@@ -817,8 +875,9 @@ return (
         <InstantExpensePopupModal />
         <UpiDetectionOnboardingModal />
 
-        {/* Bottom-Right App Download Popup (never shown on Admin or Maintenance views) */}
+        {/* Bottom-Right App Download Popup (never shown on Maintenance views) */}
         <AppDownloadPopup
+          portalScope={portalScope}
           isAdminRoute={isAdminRoute || currentTab === 'admin'}
           isMaintenanceBlocked={isMaintenanceBlocked}
           hasBottomMobileNav={Boolean(user && currentTab !== 'admin')}

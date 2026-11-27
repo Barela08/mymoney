@@ -99,6 +99,7 @@ import {
   insertSupportTicketReplyFallback,
   getSupportTicketRepliesFallback,
   updateSupportTicketStatusFallback,
+  listAdminRolesFallback,
 } from './supabaseRestFallback.js';
 import {
   normalizeSearchQuery,
@@ -581,9 +582,31 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const ADMIN_ROLES = new Set(['superadmin', 'admin', 'support', 'analyst']);
+      const ADMIN_PORTAL_ROLES = new Set(['superadmin', 'admin']);
+      const BUILTIN_STAFF_ROLES = new Set(['support', 'analyst']);
       const isMasterAdminEmail = (addr: string) =>
         addr === 'hackifypro@gmail.com' || addr === 'admin@mymoney.com';
+
+      const isKnownStaffRoleSlug = async (slugCandidate: string): Promise<boolean> => {
+        const clean = String(slugCandidate || '').toLowerCase().trim();
+        if (!clean || clean === 'user' || clean === 'anonymous' || ADMIN_PORTAL_ROLES.has(clean)) {
+          return false;
+        }
+        if (BUILTIN_STAFF_ROLES.has(clean)) return true;
+        if (isDatabaseAvailable()) {
+          try {
+            const roleRes = await query('SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1', [clean]);
+            if (roleRes.rows.length > 0) return true;
+          } catch {}
+        }
+        try {
+          const fallbackRoles = await listAdminRolesFallback();
+          if (fallbackRoles.some((r: any) => String(r.slug || '').toLowerCase().trim() === clean)) {
+            return true;
+          }
+        } catch {}
+        return false;
+      };
 
       let userRecord: any = null;
       if (isDatabaseAvailable()) {
@@ -646,21 +669,43 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
+      const rawRole = String(userRecord.role || 'user').toLowerCase().trim();
+      const rawSlug = String(userRecord.role_slug || '').toLowerCase().trim();
       const effectiveRole = isMasterAdminEmail(email)
         ? 'superadmin'
-        : String(userRecord.role || 'user').toLowerCase().trim();
+        : ADMIN_PORTAL_ROLES.has(rawRole)
+        ? rawRole
+        : ADMIN_PORTAL_ROLES.has(rawSlug)
+        ? rawSlug
+        : rawSlug && rawSlug !== 'user'
+        ? rawSlug
+        : rawRole;
 
-      if (!ADMIN_ROLES.has(effectiveRole)) {
-        await logSecurityEvent('ADMIN_LOGIN_DENIED_NON_ADMIN', {
-          userId: userRecord.id,
-          userEmail: email,
-          actorRole: effectiveRole,
-          ipAddress: clientIp,
-        }).catch(() => {});
+      if (!ADMIN_PORTAL_ROLES.has(effectiveRole)) {
+        const isStaffAccount = await isKnownStaffRoleSlug(effectiveRole);
+        await logSecurityEvent(
+          isStaffAccount ? 'ADMIN_LOGIN_DENIED_STAFF_PORTAL' : 'ADMIN_LOGIN_DENIED_NON_ADMIN',
+          {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRole,
+            ipAddress: clientIp,
+          }
+        ).catch(() => {});
+
+        if (isStaffAccount) {
+          sendJson(res, 403, {
+            success: false,
+            code: 'STAFF_PORTAL_REQUIRED',
+            message: 'Staff accounts cannot sign in on the Admin Portal. Please use the dedicated Staff Portal (/mystaff).',
+          });
+          return true;
+        }
+
         sendJson(res, 403, {
           success: false,
           code: 'ADMIN_ROLE_REQUIRED',
-          message: 'Access Denied: This login portal is restricted to authorized administrators only.',
+          message: 'Access Denied: This login portal (/myadmin) is restricted to authorized administrators only.',
         });
         return true;
       }
@@ -748,6 +793,234 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // ---------------------------------------------------------
+    // 0B. DEDICATED STAFF LOGIN: POST /api/staff/auth/login
+    // Strictly separates Staff accounts (support, analyst, custom staff roles) from Admin & User logins.
+    // ---------------------------------------------------------
+    if (pathname === '/api/staff/auth/login' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const email = normalizeEmail(body.email || '');
+      const password = String(body.password || '');
+      const rememberMe = Boolean(body.rememberMe);
+
+      const rateIp = await checkRateLimitAsync(`staff_login:ip:${clientIp}`, RATE_LIMITS.ADMIN_LOGIN_IP.max, RATE_LIMITS.ADMIN_LOGIN_IP.windowMs, RATE_LIMITS.ADMIN_LOGIN_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
+        return true;
+      }
+
+      if (email) {
+        const rateAcct = await checkRateLimitAsync(`staff_login:account:${email}`, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.max, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.op);
+        if (!rateAcct.allowed) {
+          sendRateLimitExceeded(res, rateAcct);
+          return true;
+        }
+      }
+
+      if (!email || !password) {
+        sendJson(res, 400, { success: false, message: 'Staff email and password are required.' });
+        return true;
+      }
+
+      const ADMIN_PORTAL_ROLES = new Set(['superadmin', 'admin']);
+      const BUILTIN_STAFF_ROLES = new Set(['support', 'analyst']);
+      const isMasterAdminEmail = (addr: string) =>
+        addr === 'hackifypro@gmail.com' || addr === 'admin@mymoney.com';
+
+      let userRecord: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query('SELECT * FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1', [email]);
+          if (userRes.rows.length > 0) userRecord = userRes.rows[0];
+        } catch {}
+      }
+
+      if (!userRecord) {
+        const sbRes = await sbRestRequest<any[]>(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+          userRecord = sbRes.data[0];
+        }
+      }
+
+      if (!userRecord) {
+        await logSecurityEvent('STAFF_LOGIN_FAILED_UNKNOWN', { userEmail: email, ipAddress: clientIp }).catch(() => {});
+        sendJson(res, 401, { success: false, message: 'Invalid staff credentials.' });
+        return true;
+      }
+
+      if (userRecord.locked_until && new Date(userRecord.locked_until) > new Date()) {
+        const remainingMin = Math.ceil((new Date(userRecord.locked_until).getTime() - Date.now()) / 60000);
+        sendJson(res, 429, {
+          success: false,
+          message: `Staff account is temporarily locked. Try again in ${remainingMin} minute(s).`,
+        });
+        return true;
+      }
+
+      if (userRecord.status === 'suspended' || userRecord.status === 'deactivated') {
+        sendJson(res, 403, {
+          success: false,
+          message: `This staff account is ${userRecord.status}. Sign-in blocked.`,
+        });
+        return true;
+      }
+
+      const isValid = await verifyPassword(password, userRecord.password_hash);
+      if (!isValid) {
+        if (isDatabaseAvailable()) {
+          const attempts = (userRecord.failed_login_attempts || 0) + 1;
+          const lockSql =
+            attempts >= 5
+              ? "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2"
+              : 'UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2';
+          await query(lockSql, [attempts, userRecord.id]).catch(() => {});
+        }
+        await logSecurityEvent('STAFF_LOGIN_FAILED_PASSWORD', {
+          userId: userRecord.id,
+          userEmail: email,
+          ipAddress: clientIp,
+        }).catch(() => {});
+        sendJson(res, 401, { success: false, message: 'Invalid staff credentials.' });
+        return true;
+      }
+
+      const rawRole = String(userRecord.role || 'user').toLowerCase().trim();
+      const rawSlug = String(userRecord.role_slug || '').toLowerCase().trim();
+      const effectiveRoleSlug = rawSlug && rawSlug !== 'user' ? rawSlug : rawRole;
+
+      // Reject pure Admin / Super Admin accounts from Staff Login
+      if (isMasterAdminEmail(email) || ADMIN_PORTAL_ROLES.has(rawRole) || ADMIN_PORTAL_ROLES.has(rawSlug)) {
+        await logSecurityEvent('STAFF_LOGIN_DENIED_ADMIN_PORTAL', {
+          userId: userRecord.id,
+          userEmail: email,
+          actorRole: effectiveRoleSlug,
+          ipAddress: clientIp,
+        }).catch(() => {});
+        sendJson(res, 403, {
+          success: false,
+          code: 'ADMIN_PORTAL_REQUIRED',
+          message: 'Administrator accounts must sign in through the dedicated Admin Portal (/myadmin).',
+        });
+        return true;
+      }
+
+      let isAuthorizedStaff =
+        BUILTIN_STAFF_ROLES.has(rawRole) || BUILTIN_STAFF_ROLES.has(rawSlug);
+      if (!isAuthorizedStaff && effectiveRoleSlug && effectiveRoleSlug !== 'user' && effectiveRoleSlug !== 'anonymous') {
+        if (isDatabaseAvailable()) {
+          try {
+            const roleRes = await query('SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1', [effectiveRoleSlug]);
+            if (roleRes.rows.length > 0) isAuthorizedStaff = true;
+          } catch {}
+        }
+        if (!isAuthorizedStaff) {
+          try {
+            const fallbackRoles = await listAdminRolesFallback();
+            if (fallbackRoles.some((r: any) => String(r.slug || '').toLowerCase().trim() === effectiveRoleSlug)) {
+              isAuthorizedStaff = true;
+            }
+          } catch {}
+        }
+      }
+
+      if (!isAuthorizedStaff) {
+        await logSecurityEvent('STAFF_LOGIN_DENIED_NON_STAFF', {
+          userId: userRecord.id,
+          userEmail: email,
+          actorRole: effectiveRoleSlug,
+          ipAddress: clientIp,
+        }).catch(() => {});
+        sendJson(res, 403, {
+          success: false,
+          code: 'STAFF_ROLE_REQUIRED',
+          message: 'Access Denied: This login portal (/mystaff) is restricted to authorized My Money Manager staff only.',
+        });
+        return true;
+      }
+
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.app_users
+             SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1
+             WHERE id = $2`,
+            [clientIp, userRecord.id]
+          );
+        } catch {}
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(userRecord.id)}`, {
+          method: 'PATCH',
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: new Date().toISOString(),
+            last_login_ip: clientIp,
+          },
+        }).catch(() => {});
+      }
+
+      const replaceSessionId =
+        typeof body.replaceSessionId === 'string' && body.replaceSessionId.trim()
+          ? body.replaceSessionId.trim()
+          : undefined;
+
+      let session;
+      try {
+        session = await createSession(userRecord.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: effectiveRoleSlug, email },
+          replaceSessionId,
+        });
+      } catch (sessionErr: any) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent('STAFF_LOGIN_BLOCKED_MAX_SESSIONS', {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRoleSlug,
+            ipAddress: clientIp,
+          }).catch(() => {});
+          sendJson(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions,
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
+
+      setSessionCookie(res, session.sessionToken, session.expiresAt);
+      await resetRateLimitAsync(`staff_login:ip:${clientIp}`);
+      await resetRateLimitAsync(`staff_login:account:${email}`);
+
+      const sanitizedUser = sanitizeUserOutput({
+        ...userRecord,
+        role: rawRole as any,
+        role_slug: effectiveRoleSlug,
+      });
+
+      await logSecurityEvent('STAFF_LOGIN_SUCCESS', {
+        userId: userRecord.id,
+        userEmail: email,
+        actorRole: effectiveRoleSlug,
+        ipAddress: clientIp,
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Staff member authenticated successfully.',
+        user: sanitizedUser,
+        sessionToken: session.sessionToken,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
     // 0. ADMIN CONTROL CENTER DISPATCH (RBAC Protected — Always accessible during Maintenance Mode)
     // ---------------------------------------------------------
     if (pathname.startsWith('/api/admin/')) {
@@ -757,13 +1030,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
     // ---------------------------------------------------------
     // MAINTENANCE MODE API GUARD
-    // Blocks non-admin access to all user/public operational APIs when Maintenance Mode is ON.
-    // Exempt: /api/health, /api/public/site-config, /api/admin/*, /api/auth/me, /api/auth/logout*
+    // Blocks non-admin/non-staff access to all user/public operational APIs when Maintenance Mode is ON.
+    // Exempt: /api/health, /api/public/site-config, /api/admin/*, /api/staff/auth/login, /api/auth/me, /api/auth/logout*
     // ---------------------------------------------------------
     const isMaintenanceExemptPath =
       pathname === '/api/health' ||
       pathname === '/api/public/site-config' ||
       pathname.startsWith('/api/admin/') ||
+      pathname === '/api/staff/auth/login' ||
       pathname === '/api/auth/me' ||
       pathname === '/api/auth/logout' ||
       pathname === '/api/auth/logout-all-devices';
@@ -772,11 +1046,13 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const reqUser = await authenticateRequest(req);
       const reqEmail = (reqUser?.email || '').toLowerCase().trim();
       const reqRole = (reqUser?.role || '').toLowerCase().trim();
+      const reqSlug = (reqUser?.role_slug || '').toLowerCase().trim();
       const isReqAdmin = Boolean(
         reqUser &&
           (reqEmail === 'hackifypro@gmail.com' ||
             reqEmail === 'admin@mymoney.com' ||
-            ['superadmin', 'admin', 'support', 'analyst'].includes(reqRole))
+            ['superadmin', 'admin', 'support', 'analyst'].includes(reqRole) ||
+            (reqSlug && reqSlug !== 'user' && reqSlug !== 'anonymous'))
       );
       if (!isReqAdmin) {
         const maint = await getMaintenanceSettings();

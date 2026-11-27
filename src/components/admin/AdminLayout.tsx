@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   Users,
   Activity,
-  ShieldCheck,
   ShieldAlert,
   Laptop,
   Trash2,
@@ -27,9 +26,7 @@ import {
   ChevronDown,
   RefreshCw,
   LogOut,
-  AlertTriangle,
   CheckCircle2,
-  Lock,
   ArrowLeft,
   KeyRound,
   Bot,
@@ -37,10 +34,13 @@ import {
   UserPlus,
   CheckCheck,
   Smartphone,
+  Download,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useExpense } from '../../context/ExpenseContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
+import { useToast } from '../../context/ToastContext';
 import { adminClient } from '../../lib/adminApi';
+import { hasPortalPermission, resolveEffectiveRoleSlug } from '../../lib/portalAuth';
 
 export type AdminSectionKey =
   | 'dashboard'
@@ -149,8 +149,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   onExitAdmin,
   children,
 }) => {
-  const { user, logout } = useAuth();
-  const { appBranding } = useExpense();
+  const { user, portalPermissions, logout } = useAuth();
+  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
+  const toast = useToast();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -158,8 +159,39 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const [alerts, setAlerts] = useState<any[]>([]);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [isInstallingApp, setIsInstallingApp] = useState(false);
 
-  const roleName = user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'admin' ? 'Admin' : 'Staff';
+  const effectiveRole = resolveEffectiveRoleSlug(user);
+  const roleName =
+    effectiveRole === 'superadmin'
+      ? 'Super Admin'
+      : effectiveRole === 'admin'
+      ? 'Admin'
+      : effectiveRole.replace(/[_-]+/g, ' ');
+
+  const visibleNavGroups = React.useMemo(
+    () =>
+      NAV_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          hasPortalPermission(portalPermissions, item.requiredPermission)
+        ),
+      })).filter((group) => group.items.length > 0),
+    [portalPermissions]
+  );
+
+  const handleInstallAdminApp = async () => {
+    if (isInstallingApp) return;
+    setIsInstallingApp(true);
+    try {
+      const res = await triggerInstallPrompt();
+      if (res.status === 'accepted') {
+        toast.success('Installing Admin App', 'My Money Manager Admin is installing to your device.');
+      }
+    } finally {
+      setIsInstallingApp(false);
+    }
+  };
 
   const toggleGroup = (groupLabel: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [groupLabel]: !prev[groupLabel] }));
@@ -252,36 +284,50 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           </button>
 
           <div className="flex items-center gap-2.5">
-            {appBranding?.logoUrl ? (
-              <img
-                src={appBranding.logoUrl}
-                alt={appBranding.appName || 'My Money Manager'}
-                onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
-                className="w-9 h-9 rounded-xl object-cover shadow-md border border-emerald-500/30"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-black shadow-md shadow-emerald-500/20">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-            )}
+            <img
+              src="/admin-logo.png"
+              alt="My Money Manager Admin by HackifyPro"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/admin-icon-192.png';
+              }}
+              className="w-9 h-9 rounded-xl object-cover shadow-md border border-emerald-500/40 bg-slate-900"
+            />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-sm tracking-tight text-slate-900 dark:text-slate-100">
-                  {appBranding?.appName || 'My Money Manager'} Control Center
+                  My Money Manager Admin
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                   {roleName}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                A product of HackifyPro · Administrative Platform
+                A product of HackifyPro · Admin Control Center (/myadmin)
               </p>
             </div>
           </div>
         </div>
 
         {/* Global Search & Quick Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {!isInstalled ? (
+            <button
+              type="button"
+              onClick={handleInstallAdminApp}
+              disabled={isInstallingApp}
+              data-testid="admin-header-install-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 transition-all cursor-pointer shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Download Admin App</span>
+              <span className="sm:hidden">Install App</span>
+            </button>
+          ) : (
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Admin App Installed</span>
+            </span>
+          )}
           <div className="relative hidden md:block w-72">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -520,14 +566,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             )}
           </div>
 
-          {/* Exit to Main App Button */}
+          {/* Exit to User Website Button */}
           {onExitAdmin && (
             <button
               onClick={onExitAdmin}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>User App</span>
+              <span>User Website</span>
             </button>
           )}
         </div>
@@ -538,7 +584,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         {/* Desktop Sidebar */}
         <aside className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hidden lg:flex flex-col shrink-0">
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {NAV_GROUPS.map((group) => {
+            {visibleNavGroups.map((group) => {
               const isCollapsed = collapsedGroups[group.label];
               return (
                 <div key={group.label} className="space-y-1">
@@ -585,6 +631,21 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             })}
           </div>
 
+          {/* Dedicated Admin App Download CTA in Sidebar */}
+          {!isInstalled && (
+            <div className="px-4 pb-3">
+              <button
+                type="button"
+                onClick={handleInstallAdminApp}
+                disabled={isInstallingApp}
+                className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Install Admin App</span>
+              </button>
+            </div>
+          )}
+
           {/* Admin User Footer Card */}
           <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
             <div className="flex items-center gap-2.5 overflow-hidden">
@@ -627,7 +688,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               </div>
 
               <div className="flex-1 space-y-5">
-                {NAV_GROUPS.map((group) => (
+                {visibleNavGroups.map((group) => (
                   <div key={group.label} className="space-y-1">
                     <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-2 mb-1">
                       {group.label}
@@ -660,6 +721,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               </div>
 
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                {!isInstalled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileOpen(false);
+                      handleInstallAdminApp();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Admin App</span>
+                  </button>
+                )}
                 {onExitAdmin && (
                   <button
                     type="button"
@@ -670,7 +744,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                     className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" />
-                    <span>Switch to User App</span>
+                    <span>Switch to User Website</span>
                   </button>
                 )}
                 <button

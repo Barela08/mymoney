@@ -12,6 +12,11 @@ import { syncDeviceRegistration } from './PwaInstallContext';
 import { clearUpiProfileCache } from '../lib/upiProfileApi';
 import { signInWithFirebaseGoogle } from '../lib/firebaseClient';
 import { loginWithPasskeyOnDevice } from '../lib/webauthnClient';
+import {
+  getDefaultPermissionsForRole,
+  isAdminPortalUser,
+  isStaffPortalUser,
+} from '../lib/portalAuth';
 
 export interface LoginResult {
   success: boolean;
@@ -20,12 +25,15 @@ export interface LoginResult {
   maxSessions?: number;
   activeSessions?: ActiveDeviceSession[];
   requiresAdmin?: boolean;
+  requiresStaff?: boolean;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
   isAdmin: boolean;
+  isStaff: boolean;
+  portalPermissions: string[];
   isRecoveryMode: boolean;
   recoveryToken: string | null;
   recoveryEmail: string | null;
@@ -40,6 +48,12 @@ interface AuthContextType {
   loginWithGoogle: (replaceSessionId?: string) => Promise<LoginResult>;
   loginWithPasskey: (email?: string, replaceSessionId?: string) => Promise<LoginResult>;
   adminLogin: (
+    email: string,
+    pass: string,
+    rememberMe?: boolean,
+    replaceSessionId?: string
+  ) => Promise<LoginResult>;
+  staffLogin: (
     email: string,
     pass: string,
     rememberMe?: boolean,
@@ -76,6 +90,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [portalPermissions, setPortalPermissions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRecoveryMode, setIsRecoveryMode] = useState<boolean>(false);
   const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
@@ -405,7 +420,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   };
 
-  // Dedicated Admin Portal Login handler (/admin) — strictly requires admin role
+  // Dedicated Admin Portal Login handler (/myadmin) — strictly requires superadmin/admin role
   const adminLogin = async (
     email: string,
     pass: string,
@@ -443,6 +458,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeSessions: err?.data?.activeSessions,
         message: err?.message || 'Administrator authentication failed.',
         requiresAdmin: Boolean(err?.data?.code === 'ADMIN_ROLE_REQUIRED' || err?.status === 403),
+      };
+    }
+  };
+
+  // Dedicated Staff Portal Login handler (/mystaff) — strictly requires staff role
+  const staffLogin = async (
+    email: string,
+    pass: string,
+    rememberMe: boolean = false,
+    replaceSessionId?: string
+  ): Promise<LoginResult> => {
+    const supabase = getSupabaseClient();
+    try {
+      const res = await authApi.staffLogin({ email, password: pass, rememberMe, replaceSessionId });
+      if (res.success && res.user) {
+        setUser(res.user);
+        if (supabase) {
+          supabase.auth
+            .signInWithPassword({
+              email: email.trim().toLowerCase(),
+              password: pass,
+            })
+            .catch(() => {});
+        }
+        syncDeviceRegistration();
+        return {
+          success: true,
+          message: res.message || 'Staff portal access granted.',
+        };
+      }
+      return {
+        success: false,
+        message: res.message || 'Invalid staff credentials.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        code: err?.data?.code,
+        maxSessions: err?.data?.maxSessions,
+        activeSessions: err?.data?.activeSessions,
+        message: err?.message || 'Staff authentication failed.',
+        requiresStaff: Boolean(err?.data?.code === 'STAFF_ROLE_REQUIRED' || err?.status === 403),
       };
     }
   };
@@ -790,16 +847,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isMasterAdmin = Boolean(
-    user?.email &&
-    (user.email.toLowerCase().trim() === 'hackifypro@gmail.com' ||
-     user.email.toLowerCase().trim() === 'admin@mymoney.com')
-  );
-  const userRole = (user?.role || '').toLowerCase().trim();
-  const isAdmin = Boolean(
-    isMasterAdmin ||
-    (user && (userRole === 'admin' || userRole === 'superadmin' || userRole === 'support' || userRole === 'analyst'))
-  );
+  const isAdmin = isAdminPortalUser(user);
+  const isStaff = isStaffPortalUser(user);
+
+  useEffect(() => {
+    if (!user || (!isAdmin && !isStaff)) {
+      setPortalPermissions([]);
+      return;
+    }
+    const defaults = getDefaultPermissionsForRole(user);
+    setPortalPermissions(defaults);
+    if (getStoredSessionToken()) {
+      authApi
+        .getMyPermissions()
+        .then((res) => {
+          if (res?.success && Array.isArray(res.permissions)) {
+            setPortalPermissions(res.permissions);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user, isAdmin, isStaff]);
 
   return (
     <AuthContext.Provider
@@ -807,6 +875,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isLoading,
         isAdmin,
+        isStaff,
+        portalPermissions,
         isRecoveryMode,
         recoveryToken,
         recoveryEmail,
@@ -816,6 +886,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithGoogle,
         loginWithPasskey,
         adminLogin,
+        staffLogin,
         register,
         logout,
         logoutAllDevices,

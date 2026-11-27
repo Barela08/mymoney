@@ -128,7 +128,18 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Navigation requests: Network-first, fallback to cached SPA shell, then offline.html
+  // Never hijack separate /myadmin, /mystaff, or /admin portal entries
   if (event.request.mode === 'navigate') {
+    if (
+      url.pathname === '/myadmin' ||
+      url.pathname.startsWith('/myadmin/') ||
+      url.pathname === '/mystaff' ||
+      url.pathname.startsWith('/mystaff/') ||
+      url.pathname === '/admin' ||
+      url.pathname.startsWith('/admin/')
+    ) {
+      return;
+    }
     event.respondWith(
       fetch(event.request).catch(async () => {
         const cachedIndex = await caches.match('/index.html');

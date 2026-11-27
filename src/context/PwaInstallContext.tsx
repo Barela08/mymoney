@@ -7,6 +7,12 @@ import {
   PlatformCompatibilityInfo,
 } from '../lib/pwaUtils';
 import { getStoredSessionToken } from '../lib/authApi';
+import {
+  AppPortalScope,
+  getCurrentPortalScope,
+  getPortalBranding,
+  PortalBrandingInfo,
+} from '../lib/portalAuth';
 
 export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -25,6 +31,10 @@ export type InstallPromptResult =
   | { status: 'unavailable' };
 
 interface PwaInstallContextType {
+  /** Active application scope ('user' | 'myadmin' | 'mystaff') */
+  portalScope: AppPortalScope;
+  /** Portal-specific branding for manifests, icons, titles, and accent color */
+  portalBranding: PortalBrandingInfo;
   /** Native beforeinstallprompt event has been captured and is ready to invoke */
   isInstallable: boolean;
   /** App is confirmed installed (standalone display mode or appinstalled event fired) */
@@ -61,21 +71,57 @@ interface PwaInstallContextType {
 
 const PwaInstallContext = createContext<PwaInstallContextType | undefined>(undefined);
 
-const DISMISSED_STORAGE_KEY = 'my_money_pwa_install_dismissed_at';
-const SESSION_DISMISSED_KEY = 'my_money_pwa_install_session_dismissed';
-const AUTO_PROMPT_DISABLED_KEY = 'mm_pwa_auto_prompt_disabled';
+export function getPortalStorageKeys(scope: AppPortalScope) {
+  if (scope === 'myadmin') {
+    return {
+      dismissedAtKey: 'mm_myadmin_pwa_install_dismissed_at',
+      popupDismissedAtKey: 'mm_myadmin_pwa_dismissed_at',
+      popupOpenKey: 'mm_myadmin_pwa_popup_open',
+      activeMsKey: 'mm_myadmin_pwa_active_ms',
+      sessionDismissedKey: 'mm_myadmin_pwa_install_session_dismissed',
+      autoPromptDisabledKey: 'mm_myadmin_pwa_auto_prompt_disabled',
+      downloadedConfirmedKey: 'mm_myadmin_app_downloaded_confirmed',
+      downloadedCookieName: 'mymoney_myadmin_app_downloaded',
+      cookiePath: '/myadmin',
+    };
+  }
+  if (scope === 'mystaff') {
+    return {
+      dismissedAtKey: 'mm_mystaff_pwa_install_dismissed_at',
+      popupDismissedAtKey: 'mm_mystaff_pwa_dismissed_at',
+      popupOpenKey: 'mm_mystaff_pwa_popup_open',
+      activeMsKey: 'mm_mystaff_pwa_active_ms',
+      sessionDismissedKey: 'mm_mystaff_pwa_install_session_dismissed',
+      autoPromptDisabledKey: 'mm_mystaff_pwa_auto_prompt_disabled',
+      downloadedConfirmedKey: 'mm_mystaff_app_downloaded_confirmed',
+      downloadedCookieName: 'mymoney_mystaff_app_downloaded',
+      cookiePath: '/mystaff',
+    };
+  }
+  return {
+    dismissedAtKey: 'my_money_pwa_install_dismissed_at',
+    popupDismissedAtKey: 'my_money_pwa_dismissed_at',
+    popupOpenKey: 'my_money_pwa_popup_open',
+    activeMsKey: 'my_money_pwa_active_ms',
+    sessionDismissedKey: 'my_money_pwa_install_session_dismissed',
+    autoPromptDisabledKey: 'mm_pwa_auto_prompt_disabled',
+    downloadedConfirmedKey: 'my_money_app_downloaded_confirmed',
+    downloadedCookieName: 'mymoney_app_downloaded',
+    cookiePath: '/',
+  };
+}
 
-function readAutoPromptDisabled(): boolean {
+function readAutoPromptDisabled(scope: AppPortalScope): boolean {
   try {
-    return localStorage.getItem(AUTO_PROMPT_DISABLED_KEY) === 'true';
+    return localStorage.getItem(getPortalStorageKeys(scope).autoPromptDisabledKey) === 'true';
   } catch {
     return false;
   }
 }
 
-function readPersistedDismissedAt(): number | null {
+function readPersistedDismissedAt(scope: AppPortalScope): number | null {
   try {
-    const raw = localStorage.getItem(DISMISSED_STORAGE_KEY);
+    const raw = localStorage.getItem(getPortalStorageKeys(scope).dismissedAtKey);
     if (!raw) return null;
     const parsed = parseInt(raw, 10);
     return Number.isFinite(parsed) ? parsed : null;
@@ -84,9 +130,9 @@ function readPersistedDismissedAt(): number | null {
   }
 }
 
-function readSessionDismissed(): boolean {
+function readSessionDismissed(scope: AppPortalScope): boolean {
   try {
-    return sessionStorage.getItem(SESSION_DISMISSED_KEY) === 'true';
+    return sessionStorage.getItem(getPortalStorageKeys(scope).sessionDismissedKey) === 'true';
   } catch {
     return false;
   }
@@ -95,9 +141,10 @@ function readSessionDismissed(): boolean {
 /**
  * Registers device metadata and reliable PWA installation status with backend
  */
-export function syncDeviceRegistration(isInstalledApp?: boolean) {
+export function syncDeviceRegistration(isInstalledApp?: boolean, portalOverride?: AppPortalScope) {
   if (typeof window === 'undefined') return;
   const standalone = isInstalledApp !== undefined ? isInstalledApp : isRunningStandalone();
+  const scope = portalOverride || getCurrentPortalScope();
   const compat = detectPlatformCompatibility(
     window.navigator.userAgent || '',
     window.navigator.maxTouchPoints || 0
@@ -129,6 +176,7 @@ export function syncDeviceRegistration(isInstalledApp?: boolean) {
       browser: compat.browserLabel,
       os: compat.osLabel,
       userAgent: window.navigator.userAgent,
+      portalScope: scope,
       isInstalled: standalone,
       installationStatus: standalone ? 'installed_pwa' : 'browser',
       pushPermission,
@@ -138,20 +186,50 @@ export function syncDeviceRegistration(isInstalledApp?: boolean) {
 }
 
 export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [portalScope, setPortalScope] = useState<AppPortalScope>(() => getCurrentPortalScope());
+  const portalBranding = useMemo(() => getPortalBranding(portalScope), [portalScope]);
+  const storageKeys = useMemo(() => getPortalStorageKeys(portalScope), [portalScope]);
+
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(() => isRunningStandalone());
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
   const [activeModalCount, setActiveModalCount] = useState<number>(0);
   const [autoPromptDisabled, setAutoPromptDisabledState] = useState<boolean>(() =>
-    readAutoPromptDisabled()
+    readAutoPromptDisabled(getCurrentPortalScope())
   );
   const [reopenInstallPopupSignal, setReopenInstallPopupSignal] = useState<number>(0);
 
-  const [sessionDismissed, setSessionDismissed] = useState<boolean>(() => readSessionDismissed());
-  const [persistedDismissedAt, setPersistedDismissedAt] = useState<number | null>(() =>
-    readPersistedDismissedAt()
+  const [sessionDismissed, setSessionDismissed] = useState<boolean>(() =>
+    readSessionDismissed(getCurrentPortalScope())
   );
+  const [persistedDismissedAt, setPersistedDismissedAt] = useState<number | null>(() =>
+    readPersistedDismissedAt(getCurrentPortalScope())
+  );
+
+  // Track SPA location changes so scoped storage/branding updates smoothly
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncScope = () => {
+      const next = getCurrentPortalScope();
+      setPortalScope((prev) => {
+        if (prev !== next) {
+          setAutoPromptDisabledState(readAutoPromptDisabled(next));
+          setSessionDismissed(readSessionDismissed(next));
+          setPersistedDismissedAt(readPersistedDismissedAt(next));
+        }
+        return next;
+      });
+    };
+    window.addEventListener('popstate', syncScope);
+    window.addEventListener('hashchange', syncScope);
+    window.addEventListener('mymoney:portal-change', syncScope);
+    return () => {
+      window.removeEventListener('popstate', syncScope);
+      window.removeEventListener('hashchange', syncScope);
+      window.removeEventListener('mymoney:portal-change', syncScope);
+    };
+  }, []);
 
   const compatibility = useMemo<PlatformCompatibilityInfo>(() => {
     if (typeof window === 'undefined') {
@@ -170,11 +248,11 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const persistConfirmedInstallFlag = () => {
       try {
-        localStorage.setItem('my_money_app_downloaded_confirmed', 'true');
-        localStorage.removeItem('my_money_pwa_popup_open');
-        localStorage.removeItem('my_money_pwa_dismissed_at');
+        localStorage.setItem(storageKeys.downloadedConfirmedKey, 'true');
+        localStorage.removeItem(storageKeys.popupOpenKey);
+        localStorage.removeItem(storageKeys.popupDismissedAtKey);
         const secureFlag = window.location?.protocol === 'https:' ? '; Secure' : '';
-        document.cookie = `mymoney_app_downloaded=downloaded; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax${secureFlag}`;
+        document.cookie = `${storageKeys.downloadedCookieName}=downloaded; path=${storageKeys.cookiePath}; max-age=${365 * 24 * 60 * 60}; SameSite=Lax${secureFlag}`;
       } catch {}
     };
 
@@ -185,12 +263,13 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setDeferredPrompt(null);
         setIsModalOpen(false);
         persistConfirmedInstallFlag();
+      } else {
+        setIsInstalled(false);
       }
     };
 
     updateStandalone();
 
-    // Check installed related apps on Chromium where supported
     const navWithRelated = navigator as Navigator & {
       getInstalledRelatedApps?: () => Promise<Array<{ platform: string; url?: string }>>;
     };
@@ -198,7 +277,7 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       navWithRelated
         .getInstalledRelatedApps()
         .then((apps) => {
-          if (Array.isArray(apps) && apps.length > 0) {
+          if (Array.isArray(apps) && apps.length > 0 && portalScope === 'user') {
             setIsInstalled(true);
             setDeferredPrompt(null);
             persistConfirmedInstallFlag();
@@ -229,11 +308,10 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setDeferredPrompt(null);
       setIsModalOpen(false);
       persistConfirmedInstallFlag();
-      syncDeviceRegistration(true);
+      syncDeviceRegistration(true, portalScope);
     };
 
-    // Register initial device and PWA installation state
-    syncDeviceRegistration(isRunningStandalone());
+    syncDeviceRegistration(isRunningStandalone(), portalScope);
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
@@ -244,16 +322,14 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       window.removeEventListener('appinstalled', handleAppInstalled);
       standaloneMql?.removeEventListener?.('change', handleDisplayModeChange);
     };
-  }, []);
+  }, [portalScope, storageKeys]);
 
   const isInstallable = Boolean(deferredPrompt) && !isInstalled;
 
-  // Show the header Install App button ONLY when not installed AND either:
-  // 1) Browser fired native `beforeinstallprompt` (Chrome/Edge Desktop & Android), OR
-  // 2) Browser is Safari iOS/iPadOS or Safari macOS where manual Home Screen/Dock installation is supported.
   const canOfferInstall =
     !isInstalled &&
-    (isInstallable ||
+    (portalScope !== 'user' ||
+      isInstallable ||
       compatibility.platform === 'ios_safari' ||
       compatibility.platform === 'macos_safari');
 
@@ -273,15 +349,17 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setPersistedDismissedAt(now);
     setIsModalOpen(false);
     try {
-      sessionStorage.setItem(SESSION_DISMISSED_KEY, 'true');
-      localStorage.setItem(DISMISSED_STORAGE_KEY, String(now));
-      localStorage.setItem('my_money_pwa_dismissed_at', String(now));
-      localStorage.removeItem('my_money_pwa_popup_open');
-      window.dispatchEvent(new CustomEvent('mymoney:pwa-popup-dismissed'));
+      sessionStorage.setItem(storageKeys.sessionDismissedKey, 'true');
+      localStorage.setItem(storageKeys.dismissedAtKey, String(now));
+      localStorage.setItem(storageKeys.popupDismissedAtKey, String(now));
+      localStorage.removeItem(storageKeys.popupOpenKey);
+      window.dispatchEvent(
+        new CustomEvent('mymoney:pwa-popup-dismissed', { detail: { scope: portalScope } })
+      );
     } catch {
       // Ignore storage quota errors
     }
-  }, []);
+  }, [storageKeys, portalScope]);
 
   const openInstallModal = useCallback(() => {
     if (isInstalled) return;
@@ -300,12 +378,15 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setActiveModalCount((prev) => (suppressed ? prev + 1 : Math.max(0, prev - 1)));
   }, []);
 
-  const setAutoPromptDisabled = useCallback((disabled: boolean) => {
-    setAutoPromptDisabledState(disabled);
-    try {
-      localStorage.setItem(AUTO_PROMPT_DISABLED_KEY, String(disabled));
-    } catch {}
-  }, []);
+  const setAutoPromptDisabled = useCallback(
+    (disabled: boolean) => {
+      setAutoPromptDisabledState(disabled);
+      try {
+        localStorage.setItem(storageKeys.autoPromptDisabledKey, String(disabled));
+      } catch {}
+    },
+    [storageKeys]
+  );
 
   const reopenInstallPopup = useCallback(() => {
     if (isInstalled) return;
@@ -313,18 +394,18 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setSessionDismissed(false);
     setPersistedDismissedAt(null);
     try {
-      localStorage.setItem(AUTO_PROMPT_DISABLED_KEY, 'false');
-      sessionStorage.removeItem(SESSION_DISMISSED_KEY);
-      localStorage.removeItem(DISMISSED_STORAGE_KEY);
-      localStorage.removeItem('my_money_pwa_dismissed_at');
-      localStorage.setItem('my_money_pwa_popup_open', 'true');
+      localStorage.setItem(storageKeys.autoPromptDisabledKey, 'false');
+      sessionStorage.removeItem(storageKeys.sessionDismissedKey);
+      localStorage.removeItem(storageKeys.dismissedAtKey);
+      localStorage.removeItem(storageKeys.popupDismissedAtKey);
+      localStorage.setItem(storageKeys.popupOpenKey, 'true');
       sessionStorage.removeItem('my_money_popup_auth_dismissed');
       sessionStorage.removeItem('my_money_popup_auth_dismissed_at');
       sessionStorage.removeItem('my_money_popup_app_dismissed');
       sessionStorage.removeItem('my_money_popup_app_dismissed_at');
     } catch {}
     setReopenInstallPopupSignal((n) => n + 1);
-  }, [isInstalled]);
+  }, [isInstalled, storageKeys]);
 
   const triggerInstallPrompt = useCallback(async (): Promise<InstallPromptResult> => {
     if (isInstalled) {
@@ -335,17 +416,13 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       try {
         await deferredPrompt.prompt();
         const choice = await deferredPrompt.userChoice;
-        // Per Chromium spec, each BeforeInstallPromptEvent can only be used once
         setDeferredPrompt(null);
 
         if (choice.outcome === 'accepted') {
-          // Wait for `appinstalled` to confirm, while closing our modal immediately.
-          // Note: We do NOT fake success if the user cancels.
           setIsModalOpen(false);
           return { status: 'accepted' };
         }
 
-        // User dismissed/cancelled native prompt: do NOT mark installed; record dismissal
         dismissBanner();
         return { status: 'dismissed' };
       } catch (err) {
@@ -356,18 +433,18 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     }
 
-    // Native prompt unavailable (e.g., iOS Safari, macOS Safari, or unsupported desktop browser): open instruction guide modal
     setIsModalOpen(true);
     return { status: 'manual_guide' };
   }, [isInstalled, deferredPrompt, dismissBanner]);
 
-  // Promotional suggestion visibility (never shown if installed or dismissed)
   const isBannerVisible =
     canOfferInstall && !isBannerDismissed && !isScannerActive && activeModalCount === 0;
 
   return (
     <PwaInstallContext.Provider
       value={{
+        portalScope,
+        portalBranding,
         isInstallable,
         isInstalled,
         isIOS,

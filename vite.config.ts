@@ -2,6 +2,31 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
+function isMyStaffEntryRequest(urlStr: string | undefined): boolean {
+  if (!urlStr) return false;
+  const pathname = urlStr.split('?')[0] || '/';
+  if (
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/src/') ||
+    pathname.startsWith('/assets/') ||
+    pathname.startsWith('/node_modules/') ||
+    pathname.startsWith('/@') ||
+    pathname === '/mystaff-sw.js' ||
+    pathname === '/mystaff-manifest.json' ||
+    pathname === '/mystaff-offline.html' ||
+    pathname === '/mystaff.html'
+  ) {
+    return false;
+  }
+
+  const lastSegment = pathname.split('/').pop() || '';
+  if (lastSegment.includes('.')) {
+    return false;
+  }
+
+  return pathname === '/mystaff' || pathname.startsWith('/mystaff/');
+}
+
 function isAdminEntryRequest(urlStr: string | undefined, hostHeader: string | undefined): boolean {
   if (!urlStr) return false;
   const pathname = urlStr.split('?')[0] || '/';
@@ -11,11 +36,15 @@ function isAdminEntryRequest(urlStr: string | undefined, hostHeader: string | un
     pathname.startsWith('/assets/') ||
     pathname.startsWith('/node_modules/') ||
     pathname.startsWith('/@') ||
+    pathname === '/myadmin-sw.js' ||
+    pathname === '/myadmin-manifest.json' ||
     pathname === '/admin-sw.js' ||
     pathname === '/admin-manifest.json' ||
     pathname === '/admin-subdomain-manifest.json' ||
     pathname === '/admin-offline.html' ||
-    pathname === '/admin.html'
+    pathname === '/myadmin.html' ||
+    pathname === '/admin.html' ||
+    pathname.startsWith('/mystaff')
   ) {
     return false;
   }
@@ -31,7 +60,12 @@ function isAdminEntryRequest(urlStr: string | undefined, hostHeader: string | un
     return true;
   }
 
-  return pathname === '/admin' || pathname.startsWith('/admin/');
+  return (
+    pathname === '/myadmin' ||
+    pathname.startsWith('/myadmin/') ||
+    pathname === '/admin' ||
+    pathname.startsWith('/admin/')
+  );
 }
 
 function backendApiPlugin(): Plugin {
@@ -53,8 +87,10 @@ function backendApiPlugin(): Plugin {
         }
 
         const host = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
-        if (isAdminEntryRequest(req.url, host)) {
-          req.url = '/admin.html';
+        if (isMyStaffEntryRequest(req.url)) {
+          req.url = '/mystaff.html';
+        } else if (isAdminEntryRequest(req.url, host)) {
+          req.url = '/myadmin.html';
         }
         next();
       });
@@ -63,8 +99,10 @@ function backendApiPlugin(): Plugin {
       server.middlewares.use(async (req, _res, next) => {
         try {
           const host = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
-          if (isAdminEntryRequest(req.url, host)) {
-            req.url = '/admin.html';
+          if (isMyStaffEntryRequest(req.url)) {
+            req.url = '/mystaff.html';
+          } else if (isAdminEntryRequest(req.url, host)) {
+            req.url = '/myadmin.html';
           }
           next();
         } catch (err) {
@@ -132,6 +170,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
+        myadmin: path.resolve(__dirname, 'myadmin.html'),
+        mystaff: path.resolve(__dirname, 'mystaff.html'),
         admin: path.resolve(__dirname, 'admin.html'),
       },
       output: {

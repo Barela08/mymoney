@@ -9,18 +9,23 @@ import {
   ArrowLeft,
   AlertCircle,
   ShieldCheck,
+  Download,
+  Smartphone,
+  CheckCircle2,
+  UserCog,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
+import { usePwaInstall } from '../../context/PwaInstallContext';
 
 interface AdminLoginPageProps {
   onReturnHome?: () => void;
+  onGoToStaff?: () => void;
 }
 
-export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) => {
+export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome, onGoToStaff }) => {
   const { adminLogin } = useAuth();
-  const { appBranding } = useExpense();
+  const { isInstalled, triggerInstallPrompt, compatibility } = usePwaInstall();
   const toast = useToast();
 
   const [email, setEmail] = useState('');
@@ -28,7 +33,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isInstallingApp, setIsInstallingApp] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requiresStaffPortal, setRequiresStaffPortal] = useState(false);
 
   const handleReturnHome = () => {
     if (onReturnHome) {
@@ -36,15 +43,39 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
       return;
     }
     if (typeof window !== 'undefined') {
-      window.history.pushState(null, '', '/');
-      window.location.hash = '';
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      window.location.href = '/';
+    }
+  };
+
+  const handleGoToStaff = () => {
+    if (onGoToStaff) {
+      onGoToStaff();
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      window.location.href = '/mystaff';
+    }
+  };
+
+  const handleInstallAdminApp = async () => {
+    if (isInstallingApp) return;
+    setIsInstallingApp(true);
+    try {
+      const res = await triggerInstallPrompt();
+      if (res.status === 'accepted') {
+        toast.success('Installing Admin App', 'My Money Manager Admin is being installed to your device.');
+      } else if (res.status === 'already_installed') {
+        toast.info('Already Installed', 'My Money Manager Admin is already running as an installed app.');
+      }
+    } finally {
+      setIsInstallingApp(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setRequiresStaffPortal(false);
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
@@ -60,10 +91,13 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
     try {
       const res = await adminLogin(trimmedEmail, password, rememberMe);
       if (res.success) {
-        toast.success('Admin Authenticated', 'Welcome to the HackifyPro Admin Control Center.');
+        toast.success('Admin Authenticated', 'Welcome to My Money Manager Admin Control Center.');
       } else {
         const msg = res.message || 'Invalid administrator credentials.';
         setErrorMessage(msg);
+        if (res.code === 'STAFF_PORTAL_REQUIRED') {
+          setRequiresStaffPortal(true);
+        }
         toast.error('Admin Login Failed', msg);
       }
     } catch (err: any) {
@@ -79,41 +113,65 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-8 relative overflow-hidden">
       {/* Background ambient accents */}
       <div className="absolute -top-28 left-1/2 -translate-x-1/2 w-[520px] h-[520px] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Bar */}
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-2 z-10">
         <div className="flex items-center gap-2.5 min-w-0">
           <img
-            src={appBranding?.logoUrl || '/logo.jpg'}
-            alt={`${appBranding?.appName || 'My Money Manager'} by HackifyPro`}
+            src="/admin-logo.png"
+            alt="My Money Manager Admin by HackifyPro"
             onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = '/logo.jpg';
+              (e.currentTarget as HTMLImageElement).src = '/admin-icon-192.png';
             }}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-emerald-500/40 shadow-lg shrink-0"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-emerald-500/40 shadow-lg shrink-0 bg-slate-900"
           />
           <div className="min-w-0">
-            <span className="text-sm font-black tracking-tight text-white block truncate">
-              {appBranding?.appName || 'My Money Manager'}
+            <span className="text-sm font-black tracking-tight text-white block">
+              <span className="sm:hidden">MM Admin</span>
+              <span className="hidden sm:inline">My Money Manager Admin</span>
             </span>
-            <span className="text-[11px] font-semibold text-emerald-400 block truncate">
-              A product of HackifyPro · Admin Security Gateway
+            <span className="text-[11px] font-semibold text-emerald-400 block">
+              <span className="sm:hidden">HackifyPro · Security</span>
+              <span className="hidden sm:inline">A product of HackifyPro · Admin Security Gateway</span>
             </span>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleReturnHome}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
-        >
-          <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-          <span>User Website</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {!isInstalled ? (
+            <button
+              type="button"
+              onClick={handleInstallAdminApp}
+              disabled={isInstallingApp}
+              data-testid="admin-login-download-app-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-md shadow-emerald-900/30 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Download Admin App</span>
+              <span className="sm:hidden">Install App</span>
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-bold text-emerald-300">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Admin App Installed</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={handleReturnHome}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">User Website</span>
+            <span className="sm:hidden">Home</span>
+          </button>
+        </div>
       </header>
 
       {/* Center Admin Login Card */}
-      <main className="w-full max-w-md mx-auto my-8 z-10">
+      <main className="w-full max-w-md mx-auto my-8 z-10 space-y-4">
         <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/50 space-y-6">
           <div className="text-center space-y-2">
             <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
@@ -121,23 +179,35 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
             </div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">
               <ShieldCheck className="w-3 h-3" />
-              Restricted Admin Portal (/admin)
+              Restricted Admin Portal (/myadmin)
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               Administrator Sign In
             </h1>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Sign in with an authorized administrator account to manage platform settings, API keys, maintenance mode, and users.
+              Sign in with an authorized Admin or Super Admin account to manage platform controls, staff roles, API keys, and security.
             </p>
           </div>
 
           {errorMessage && (
             <div
               role="alert"
-              className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs"
+              className="space-y-2.5 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs"
             >
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <p className="leading-relaxed font-medium">{errorMessage}</p>
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <p className="leading-relaxed font-medium">{errorMessage}</p>
+              </div>
+              {requiresStaffPortal && (
+                <button
+                  type="button"
+                  onClick={handleGoToStaff}
+                  className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <UserCog className="w-3.5 h-3.5" />
+                  <span>Open Staff Portal (/mystaff)</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -214,9 +284,45 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
             </button>
           </form>
 
-          <div className="pt-4 border-t border-slate-800/80 text-center">
+          {/* Dedicated Admin App Download Card */}
+          {!isInstalled && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Smartphone className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white">Install Admin App</p>
+                  <p className="text-[11px] text-slate-400">
+                    Dedicated /myadmin PWA ({compatibility.osLabel})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleInstallAdminApp}
+                disabled={isInstallingApp}
+                className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Install</span>
+              </button>
+            </div>
+          )}
+
+          <div className="pt-4 border-t border-slate-800/80 text-center space-y-2">
+            <p className="text-[11px] text-slate-400">
+              Staff team member?{' '}
+              <button
+                type="button"
+                onClick={handleGoToStaff}
+                className="text-indigo-400 hover:text-indigo-300 font-bold underline cursor-pointer"
+              >
+                Sign in at Staff Portal (/mystaff)
+              </button>
+            </p>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Standard user accounts do not have permission to sign in here. Normal users should sign in on the main website.
+              Standard user accounts do not have permission to sign in here.
             </p>
           </div>
         </div>
@@ -224,7 +330,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
 
       {/* Footer */}
       <footer className="text-center text-[11px] text-slate-500 z-10">
-        {appBranding?.appName || 'My Money Manager'} — A product of HackifyPro
+        My Money Manager Admin — A product of HackifyPro
       </footer>
     </div>
   );

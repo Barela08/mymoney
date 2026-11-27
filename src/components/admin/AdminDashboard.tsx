@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { ShieldAlert, ArrowLeft, RefreshCw, LogOut } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, RefreshCw, LogOut, Headset } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AdminLayout, AdminSectionKey } from './AdminLayout';
+import { isAdminPortalUser } from '../../lib/portalAuth';
 
 // Tab Components
 import { AdminOverviewTab } from './tabs/AdminOverviewTab';
@@ -27,20 +28,28 @@ import { AdminInstalledDevicesTab } from './tabs/AdminInstalledDevicesTab';
 
 interface AdminDashboardProps {
   onExit?: () => void;
+  onGoToStaff?: () => void;
   initialSection?: AdminSectionKey;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onExit,
+  onGoToStaff,
   initialSection = 'dashboard',
 }) => {
-  const { user, isAdmin, isLoading, logout } = useAuth();
+  const { user, isAdmin, isStaff, isLoading, logout } = useAuth();
 
-  // Parse initial section from URL hash (#admin=section_name) or prop
+  // Parse initial section from URL hash (#myadmin=section_name or #admin=section_name) or prop
   const getInitialSection = (): AdminSectionKey => {
-    if (typeof window !== 'undefined' && window.location.hash.startsWith('#admin=')) {
-      const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
-      if (parsed) return parsed;
+    if (typeof window !== 'undefined') {
+      if (window.location.hash.startsWith('#myadmin=')) {
+        const parsed = window.location.hash.replace('#myadmin=', '').split('&')[0] as AdminSectionKey;
+        if (parsed) return parsed;
+      }
+      if (window.location.hash.startsWith('#admin=')) {
+        const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
+        if (parsed) return parsed;
+      }
     }
     return initialSection;
   };
@@ -50,7 +59,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Keep state in sync with URL hash for deep-linking & back/forward navigation
   React.useEffect(() => {
     const handleHashChange = () => {
-      if (window.location.hash.startsWith('#admin=')) {
+      if (window.location.hash.startsWith('#myadmin=')) {
+        const parsed = window.location.hash.replace('#myadmin=', '').split('&')[0] as AdminSectionKey;
+        if (parsed) setCurrentSectionState(parsed);
+      } else if (window.location.hash.startsWith('#admin=')) {
         const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
         if (parsed) setCurrentSectionState(parsed);
       }
@@ -62,7 +74,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const setCurrentSection = (section: AdminSectionKey) => {
     setCurrentSectionState(section);
     if (typeof window !== 'undefined') {
-      window.location.hash = `#admin=${section}`;
+      window.location.hash = `#myadmin=${section}`;
     }
   };
 
@@ -76,14 +88,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
-  // RBAC Access Guard: user must be authenticated with administrative privileges
-  const normalizedEmail = (user?.email || '').toLowerCase().trim();
-  const isMasterAdmin = Boolean(
-    normalizedEmail === 'admin@mymoney.com' || normalizedEmail === 'hackifypro@gmail.com'
-  );
-  const allowedRoles = ['superadmin', 'admin', 'analyst', 'support'];
-  const userRole = (user?.role || '').toLowerCase().trim();
-  const hasAccess = Boolean(user && (isMasterAdmin || isAdmin || (userRole && allowedRoles.includes(userRole))));
+  // Strict RBAC Access Guard: /myadmin is reserved exclusively for Super Admin and Admin accounts.
+  // Staff accounts (support, analyst, custom roles) belong on /mystaff.
+  const hasAccess = Boolean(user && (isAdmin || isAdminPortalUser(user)));
 
   if (!hasAccess) {
     return (
@@ -91,17 +98,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 mb-4 shadow-xl shadow-rose-500/10">
           <ShieldAlert className="w-8 h-8" />
         </div>
-        <h2 className="text-xl font-black text-white mb-2">Administrative Clearance Required</h2>
+        <h2 className="text-xl font-black text-white mb-2">
+          {isStaff ? 'Staff Account Detected' : 'Administrative Clearance Required'}
+        </h2>
         <p className="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
-          This zone is restricted exclusively to authorized platform administration personnel. Normal user accounts cannot access the Admin Control Center.
+          {isStaff
+            ? 'You are signed in with a Staff role account. Staff members operate inside the dedicated Staff Portal (/mystaff), separate from Admin (/myadmin).'
+            : 'This zone is restricted exclusively to authorized platform Administrators. Normal user accounts cannot access the Admin Control Center.'}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
+          {isStaff && (
+            <button
+              type="button"
+              onClick={onGoToStaff || (() => { window.location.href = '/mystaff'; })}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+            >
+              <Headset className="w-4 h-4" />
+              Open Staff Portal (/mystaff)
+            </button>
+          )}
           <button
             onClick={onExit || (() => { window.location.href = '/'; })}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            Return to Personal Workspace
+            Return to User Website
           </button>
           <button
             onClick={() => logout()}

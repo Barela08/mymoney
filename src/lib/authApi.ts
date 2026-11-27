@@ -145,6 +145,7 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
       typeof window !== 'undefined' &&
       !endpoint.startsWith('/api/auth/login') &&
       !endpoint.startsWith('/api/admin/auth/login') &&
+      !endpoint.startsWith('/api/staff/auth/login') &&
       !endpoint.startsWith('/api/auth/register') &&
       !endpoint.startsWith('/api/auth/google') &&
       !endpoint.startsWith('/api/auth/passkey/login')
@@ -248,6 +249,27 @@ export const authApi = {
       if (data.user) setStoredAuthUser(data.user);
     }
     return data;
+  },
+
+  async staffLogin(payload: {
+    email: string;
+    password: string;
+    rememberMe?: boolean;
+    replaceSessionId?: string;
+  }): Promise<{ success: boolean; message: string; user: AuthUser; sessionToken: string }> {
+    const data = await request('/api/staff/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.sessionToken) {
+      setStoredSessionToken(data.sessionToken);
+      if (data.user) setStoredAuthUser(data.user);
+    }
+    return data;
+  },
+
+  async getMyPermissions(): Promise<{ success: boolean; role: string; permissions: string[] }> {
+    return await request('/api/admin/my-permissions', { method: 'GET' });
   },
 
   async logout(): Promise<void> {

@@ -99,7 +99,9 @@ export interface AuthUser {
   displayName: string;
   full_name?: string;
   phone?: string | null;
-  role: 'admin' | 'user' | 'superadmin' | 'anonymous';
+  role: 'admin' | 'user' | 'superadmin' | 'support' | 'analyst' | 'anonymous' | string;
+  role_slug?: string | null;
+  staff_permissions?: string[];
   status: 'active' | 'suspended' | 'deactivated';
   email_verified?: boolean;
   emailVerified?: boolean;

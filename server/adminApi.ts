@@ -268,6 +268,20 @@ export async function handleAdminApiRequest(
 
   try {
     // =========================================================
+    // 0. CURRENT ADMIN / STAFF EFFECTIVE PERMISSIONS: GET /api/admin/my-permissions
+    // =========================================================
+    if (pathname === '/api/admin/my-permissions' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res);
+      if (!auth) return true;
+      sendJson(res, 200, {
+        success: true,
+        role: auth.role,
+        permissions: auth.permissions,
+      });
+      return true;
+    }
+
+    // =========================================================
     // 1. DASHBOARD OVERVIEW & KPIS: GET /api/admin/dashboard-stats
     // =========================================================
     if (pathname === '/api/admin/dashboard-stats' && method === 'GET') {
@@ -3759,10 +3773,25 @@ export async function handleAdminApiRequest(
       }
 
       const assignedRole = String(role || 'support').toLowerCase().trim();
-      const allowedStaffRoles = ['superadmin', 'admin', 'support', 'analyst', 'user'];
-      if (!allowedStaffRoles.includes(assignedRole)) {
-        sendJson(res, 400, { success: false, message: 'Invalid role specified.' });
-        return true;
+      const allowedStaffRoles = new Set(['superadmin', 'admin', 'support', 'analyst', 'user']);
+      if (!allowedStaffRoles.has(assignedRole)) {
+        let isCustomRole = false;
+        if (isDatabaseAvailable()) {
+          try {
+            const roleCheck = await query('SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1', [assignedRole]);
+            if (roleCheck.rows.length > 0) isCustomRole = true;
+          } catch {}
+        }
+        if (!isCustomRole) {
+          try {
+            const fbRoles = await listAdminRolesFallback();
+            isCustomRole = fbRoles.some((r: any) => String(r.slug || '').toLowerCase().trim() === assignedRole);
+          } catch {}
+        }
+        if (!isCustomRole) {
+          sendJson(res, 400, { success: false, message: 'Invalid role specified.' });
+          return true;
+        }
       }
       if (assignedRole === 'superadmin' && auth.role !== 'superadmin') {
         sendJson(res, 403, { success: false, message: 'Only a superadmin can assign superadmin privileges.' });
