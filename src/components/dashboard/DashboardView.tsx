@@ -31,6 +31,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { StatCard } from '../common/StatCard';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { ThemeToggle } from '../common/ThemeToggle';
 import { EmptyState } from '../common/EmptyState';
 import { FirstTimeOnboarding } from '../common/FirstTimeOnboarding';
 import { SkeletonCardsGrid, SkeletonTable } from '../common/states/SkeletonLoaders';
@@ -223,6 +224,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
             Personal Ledger · {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
         </div>
       </div>
 

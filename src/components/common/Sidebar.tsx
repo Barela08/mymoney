@@ -45,6 +45,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
+import { ThemeToggle } from './ThemeToggle';
 
 export type NavTab =
   | 'dashboard'
@@ -368,31 +369,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Theme Toggle & Logout (Balanced 2-Column Row) */}
-        <div className="grid grid-cols-2 gap-2 pt-0.5">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="h-9 px-3 flex items-center justify-center gap-1.5 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
-            title="Toggle theme"
-          >
-            {theme === 'dark' ? (
-              <>
-                <Moon className="w-3.5 h-3.5 text-amber-400" />
-                <span>Dark</span>
-              </>
-            ) : (
-              <>
-                <Sun className="w-3.5 h-3.5 text-amber-500" />
-                <span>Light</span>
-              </>
-            )}
-          </button>
+        {/* Theme Toggle & Logout */}
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <div className="flex items-center gap-2">
+            <ThemeToggle size="sm" />
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              {theme === 'dark' ? 'Dark' : 'Light'}
+            </span>
+          </div>
 
           <button
             type="button"
             onClick={logout}
-            className="h-9 px-3 flex items-center justify-center gap-1.5 text-xs font-medium rounded-xl text-rose-600 dark:text-rose-400 bg-rose-50/50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 border border-rose-200/60 dark:border-rose-900/40 transition-colors cursor-pointer"
+            className="h-8 px-2.5 flex items-center justify-center gap-1.5 text-xs font-medium rounded-xl text-rose-600 dark:text-rose-400 bg-rose-50/50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 border border-rose-200/60 dark:border-rose-900/40 transition-colors cursor-pointer"
             title="Log out"
           >
             <LogOut className="w-3.5 h-3.5" />

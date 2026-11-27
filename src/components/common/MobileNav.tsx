@@ -48,6 +48,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatINR } from '../../lib/dateUtils';
 import { SUPPORT_CONTACT } from '../../config/contact';
+import { ThemeToggle } from './ThemeToggle';
 
 const iconMap: Record<string, any> = {
   Home,
@@ -301,15 +302,9 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             </button>
           )}
 
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>Appearance</span>
-            <button
-              onClick={toggleTheme}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300"
-            >
-              {theme === 'dark' ? <Moon className="w-3.5 h-3.5 text-amber-400" /> : <Sun className="w-3.5 h-3.5 text-amber-500" />}
-              <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
-            </button>
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 py-1">
+            <span className="font-medium">Theme Mode</span>
+            <ThemeToggle size="sm" />
           </div>
 
           <button

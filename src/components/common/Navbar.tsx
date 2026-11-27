@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Menu,
-  Settings,
   User,
   AlertTriangle,
   PlusCircle,
@@ -10,6 +9,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
 import { NavTab } from './Sidebar';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
+import { ThemeToggle } from './ThemeToggle';
+import { ProfileDropdown } from './ProfileDropdown';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -132,53 +133,32 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* 1. Settings Gear Icon */}
-          <button
-            type="button"
-            onClick={() => onSelectTab('settings')}
-            className={`h-9 w-9 flex items-center justify-center rounded-xl border transition-all cursor-pointer relative group ${
-              currentTab === 'settings'
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
-            }`}
-            title="Settings"
-            aria-label="Settings"
-          >
-            <Settings className="w-4 h-4 stroke-[1.8]" />
-            {/* Desktop Tooltip */}
-            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm z-50 hidden sm:block">
-              Settings
-            </span>
-          </button>
+          {/* 1. Theme Toggle Button */}
+          <ThemeToggle />
 
-          {/* 2. Profile Avatar / Icon */}
-          <button
-            type="button"
-            onClick={() => onSelectTab('profile')}
-            className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all cursor-pointer relative group p-0.5 ${
-              currentTab === 'profile'
-                ? 'border-emerald-500 ring-2 ring-emerald-500/30'
-                : 'border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-            }`}
-            title={user?.displayName ? `Profile: ${user.displayName}` : 'Profile'}
-            aria-label="Profile"
-          >
-            {user?.avatar_url || user?.avatarUrl ? (
-              <img
-                src={user?.avatar_url || user?.avatarUrl || ''}
-                alt={user.displayName || 'Profile'}
-                className="w-full h-full rounded-[10px] object-cover"
-              />
-            ) : (
-              <div className="w-full h-full rounded-[10px] bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-xs font-bold">
-                {user?.displayName ? user.displayName.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
-              </div>
-            )}
-            {/* Desktop Tooltip */}
-            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm z-50 hidden sm:block">
-              Profile
-            </span>
-          </button>
+          {/* 2. Single My Account / Profile Icon */}
+          {user ? (
+            <ProfileDropdown
+              variant="navbar"
+              onOpenPrivacySettings={() => {
+                if (typeof window !== 'undefined') {
+                  window.location.hash = '#privacy';
+                }
+                onSelectTab('settings');
+              }}
+              onOpenFullSettings={() => onSelectTab(isAdmin ? 'admin' : 'settings')}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSelectTab('profile')}
+              className="h-9 w-9 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Account / Sign In"
+              aria-label="Account"
+            >
+              <User className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </header>
