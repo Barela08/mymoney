@@ -972,58 +972,60 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     </div>
                   )}
 
-                  {/* Camera Controls: Torch, Switch Camera & Pause/Resume */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
-                    {/* Pause / Resume Button */}
-                    <button
-                      type="button"
-                      onClick={togglePauseScanning}
-                      className={`p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer ${
-                        isScanningPaused
-                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                          : 'bg-slate-900/70 text-white hover:bg-slate-900'
-                      }`}
-                      title={isScanningPaused ? 'Resume Scanning' : 'Pause Scanning'}
-                      aria-label={isScanningPaused ? 'Resume Scanning' : 'Pause Scanning'}
-                    >
-                      {isScanningPaused ? (
-                        <Play className="w-4 h-4 fill-current" />
-                      ) : (
-                        <Pause className="w-4 h-4" />
-                      )}
-                    </button>
-
-                    {supportsTorch && (
+                  {/* Camera Controls: Torch, Switch Camera & Pause/Resume (Only when camera is active) */}
+                  {cameraStatus === 'active' && (
+                    <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                      {/* Pause / Resume Button */}
                       <button
                         type="button"
-                        onClick={toggleTorch}
+                        onClick={togglePauseScanning}
                         className={`p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer ${
-                          isTorchOn
-                            ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/30'
+                          isScanningPaused
+                            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                             : 'bg-slate-900/70 text-white hover:bg-slate-900'
                         }`}
-                        title={isTorchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
-                        aria-label="Toggle Flashlight"
+                        title={isScanningPaused ? 'Resume Scanning' : 'Pause Scanning'}
+                        aria-label={isScanningPaused ? 'Resume Scanning' : 'Pause Scanning'}
                       >
-                        {isTorchOn ? (
-                          <Zap className="w-4 h-4 fill-current" />
+                        {isScanningPaused ? (
+                          <Play className="w-4 h-4 fill-current" />
                         ) : (
-                          <ZapOff className="w-4 h-4" />
+                          <Pause className="w-4 h-4" />
                         )}
                       </button>
-                    )}
-                    {videoDevices.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={handleSwitchCamera}
-                        className="p-2 rounded-xl bg-slate-900/70 text-white hover:bg-slate-900 backdrop-blur-md transition-all cursor-pointer"
-                        title="Switch Camera"
-                        aria-label="Switch Camera"
-                      >
-                        <SwitchCamera className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+
+                      {supportsTorch && (
+                        <button
+                          type="button"
+                          onClick={toggleTorch}
+                          className={`p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer ${
+                            isTorchOn
+                              ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/30'
+                              : 'bg-slate-900/70 text-white hover:bg-slate-900'
+                          }`}
+                          title={isTorchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
+                          aria-label="Toggle Flashlight"
+                        >
+                          {isTorchOn ? (
+                            <Zap className="w-4 h-4 fill-current" />
+                          ) : (
+                            <ZapOff className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                      {videoDevices.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleSwitchCamera}
+                          className="p-2 rounded-xl bg-slate-900/70 text-white hover:bg-slate-900 backdrop-blur-md transition-all cursor-pointer"
+                          title="Switch Camera"
+                          aria-label="Switch Camera"
+                        >
+                          <SwitchCamera className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {isScanningPaused && (
                     <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex flex-col items-center justify-center text-white space-y-2">
