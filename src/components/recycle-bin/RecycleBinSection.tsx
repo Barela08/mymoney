@@ -10,6 +10,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { EmptyState } from '../common/EmptyState';
 import { SkeletonCardsGrid } from '../common/states';
@@ -18,6 +19,7 @@ import { Transaction } from '../../types';
 
 export const RecycleBinSection: React.FC = () => {
   const { recycleBinTransactions, restoreTransaction, permanentDeleteTransaction, isLoading } = useExpense();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -221,6 +223,12 @@ export const RecycleBinSection: React.FC = () => {
                   <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-1">
                     <User className="w-3.5 h-3.5" />
                     <span>Person: {item.person_name}</span>
+                  </p>
+                )}
+
+                {item.user_email && isAdmin && (
+                  <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-1 font-mono">
+                    Owner: {item.user_email}
                   </p>
                 )}
 

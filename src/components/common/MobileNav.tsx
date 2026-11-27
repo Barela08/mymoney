@@ -13,6 +13,7 @@ import {
   X,
   Plus,
   LogOut,
+  Shield,
   Trash2,
   FolderKanban,
   GraduationCap,
@@ -81,7 +82,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onOpenHelpModal,
 }) => {
   const { summary, recycleBinTransactions, dynamicSections, appBranding } = useExpense();
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const { totalUnreadCount } = useNotifications();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
@@ -180,6 +181,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       title: 'Help & Support',
       items: [
         { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
+        ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
       ],
     },
   ];
@@ -264,9 +266,15 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 </p>
               </div>
             </div>
-            <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700/60 shrink-0">
-              Account
-            </span>
+            {isAdmin ? (
+              <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/50 dark:border-amber-800/50 shrink-0">
+                Admin
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700/60 shrink-0">
+                User
+              </span>
+            )}
           </div>
         )}
 

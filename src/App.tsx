@@ -19,8 +19,10 @@ import { ScanQrModal } from './components/people/ScanQrModal';
 import { udharDeletionApi } from './lib/udharDeletionApi';
 import { AddTransactionModal } from './components/modals/AddTransactionModal';
 import { AuthPage } from './components/auth/AuthPage';
+import { AdminLoginPage } from './components/auth/AdminLoginPage';
 import { AppDownloadPopup } from './components/common/AppDownloadPopup';
 import { TransactionCategory, TransactionSubcategory } from './types';
+import { AlertTriangle } from 'lucide-react';
 import { PwaInstallProvider, usePwaInstall } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
 import { PwaInstallModal } from './components/common/PwaInstallModal';
@@ -35,6 +37,7 @@ import { UpiDetectionOnboardingModal } from './components/upi/UpiDetectionOnboar
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
 // High-Performance On-Demand Lazy Loaded Modules
+const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const LegalCenterSection = lazy(() => import('./components/legal/LegalCenterSection').then(m => ({ default: m.LegalCenterSection })));
 const CalculatorSection = lazy(() => import('./components/calculator/CalculatorSection').then(m => ({ default: m.CalculatorSection })));
 const ReportsSection = lazy(() => import('./components/reports/ReportsSection').then(m => ({ default: m.ReportsSection })));
@@ -57,6 +60,7 @@ const NotificationPreferencesModal = lazy(() => import('./components/notificatio
 const CompleteProfileScreen = lazy(() => import('./components/auth/CompleteProfileScreen').then(m => ({ default: m.CompleteProfileScreen })));
 
 const PATH_TO_TAB: Record<string, NavTab> = {
+  '/admin': 'admin',
   '/transactions': 'all_transactions',
   '/people': 'people',
   '/reports': 'reports',
@@ -77,6 +81,7 @@ const PATH_TO_TAB: Record<string, NavTab> = {
 
 const TAB_TO_PATH: Partial<Record<NavTab, string>> = {
   dashboard: '/',
+  admin: '/admin',
   all_transactions: '/transactions',
   people: '/people',
   reports: '/reports',
@@ -103,7 +108,7 @@ const SectionFallback: React.FC = () => (
 );
 
 const MainContent: React.FC = () => {
-  const { user, isLoading, isRecoveryMode } = useAuth();
+  const { user, isAdmin, isLoading, isRecoveryMode } = useAuth();
   const { maintenanceSettings, refreshSiteConfig, dynamicSections, refreshTransactions, appBranding } = useExpense();
   const toast = useToast();
 
@@ -127,6 +132,9 @@ const MainContent: React.FC = () => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
       const hash = window.location.hash;
+      if (p === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+        return 'admin';
+      }
       if (hash === '#privacy-policy') return 'legal';
       if (
         hash === '#delete-account' ||
@@ -167,11 +175,11 @@ const MainContent: React.FC = () => {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
       const h = window.location.hash || '';
       setRouteLocation({ pathname: p, hash: h });
-      if (p === '/admin' || p.startsWith('/admin/')) {
-        window.location.replace(p + window.location.search + h);
-        return;
+      if (p === '/admin' || h === '#admin' || h.startsWith('#admin=')) {
+        setCurrentTabState('admin');
+      } else {
+        setCurrentTabState(PATH_TO_TAB[p] || 'dashboard');
       }
-      setCurrentTabState(PATH_TO_TAB[p] || 'dashboard');
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -192,8 +200,8 @@ const MainContent: React.FC = () => {
       const path = window.location.pathname.replace(/\/+$/, '') || '/';
       setRouteLocation({ pathname: path, hash });
 
-      if (path === '/admin' || path.startsWith('/admin/')) {
-        window.location.replace(path + window.location.search + hash);
+      if (path === '/admin' || hash === '#admin' || hash.startsWith('#admin=')) {
+        setCurrentTabState('admin');
         return;
       }
 
@@ -321,17 +329,6 @@ const MainContent: React.FC = () => {
     }
   }, [user, routeLocation.pathname, routeLocation.hash]);
 
-  // Redirect any /admin path hit inside consumer bundle to the standalone Admin HTML entrypoint
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const p = window.location.pathname.replace(/\/+$/, '') || '/';
-    const isAdminSubdomain = (window.location.hostname || '').toLowerCase().startsWith('admin.');
-    if (isAdminSubdomain || p === '/admin' || p.startsWith('/admin/')) {
-      const target = isAdminSubdomain ? window.location.href : `/admin${window.location.search}${window.location.hash}`;
-      window.location.replace(target);
-    }
-  }, [routeLocation.pathname]);
-
   // Loading state
   if (isLoading) {
     return (
@@ -349,8 +346,87 @@ const MainContent: React.FC = () => {
     );
   }
 
-  // MAINTENANCE MODE ENFORCEMENT (Consumer app renders maintenance screen cleanly without any admin shortcut)
-  const isMaintenanceBlocked = Boolean(maintenanceSettings.isEnabled);
+  const isAdminRoute =
+    routeLocation.pathname === '/admin' ||
+    routeLocation.hash === '#admin' ||
+    routeLocation.hash.startsWith('#admin=');
+// Separate Admin Portal Route (/admin) — Always accessible even during Maintenance Mode
+if (isAdminRoute) {
+if (!user) {
+return (
+<AdminLoginPage
+onReturnHome={() => {
+if (typeof window !== 'undefined') {
+window.history.pushState(null, '', '/');
+if (window.location.hash.startsWith('#admin')) {
+window.location.hash = '';
+}
+}
+setRouteLocation({ pathname: '/', hash: '' });
+setCurrentTabState('dashboard');
+}}
+/>
+);
+}
+
+// Role Enforcement: Non-admin users are strictly blocked with 403 Forbidden
+if (user && !isAdmin) {
+return (
+<div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+<div className="max-w-md w-full bg-slate-900 border border-rose-500/30 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
+<div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto ring-8 ring-rose-500/5">
+<AlertTriangle className="w-8 h-8" />
+</div>
+<div className="space-y-2">
+<h2 className="text-xl font-black text-white">403 Forbidden: Access Denied</h2>
+<p className="text-xs text-slate-400 leading-relaxed">
+You do not have administrative privileges to access the Admin Control Center.
+This incident has been logged for security.
+</p>
+</div>
+<button
+onClick={() => {
+if (typeof window !== 'undefined') {
+window.history.pushState(null, '', '/');
+if (window.location.hash.startsWith('#admin')) {
+window.location.hash = '';
+}
+}
+setRouteLocation({ pathname: '/', hash: '' });
+setCurrentTabState('dashboard');
+}}
+className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-emerald-900/30 cursor-pointer"
+>
+Return to Safe Dashboard
+</button>
+</div>
+</div>
+);
+}
+
+return (
+<Suspense fallback={<SectionFallback />}>
+<AdminDashboard
+          onExit={() => {
+            if (typeof window !== 'undefined') {
+              if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
+                window.history.pushState(null, '', '/');
+              }
+              if (window.location.hash.startsWith('#admin')) {
+                window.location.hash = '';
+              }
+            }
+            setRouteLocation({ pathname: '/', hash: '' });
+            setCurrentTab('dashboard');
+          }}
+        />
+      </Suspense>
+    );
+  }
+
+  // MAINTENANCE MODE ENFORCEMENT (Homepage, Normal Login/Register, and User Dashboard):
+  // If maintenance mode is enabled and current visitor is NOT an authenticated admin, block access.
+  const isMaintenanceBlocked = Boolean(maintenanceSettings.isEnabled && !isAdmin);
   if (isMaintenanceBlocked) {
     return (
       <MaintenanceScreen
@@ -387,7 +463,7 @@ const MainContent: React.FC = () => {
   }
 
   // Mandatory first-time Complete Your Profile gate after Google, Passkey, or Email registration
-  if (user && (user.profileCompleted === false || user.profile_completed === false)) {
+  if (user && !isAdmin && (user.profileCompleted === false || user.profile_completed === false)) {
     return (
       <Suspense fallback={<SectionFallback />}>
         <CompleteProfileScreen />
@@ -400,7 +476,42 @@ const MainContent: React.FC = () => {
       {/* State 11 & 12: Offline and Reconnecting Status Banner */}
       <OfflineBanner />
 
-      <PullToRefresh onRefresh={refreshTransactions} className="flex flex-1 min-h-0 flex-col">
+      {/* Admin Maintenance Mode Banner */}
+      {maintenanceSettings.isEnabled && isAdmin && (
+        <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-black flex items-center justify-between border-b border-amber-600 shadow-sm animate-pulse z-50">
+          <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>
+              MAINTENANCE MODE ACTIVE: Normal users are blocked. You are browsing with Admin Bypass privilege.
+            </span>
+            <button
+              onClick={() => setCurrentTab('admin')}
+              className="ml-auto underline font-bold cursor-pointer hover:text-black shrink-0"
+            >
+              Admin Control Panel &rarr;
+            </button>
+          </div>
+        </div>
+      )}
+
+      {currentTab === 'admin' && isAdmin ? (
+        <Suspense fallback={<SectionFallback />}>
+          <AdminDashboard
+            onExit={() => {
+              if (typeof window !== 'undefined') {
+                if (window.location.pathname === '/admin') {
+                  window.history.pushState(null, '', '/');
+                }
+                if (window.location.hash.startsWith('#admin')) {
+                  window.location.hash = '';
+                }
+              }
+              setCurrentTab('dashboard');
+            }}
+          />
+        </Suspense>
+      ) : (
+        <PullToRefresh onRefresh={refreshTransactions} className="flex flex-1 min-h-0 flex-col">
           <div className="flex flex-1 min-h-0">
             {/* Sidebar for Desktop */}
             <Sidebar
@@ -581,6 +692,7 @@ const MainContent: React.FC = () => {
             />
           </div>
         </PullToRefresh>
+      )}
 
         {/* Universal Add Transaction Modal */}
         <AddTransactionModal
@@ -645,11 +757,11 @@ const MainContent: React.FC = () => {
         <InstantExpensePopupModal />
         <UpiDetectionOnboardingModal />
 
-        {/* Bottom-Right App Download Popup (never shown on Maintenance views) */}
+        {/* Bottom-Right App Download Popup (never shown on Admin or Maintenance views) */}
         <AppDownloadPopup
-          isAdminRoute={false}
+          isAdminRoute={isAdminRoute || currentTab === 'admin'}
           isMaintenanceBlocked={isMaintenanceBlocked}
-          hasBottomMobileNav={Boolean(user)}
+          hasBottomMobileNav={Boolean(user && currentTab !== 'admin')}
         />
     </div>
   );

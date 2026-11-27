@@ -53,7 +53,6 @@ import {
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
   createNotification,
-  recordAdminNotification,
 } from './notificationService.js';
 import {
   sbRestRequest,
@@ -1611,7 +1610,6 @@ export async function handleAdminApiRequest(
       const emptyMetrics = {
         total: 0,
         open: 0,
-        under_review: 0,
         in_progress: 0,
         waiting_user: 0,
         resolved: 0,
@@ -1664,7 +1662,6 @@ export async function handleAdminApiRequest(
               SELECT
                 COUNT(*)::int as total,
                 COUNT(CASE WHEN status = 'open' THEN 1 END)::int as open,
-                COUNT(CASE WHEN status = 'under_review' THEN 1 END)::int as under_review,
                 COUNT(CASE WHEN status = 'in_progress' THEN 1 END)::int as in_progress,
                 COUNT(CASE WHEN status = 'waiting_user' THEN 1 END)::int as waiting_user,
                 COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int as resolved,
@@ -1702,7 +1699,6 @@ export async function handleAdminApiRequest(
         metrics: {
           total: tickets.length,
           open: tickets.filter((t) => t.status === 'open').length,
-          under_review: tickets.filter((t) => t.status === 'under_review').length,
           in_progress: tickets.filter((t) => t.status === 'in_progress').length,
           waiting_user: tickets.filter((t) => t.status === 'waiting_user').length,
           resolved: tickets.filter((t) => t.status === 'resolved').length,
@@ -2917,36 +2913,26 @@ export async function handleAdminApiRequest(
       if (!auth) return true;
 
       const body = await parseJsonBody(req);
-      const testTitle = body.title || 'Admin Mobile Push Test';
-      const testMessage =
-        body.message ||
-        'Web Push delivery is active for My Money Manager Admin. Clicking this alert opens the Admin Notifications Center.';
-      const deepLink = body.deep_link || 'admin:notifications';
+      const testTitle = body.title || 'Test Push Notification';
+      const testMessage = body.message || 'This is a test notification from My Money Manager Admin Control Center.';
+      const deepLink = body.deep_link || 'dashboard';
 
       const resPush = await createNotification({
         userId: auth.authUser.id,
-        title: testTitle,
+        title: `[Test] ${testTitle}`,
         message: testMessage,
-        category: 'security',
+        category: 'general',
         type: 'info',
         deepLink,
         channels: ['in_app', 'push'],
         skipPreferenceCheck: true,
-        isAdmin: true,
-        priority: 'normal',
       });
 
       sendJson(res, 200, {
         success: resPush.success,
-        pushDelivered: resPush.pushDelivered,
-        pushFailed: resPush.pushFailed,
-        deviceCount: resPush.deviceCount,
-        message:
-          resPush.pushDelivered > 0
-            ? `Test push delivered to ${resPush.pushDelivered} subscribed device(s).`
-            : resPush.deviceCount === 0
-            ? 'In-app test alert saved. Enable Web Push on this device to receive lock-screen notifications.'
-            : 'In-app alert saved, but browser push delivery failed. Check notification permissions or re-subscribe.',
+        message: resPush.success
+          ? 'Test notification successfully dispatched to your administrator account.'
+          : 'Could not send test push notification. Check if push is enabled on this browser.',
       });
       return true;
     }
@@ -2960,39 +2946,8 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'dashboard.view');
       if (!auth) return true;
 
-      const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-      const category = (urlObj.searchParams.get('category') || '').trim();
-      const priority = (urlObj.searchParams.get('priority') || '').trim();
-      const unreadOnly = urlObj.searchParams.get('unread_only') === 'true';
-      const q = (urlObj.searchParams.get('q') || '').trim();
-      const limit = Math.min(300, Math.max(1, parseInt(urlObj.searchParams.get('limit') || '150', 10) || 150));
-
-      const allNotifs = await getAdminNotifications({ limit: 300 });
-      const countsByCategory = {
-        all: allNotifs.length,
-        unread: allNotifs.filter((n) => !n.is_read).length,
-        new_users: allNotifs.filter((n) => n.category === 'new_users').length,
-        feedback: allNotifs.filter((n) => n.category === 'feedback').length,
-        complaints: allNotifs.filter((n) => n.category === 'complaints').length,
-        support: allNotifs.filter((n) => n.category === 'support').length,
-        security: allNotifs.filter((n) => n.category === 'security').length,
-        system: allNotifs.filter((n) => n.category === 'system').length,
-      };
-
-      const filtered = await getAdminNotifications({
-        limit,
-        category: category || undefined,
-        priority: priority || undefined,
-        unreadOnly,
-        q: q || undefined,
-      });
-
-      sendJson(res, 200, {
-        success: true,
-        notifications: filtered,
-        unreadCount: countsByCategory.unread,
-        countsByCategory,
-      });
+      const notifs = await getAdminNotifications(100);
+      sendJson(res, 200, { success: true, notifications: notifs });
       return true;
     }
 
@@ -4759,17 +4714,6 @@ export async function handleAdminApiRequest(
     return false;
   } catch (err: any) {
     console.error(`[Admin API Error] ${method} ${pathname}:`, err);
-    const bucket = Math.floor(Date.now() / (5 * 60 * 1000));
-    recordAdminNotification({
-      eventType: 'system_error',
-      priority: 'urgent',
-      category: 'security',
-      deepLink: 'admin:notifications',
-      dedupeKey: `sys-err:admin:${method}:${pathname}:${bucket}`,
-      title: 'Admin Console System Error',
-      message: `Unhandled error on ${method} ${pathname}: ${String(err?.message || 'Internal error').slice(0, 120)}`,
-      metadata: { method, pathname, errorName: err?.name || 'Error' },
-    }).catch(() => {});
     sendJson(res, 500, {
       success: false,
       message: 'An internal server error occurred while processing administrative operation.',

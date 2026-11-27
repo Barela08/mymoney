@@ -82,9 +82,6 @@ export interface CreateNotificationParams {
     actionText?: string;
   };
   campaignId?: string;
-  isAdmin?: boolean;
-  priority?: 'low' | 'normal' | 'high' | 'urgent';
-  recordId?: string;
 }
 
 export interface UserPreferences {
@@ -344,32 +341,11 @@ export function maskFinancialData(text: string, maskUdharDetails: boolean = fals
 }
 
 /**
- * Normalize a deep link to a safe same-origin SPA URL (consumer or isolated Admin App)
+ * Normalize a deep link to a safe same-origin SPA URL
  */
-export function buildSafeDeepLinkUrl(
-  deepLink?: string,
-  isAdmin: boolean = false,
-  recordId?: string
-): string {
-  const clean = (deepLink || '').trim();
-  const looksLikeAdmin =
-    isAdmin || clean === 'admin' || clean.startsWith('admin:') || clean.startsWith('/admin');
-
-  if (looksLikeAdmin) {
-    let section = 'notifications';
-    if (clean.startsWith('admin:')) {
-      section = clean.slice('admin:'.length).trim() || 'notifications';
-    } else if (clean.startsWith('/admin')) {
-      return clean;
-    } else if (clean && clean !== 'admin') {
-      section = clean;
-    }
-    const safeSection = section.replace(/[^a-zA-Z0-9_-]/g, '') || 'notifications';
-    const recordQuery = recordId ? `&id=${encodeURIComponent(recordId)}` : '';
-    return `/admin?tab=${encodeURIComponent(safeSection)}${recordQuery}#admin=${encodeURIComponent(safeSection)}`;
-  }
-
-  if (!clean) return '/';
+export function buildSafeDeepLinkUrl(deepLink?: string): string {
+  if (!deepLink || !deepLink.trim()) return '/';
+  const clean = deepLink.trim();
   const pathRoutes = new Set([
     '/ai-assistant',
     '/expense-calendar',
@@ -1204,53 +1180,35 @@ export async function createNotification(params: CreateNotificationParams): Prom
       subs.length > 0 &&
       (skipPreferenceCheck || (prefs.push_enabled && categoryAllowed))
     ) {
-      const isAdminNotif = Boolean(
-        params.isAdmin ||
-          (deepLink && (deepLink === 'admin' || deepLink.startsWith('admin:') || deepLink.startsWith('/admin')))
-      );
       const isUdharCategory = category === 'udhar' || category === 'repay' || category === 'settlement';
-      const shouldMask = prefs.privacy_hide_amounts || isAdminNotif;
-      const pushTitle = shouldMask ? maskFinancialData(title, isUdharCategory) : title;
-      const pushBody = shouldMask ? maskFinancialData(message, isUdharCategory) : message;
-      const targetUrl = buildSafeDeepLinkUrl(
-        deepLink,
-        isAdminNotif,
-        params.recordId || relatedEntityId
-      );
+      const pushTitle = prefs.privacy_hide_amounts ? maskFinancialData(title, isUdharCategory) : title;
+      const pushBody = prefs.privacy_hide_amounts ? maskFinancialData(message, isUdharCategory) : message;
+      const targetUrl = buildSafeDeepLinkUrl(deepLink);
       const timestamp = Date.now();
       const notifTag =
         tag ||
         (dedupeKey
-          ? `${isAdminNotif ? 'mm-adm' : 'mm'}-${dedupeKey.slice(0, 80)}`
-          : `${isAdminNotif ? 'mm-adm' : 'mm'}-${category}-${notificationId || timestamp}`);
+          ? `mm-${dedupeKey.slice(0, 80)}`
+          : `mm-${category}-${notificationId || timestamp}`);
       const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
-      const highPriority =
-        params.priority === 'urgent' ||
-        params.priority === 'high' ||
-        category === 'security' ||
-        type === 'error';
 
       const pushPayload = JSON.stringify({
         title: pushTitle,
         body: pushBody,
-        icon: isAdminNotif ? '/admin-notification-icon.png' : '/icon-192.png',
-        badge: isAdminNotif ? '/admin-badge-96.png' : '/notification-badge-96.png',
+        icon: '/icon-192.png',
+        badge: '/notification-badge-96.png',
         tag: notifTag,
         category,
         type,
-        priority: params.priority || 'normal',
         timestamp,
         renotify: true,
         silent: soundMuted,
         vibrate: soundMuted ? undefined : [200, 80, 200],
         soundEnabled: !soundMuted,
-        requireInteraction: highPriority,
+        requireInteraction: category === 'security' || type === 'error',
         data: {
           url: targetUrl,
           notificationId: notificationId || null,
-          recordId: params.recordId || relatedEntityId || null,
-          isAdmin: isAdminNotif,
-          priority: params.priority || 'normal',
           category,
           type,
           dedupeKey: dedupeKey || null,
@@ -1787,7 +1745,8 @@ export async function notifyFeedbackSubmitted(
 }
 
 /**
- * Triggered when any user submits feedback — logs to admin_notifications and notifies ALL admin users via in-app + Web Push.
+ * Triggered when any user submits feedback — notifies ALL admin users.
+ * Sends in-app + push notification to each admin/superadmin.
  */
 export async function notifyAdminNewFeedback(opts: {
   feedbackId: string;
@@ -1798,32 +1757,50 @@ export async function notifyAdminNewFeedback(opts: {
   category?: string;
   message: string;
 }): Promise<void> {
-  const shortMsg = opts.message.length > 90 ? opts.message.slice(0, 90) + '…' : opts.message;
-  const ratingText = `${Math.max(1, Math.min(5, opts.rating))}/5`;
-  await recordAdminNotification({
-    eventType: 'feedback',
-    priority: opts.rating <= 2 ? 'high' : 'normal',
-    category: 'feedback',
-    relatedEntityType: 'feedback',
-    relatedEntityId: opts.feedbackDbId,
-    deepLink: 'admin:feedback',
-    dedupeKey: `feedback:${opts.feedbackDbId || opts.feedbackId}`,
-    title: `New Feedback (${ratingText}) · ${opts.category || 'General'}`,
-    message: `${opts.submitterName} (${opts.submitterEmail}) submitted feedback: "${shortMsg}"`,
-    userEmail: opts.submitterEmail,
-    metadata: {
-      feedbackId: opts.feedbackId,
-      feedbackDbId: opts.feedbackDbId,
-      submitterName: opts.submitterName,
-      submitterEmail: opts.submitterEmail,
-      rating: opts.rating,
-      feedbackCategory: opts.category || 'General',
-      preview: shortMsg,
-      submittedAt: new Date().toISOString(),
-    },
-  }).catch((e) =>
-    console.warn('[notifyAdminNewFeedback] Error recording admin notification:', e?.message)
-  );
+  try {
+    let adminRows: Array<{ id: string }> = [];
+    if (isDatabaseAvailable()) {
+      try {
+        const adminsRes = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
+        );
+        adminRows = adminsRes.rows || [];
+      } catch {
+        adminRows = [];
+      }
+    }
+
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers
+        .filter((u) => ['admin', 'superadmin'].includes(String(u.role || '').toLowerCase()))
+        .map((u) => ({ id: u.id }));
+    }
+
+    if (adminRows.length === 0) return;
+
+    const stars = '⭐'.repeat(Math.max(1, Math.min(5, opts.rating)));
+    const shortMsg = opts.message.length > 80 ? opts.message.slice(0, 80) + '…' : opts.message;
+
+    for (const admin of adminRows) {
+      await createNotification({
+        userId: admin.id,
+        title: `New Feedback Received ${stars}`,
+        message: `${opts.submitterName} (${opts.submitterEmail}) left a ${opts.rating}-star review in "${opts.category || 'General'}": "${shortMsg}"`,
+        category: 'feedback',
+        type: 'info',
+        relatedEntityType: 'feedback',
+        relatedEntityId: opts.feedbackDbId,
+        deepLink: 'admin:feedback',
+        channels: ['in_app', 'push'],
+        skipPreferenceCheck: true,
+      }).catch((e) =>
+        console.warn(`[notifyAdminNewFeedback] Failed for admin ${admin.id}:`, e?.message)
+      );
+    }
+  } catch (e: any) {
+    console.warn('[notifyAdminNewFeedback] Error fetching admin list:', e?.message);
+  }
 }
 
 /**
@@ -1852,8 +1829,7 @@ export async function notifyComplaintSubmitted(
 }
 
 /**
- * Triggered when any user raises a complaint or support ticket (or sends a follow-up reply) —
- * logs to admin_notifications and notifies ALL admin users via in-app + Web Push.
+ * Triggered when any user raises a complaint or support ticket — notifies ALL admin users via in-app + external push.
  */
 export async function notifyAdminNewSupportTicket(opts: {
   ticketId: string;
@@ -1863,48 +1839,49 @@ export async function notifyAdminNewSupportTicket(opts: {
   submitterEmail: string;
   category?: string;
   subject: string;
-  description?: string;
-  priority?: 'low' | 'normal' | 'high' | 'urgent';
-  isFollowUpReply?: boolean;
 }): Promise<void> {
-  const isComplaint = opts.ticketType === 'complaint';
-  const label = isComplaint ? 'Complaint' : 'Support Request';
-  const isFollowUp =
-    Boolean(opts.isFollowUpReply) ||
-    opts.category === 'User Follow-Up Reply' ||
-    opts.subject.startsWith('Reply on #');
-  const replyWindow = Math.floor(Date.now() / 15000);
-  const dedupeKey = isFollowUp
-    ? `ticket-reply:${opts.ticketId}:${replyWindow}`
-    : `ticket:${opts.ticketId}`;
-  const preview = opts.description
-    ? ` — "${opts.description.slice(0, 80)}${opts.description.length > 80 ? '…' : ''}"`
-    : '';
+  try {
+    let adminRows: Array<{ id: string }> = [];
+    if (isDatabaseAvailable()) {
+      try {
+        const adminsRes = await query(
+          `SELECT id FROM public.app_users WHERE LOWER(role) IN ('admin', 'superadmin') AND (status IS NULL OR status = 'active')`
+        );
+        adminRows = adminsRes.rows || [];
+      } catch {
+        adminRows = [];
+      }
+    }
 
-  await recordAdminNotification({
-    eventType: isComplaint ? 'complaint' : 'support_ticket',
-    priority: opts.priority || (isComplaint ? 'high' : 'normal'),
-    category: isComplaint ? 'complaints' : 'support',
-    relatedEntityType: 'support_ticket',
-    relatedEntityId: opts.ticketId,
-    deepLink: isComplaint ? 'admin:complaints' : 'admin:support',
-    dedupeKey,
-    title: isFollowUp
-      ? `${label} Update #${opts.ticketNumber}`
-      : `New ${label} #${opts.ticketNumber}`,
-    message: `${opts.submitterName} (${opts.submitterEmail}) [${opts.category || 'General'}]: "${opts.subject}"${preview}`,
-    userEmail: opts.submitterEmail,
-    metadata: {
-      ticketId: opts.ticketId,
-      ticketNumber: opts.ticketNumber,
-      ticketType: opts.ticketType,
-      submitterName: opts.submitterName,
-      submitterEmail: opts.submitterEmail,
-      ticketCategory: opts.category || 'General',
-      subject: opts.subject,
-      submittedAt: new Date().toISOString(),
-    },
-  }).catch((e) => console.warn('[notifyAdminNewSupportTicket] Error:', e?.message));
+    if (adminRows.length === 0) {
+      const fbUsers = await listAllAppUsersFallback();
+      adminRows = fbUsers
+        .filter((u) => ['admin', 'superadmin'].includes(String(u.role || '').toLowerCase()))
+        .map((u) => ({ id: u.id }));
+    }
+
+    if (adminRows.length === 0) return;
+
+    const label = opts.ticketType === 'complaint' ? 'Complaint' : 'Support Ticket';
+    for (const admin of adminRows) {
+      await createNotification({
+        userId: admin.id,
+        title: `New ${label} #${opts.ticketNumber}`,
+        message: `${opts.submitterName} (${opts.submitterEmail}): "${opts.subject}" [${opts.category || 'General'}]`,
+        category: opts.ticketType,
+        type: opts.ticketType === 'complaint' ? 'warning' : 'info',
+        relatedEntityType: 'support_ticket',
+        relatedEntityId: opts.ticketId,
+        deepLink: 'admin:support',
+        channels: ['in_app', 'push'],
+        skipPreferenceCheck: true,
+      }).catch((e) =>
+        console.warn(`[notifyAdminNewSupportTicket] Failed for admin ${admin.id}:`, e?.message)
+      );
+    }
+  } catch (e: any) {
+    console.warn('[notifyAdminNewSupportTicket] Error:', e?.message);
+  }
 }
 
 export async function notifyAdminTicketReply(
@@ -2453,104 +2430,20 @@ export async function getAdminInstalledDevices(filters?: {
 // Two-Way Notification System: User-to-Admin & Admin Preferences
 // ==============================================================================
 
-export type AdminEventType =
-  | 'new_user'
-  | 'feedback'
-  | 'complaint'
-  | 'support_ticket'
-  | 'security_alert'
-  | 'suspicious_activity'
-  | 'payment_failed'
-  | 'system_error'
-  | 'pwa_install'
-  | 'push_failure'
-  | 'critical_alert';
-
-export type AdminNotificationPriority = 'low' | 'normal' | 'high' | 'urgent';
-
 export interface AdminNotificationRecord {
   id: string;
-  event_type: AdminEventType;
-  category?: string;
-  priority?: AdminNotificationPriority;
+  event_type: 'new_user' | 'pwa_install' | 'support_ticket' | 'critical_alert' | 'push_failure';
   title: string;
   message: string;
-  user_id?: string | null;
-  user_email?: string | null;
-  related_entity_type?: string | null;
-  related_entity_id?: string | null;
-  deep_link?: string | null;
-  dedupe_key?: string | null;
+  user_id?: string;
+  user_email?: string;
   metadata?: Record<string, any>;
   is_read: boolean;
   read_at?: string | null;
   created_at: string;
 }
 
-interface AdminNotificationFallbackFile {
-  notifications: AdminNotificationRecord[];
-  dedupeKeys: Record<string, number>;
-}
-
 const localAdminNotifications: AdminNotificationRecord[] = [];
-const localAdminDedupeKeys = new Map<string, number>();
-
-function resolveAdminNotifFile(): string | null {
-  try {
-    const dir = resolveWritablePushDir();
-    const resolved = path.resolve(dir, 'admin-notifications.json');
-    if (!resolved.startsWith(dir + path.sep)) return null;
-    return resolved;
-  } catch {
-    return null;
-  }
-}
-
-function readAdminNotifStore(): AdminNotificationFallbackFile {
-  const file = resolveAdminNotifFile();
-  if (file) {
-    try {
-      if (fs.existsSync(file)) {
-        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-        return {
-          notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
-          dedupeKeys: parsed.dedupeKeys && typeof parsed.dedupeKeys === 'object' ? parsed.dedupeKeys : {},
-        };
-      }
-    } catch {}
-  }
-  return {
-    notifications: [...localAdminNotifications],
-    dedupeKeys: Object.fromEntries(localAdminDedupeKeys.entries()),
-  };
-}
-
-function writeAdminNotifStore(store: AdminNotificationFallbackFile): void {
-  const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
-  const prunedKeys: Record<string, number> = {};
-  for (const [k, ts] of Object.entries(store.dedupeKeys || {})) {
-    if (typeof ts === 'number' && ts >= cutoff) {
-      prunedKeys[k] = ts;
-    }
-  }
-  store.dedupeKeys = prunedKeys;
-  store.notifications = store.notifications.slice(0, 300);
-
-  localAdminNotifications.length = 0;
-  localAdminNotifications.push(...store.notifications);
-  localAdminDedupeKeys.clear();
-  for (const [k, ts] of Object.entries(prunedKeys)) {
-    localAdminDedupeKeys.set(k, ts);
-  }
-
-  const file = resolveAdminNotifFile();
-  if (file) {
-    try {
-      fs.writeFileSync(file, JSON.stringify(store, null, 2), 'utf8');
-    } catch {}
-  }
-}
-
 let localAdminPreferences = {
   alert_new_user_registration: true,
   alert_app_installation: true,
@@ -2563,234 +2456,59 @@ let localAdminPreferences = {
   delivery_channel: 'push_and_inapp',
 };
 
-function inferAdminCategory(eventType: AdminEventType, explicit?: string): string {
-  if (explicit) return explicit;
-  switch (eventType) {
-    case 'new_user':
-      return 'new_users';
-    case 'feedback':
-      return 'feedback';
-    case 'complaint':
-      return 'complaints';
-    case 'support_ticket':
-      return 'support';
-    case 'security_alert':
-    case 'suspicious_activity':
-    case 'payment_failed':
-    case 'system_error':
-    case 'critical_alert':
-      return 'security';
-    case 'pwa_install':
-    case 'push_failure':
-    default:
-      return 'system';
-  }
-}
-
-function inferAdminPriority(eventType: AdminEventType, explicit?: AdminNotificationPriority): AdminNotificationPriority {
-  if (explicit) return explicit;
-  switch (eventType) {
-    case 'system_error':
-    case 'critical_alert':
-    case 'suspicious_activity':
-      return 'urgent';
-    case 'security_alert':
-    case 'payment_failed':
-    case 'complaint':
-      return 'high';
-    case 'new_user':
-    case 'feedback':
-    case 'support_ticket':
-      return 'normal';
-    default:
-      return 'low';
-  }
-}
-
-function inferAdminDeepLink(eventType: AdminEventType, explicit?: string): string {
-  if (explicit) return explicit;
-  switch (eventType) {
-    case 'new_user':
-      return 'admin:users';
-    case 'feedback':
-      return 'admin:feedback';
-    case 'complaint':
-      return 'admin:complaints';
-    case 'support_ticket':
-      return 'admin:support';
-    case 'security_alert':
-    case 'suspicious_activity':
-    case 'payment_failed':
-      return 'admin:security';
-    case 'system_error':
-    case 'critical_alert':
-    case 'pwa_install':
-    case 'push_failure':
-    default:
-      return 'admin:notifications';
-  }
-}
-
-function normalizeAdminRow(row: any): AdminNotificationRecord {
-  const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-  const eventType = (row?.event_type || 'security_alert') as AdminEventType;
-  return {
-    id: String(row.id),
-    event_type: eventType,
-    category: row.category || meta.category || inferAdminCategory(eventType),
-    priority: row.priority || meta.priority || inferAdminPriority(eventType),
-    title: String(row.title || 'Admin Notification'),
-    message: String(row.message || ''),
-    user_id: row.user_id || null,
-    user_email: row.user_email || null,
-    related_entity_type: row.related_entity_type || meta.relatedEntityType || null,
-    related_entity_id: row.related_entity_id || meta.relatedEntityId || row.user_id || null,
-    deep_link: row.deep_link || meta.deepLink || inferAdminDeepLink(eventType),
-    dedupe_key: row.dedupe_key || meta.dedupeKey || null,
-    metadata: meta,
-    is_read: Boolean(row.is_read),
-    read_at: row.read_at || null,
-    created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
-  };
-}
-
 export async function recordAdminNotification(params: {
-  eventType: AdminEventType;
+  eventType: 'new_user' | 'pwa_install' | 'support_ticket' | 'critical_alert' | 'push_failure';
   title: string;
   message: string;
   userId?: string;
   userEmail?: string;
-  priority?: AdminNotificationPriority;
-  category?: string;
-  relatedEntityType?: string;
-  relatedEntityId?: string;
-  deepLink?: string;
-  dedupeKey?: string;
   metadata?: Record<string, any>;
 }): Promise<boolean> {
   const { eventType, title, message, userId, userEmail, metadata = {} } = params;
-  const priority = inferAdminPriority(eventType, params.priority);
-  const category = inferAdminCategory(eventType, params.category);
-  const deepLink = inferAdminDeepLink(eventType, params.deepLink);
-  const relatedEntityType = params.relatedEntityType || (userId ? 'user' : undefined);
-  const relatedEntityId = params.relatedEntityId || userId;
-  const dedupeKey = params.dedupeKey;
 
-  // Idempotent deduplication guard across DB and persisted local fallback
-  const store = readAdminNotifStore();
-  if (dedupeKey) {
-    if (store.dedupeKeys[dedupeKey] || localAdminDedupeKeys.has(dedupeKey)) {
-      return true;
-    }
-    if (isDatabaseAvailable()) {
-      try {
-        const dupRes = await query(
-          `SELECT id FROM public.admin_notifications WHERE metadata->>'dedupeKey' = $1 LIMIT 1`,
-          [dedupeKey]
-        );
-        if (dupRes.rows.length > 0) {
-          store.dedupeKeys[dedupeKey] = Date.now();
-          writeAdminNotifStore(store);
-          return true;
-        }
-      } catch {}
-    }
-  }
-
-  const enrichedMeta: Record<string, any> = {
-    ...metadata,
-    priority,
-    category,
-    deepLink,
-    relatedEntityType: relatedEntityType || null,
-    relatedEntityId: relatedEntityId || null,
-    ...(dedupeKey ? { dedupeKey } : {}),
-  };
-
-  let insertedId: string | null = null;
-  if (isDatabaseAvailable()) {
-    try {
-      const insRes = await query(
-        `INSERT INTO public.admin_notifications
-         (event_type, title, message, user_id, user_email, metadata, is_read, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
-         RETURNING id`,
-        [eventType, title, message, userId || null, userEmail || null, JSON.stringify(enrichedMeta)]
-      );
-      insertedId = insRes.rows[0]?.id || null;
-    } catch {
-      insertedId = null;
-    }
-  }
-
-  const localRecord: AdminNotificationRecord = normalizeAdminRow({
-    id: insertedId || `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+  const localRecord: AdminNotificationRecord = {
+    id: `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     event_type: eventType,
-    category,
-    priority,
     title,
     message,
-    user_id: userId || null,
-    user_email: userEmail || null,
-    related_entity_type: relatedEntityType || null,
-    related_entity_id: relatedEntityId || null,
-    deep_link: deepLink,
-    dedupe_key: dedupeKey || null,
-    metadata: enrichedMeta,
+    user_id: userId,
+    user_email: userEmail,
+    metadata,
     is_read: false,
     created_at: new Date().toISOString(),
-  });
+  };
+  localAdminNotifications.unshift(localRecord);
 
-  store.notifications = [
-    localRecord,
-    ...store.notifications.filter((n) => n.id !== localRecord.id),
-  ];
-  if (dedupeKey) {
-    store.dedupeKeys[dedupeKey] = Date.now();
+  try {
+    await query(
+      `INSERT INTO public.admin_notifications
+       (event_type, title, message, user_id, user_email, metadata, is_read, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())`,
+      [eventType, title, message, userId || null, userEmail || null, JSON.stringify(metadata)]
+    );
+  } catch {
+    // Already tracked in localAdminNotifications
   }
-  writeAdminNotifStore(store);
 
-  // Check admin alert preference before dispatching live Web Push + in-app notification to admins
+  // Check admin alert preference & quiet hours before dispatching live push to admins
   const prefs = await getAdminNotificationPreferences();
   const isAlertEnabled =
-    (eventType === 'new_user' && prefs.alert_new_user_registration !== false) ||
-    (eventType === 'pwa_install' && prefs.alert_app_installation !== false) ||
-    ((eventType === 'feedback' || eventType === 'complaint' || eventType === 'support_ticket') &&
-      prefs.alert_support_ticket !== false) ||
-    ((eventType === 'security_alert' ||
-      eventType === 'suspicious_activity' ||
-      eventType === 'payment_failed' ||
-      eventType === 'system_error' ||
-      eventType === 'critical_alert') &&
-      prefs.alert_critical_security !== false) ||
-    (eventType === 'push_failure' && prefs.alert_push_failure !== false);
+    (eventType === 'new_user' && prefs.alert_new_user_registration) ||
+    (eventType === 'pwa_install' && prefs.alert_app_installation) ||
+    (eventType === 'support_ticket' && prefs.alert_support_ticket) ||
+    (eventType === 'critical_alert' && prefs.alert_critical_security) ||
+    (eventType === 'push_failure' && prefs.alert_push_failure);
 
   if (!isAlertEnabled) {
     return true;
   }
 
-  const isSecurityOrCritical =
-    eventType === 'security_alert' ||
-    eventType === 'suspicious_activity' ||
-    eventType === 'payment_failed' ||
-    eventType === 'system_error' ||
-    eventType === 'critical_alert';
-  const notifCategory: NotificationCategory =
-    eventType === 'feedback'
-      ? 'feedback'
-      : eventType === 'complaint'
-      ? 'complaint'
-      : eventType === 'support_ticket'
-      ? 'support'
-      : isSecurityOrCritical
-      ? 'security'
-      : 'system';
-
+  // Find all administrators
   try {
     let adminRows: Array<{ id: string }> = [];
     if (isDatabaseAvailable()) {
       const admins = await query(
-        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin') AND (status IS NULL OR status = 'active')`
+        `SELECT id FROM public.app_users WHERE LOWER(role) IN ('superadmin', 'admin')`
       );
       adminRows = admins.rows || [];
     }
@@ -2803,24 +2521,13 @@ export async function recordAdminNotification(params: {
     for (const a of adminRows) {
       createNotification({
         userId: a.id,
-        title,
+        title: `[Admin Alert] ${title}`,
         message,
-        category: notifCategory,
-        type:
-          priority === 'urgent' || eventType === 'system_error' || eventType === 'payment_failed'
-            ? 'error'
-            : priority === 'high'
-            ? 'warning'
-            : 'info',
-        relatedEntityType: relatedEntityType || eventType,
-        relatedEntityId: relatedEntityId || localRecord.id,
-        recordId: relatedEntityId || localRecord.id,
-        deepLink,
-        dedupeKey: dedupeKey ? `adm:${dedupeKey}:${a.id}` : undefined,
+        category: 'security',
+        type: eventType === 'critical_alert' ? 'error' : 'info',
         channels: prefs.delivery_channel === 'inapp_only' ? ['in_app'] : ['in_app', 'push'],
+        deepLink: 'admin',
         skipPreferenceCheck: true,
-        isAdmin: true,
-        priority,
       }).catch(() => {});
     }
   } catch {}
@@ -2828,106 +2535,46 @@ export async function recordAdminNotification(params: {
   return true;
 }
 
-export async function getAdminNotifications(
-  limitOrOpts:
-    | number
-    | {
-        limit?: number;
-        category?: string;
-        priority?: string;
-        unreadOnly?: boolean;
-        q?: string;
-      } = 50
-): Promise<AdminNotificationRecord[]> {
-  const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts || {};
-  const limit = Math.min(300, Math.max(1, opts.limit || 100));
-
-  const merged = new Map<string, AdminNotificationRecord>();
-
-  if (isDatabaseAvailable()) {
-    try {
-      const res = await query(
-        `SELECT * FROM public.admin_notifications
-         ORDER BY created_at DESC
-         LIMIT $1`,
-        [Math.max(limit, 200)]
-      );
-      for (const r of res.rows || []) {
-        const norm = normalizeAdminRow(r);
-        merged.set(norm.id, norm);
-      }
-    } catch {}
-  }
-
-  const localStore = readAdminNotifStore();
-  for (const r of localStore.notifications) {
-    const norm = normalizeAdminRow(r);
-    if (!merged.has(norm.id)) {
-      merged.set(norm.id, norm);
-    }
-  }
-
-  let items = Array.from(merged.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
-
-  if (opts.category && opts.category !== 'all') {
-    items = items.filter((n) => n.category === opts.category);
-  }
-  if (opts.priority && opts.priority !== 'all') {
-    items = items.filter((n) => n.priority === opts.priority);
-  }
-  if (opts.unreadOnly) {
-    items = items.filter((n) => !n.is_read);
-  }
-  if (opts.q && opts.q.trim()) {
-    const needle = opts.q.trim().toLowerCase();
-    items = items.filter(
-      (n) =>
-        n.title.toLowerCase().includes(needle) ||
-        n.message.toLowerCase().includes(needle) ||
-        String(n.user_email || '').toLowerCase().includes(needle) ||
-        String(n.related_entity_id || '').toLowerCase().includes(needle) ||
-        String(n.event_type || '').toLowerCase().includes(needle)
+export async function getAdminNotifications(limit = 50): Promise<AdminNotificationRecord[]> {
+  try {
+    const res = await query(
+      `SELECT * FROM public.admin_notifications
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
     );
-  }
-
-  return items.slice(0, limit);
+    if (res.rows && res.rows.length > 0) {
+      return res.rows;
+    }
+  } catch {}
+  return localAdminNotifications.slice(0, limit);
 }
 
 export async function markAdminNotificationRead(id: string): Promise<boolean> {
-  if (isDatabaseAvailable()) {
-    try {
-      await query(
-        `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
-        [id]
-      );
-    } catch {}
-  }
-  const store = readAdminNotifStore();
-  const idx = store.notifications.findIndex((n) => n.id === id);
-  if (idx >= 0) {
-    store.notifications[idx].is_read = true;
-    store.notifications[idx].read_at = new Date().toISOString();
-    writeAdminNotifStore(store);
+  try {
+    await query(
+      `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
+      [id]
+    );
+  } catch {
+    const found = localAdminNotifications.find((n) => n.id === id);
+    if (found) {
+      found.is_read = true;
+      found.read_at = new Date().toISOString();
+    }
   }
   return true;
 }
 
 export async function markAllAdminNotificationsRead(): Promise<boolean> {
-  if (isDatabaseAvailable()) {
-    try {
-      await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
-    } catch {}
+  try {
+    await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
+  } catch {
+    localAdminNotifications.forEach((n) => {
+      n.is_read = true;
+      n.read_at = new Date().toISOString();
+    });
   }
-  const store = readAdminNotifStore();
-  const now = new Date().toISOString();
-  store.notifications = store.notifications.map((n) => ({
-    ...n,
-    is_read: true,
-    read_at: n.read_at || now,
-  }));
-  writeAdminNotifStore(store);
   return true;
 }
 

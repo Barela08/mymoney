@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Shield,
   Lock,
   Mail,
   Eye,
@@ -10,6 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 
 interface AdminLoginPageProps {
@@ -18,6 +20,7 @@ interface AdminLoginPageProps {
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) => {
   const { adminLogin } = useAuth();
+  const { appBranding } = useExpense();
   const toast = useToast();
 
   const [email, setEmail] = useState('');
@@ -33,15 +36,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
       return;
     }
     if (typeof window !== 'undefined') {
-      const host = (window.location.hostname || '').toLowerCase();
-      if (host.startsWith('admin.')) {
-        window.location.href =
-          host === 'admin.nileshbarela.site'
-            ? 'https://mymoney.nileshbarela.site'
-            : `${window.location.protocol}//${window.location.host.replace(/^admin\./i, '')}/`;
-        return;
-      }
-      window.location.href = '/';
+      window.history.pushState(null, '', '/');
+      window.location.hash = '';
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
   };
 
@@ -63,7 +60,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
     try {
       const res = await adminLogin(trimmedEmail, password, rememberMe);
       if (res.success) {
-        toast.success('Admin Authenticated', 'Welcome to My Money Manager Admin.');
+        toast.success('Admin Authenticated', 'Welcome to the HackifyPro Admin Control Center.');
       } else {
         const msg = res.message || 'Invalid administrator credentials.';
         setErrorMessage(msg);
@@ -79,21 +76,28 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-8 relative overflow-hidden">
+      {/* Background ambient accents */}
+      <div className="absolute -top-28 left-1/2 -translate-x-1/2 w-[520px] h-[520px] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
       {/* Top Bar */}
-      <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-2 z-10">
+        <div className="flex items-center gap-2.5 min-w-0">
           <img
-            src="/admin-logo.png"
-            alt="My Money Manager Admin by HackifyPro"
-            className="w-10 h-10 rounded-xl object-cover border border-slate-800 shrink-0"
+            src={appBranding?.logoUrl || '/logo.jpg'}
+            alt={`${appBranding?.appName || 'My Money Manager'} by HackifyPro`}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).src = '/logo.jpg';
+            }}
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-emerald-500/40 shadow-lg shrink-0"
           />
           <div className="min-w-0">
-            <span className="text-sm font-bold tracking-tight text-white block truncate">
-              My Money Manager Admin
+            <span className="text-sm font-black tracking-tight text-white block truncate">
+              {appBranding?.appName || 'My Money Manager'}
             </span>
-            <span className="text-xs text-slate-400 block truncate">
-              HackifyPro Operations &amp; Security Gateway
+            <span className="text-[11px] font-semibold text-emerald-400 block truncate">
+              A product of HackifyPro · Admin Security Gateway
             </span>
           </div>
         </div>
@@ -101,38 +105,36 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
         <button
           type="button"
           onClick={handleReturnHome}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
           <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-          <span>Consumer App</span>
+          <span>User Website</span>
         </button>
       </header>
 
       {/* Center Admin Login Card */}
-      <main className="w-full max-w-md mx-auto my-8">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6">
-          <div className="text-center space-y-2.5">
-            <img
-              src="/admin-logo.png"
-              alt="My Money Manager Admin"
-              className="w-14 h-14 rounded-2xl object-cover mx-auto border border-emerald-500/30"
-            />
-            <p className="text-xs font-semibold text-emerald-400 flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Restricted Administrator Console</span>
-            </p>
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              Sign in to Admin Console
+      <main className="w-full max-w-md mx-auto my-8 z-10">
+        <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/50 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
+              <Shield className="w-7 h-7" />
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">
+              <ShieldCheck className="w-3 h-3" />
+              Restricted Admin Portal (/admin)
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Administrator Sign In
             </h1>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Manage live users, security alerts, complaints, support requests, and mobile push notifications.
+              Sign in with an authorized administrator account to manage platform settings, API keys, maintenance mode, and users.
             </p>
           </div>
 
           {errorMessage && (
             <div
               role="alert"
-              className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs"
+              className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs"
             >
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed font-medium">{errorMessage}</p>
@@ -143,9 +145,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
             <div>
               <label
                 htmlFor="admin-login-email"
-                className="block text-xs font-semibold text-slate-300 mb-1.5"
+                className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5"
               >
-                Administrator Email
+                Admin Email
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -165,7 +167,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
             <div>
               <label
                 htmlFor="admin-login-password"
-                className="block text-xs font-semibold text-slate-300 mb-1.5"
+                className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5"
               >
                 Password
               </label>
@@ -205,24 +207,24 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onReturnHome }) 
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold text-sm shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>{isSubmitting ? 'Verifying Credentials...' : 'Sign In to Admin Console'}</span>
+              <span>{isSubmitting ? 'Verifying Clearance...' : 'Sign In to Admin Panel'}</span>
               {!isSubmitting && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
 
-          <div className="pt-4 border-t border-slate-800 text-center">
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Authorized administrators only. Standard user accounts must sign in on the main consumer application.
+          <div className="pt-4 border-t border-slate-800/80 text-center">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Standard user accounts do not have permission to sign in here. Normal users should sign in on the main website.
             </p>
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="text-center text-xs text-slate-500">
-        My Money Manager Admin &middot; A product of HackifyPro
+      <footer className="text-center text-[11px] text-slate-500 z-10">
+        {appBranding?.appName || 'My Money Manager'} — A product of HackifyPro
       </footer>
     </div>
   );

@@ -1,11 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ShieldAlert, ArrowLeft, RefreshCw, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { AdminLayout } from './AdminLayout';
-import {
-  normalizeAdminSection,
-  type AdminSectionKey,
-} from './AdminAppNavigation';
+import { AdminLayout, AdminSectionKey } from './AdminLayout';
 
 // Tab Components
 import { AdminOverviewTab } from './tabs/AdminOverviewTab';
@@ -14,7 +10,6 @@ import { AdminSecurityTab } from './tabs/AdminSecurityTab';
 import { AdminDeletionsTab } from './tabs/AdminDeletionsTab';
 import { AdminEmailsTab } from './tabs/AdminEmailsTab';
 import { AdminNotificationsTab } from './tabs/AdminNotificationsTab';
-import { AdminInboxNotificationsTab } from './tabs/AdminInboxNotificationsTab';
 import { AdminSupportTab } from './tabs/AdminSupportTab';
 import { AdminLegalTab } from './tabs/AdminLegalTab';
 import { AdminAnalyticsTab } from './tabs/AdminAnalyticsTab';
@@ -35,116 +30,43 @@ interface AdminDashboardProps {
   initialSection?: AdminSectionKey;
 }
 
-function readLocationRoute(): { section: AdminSectionKey; recordId: string | null } {
-  if (typeof window === 'undefined') {
-    return { section: 'dashboard', recordId: null };
-  }
-  const params = new URLSearchParams(window.location.search);
-  const qTab = params.get('tab');
-  const qId = params.get('id');
-  if (qTab) {
-    return { section: normalizeAdminSection(qTab), recordId: qId || null };
-  }
-  if (window.location.hash.startsWith('#admin=')) {
-    const raw = window.location.hash.replace('#admin=', '').split('&')[0];
-    return { section: normalizeAdminSection(raw), recordId: qId || null };
-  }
-  return { section: 'dashboard', recordId: qId || null };
-}
-
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onExit,
   initialSection = 'dashboard',
 }) => {
   const { user, isAdmin, isLoading, logout } = useAuth();
 
-  const [routeState, setRouteState] = useState<{
-    section: AdminSectionKey;
-    recordId: string | null;
-    notificationId: string | null;
-  }>(() => {
-    const loc = readLocationRoute();
-    return {
-      section: loc.section !== 'dashboard' ? loc.section : initialSection,
-      recordId: loc.recordId,
-      notificationId: null,
-    };
-  });
-
-  const navigateSection = useCallback((section: AdminSectionKey, recordId?: string | null) => {
-    const normalized = normalizeAdminSection(section);
-    const nextRecordId = recordId ?? null;
-    setRouteState({
-      section: normalized,
-      recordId: nextRecordId,
-      notificationId: null,
-    });
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', normalized);
-      if (nextRecordId) {
-        url.searchParams.set('id', nextRecordId);
-      } else {
-        url.searchParams.delete('id');
-      }
-      url.hash = `#admin=${normalized}`;
-      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  // Parse initial section from URL hash (#admin=section_name) or prop
+  const getInitialSection = (): AdminSectionKey => {
+    if (typeof window !== 'undefined' && window.location.hash.startsWith('#admin=')) {
+      const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
+      if (parsed) return parsed;
     }
-  }, []);
+    return initialSection;
+  };
 
-  useEffect(() => {
-    const handleHashOrPop = () => {
-      const loc = readLocationRoute();
-      setRouteState((prev) => ({
-        section: loc.section,
-        recordId: loc.recordId,
-        notificationId: prev.notificationId,
-      }));
-    };
+  const [currentSection, setCurrentSectionState] = React.useState<AdminSectionKey>(getInitialSection);
 
-    const handleAdminNavigateEvent = (ev: Event) => {
-      const detail = (ev as CustomEvent<{
-        section?: string;
-        recordId?: string | null;
-        notificationId?: string | null;
-      }>).detail;
-      if (!detail?.section) return;
-      const normalized = normalizeAdminSection(detail.section);
-      setRouteState({
-        section: normalized,
-        recordId: detail.recordId || null,
-        notificationId: detail.notificationId || null,
-      });
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', normalized);
-      if (detail.recordId) {
-        url.searchParams.set('id', detail.recordId);
-      } else {
-        url.searchParams.delete('id');
+  // Keep state in sync with URL hash for deep-linking & back/forward navigation
+  React.useEffect(() => {
+    const handleHashChange = () => {
+      if (window.location.hash.startsWith('#admin=')) {
+        const parsed = window.location.hash.replace('#admin=', '').split('&')[0] as AdminSectionKey;
+        if (parsed) setCurrentSectionState(parsed);
       }
-      url.hash = `#admin=${normalized}`;
-      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
     };
-
-    window.addEventListener('hashchange', handleHashOrPop);
-    window.addEventListener('popstate', handleHashOrPop);
-    window.addEventListener('mymoney:admin-navigate', handleAdminNavigateEvent);
-    return () => {
-      window.removeEventListener('hashchange', handleHashOrPop);
-      window.removeEventListener('popstate', handleHashOrPop);
-      window.removeEventListener('mymoney:admin-navigate', handleAdminNavigateEvent);
-    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const clearFocusRecord = useCallback(() => {
-    setRouteState((prev) => ({ ...prev, recordId: null, notificationId: null }));
+  const setCurrentSection = (section: AdminSectionKey) => {
+    setCurrentSectionState(section);
     if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('id');
-      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      window.location.hash = `#admin=${section}`;
     }
-  }, []);
+  };
 
+  // Loading state
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
@@ -154,39 +76,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
+  // RBAC Access Guard: user must be authenticated with administrative privileges
   const normalizedEmail = (user?.email || '').toLowerCase().trim();
   const isMasterAdmin = Boolean(
     normalizedEmail === 'admin@mymoney.com' || normalizedEmail === 'hackifypro@gmail.com'
   );
   const allowedRoles = ['superadmin', 'admin', 'analyst', 'support'];
   const userRole = (user?.role || '').toLowerCase().trim();
-  const hasAccess = Boolean(
-    user && (isMasterAdmin || isAdmin || (userRole && allowedRoles.includes(userRole)))
-  );
+  const hasAccess = Boolean(user && (isMasterAdmin || isAdmin || (userRole && allowedRoles.includes(userRole))));
 
   if (!hasAccess) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 mb-4">
+        <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 mb-4 shadow-xl shadow-rose-500/10">
           <ShieldAlert className="w-8 h-8" />
         </div>
-        <h2 className="text-xl font-bold text-white mb-2">Administrative Clearance Required</h2>
+        <h2 className="text-xl font-black text-white mb-2">Administrative Clearance Required</h2>
         <p className="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
-          This zone is restricted exclusively to authorized platform administration personnel. Normal user accounts cannot access the Admin Console.
+          This zone is restricted exclusively to authorized platform administration personnel. Normal user accounts cannot access the Admin Control Center.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button
-            type="button"
             onClick={onExit || (() => { window.location.href = '/'; })}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            Return to Consumer App
+            Return to Personal Workspace
           </button>
           <button
-            type="button"
             onClick={() => logout()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             Sign Out &amp; Switch to Admin
@@ -196,32 +115,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
+  // Render Active Section
   const renderSectionContent = () => {
-    switch (routeState.section) {
+    switch (currentSection) {
       case 'dashboard':
         return <AdminOverviewTab />;
-      case 'notifications':
-        return (
-          <AdminInboxNotificationsTab
-            onNavigateSection={navigateSection}
-            focusNotificationId={routeState.notificationId}
-          />
-        );
-      case 'broadcasts':
-        return <AdminNotificationsTab />;
       case 'users':
-      case 'activity':
-        return (
-          <AdminUsersTab
-            initialStatusFilter="all"
-            focusUserId={routeState.recordId}
-            onClearFocusUser={clearFocusRecord}
-          />
-        );
+        return <AdminUsersTab initialStatusFilter="all" />;
       case 'installed_devices':
         return <AdminInstalledDevicesTab />;
       case 'admins':
         return <AdminAccountsTab />;
+      case 'activity':
+        return <AdminUsersTab initialStatusFilter="all" />;
       case 'financial_access':
         return <AdminFinancialAccessTab />;
       case 'transactions':
@@ -238,30 +144,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return <AdminEmailsTab initialSubView="logs" />;
       case 'email_templates':
         return <AdminEmailsTab initialSubView="templates" />;
-      case 'feedback':
-        return (
-          <AdminSupportTab
-            mode="feedback"
-            focusRecordId={routeState.recordId}
-            onClearFocusRecord={clearFocusRecord}
-          />
-        );
-      case 'complaints':
-        return (
-          <AdminSupportTab
-            mode="complaints"
-            focusRecordId={routeState.recordId}
-            onClearFocusRecord={clearFocusRecord}
-          />
-        );
+      case 'notifications':
+        return <AdminNotificationsTab />;
       case 'support':
-        return (
-          <AdminSupportTab
-            mode="support"
-            focusRecordId={routeState.recordId}
-            onClearFocusRecord={clearFocusRecord}
-          />
-        );
+        return <AdminSupportTab />;
       case 'legal':
         return <AdminLegalTab />;
       case 'analytics':
@@ -288,8 +174,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <AdminLayout
-      currentSection={routeState.section}
-      onSelectSection={navigateSection}
+      currentSection={currentSection}
+      onSelectSection={setCurrentSection}
       onExitAdmin={onExit}
     >
       {renderSectionContent()}

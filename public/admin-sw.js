@@ -1,4 +1,4 @@
-const ADMIN_CACHE_NAME = 'mm-admin-pwa-v1.1.0';
+const ADMIN_CACHE_NAME = 'mm-admin-pwa-v1.0.0';
 
 const ADMIN_PRECACHE_ASSETS = [
   '/admin',
@@ -83,22 +83,13 @@ function sanitizeAdminDeepLink(rawUrl) {
   }
 
   // Ensure Admin notifications ALWAYS open the Admin App, never the normal user app root
-  if (isAdminSubdomainHost()) {
-    if (path === '/admin' || path === '/admin/') {
-      return '/';
+  if (!isAdminSubdomainHost()) {
+    if (path === '/' || path.startsWith('/#') || path.startsWith('/?')) {
+      return `/admin${path.slice(1)}`;
     }
-    if (path.startsWith('/admin?') || path.startsWith('/admin#') || path.startsWith('/admin/')) {
-      const stripped = path.replace(/^\/admin(?=[/?#]|$)/, '') || '/';
-      return stripped.startsWith('/') ? stripped : `/${stripped}`;
+    if (!path.startsWith('/admin')) {
+      return fallback;
     }
-    return path || fallback;
-  }
-
-  if (path === '/' || path.startsWith('/#') || path.startsWith('/?')) {
-    return `/admin${path.slice(1)}`;
-  }
-  if (!path.startsWith('/admin')) {
-    return fallback;
   }
   return path || fallback;
 }
@@ -265,8 +256,6 @@ self.addEventListener('push', (event) => {
             ...(parsed.data && typeof parsed.data === 'object' ? parsed.data : {}),
             url: sanitizeAdminDeepLink(parsed.data?.url || parsed.url || getAdminHomeUrl()),
             category: parsed.data?.category || parsed.category || 'security_alert',
-            eventType: parsed.data?.eventType || parsed.eventType || null,
-            recordId: parsed.data?.recordId || parsed.recordId || null,
             notificationId: parsed.data?.notificationId || parsed.notificationId || null,
             timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now(),
           },
@@ -353,8 +342,6 @@ self.addEventListener('notificationclick', (event) => {
                 type: 'ADMIN_NOTIFICATION_NAVIGATE',
                 url: targetUrl,
                 category: event.notification.data?.category || 'security_alert',
-                eventType: event.notification.data?.eventType || null,
-                recordId: event.notification.data?.recordId || null,
                 notificationId: event.notification.data?.notificationId || null,
               });
             }

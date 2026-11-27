@@ -66,37 +66,12 @@ export const adminClient = {
   },
 
   // 2. Users & Profile
-  async getUsers(
-    queryOrParams?:
-      | string
-      | {
-          q?: string;
-          status?: string;
-          verified?: string;
-          role?: string;
-          regFrom?: string;
-          regTo?: string;
-          page?: number;
-          limit?: number;
-        },
-    statusArg?: string
-  ) {
-    const opts =
-      typeof queryOrParams === 'string'
-        ? { q: queryOrParams, status: statusArg }
-        : queryOrParams || {};
+  async getUsers(query?: string, status?: string) {
     try {
       const params = new URLSearchParams();
-      if (opts.q) params.append('q', opts.q);
-      if (opts.status && opts.status !== 'all') params.append('status', opts.status);
-      if (opts.verified && opts.verified !== 'all') params.append('verified', opts.verified);
-      if (opts.role && opts.role !== 'all') params.append('role', opts.role);
-      if (opts.regFrom) params.append('regFrom', opts.regFrom);
-      if (opts.regTo) params.append('regTo', opts.regTo);
-      if (opts.page) params.append('page', String(opts.page));
-      if (opts.limit) params.append('limit', String(opts.limit));
-      const qs = params.toString();
-      return await adminRequest(`/api/admin/users${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      if (query) params.append('q', query);
+      if (status && status !== 'all') params.append('status', status);
+      return await adminRequest(`/api/admin/users?${params.toString()}`, { method: 'GET' });
     } catch (err: any) {
       console.warn('Backend admin users API unreachable, fetching directly via Supabase:', err.message);
       const res = await authApi.adminGetUsers();
@@ -279,13 +254,12 @@ export const adminClient = {
     });
   },
 
-  // 6. Support Tickets & Complaints
-  async getSupportTickets(category?: string, status?: string, priority?: string, ticketType?: string) {
+  // 6. Support Tickets
+  async getSupportTickets(category?: string, status?: string, priority?: string) {
     const params = new URLSearchParams();
     if (category && category !== 'all') params.append('category', category);
     if (status && status !== 'all') params.append('status', status);
     if (priority && priority !== 'all') params.append('priority', priority);
-    if (ticketType && ticketType !== 'all') params.append('type', ticketType);
     return adminRequest(`/api/admin/support/tickets?${params.toString()}`, { method: 'GET' });
   },
 
@@ -476,21 +450,8 @@ export const adminClient = {
     });
   },
 
-  async getAdminNotifications(params?: {
-    category?: string;
-    priority?: string;
-    unreadOnly?: boolean;
-    q?: string;
-    limit?: number;
-  }) {
-    const qs = new URLSearchParams();
-    if (params?.category && params.category !== 'all') qs.append('category', params.category);
-    if (params?.priority && params.priority !== 'all') qs.append('priority', params.priority);
-    if (params?.unreadOnly) qs.append('unreadOnly', 'true');
-    if (params?.q) qs.append('q', params.q);
-    if (params?.limit) qs.append('limit', String(params.limit));
-    const qStr = qs.toString();
-    return adminRequest(`/api/admin/system/notifications${qStr ? `?${qStr}` : ''}`, { method: 'GET' });
+  async getAdminNotifications() {
+    return adminRequest('/api/admin/system/notifications', { method: 'GET' });
   },
 
   async markAdminNotificationRead(id: string) {
@@ -499,20 +460,6 @@ export const adminClient = {
 
   async markAllAdminNotificationsRead() {
     return adminRequest('/api/admin/system/notifications/mark-all-read', { method: 'POST' });
-  },
-
-  async getPushSubscriptions() {
-    return adminRequest('/api/notifications/push/subscriptions', { method: 'GET' });
-  },
-
-  async deletePushSubscription(id: string) {
-    return adminRequest(`/api/notifications/push/subscriptions/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-  },
-
-  async getPushStatus() {
-    return adminRequest('/api/notifications/push/status', { method: 'GET' });
   },
 
   // 11. Sensitive Financial Data Access Workflow (PART F)

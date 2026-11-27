@@ -59,7 +59,6 @@ export interface FeedbackRecord {
   rating?: number;
   status: 'new' | 'reviewed' | 'responded' | 'resolved';
   admin_notes?: string;
-  admin_response?: string;
   reviewed_by?: string;
   reviewed_at?: string;
   created_at: string;
@@ -90,7 +89,7 @@ export interface SupportTicketRecord {
   subject: string;
   description: string;
   priority: 'low' | 'normal' | 'high' | 'urgent';
-  status: 'open' | 'under_review' | 'in_progress' | 'waiting_user' | 'resolved' | 'closed';
+  status: 'open' | 'in_progress' | 'waiting_user' | 'resolved' | 'closed';
   assigned_to?: string;
   attachment_url?: string;
   internal_notes?: string;
@@ -128,7 +127,6 @@ export interface TicketStatusHistoryRecord {
 export interface TicketMetrics {
   total: number;
   open: number;
-  under_review?: number;
   in_progress: number;
   waiting_user: number;
   resolved: number;
