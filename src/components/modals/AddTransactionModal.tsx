@@ -326,10 +326,36 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/65 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div
-        className="w-full sm:max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] sm:max-h-[90vh] transition-all"
+        className="w-full sm:max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] sm:max-h-[90vh] animate-slide-up"
         role="dialog"
         aria-modal="true"
       >
+        {saveSuccess ? (
+          <div className="p-10 flex flex-col items-center justify-center text-center space-y-3 animate-pop">
+            <div
+              className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${
+                saveSuccess.type === 'receive'
+                  ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                  : 'bg-rose-600 text-white shadow-rose-600/30'
+              }`}
+            >
+              <CheckCircle2 className="w-9 h-9 stroke-[2.2]" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              {saveSuccess.type === 'receive' ? 'Money Received!' : 'Expense Saved!'}
+            </h3>
+            <p
+              className={`text-2xl font-black tabular-nums ${
+                saveSuccess.type === 'receive'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {saveSuccess.type === 'receive' ? '+' : '-'}₹{saveSuccess.amount.toLocaleString('en-IN')}
+            </p>
+          </div>
+        ) : (
+        <>
         {/* ================= STEP 1: SELECTION SCREEN ================= */}
         {mode === 'select' && (
           <div className="p-6 sm:p-7 space-y-6">
