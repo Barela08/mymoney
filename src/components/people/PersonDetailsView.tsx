@@ -32,7 +32,12 @@ import {
   UdharTransactionItem,
   UdharRepayment,
 } from '../../lib/udharDeletionApi';
-import { calculatePersonLedgerSummary, canCancelUdhar, canDeleteRepayment } from '../../lib/sharedUdharEngine';
+import {
+  calculatePersonLedgerSummary,
+  canCancelUdhar,
+  canDeleteRepayment,
+  getUdharSettlementStatus,
+} from '../../lib/sharedUdharEngine';
 import { SettleUdharModal } from './SettleUdharModal';
 import { RepayUdharModal } from './RepayUdharModal';
 import { UdharDetailModal } from './UdharDetailModal';
@@ -58,7 +63,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   udharLoaded = false,
   onRefreshUdhar,
 }) => {
-  const { settlePersonUdhar, permanentDeletePersonTransactions, refreshTransactions } = useExpense();
+  const { settlePersonUdhar, permanentDeletePersonTransactions, refreshTransactions, refreshNotifications } = useExpense();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -115,7 +120,9 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
       const q = searchHistory.toLowerCase().trim();
       list = list.filter(
         (t) =>
+          (t.description && t.description.toLowerCase().includes(q)) ||
           (t.notes && t.notes.toLowerCase().includes(q)) ||
+          String(t.id).toLowerCase().includes(q) ||
           String(t.original_amount).includes(q) ||
           String(t.current_balance).includes(q)
       );
@@ -125,7 +132,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
     } else if (filterType === 'received') {
       list = list.filter((t) => t.direction === 'took');
     } else if (filterType === 'settled') {
-      list = list.filter((t) => t.status === 'settled');
+      list = list.filter((t) => getUdharSettlementStatus(t).isSettled);
     }
     return list;
   }, [personUdharTxs, searchHistory, filterType]);
@@ -177,25 +184,25 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
         const res = await udharDeletionApi.settleUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Settled', res.message || 'This Udhar entry is now marked settled.');
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           if (onRefreshUdhar) await onRefreshUdhar();
           await refreshTransactions();
+          await refreshNotifications();
         }
       } else if (pendingConfirmAction.type === 'delete_single') {
         const res = await udharDeletionApi.cancelUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Deleted', res.message || 'Udhar entry deleted and totals recalculated.');
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           if (onRefreshUdhar) await onRefreshUdhar();
           await refreshTransactions();
+          await refreshNotifications();
         }
       } else if (pendingConfirmAction.type === 'delete_repayment') {
         const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
         if (res.success) {
           toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           if (onRefreshUdhar) await onRefreshUdhar();
           await refreshTransactions();
+          await refreshNotifications();
         }
       } else if (pendingConfirmAction.type === 'delete_history') {
         await permanentDeletePersonTransactions(person.name);
@@ -408,212 +415,334 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
         </div>
       </div>
 
-      {/* Shared Two-Way Udhar Ledger (if any two-way records exist) */}
+      {/* Shared Two-Way Udhar Ledger (I Gave vs I Borrowed) */}
       {personUdharTxs.length > 0 && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div>
               <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                Shared Two-Way Udhar Records ({personUdharTxs.length})
+                Udhar Transactions ({personUdharTxs.length})
               </h3>
               <p className="text-xs text-slate-400">
-                Synchronized canonical debts with partial repayments & settlement state
+                I Gave ({personUdharTxs.filter((t) => t.direction === 'gave').length}) · I Borrowed ({personUdharTxs.filter((t) => t.direction === 'took').length})
               </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search note, ID, amount..."
+                  value={searchHistory}
+                  onChange={(e) => setSearchHistory(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs w-40 sm:w-48 focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setFilterType('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    filterType === 'all' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('given')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    filterType === 'given' ? 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-400 shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  I Gave
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('received')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    filterType === 'received' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  I Borrowed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('settled')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    filterType === 'settled' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  Settled
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="space-y-3">
-            {filteredUdharTxs.map((tx) => {
-              const curBal = parseFloat(String(tx.current_balance)) || 0;
-              const origAmt = parseFloat(String(tx.original_amount)) || 0;
-              const isGave = tx.direction === 'gave';
-              const isTxSettled = tx.status === 'settled' || curBal <= 0.01;
-              const isRepaymentsExpanded = Boolean(expandedRepayments[tx.id]);
+            {filteredUdharTxs.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">
+                No transactions match this filter.
+              </p>
+            ) : (
+              filteredUdharTxs.map((tx) => {
+                const statusInfo = getUdharSettlementStatus(tx);
+                const curBal = statusInfo.remainingAmount;
+                const origAmt = statusInfo.originalAmount;
+                const isGave = tx.direction === 'gave';
+                const isLinked = Boolean(tx.counterpart_user_id);
+                const isTxSettled = statusInfo.isSettled;
+                const isDisputed = tx.status === 'disputed';
+                const isRepaymentsExpanded = Boolean(expandedRepayments[tx.id]);
+                const deleteGuard = canCancelUdhar({
+                  status: tx.status,
+                  deleted_at: tx.deleted_at,
+                  direction: tx.direction,
+                  is_shared: isLinked,
+                  counterpart_user_id: tx.counterpart_user_id,
+                  original_amount: tx.original_amount,
+                  paid_amount: tx.paid_amount,
+                  current_balance: tx.current_balance,
+                  settled_at: tx.settled_at,
+                  repayments: tx.repayments,
+                });
 
-              return (
-                <div
-                  key={tx.id}
-                  className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`p-2 rounded-xl shrink-0 ${
-                          isGave
-                            ? 'bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
-                            : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      >
-                        {isGave ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
+                return (
+                  <div
+                    key={tx.id}
+                    data-testid={`person-udhar-card-${tx.id}`}
+                    className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`p-2 rounded-xl shrink-0 ${
+                            isGave
+                              ? 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
+                              : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
+                          {isGave ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`font-bold text-sm ${
+                                isGave ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                              }`}
+                            >
+                              {isGave ? 'I Gave' : 'I Borrowed'}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isDisputed
+                                  ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                                  : isTxSettled
+                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                                  : statusInfo.isPartiallySettled
+                                  ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                              }`}
+                            >
+                              {tx.status === 'pending_confirmation' && !isTxSettled
+                                ? 'Pending Confirmation'
+                                : statusInfo.label}
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-400" title={tx.id}>
+                              ID: {tx.id}
+                            </span>
+                          </div>
+                          {tx.description && (
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 mt-0.5">
+                              {tx.description}
+                            </p>
+                          )}
+                          {tx.notes && <p className="text-xs text-slate-500 mt-0.5">{tx.notes}</p>}
+                          <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1 flex-wrap">
+                            <span>Date: {formatDisplayDate(tx.transaction_date)}</span>
+                            {tx.due_date && <span>· Due: {formatDisplayDate(tx.due_date)}</span>}
+                            {statusInfo.paidAmount > 0.01 && (
+                              <span>· Repaid: {formatINR(statusInfo.paidAmount)}</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                            {isGave ? 'You Gave' : 'You Took'}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              isTxSettled
-                                ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                : isGave
-                                ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                                : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+
+                      <div className="text-right sm:text-right">
+                        <div className="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">
+                          Amount: {formatINR(origAmt)}
+                        </div>
+                        {statusInfo.isPartiallySettled ? (
+                          <div className="font-black text-sm text-amber-600 dark:text-amber-400">
+                            Remaining: {formatINR(curBal)}
+                          </div>
+                        ) : !isTxSettled ? (
+                          <div
+                            className={`font-black text-sm ${
+                              isGave ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
                             }`}
                           >
-                            {isTxSettled ? 'Settled' : tx.status}
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-400">
-                            #{String(tx.id).slice(0, 8)}
-                          </span>
-                        </div>
-                        {tx.description && <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 mt-0.5">{tx.description}</p>}
-                        {tx.notes && <p className="text-xs text-slate-500 mt-0.5">{tx.notes}</p>}
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1">
-                          <span>Date: {formatDisplayDate(tx.transaction_date)}</span>
-                          {tx.due_date && <span>· Due: {formatDisplayDate(tx.due_date)}</span>}
-                        </div>
+                            Remaining: {formatINR(curBal)}
+                          </div>
+                        ) : (
+                          <div className="font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                            Remaining: ₹0 (Settled)
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="text-right sm:text-right">
-                      <div className="font-mono text-sm text-slate-400">
-                        Original: {formatINR(origAmt)}
-                      </div>
-                      <div
-                        className={`font-black text-base ${
-                          isTxSettled
-                            ? 'text-slate-400'
-                            : isGave
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      >
-                        Remaining: {formatINR(curBal)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions for this specific Udhar record */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex-wrap gap-2 text-xs">
-                    <button
-                      onClick={() => toggleRepayments(tx.id)}
-                      className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Repayments ({tx.repayments?.length || 0})</span>
-                      {isRepaymentsExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Actions for this specific Udhar record */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex-wrap gap-2 text-xs">
                       <button
-                        onClick={() => setSelectedTxForDetail(tx)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                        type="button"
+                        onClick={() => toggleRepayments(tx.id)}
+                        className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold flex items-center gap-1 cursor-pointer"
                       >
-                        Details
+                        <span>Settlement History ({tx.repayments?.length || 0})</span>
+                        {isRepaymentsExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
-                      {!isTxSettled && tx.status !== 'disputed' && curBal > 0 && (
-                        <>
-                          <button
-                            onClick={() => setSelectedTxForRepay(tx)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                          >
-                            Record Repayment
-                          </button>
-                          {isGave && (
-                            <button
-                              onClick={() => handleSettleSingleTx(tx)}
-                              data-testid={`udhar-settle-btn-${tx.id}`}
-                              className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold cursor-pointer"
-                              title="Settle this individual transaction (Lender only)"
-                            >
-                              Settle
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {(isGave || !tx.counterpart_user_id) && canCancelUdhar({ status: tx.status, paid_amount: tx.paid_amount, repayments: tx.repayments }).allowed && (
-                        <button
-                          onClick={() => handleDeleteSingleTx(tx)}
-                          data-testid={`udhar-delete-btn-${tx.id}`}
-                          className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold cursor-pointer"
-                          title="Delete this individual Udhar entry (Lender only)"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Expanded Repayments History */}
-                  {isRepaymentsExpanded && (
-                    <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Repayments Log
-                      </p>
-                      {(!tx.repayments || tx.repayments.length === 0) ? (
-                        <p className="text-xs text-slate-400 italic">No partial repayments recorded yet.</p>
-                      ) : (
-                        <div className="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800">
-                          {tx.repayments.map((rep) => {
-                            const repDeleteAllowed = canDeleteRepayment({
-                              isShared: Boolean(tx.counterpart_user_id),
-                              direction: tx.direction,
-                              actorUserId: user?.id || user?.uid,
-                              repayment: rep,
-                            }).allowed;
-                            return (
-                              <div key={rep.id} className="pt-1.5 flex items-center justify-between gap-2 text-xs">
-                                <div className="min-w-0">
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                    {formatINR(Number(rep.amount))}
-                                  </span>
-                                  {rep.notes && <span className="text-slate-400 ml-1.5">({rep.notes})</span>}
-                                  {rep.status === 'pending_confirmation' && (
-                                    <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[11px] text-slate-400">
-                                    {formatDisplayDate(rep.repayment_date)}
-                                  </span>
-                                  {repDeleteAllowed && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setPendingConfirmAction({ type: 'delete_repayment', tx, rep })}
-                                      data-testid={`person-repayment-delete-btn-${rep.id}`}
-                                      className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
-                                      title="Delete this repayment"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTxForDetail(tx)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                        >
+                          Details
+                        </button>
+                        {!isTxSettled && !isDisputed && curBal > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTxForRepay(tx)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                            >
+                              Record Repayment
+                            </button>
+                            {isGave && (
+                              <button
+                                type="button"
+                                onClick={() => handleSettleSingleTx(tx)}
+                                data-testid={`udhar-settle-btn-${tx.id}`}
+                                className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold cursor-pointer"
+                                title="Settle this individual transaction (Lender only)"
+                              >
+                                Settle
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {deleteGuard.allowed ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSingleTx(tx)}
+                            data-testid={`udhar-delete-btn-${tx.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold cursor-pointer"
+                            title="Delete this individual Udhar entry"
+                          >
+                            Delete
+                          </button>
+                        ) : !isGave && isLinked && !isDisputed ? (
+                          <button
+                            type="button"
+                            disabled
+                            data-testid={`udhar-delete-disabled-${tx.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-semibold cursor-not-allowed opacity-75"
+                            title="You can delete this transaction after it is fully settled."
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    {!isGave && isLinked && !isDisputed && !deleteGuard.allowed && (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                        You can delete this transaction after it is fully settled.
+                      </p>
+                    )}
+
+                    {/* Expanded Repayments / Settlement History */}
+                    {isRepaymentsExpanded && (
+                      <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Settlement & Repayments Log
+                        </p>
+                        {(!tx.repayments || tx.repayments.length === 0) ? (
+                          <p className="text-xs text-slate-400 italic">No partial repayments recorded yet.</p>
+                        ) : (
+                          <div className="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800">
+                            {tx.repayments.map((rep) => {
+                              const repDeleteAllowed = canDeleteRepayment({
+                                isShared: isLinked,
+                                direction: tx.direction,
+                                actorUserId: user?.id || user?.uid,
+                                repayment: rep,
+                              }).allowed;
+                              return (
+                                <div key={rep.id} className="pt-1.5 flex items-center justify-between gap-2 text-xs">
+                                  <div className="min-w-0">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                      {formatINR(Number(rep.amount))}
+                                    </span>
+                                    {rep.payment_method && (
+                                      <span className="ml-1.5 text-[10px] text-slate-400">via {rep.payment_method}</span>
+                                    )}
+                                    {rep.notes && <span className="text-slate-400 ml-1.5">({rep.notes})</span>}
+                                    {rep.status === 'pending_confirmation' && (
+                                      <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-[11px] text-slate-400">
+                                      {formatDisplayDate(rep.repayment_date)}
+                                    </span>
+                                    {repDeleteAllowed && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPendingConfirmAction({ type: 'delete_repayment', tx, rep })}
+                                        data-testid={`person-repayment-delete-btn-${rep.id}`}
+                                        className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                                        title="Delete this repayment"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
 
-      {/* Transaction History Section (All entries) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-              Transaction History with {person.name}
-            </h3>
-            <p className="text-xs text-slate-400">
-              Every given, received, or settled entry in chronological order
-            </p>
-          </div>
+      {/* Manual Ledger History Section (if manual non-Udhar entries exist or no Udhar entries yet) */}
+      {(personUdharTxs.length === 0 || (person.transactions && person.transactions.length > 0)) && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                {personUdharTxs.length > 0
+                  ? `Additional Manual Entries with ${person.name}`
+                  : `Transaction History with ${person.name}`}
+              </h3>
+              <p className="text-xs text-slate-400">
+                Every given, received, or settled entry in chronological order
+              </p>
+            </div>
 
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -718,7 +847,8 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
             })}
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Settle Full Modal */}
       {isSettleModalOpen && (

@@ -13,20 +13,24 @@ interface AppDownloadPopupProps {
 
 const DOWNLOADED_STORAGE_KEY = 'my_money_app_downloaded_confirmed';
 const DOWNLOADED_COOKIE_NAME = 'mymoney_app_downloaded';
+const ACTIVE_USAGE_MS_KEY = 'my_money_pwa_active_ms';
+const POPUP_OPEN_KEY = 'my_money_pwa_popup_open';
+const DISMISSED_AT_KEY = 'my_money_pwa_dismissed_at';
+
+// Legacy session/cookie keys to clean up
 const AUTH_SESSION_DISMISSED_KEY = 'my_money_popup_auth_dismissed';
 const APP_SESSION_DISMISSED_KEY = 'my_money_popup_app_dismissed';
 const AUTH_DISMISSED_AT_KEY = 'my_money_popup_auth_dismissed_at';
 const APP_DISMISSED_AT_KEY = 'my_money_popup_app_dismissed_at';
+const LEGACY_POPUP_STORAGE_KEY = 'my_money_app_popup_action';
+const LEGACY_POPUP_COOKIE_NAME = 'mymoney_app_popup_dismissed';
 
+export const INITIAL_INSTALL_POPUP_DELAY_MS = 60_000;
 export const POPUP_REPROMPT_DELAY_MS = 60_000;
 
 export function getInitialVisitWaitMs(): number {
-  return 0;
+  return INITIAL_INSTALL_POPUP_DELAY_MS;
 }
-
-// Legacy keys to clean up so users are not blocked by old 7-day cookie
-const LEGACY_POPUP_STORAGE_KEY = 'my_money_app_popup_action';
-const LEGACY_POPUP_COOKIE_NAME = 'mymoney_app_popup_dismissed';
 
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -43,6 +47,55 @@ function writeCookie(name: string, value: string, days: number): void {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
 }
 
+export function getActiveUsageMs(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem(ACTIVE_USAGE_MS_KEY);
+    if (!raw) return 0;
+    const parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function addActiveUsageMs(deltaMs: number): number {
+  if (typeof window === 'undefined') return 0;
+  const current = getActiveUsageMs();
+  const next = Math.min(INITIAL_INSTALL_POPUP_DELAY_MS, current + Math.max(0, Math.round(deltaMs)));
+  try {
+    localStorage.setItem(ACTIVE_USAGE_MS_KEY, String(next));
+  } catch {}
+  return next;
+}
+
+export function isPopupOpenPersisted(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(POPUP_OPEN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setPopupOpenPersisted(isOpen: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (isOpen) {
+      localStorage.setItem(POPUP_OPEN_KEY, 'true');
+    } else {
+      localStorage.removeItem(POPUP_OPEN_KEY);
+    }
+  } catch {}
+}
+
+export function getRemainingInitialWaitMs(): number {
+  if (typeof window === 'undefined') return INITIAL_INSTALL_POPUP_DELAY_MS;
+  if (window.location?.hash === '#install' || window.location?.hash === '#app-install') return 0;
+  if (isPopupOpenPersisted()) return 0;
+  return Math.max(0, INITIAL_INSTALL_POPUP_DELAY_MS - getActiveUsageMs());
+}
+
 /**
  * Checks whether the user has ALREADY downloaded or installed the app.
  * If yes, they must NEVER see the download popup again.
@@ -51,7 +104,6 @@ export function isAppDownloadedOrInstalled(isPwaInstalled?: boolean): boolean {
   if (typeof window === 'undefined') return false;
   if (isPwaInstalled || isRunningStandalone()) return true;
 
-  // Check persistent downloaded cookie & localStorage flag
   if (readCookie(DOWNLOADED_COOKIE_NAME) === 'downloaded') return true;
 
   try {
@@ -64,86 +116,72 @@ export function isAppDownloadedOrInstalled(isPwaInstalled?: boolean): boolean {
 
 /**
  * Permanently marks the app as downloaded/installed.
+ * Called ONLY when installation actually completes or external download starts — NEVER on Cancel/Close.
  */
 export function markAppAsDownloaded(): void {
   if (typeof window === 'undefined') return;
   writeCookie(DOWNLOADED_COOKIE_NAME, 'downloaded', 365);
   try {
     localStorage.setItem(DOWNLOADED_STORAGE_KEY, 'true');
+    localStorage.removeItem(POPUP_OPEN_KEY);
+    localStorage.removeItem(DISMISSED_AT_KEY);
+    localStorage.removeItem(ACTIVE_USAGE_MS_KEY);
   } catch {}
 }
 
 /**
- * Temporarily dismisses the popup for the current view and starts a 1-minute cooldown:
- * - If cancelled on login/auth view, dismisses ONLY for the auth view.
- * - Reappears automatically after POPUP_REPROMPT_DELAY_MS (60 seconds) of visible browser usage if not installed.
+ * Temporarily hides the popup and schedules a 1-minute (60s) reappear cooldown in localStorage.
+ * Persists across refreshes, route changes, login transitions, and browser restarts.
  */
-export function dismissPopupForCurrentView(isAuthView: boolean, now: number = Date.now()): void {
+export function dismissPopupForCurrentView(_isAuthView?: boolean, now: number = Date.now()): void {
   if (typeof window === 'undefined') return;
   try {
-    if (isAuthView) {
-      sessionStorage.setItem(AUTH_SESSION_DISMISSED_KEY, 'true');
-      sessionStorage.setItem(AUTH_DISMISSED_AT_KEY, String(now));
-    } else {
-      sessionStorage.setItem(APP_SESSION_DISMISSED_KEY, 'true');
-      sessionStorage.setItem(APP_DISMISSED_AT_KEY, String(now));
-    }
+    localStorage.setItem(DISMISSED_AT_KEY, String(now));
+    localStorage.removeItem(POPUP_OPEN_KEY);
   } catch {}
 }
 
-export function clearDismissalForView(isAuthView: boolean): void {
+export function clearDismissalForView(_isAuthView?: boolean): void {
   if (typeof window === 'undefined') return;
   try {
-    if (isAuthView) {
-      sessionStorage.removeItem(AUTH_SESSION_DISMISSED_KEY);
-      sessionStorage.removeItem(AUTH_DISMISSED_AT_KEY);
-    } else {
-      sessionStorage.removeItem(APP_SESSION_DISMISSED_KEY);
-      sessionStorage.removeItem(APP_DISMISSED_AT_KEY);
-    }
+    localStorage.removeItem(DISMISSED_AT_KEY);
+    sessionStorage.removeItem(AUTH_SESSION_DISMISSED_KEY);
+    sessionStorage.removeItem(AUTH_DISMISSED_AT_KEY);
+    sessionStorage.removeItem(APP_SESSION_DISMISSED_KEY);
+    sessionStorage.removeItem(APP_DISMISSED_AT_KEY);
   } catch {}
 }
 
 /**
  * Returns remaining milliseconds (0 if ready to display immediately) for the 1-minute re-appear rule.
  */
-export function getPopupRemainingCooldownMs(isAuthView: boolean, now: number = Date.now()): number {
+export function getPopupRemainingCooldownMs(_isAuthView?: boolean, now: number = Date.now()): number {
   if (typeof window === 'undefined') return 0;
   if (window.location?.hash === '#install' || window.location?.hash === '#app-install') return 0;
 
-  const flagKey = isAuthView ? AUTH_SESSION_DISMISSED_KEY : APP_SESSION_DISMISSED_KEY;
-  const atKey = isAuthView ? AUTH_DISMISSED_AT_KEY : APP_DISMISSED_AT_KEY;
-
   try {
-    const isMarked = sessionStorage.getItem(flagKey) === 'true';
-    if (!isMarked) {
-      sessionStorage.removeItem(atKey);
+    const rawAt = localStorage.getItem(DISMISSED_AT_KEY);
+    if (!rawAt) return 0;
+    const dismissedAt = parseInt(rawAt, 10);
+    if (!Number.isFinite(dismissedAt)) {
+      localStorage.removeItem(DISMISSED_AT_KEY);
       return 0;
     }
-
-    const rawAt = sessionStorage.getItem(atKey);
-    if (rawAt) {
-      const dismissedAt = parseInt(rawAt, 10);
-      if (Number.isFinite(dismissedAt)) {
-        const elapsed = now - dismissedAt;
-        if (elapsed >= 0 && elapsed < POPUP_REPROMPT_DELAY_MS) {
-          return POPUP_REPROMPT_DELAY_MS - elapsed;
-        }
-        clearDismissalForView(isAuthView);
-        return 0;
-      }
+    const elapsed = now - dismissedAt;
+    if (elapsed >= 0 && elapsed < POPUP_REPROMPT_DELAY_MS) {
+      return POPUP_REPROMPT_DELAY_MS - elapsed;
     }
-
-    return POPUP_REPROMPT_DELAY_MS;
+    clearDismissalForView();
+    return 0;
   } catch {
     return 0;
   }
 }
 
 /**
- * Checks if dismissed for the given view within the active 1-minute cooldown window.
+ * Checks if dismissed within the active 1-minute cooldown window.
  */
-export function isDismissedForView(isAuthView: boolean, now: number = Date.now()): boolean {
+export function isDismissedForView(isAuthView: boolean = false, now: number = Date.now()): boolean {
   return getPopupRemainingCooldownMs(isAuthView, now) > 0;
 }
 
@@ -189,6 +227,10 @@ function cleanupLegacyDismissals(): void {
         markAppAsDownloaded();
       }
     }
+    sessionStorage.removeItem(AUTH_SESSION_DISMISSED_KEY);
+    sessionStorage.removeItem(AUTH_DISMISSED_AT_KEY);
+    sessionStorage.removeItem(APP_SESSION_DISMISSED_KEY);
+    sessionStorage.removeItem(APP_DISMISSED_AT_KEY);
   } catch {}
 }
 
@@ -228,35 +270,43 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   const isAuthView = !user;
 
   const computeIsHidden = useCallback(() => {
-    if (isAppDownloadedOrInstalled(isInstalled)) {
-      return true;
-    }
-    if (isDismissedForView(isAuthView)) {
-      return true;
-    }
-    return false;
+    if (isAppDownloadedOrInstalled(isInstalled)) return true;
+    if (isDismissedForView(isAuthView)) return true;
+    if (isPopupOpenPersisted()) return false;
+    return getRemainingInitialWaitMs() > 0;
   }, [isInstalled, isAuthView]);
 
   const [isHidden, setIsHidden] = useState<boolean>(computeIsHidden);
   const [dismissTick, setDismissTick] = useState<number>(0);
-  const [hasMountSettled, setHasMountSettled] = useState<boolean>(false);
+  const [hasMountSettled, setHasMountSettled] = useState<boolean>(() => isPopupOpenPersisted());
   const [forceVisible, setForceVisible] = useState<boolean>(false);
-  const remainingVisibleMsRef = useRef<number>(0);
+  const lastVisibleTickAtRef = useRef<number | null>(null);
 
-  // Clean up legacy 7-day dismissals on mount + brief 600ms settle so initial render doesn't flicker
   useEffect(() => {
     cleanupLegacyDismissals();
+    if (hasMountSettled) return;
     const timer = window.setTimeout(() => {
       setHasMountSettled(true);
-    }, 600);
+    }, 150);
     return () => window.clearTimeout(timer);
+  }, [hasMountSettled]);
+
+  // Listen to modal dismissals from PwaInstallContext so AppDownloadPopup enters 1-min cooldown cleanly
+  useEffect(() => {
+    const handleExternalDismiss = () => {
+      setForceVisible(false);
+      setIsHidden(true);
+      setDismissTick((t) => t + 1);
+    };
+    window.addEventListener('mymoney:pwa-popup-dismissed', handleExternalDismiss);
+    return () => window.removeEventListener('mymoney:pwa-popup-dismissed', handleExternalDismiss);
   }, []);
 
   // Reopen immediately whenever user triggers "Reopen Install Popup" from Settings
   useEffect(() => {
     if (reopenInstallPopupSignal > 0 && !isAppDownloadedOrInstalled(isInstalled)) {
       clearDismissalForView(isAuthView);
-      remainingVisibleMsRef.current = 0;
+      setPopupOpenPersisted(true);
       setForceVisible(true);
       setIsHidden(false);
     }
@@ -264,11 +314,12 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
 
   // Lifecycle effect:
   // 1. If installed/downloaded: permanently stop showing.
-  // 2. If user dismissed (Cancel): wait 1 minute (60s) of active/visible tab time, pausing when tab is hidden.
-  // 3. On initial visit when not dismissed: show as soon as mount settles.
+  // 2. If already opened previously & not dismissed: stay open across refreshes, routes, login transitions, & restarts.
+  // 3. If user clicked Cancel/Close: hide and wait 1 minute (60s), persisting across refreshes/restarts, then reopen.
+  // 4. On initial visit when not opened yet: accumulate 60s of active/visible page time in localStorage, then open.
   useEffect(() => {
     if (isAppDownloadedOrInstalled(isInstalled)) {
-      remainingVisibleMsRef.current = 0;
+      setPopupOpenPersisted(false);
       setForceVisible(false);
       setIsHidden(true);
       return;
@@ -280,31 +331,74 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
     }
 
     const cooldownMs = getPopupRemainingCooldownMs(isAuthView);
-    if (cooldownMs <= 0 || forceVisible) {
-      remainingVisibleMsRef.current = 0;
+    if (forceVisible) {
+      setPopupOpenPersisted(true);
       setIsHidden(false);
       return;
     }
 
-    setIsHidden(true);
-    remainingVisibleMsRef.current = cooldownMs;
+    // In cooldown after Cancel/Close
+    if (cooldownMs > 0) {
+      setPopupOpenPersisted(false);
+      setIsHidden(true);
 
-    let lastVisibleTickAt =
+      const intervalId = window.setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          return;
+        }
+        const remaining = getPopupRemainingCooldownMs(isAuthView, Date.now());
+        if (remaining <= 0) {
+          clearDismissalForView(isAuthView);
+          setPopupOpenPersisted(true);
+          setIsHidden(false);
+          window.clearInterval(intervalId);
+        }
+      }, 1000);
+
+      const handleVisibilityChange = () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          const remaining = getPopupRemainingCooldownMs(isAuthView, Date.now());
+          if (remaining <= 0) {
+            clearDismissalForView(isAuthView);
+            setPopupOpenPersisted(true);
+            setIsHidden(false);
+          }
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => {
+        window.clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+
+    // Check if already ready to display (persisted open OR 60s active usage completed)
+    if (isPopupOpenPersisted() || getRemainingInitialWaitMs() <= 0) {
+      setPopupOpenPersisted(true);
+      setIsHidden(false);
+      return;
+    }
+
+    // Initial 60s active visible page time tracker
+    setIsHidden(true);
+    lastVisibleTickAtRef.current =
       typeof document !== 'undefined' && document.visibilityState === 'hidden' ? null : Date.now();
 
     const intervalId = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        lastVisibleTickAt = null;
+        lastVisibleTickAtRef.current = null;
         return;
       }
 
       const now = Date.now();
-      const delta = lastVisibleTickAt !== null ? Math.max(0, now - lastVisibleTickAt) : 1000;
-      lastVisibleTickAt = now;
-      remainingVisibleMsRef.current = Math.max(0, remainingVisibleMsRef.current - delta);
+      const delta =
+        lastVisibleTickAtRef.current !== null ? Math.max(0, now - lastVisibleTickAtRef.current) : 1000;
+      lastVisibleTickAtRef.current = now;
 
-      if (remainingVisibleMsRef.current <= 0) {
-        clearDismissalForView(isAuthView);
+      const updatedTotal = addActiveUsageMs(delta);
+      if (updatedTotal >= INITIAL_INSTALL_POPUP_DELAY_MS) {
+        setPopupOpenPersisted(true);
         setIsHidden(false);
         window.clearInterval(intervalId);
       }
@@ -312,9 +406,12 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        lastVisibleTickAt = Date.now();
+        lastVisibleTickAtRef.current = Date.now();
       } else {
-        lastVisibleTickAt = null;
+        if (lastVisibleTickAtRef.current !== null) {
+          addActiveUsageMs(Date.now() - lastVisibleTickAtRef.current);
+        }
+        lastVisibleTickAtRef.current = null;
       }
     };
 
@@ -325,7 +422,12 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
     };
   }, [isInstalled, isAuthView, dismissTick, autoPromptDisabled, forceVisible]);
 
-  const isEnabled = appPopupSettings?.enabled !== false;
+  const safeHref = sanitizeDownloadHref(appPopupSettings?.downloadUrl);
+  const isInternalInstallAction =
+    safeHref === '/#install' || safeHref === '#install' || safeHref === '/#app-install';
+  const isExternal = /^https?:\/\//i.test(safeHref);
+  // Built-in PWA install prompt stays active even if optional site banner toggle is false
+  const isEnabled = isInternalInstallAction ? true : appPopupSettings?.enabled !== false;
 
   if (
     !hasMountSettled ||
@@ -345,15 +447,9 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
     return null;
   }
 
-  const safeHref = sanitizeDownloadHref(appPopupSettings?.downloadUrl);
-  const isInternalInstallAction =
-    safeHref === '/#install' || safeHref === '#install' || safeHref === '/#app-install';
-  const isExternal = /^https?:\/\//i.test(safeHref);
-
   const handleDismiss = () => {
     setForceVisible(false);
     dismissPopupForCurrentView(isAuthView);
-    remainingVisibleMsRef.current = POPUP_REPROMPT_DELAY_MS;
     setIsHidden(true);
     setDismissTick((t) => t + 1);
   };
@@ -370,11 +466,10 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
         } else if (result.status === 'dismissed') {
           // User declined browser install prompt: do NOT mark installed; reappear after 1 min
           dismissPopupForCurrentView(isAuthView);
-          remainingVisibleMsRef.current = POPUP_REPROMPT_DELAY_MS;
           setIsHidden(true);
           setDismissTick((t) => t + 1);
         } else {
-          // Native beforeinstallprompt unavailable (e.g. iOS Safari or manual browser): open guide modal
+          // Native beforeinstallprompt unavailable (iOS Safari, macOS Safari, or other browser): open guide modal
           openInstallModal();
         }
       } catch (err) {

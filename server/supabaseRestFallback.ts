@@ -610,6 +610,46 @@ export async function deactivateBroadcastBannerFallback(id: string): Promise<voi
   }
 }
 
+export async function purgeUdharNotificationsFallback(linkId: string, txId?: string): Promise<void> {
+  if (!linkId && !txId) return;
+  const now = new Date().toISOString();
+  const store = readNotifStore();
+  let changed = false;
+
+  for (const b of store.banners) {
+    if (
+      b &&
+      b.is_active !== false &&
+      ((linkId && b.related_entity_id === linkId) || (txId && b.related_entity_id === txId))
+    ) {
+      b.is_active = false;
+      changed = true;
+    }
+  }
+
+  for (const n of store.userNotifications) {
+    if (!n || n.is_deleted) continue;
+    const meta = n.metadata || {};
+    const matchesLink =
+      Boolean(linkId) &&
+      (n.related_entity_id === linkId ||
+        meta.relatedEntityId === linkId ||
+        meta.linkId === linkId);
+    const matchesTx =
+      Boolean(txId) &&
+      (n.related_entity_id === txId || meta.udharId === txId || meta.transactionId === txId);
+    if (matchesLink || matchesTx) {
+      n.is_deleted = true;
+      n.deleted_at = now;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    writeNotifStore(store);
+  }
+}
+
 export async function insertUserNotificationFallback(params: {
   user_id: string;
   title: string;

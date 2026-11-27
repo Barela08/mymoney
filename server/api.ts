@@ -3098,17 +3098,119 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const contactsRes = await query(
-        `SELECT c.id, c.name, c.email, c.phone, c.photo_url, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
-                u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
-         FROM public.udhar_contacts c
-         LEFT JOIN public.app_users u ON c.linked_user_id = u.id
-         WHERE c.user_id = $1
-         ORDER BY c.name ASC`,
-        [authUser.id]
-      );
+      const [contactsRes, connsRes, txPeersRes] = await Promise.all([
+        query(
+          `SELECT c.id, c.name, c.email, c.phone, c.photo_url, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
+                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+           FROM public.udhar_contacts c
+           LEFT JOIN public.app_users u ON c.linked_user_id = u.id
+           WHERE c.user_id = $1
+           ORDER BY c.name ASC`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END AS peer_id,
+                  u.full_name, u.email, u.avatar_url, u.role, u.status, COALESCE(u.deletion_status, 'none') AS deletion_status
+           FROM public.user_connections uc
+           JOIN public.app_users u ON u.id = (CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END)
+           WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1) AND uc.status = 'connected'`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT DISTINCT ON (COALESCE(t.counterpart_user_id::text, LOWER(TRIM(t.counterpart_name))))
+                  t.counterpart_user_id, t.counterpart_name, t.created_at, t.updated_at,
+                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+           FROM public.udhar_transactions t
+           LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
+           WHERE t.user_id = $1 AND t.status <> 'cancelled' AND t.deleted_at IS NULL`,
+          [authUser.id]
+        ),
+      ]);
 
-      sendJson(res, 200, { success: true, contacts: contactsRes.rows });
+      const mergedContacts: any[] = [];
+      const seenLinked = new Set<string>();
+      const seenNames = new Set<string>();
+
+      for (const c of contactsRes.rows) {
+        const linkedId = c.linked_user_id || null;
+        const normName = (c.name || '').trim().toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+        } else if (normName) {
+          if (seenNames.has(normName)) continue;
+          seenNames.add(normName);
+        }
+        mergedContacts.push({
+          ...c,
+          linked_user_email: c.linked_user_email ? maskEmailForPrivacy(c.linked_user_email) : null,
+          is_registered: Boolean(linkedId),
+        });
+      }
+
+      for (const conn of connsRes.rows) {
+        if (!conn.peer_id || conn.peer_id === authUser.id || seenLinked.has(conn.peer_id)) continue;
+        if (!isDiscoverableNormalUser(conn)) continue;
+        seenLinked.add(conn.peer_id);
+        mergedContacts.push({
+          id: `conn_${conn.peer_id}`,
+          name: (conn.full_name || conn.email?.split('@')[0] || 'Connected User').trim(),
+          email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          phone: null,
+          photo_url: conn.avatar_url || null,
+          relationship_type: 'Friend',
+          notes: null,
+          linked_user_id: conn.peer_id,
+          linked_user_name: conn.full_name || null,
+          linked_user_email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          linked_user_avatar: conn.avatar_url || null,
+          is_registered: true,
+        });
+      }
+
+      for (const tp of txPeersRes.rows) {
+        const linkedId = tp.counterpart_user_id || null;
+        const rawName = (tp.counterpart_name || '').trim();
+        const normName = rawName.toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+          mergedContacts.push({
+            id: `tx_peer_${linkedId}`,
+            name: (tp.linked_user_name || rawName || 'Connected User').trim(),
+            email: tp.linked_user_email ? maskEmailForPrivacy(tp.linked_user_email) : null,
+            phone: null,
+            photo_url: tp.linked_user_avatar || null,
+            relationship_type: 'Friend',
+            notes: null,
+            linked_user_id: linkedId,
+            linked_user_name: tp.linked_user_name || null,
+            linked_user_email: tp.linked_user_email ? maskEmailForPrivacy(tp.linked_user_email) : null,
+            linked_user_avatar: tp.linked_user_avatar || null,
+            is_registered: true,
+            created_at: tp.created_at,
+            updated_at: tp.updated_at,
+          });
+        } else if (normName && !seenNames.has(normName)) {
+          seenNames.add(normName);
+          mergedContacts.push({
+            id: `tx_local_${normName.replace(/[^a-z0-9]/g, '_')}`,
+            name: rawName,
+            email: null,
+            phone: null,
+            photo_url: null,
+            relationship_type: 'Friend',
+            notes: null,
+            linked_user_id: null,
+            is_registered: false,
+            created_at: tp.created_at,
+            updated_at: tp.updated_at,
+          });
+        }
+      }
+
+      mergedContacts.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+      sendJson(res, 200, { success: true, contacts: mergedContacts });
       return true;
     }
 
@@ -3126,43 +3228,163 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const contactsRes = await query(
-        `SELECT 
-          c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.photo_url, c.created_at, c.updated_at,
-          u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar,
-          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status <> 'cancelled' THEN t.original_amount ELSE 0 END), 0) AS total_given,
-          COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status <> 'cancelled' THEN t.original_amount ELSE 0 END), 0) AS total_taken,
-          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance 
-                            WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN -t.current_balance 
-                            ELSE 0 END), 0) AS net_balance,
-          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_receivable,
-          COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_payable,
-          MAX(t.transaction_date) AS last_transaction_date,
-          COUNT(CASE WHEN t.status <> 'cancelled' THEN 1 END) AS total_transactions_count,
-          COUNT(CASE WHEN t.status NOT IN ('settled', 'cancelled') AND t.current_balance > 0 THEN 1 END) AS pending_transactions_count
-        FROM public.udhar_contacts c
-        LEFT JOIN public.app_users u ON c.linked_user_id = u.id
-        LEFT JOIN public.udhar_transactions t ON t.user_id = c.user_id AND (
-          (c.linked_user_id IS NOT NULL AND t.counterpart_user_id = c.linked_user_id) OR
-          (c.linked_user_id IS NULL AND t.counterpart_user_id IS NULL AND LOWER(TRIM(t.counterpart_name)) = LOWER(TRIM(c.name)))
-        )
-        WHERE c.user_id = $1
-        GROUP BY c.id, u.full_name, u.email, u.avatar_url
-        ORDER BY c.name ASC`,
-        [authUser.id]
-      );
+      const [contactsRes, connsRes, txsRes] = await Promise.all([
+        query(
+          `SELECT c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.photo_url, c.created_at, c.updated_at,
+                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+           FROM public.udhar_contacts c
+           LEFT JOIN public.app_users u ON c.linked_user_id = u.id
+           WHERE c.user_id = $1
+           ORDER BY c.name ASC`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END AS peer_id,
+                  u.full_name, u.email, u.avatar_url, u.role, u.status, COALESCE(u.deletion_status, 'none') AS deletion_status
+           FROM public.user_connections uc
+           JOIN public.app_users u ON u.id = (CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END)
+           WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1) AND uc.status = 'connected'`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT t.*, u.full_name AS counterpart_registered_name, u.email AS counterpart_email, u.avatar_url AS counterpart_avatar
+           FROM public.udhar_transactions t
+           LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
+           WHERE t.user_id = $1 AND t.status <> 'cancelled' AND t.deleted_at IS NULL`,
+          [authUser.id]
+        ),
+      ]);
 
-      const parsedContacts = contactsRes.rows.map((row: any) => ({
-        ...row,
-        total_given: parseFloat(row.total_given) || 0,
-        total_taken: parseFloat(row.total_taken) || 0,
-        net_balance: Math.round((parseFloat(row.net_balance) || 0) * 100) / 100,
-        outstanding_receivable: parseFloat(row.outstanding_receivable) || 0,
-        outstanding_payable: parseFloat(row.outstanding_payable) || 0,
-        total_transactions_count: parseInt(row.total_transactions_count, 10) || 0,
-        pending_transactions_count: parseInt(row.pending_transactions_count, 10) || 0,
-        is_registered: Boolean(row.linked_user_id),
-      }));
+      const baseContacts: any[] = [];
+      const seenLinked = new Set<string>();
+      const seenNames = new Set<string>();
+
+      for (const c of contactsRes.rows) {
+        const linkedId = c.linked_user_id || null;
+        const normName = (c.name || '').trim().toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+        } else if (normName) {
+          if (seenNames.has(normName)) continue;
+          seenNames.add(normName);
+        }
+        baseContacts.push(c);
+      }
+
+      for (const conn of connsRes.rows) {
+        if (!conn.peer_id || conn.peer_id === authUser.id || seenLinked.has(conn.peer_id)) continue;
+        if (!isDiscoverableNormalUser(conn)) continue;
+        seenLinked.add(conn.peer_id);
+        baseContacts.push({
+          id: `conn_${conn.peer_id}`,
+          name: (conn.full_name || conn.email?.split('@')[0] || 'Connected User').trim(),
+          email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          phone: null,
+          photo_url: conn.avatar_url || null,
+          relationship_type: 'Friend',
+          notes: null,
+          linked_user_id: conn.peer_id,
+          linked_user_name: conn.full_name || null,
+          linked_user_email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          linked_user_avatar: conn.avatar_url || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      for (const t of txsRes.rows) {
+        const linkedId = t.counterpart_user_id || null;
+        const rawName = (t.counterpart_name || '').trim();
+        const normName = rawName.toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+          baseContacts.push({
+            id: `tx_peer_${linkedId}`,
+            name: (t.counterpart_registered_name || rawName || 'Connected User').trim(),
+            email: t.counterpart_email ? maskEmailForPrivacy(t.counterpart_email) : null,
+            phone: null,
+            photo_url: t.counterpart_avatar || null,
+            relationship_type: 'Friend',
+            notes: null,
+            linked_user_id: linkedId,
+            linked_user_name: t.counterpart_registered_name || null,
+            linked_user_email: t.counterpart_email ? maskEmailForPrivacy(t.counterpart_email) : null,
+            linked_user_avatar: t.counterpart_avatar || null,
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+          });
+        } else if (normName && !seenNames.has(normName)) {
+          seenNames.add(normName);
+          baseContacts.push({
+            id: `tx_local_${normName.replace(/[^a-z0-9]/g, '_')}`,
+            name: rawName,
+            email: null,
+            phone: null,
+            photo_url: null,
+            relationship_type: 'Friend',
+            notes: null,
+            linked_user_id: null,
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+          });
+        }
+      }
+
+      const parsedContacts = baseContacts
+        .map((c) => {
+          const matchingTxs = txsRes.rows.filter((t: any) => {
+            if (c.linked_user_id && t.counterpart_user_id === c.linked_user_id) return true;
+            if (
+              !c.linked_user_id &&
+              !t.counterpart_user_id &&
+              (t.counterpart_name || '').trim().toLowerCase() === (c.name || '').trim().toLowerCase()
+            ) {
+              return true;
+            }
+            return false;
+          });
+
+          let totalGiven = 0;
+          let totalTaken = 0;
+          let receivable = 0;
+          let payable = 0;
+          let lastDate: string | null = null;
+          let pendingCount = 0;
+
+          for (const t of matchingTxs) {
+            const orig = parseFloat(t.original_amount) || 0;
+            const cur = parseFloat(t.current_balance) || 0;
+            const isSettled = t.status === 'settled' || cur <= 0.01;
+            if (t.direction === 'gave') {
+              totalGiven += orig;
+              if (!isSettled) receivable += cur;
+            } else {
+              totalTaken += orig;
+              if (!isSettled) payable += cur;
+            }
+            if (!isSettled && cur > 0.01) pendingCount += 1;
+            if (t.transaction_date && (!lastDate || t.transaction_date > lastDate)) {
+              lastDate = t.transaction_date;
+            }
+          }
+
+          return {
+            ...c,
+            linked_user_email: c.linked_user_email ? maskEmailForPrivacy(c.linked_user_email) : null,
+            total_given: roundMoney(totalGiven),
+            total_taken: roundMoney(totalTaken),
+            outstanding_receivable: roundMoney(receivable),
+            outstanding_payable: roundMoney(payable),
+            net_balance: roundMoney(receivable - payable),
+            last_transaction_date: lastDate,
+            total_transactions_count: matchingTxs.length,
+            pending_transactions_count: pendingCount,
+            is_registered: Boolean(c.linked_user_id),
+          };
+        })
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
       sendJson(res, 200, { success: true, contacts: parsedContacts });
       return true;
@@ -3218,20 +3440,50 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
       }
 
-      const upsertRes = await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, notes, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE 
-         SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
-             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
-             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-             relationship_type = EXCLUDED.relationship_type, 
-             notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
-             linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
-             updated_at = NOW()
-         RETURNING *`,
-        [authUser.id, name, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId]
-      );
+      // Deduplicate by linked_user_id or case-insensitive trimmed name before inserting
+      const existingCheck = linkedUserId
+        ? await query(
+            `SELECT * FROM public.udhar_contacts
+             WHERE user_id = $1 AND (linked_user_id = $2 OR (linked_user_id IS NULL AND LOWER(TRIM(name)) = LOWER(TRIM($3))))
+             ORDER BY (linked_user_id IS NOT NULL) DESC LIMIT 1`,
+            [authUser.id, linkedUserId, name]
+          )
+        : await query(
+            `SELECT * FROM public.udhar_contacts
+             WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+             LIMIT 1`,
+            [authUser.id, name]
+          );
+
+      const upsertRes = existingCheck.rows.length > 0
+        ? await query(
+            `UPDATE public.udhar_contacts
+             SET name = $1,
+                 email = COALESCE($2, email),
+                 phone = COALESCE($3, phone),
+                 photo_url = COALESCE($4, photo_url),
+                 relationship_type = $5,
+                 notes = COALESCE($6, notes),
+                 linked_user_id = COALESCE($7, linked_user_id),
+                 updated_at = NOW()
+             WHERE id = $8 AND user_id = $9
+             RETURNING *`,
+            [name, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId, existingCheck.rows[0].id, authUser.id]
+          )
+        : await query(
+            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, notes, linked_user_id, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+             ON CONFLICT (user_id, name) DO UPDATE 
+             SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+                 phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
+                 relationship_type = EXCLUDED.relationship_type, 
+                 notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
+                 linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
+                 updated_at = NOW()
+             RETURNING *`,
+            [authUser.id, name, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId]
+          );
 
       if (linkedUserId && linkedUserId !== authUser.id) {
         await query(
@@ -6007,6 +6259,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       if (!isDatabaseAvailable()) {
         const restRes = await cancelUdharRest(authUser, txId, deletionReason);
+        if (restRes.status === 200 && restRes.body?.success) {
+          await logSecurityEvent('UDHAR_DELETED', {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            details: {
+              txId,
+              linkId: restRes.body.linkId,
+              direction: restRes.body.direction,
+              counterpartUserId: restRes.body.counterpartUserId,
+              originalAmount: restRes.body.originalAmount,
+              reason: deletionReason || null,
+            },
+          });
+        }
         sendJson(res, restRes.status, restRes.body);
         return true;
       }
@@ -6026,54 +6292,79 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         const tx = txRes.rows[0];
-        if (tx.counterpart_user_id && tx.direction === 'took') {
-          await client.query('ROLLBACK');
-          sendJson(res, 403, {
-            success: false,
-            message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
-          });
-          return true;
-        }
         const repsRes = await client.query(
-          `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
+          `SELECT id, amount, status, deleted_at FROM public.udhar_repayments WHERE link_id = $1`,
           [tx.link_id]
         );
+        const activeReps = repsRes.rows.filter((r: any) => isActiveRepayment(r));
+
+        const recalc = recalculateUdharFromRepayments({
+          originalAmount: tx.original_amount,
+          repayments: activeReps,
+          currentStatus: tx.status,
+        });
+        const effectiveStatus = tx.status === 'cancelled' || tx.deleted_at
+          ? 'cancelled'
+          : tx.status === 'disputed'
+            ? 'disputed'
+            : (activeReps.length > 0 ? recalc.nextStatus : tx.status);
 
         const guard = canCancelUdhar({
-          status: tx.status,
+          status: effectiveStatus,
           deleted_at: tx.deleted_at,
-          paid_amount: tx.paid_amount,
-          repayments: repsRes.rows.filter((r: any) => isActiveRepayment(r)),
+          direction: tx.direction,
+          is_shared: Boolean(tx.counterpart_user_id),
+          counterpart_user_id: tx.counterpart_user_id,
+          original_amount: tx.original_amount,
+          paid_amount: activeReps.length > 0 ? recalc.paidAmount : tx.paid_amount,
+          current_balance: activeReps.length > 0 ? recalc.remainingBalance : tx.current_balance,
+          settled_at: tx.settled_at,
+          repayments: activeReps,
         });
 
         if (!guard.allowed) {
           await client.query('ROLLBACK');
-          sendJson(res, 409, {
+          sendJson(res, guard.httpStatus || 409, {
             success: false,
+            code: guard.code,
             message: guard.reason,
           });
           return true;
         }
 
         const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        let updatedRows: any[] = [];
         await client.query('SAVEPOINT delete_audit_cols');
         try {
-          await client.query(
+          const upd = await client.query(
             `UPDATE public.udhar_transactions
              SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
                  deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
-             WHERE link_id = $1`,
+             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             RETURNING id`,
             [tx.link_id, authUser.id, cleanReason]
           );
+          updatedRows = upd.rows;
           await client.query('RELEASE SAVEPOINT delete_audit_cols');
         } catch {
           await client.query('ROLLBACK TO SAVEPOINT delete_audit_cols');
-          await client.query(
+          const upd = await client.query(
             `UPDATE public.udhar_transactions
              SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
-             WHERE link_id = $1`,
+             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             RETURNING id`,
             [tx.link_id]
           );
+          updatedRows = upd.rows;
+        }
+
+        if (updatedRows.length === 0) {
+          await client.query('ROLLBACK');
+          sendJson(res, 409, {
+            success: false,
+            message: 'This transaction has already been deleted or cannot be deleted in its current state.',
+          });
+          return true;
         }
 
         // Soft-delete associated repayments so orphaned rows cannot affect totals or history
@@ -6094,33 +6385,42 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           );
         }
 
-        if (tx.counterpart_user_id) {
-          await client.query(
-            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-             VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
-            [
-              `Udhar Removed by ${authUser.full_name}`,
-              `${authUser.full_name} deleted the Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
-              tx.counterpart_user_id,
-              tx.link_id,
-              authUser.id,
-            ]
-          ).catch(() => {});
-        }
+        // Deactivate notifications tied to this deleted Udhar so neither user retains stale alerts
+        await client.query(
+          `UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`,
+          [tx.link_id, tx.id]
+        ).catch(() => {});
+        await client.query(
+          `UPDATE public.user_notifications
+           SET is_deleted = TRUE, deleted_at = NOW()
+           WHERE related_entity_id = $1
+              OR related_entity_id = $2
+              OR metadata->>'relatedEntityId' = $1
+              OR metadata->>'linkId' = $1
+              OR metadata->>'udharId' = $2`,
+          [tx.link_id, tx.id]
+        ).catch(() => {});
 
         await client.query('COMMIT');
 
-        await logSecurityEvent('UDHAR_CANCELLED', {
+        await logSecurityEvent('UDHAR_DELETED', {
           userId: authUser.id,
           userEmail: authUser.email,
-          details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount, reason: cleanReason },
+          details: {
+            txId,
+            linkId: tx.link_id,
+            direction: tx.direction,
+            counterpartUserId: tx.counterpart_user_id || null,
+            originalAmount: tx.original_amount,
+            reason: cleanReason,
+          },
         });
 
         sendJson(res, 200, {
           success: true,
           deletedTransactionId: tx.id,
           linkId: tx.link_id,
-          message: 'Udhar entry deleted successfully. Totals have been recalculated.',
+          message: 'Udhar entry deleted successfully for both participants. Totals have been recalculated.',
         });
         return true;
       } catch (err) {
@@ -6341,7 +6641,11 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       }
 
       const txRes = await query(
-        'SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2)',
+        `SELECT * FROM public.udhar_transactions
+         WHERE id = $1
+           AND (user_id = $2 OR counterpart_user_id = $2)
+           AND status <> 'cancelled'
+           AND deleted_at IS NULL`,
         [txId, authUser.id]
       );
       if (txRes.rows.length === 0) {

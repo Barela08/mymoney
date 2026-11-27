@@ -517,25 +517,185 @@ export function isActiveRepayment(repayment: {
   return repayment.status !== 'deleted' && repayment.status !== 'cancelled';
 }
 
+export interface UdharSettlementStatusInfo {
+  code: 'pending' | 'partial' | 'settled' | 'disputed' | 'cancelled';
+  label: 'Pending' | 'Partially Settled' | 'Settled' | 'Disputed' | 'Deleted';
+  originalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  isSettled: boolean;
+  isPartiallySettled: boolean;
+  isPending: boolean;
+}
+
+/**
+ * Authoritative normalized settlement status helper used across UI and backend.
+ */
+export function getUdharSettlementStatus(tx: {
+  status: string;
+  deleted_at?: string | null;
+  original_amount?: number | string;
+  current_balance?: number | string;
+  paid_amount?: number | string;
+  repayments?: Array<{ amount?: number | string; status?: string | null; deleted_at?: string | null }>;
+}): UdharSettlementStatusInfo {
+  const originalAmount = roundMoney(Math.max(0, parseFloat(String(tx.original_amount ?? 0)) || 0));
+  const rawRemaining = roundMoney(Math.max(0, parseFloat(String(tx.current_balance ?? 0)) || 0));
+
+  let paidAmount = roundMoney(Math.max(0, parseFloat(String(tx.paid_amount ?? 0)) || 0));
+  if (Array.isArray(tx.repayments) && tx.repayments.length > 0) {
+    const confirmedSum = roundMoney(
+      tx.repayments
+        .filter((r) => isActiveRepayment(r) && r.status === 'confirmed')
+        .reduce((sum, r) => sum + (parseFloat(String(r.amount ?? 0)) || 0), 0)
+    );
+    if (confirmedSum > 0) {
+      paidAmount = roundMoney(Math.min(originalAmount || confirmedSum, confirmedSum));
+    }
+  } else if (paidAmount <= 0 && originalAmount > 0 && rawRemaining < originalAmount) {
+    paidAmount = roundMoney(Math.max(0, originalAmount - rawRemaining));
+  }
+
+  if (tx.status === 'cancelled' || Boolean(tx.deleted_at)) {
+    return {
+      code: 'cancelled',
+      label: 'Deleted',
+      originalAmount,
+      paidAmount: 0,
+      remainingAmount: 0,
+      isSettled: false,
+      isPartiallySettled: false,
+      isPending: false,
+    };
+  }
+
+  if (tx.status === 'disputed') {
+    return {
+      code: 'disputed',
+      label: 'Disputed',
+      originalAmount,
+      paidAmount,
+      remainingAmount: rawRemaining,
+      isSettled: false,
+      isPartiallySettled: false,
+      isPending: false,
+    };
+  }
+
+  const isSettled = tx.status === 'settled' || (originalAmount > 0 && rawRemaining <= 0.01);
+  if (isSettled) {
+    return {
+      code: 'settled',
+      label: 'Settled',
+      originalAmount,
+      paidAmount: originalAmount > 0 ? originalAmount : paidAmount,
+      remainingAmount: 0,
+      isSettled: true,
+      isPartiallySettled: false,
+      isPending: false,
+    };
+  }
+
+  const isPartiallySettled = paidAmount > 0.01 && rawRemaining > 0.01;
+  if (isPartiallySettled) {
+    return {
+      code: 'partial',
+      label: 'Partially Settled',
+      originalAmount,
+      paidAmount,
+      remainingAmount: rawRemaining,
+      isSettled: false,
+      isPartiallySettled: true,
+      isPending: false,
+    };
+  }
+
+  return {
+    code: 'pending',
+    label: 'Pending',
+    originalAmount,
+    paidAmount,
+    remainingAmount: rawRemaining,
+    isSettled: false,
+    isPartiallySettled: false,
+    isPending: true,
+  };
+}
+
 /**
  * Deletion/cancellation guard:
- * Authorized lender (or manual owner) may delete any active Udhar entry — including
- * partially repaid or fully settled entries — except already cancelled/deleted or disputed records.
+ * - Already deleted/cancelled or disputed transactions cannot be deleted.
+ * - "I Gave" (`direction === 'gave'`) or local non-shared transactions can be deleted anytime
+ *   (Pending, Partially Settled, or Settled).
+ * - Shared "I Borrowed" (`direction === 'took'` with `is_shared` / `counterpart_user_id`) CANNOT
+ *   be deleted while Pending or Partially Settled; it can ONLY be deleted once fully Settled.
  */
 export function canCancelUdhar(udhar: {
   status: string;
   deleted_at?: string | null;
+  direction?: 'gave' | 'took';
+  is_shared?: boolean;
+  counterpart_user_id?: string | null;
+  original_amount?: number | string;
   paid_amount?: number | string;
-  repayments?: Array<{ status: string; deleted_at?: string | null }>;
-}): { allowed: boolean; reason?: string } {
+  current_balance?: number | string;
+  settled_at?: string | null;
+  repayments?: Array<{ amount?: number | string; status: string; deleted_at?: string | null }>;
+}): { allowed: boolean; httpStatus?: number; code?: string; reason?: string } {
   if (udhar.status === 'cancelled' || Boolean(udhar.deleted_at)) {
-    return { allowed: false, reason: 'This Udhar is already deleted.' };
+    return {
+      allowed: false,
+      httpStatus: 404,
+      code: 'ALREADY_DELETED',
+      reason: 'This Udhar is already deleted.',
+    };
   }
   if (udhar.status === 'disputed') {
     return {
       allowed: false,
+      httpStatus: 409,
+      code: 'DISPUTED',
       reason: 'Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history.',
     };
+  }
+
+  const isShared = Boolean(udhar.is_shared ?? udhar.counterpart_user_id);
+  if (udhar.direction === 'took' && isShared) {
+    const activeRepayments = Array.isArray(udhar.repayments)
+      ? udhar.repayments.filter((r) => isActiveRepayment(r))
+      : [];
+
+    let isFullySettled = false;
+    if (udhar.original_amount !== undefined && activeRepayments.length > 0) {
+      const recalc = recalculateUdharFromRepayments({
+        originalAmount: udhar.original_amount,
+        repayments: activeRepayments.map((r) => ({
+          amount: r.amount ?? 0,
+          status: r.status,
+          deleted_at: r.deleted_at,
+        })),
+        currentStatus: udhar.status,
+      });
+      isFullySettled = recalc.isSettled && udhar.status === 'settled';
+    } else if (udhar.status === 'settled') {
+      const orig = roundMoney(parseFloat(String(udhar.original_amount ?? 0)) || 0);
+      const cur = roundMoney(parseFloat(String(udhar.current_balance ?? 0)) || 0);
+      const paid = roundMoney(parseFloat(String(udhar.paid_amount ?? orig)) || 0);
+      if (orig > 0) {
+        isFullySettled = cur <= 0.01 && paid >= orig - 0.01;
+      } else {
+        isFullySettled = cur <= 0.01;
+      }
+    }
+
+    if (!isFullySettled) {
+      return {
+        allowed: false,
+        httpStatus: 403,
+        code: 'BORROWER_REQUIRES_SETTLEMENT',
+        reason: 'You can delete this transaction after it is fully settled.',
+      };
+    }
   }
 
   return { allowed: true };

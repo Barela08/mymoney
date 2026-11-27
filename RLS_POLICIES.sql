@@ -650,7 +650,8 @@ BEGIN
       FOR INSERT TO authenticated
       WITH CHECK (auth.uid() = user_id);
 
-    -- Borrowers (direction = 'took' on shared transactions) cannot settle or cancel directly via PostgREST
+    -- Unsettled borrowers (direction = 'took' on shared transactions) cannot settle or cancel directly via PostgREST;
+    -- borrowers may only soft-delete ('cancelled') once current_balance <= 0.01 (fully settled).
     DROP POLICY IF EXISTS "udhar_tx_update_lender_enforced" ON public.udhar_transactions;
     CREATE POLICY "udhar_tx_update_lender_enforced" ON public.udhar_transactions
       FOR UPDATE TO authenticated
@@ -660,6 +661,7 @@ BEGIN
         AND (
           counterpart_user_id IS NULL
           OR direction = 'gave'
+          OR (status = 'cancelled' AND current_balance <= 0.01)
           OR status NOT IN ('settled', 'cancelled')
         )
       );

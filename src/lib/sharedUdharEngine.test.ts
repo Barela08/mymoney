@@ -15,6 +15,7 @@ import {
   calculatePersonLedgerSummary,
   calculatePeopleDashboardSummary,
   calculatePersonalIncomeExpenseExcludingUdhar,
+  getUdharSettlementStatus,
   packStructuredNote,
   unpackStructuredNote,
   CanonicalUdharRecord,
@@ -225,20 +226,132 @@ test('Scenario 8 & 9: Edit audit diff, repayment preservation, and cancellation 
   assert.equal(goodEdit.nextRemainingAmount, 4000);
   assert.equal(goodEdit.changes?.length, 2);
 
-  // Deletion/cancellation allowed for active entries including partial or settled ones
-  assert.equal(canCancelUdhar({ status: 'confirmed', paid_amount: 0, repayments: [] }).allowed, true);
+  // Settlement status normalization
+  const pendingStatus = getUdharSettlementStatus({
+    original_amount: 5000,
+    paid_amount: 0,
+    current_balance: 5000,
+    status: 'confirmed',
+  });
+  assert.equal(pendingStatus.label, 'Pending');
+  assert.equal(pendingStatus.remainingAmount, 5000);
+  assert.equal(pendingStatus.isSettled, false);
+
+  const partialStatus = getUdharSettlementStatus({
+    original_amount: 5000,
+    paid_amount: 1500,
+    current_balance: 3500,
+    status: 'confirmed',
+  });
+  assert.equal(partialStatus.label, 'Partially Settled');
+  assert.equal(partialStatus.remainingAmount, 3500);
+  assert.equal(partialStatus.isSettled, false);
+
+  const settledStatus = getUdharSettlementStatus({
+    original_amount: 5000,
+    paid_amount: 5000,
+    current_balance: 0,
+    status: 'settled',
+  });
+  assert.equal(settledStatus.label, 'Settled');
+  assert.equal(settledStatus.remainingAmount, 0);
+  assert.equal(settledStatus.isSettled, true);
+
+  // I Gave: Deletion/cancellation allowed for active entries in Pending, Partially Settled, or Settled states
   assert.equal(
-    canCancelUdhar({ status: 'confirmed', paid_amount: 1000, repayments: [{ status: 'confirmed' }] }).allowed,
+    canCancelUdhar({
+      direction: 'gave',
+      is_shared: true,
+      counterpart_user_id: 'user-b',
+      status: 'confirmed',
+      original_amount: 5000,
+      paid_amount: 0,
+      current_balance: 5000,
+      repayments: [],
+    }).allowed,
     true
   );
   assert.equal(
-    canCancelUdhar({ status: 'settled', paid_amount: 5000, repayments: [{ status: 'confirmed' }] }).allowed,
+    canCancelUdhar({
+      direction: 'gave',
+      is_shared: true,
+      counterpart_user_id: 'user-b',
+      status: 'confirmed',
+      original_amount: 5000,
+      paid_amount: 1000,
+      current_balance: 4000,
+      repayments: [{ amount: 1000, status: 'confirmed' }],
+    }).allowed,
     true
   );
   assert.equal(
-    canCancelUdhar({ status: 'confirmed', paid_amount: 0, repayments: [{ status: 'pending_confirmation' }] }).allowed,
+    canCancelUdhar({
+      direction: 'gave',
+      is_shared: true,
+      counterpart_user_id: 'user-b',
+      status: 'settled',
+      original_amount: 5000,
+      paid_amount: 5000,
+      current_balance: 0,
+      repayments: [{ amount: 5000, status: 'confirmed' }],
+    }).allowed,
     true
   );
+
+  // I Borrowed (shared): blocked when Pending or Partially Settled; allowed ONLY once fully Settled
+  const borrowerPending = canCancelUdhar({
+    direction: 'took',
+    is_shared: true,
+    counterpart_user_id: 'user-a',
+    status: 'confirmed',
+    original_amount: 5000,
+    paid_amount: 0,
+    current_balance: 5000,
+    repayments: [],
+  });
+  assert.equal(borrowerPending.allowed, false);
+  assert.equal(borrowerPending.httpStatus, 403);
+  assert.match(borrowerPending.reason || '', /after it is fully settled/i);
+
+  const borrowerPartial = canCancelUdhar({
+    direction: 'took',
+    is_shared: true,
+    counterpart_user_id: 'user-a',
+    status: 'confirmed',
+    original_amount: 5000,
+    paid_amount: 2000,
+    current_balance: 3000,
+    repayments: [{ amount: 2000, status: 'confirmed' }],
+  });
+  assert.equal(borrowerPartial.allowed, false);
+  assert.equal(borrowerPartial.httpStatus, 403);
+
+  const borrowerSettled = canCancelUdhar({
+    direction: 'took',
+    is_shared: true,
+    counterpart_user_id: 'user-a',
+    status: 'settled',
+    original_amount: 5000,
+    paid_amount: 5000,
+    current_balance: 0,
+    repayments: [{ amount: 5000, status: 'confirmed' }],
+  });
+  assert.equal(borrowerSettled.allowed, true);
+
+  // Tampered status='settled' with remaining balance must STILL be blocked by repayment recalculation
+  const tamperedSettled = canCancelUdhar({
+    direction: 'took',
+    is_shared: true,
+    counterpart_user_id: 'user-a',
+    status: 'settled',
+    original_amount: 5000,
+    paid_amount: 0,
+    current_balance: 0,
+    repayments: [],
+  });
+  assert.equal(tamperedSettled.allowed, false);
+  assert.equal(tamperedSettled.httpStatus, 403);
+
   // Disputed or already cancelled entries remain blocked
   assert.equal(canCancelUdhar({ status: 'disputed', paid_amount: 0, repayments: [] }).allowed, false);
   assert.equal(canCancelUdhar({ status: 'cancelled', paid_amount: 0, repayments: [] }).allowed, false);

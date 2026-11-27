@@ -202,11 +202,27 @@ export const PwaInstallModal: React.FC = () => {
                 Click <strong>Install App</strong> below to open your browser&apos;s native installation confirmation dialog.
               </p>
             ) : (
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                Open your browser menu (
-                <MoreVertical className="w-3.5 h-3.5 inline mx-0.5 text-slate-500" />) or the install icon in the address bar and choose{' '}
-                <strong>Install My Money Manager</strong> or <strong>Add to Home screen</strong>.
-              </p>
+              <ol className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                <li className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">
+                    1
+                  </span>
+                  <span>
+                    Open your browser menu (
+                    <MoreVertical className="w-3.5 h-3.5 inline mx-0.5 text-slate-500" />) or look for the{' '}
+                    <strong>Install</strong> icon in the address bar.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">
+                    2
+                  </span>
+                  <span>
+                    Select <strong>Install My Money Manager</strong>, <strong>Install App</strong>, or{' '}
+                    <strong>Add to Home screen</strong> (if your browser doesn&apos;t support direct PWA install, open in Chrome, Edge, or Safari).
+                  </span>
+                </li>
+              </ol>
             )}
           </div>
         )}
@@ -231,11 +247,11 @@ export const PwaInstallModal: React.FC = () => {
                 onClick={handleDismiss}
                 className="w-full py-2.5 px-4 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
               >
-                {isInstallable ? 'Not Now (Dismiss)' : 'Dismiss'}
+                {isInstallable ? 'Not Now (Dismiss)' : 'Close Guide'}
               </button>
             </div>
             <p className="text-[11px] text-center text-slate-400 dark:text-slate-500">
-              Dismissing closes this prompt without installing. You can still install anytime from the header while available.
+              Closing this guide will remind you again in 1 minute while the app is not installed.
             </p>
           </div>
         ) : (

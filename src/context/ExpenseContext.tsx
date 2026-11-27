@@ -51,6 +51,8 @@ interface ExpenseContextType {
   summary: FinancialSummary;
   peopleSummaries: PersonSummary[];
   savedContacts: UdharContact[];
+  isLoadingContacts: boolean;
+  contactsError: string | null;
   refreshContacts: () => Promise<void>;
   filterOptions: FilterOptions;
   setFilterOptions: React.Dispatch<React.SetStateAction<FilterOptions>>;
@@ -271,19 +273,30 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
   const [lastDeletedTx, setLastDeletedTx] = useState<Transaction | null>(null);
   const [savedContacts, setSavedContacts] = useState<UdharContact[]>([]);
+  const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(false);
+  const [contactsError, setContactsError] = useState<string | null>(null);
 
   const refreshContacts = useCallback(async () => {
     if (!user) {
       setSavedContacts([]);
+      setContactsError(null);
+      setIsLoadingContacts(false);
       return;
     }
+    setIsLoadingContacts(true);
+    setContactsError(null);
     try {
-      const res = await udharDeletionApi.getContacts();
+      const res = await udharDeletionApi.getContactsWithBalances().catch(() => udharDeletionApi.getContacts());
       if (res && res.success) {
         setSavedContacts(res.contacts || []);
+      } else {
+        setContactsError('Unable to load saved people.');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[ExpenseContext] Failed to load contacts:', e);
+      setContactsError(e?.message || 'Failed to load contacts. Please retry.');
+    } finally {
+      setIsLoadingContacts(false);
     }
   }, [user]);
 
@@ -304,6 +317,39 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const getUserPendingQueueKey = useCallback((uid?: string) => {
     return `my_money_pending_queue_${uid || 'guest'}`;
   }, []);
+
+  const getUserDeletedTombstonesKey = useCallback((uid?: string) => {
+    return `my_money_deleted_tx_tombstones_${uid || 'guest'}`;
+  }, []);
+
+  const getDeletedTombstones = useCallback((uid?: string): Set<string> => {
+    try {
+      const raw = localStorage.getItem(getUserDeletedTombstonesKey(uid));
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  }, [getUserDeletedTombstonesKey]);
+
+  const addDeletedTombstones = useCallback((uid: string | undefined, ids: string[]) => {
+    if (!ids.length) return;
+    try {
+      const set = getDeletedTombstones(uid);
+      ids.forEach((id) => set.add(String(id)));
+      const trimmed = Array.from(set).slice(-500);
+      localStorage.setItem(getUserDeletedTombstonesKey(uid), JSON.stringify(trimmed));
+    } catch {}
+  }, [getDeletedTombstones, getUserDeletedTombstonesKey]);
+
+  const removeDeletedTombstones = useCallback((uid: string | undefined, ids: string[]) => {
+    if (!ids.length) return;
+    try {
+      const set = getDeletedTombstones(uid);
+      ids.forEach((id) => set.delete(String(id)));
+      localStorage.setItem(getUserDeletedTombstonesKey(uid), JSON.stringify(Array.from(set)));
+    } catch {}
+  }, [getDeletedTombstones, getUserDeletedTombstonesKey]);
 
   const getPendingQueue = useCallback((uid?: string): Transaction[] => {
     try {
@@ -456,47 +502,54 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         if (Array.isArray(supaData)) {
-          // Process offline pending queue (ONLY items that explicitly failed to upload)
-          const pendingQueue = getPendingQueue(user.uid);
+          const tombstones = getDeletedTombstones(user.uid);
+          const cleanRemote = supaData.filter((t) => !tombstones.has(String(t.id)));
+
+          // Process offline pending queue (ONLY items that explicitly failed to upload and were NOT deleted)
+          const pendingQueue = getPendingQueue(user.uid).filter((t) => !tombstones.has(String(t.id)));
           if (pendingQueue.length > 0) {
             const remainingQueue: Transaction[] = [];
             for (const pendingTx of pendingQueue) {
               try {
                 const saved = await saveTransactionToSupabase(pendingTx);
-                const idx = supaData.findIndex((t) => t.id === pendingTx.id);
-                if (idx >= 0) supaData[idx] = saved;
-                else supaData.unshift(saved);
+                const idx = cleanRemote.findIndex((t) => t.id === pendingTx.id);
+                if (idx >= 0) cleanRemote[idx] = saved;
+                else cleanRemote.unshift(saved);
               } catch (e) {
                 console.warn('Could not sync pending tx from queue:', e);
                 remainingQueue.push(pendingTx);
               }
             }
             savePendingQueue(user.uid, remainingQueue);
+          } else if (getPendingQueue(user.uid).length > 0) {
+            savePendingQueue(user.uid, []);
           }
 
           // Anti-Data Loss Protection: Ensure local transactions are not obliterated if remote fetch returned empty
+          // while NEVER resurrecting tombstoned/deleted records
           const localSaved = localStorage.getItem(getUserTxStorageKey(user.uid));
           let localList: Transaction[] = [];
           try {
-            localList = localSaved ? JSON.parse(localSaved) : [];
+            const parsedLocal = localSaved ? JSON.parse(localSaved) : [];
+            localList = Array.isArray(parsedLocal)
+              ? parsedLocal.filter((t) => !tombstones.has(String(t.id)) && !t.is_deleted)
+              : [];
           } catch {}
 
-          let mergedData = supaData;
-          if (supaData.length === 0 && localList.length > 0) {
-            // Restore and sync local transactions to cloud
+          let mergedData = cleanRemote;
+          if (cleanRemote.length === 0 && localList.length > 0) {
             for (const localTx of localList) {
               saveTransactionToSupabase(localTx).catch(() => {});
             }
             mergedData = localList;
-          } else if (supaData.length > 0 && localList.length > 0) {
-            // Retain any newly created local transactions that have not yet propagated
-            const supaIds = new Set(supaData.map((t) => t.id));
+          } else if (cleanRemote.length > 0 && localList.length > 0) {
+            const supaIds = new Set(cleanRemote.map((t) => t.id));
             const unsynced = localList.filter((t) => !supaIds.has(t.id));
             if (unsynced.length > 0) {
               for (const u of unsynced) {
                 saveTransactionToSupabase(u).catch(() => {});
               }
-              mergedData = [...unsynced, ...supaData];
+              mergedData = [...unsynced, ...cleanRemote];
             }
           }
 
@@ -691,10 +744,15 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setIsOffline(true);
     };
 
+    const handleUdharUpdated = () => {
+      refreshContacts();
+    };
+
     document.addEventListener('visibilitychange', handleSyncTrigger);
     window.addEventListener('focus', handleSyncTrigger);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('mymoney:udhar-updated', handleUdharUpdated);
 
     // 4. Polling fallback every 20 seconds when screen is visible
     const pollInterval = setInterval(() => {
@@ -710,6 +768,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       window.removeEventListener('focus', handleSyncTrigger);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('mymoney:udhar-updated', handleUdharUpdated);
       clearInterval(pollInterval);
     };
   }, [user, isAdmin, syncWithDatabase, persistLocally, refreshContacts]);
@@ -986,6 +1045,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const nowIso = new Date().toISOString();
     setLastDeletedTx(existing);
+    addDeletedTombstones(user.uid, [id]);
+    savePendingQueue(user.uid, getPendingQueue(user.uid).filter((t) => t.id !== id));
     setAllTransactions((prev) => {
       const updated = prev.map((t) =>
         t.id === id ? { ...t, is_deleted: true, deleted_at: nowIso, deleted_by: user.uid } : t
@@ -1013,6 +1074,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const restoreTransaction = async (id: string): Promise<boolean> => {
     if (!user) return false;
 
+    removeDeletedTombstones(user.uid, [id]);
     setAllTransactions((prev) => {
       const updated = prev.map((t) =>
         t.id === id ? { ...t, is_deleted: false, deleted_at: undefined, deleted_by: undefined } : t
@@ -1045,6 +1107,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const permanentDeleteTransaction = async (id: string): Promise<boolean> => {
     if (!user) return false;
 
+    addDeletedTombstones(user.uid, [id]);
+    savePendingQueue(user.uid, getPendingQueue(user.uid).filter((t) => t.id !== id));
     setAllTransactions((prev) => {
       const updated = prev.filter((t) => t.id !== id);
       persistLocally(updated);
@@ -1133,7 +1197,9 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const permanentDeleteMultipleTransactions = async (ids: string[]): Promise<boolean> => {
     if (!user || ids.length === 0) return false;
 
+    addDeletedTombstones(user.uid, ids);
     const idSet = new Set(ids);
+    savePendingQueue(user.uid, getPendingQueue(user.uid).filter((t) => !idSet.has(t.id)));
     setAllTransactions((prev) => {
       const updated = prev.filter((t) => !idSet.has(t.id));
       persistLocally(updated);
@@ -1346,13 +1412,17 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [userTransactions]);
 
-  // People summaries for current user (incorporating saved/connected contacts from QR & manual)
+  // People summaries for current user (incorporating saved/connected contacts with live Udhar balances + manual ledger)
   const peopleSummaries: PersonSummary[] = useMemo(() => {
     const map = new Map<
       string,
       {
+        displayName: string;
         given: number;
         received: number;
+        udharNetBalance: number;
+        udharHasBalances: boolean;
+        udharTxCount: number;
         txs: Transaction[];
         lastDate: string;
         linkedUserId?: string | null;
@@ -1363,62 +1433,100 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isRegisteredUser?: boolean;
       }
     >();
+    const linkedToKey = new Map<string, string>();
+    const nameToKey = new Map<string, string>();
 
-    // 1. First seed map with all saved contacts (QR connected & manual)
+    // 1. First seed map with all saved/connected contacts (including authoritative Udhar balance fields)
     for (const c of savedContacts) {
-      const nameKey = c.name.trim();
-      if (!map.has(nameKey)) {
-        map.set(nameKey, {
-          given: 0,
-          received: 0,
+      const displayName = (c.name || '').trim();
+      const normName = displayName.toLowerCase();
+      const key = c.linked_user_id ? `uid:${c.linked_user_id}` : `name:${normName}`;
+      if (!displayName && !c.linked_user_id) continue;
+
+      if (c.linked_user_id) linkedToKey.set(c.linked_user_id, key);
+      if (normName) nameToKey.set(normName, key);
+
+      const udharGiven = Number(c.total_given) || 0;
+      const udharTaken = Number(c.total_taken) || 0;
+      const udharNet = Number(c.net_balance) || 0;
+      const udharCount = Number(c.total_transactions_count) || 0;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          displayName: displayName || c.linked_user_name || 'Connected User',
+          given: udharGiven,
+          received: udharTaken,
+          udharNetBalance: udharNet,
+          udharHasBalances: udharCount > 0 || udharGiven > 0 || udharTaken > 0,
+          udharTxCount: udharCount,
           txs: [],
-          lastDate: c.created_at?.split('T')[0] || '',
+          lastDate: c.last_transaction_date || c.created_at?.split('T')[0] || '',
           linkedUserId: c.linked_user_id,
-          email: c.email,
-          phone: c.phone,
-          avatarUrl: c.linked_user_avatar,
+          email: c.email || c.linked_user_email || null,
+          phone: c.phone || null,
+          avatarUrl: c.linked_user_avatar || c.photo_url || null,
           relationshipType: c.relationship_type,
-          isRegisteredUser: Boolean(c.linked_user_id),
+          isRegisteredUser: Boolean(c.linked_user_id || c.is_registered),
         });
       }
     }
 
-    // 2. Map all transactions onto contacts
+    // 2. Map local/personal ledger transactions onto contacts (deduped case-insensitively)
     for (const tx of userTransactions) {
       if (tx.category === 'people' && tx.person_name) {
-        const nameKey = tx.person_name.trim();
-        if (!map.has(nameKey)) {
-          map.set(nameKey, {
+        const displayName = tx.person_name.trim();
+        const normName = displayName.toLowerCase();
+        const metaLinked = (tx.metadata as any)?.linked_user_id || (tx.metadata as any)?.counterpart_user_id || null;
+        const resolvedKey =
+          (metaLinked && linkedToKey.get(String(metaLinked))) ||
+          nameToKey.get(normName) ||
+          `name:${normName}`;
+
+        if (!map.has(resolvedKey)) {
+          nameToKey.set(normName, resolvedKey);
+          map.set(resolvedKey, {
+            displayName,
             given: 0,
             received: 0,
+            udharNetBalance: 0,
+            udharHasBalances: false,
+            udharTxCount: 0,
             txs: [],
             lastDate: tx.transaction_date,
-            isRegisteredUser: false,
+            linkedUserId: metaLinked,
+            isRegisteredUser: Boolean(metaLinked),
           });
         }
-        const data = map.get(nameKey)!;
+
+        const data = map.get(resolvedKey)!;
         data.txs.push(tx);
         if (tx.transaction_date > data.lastDate) {
           data.lastDate = tx.transaction_date;
         }
-        if (tx.subcategory === 'money_given') {
-          data.given += Number(tx.amount) || 0;
-        } else {
-          data.received += Number(tx.amount) || 0;
+        // Only add local ledger amounts if this person does NOT already come from canonical Udhar totals
+        if (!data.udharHasBalances) {
+          if (tx.subcategory === 'money_given') {
+            data.given += Number(tx.amount) || 0;
+          } else {
+            data.received += Number(tx.amount) || 0;
+          }
         }
       }
     }
 
     const list: PersonSummary[] = [];
-    map.forEach((val, name) => {
-      const balance = Math.round((val.given - val.received) * 100) / 100;
+    map.forEach((val) => {
+      const balance = val.udharHasBalances
+        ? Math.round(val.udharNetBalance * 100) / 100
+        : Math.round((val.given - val.received) * 100) / 100;
+      const totalCount = val.udharHasBalances ? Math.max(val.udharTxCount, val.txs.length) : val.txs.length;
       list.push({
-        name,
+        name: val.displayName,
         totalGiven: val.given,
         totalReceived: val.received,
         outstandingBalance: balance,
-        isSettled: val.txs.length === 0 || Math.abs(balance) < 0.01,
-        transactionCount: val.txs.length,
+        isSettled: totalCount === 0 || Math.abs(balance) < 0.01,
+        transactionCount: totalCount,
         lastTransactionDate: val.lastDate,
         transactions: val.txs.sort((a, b) =>
           (b.transaction_date + b.transaction_time).localeCompare(a.transaction_date + a.transaction_time)
@@ -1529,6 +1637,8 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         summary,
         peopleSummaries,
         savedContacts,
+        isLoadingContacts,
+        contactsError,
         refreshContacts,
         filterOptions,
         setFilterOptions,

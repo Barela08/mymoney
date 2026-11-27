@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { isDiscoverableNormalUser, type AuthenticatedUser } from './auth.js';
+import { purgeUdharNotificationsFallback } from './supabaseRestFallback.js';
 import {
   normalizeSearchQuery,
   classifyLiveSearchQuery,
@@ -207,46 +208,71 @@ async function upsertUdharContactRest(payload: {
   linked_user_id: string | null;
   updated_at: string;
 }): Promise<{ ok: boolean; status: number; data: any[] | null; error?: string }> {
+  const cleanName = payload.name.trim();
+  const normalizedName = cleanName.toLowerCase();
+  const cleanPayload = { ...payload, name: cleanName };
+
+  // 1. Deduplicate by linked_user_id first (prevents duplicate rows when user renames or connects)
+  if (cleanPayload.linked_user_id) {
+    const byLink = await sbRest<any[]>(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&linked_user_id=eq.${encodeURIComponent(cleanPayload.linked_user_id)}&limit=1`
+    );
+    if (byLink.ok && byLink.data && byLink.data.length > 0) {
+      const existing = byLink.data[0];
+      return sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(existing.id)}`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: {
+          ...cleanPayload,
+          email: cleanPayload.email ?? existing.email ?? null,
+          phone: cleanPayload.phone ?? existing.phone ?? null,
+          photo_url: cleanPayload.photo_url ?? existing.photo_url ?? null,
+          notes: cleanPayload.notes ?? existing.notes ?? null,
+        },
+      });
+    }
+  }
+
+  // 2. Deduplicate case-insensitively by trimmed name so "Rahul" and "rahul" never duplicate
+  const allForUser = await sbRest<any[]>(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&select=id,name,email,phone,photo_url,notes,linked_user_id`
+  );
+  if (allForUser.ok && Array.isArray(allForUser.data)) {
+    const matchedByName = allForUser.data.find(
+      (c) =>
+        (c.name || '').trim().toLowerCase() === normalizedName &&
+        (!cleanPayload.linked_user_id || !c.linked_user_id || c.linked_user_id === cleanPayload.linked_user_id)
+    );
+    if (matchedByName) {
+      return sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(matchedByName.id)}`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: {
+          ...cleanPayload,
+          email: cleanPayload.email ?? matchedByName.email ?? null,
+          phone: cleanPayload.phone ?? matchedByName.phone ?? null,
+          photo_url: cleanPayload.photo_url ?? matchedByName.photo_url ?? null,
+          notes: cleanPayload.notes ?? matchedByName.notes ?? null,
+          linked_user_id: cleanPayload.linked_user_id || matchedByName.linked_user_id || null,
+        },
+      });
+    }
+  }
+
+  // 3. Insert / merge on unique constraint fallback
   const res = await sbRest<any[]>('udhar_contacts?on_conflict=user_id,name', {
     method: 'POST',
     prefer: 'resolution=merge-duplicates,return=representation',
-    body: payload,
+    body: cleanPayload,
   });
   if (res.ok && res.data && res.data.length > 0) {
     return res;
   }
 
-  if (payload.linked_user_id) {
-    const byLink = await sbRest<any[]>(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&linked_user_id=eq.${encodeURIComponent(payload.linked_user_id)}&limit=1`
-    );
-    if (byLink.ok && byLink.data && byLink.data.length > 0) {
-      return sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(byLink.data[0].id)}`, {
-        method: 'PATCH',
-        prefer: 'return=representation',
-        body: payload,
-      });
-    }
-  }
-
-  const byName = await sbRest<any[]>(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&name=ilike.${encodeURIComponent(payload.name)}&limit=1`
-  );
-  if (byName.ok && byName.data && byName.data.length > 0) {
-    return sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(byName.data[0].id)}`, {
-      method: 'PATCH',
-      prefer: 'return=representation',
-      body: {
-        ...payload,
-        linked_user_id: payload.linked_user_id || byName.data[0].linked_user_id || null,
-      },
-    });
-  }
-
   return sbRest<any[]>('udhar_contacts', {
     method: 'POST',
     prefer: 'return=representation',
-    body: payload,
+    body: cleanPayload,
   });
 }
 
@@ -374,17 +400,69 @@ async function createTargetedNotificationRest(params: {
         message: params.message,
         category: params.category || 'udhar',
         type: params.type === 'udhar_connection_request' ? 'info' : 'success',
+        related_entity_type: 'udhar',
+        related_entity_id: params.relatedEntityId || null,
         deep_link: params.deepLink || 'people',
         is_read: false,
         is_deleted: false,
         metadata: params.metadata || {
           actionType: params.type,
           relatedEntityId: params.relatedEntityId || null,
+          linkId: params.relatedEntityId || null,
           actorUserId: params.actorUserId,
         },
       },
     }).catch(() => {}),
   ]);
+}
+
+async function deactivateUdharNotificationsRest(linkId: string, txId?: string) {
+  if (!linkId && !txId) return;
+  const nowIso = new Date().toISOString();
+  const tasks: Promise<any>[] = [];
+
+  if (linkId) {
+    tasks.push(
+      sbRest(`notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { is_active: false },
+      }).catch(() => {}),
+      sbRest(`user_notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { is_deleted: true, deleted_at: nowIso },
+      }).catch(() => {}),
+      sbRest(`user_notifications?metadata->>relatedEntityId=eq.${encodeURIComponent(linkId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { is_deleted: true, deleted_at: nowIso },
+      }).catch(() => {}),
+      sbRest(`user_notifications?metadata->>linkId=eq.${encodeURIComponent(linkId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { is_deleted: true, deleted_at: nowIso },
+      }).catch(() => {})
+    );
+  }
+
+  if (txId) {
+    tasks.push(
+      sbRest(`notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { is_active: false },
+      }).catch(() => {}),
+      sbRest(`user_notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
+        method: 'PATCH',
+        prefer: 'return=minimal',
+        body: { is_deleted: true, deleted_at: nowIso },
+      }).catch(() => {})
+    );
+  }
+
+  tasks.push(purgeUdharNotificationsFallback(linkId, txId).catch(() => {}));
+  await Promise.all(tasks);
 }
 
 // ============================================================================
@@ -1237,24 +1315,149 @@ export async function recordPrivacyConsentBatchRest(
 // ============================================================================
 // 3. CONTACTS (Manual Local vs Explicitly Linked Registered)
 // ============================================================================
-export async function getContactsRest(authUser: AuthenticatedUser) {
-  const res = await sbRest<any[]>(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`
+async function buildMergedDirectoryForUserRest(
+  authUser: AuthenticatedUser,
+  activeTxs: any[] = []
+) {
+  const [contactsRes, connsRes] = await Promise.all([
+    sbRest<any[]>(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
+    sbRest<any[]>(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&status=eq.connected`
+    ),
+  ]);
+
+  if (!contactsRes.ok) {
+    return { ok: false as const, error: contactsRes.error || 'Failed to load contacts.' };
+  }
+
+  const rawContacts = contactsRes.data || [];
+  const connectedPeerIds = new Set<string>();
+  if (connsRes.ok && Array.isArray(connsRes.data)) {
+    for (const conn of connsRes.data) {
+      const peerId = conn.user_a_id === authUser.id ? conn.user_b_id : conn.user_a_id;
+      if (peerId && peerId !== authUser.id) {
+        connectedPeerIds.add(peerId);
+      }
+    }
+  }
+
+  const txPeerIds = activeTxs
+    .map((t) => t.counterpart_user_id)
+    .filter((id): id is string => Boolean(id && id !== authUser.id));
+
+  const allUserIds = Array.from(
+    new Set([
+      ...rawContacts.map((r) => r.linked_user_id).filter(Boolean),
+      ...Array.from(connectedPeerIds),
+      ...txPeerIds,
+    ])
   );
-  if (!res.ok) {
+  const userMap = await fetchUsersByIds(allUserIds);
+
+  const deduped: any[] = [];
+  const seenLinkedIds = new Set<string>();
+  const seenUnlinkedNames = new Set<string>();
+
+  for (const c of rawContacts) {
+    const linkedId = c.linked_user_id || null;
+    const normName = (c.name || '').trim().toLowerCase();
+    if (linkedId) {
+      if (seenLinkedIds.has(linkedId)) continue;
+      seenLinkedIds.add(linkedId);
+    } else if (normName) {
+      if (seenUnlinkedNames.has(normName)) continue;
+      seenUnlinkedNames.add(normName);
+    }
+    deduped.push(c);
+  }
+
+  // Synthesize missing entries for accepted user_connections
+  for (const peerId of connectedPeerIds) {
+    if (seenLinkedIds.has(peerId)) continue;
+    const u = userMap.get(peerId);
+    if (!u || !isDiscoverableNormalUser(u)) continue;
+    seenLinkedIds.add(peerId);
+    deduped.push({
+      id: `conn_${peerId}`,
+      user_id: authUser.id,
+      name: (u.full_name || u.email?.split('@')[0] || 'Connected User').trim(),
+      email: u.email ? maskEmailForPrivacy(u.email) : null,
+      phone: null,
+      photo_url: u.avatar_url || null,
+      relationship_type: 'Friend',
+      notes: null,
+      linked_user_id: peerId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // Synthesize missing entries for active Udhar counterparts
+  for (const t of activeTxs) {
+    if (t.status === 'cancelled' || t.deleted_at) continue;
+    const linkedId = t.counterpart_user_id || null;
+    const rawName = (t.counterpart_name || '').trim();
+    const normName = rawName.toLowerCase();
+    if (linkedId) {
+      if (seenLinkedIds.has(linkedId)) continue;
+      const u = userMap.get(linkedId);
+      seenLinkedIds.add(linkedId);
+      deduped.push({
+        id: `tx_peer_${linkedId}`,
+        user_id: authUser.id,
+        name: (u?.full_name || rawName || 'Connected User').trim(),
+        email: u?.email ? maskEmailForPrivacy(u.email) : null,
+        phone: null,
+        photo_url: u?.avatar_url || null,
+        relationship_type: 'Friend',
+        notes: null,
+        linked_user_id: linkedId,
+        created_at: t.created_at || new Date().toISOString(),
+        updated_at: t.updated_at || new Date().toISOString(),
+      });
+    } else if (normName && !seenUnlinkedNames.has(normName)) {
+      seenUnlinkedNames.add(normName);
+      deduped.push({
+        id: `tx_local_${normName.replace(/[^a-z0-9]/g, '_')}`,
+        user_id: authUser.id,
+        name: rawName,
+        email: null,
+        phone: null,
+        photo_url: null,
+        relationship_type: 'Friend',
+        notes: null,
+        linked_user_id: null,
+        created_at: t.created_at || new Date().toISOString(),
+        updated_at: t.updated_at || new Date().toISOString(),
+      });
+    }
+  }
+
+  deduped.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  return { ok: true as const, contacts: deduped, userMap };
+}
+
+export async function getContactsRest(authUser: AuthenticatedUser) {
+  const txRes = await sbRest<any[]>(
+    `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`
+  );
+  const activeTxs = (txRes.ok && Array.isArray(txRes.data))
+    ? txRes.data.filter((t) => t.status !== 'cancelled' && !t.deleted_at)
+    : [];
+
+  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
+  if (!merged.ok) {
     return { status: 503, body: { success: false, message: 'Failed to load contacts.' } };
   }
-  const rows = res.data || [];
-  const linkedIds = rows.map((r) => r.linked_user_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(linkedIds);
 
-  const contacts = rows.map((c) => {
-    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
+  const contacts = merged.contacts.map((c) => {
+    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
     return {
       ...c,
       linked_user_name: u?.full_name || null,
       linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
       linked_user_avatar: u?.avatar_url || null,
+      is_registered: Boolean(c.linked_user_id),
     };
   });
 
@@ -1262,23 +1465,19 @@ export async function getContactsRest(authUser: AuthenticatedUser) {
 }
 
 export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
-  const [contactsRes, txRes] = await Promise.all([
-    sbRest<any[]>(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
-    sbRest<any[]>(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`),
-  ]);
+  const txRes = await sbRest<any[]>(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`);
+  const activeTxs = (txRes.ok && Array.isArray(txRes.data))
+    ? txRes.data.filter((t) => t.status !== 'cancelled' && !t.deleted_at)
+    : [];
 
-  if (!contactsRes.ok) {
+  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
+  if (!merged.ok) {
     return { status: 503, body: { success: false, message: 'Failed to load people contacts.' } };
   }
 
-  const contacts = contactsRes.data || [];
-  const txs = (txRes.ok && Array.isArray(txRes.data)) ? txRes.data : [];
-  const linkedIds = contacts.map((c) => c.linked_user_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(linkedIds);
-
-  const parsedContacts = contacts.map((c) => {
-    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
-    const matchingTxs = txs.filter((t) => {
+  const parsedContacts = merged.contacts.map((c) => {
+    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
+    const matchingTxs = activeTxs.filter((t) => {
       if (c.linked_user_id && t.counterpart_user_id === c.linked_user_id) return true;
       if (!c.linked_user_id && !t.counterpart_user_id && (t.counterpart_name || '').trim().toLowerCase() === (c.name || '').trim().toLowerCase()) {
         return true;
@@ -1322,7 +1521,7 @@ export async function getContactsWithBalancesRest(authUser: AuthenticatedUser) {
       outstanding_payable: roundMoney(payable),
       net_balance: roundMoney(receivable - payable),
       last_transaction_date: lastDate,
-      total_transactions_count: matchingTxs.filter((t) => t.status !== 'cancelled' && !t.deleted_at).length,
+      total_transactions_count: matchingTxs.length,
       pending_transactions_count: pendingCount,
       is_registered: Boolean(c.linked_user_id),
     };
@@ -2673,35 +2872,47 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
   }
   const tx = txRes.data[0];
 
-  if (tx.counterpart_user_id && tx.direction === 'took') {
-    return {
-      status: 403,
-      body: {
-        success: false,
-        message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
-      },
-    };
-  }
-
   const repsRes = await sbRest<any[]>(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`);
   const repayments = (repsRes.ok && Array.isArray(repsRes.data))
     ? repsRes.data.filter((r) => isActiveRepayment(r))
     : [];
 
+  // Recompute authoritative settlement status strictly on backend from persisted repayments
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: tx.original_amount,
+    repayments,
+    currentStatus: tx.status,
+  });
+
+  const effectiveStatus = tx.status === 'cancelled' || tx.deleted_at
+    ? 'cancelled'
+    : tx.status === 'disputed'
+      ? 'disputed'
+      : (repayments.length > 0 ? recalc.nextStatus : tx.status);
+
   const guard = canCancelUdhar({
-    status: tx.status,
+    status: effectiveStatus,
     deleted_at: tx.deleted_at,
-    paid_amount: tx.paid_amount,
+    direction: tx.direction,
+    is_shared: Boolean(tx.counterpart_user_id),
+    counterpart_user_id: tx.counterpart_user_id,
+    original_amount: tx.original_amount,
+    paid_amount: repayments.length > 0 ? recalc.paidAmount : tx.paid_amount,
+    current_balance: repayments.length > 0 ? recalc.remainingBalance : tx.current_balance,
+    settled_at: tx.settled_at,
     repayments,
   });
 
   if (!guard.allowed) {
-    return { status: 409, body: { success: false, message: guard.reason } };
+    return {
+      status: guard.httpStatus || 409,
+      body: { success: false, code: guard.code, message: guard.reason },
+    };
   }
 
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : null;
   const nowIso = new Date().toISOString();
-  // Atomic conditional soft-delete (allowed for active, partial, and settled Udhar entries; never disputed/cancelled)
+  // Atomic conditional soft-delete across both linked user rows (prevents replay/concurrent delete)
   let softDelRes = await sbRest<any[]>(
     `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
     {
@@ -2734,10 +2945,10 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
     return { status: 503, body: { success: false, message: softDelRes.error || 'Failed to delete transaction.' } };
   }
   if (!Array.isArray(softDelRes.data) || softDelRes.data.length === 0) {
-    return { status: 409, body: { success: false, message: 'This transaction cannot be deleted in its current state.' } };
+    return { status: 409, body: { success: false, message: 'This transaction has already been deleted or cannot be deleted in its current state.' } };
   }
 
-  // Soft-delete all associated repayments for this Udhar (pre-migration fallback deletes rows physically if enum/columns don't exist)
+  // Cascade soft-delete to all repayments linked to this Udhar
   if (repayments.length > 0) {
     const repDelRes = await sbRest<any[]>(
       `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`,
@@ -2760,16 +2971,8 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
     }
   }
 
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Removed by ${authUser.full_name}`,
-      message: `${authUser.full_name} deleted the Udhar entry of ₹${parseFloat(tx.original_amount).toLocaleString('en-IN')}.`,
-      type: 'udhar_cancelled',
-      relatedEntityId: tx.link_id,
-    });
-  }
+  // Remove notifications referencing this deleted transaction so neither user sees stale reminders
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id);
 
   return {
     status: 200,
@@ -2777,9 +2980,13 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
       success: true,
       deletedTransactionId: tx.id,
       linkId: tx.link_id,
+      originalAmount: tx.original_amount,
+      direction: tx.direction,
+      counterpartUserId: tx.counterpart_user_id || null,
+      deletionReason: cleanReason,
       deletedAt: nowIso,
       deletedBy: authUser.id,
-      message: 'Udhar entry deleted successfully. Totals have been recalculated.',
+      message: 'Udhar entry deleted successfully for both participants. Totals have been recalculated.',
     },
   };
 }
@@ -2930,6 +3137,9 @@ export async function getUdharHistoryRest(authUser: AuthenticatedUser, txId: str
     return { status: 404, body: { success: false, message: 'Transaction not found.' } };
   }
   const tx = txRes.data[0];
+  if (tx.status === 'cancelled' || Boolean(tx.deleted_at)) {
+    return { status: 404, body: { success: false, message: 'Transaction not found.' } };
+  }
 
   const [repsRes, histRes] = await Promise.all([
     sbRest<any[]>(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),

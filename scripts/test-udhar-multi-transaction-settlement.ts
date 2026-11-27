@@ -111,7 +111,7 @@ async function runAll() {
   });
 
   // Test 3: Settlement & Delete Permissions (Lender vs Borrower)
-  await runTest('Borrower attempting to settle or delete receives 403 Forbidden', () => {
+  await runTest('Unsettled borrower delete returns 403; settled borrower delete is allowed', () => {
     const lenderUserId = 'lender-123';
     const borrowerUserId = 'borrower-456';
 
@@ -126,7 +126,7 @@ async function runAll() {
     };
 
     // Settle guard test
-    const canSettle = (authUser: { id: string }, tx: typeof transactionFromBorrowerPerspective) => {
+    const canSettle = (_authUser: { id: string }, tx: typeof transactionFromBorrowerPerspective) => {
       if (tx.counterpart_user_id && tx.direction === 'took') {
         return {
           status: 403,
@@ -137,13 +137,13 @@ async function runAll() {
       return { status: 200, allowed: true };
     };
 
-    // Delete guard test
-    const canDelete = (authUser: { id: string }, tx: typeof transactionFromBorrowerPerspective) => {
-      if (tx.counterpart_user_id && tx.direction === 'took') {
+    // Delete guard test (Part 3: shared I Borrowed only deletable after full settlement)
+    const canDelete = (_authUser: { id: string }, tx: typeof transactionFromBorrowerPerspective) => {
+      if (tx.counterpart_user_id && tx.direction === 'took' && tx.current_balance > 0.01) {
         return {
           status: 403,
           allowed: false,
-          message: 'Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions.',
+          message: 'You can delete this transaction after it is fully settled.',
         };
       }
       return { status: 200, allowed: true };
@@ -154,10 +154,18 @@ async function runAll() {
     assert.strictEqual(settleResult.status, 403, 'Borrower settle attempt must return 403');
     assert.strictEqual(settleResult.allowed, false);
 
-    // When borrower calls delete
+    // When unsettled borrower calls delete
     const deleteResult = canDelete({ id: borrowerUserId }, transactionFromBorrowerPerspective);
-    assert.strictEqual(deleteResult.status, 403, 'Borrower delete attempt must return 403');
+    assert.strictEqual(deleteResult.status, 403, 'Unsettled borrower delete attempt must return 403');
     assert.strictEqual(deleteResult.allowed, false);
+
+    // When settled borrower calls delete
+    const settledBorrowerDeleteResult = canDelete(
+      { id: borrowerUserId },
+      { ...transactionFromBorrowerPerspective, current_balance: 0, status: 'settled' }
+    );
+    assert.strictEqual(settledBorrowerDeleteResult.status, 200, 'Settled borrower delete attempt is authorized');
+    assert.strictEqual(settledBorrowerDeleteResult.allowed, true);
 
     // When lender calls settle
     const lenderTxPerspective = {

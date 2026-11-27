@@ -47,7 +47,11 @@ import {
   UdharSummaryData,
 } from '../../lib/udharDeletionApi';
 import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
-import { canCancelUdhar, canDeleteRepayment } from '../../lib/sharedUdharEngine';
+import {
+  canCancelUdhar,
+  canDeleteRepayment,
+  getUdharSettlementStatus,
+} from '../../lib/sharedUdharEngine';
 import { MyUdharQrModal } from './MyUdharQrModal';
 import { ScanQrModal } from './ScanQrModal';
 import { AddUdharModal } from './AddUdharModal';
@@ -65,7 +69,15 @@ interface PeopleSectionProps {
 }
 
 export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) => {
-  const { summary, refreshTransactions, peopleSummaries, refreshContacts } = useExpense();
+  const {
+    summary,
+    refreshTransactions,
+    peopleSummaries,
+    refreshContacts,
+    isLoadingContacts,
+    contactsError,
+    refreshNotifications,
+  } = useExpense();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -82,6 +94,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   });
   const [isLoadingUdhar, setIsLoadingUdhar] = useState<boolean>(true);
   const [hasLoadedUdhar, setHasLoadedUdhar] = useState<boolean>(false);
+  const [udharError, setUdharError] = useState<string | null>(null);
   const [requestsRefreshKey, setRequestsRefreshKey] = useState<number>(0);
 
   // Tab filter: 'all' | 'lent' | 'borrowed' | 'pending_confirmation' | 'overdue' | 'settled'
@@ -122,15 +135,19 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   const fetchUdharData = useCallback(async () => {
     try {
       setIsLoadingUdhar(true);
+      setUdharError(null);
       const res = await udharDeletionApi.getUdharTransactions();
       if (res.success) {
-        setUdharTransactions(res.transactions);
+        setUdharTransactions(res.transactions || []);
         setUdharSummary(res.summary);
         setHasLoadedUdhar(true);
+      } else {
+        setUdharError('Could not load Udhar transactions.');
       }
       await refreshContacts();
     } catch (err: any) {
       console.warn('Could not fetch udhar transactions:', err.message);
+      setUdharError(err?.message || 'Unable to sync People ledger right now. Please retry.');
     } finally {
       setIsLoadingUdhar(false);
     }
@@ -142,24 +159,46 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchUdharData();
       }
-    }, 15000);
+    }, 10000);
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribeRealtime = subscribeToSupabaseUdharRealtime(() => {
+    const scheduleSync = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         fetchUdharData();
         refreshTransactions();
+        refreshNotifications();
         setRequestsRefreshKey((k) => k + 1);
-      }, 350);
-    });
+      }, 250);
+    };
+
+    const unsubscribeRealtime = subscribeToSupabaseUdharRealtime(scheduleSync);
+    const handleVisibilityOrFocus = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        scheduleSync();
+      }
+    };
+    const handleUdharUpdated = () => {
+      scheduleSync();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mymoney:udhar-updated', handleUdharUpdated);
+      window.addEventListener('focus', handleVisibilityOrFocus);
+      document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
 
     return () => {
       clearInterval(interval);
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribeRealtime();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('mymoney:udhar-updated', handleUdharUpdated);
+        window.removeEventListener('focus', handleVisibilityOrFocus);
+        document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      }
     };
-  }, [fetchUdharData, refreshTransactions]);
+  }, [fetchUdharData, refreshTransactions, refreshNotifications]);
 
   const executePendingConfirmAction = async () => {
     if (!pendingConfirmAction) return;
@@ -169,25 +208,25 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         const res = await udharDeletionApi.settleUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Settled', res.message || 'This Udhar entry is now marked settled.');
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           await fetchUdharData();
           await refreshTransactions();
+          await refreshNotifications();
         }
       } else if (pendingConfirmAction.type === 'delete_single') {
         const res = await udharDeletionApi.cancelUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Deleted', res.message || 'Udhar entry deleted and totals recalculated.');
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           await fetchUdharData();
           await refreshTransactions();
+          await refreshNotifications();
         }
       } else if (pendingConfirmAction.type === 'delete_repayment') {
         const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
         if (res.success) {
           toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
-          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           await fetchUdharData();
           await refreshTransactions();
+          await refreshNotifications();
         }
       }
       setPendingConfirmAction(null);
@@ -257,7 +296,13 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   // Screen 8: Individual Person Details View
   const currentSelectedPerson = useMemo(() => {
     if (!selectedPersonForDetails) return null;
-    return peopleSummaries.find((p) => p.name === selectedPersonForDetails.name) || selectedPersonForDetails;
+    return (
+      peopleSummaries.find(
+        (p) =>
+          (selectedPersonForDetails.linkedUserId && p.linkedUserId === selectedPersonForDetails.linkedUserId) ||
+          p.name.trim().toLowerCase() === selectedPersonForDetails.name.trim().toLowerCase()
+      ) || selectedPersonForDetails
+    );
   }, [selectedPersonForDetails, peopleSummaries]);
 
   if (currentSelectedPerson) {
@@ -437,7 +482,26 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           </div>
         </div>
 
-        {peopleSummaries.length === 0 ? (
+        {contactsError && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3 text-xs text-rose-700 dark:text-rose-300">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{contactsError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => refreshContacts()}
+              className="px-3 py-1 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 cursor-pointer shrink-0 flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Retry</span>
+            </button>
+          </div>
+        )}
+
+        {(isLoadingContacts || isLoadingUdhar) && peopleSummaries.length === 0 ? (
+          <SkeletonCardsGrid count={3} />
+        ) : peopleSummaries.length === 0 ? (
           <div className="p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
             <Users className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
             <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
@@ -589,7 +653,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
               }`}
             >
-              Money I Gave (Lend)
+              I Gave ({udharTransactions.filter((t) => t.direction === 'gave').length})
             </button>
 
             <button
@@ -600,7 +664,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
               }`}
             >
-              Money I Took (Borrow)
+              I Borrowed ({udharTransactions.filter((t) => t.direction === 'took').length})
             </button>
 
             <button
@@ -658,7 +722,24 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         </div>
 
         {/* Transactions Feed */}
-        {isLoadingUdhar ? (
+        {udharError && (
+          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3 text-xs text-rose-700 dark:text-rose-300">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{udharError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchUdharData()}
+              className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 cursor-pointer shrink-0 flex items-center gap-1"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Retry</span>
+            </button>
+          </div>
+        )}
+
+        {isLoadingUdhar && !hasLoadedUdhar ? (
           <SkeletonTable rows={5} />
         ) : filteredTransactions.length === 0 ? (
           <EmptyState
@@ -676,8 +757,21 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
               const isLinked = Boolean(tx.counterpart_user_id);
               const isPendingConfirm = tx.status === 'pending_confirmation';
               const isDisputed = tx.status === 'disputed';
-              const isSettled = tx.status === 'settled' || cur <= 0.01;
+              const statusInfo = getUdharSettlementStatus(tx);
+              const isSettled = statusInfo.isSettled;
               const isOverdue = tx.due_date && tx.due_date < todayStr && !isSettled;
+              const deleteGuard = canCancelUdhar({
+                status: tx.status,
+                deleted_at: tx.deleted_at,
+                direction: tx.direction,
+                is_shared: isLinked,
+                counterpart_user_id: tx.counterpart_user_id,
+                original_amount: tx.original_amount,
+                paid_amount: tx.paid_amount,
+                current_balance: tx.current_balance,
+                settled_at: tx.settled_at,
+                repayments: tx.repayments,
+              });
               const repaymentsCount = tx.repayments?.length || 0;
               const isExpanded = Boolean(expandedRepayments[tx.id]);
 
@@ -716,25 +810,27 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </h4>
 
                           {/* Status Badge */}
-                          {isPendingConfirm ? (
-                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 animate-pulse">
-                              Pending Confirmation
-                            </span>
-                          ) : isDisputed ? (
+                          {isDisputed ? (
                             <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300">
                               Disputed
                             </span>
                           ) : isSettled ? (
-                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                              Fully Settled (₹0)
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                              Settled
                             </span>
-                          ) : isOverdue ? (
-                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 animate-pulse">
-                              Overdue
+                          ) : statusInfo.isPartiallySettled ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300">
+                              Partially Settled
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
-                              Confirmed
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                              {isPendingConfirm ? 'Pending Confirmation' : 'Pending'}
+                            </span>
+                          )}
+
+                          {isOverdue && (
+                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300">
+                              Overdue
                             </span>
                           )}
 
@@ -747,13 +843,17 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                         </div>
 
                         <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            {isGave ? 'You Lent (Money Given)' : 'You Borrowed (Money Taken)'}
+                          <span className={`font-bold ${isGave ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            {isGave ? 'I Gave' : 'I Borrowed'}
                           </span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5 text-slate-400" />
                             <span>{formatDisplayDate(tx.transaction_date)}</span>
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono text-[10px] text-slate-400" title={tx.id}>
+                            ID: {tx.id.slice(0, 8)}
                           </span>
                           {tx.due_date && (
                             <>
@@ -854,18 +954,29 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </>
                         )}
 
-                        {(isGave || !tx.counterpart_user_id) && canCancelUdhar({ status: tx.status, paid_amount: tx.paid_amount, repayments: tx.repayments }).allowed && (
+                        {deleteGuard.allowed ? (
                           <button
                             type="button"
                             onClick={() => setPendingConfirmAction({ type: 'delete_single', tx })}
                             data-testid={`udhar-feed-delete-btn-${tx.id}`}
                             className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Delete only this Udhar entry (Lender only)"
+                            title="Delete this Udhar entry"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>Delete</span>
                           </button>
-                        )}
+                        ) : !isGave && isLinked && !isDisputed ? (
+                          <button
+                            type="button"
+                            disabled
+                            data-testid={`udhar-feed-delete-disabled-${tx.id}`}
+                            className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-not-allowed opacity-75"
+                            title="You can delete this transaction after it is fully settled."
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+                        ) : null}
 
                         {/* Expand Repayments history */}
                         {repaymentsCount > 0 && (
@@ -879,6 +990,11 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </button>
                         )}
                       </div>
+                      {!isGave && isLinked && !isDisputed && !deleteGuard.allowed && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium sm:text-right">
+                          You can delete this transaction after it is fully settled.
+                        </p>
+                      )}
                     </div>
                   </div>
 

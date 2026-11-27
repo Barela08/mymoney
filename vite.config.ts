@@ -1,29 +1,71 @@
+import path from 'path';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+
+function isAdminEntryRequest(urlStr: string | undefined, hostHeader: string | undefined): boolean {
+  if (!urlStr) return false;
+  const pathname = urlStr.split('?')[0] || '/';
+  if (
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/src/') ||
+    pathname.startsWith('/assets/') ||
+    pathname.startsWith('/node_modules/') ||
+    pathname.startsWith('/@') ||
+    pathname === '/admin-sw.js' ||
+    pathname === '/admin-manifest.json' ||
+    pathname === '/admin-subdomain-manifest.json' ||
+    pathname === '/admin-offline.html' ||
+    pathname === '/admin.html'
+  ) {
+    return false;
+  }
+
+  // Pass static files through directly
+  const lastSegment = pathname.split('/').pop() || '';
+  if (lastSegment.includes('.')) {
+    return false;
+  }
+
+  const host = (hostHeader || '').toLowerCase().split(':')[0];
+  if (host.startsWith('admin.')) {
+    return true;
+  }
+
+  return pathname === '/admin' || pathname.startsWith('/admin/');
+}
 
 function backendApiPlugin(): Plugin {
   return {
     name: 'backend-api-plugin',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (!req.url || !req.url.startsWith('/api')) {
-          return next();
-        }
-        try {
-          const apiModule = await server.ssrLoadModule('./server/api.ts');
-          const handled = await apiModule.handleApiRequest(req, res);
-          if (!handled) {
-            next();
+        if (req.url && req.url.startsWith('/api')) {
+          try {
+            const apiModule = await server.ssrLoadModule('./server/api.ts');
+            const handled = await apiModule.handleApiRequest(req, res);
+            if (!handled) {
+              next();
+            }
+            return;
+          } catch (err) {
+            return next(err);
           }
-        } catch (err) {
-          next(err);
         }
+
+        const host = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+        if (isAdminEntryRequest(req.url, host)) {
+          req.url = '/admin.html';
+        }
+        next();
       });
     },
     configurePreviewServer(server) {
-      server.middlewares.use(async (_req, _res, next) => {
+      server.middlewares.use(async (req, _res, next) => {
         try {
-          // Preview server fallback
+          const host = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+          if (isAdminEntryRequest(req.url, host)) {
+            req.url = '/admin.html';
+          }
           next();
         } catch (err) {
           next(err);
@@ -88,6 +130,10 @@ export default defineConfig({
     cssCodeSplit: true,
     minify: 'esbuild',
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        admin: path.resolve(__dirname, 'admin.html'),
+      },
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {

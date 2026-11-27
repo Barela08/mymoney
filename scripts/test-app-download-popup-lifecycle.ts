@@ -1,13 +1,15 @@
 /**
  * Verification Test Suite: App Download Popup Lifecycle & User Journey
- * 
- * Verifies the 3 required behaviors:
- * 1. Cancelling without downloading allows the popup to reappear.
- * 2. Cancelling on the login page re-prompts after logging in.
- * 3. Downloading/installing permanently suppresses the popup.
+ *
+ * Verifies all required behaviors:
+ * 1. Triggers after 60 seconds (60,000ms) of active page time when not installed.
+ * 2. Persists open state & active time across refreshes, route changes, login transitions, and browser restarts.
+ * 3. Cancelling/closing hides the popup and schedules reappearance after 1 minute (60,000ms) while still uninstalled.
+ * 4. Cancelling NEVER marks the app as downloaded/installed.
+ * 5. Built-in /#install mode stays enabled regardless of optional site banner setting.
+ * 6. Installing/downloading permanently suppresses the popup.
  */
 
-// Mock storage
 const mockSessionStorage: Record<string, string> = {};
 const mockLocalStorage: Record<string, string> = {};
 let mockCookies = '';
@@ -15,7 +17,7 @@ let mockCookies = '';
 function setupMockEnvironment() {
   (global as any).window = {
     location: { hash: '', protocol: 'https:' },
-    matchMedia: (query: string) => ({ matches: false }),
+    matchMedia: () => ({ matches: false }),
     navigator: {},
   };
   (global as any).document = {
@@ -34,21 +36,32 @@ function setupMockEnvironment() {
   };
   (global as any).sessionStorage = {
     getItem: (key: string) => mockSessionStorage[key] || null,
-    setItem: (key: string, val: string) => { mockSessionStorage[key] = val; },
-    removeItem: (key: string) => { delete mockSessionStorage[key]; },
-    clear: () => { for (const k in mockSessionStorage) delete mockSessionStorage[k]; },
+    setItem: (key: string, val: string) => {
+      mockSessionStorage[key] = val;
+    },
+    removeItem: (key: string) => {
+      delete mockSessionStorage[key];
+    },
+    clear: () => {
+      for (const k in mockSessionStorage) delete mockSessionStorage[k];
+    },
   };
   (global as any).localStorage = {
     getItem: (key: string) => mockLocalStorage[key] || null,
-    setItem: (key: string, val: string) => { mockLocalStorage[key] = val; },
-    removeItem: (key: string) => { delete mockLocalStorage[key]; },
-    clear: () => { for (const k in mockLocalStorage) delete mockLocalStorage[k]; },
+    setItem: (key: string, val: string) => {
+      mockLocalStorage[key] = val;
+    },
+    removeItem: (key: string) => {
+      delete mockLocalStorage[key];
+    },
+    clear: () => {
+      for (const k in mockLocalStorage) delete mockLocalStorage[k];
+    },
   };
 }
 
 setupMockEnvironment();
 
-// Import after globals are set
 const {
   isAppDownloadedOrInstalled,
   markAppAsDownloaded,
@@ -57,7 +70,13 @@ const {
   getPopupRemainingCooldownMs,
   isDismissedForView,
   getInitialVisitWaitMs,
+  getActiveUsageMs,
+  addActiveUsageMs,
+  getRemainingInitialWaitMs,
+  isPopupOpenPersisted,
+  setPopupOpenPersisted,
   shouldSuppressInstallPopup,
+  INITIAL_INSTALL_POPUP_DELAY_MS,
   POPUP_REPROMPT_DELAY_MS,
 } = await import('../src/components/common/AppDownloadPopup.js');
 
@@ -76,43 +95,39 @@ function assert(condition: boolean, msg: string) {
 
 console.log('=== App Download Popup Lifecycle Test Suite ===\n');
 
-// Test 1: Initially, new visitor should NOT be considered downloaded/installed and should see popup promptly
+// Test 1: Initially requires 60 seconds of active page time
 assert(!isAppDownloadedOrInstalled(false), 'New visitor is not marked as downloaded/installed');
-assert(POPUP_REPROMPT_DELAY_MS === 60_000, 'Reprompt cooldown is exactly 1 minute (60,000ms)');
-assert(getInitialVisitWaitMs() === 0, 'Initial visit does NOT artificially delay popup by 60 seconds');
+assert(INITIAL_INSTALL_POPUP_DELAY_MS === 60_000, 'Initial delay is 60,000ms (60 seconds active usage)');
+assert(POPUP_REPROMPT_DELAY_MS === 60_000, 'Reprompt cooldown is 60,000ms (1 minute)');
+assert(getInitialVisitWaitMs() === 60_000, 'getInitialVisitWaitMs returns 60,000ms');
+assert(getRemainingInitialWaitMs() === 60_000, 'Fresh visitor has 60,000ms active wait remaining');
 
-// Test 2: If user cancels on Login page (auth view = true)
+// Test 2: Active usage persists across refresh / login transition / browser restart
+addActiveUsageMs(25_000);
+assert(getActiveUsageMs() === 25_000, 'Active page time stores 25,000ms in localStorage');
+assert(getRemainingInitialWaitMs() === 35_000, '35,000ms remaining after refresh/restart');
+
+addActiveUsageMs(35_000);
+assert(getRemainingInitialWaitMs() === 0, 'After 60s cumulative active usage, remaining wait is 0ms');
+setPopupOpenPersisted(true);
+assert(isPopupOpenPersisted(), 'Open state persists across refresh/route/login/restart');
+
+// Test 3: Cancelling / closing hides popup and schedules 60s reappear WITHOUT marking downloaded
 const t0 = 1_700_000_000_000;
 dismissPopupForCurrentView(true, t0);
-assert(mockSessionStorage['my_money_popup_auth_dismissed'] === 'true', 'Cancelling on login page sets auth view dismissal');
-assert(!mockSessionStorage['my_money_popup_app_dismissed'], 'Cancelling on login page does NOT dismiss dashboard view');
-assert(!isAppDownloadedOrInstalled(false), 'Cancelling does NOT mark app as downloaded');
-assert(isDismissedForView(true, t0 + 59_000), 'Auth popup stays hidden at 59s after cancel');
-assert(getPopupRemainingCooldownMs(true, t0 + 30_000) === 30_000, 'Remaining cooldown at 30s is exactly 30,000ms');
-assert(!isDismissedForView(true, t0 + 60_000), 'Auth popup automatically clears dismissal and reappears at 60s (1 min)');
+assert(!isPopupOpenPersisted(), 'Cancelling clears open state');
+assert(mockLocalStorage['my_money_pwa_dismissed_at'] === String(t0), 'Dismiss timestamp persisted in localStorage');
+assert(!isAppDownloadedOrInstalled(false), 'Cancelling NEVER marks app as downloaded/installed');
+assert(isDismissedForView(true, t0 + 59_000), 'Popup stays hidden at 59s after Cancel/Close');
+assert(getPopupRemainingCooldownMs(true, t0 + 30_000) === 30_000, 'Remaining cooldown at 30s is 30,000ms');
+assert(!isDismissedForView(false, t0 + 60_000), 'Popup reappears automatically after 60s even across login/view change or restart');
 
-// Test 3: After login (dashboard view = false), popup should NOT be suppressed by the login dismiss
-dismissPopupForCurrentView(true, t0);
-const isDismissedOnDashboard = isDismissedForView(false, t0 + 5_000);
-assert(!isDismissedOnDashboard, 'Dashboard view is NOT suppressed after user logged in from login page cancellation');
-
-// Test 4: If user cancels on Dashboard, hides for 60s then re-appears automatically
-dismissPopupForCurrentView(false, t0);
-assert(mockSessionStorage['my_money_popup_app_dismissed'] === 'true', 'Cancelling on dashboard sets dashboard view dismissal');
-assert(isDismissedForView(false, t0 + 45_000), 'Dashboard popup remains hidden at 45s after cancel');
-assert(getPopupRemainingCooldownMs(false, t0 + 45_000) === 15_000, 'Remaining dashboard cooldown at 45s is 15,000ms');
-assert(!isDismissedForView(false, t0 + 60_000), 'Dashboard popup automatically reappears after 1 minute (60s)');
-
-// Test 5: Clear dismissal helper & fresh session without download
+// Test 4: Clear dismissal helper
 dismissPopupForCurrentView(false, t0);
 clearDismissalForView(false);
-assert(!isDismissedForView(false, t0 + 1_000), 'clearDismissalForView clears dismissal immediately');
-delete mockSessionStorage['my_money_popup_app_dismissed'];
-delete mockSessionStorage['my_money_popup_auth_dismissed'];
-assert(!isAppDownloadedOrInstalled(false), 'On new session without download, app is not downloaded');
-assert(!mockSessionStorage['my_money_popup_app_dismissed'], 'On new session, popup can appear again');
+assert(!isDismissedForView(false, t0 + 1_000), 'clearDismissalForView clears cooldown immediately');
 
-// Test 6: Active modal / scanner suppression & Settings Reopen behavior
+// Test 5: Suppression rules
 assert(
   !shouldSuppressInstallPopup({
     isAdminRoute: false,
@@ -125,7 +140,7 @@ assert(
     activeModalCount: 0,
     autoPromptDisabled: false,
   }),
-  'Popup displays cleanly when no modal/scanner is open and app is not installed'
+  'Popup displays cleanly when active wait reached and app is not installed'
 );
 assert(
   shouldSuppressInstallPopup({
@@ -156,20 +171,6 @@ assert(
   'Popup is suppressed while QR scanner is active'
 );
 assert(
-  shouldSuppressInstallPopup({
-    isAdminRoute: false,
-    isMaintenanceBlocked: false,
-    isEnabled: true,
-    isInstalled: false,
-    isHidden: false,
-    isModalOpen: false,
-    isScannerActive: false,
-    activeModalCount: 0,
-    autoPromptDisabled: true,
-  }),
-  'Popup respects user auto-reminder disable toggle'
-);
-assert(
   !shouldSuppressInstallPopup({
     isAdminRoute: false,
     isMaintenanceBlocked: false,
@@ -185,14 +186,12 @@ assert(
   'Settings Reopen Install Popup overrides cooldown when no blocking modal is open'
 );
 
-// Test 7: When user actually downloads or installs the app
+// Test 6: Installing / downloading permanently suppresses the popup
 markAppAsDownloaded();
-assert(isAppDownloadedOrInstalled(false), 'After downloading, isAppDownloadedOrInstalled is TRUE');
+assert(isAppDownloadedOrInstalled(false), 'After installing/downloading, isAppDownloadedOrInstalled is TRUE');
 assert(mockLocalStorage['my_money_app_downloaded_confirmed'] === 'true', 'Persistent download flag saved to localStorage');
 assert(mockCookies.includes('mymoney_app_downloaded=downloaded'), 'Persistent download cookie saved');
-
-// Test 8: Downloaded user in subsequent sessions or auth pages never sees the popup
-assert(isAppDownloadedOrInstalled(false), 'Downloaded user is permanently suppressed even on new session');
+assert(!isPopupOpenPersisted(), 'Open state cleared on install');
 assert(isAppDownloadedOrInstalled(true), 'Standalone/PWA-installed user is permanently suppressed');
 assert(
   shouldSuppressInstallPopup({

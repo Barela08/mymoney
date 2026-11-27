@@ -42,6 +42,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
   const [contacts, setContacts] = useState<UdharContact[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [contactsError, setContactsError] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState<string>('');
 
   // Add / Edit Modal
@@ -66,16 +67,22 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
   const [addModeUserSearch, setAddModeUserSearch] = useState<string>('');
   const [addModeSearchResults, setAddModeSearchResults] = useState<SearchUserResult[]>([]);
   const [isSearchingAddMode, setIsSearchingAddMode] = useState<boolean>(false);
+  const [addModeSearchError, setAddModeSearchError] = useState<string | null>(null);
 
   const fetchContacts = async () => {
     try {
       setIsLoading(true);
+      setContactsError(null);
       const res = await udharDeletionApi.getContacts();
       if (res.success) {
-        setContacts(res.contacts);
+        setContacts(res.contacts || []);
+      } else {
+        setContactsError('Unable to load your saved people right now.');
       }
     } catch (err: any) {
-      toast.error('Error', err.message || 'Unable to fetch contacts.');
+      const msg = err?.message || 'Unable to fetch contacts.';
+      setContactsError(msg);
+      toast.error('Error', msg);
     } finally {
       setIsLoading(false);
     }
@@ -123,18 +130,24 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
   useEffect(() => {
     if (!isAddMode || addModeUserSearch.trim().length < 2) {
       setAddModeSearchResults([]);
+      setAddModeSearchError(null);
       return;
     }
 
     const t = setTimeout(async () => {
       try {
         setIsSearchingAddMode(true);
+        setAddModeSearchError(null);
         const res = await udharDeletionApi.searchUsers(addModeUserSearch);
         if (res.success) {
-          setAddModeSearchResults(res.users);
+          setAddModeSearchResults(res.users || []);
+        } else {
+          setAddModeSearchResults([]);
+          setAddModeSearchError('Could not search registered users right now.');
         }
-      } catch {
-        // ignore
+      } catch (err: any) {
+        setAddModeSearchResults([]);
+        setAddModeSearchError(err?.message || 'Unable to reach user directory.');
       } finally {
         setIsSearchingAddMode(false);
       }
@@ -346,16 +359,33 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) {
+    if (isSaving) return;
+    const trimmedName = formName.trim();
+    if (!trimmedName) {
       toast.error('Name Required', 'Please enter a name for this contact.');
       return;
+    }
+
+    if (!editingContact) {
+      const normalizedTarget = trimmedName.toLowerCase();
+      const duplicate = contacts.find((c) => {
+        if (selectedRegisteredUser?.id && c.linked_user_id === selectedRegisteredUser.id) return true;
+        return c.name.trim().toLowerCase() === normalizedTarget;
+      });
+      if (duplicate) {
+        toast.info(
+          'Already Saved',
+          `"${duplicate.name}" is already in your Saved People list.`
+        );
+        return;
+      }
     }
 
     try {
       setIsSaving(true);
       if (editingContact) {
         const res = await udharDeletionApi.updateContact(editingContact.id, {
-          name: formName.trim(),
+          name: trimmedName,
           email: formEmail.trim() || undefined,
           phone: formPhone.trim() || undefined,
           relationship_type: formRelationship,
@@ -366,15 +396,15 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
           if (res.reciprocallyLinked || selectedRegisteredUser || editingContact.linked_user_id) {
             toast.success(
               'Updated & 2-Way Synced!',
-              `Saved contact for ${formName.trim()} updated. Synced in both users' Saved People.`
+              `Saved contact for ${trimmedName} updated. Synced in both users' Saved People.`
             );
           } else {
-            toast.success('Updated', `Saved contact for ${formName.trim()} updated.`);
+            toast.success('Updated', `Saved contact for ${trimmedName} updated.`);
           }
         }
       } else {
         const res = await udharDeletionApi.saveContact({
-          name: formName.trim(),
+          name: trimmedName,
           email: formEmail.trim() || undefined,
           phone: formPhone.trim() || undefined,
           relationship_type: formRelationship,
@@ -385,10 +415,10 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
           if (res.reciprocallyLinked || selectedRegisteredUser) {
             toast.success(
               'Contact Added & 2-Way Synced!',
-              `${formName.trim()} saved. You are also automatically added to their Saved People!`
+              `${trimmedName} saved. You are also automatically added to their Saved People!`
             );
           } else {
-            toast.success('Contact Added', `${formName.trim()} added to your saved people.`);
+            toast.success('Contact Added', `${trimmedName} added to your saved people.`);
           }
         }
       }
@@ -596,6 +626,10 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
                 {isSearchingAddMode && (
                   <p className="text-[10px] text-slate-400 animate-pulse">Searching users...</p>
+                )}
+
+                {!isSearchingAddMode && addModeSearchError && (
+                  <p className="text-[10px] text-rose-600 dark:text-rose-400">{addModeSearchError}</p>
                 )}
 
                 {addModeSearchResults.length > 0 && (
@@ -903,6 +937,18 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
               {isLoading ? (
                 <p className="text-center py-6 text-xs text-slate-400 animate-pulse">Loading contacts...</p>
+              ) : contactsError ? (
+                <div className="text-center py-6 px-4 bg-rose-50 dark:bg-rose-950/30 rounded-2xl border border-rose-200 dark:border-rose-900 space-y-2">
+                  <AlertCircle className="w-6 h-6 text-rose-500 mx-auto" />
+                  <p className="text-xs font-bold text-rose-700 dark:text-rose-300">{contactsError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void fetchContacts()}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Retry Loading
+                  </button>
+                </div>
               ) : filtered.length === 0 ? (
                 <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1.5">
                   <Users className="w-7 h-7 text-slate-300 mx-auto" />

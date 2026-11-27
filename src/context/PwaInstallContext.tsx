@@ -171,6 +171,8 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const persistConfirmedInstallFlag = () => {
       try {
         localStorage.setItem('my_money_app_downloaded_confirmed', 'true');
+        localStorage.removeItem('my_money_pwa_popup_open');
+        localStorage.removeItem('my_money_pwa_dismissed_at');
         const secureFlag = window.location?.protocol === 'https:' ? '; Secure' : '';
         document.cookie = `mymoney_app_downloaded=downloaded; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax${secureFlag}`;
       } catch {}
@@ -273,6 +275,9 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       sessionStorage.setItem(SESSION_DISMISSED_KEY, 'true');
       localStorage.setItem(DISMISSED_STORAGE_KEY, String(now));
+      localStorage.setItem('my_money_pwa_dismissed_at', String(now));
+      localStorage.removeItem('my_money_pwa_popup_open');
+      window.dispatchEvent(new CustomEvent('mymoney:pwa-popup-dismissed'));
     } catch {
       // Ignore storage quota errors
     }
@@ -311,6 +316,8 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       localStorage.setItem(AUTO_PROMPT_DISABLED_KEY, 'false');
       sessionStorage.removeItem(SESSION_DISMISSED_KEY);
       localStorage.removeItem(DISMISSED_STORAGE_KEY);
+      localStorage.removeItem('my_money_pwa_dismissed_at');
+      localStorage.setItem('my_money_pwa_popup_open', 'true');
       sessionStorage.removeItem('my_money_popup_auth_dismissed');
       sessionStorage.removeItem('my_money_popup_auth_dismissed_at');
       sessionStorage.removeItem('my_money_popup_app_dismissed');
@@ -349,14 +356,10 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     }
 
-    // Native prompt unavailable (e.g., iOS Safari, macOS Safari, or manual guide requested)
-    if (compatibility.supportsManualInstall) {
-      setIsModalOpen(true);
-      return { status: 'manual_guide' };
-    }
-
-    return { status: 'unavailable' };
-  }, [isInstalled, deferredPrompt, dismissBanner, compatibility.supportsManualInstall]);
+    // Native prompt unavailable (e.g., iOS Safari, macOS Safari, or unsupported desktop browser): open instruction guide modal
+    setIsModalOpen(true);
+    return { status: 'manual_guide' };
+  }, [isInstalled, deferredPrompt, dismissBanner]);
 
   // Promotional suggestion visibility (never shown if installed or dismissed)
   const isBannerVisible =

@@ -50486,6 +50486,32 @@ async function deactivateBroadcastBannerFallback(id) {
     writeNotifStore(store);
   }
 }
+async function purgeUdharNotificationsFallback(linkId, txId) {
+  if (!linkId && !txId) return;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const store = readNotifStore();
+  let changed = false;
+  for (const b of store.banners) {
+    if (b && b.is_active !== false && (linkId && b.related_entity_id === linkId || txId && b.related_entity_id === txId)) {
+      b.is_active = false;
+      changed = true;
+    }
+  }
+  for (const n of store.userNotifications) {
+    if (!n || n.is_deleted) continue;
+    const meta = n.metadata || {};
+    const matchesLink = Boolean(linkId) && (n.related_entity_id === linkId || meta.relatedEntityId === linkId || meta.linkId === linkId);
+    const matchesTx = Boolean(txId) && (n.related_entity_id === txId || meta.udharId === txId || meta.transactionId === txId);
+    if (matchesLink || matchesTx) {
+      n.is_deleted = true;
+      n.deleted_at = now;
+      changed = true;
+    }
+  }
+  if (changed) {
+    writeNotifStore(store);
+  }
+}
 async function insertUserNotificationFallback(params) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const id = crypto13.randomUUID();
@@ -89819,13 +89845,54 @@ function isActiveRepayment(repayment) {
 }
 function canCancelUdhar(udhar) {
   if (udhar.status === "cancelled" || Boolean(udhar.deleted_at)) {
-    return { allowed: false, reason: "This Udhar is already deleted." };
+    return {
+      allowed: false,
+      httpStatus: 404,
+      code: "ALREADY_DELETED",
+      reason: "This Udhar is already deleted."
+    };
   }
   if (udhar.status === "disputed") {
     return {
       allowed: false,
+      httpStatus: 409,
+      code: "DISPUTED",
       reason: "Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history."
     };
+  }
+  const isShared = Boolean(udhar.is_shared ?? udhar.counterpart_user_id);
+  if (udhar.direction === "took" && isShared) {
+    const activeRepayments = Array.isArray(udhar.repayments) ? udhar.repayments.filter((r2) => isActiveRepayment(r2)) : [];
+    let isFullySettled = false;
+    if (udhar.original_amount !== void 0 && activeRepayments.length > 0) {
+      const recalc = recalculateUdharFromRepayments({
+        originalAmount: udhar.original_amount,
+        repayments: activeRepayments.map((r2) => ({
+          amount: r2.amount ?? 0,
+          status: r2.status,
+          deleted_at: r2.deleted_at
+        })),
+        currentStatus: udhar.status
+      });
+      isFullySettled = recalc.isSettled && udhar.status === "settled";
+    } else if (udhar.status === "settled") {
+      const orig = roundMoney(parseFloat(String(udhar.original_amount ?? 0)) || 0);
+      const cur = roundMoney(parseFloat(String(udhar.current_balance ?? 0)) || 0);
+      const paid = roundMoney(parseFloat(String(udhar.paid_amount ?? orig)) || 0);
+      if (orig > 0) {
+        isFullySettled = cur <= 0.01 && paid >= orig - 0.01;
+      } else {
+        isFullySettled = cur <= 0.01;
+      }
+    }
+    if (!isFullySettled) {
+      return {
+        allowed: false,
+        httpStatus: 403,
+        code: "BORROWER_REQUIRES_SETTLEMENT",
+        reason: "You can delete this transaction after it is fully settled."
+      };
+    }
   }
   return { allowed: true };
 }
@@ -90187,43 +90254,62 @@ async function upsertUserConnectionRest(userAId, userBId, status) {
   });
 }
 async function upsertUdharContactRest(payload) {
+  const cleanName = payload.name.trim();
+  const normalizedName = cleanName.toLowerCase();
+  const cleanPayload = { ...payload, name: cleanName };
+  if (cleanPayload.linked_user_id) {
+    const byLink = await sbRest(
+      `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&linked_user_id=eq.${encodeURIComponent(cleanPayload.linked_user_id)}&limit=1`
+    );
+    if (byLink.ok && byLink.data && byLink.data.length > 0) {
+      const existing = byLink.data[0];
+      return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(existing.id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          ...cleanPayload,
+          email: cleanPayload.email ?? existing.email ?? null,
+          phone: cleanPayload.phone ?? existing.phone ?? null,
+          photo_url: cleanPayload.photo_url ?? existing.photo_url ?? null,
+          notes: cleanPayload.notes ?? existing.notes ?? null
+        }
+      });
+    }
+  }
+  const allForUser = await sbRest(
+    `udhar_contacts?user_id=eq.${encodeURIComponent(cleanPayload.user_id)}&select=id,name,email,phone,photo_url,notes,linked_user_id`
+  );
+  if (allForUser.ok && Array.isArray(allForUser.data)) {
+    const matchedByName = allForUser.data.find(
+      (c) => (c.name || "").trim().toLowerCase() === normalizedName && (!cleanPayload.linked_user_id || !c.linked_user_id || c.linked_user_id === cleanPayload.linked_user_id)
+    );
+    if (matchedByName) {
+      return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(matchedByName.id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          ...cleanPayload,
+          email: cleanPayload.email ?? matchedByName.email ?? null,
+          phone: cleanPayload.phone ?? matchedByName.phone ?? null,
+          photo_url: cleanPayload.photo_url ?? matchedByName.photo_url ?? null,
+          notes: cleanPayload.notes ?? matchedByName.notes ?? null,
+          linked_user_id: cleanPayload.linked_user_id || matchedByName.linked_user_id || null
+        }
+      });
+    }
+  }
   const res = await sbRest("udhar_contacts?on_conflict=user_id,name", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
-    body: payload
+    body: cleanPayload
   });
   if (res.ok && res.data && res.data.length > 0) {
     return res;
   }
-  if (payload.linked_user_id) {
-    const byLink = await sbRest(
-      `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&linked_user_id=eq.${encodeURIComponent(payload.linked_user_id)}&limit=1`
-    );
-    if (byLink.ok && byLink.data && byLink.data.length > 0) {
-      return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(byLink.data[0].id)}`, {
-        method: "PATCH",
-        prefer: "return=representation",
-        body: payload
-      });
-    }
-  }
-  const byName = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(payload.user_id)}&name=ilike.${encodeURIComponent(payload.name)}&limit=1`
-  );
-  if (byName.ok && byName.data && byName.data.length > 0) {
-    return sbRest(`udhar_contacts?id=eq.${encodeURIComponent(byName.data[0].id)}`, {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: {
-        ...payload,
-        linked_user_id: payload.linked_user_id || byName.data[0].linked_user_id || null
-      }
-    });
-  }
   return sbRest("udhar_contacts", {
     method: "POST",
     prefer: "return=representation",
-    body: payload
+    body: cleanPayload
   });
 }
 async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend") {
@@ -90330,18 +90416,73 @@ async function createTargetedNotificationRest(params) {
         message: params.message,
         category: params.category || "udhar",
         type: params.type === "udhar_connection_request" ? "info" : "success",
+        related_entity_type: "udhar",
+        related_entity_id: params.relatedEntityId || null,
         deep_link: params.deepLink || "people",
         is_read: false,
         is_deleted: false,
         metadata: params.metadata || {
           actionType: params.type,
           relatedEntityId: params.relatedEntityId || null,
+          linkId: params.relatedEntityId || null,
           actorUserId: params.actorUserId
         }
       }
     }).catch(() => {
     })
   ]);
+}
+async function deactivateUdharNotificationsRest(linkId, txId) {
+  if (!linkId && !txId) return;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const tasks = [];
+  if (linkId) {
+    tasks.push(
+      sbRest(`notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_active: false }
+      }).catch(() => {
+      }),
+      sbRest(`user_notifications?related_entity_id=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      }),
+      sbRest(`user_notifications?metadata->>relatedEntityId=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      }),
+      sbRest(`user_notifications?metadata->>linkId=eq.${encodeURIComponent(linkId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      })
+    );
+  }
+  if (txId) {
+    tasks.push(
+      sbRest(`notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_active: false }
+      }).catch(() => {
+      }),
+      sbRest(`user_notifications?related_entity_id=eq.${encodeURIComponent(txId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { is_deleted: true, deleted_at: nowIso }
+      }).catch(() => {
+      })
+    );
+  }
+  tasks.push(purgeUdharNotificationsFallback(linkId, txId).catch(() => {
+  }));
+  await Promise.all(tasks);
 }
 async function searchUsersRest(authUser, rawQuery) {
   const classified = classifyLiveSearchQuery(rawQuery);
@@ -91058,42 +91199,142 @@ async function recordPrivacyConsentBatchRest(authUser, entries) {
     }
   };
 }
-async function getContactsRest(authUser) {
-  const res = await sbRest(
-    `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`
+async function buildMergedDirectoryForUserRest(authUser, activeTxs = []) {
+  const [contactsRes, connsRes] = await Promise.all([
+    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
+    sbRest(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&status=eq.connected`
+    )
+  ]);
+  if (!contactsRes.ok) {
+    return { ok: false, error: contactsRes.error || "Failed to load contacts." };
+  }
+  const rawContacts = contactsRes.data || [];
+  const connectedPeerIds = /* @__PURE__ */ new Set();
+  if (connsRes.ok && Array.isArray(connsRes.data)) {
+    for (const conn of connsRes.data) {
+      const peerId = conn.user_a_id === authUser.id ? conn.user_b_id : conn.user_a_id;
+      if (peerId && peerId !== authUser.id) {
+        connectedPeerIds.add(peerId);
+      }
+    }
+  }
+  const txPeerIds = activeTxs.map((t2) => t2.counterpart_user_id).filter((id) => Boolean(id && id !== authUser.id));
+  const allUserIds = Array.from(
+    /* @__PURE__ */ new Set([
+      ...rawContacts.map((r2) => r2.linked_user_id).filter(Boolean),
+      ...Array.from(connectedPeerIds),
+      ...txPeerIds
+    ])
   );
-  if (!res.ok) {
+  const userMap = await fetchUsersByIds(allUserIds);
+  const deduped = [];
+  const seenLinkedIds = /* @__PURE__ */ new Set();
+  const seenUnlinkedNames = /* @__PURE__ */ new Set();
+  for (const c of rawContacts) {
+    const linkedId = c.linked_user_id || null;
+    const normName = (c.name || "").trim().toLowerCase();
+    if (linkedId) {
+      if (seenLinkedIds.has(linkedId)) continue;
+      seenLinkedIds.add(linkedId);
+    } else if (normName) {
+      if (seenUnlinkedNames.has(normName)) continue;
+      seenUnlinkedNames.add(normName);
+    }
+    deduped.push(c);
+  }
+  for (const peerId of connectedPeerIds) {
+    if (seenLinkedIds.has(peerId)) continue;
+    const u = userMap.get(peerId);
+    if (!u || !isDiscoverableNormalUser(u)) continue;
+    seenLinkedIds.add(peerId);
+    deduped.push({
+      id: `conn_${peerId}`,
+      user_id: authUser.id,
+      name: (u.full_name || u.email?.split("@")[0] || "Connected User").trim(),
+      email: u.email ? maskEmailForPrivacy(u.email) : null,
+      phone: null,
+      photo_url: u.avatar_url || null,
+      relationship_type: "Friend",
+      notes: null,
+      linked_user_id: peerId,
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  for (const t2 of activeTxs) {
+    if (t2.status === "cancelled" || t2.deleted_at) continue;
+    const linkedId = t2.counterpart_user_id || null;
+    const rawName = (t2.counterpart_name || "").trim();
+    const normName = rawName.toLowerCase();
+    if (linkedId) {
+      if (seenLinkedIds.has(linkedId)) continue;
+      const u = userMap.get(linkedId);
+      seenLinkedIds.add(linkedId);
+      deduped.push({
+        id: `tx_peer_${linkedId}`,
+        user_id: authUser.id,
+        name: (u?.full_name || rawName || "Connected User").trim(),
+        email: u?.email ? maskEmailForPrivacy(u.email) : null,
+        phone: null,
+        photo_url: u?.avatar_url || null,
+        relationship_type: "Friend",
+        notes: null,
+        linked_user_id: linkedId,
+        created_at: t2.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: t2.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    } else if (normName && !seenUnlinkedNames.has(normName)) {
+      seenUnlinkedNames.add(normName);
+      deduped.push({
+        id: `tx_local_${normName.replace(/[^a-z0-9]/g, "_")}`,
+        user_id: authUser.id,
+        name: rawName,
+        email: null,
+        phone: null,
+        photo_url: null,
+        relationship_type: "Friend",
+        notes: null,
+        linked_user_id: null,
+        created_at: t2.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: t2.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+  }
+  deduped.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  return { ok: true, contacts: deduped, userMap };
+}
+async function getContactsRest(authUser) {
+  const txRes = await sbRest(
+    `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`
+  );
+  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => t2.status !== "cancelled" && !t2.deleted_at) : [];
+  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
+  if (!merged.ok) {
     return { status: 503, body: { success: false, message: "Failed to load contacts." } };
   }
-  const rows = res.data || [];
-  const linkedIds = rows.map((r2) => r2.linked_user_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(linkedIds);
-  const contacts = rows.map((c) => {
-    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
+  const contacts = merged.contacts.map((c) => {
+    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
     return {
       ...c,
       linked_user_name: u?.full_name || null,
       linked_user_email: u?.email ? maskEmailForPrivacy(u.email) : null,
-      linked_user_avatar: u?.avatar_url || null
+      linked_user_avatar: u?.avatar_url || null,
+      is_registered: Boolean(c.linked_user_id)
     };
   });
   return { status: 200, body: { success: true, contacts } };
 }
 async function getContactsWithBalancesRest(authUser) {
-  const [contactsRes, txRes] = await Promise.all([
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&order=name.asc`),
-    sbRest(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`)
-  ]);
-  if (!contactsRes.ok) {
+  const txRes = await sbRest(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`);
+  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => t2.status !== "cancelled" && !t2.deleted_at) : [];
+  const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
+  if (!merged.ok) {
     return { status: 503, body: { success: false, message: "Failed to load people contacts." } };
   }
-  const contacts = contactsRes.data || [];
-  const txs = txRes.ok && Array.isArray(txRes.data) ? txRes.data : [];
-  const linkedIds = contacts.map((c) => c.linked_user_id).filter(Boolean);
-  const userMap = await fetchUsersByIds(linkedIds);
-  const parsedContacts = contacts.map((c) => {
-    const u = c.linked_user_id ? userMap.get(c.linked_user_id) : null;
-    const matchingTxs = txs.filter((t2) => {
+  const parsedContacts = merged.contacts.map((c) => {
+    const u = c.linked_user_id ? merged.userMap.get(c.linked_user_id) : null;
+    const matchingTxs = activeTxs.filter((t2) => {
       if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
       if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
         return true;
@@ -91134,7 +91375,7 @@ async function getContactsWithBalancesRest(authUser) {
       outstanding_payable: roundMoney(payable),
       net_balance: roundMoney(receivable - payable),
       last_transaction_date: lastDate,
-      total_transactions_count: matchingTxs.filter((t2) => t2.status !== "cancelled" && !t2.deleted_at).length,
+      total_transactions_count: matchingTxs.length,
       pending_transactions_count: pendingCount,
       is_registered: Boolean(c.linked_user_id)
     };
@@ -92320,25 +92561,31 @@ async function cancelUdharRest(authUser, txId, reason) {
     return { status: 404, body: { success: false, message: "Transaction not found." } };
   }
   const tx = txRes.data[0];
-  if (tx.counterpart_user_id && tx.direction === "took") {
-    return {
-      status: 403,
-      body: {
-        success: false,
-        message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
-      }
-    };
-  }
   const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`);
   const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: tx.original_amount,
+    repayments,
+    currentStatus: tx.status
+  });
+  const effectiveStatus = tx.status === "cancelled" || tx.deleted_at ? "cancelled" : tx.status === "disputed" ? "disputed" : repayments.length > 0 ? recalc.nextStatus : tx.status;
   const guard = canCancelUdhar({
-    status: tx.status,
+    status: effectiveStatus,
     deleted_at: tx.deleted_at,
-    paid_amount: tx.paid_amount,
+    direction: tx.direction,
+    is_shared: Boolean(tx.counterpart_user_id),
+    counterpart_user_id: tx.counterpart_user_id,
+    original_amount: tx.original_amount,
+    paid_amount: repayments.length > 0 ? recalc.paidAmount : tx.paid_amount,
+    current_balance: repayments.length > 0 ? recalc.remainingBalance : tx.current_balance,
+    settled_at: tx.settled_at,
     repayments
   });
   if (!guard.allowed) {
-    return { status: 409, body: { success: false, message: guard.reason } };
+    return {
+      status: guard.httpStatus || 409,
+      body: { success: false, code: guard.code, message: guard.reason }
+    };
   }
   const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
@@ -92372,7 +92619,7 @@ async function cancelUdharRest(authUser, txId, reason) {
     return { status: 503, body: { success: false, message: softDelRes.error || "Failed to delete transaction." } };
   }
   if (!Array.isArray(softDelRes.data) || softDelRes.data.length === 0) {
-    return { status: 409, body: { success: false, message: "This transaction cannot be deleted in its current state." } };
+    return { status: 409, body: { success: false, message: "This transaction has already been deleted or cannot be deleted in its current state." } };
   }
   if (repayments.length > 0) {
     const repDelRes = await sbRest(
@@ -92395,25 +92642,20 @@ async function cancelUdharRest(authUser, txId, reason) {
       });
     }
   }
-  if (tx.counterpart_user_id) {
-    await createTargetedNotificationRest({
-      targetUserId: tx.counterpart_user_id,
-      actorUserId: authUser.id,
-      title: `Udhar Removed by ${authUser.full_name}`,
-      message: `${authUser.full_name} deleted the Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
-      type: "udhar_cancelled",
-      relatedEntityId: tx.link_id
-    });
-  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id);
   return {
     status: 200,
     body: {
       success: true,
       deletedTransactionId: tx.id,
       linkId: tx.link_id,
+      originalAmount: tx.original_amount,
+      direction: tx.direction,
+      counterpartUserId: tx.counterpart_user_id || null,
+      deletionReason: cleanReason,
       deletedAt: nowIso,
       deletedBy: authUser.id,
-      message: "Udhar entry deleted successfully. Totals have been recalculated."
+      message: "Udhar entry deleted successfully for both participants. Totals have been recalculated."
     }
   };
 }
@@ -92548,6 +92790,9 @@ async function getUdharHistoryRest(authUser, txId) {
     return { status: 404, body: { success: false, message: "Transaction not found." } };
   }
   const tx = txRes.data[0];
+  if (tx.status === "cancelled" || Boolean(tx.deleted_at)) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
   const [repsRes, histRes] = await Promise.all([
     sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),
     sbRest(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`)
@@ -100420,16 +100665,114 @@ async function handleApiRequest(req, res) {
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
-      const contactsRes = await query(
-        `SELECT c.id, c.name, c.email, c.phone, c.photo_url, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
-                u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
-         FROM public.udhar_contacts c
-         LEFT JOIN public.app_users u ON c.linked_user_id = u.id
-         WHERE c.user_id = $1
-         ORDER BY c.name ASC`,
-        [authUser.id]
-      );
-      sendJson6(res, 200, { success: true, contacts: contactsRes.rows });
+      const [contactsRes, connsRes, txPeersRes] = await Promise.all([
+        query(
+          `SELECT c.id, c.name, c.email, c.phone, c.photo_url, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
+                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+           FROM public.udhar_contacts c
+           LEFT JOIN public.app_users u ON c.linked_user_id = u.id
+           WHERE c.user_id = $1
+           ORDER BY c.name ASC`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END AS peer_id,
+                  u.full_name, u.email, u.avatar_url, u.role, u.status, COALESCE(u.deletion_status, 'none') AS deletion_status
+           FROM public.user_connections uc
+           JOIN public.app_users u ON u.id = (CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END)
+           WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1) AND uc.status = 'connected'`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT DISTINCT ON (COALESCE(t.counterpart_user_id::text, LOWER(TRIM(t.counterpart_name))))
+                  t.counterpart_user_id, t.counterpart_name, t.created_at, t.updated_at,
+                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+           FROM public.udhar_transactions t
+           LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
+           WHERE t.user_id = $1 AND t.status <> 'cancelled' AND t.deleted_at IS NULL`,
+          [authUser.id]
+        )
+      ]);
+      const mergedContacts = [];
+      const seenLinked = /* @__PURE__ */ new Set();
+      const seenNames = /* @__PURE__ */ new Set();
+      for (const c of contactsRes.rows) {
+        const linkedId = c.linked_user_id || null;
+        const normName = (c.name || "").trim().toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+        } else if (normName) {
+          if (seenNames.has(normName)) continue;
+          seenNames.add(normName);
+        }
+        mergedContacts.push({
+          ...c,
+          linked_user_email: c.linked_user_email ? maskEmailForPrivacy(c.linked_user_email) : null,
+          is_registered: Boolean(linkedId)
+        });
+      }
+      for (const conn of connsRes.rows) {
+        if (!conn.peer_id || conn.peer_id === authUser.id || seenLinked.has(conn.peer_id)) continue;
+        if (!isDiscoverableNormalUser(conn)) continue;
+        seenLinked.add(conn.peer_id);
+        mergedContacts.push({
+          id: `conn_${conn.peer_id}`,
+          name: (conn.full_name || conn.email?.split("@")[0] || "Connected User").trim(),
+          email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          phone: null,
+          photo_url: conn.avatar_url || null,
+          relationship_type: "Friend",
+          notes: null,
+          linked_user_id: conn.peer_id,
+          linked_user_name: conn.full_name || null,
+          linked_user_email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          linked_user_avatar: conn.avatar_url || null,
+          is_registered: true
+        });
+      }
+      for (const tp of txPeersRes.rows) {
+        const linkedId = tp.counterpart_user_id || null;
+        const rawName = (tp.counterpart_name || "").trim();
+        const normName = rawName.toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+          mergedContacts.push({
+            id: `tx_peer_${linkedId}`,
+            name: (tp.linked_user_name || rawName || "Connected User").trim(),
+            email: tp.linked_user_email ? maskEmailForPrivacy(tp.linked_user_email) : null,
+            phone: null,
+            photo_url: tp.linked_user_avatar || null,
+            relationship_type: "Friend",
+            notes: null,
+            linked_user_id: linkedId,
+            linked_user_name: tp.linked_user_name || null,
+            linked_user_email: tp.linked_user_email ? maskEmailForPrivacy(tp.linked_user_email) : null,
+            linked_user_avatar: tp.linked_user_avatar || null,
+            is_registered: true,
+            created_at: tp.created_at,
+            updated_at: tp.updated_at
+          });
+        } else if (normName && !seenNames.has(normName)) {
+          seenNames.add(normName);
+          mergedContacts.push({
+            id: `tx_local_${normName.replace(/[^a-z0-9]/g, "_")}`,
+            name: rawName,
+            email: null,
+            phone: null,
+            photo_url: null,
+            relationship_type: "Friend",
+            notes: null,
+            linked_user_id: null,
+            is_registered: false,
+            created_at: tp.created_at,
+            updated_at: tp.updated_at
+          });
+        }
+      }
+      mergedContacts.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      sendJson6(res, 200, { success: true, contacts: mergedContacts });
       return true;
     }
     if (pathname === "/api/udhar/contacts/with-balances" && method === "GET") {
@@ -100443,42 +100786,149 @@ async function handleApiRequest(req, res) {
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
-      const contactsRes = await query(
-        `SELECT 
-          c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.photo_url, c.created_at, c.updated_at,
-          u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar,
-          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status <> 'cancelled' THEN t.original_amount ELSE 0 END), 0) AS total_given,
-          COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status <> 'cancelled' THEN t.original_amount ELSE 0 END), 0) AS total_taken,
-          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance 
-                            WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN -t.current_balance 
-                            ELSE 0 END), 0) AS net_balance,
-          COALESCE(SUM(CASE WHEN t.direction = 'gave' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_receivable,
-          COALESCE(SUM(CASE WHEN t.direction = 'took' AND t.status NOT IN ('settled', 'cancelled') THEN t.current_balance ELSE 0 END), 0) AS outstanding_payable,
-          MAX(t.transaction_date) AS last_transaction_date,
-          COUNT(CASE WHEN t.status <> 'cancelled' THEN 1 END) AS total_transactions_count,
-          COUNT(CASE WHEN t.status NOT IN ('settled', 'cancelled') AND t.current_balance > 0 THEN 1 END) AS pending_transactions_count
-        FROM public.udhar_contacts c
-        LEFT JOIN public.app_users u ON c.linked_user_id = u.id
-        LEFT JOIN public.udhar_transactions t ON t.user_id = c.user_id AND (
-          (c.linked_user_id IS NOT NULL AND t.counterpart_user_id = c.linked_user_id) OR
-          (c.linked_user_id IS NULL AND t.counterpart_user_id IS NULL AND LOWER(TRIM(t.counterpart_name)) = LOWER(TRIM(c.name)))
+      const [contactsRes, connsRes, txsRes] = await Promise.all([
+        query(
+          `SELECT c.id, c.name, c.email, c.phone, c.relationship_type, c.notes, c.linked_user_id, c.photo_url, c.created_at, c.updated_at,
+                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
+           FROM public.udhar_contacts c
+           LEFT JOIN public.app_users u ON c.linked_user_id = u.id
+           WHERE c.user_id = $1
+           ORDER BY c.name ASC`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END AS peer_id,
+                  u.full_name, u.email, u.avatar_url, u.role, u.status, COALESCE(u.deletion_status, 'none') AS deletion_status
+           FROM public.user_connections uc
+           JOIN public.app_users u ON u.id = (CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END)
+           WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1) AND uc.status = 'connected'`,
+          [authUser.id]
+        ),
+        query(
+          `SELECT t.*, u.full_name AS counterpart_registered_name, u.email AS counterpart_email, u.avatar_url AS counterpart_avatar
+           FROM public.udhar_transactions t
+           LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
+           WHERE t.user_id = $1 AND t.status <> 'cancelled' AND t.deleted_at IS NULL`,
+          [authUser.id]
         )
-        WHERE c.user_id = $1
-        GROUP BY c.id, u.full_name, u.email, u.avatar_url
-        ORDER BY c.name ASC`,
-        [authUser.id]
-      );
-      const parsedContacts = contactsRes.rows.map((row) => ({
-        ...row,
-        total_given: parseFloat(row.total_given) || 0,
-        total_taken: parseFloat(row.total_taken) || 0,
-        net_balance: Math.round((parseFloat(row.net_balance) || 0) * 100) / 100,
-        outstanding_receivable: parseFloat(row.outstanding_receivable) || 0,
-        outstanding_payable: parseFloat(row.outstanding_payable) || 0,
-        total_transactions_count: parseInt(row.total_transactions_count, 10) || 0,
-        pending_transactions_count: parseInt(row.pending_transactions_count, 10) || 0,
-        is_registered: Boolean(row.linked_user_id)
-      }));
+      ]);
+      const baseContacts = [];
+      const seenLinked = /* @__PURE__ */ new Set();
+      const seenNames = /* @__PURE__ */ new Set();
+      for (const c of contactsRes.rows) {
+        const linkedId = c.linked_user_id || null;
+        const normName = (c.name || "").trim().toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+        } else if (normName) {
+          if (seenNames.has(normName)) continue;
+          seenNames.add(normName);
+        }
+        baseContacts.push(c);
+      }
+      for (const conn of connsRes.rows) {
+        if (!conn.peer_id || conn.peer_id === authUser.id || seenLinked.has(conn.peer_id)) continue;
+        if (!isDiscoverableNormalUser(conn)) continue;
+        seenLinked.add(conn.peer_id);
+        baseContacts.push({
+          id: `conn_${conn.peer_id}`,
+          name: (conn.full_name || conn.email?.split("@")[0] || "Connected User").trim(),
+          email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          phone: null,
+          photo_url: conn.avatar_url || null,
+          relationship_type: "Friend",
+          notes: null,
+          linked_user_id: conn.peer_id,
+          linked_user_name: conn.full_name || null,
+          linked_user_email: conn.email ? maskEmailForPrivacy(conn.email) : null,
+          linked_user_avatar: conn.avatar_url || null,
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      for (const t2 of txsRes.rows) {
+        const linkedId = t2.counterpart_user_id || null;
+        const rawName = (t2.counterpart_name || "").trim();
+        const normName = rawName.toLowerCase();
+        if (linkedId) {
+          if (seenLinked.has(linkedId)) continue;
+          seenLinked.add(linkedId);
+          baseContacts.push({
+            id: `tx_peer_${linkedId}`,
+            name: (t2.counterpart_registered_name || rawName || "Connected User").trim(),
+            email: t2.counterpart_email ? maskEmailForPrivacy(t2.counterpart_email) : null,
+            phone: null,
+            photo_url: t2.counterpart_avatar || null,
+            relationship_type: "Friend",
+            notes: null,
+            linked_user_id: linkedId,
+            linked_user_name: t2.counterpart_registered_name || null,
+            linked_user_email: t2.counterpart_email ? maskEmailForPrivacy(t2.counterpart_email) : null,
+            linked_user_avatar: t2.counterpart_avatar || null,
+            created_at: t2.created_at,
+            updated_at: t2.updated_at
+          });
+        } else if (normName && !seenNames.has(normName)) {
+          seenNames.add(normName);
+          baseContacts.push({
+            id: `tx_local_${normName.replace(/[^a-z0-9]/g, "_")}`,
+            name: rawName,
+            email: null,
+            phone: null,
+            photo_url: null,
+            relationship_type: "Friend",
+            notes: null,
+            linked_user_id: null,
+            created_at: t2.created_at,
+            updated_at: t2.updated_at
+          });
+        }
+      }
+      const parsedContacts = baseContacts.map((c) => {
+        const matchingTxs = txsRes.rows.filter((t2) => {
+          if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
+          if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
+            return true;
+          }
+          return false;
+        });
+        let totalGiven = 0;
+        let totalTaken = 0;
+        let receivable = 0;
+        let payable = 0;
+        let lastDate = null;
+        let pendingCount = 0;
+        for (const t2 of matchingTxs) {
+          const orig = parseFloat(t2.original_amount) || 0;
+          const cur = parseFloat(t2.current_balance) || 0;
+          const isSettled = t2.status === "settled" || cur <= 0.01;
+          if (t2.direction === "gave") {
+            totalGiven += orig;
+            if (!isSettled) receivable += cur;
+          } else {
+            totalTaken += orig;
+            if (!isSettled) payable += cur;
+          }
+          if (!isSettled && cur > 0.01) pendingCount += 1;
+          if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
+            lastDate = t2.transaction_date;
+          }
+        }
+        return {
+          ...c,
+          linked_user_email: c.linked_user_email ? maskEmailForPrivacy(c.linked_user_email) : null,
+          total_given: roundMoney(totalGiven),
+          total_taken: roundMoney(totalTaken),
+          outstanding_receivable: roundMoney(receivable),
+          outstanding_payable: roundMoney(payable),
+          net_balance: roundMoney(receivable - payable),
+          last_transaction_date: lastDate,
+          total_transactions_count: matchingTxs.length,
+          pending_transactions_count: pendingCount,
+          is_registered: Boolean(c.linked_user_id)
+        };
+      }).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
       sendJson6(res, 200, { success: true, contacts: parsedContacts });
       return true;
     }
@@ -100524,18 +100974,42 @@ async function handleApiRequest(req, res) {
           return true;
         }
       }
-      const upsertRes = await query(
+      const existingCheck = linkedUserId ? await query(
+        `SELECT * FROM public.udhar_contacts
+             WHERE user_id = $1 AND (linked_user_id = $2 OR (linked_user_id IS NULL AND LOWER(TRIM(name)) = LOWER(TRIM($3))))
+             ORDER BY (linked_user_id IS NOT NULL) DESC LIMIT 1`,
+        [authUser.id, linkedUserId, name2]
+      ) : await query(
+        `SELECT * FROM public.udhar_contacts
+             WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+             LIMIT 1`,
+        [authUser.id, name2]
+      );
+      const upsertRes = existingCheck.rows.length > 0 ? await query(
+        `UPDATE public.udhar_contacts
+             SET name = $1,
+                 email = COALESCE($2, email),
+                 phone = COALESCE($3, phone),
+                 photo_url = COALESCE($4, photo_url),
+                 relationship_type = $5,
+                 notes = COALESCE($6, notes),
+                 linked_user_id = COALESCE($7, linked_user_id),
+                 updated_at = NOW()
+             WHERE id = $8 AND user_id = $9
+             RETURNING *`,
+        [name2, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId, existingCheck.rows[0].id, authUser.id]
+      ) : await query(
         `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, notes, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE 
-         SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
-             phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
-             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-             relationship_type = EXCLUDED.relationship_type, 
-             notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
-             linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
-             updated_at = NOW()
-         RETURNING *`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+             ON CONFLICT (user_id, name) DO UPDATE 
+             SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
+                 phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
+                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
+                 relationship_type = EXCLUDED.relationship_type, 
+                 notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
+                 linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
+                 updated_at = NOW()
+             RETURNING *`,
         [authUser.id, name2, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId]
       );
       if (linkedUserId && linkedUserId !== authUser.id) {
@@ -102956,6 +103430,20 @@ async function handleApiRequest(req, res) {
       const deletionReason = typeof body?.reason === "string" ? body.reason.trim() : typeof body?.deletion_reason === "string" ? body.deletion_reason.trim() : "";
       if (!isDatabaseAvailable()) {
         const restRes = await cancelUdharRest(authUser, txId, deletionReason);
+        if (restRes.status === 200 && restRes.body?.success) {
+          await logSecurityEvent("UDHAR_DELETED", {
+            userId: authUser.id,
+            userEmail: authUser.email,
+            details: {
+              txId,
+              linkId: restRes.body.linkId,
+              direction: restRes.body.direction,
+              counterpartUserId: restRes.body.counterpartUserId,
+              originalAmount: restRes.body.originalAmount,
+              reason: deletionReason || null
+            }
+          });
+        }
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
@@ -102972,51 +103460,70 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const tx = txRes.rows[0];
-        if (tx.counterpart_user_id && tx.direction === "took") {
-          await client.query("ROLLBACK");
-          sendJson6(res, 403, {
-            success: false,
-            message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
-          });
-          return true;
-        }
         const repsRes = await client.query(
-          `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
+          `SELECT id, amount, status, deleted_at FROM public.udhar_repayments WHERE link_id = $1`,
           [tx.link_id]
         );
+        const activeReps = repsRes.rows.filter((r2) => isActiveRepayment(r2));
+        const recalc = recalculateUdharFromRepayments({
+          originalAmount: tx.original_amount,
+          repayments: activeReps,
+          currentStatus: tx.status
+        });
+        const effectiveStatus = tx.status === "cancelled" || tx.deleted_at ? "cancelled" : tx.status === "disputed" ? "disputed" : activeReps.length > 0 ? recalc.nextStatus : tx.status;
         const guard = canCancelUdhar({
-          status: tx.status,
+          status: effectiveStatus,
           deleted_at: tx.deleted_at,
-          paid_amount: tx.paid_amount,
-          repayments: repsRes.rows.filter((r2) => isActiveRepayment(r2))
+          direction: tx.direction,
+          is_shared: Boolean(tx.counterpart_user_id),
+          counterpart_user_id: tx.counterpart_user_id,
+          original_amount: tx.original_amount,
+          paid_amount: activeReps.length > 0 ? recalc.paidAmount : tx.paid_amount,
+          current_balance: activeReps.length > 0 ? recalc.remainingBalance : tx.current_balance,
+          settled_at: tx.settled_at,
+          repayments: activeReps
         });
         if (!guard.allowed) {
           await client.query("ROLLBACK");
-          sendJson6(res, 409, {
+          sendJson6(res, guard.httpStatus || 409, {
             success: false,
+            code: guard.code,
             message: guard.reason
           });
           return true;
         }
         const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        let updatedRows = [];
         await client.query("SAVEPOINT delete_audit_cols");
         try {
-          await client.query(
+          const upd = await client.query(
             `UPDATE public.udhar_transactions
              SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
                  deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
-             WHERE link_id = $1`,
+             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             RETURNING id`,
             [tx.link_id, authUser.id, cleanReason]
           );
+          updatedRows = upd.rows;
           await client.query("RELEASE SAVEPOINT delete_audit_cols");
         } catch {
           await client.query("ROLLBACK TO SAVEPOINT delete_audit_cols");
-          await client.query(
+          const upd = await client.query(
             `UPDATE public.udhar_transactions
              SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
-             WHERE link_id = $1`,
+             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             RETURNING id`,
             [tx.link_id]
           );
+          updatedRows = upd.rows;
+        }
+        if (updatedRows.length === 0) {
+          await client.query("ROLLBACK");
+          sendJson6(res, 409, {
+            success: false,
+            message: "This transaction has already been deleted or cannot be deleted in its current state."
+          });
+          return true;
         }
         await client.query("SAVEPOINT delete_reps_soft");
         try {
@@ -103034,31 +103541,40 @@ async function handleApiRequest(req, res) {
             [tx.link_id]
           );
         }
-        if (tx.counterpart_user_id) {
-          await client.query(
-            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-             VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
-            [
-              `Udhar Removed by ${authUser.full_name}`,
-              `${authUser.full_name} deleted the Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
-              tx.counterpart_user_id,
-              tx.link_id,
-              authUser.id
-            ]
-          ).catch(() => {
-          });
-        }
+        await client.query(
+          `UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`,
+          [tx.link_id, tx.id]
+        ).catch(() => {
+        });
+        await client.query(
+          `UPDATE public.user_notifications
+           SET is_deleted = TRUE, deleted_at = NOW()
+           WHERE related_entity_id = $1
+              OR related_entity_id = $2
+              OR metadata->>'relatedEntityId' = $1
+              OR metadata->>'linkId' = $1
+              OR metadata->>'udharId' = $2`,
+          [tx.link_id, tx.id]
+        ).catch(() => {
+        });
         await client.query("COMMIT");
-        await logSecurityEvent("UDHAR_CANCELLED", {
+        await logSecurityEvent("UDHAR_DELETED", {
           userId: authUser.id,
           userEmail: authUser.email,
-          details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount, reason: cleanReason }
+          details: {
+            txId,
+            linkId: tx.link_id,
+            direction: tx.direction,
+            counterpartUserId: tx.counterpart_user_id || null,
+            originalAmount: tx.original_amount,
+            reason: cleanReason
+          }
         });
         sendJson6(res, 200, {
           success: true,
           deletedTransactionId: tx.id,
           linkId: tx.link_id,
-          message: "Udhar entry deleted successfully. Totals have been recalculated."
+          message: "Udhar entry deleted successfully for both participants. Totals have been recalculated."
         });
         return true;
       } catch (err) {
@@ -103253,7 +103769,11 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const txRes = await query(
-        "SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2)",
+        `SELECT * FROM public.udhar_transactions
+         WHERE id = $1
+           AND (user_id = $2 OR counterpart_user_id = $2)
+           AND status <> 'cancelled'
+           AND deleted_at IS NULL`,
         [txId, authUser.id]
       );
       if (txRes.rows.length === 0) {
