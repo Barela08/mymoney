@@ -97439,12 +97439,12 @@ async function handleApiRequest(req, res) {
           ) AND LENGTH(REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g')) >= 10`;
           queryParams = [authUser.id, classified.digitsOnly, classified.last10Digits];
         } else {
-          whereMatchSql = `(LOWER(u.full_name) LIKE $2 OR LOWER(COALESCE(u.username, '')) LIKE $2)`;
+          whereMatchSql = `(LOWER(u.full_name) LIKE $2 OR LOWER(COALESCE(u.email, '')) LIKE $2)`;
           queryParams = [authUser.id, `%${classified.normalized}%`];
         }
         const usersRes = await query(
-          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.username,
-             COALESCE(u.is_verified, TRUE) AS is_verified,
+          `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url,
+             COALESCE(u.email_verified, TRUE) AS is_verified,
              (
                SELECT uc.status FROM public.user_connections uc
                WHERE (uc.user_a_id = $1 AND uc.user_b_id = u.id)
@@ -97492,9 +97492,9 @@ async function handleApiRequest(req, res) {
           const showContactHint = isConnected || isSelf;
           return {
             id: u.id,
-            displayName: u.full_name || u.username || "My Money User",
-            fullName: u.full_name || u.username || "My Money User",
-            username: u.username || null,
+            displayName: u.full_name || (u.email ? u.email.split("@")[0] : "My Money User"),
+            fullName: u.full_name || (u.email ? u.email.split("@")[0] : "My Money User"),
+            username: u.email ? u.email.split("@")[0] : null,
             accountIndicator: "My Money Manager Account",
             emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : void 0,
             phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,

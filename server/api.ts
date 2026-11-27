@@ -3442,9 +3442,9 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           const showContactHint = isConnected || isSelf;
           return {
             id: u.id,
-            displayName: u.full_name || u.username || 'My Money User',
-            fullName: u.full_name || u.username || 'My Money User',
-            username: u.username || null,
+            displayName: u.full_name || (u.email ? u.email.split('@')[0] : 'My Money User'),
+            fullName: u.full_name || (u.email ? u.email.split('@')[0] : 'My Money User'),
+            username: u.email ? u.email.split('@')[0] : null,
             accountIndicator: 'My Money Manager Account',
             emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : undefined,
             phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
