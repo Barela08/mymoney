@@ -304,9 +304,20 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           (person.linkedUserId && c.linked_user_id === person.linkedUserId) ||
           c.name.trim().toLowerCase() === normName
       );
-      const targetId =
+      let targetId =
+        person.contactId ||
         matchingContact?.id ||
         (person.linkedUserId ? `conn_${person.linkedUserId}` : null);
+
+      if (!targetId) {
+        const freshRes = await udharDeletionApi.getContacts().catch(() => null);
+        const freshMatch = freshRes?.contacts?.find(
+          (c) =>
+            (person.linkedUserId && c.linked_user_id === person.linkedUserId) ||
+            c.name.trim().toLowerCase() === normName
+        );
+        targetId = freshMatch?.id || null;
+      }
 
       if (!targetId) {
         toast.error('Delete Failed', 'Could not locate saved connection identifier.');
@@ -1341,7 +1352,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </>
                         )}
 
-                        {!isPendingConfirm && deleteGuard.allowed ? (
+                        {!isPendingConfirm && deleteGuard.allowed && (
                           <button
                             type="button"
                             onClick={() => setPendingConfirmAction({ type: 'delete_single', tx })}
@@ -1352,18 +1363,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>Delete</span>
                           </button>
-                        ) : !isPendingConfirm && !isGave && isLinked && !isDisputed && !isRejectedOrCancelled ? (
-                          <button
-                            type="button"
-                            disabled
-                            data-testid={`udhar-feed-delete-disabled-${tx.id}`}
-                            className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-not-allowed opacity-75"
-                            title="You can delete this transaction after it is fully settled."
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Delete</span>
-                          </button>
-                        ) : null}
+                        )}
 
                         {/* Expand Repayments history */}
                         {repaymentsCount > 0 && !isPendingConfirm && !isRejectedOrCancelled && (
@@ -1377,11 +1377,6 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                           </button>
                         )}
                       </div>
-                      {!isPendingConfirm && !isGave && isLinked && !isDisputed && !isRejectedOrCancelled && !deleteGuard.allowed && (
-                        <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium sm:text-right">
-                          You can delete this transaction after it is fully settled.
-                        </p>
-                      )}
                     </div>
                   </div>
 

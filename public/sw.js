@@ -370,3 +370,18 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'BRANDING_UPDATED') {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then((cache) =>
+        Promise.allSettled([
+          cache.delete('/manifest.json'),
+          cache.delete('/logo.jpg'),
+          cache.delete('/icon-192.png'),
+          cache.delete('/icon-512.png'),
+        ])
+      )
+    );
+  }
+});

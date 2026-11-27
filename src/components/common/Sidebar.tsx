@@ -100,10 +100,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAddModal,
   onOpenHelpModal,
 }) => {
-  const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings, appBranding } = useExpense();
+  const { summary, recycleBinTransactions, dynamicSections, maintenanceSettings, appBranding, siteConfig } = useExpense();
   const { theme } = useTheme();
   const { user, isAdmin, logout } = useAuth();
   const { totalUnreadCount } = useNotifications();
+  const vis = siteConfig.featureVisibility;
+  const userBrand = siteConfig.branding.user_app;
 
   // Find enabled custom sections that aren't the standard 5 (home, room, food, other, people)
   const coreSectionIds = ['home', 'room', 'food', 'other', 'people'];
@@ -142,7 +144,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick: onOpenAddModal,
         },
         { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
-        { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
+        ...(vis.udharEnabled
+          ? [{ id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) }]
+          : []),
         ...customSections.map((sec) => ({
           id: sec.id as NavTab,
           label: sec.name,
@@ -156,13 +160,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
         { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
         { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
-        { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
+        ...(vis.reportsEnabled ? [{ id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 }] : []),
       ],
     },
     {
       title: 'Financial Tools',
       items: [
-        { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
+        ...(vis.upiQrEnabled ? [{ id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode }] : []),
         { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
         { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
@@ -170,13 +174,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
       ],
     },
-    {
+    ...((vis.aiAssistantEnabled || vis.receiptScannerEnabled) ? [{
       title: 'AI & Smart Features',
       items: [
-        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-        { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
+        ...(vis.aiAssistantEnabled ? [{ id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles }] : []),
+        ...(vis.receiptScannerEnabled ? [{ id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt }] : []),
       ],
-    },
+    }] : []),
     {
       title: 'Notifications & Alerts',
       items: [
@@ -192,10 +196,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Account & Privacy',
       items: [
         { id: 'profile' as NavTab, label: 'My Account', icon: User },
-        { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale },
+        ...(vis.legalCenterEnabled ? [{ id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale }] : []),
       ],
     },
-    {
+    ...(vis.supportDeskEnabled ? [{
       title: 'Help & Support',
       items: [
         {
@@ -205,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick: onOpenHelpModal ? () => onOpenHelpModal('help') : undefined,
         },
       ],
-    },
+    }] : []),
     ...(isAdmin ? [{
       title: 'Admin',
       items: [
@@ -220,19 +224,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-5 border-b border-slate-100 dark:border-slate-800/80">
         <div className="flex items-center gap-3">
           <img
-            src={appBranding?.logoUrl || '/logo.jpg'}
-            alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+            src={userBrand.logoUrl || appBranding?.logoUrl || '/logo.jpg'}
+            alt={`${userBrand.appName || appBranding?.appName || 'My Money Manager'} ${userBrand.tagline || appBranding?.subTitle || 'by HackifyPro'}`}
             onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
             className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
           />
           <div className="min-w-0">
             <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight truncate">
-              {appBranding?.appName || 'My Money Manager'}
+              {userBrand.appName || appBranding?.appName || 'My Money Manager'}
             </h1>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-              {appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
+              {userBrand.tagline || (appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
                 ? appBranding.subTitle
-                : 'A product of HackifyPro'}
+                : 'A product of HackifyPro')}
             </p>
           </div>
         </div>

@@ -359,3 +359,18 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'BRANDING_UPDATED') {
+    event.waitUntil(
+      caches.open(ADMIN_CACHE_NAME).then((cache) =>
+        Promise.allSettled([
+          cache.delete('/myadmin-manifest.json'),
+          cache.delete('/admin-logo.png'),
+          cache.delete('/admin-favicon.png'),
+          cache.delete('/admin-icon-192.png'),
+        ])
+      )
+    );
+  }
+});

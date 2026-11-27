@@ -81,11 +81,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   onOpenAddModal,
   onOpenHelpModal,
 }) => {
-  const { summary, recycleBinTransactions, dynamicSections, appBranding } = useExpense();
+  const { summary, recycleBinTransactions, dynamicSections, appBranding, siteConfig } = useExpense();
   const { user, isAdmin, logout } = useAuth();
   const { totalUnreadCount } = useNotifications();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
+  const vis = siteConfig.featureVisibility;
+  const userBrand = siteConfig.branding.user_app;
 
   // Nielsen Heuristic: User Control & Freedom — Escape key handling
   useEffect(() => {
@@ -124,7 +126,9 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       items: [
         { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
         { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, count: summary.totalTransactionsCount },
-        { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
+        ...(vis.udharEnabled
+          ? [{ id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) }]
+          : []),
         ...customSections.map((sec) => ({
           id: sec.id as NavTab,
           label: sec.name,
@@ -135,7 +139,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     {
       title: 'Financial Tools',
       items: [
-        { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
+        ...(vis.upiQrEnabled ? [{ id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode }] : []),
         { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
         { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
@@ -146,19 +150,19 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     {
       title: 'Reports & Planning',
       items: [
-        { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
+        ...(vis.reportsEnabled ? [{ id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 }] : []),
         { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
         { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
         { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
       ],
     },
-    {
+    ...((vis.aiAssistantEnabled || vis.receiptScannerEnabled) ? [{
       title: 'AI & Smart Features',
       items: [
-        { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-        { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
+        ...(vis.aiAssistantEnabled ? [{ id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles }] : []),
+        ...(vis.receiptScannerEnabled ? [{ id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt }] : []),
       ],
-    },
+    }] : []),
     {
       title: 'Notifications & Alerts',
       items: [
@@ -174,17 +178,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       title: 'Account & Privacy',
       items: [
         { id: 'profile' as NavTab, label: 'My Account', icon: User },
-        { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale },
+        ...(vis.legalCenterEnabled ? [{ id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale }] : []),
       ],
     },
     {
       title: 'Help & Support',
       items: [
-        { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
+        ...(vis.supportDeskEnabled ? [{ id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle }] : []),
         ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
       ],
     },
-  ];
+  ].filter((g) => g.items.length > 0);
 
   const handleSelect = (tab: NavTab) => {
     onSelectTab(tab);
@@ -216,17 +220,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <img
-              src={appBranding?.logoUrl || '/logo.jpg'}
-              alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+              src={userBrand.logoUrl || appBranding?.logoUrl || '/logo.jpg'}
+              alt={`${userBrand.appName || appBranding?.appName || 'My Money Manager'} ${userBrand.tagline || appBranding?.subTitle || 'by HackifyPro'}`}
               onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
               className="w-10 h-10 rounded-xl object-cover shadow-sm border border-emerald-500/30 shrink-0"
             />
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
-                {appBranding?.appName || 'My Money Manager'}
+                {userBrand.appName || appBranding?.appName || 'My Money Manager'}
               </h2>
               <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 truncate">
-                {appBranding?.subTitle || 'by HackifyPro'}
+                {userBrand.tagline || appBranding?.subTitle || 'by HackifyPro'}
               </p>
             </div>
           </div>
@@ -447,24 +451,26 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         )}
 
         {/* Floating AI Assistant Trigger Button */}
-        <button
-          onClick={() => setIsAiMenuOpen((prev) => !prev)}
-          className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg border transition-all duration-200 cursor-pointer ${
-            isAiMenuOpen
-              ? 'bg-emerald-600 text-emerald-50 border-emerald-400/70 ring-4 ring-emerald-500/25 scale-105 z-50'
-              : currentTab === 'ai_assistant'
-              ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 scale-105'
-              : 'bg-emerald-700 text-emerald-50 hover:bg-emerald-600 border-emerald-500/40 hover:scale-105 active:scale-95 shadow-emerald-950/30'
-          }`}
-          aria-label="Ask AI Assistant"
-          title="Ask AI Assistant (Voice or Chat)"
-        >
-          {isAiMenuOpen ? (
-            <X className="w-5 h-5 stroke-[2.5]" />
-          ) : (
-            <AiCompanionMark size={22} />
-          )}
-        </button>
+        {vis.aiAssistantEnabled && (
+          <button
+            onClick={() => setIsAiMenuOpen((prev) => !prev)}
+            className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg border transition-all duration-200 cursor-pointer ${
+              isAiMenuOpen
+                ? 'bg-emerald-600 text-emerald-50 border-emerald-400/70 ring-4 ring-emerald-500/25 scale-105 z-50'
+                : currentTab === 'ai_assistant'
+                ? 'bg-emerald-500 text-slate-950 border-emerald-300 ring-4 ring-emerald-500/30 scale-105'
+                : 'bg-emerald-700 text-emerald-50 hover:bg-emerald-600 border-emerald-500/40 hover:scale-105 active:scale-95 shadow-emerald-950/30'
+            }`}
+            aria-label="Ask AI Assistant"
+            title="Ask AI Assistant (Voice or Chat)"
+          >
+            {isAiMenuOpen ? (
+              <X className="w-5 h-5 stroke-[2.5]" />
+            ) : (
+              <AiCompanionMark size={22} />
+            )}
+          </button>
+        )}
 
         {/* Floating Add Transaction (+) Button */}
         <button
@@ -535,36 +541,42 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               onSelectTab('all_transactions');
             },
           },
-          {
-            key: 'people',
-            label: 'People',
-            shortLabel: 'People',
-            icon: Users,
-            onClick: () => {
-              setIsMoreSheetOpen(false);
-              onSelectTab('people');
-            },
-          },
-          {
-            key: 'upi_qr',
-            label: 'UPI QR',
-            shortLabel: 'UPI QR',
-            icon: QrCode,
-            onClick: () => {
-              setIsMoreSheetOpen(false);
-              onSelectTab('upi_qr');
-            },
-          },
-          {
-            key: 'reports',
-            label: 'Reports',
-            shortLabel: 'Reports',
-            icon: BarChart3,
-            onClick: () => {
-              setIsMoreSheetOpen(false);
-              onSelectTab('reports');
-            },
-          },
+          ...(vis.udharEnabled
+            ? [{
+                key: 'people',
+                label: 'People',
+                shortLabel: 'People',
+                icon: Users,
+                onClick: () => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('people');
+                },
+              }]
+            : []),
+          ...(vis.upiQrEnabled
+            ? [{
+                key: 'upi_qr',
+                label: 'UPI QR',
+                shortLabel: 'UPI QR',
+                icon: QrCode,
+                onClick: () => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('upi_qr');
+                },
+              }]
+            : []),
+          ...(vis.reportsEnabled
+            ? [{
+                key: 'reports',
+                label: 'Reports',
+                shortLabel: 'Reports',
+                icon: BarChart3,
+                onClick: () => {
+                  setIsMoreSheetOpen(false);
+                  onSelectTab('reports');
+                },
+              }]
+            : []),
           {
             key: 'more',
             label: 'More',
@@ -573,6 +585,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             onClick: () => setIsMoreSheetOpen(!isMoreSheetOpen),
           },
         ];
+
+        const matchedTabIdx = mobileBottomItems.findIndex((i) => i.key === currentTab);
+        const resolvedActiveIndex =
+          isMoreSheetOpen || MORE_TABS.has(currentTab) || matchedTabIdx === -1
+            ? mobileBottomItems.length - 1
+            : matchedTabIdx;
 
         return (
           <nav
@@ -585,9 +603,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               <div
                 aria-hidden="true"
                 data-testid="floating-notch-indicator"
-                data-active-index={activeIndex}
-                className="absolute top-1.5 bottom-1.5 left-1.5 w-[calc((100%-0.75rem)/6)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.35,0.64,1)] pointer-events-none"
-                style={{ transform: `translateX(${activeIndex * 100}%)` }}
+                data-active-index={resolvedActiveIndex}
+                className="absolute top-1.5 bottom-1.5 left-1.5 transition-transform duration-300 ease-[cubic-bezier(0.34,1.35,0.64,1)] pointer-events-none"
+                style={{
+                  width: `calc((100% - 0.75rem) / ${mobileBottomItems.length})`,
+                  transform: `translateX(${resolvedActiveIndex * 100}%)`,
+                }}
               >
                 <div className="relative w-full h-full rounded-xl bg-emerald-50 dark:bg-emerald-950/75 border border-emerald-200/80 dark:border-emerald-700/60 shadow-xs">
                   {/* Top Notch Accent Crest */}
@@ -595,10 +616,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 </div>
               </div>
 
-              <div className="relative z-10 grid grid-cols-6 items-center">
+              <div
+                className="relative z-10 grid items-center"
+                style={{ gridTemplateColumns: `repeat(${mobileBottomItems.length}, minmax(0, 1fr))` }}
+              >
                 {mobileBottomItems.map((item, idx) => {
                   const Icon = item.icon;
-                  const isActive = idx === activeIndex;
+                  const isActive = idx === resolvedActiveIndex;
                   return (
                     <button
                       key={item.key}
@@ -795,35 +819,41 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             </div>
 
             {/* AI & Smart Features */}
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                AI &amp; Smart Features
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreSheetOpen(false);
-                    onSelectTab('ai_assistant');
-                  }}
-                  className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 active:scale-[0.98] transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4 stroke-[1.75]" />
-                  <span>AI Money Assistant</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreSheetOpen(false);
-                    onSelectTab('receipt_scanner');
-                  }}
-                  className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                  <span>Receipt Scanner (OCR)</span>
-                </button>
+            {(vis.aiAssistantEnabled || vis.receiptScannerEnabled) && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  AI &amp; Smart Features
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {vis.aiAssistantEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMoreSheetOpen(false);
+                        onSelectTab('ai_assistant');
+                      }}
+                      className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 active:scale-[0.98] transition-colors text-xs font-semibold cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4 stroke-[1.75]" />
+                      <span>AI Money Assistant</span>
+                    </button>
+                  )}
+                  {vis.receiptScannerEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMoreSheetOpen(false);
+                        onSelectTab('receipt_scanner');
+                      }}
+                      className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 active:scale-[0.98] transition-colors text-xs font-semibold cursor-pointer"
+                    >
+                      <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                      <span>Receipt Scanner (OCR)</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Account & Privacy + Help & Support */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">

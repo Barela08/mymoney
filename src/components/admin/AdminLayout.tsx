@@ -35,12 +35,16 @@ import {
   CheckCheck,
   Smartphone,
   Download,
+  LayoutTemplate,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
 import { useToast } from '../../context/ToastContext';
 import { adminClient } from '../../lib/adminApi';
 import { hasPortalPermission, resolveEffectiveRoleSlug } from '../../lib/portalAuth';
+import { sanitizePublicUrl } from '../../lib/siteConfigDefaults';
 
 export type AdminSectionKey =
   | 'dashboard'
@@ -66,6 +70,8 @@ export type AdminSectionKey =
   | 'backups'
   | 'audit_logs'
   | 'settings'
+  | 'website_control'
+  | 'staff_tasks'
   | 'roles'
   | 'features';
 
@@ -113,11 +119,13 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'emails', label: 'Email Dispatch Logs', icon: Mail, requiredPermission: 'emails.read' },
       { key: 'email_templates', label: 'Email Templates', icon: FileText, requiredPermission: 'emails.templates.manage' },
       { key: 'support', label: 'Support & Feedback', icon: MessageSquare, requiredPermission: 'support.read' },
+      { key: 'staff_tasks', label: 'Staff Tasks', icon: ClipboardList, requiredPermission: 'support.read' },
     ],
   },
   {
     label: 'Application Control',
     items: [
+      { key: 'website_control', label: 'Website Control Center', icon: LayoutTemplate, requiredPermission: 'settings.manage' },
       { key: 'features', label: 'Feature Flags', icon: Sliders, requiredPermission: 'features.manage' },
       { key: 'ai', label: 'AI Management', icon: Bot, requiredPermission: 'ai.manage' },
       { key: 'settings', label: 'Website Settings', icon: Settings, requiredPermission: 'settings.manage' },
@@ -150,8 +158,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   children,
 }) => {
   const { user, portalPermissions, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
+  const { siteConfig } = useExpense();
+  const { isInstalled, triggerInstallPrompt, canOfferInstall } = usePwaInstall();
   const toast = useToast();
+  const adminBrand = siteConfig.branding.admin_app;
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -186,7 +196,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     try {
       const res = await triggerInstallPrompt();
       if (res.status === 'accepted') {
-        toast.success('Installing Admin App', 'My Money Manager Admin is installing to your device.');
+        toast.success('Installing Admin App', `${adminBrand.appName} is installing to your device.`);
       }
     } finally {
       setIsInstallingApp(false);
@@ -285,8 +295,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
           <div className="flex items-center gap-2.5">
             <img
-              src="/admin-logo.png"
-              alt="My Money Manager Admin by HackifyPro"
+              src={sanitizePublicUrl(adminBrand.logoUrl, '/admin-logo.png')}
+              alt={adminBrand.appName || 'My Money Manager Admin'}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/admin-icon-192.png';
               }}
@@ -295,14 +305,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-sm tracking-tight text-slate-900 dark:text-slate-100">
-                  My Money Manager Admin
+                  {adminBrand.appName || 'My Money Manager Admin'}
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                   {roleName}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                A product of HackifyPro · Admin Control Center (/myadmin)
+                {adminBrand.tagline || 'A product of HackifyPro · Admin Control Center (/myadmin)'}
               </p>
             </div>
           </div>
@@ -310,7 +320,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
         {/* Global Search & Quick Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {!isInstalled ? (
+          {!isInstalled && canOfferInstall ? (
             <button
               type="button"
               onClick={handleInstallAdminApp}
@@ -322,12 +332,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               <span className="hidden sm:inline">Download Admin App</span>
               <span className="sm:hidden">Install App</span>
             </button>
-          ) : (
+          ) : isInstalled ? (
             <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Admin App Installed</span>
             </span>
-          )}
+          ) : null}
           <div className="relative hidden md:block w-72">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input

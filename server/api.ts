@@ -83,7 +83,23 @@ import {
   recordDeviceInstallation,
   recordAdminNotification,
   dispatchNewUserWelcomeNotification,
+  getStaffNotifications,
+  markStaffNotificationRead,
+  markAllStaffNotificationsRead,
 } from './notificationService.js';
+import {
+  getPublicSiteConfigPayload,
+  getPublishedSiteConfig,
+  subscribeSiteConfigSse,
+  getBrandingAssetById,
+  serveBrandingAssetResponse,
+  buildDynamicPwaManifest,
+  resolveDynamicPwaIcon,
+  generateRobotsTxt,
+  generateSitemapXml,
+  listStaffTasks,
+  updateStaffTask,
+} from './siteControlCenter.js';
 import {
   insertFeedbackFallback,
   listFeedbacksFallback,
@@ -451,8 +467,8 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
   const method = req.method?.toUpperCase() || 'GET';
 
-  // Only handle /api/* routes
-  if (!pathname.startsWith('/api/')) {
+  // Handle /api/* and dynamic SEO endpoints (/robots.txt, /sitemap.xml)
+  if (!pathname.startsWith('/api/') && pathname !== '/robots.txt' && pathname !== '/sitemap.xml') {
     return false;
   }
 
@@ -534,25 +550,99 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
 
-  // Public non-secret site configuration (maintenance mode & app download popup)
+  // Public non-secret site configuration (all public Control Center modules, never secrets)
   if (pathname === '/api/public/site-config' && method === 'GET') {
     try {
+      const payload = await getPublicSiteConfigPayload();
+      sendJson(res, 200, payload);
+    } catch {
       const [maintenance, appPopup] = await Promise.all([
-        getMaintenanceSettings(),
-        getAppPopupSettings(),
+        getMaintenanceSettings().catch(() => ({ isEnabled: false })),
+        getAppPopupSettings().catch(() => ({ enabled: true, downloadUrl: '/#install' })),
       ]);
       sendJson(res, 200, {
         success: true,
+        version: 1,
+        updatedAt: new Date().toISOString(),
         maintenance,
         appPopup,
       });
-    } catch {
-      sendJson(res, 200, {
-        success: true,
-        maintenance: { isEnabled: false },
-        appPopup: { enabled: true, downloadUrl: '/#install' },
-      });
     }
+    return true;
+  }
+
+  // Real-time Server-Sent Events (SSE) stream for live configuration updates without page reload
+  if (pathname === '/api/public/site-config/stream' && method === 'GET') {
+    const parsed = parseUrl(req.url || '', true);
+    const sinceParam =
+      typeof parsed.query.v === 'string'
+        ? parseInt(parsed.query.v, 10)
+        : typeof req.headers['last-event-id'] === 'string'
+        ? parseInt(req.headers['last-event-id'], 10)
+        : undefined;
+    await subscribeSiteConfigSse(
+      req,
+      res,
+      Number.isFinite(sinceParam as number) ? (sinceParam as number) : undefined
+    );
+    return true;
+  }
+
+  // Public sanitized branding asset retrieval (sandbox CSP enforced for SVG)
+  const brandingAssetMatch = pathname.match(/^\/api\/branding\/assets\/([a-zA-Z0-9._-]+)$/);
+  if (brandingAssetMatch && method === 'GET') {
+    const asset = await getBrandingAssetById(brandingAssetMatch[1]);
+    if (!asset) {
+      sendJson(res, 404, { success: false, message: 'Branding asset not found.' });
+      return true;
+    }
+    serveBrandingAssetResponse(res, asset);
+    return true;
+  }
+
+  // Dynamic per-app PWA manifests (/api/pwa/manifest/user | myadmin | mystaff)
+  const pwaManifestMatch = pathname.match(/^\/api\/pwa\/manifest\/(user|myadmin|mystaff)$/);
+  if (pwaManifestMatch && method === 'GET') {
+    const scope = pwaManifestMatch[1] as 'user' | 'myadmin' | 'mystaff';
+    const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+    const manifest = await buildDynamicPwaManifest(scope, hostHeader);
+    res.writeHead(200, {
+      'Content-Type': 'application/manifest+json; charset=utf-8',
+      'Cache-Control': 'no-cache, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(JSON.stringify(manifest, null, 2));
+    return true;
+  }
+
+  // Dynamic per-app PWA icon resolver (/api/pwa/icon/user | myadmin | mystaff)
+  const pwaIconMatch = pathname.match(/^\/api\/pwa\/icon\/(user|myadmin|mystaff)$/);
+  if (pwaIconMatch && method === 'GET') {
+    const scope = pwaIconMatch[1] as 'user' | 'myadmin' | 'mystaff';
+    await resolveDynamicPwaIcon(scope, res);
+    return true;
+  }
+
+  // Dynamic SEO endpoints (never expose /myadmin or /mystaff)
+  if ((pathname === '/robots.txt' || pathname === '/api/robots.txt') && method === 'GET') {
+    const body = await generateRobotsTxt();
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'public, max-age=60, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(body);
+    return true;
+  }
+
+  if ((pathname === '/sitemap.xml' || pathname === '/api/sitemap.xml') && method === 'GET') {
+    const xml = await generateSitemapXml();
+    res.writeHead(200, {
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=60, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(xml);
     return true;
   }
 
@@ -801,6 +891,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // Strictly separates Staff accounts (support, analyst, custom staff roles) from Admin & User logins.
     // ---------------------------------------------------------
     if (pathname === '/api/staff/auth/login' && method === 'POST') {
+      const maintCheck = await getMaintenanceSettings().catch(() => ({ isEnabled: false, allowStaffAccessDuringMaintenance: true } as any));
+      if (maintCheck?.isEnabled && maintCheck?.allowStaffAccessDuringMaintenance === false) {
+        sendJson(res, 503, {
+          success: false,
+          code: 'MAINTENANCE_MODE',
+          maintenance: true,
+          message:
+            maintCheck.message ||
+            'Platform maintenance is active and staff access is temporarily paused.',
+          expectedRestoration: maintCheck.expectedRestoration,
+        });
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       const email = normalizeEmail(body.email || '');
       const password = String(body.password || '');
@@ -1034,12 +1138,19 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
     // ---------------------------------------------------------
     // MAINTENANCE MODE API GUARD
-    // Blocks non-admin/non-staff access to all user/public operational APIs when Maintenance Mode is ON.
-    // Exempt: /api/health, /api/public/site-config, /api/admin/*, /api/staff/auth/login, /api/auth/me, /api/auth/logout*
+    // Blocks non-admin access when Maintenance Mode is ON.
+    // Staff bypass is controlled by maint.allowStaffAccessDuringMaintenance (superadmin/admin always bypass).
     // ---------------------------------------------------------
     const isMaintenanceExemptPath =
       pathname === '/api/health' ||
       pathname === '/api/public/site-config' ||
+      pathname === '/api/public/site-config/stream' ||
+      pathname.startsWith('/api/branding/assets/') ||
+      pathname.startsWith('/api/pwa/') ||
+      pathname === '/api/robots.txt' ||
+      pathname === '/api/sitemap.xml' ||
+      pathname === '/robots.txt' ||
+      pathname === '/sitemap.xml' ||
       pathname.startsWith('/api/admin/') ||
       pathname === '/api/staff/auth/login' ||
       pathname === '/api/auth/me' ||
@@ -1047,19 +1158,27 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       pathname === '/api/auth/logout-all-devices';
 
     if (!isMaintenanceExemptPath && (await isMaintenanceModeEnabled())) {
+      const maint = await getMaintenanceSettings();
       const reqUser = await authenticateRequest(req);
       const reqEmail = (reqUser?.email || '').toLowerCase().trim();
       const reqRole = (reqUser?.role || '').toLowerCase().trim();
       const reqSlug = (reqUser?.role_slug || '').toLowerCase().trim();
-      const isReqAdmin = Boolean(
+      const isPureAdmin = Boolean(
         reqUser &&
           (reqEmail === 'hackifypro@gmail.com' ||
             reqEmail === 'admin@mymoney.com' ||
-            ['superadmin', 'admin', 'support', 'analyst'].includes(reqRole) ||
+            ['superadmin', 'admin'].includes(reqRole) ||
+            ['superadmin', 'admin'].includes(reqSlug))
+      );
+      const isStaffMember = Boolean(
+        reqUser &&
+          !isPureAdmin &&
+          (['support', 'analyst'].includes(reqRole) ||
             (reqSlug && reqSlug !== 'user' && reqSlug !== 'anonymous'))
       );
-      if (!isReqAdmin) {
-        const maint = await getMaintenanceSettings();
+      const canBypass =
+        isPureAdmin || (isStaffMember && maint.allowStaffAccessDuringMaintenance !== false);
+      if (!canBypass) {
         sendJson(res, 503, {
           success: false,
           code: 'MAINTENANCE_MODE',
@@ -1068,6 +1187,133 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
             maint.message ||
             'Platform is currently undergoing scheduled maintenance. Please check back shortly.',
           expectedRestoration: maint.expectedRestoration,
+        });
+        return true;
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 0A-2. DEDICATED STAFF PORTAL ENDPOINTS: /api/staff/*
+    // Strictly isolated to verified staff accounts (support, analyst, custom staff roles).
+    // Normal users and unauthenticated callers are denied with 401/403.
+    // ---------------------------------------------------------
+    if (pathname.startsWith('/api/staff/')) {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Staff authentication required.' });
+        return true;
+      }
+      const staffRole = String(authUser.role || 'user').toLowerCase().trim();
+      const staffSlug = String(authUser.role_slug || '').toLowerCase().trim();
+      const effectiveStaffRole = staffSlug && staffSlug !== 'user' ? staffSlug : staffRole;
+      const isMaster =
+        (authUser.email || '').toLowerCase().trim() === 'hackifypro@gmail.com' ||
+        (authUser.email || '').toLowerCase().trim() === 'admin@mymoney.com';
+
+      let isVerifiedStaff =
+        !isMaster &&
+        !['superadmin', 'admin'].includes(effectiveStaffRole) &&
+        (['support', 'analyst'].includes(staffRole) ||
+          ['support', 'analyst'].includes(staffSlug));
+
+      if (!isVerifiedStaff && !isMaster && !['superadmin', 'admin'].includes(effectiveStaffRole) && effectiveStaffRole !== 'user' && effectiveStaffRole !== 'anonymous') {
+        try {
+          const fbRoles = await listAdminRolesFallback();
+          if (fbRoles.some((r: any) => String(r.slug || '').toLowerCase().trim() === effectiveStaffRole)) {
+            isVerifiedStaff = true;
+          }
+        } catch {}
+        if (!isVerifiedStaff && isDatabaseAvailable()) {
+          try {
+            const roleCheck = await query('SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1', [effectiveStaffRole]);
+            if (roleCheck.rows.length > 0) isVerifiedStaff = true;
+          } catch {}
+        }
+      }
+
+      const allowReadForSuperadmin = ['superadmin', 'admin'].includes(effectiveStaffRole) || isMaster;
+      if (!isVerifiedStaff && !allowReadForSuperadmin) {
+        sendJson(res, 403, {
+          success: false,
+          code: 'STAFF_ROLE_REQUIRED',
+          message: 'Access Denied: Staff role authorization required for /api/staff/* endpoints.',
+        });
+        return true;
+      }
+
+      if (pathname === '/api/staff/tasks' && method === 'GET') {
+        const parsed = parseUrl(req.url || '', true);
+        const status = typeof parsed.query.status === 'string' ? parsed.query.status : undefined;
+        const tasks = await listStaffTasks({ assignedTo: allowReadForSuperadmin ? undefined : authUser.id, status });
+        const allForCounts = await listStaffTasks({ assignedTo: allowReadForSuperadmin ? undefined : authUser.id });
+        const counts = {
+          total: allForCounts.length,
+          open: allForCounts.filter((t) => t.status === 'open').length,
+          in_progress: allForCounts.filter((t) => t.status === 'in_progress').length,
+          completed: allForCounts.filter((t) => t.status === 'completed').length,
+          blocked: allForCounts.filter((t) => t.status === 'blocked').length,
+        };
+        sendJson(res, 200, { success: true, tasks, counts });
+        return true;
+      }
+
+      const staffTaskPatchMatch = pathname.match(/^\/api\/staff\/tasks\/([a-zA-Z0-9_-]+)$/);
+      if (staffTaskPatchMatch && (method === 'PATCH' || method === 'PUT')) {
+        const taskId = staffTaskPatchMatch[1];
+        const body = await parseJsonBody(req);
+        const allowedStatuses = new Set(['open', 'in_progress', 'completed', 'blocked']);
+        if (!body.status || !allowedStatuses.has(String(body.status))) {
+          sendJson(res, 400, {
+            success: false,
+            message: 'Staff members can only update task status to open, in_progress, completed, or blocked.',
+          });
+          return true;
+        }
+        const visibleTasks = await listStaffTasks({ assignedTo: allowReadForSuperadmin ? undefined : authUser.id });
+        const existingTask = visibleTasks.find((t) => t.id === taskId);
+        if (!existingTask) {
+          sendJson(res, 404, { success: false, message: 'Assigned task not found for your staff account.' });
+          return true;
+        }
+        const updated = await updateStaffTask(taskId, {
+          status: body.status,
+        });
+        await logSecurityEvent('STAFF_TASK_STATUS_UPDATED', {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          actorRole: effectiveStaffRole,
+          ipAddress: clientIp,
+          details: { taskId, newStatus: body.status },
+        }).catch(() => {});
+        sendJson(res, 200, { success: true, message: 'Task status updated.', task: updated });
+        return true;
+      }
+
+      if (pathname === '/api/staff/notifications' && method === 'GET') {
+        const notifications = await getStaffNotifications(authUser.id, 60);
+        const unreadCount = notifications.filter((n) => !n.is_read).length;
+        sendJson(res, 200, { success: true, notifications, unreadCount });
+        return true;
+      }
+
+      const staffNotifReadMatch = pathname.match(/^\/api\/staff\/notifications\/([a-zA-Z0-9_-]+)\/read$/);
+      if (staffNotifReadMatch && method === 'POST') {
+        await markStaffNotificationRead(staffNotifReadMatch[1], authUser.id);
+        sendJson(res, 200, { success: true, message: 'Notification marked as read.' });
+        return true;
+      }
+
+      if (pathname === '/api/staff/notifications/read-all' && method === 'POST') {
+        await markAllStaffNotificationsRead(authUser.id);
+        sendJson(res, 200, { success: true, message: 'All staff notifications marked as read.' });
+        return true;
+      }
+
+      if (pathname === '/api/staff/profile' && method === 'GET') {
+        sendJson(res, 200, {
+          success: true,
+          staff: sanitizeUserOutput(authUser),
+          portalRole: effectiveStaffRole,
         });
         return true;
       }
@@ -1109,6 +1355,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 1. REGISTER: POST /api/auth/register
     // ---------------------------------------------------------
     if (pathname === '/api/auth/register' && method === 'POST') {
+      const siteCfg = await getPublishedSiteConfig().catch(() => null);
+      if (siteCfg && siteCfg.loginSettings.allowRegistration === false) {
+        sendJson(res, 403, {
+          success: false,
+          code: 'REGISTRATION_DISABLED',
+          message: 'New user registration is currently disabled by an administrator.',
+        });
+        return true;
+      }
+
       const rate = await checkRateLimitAsync(`signup:ip:${clientIp}`, RATE_LIMITS.SIGNUP_IP.max, RATE_LIMITS.SIGNUP_IP.windowMs, RATE_LIMITS.SIGNUP_IP.op);
       if (!rate.allowed) {
         sendRateLimitExceeded(res, rate);
@@ -1272,6 +1528,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     // 2. LOGIN: POST /api/auth/login
     // ---------------------------------------------------------
     if (pathname === '/api/auth/login' && method === 'POST') {
+      const siteCfg = await getPublishedSiteConfig().catch(() => null);
+      if (siteCfg && siteCfg.loginSettings.allowLogin === false) {
+        sendJson(res, 403, {
+          success: false,
+          code: 'LOGIN_DISABLED',
+          message: 'User login is temporarily paused by an administrator. Please check back shortly.',
+        });
+        return true;
+      }
+
       const body = await parseJsonBody(req);
       const email = normalizeEmail(body.email || '');
       const password = body.password || '';
@@ -3346,19 +3612,35 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         // 4. Ensure mutual friendship connection in user_connections
-        await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-          [sourceUser.id, targetUserId]
-        ).catch(() => {});
-
-        await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-          [targetUserId, sourceUser.id]
-        ).catch(() => {});
+        try {
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status, consented_at, responded_at, deleted_at, deleted_by, cancelled_at, updated_at)
+             VALUES ($1, $2, 'connected', NOW(), NOW(), NULL, NULL, NULL, NOW())
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+             SET status = 'connected', consented_at = COALESCE(public.user_connections.consented_at, NOW()), responded_at = NOW(), deleted_at = NULL, deleted_by = NULL, cancelled_at = NULL, updated_at = NOW()`,
+            [sourceUser.id, targetUserId]
+          );
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status, consented_at, responded_at, deleted_at, deleted_by, cancelled_at, updated_at)
+             VALUES ($1, $2, 'connected', NOW(), NOW(), NULL, NULL, NULL, NOW())
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+             SET status = 'connected', consented_at = COALESCE(public.user_connections.consented_at, NOW()), responded_at = NOW(), deleted_at = NULL, deleted_by = NULL, cancelled_at = NULL, updated_at = NOW()`,
+            [targetUserId, sourceUser.id]
+          );
+        } catch {
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [sourceUser.id, targetUserId]
+          ).catch(() => {});
+          await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [targetUserId, sourceUser.id]
+          ).catch(() => {});
+        }
 
         // 5. Retroactively bind counterpart_user_id on previous transactions if any
         await query(
@@ -3464,6 +3746,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           },
         };
       }
+
+      // Clear any prior deleted/rejected/cancelled rows in both directions so re-adding via search
+      // creates a clean fresh pending connection request requiring the recipient's approval.
+      await query(
+        `DELETE FROM public.user_connections
+         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+           AND status IN ('deleted', 'rejected', 'cancelled')`,
+        [authUser.id, targetUserId]
+      ).catch(() => {});
 
       let insRes: any;
       try {
@@ -3589,28 +3880,25 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       try {
         await query(
-          `UPDATE public.user_connections SET status = 'connected', consented_at = NOW(), responded_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          `UPDATE public.user_connections
+           SET status = 'connected', consented_at = NOW(), responded_at = NOW(), deleted_at = NULL, deleted_by = NULL, cancelled_at = NULL, updated_at = NOW()
+           WHERE id = $1`,
           [pending.id]
         );
       } catch {
         await query(`UPDATE public.user_connections SET status = 'connected' WHERE id = $1`, [pending.id]);
       }
 
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [authUser.id, requesterId]
-      ).catch(() => {});
-
-      await query(
-        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'Friend', $6, NOW())
-         ON CONFLICT (user_id, name) DO UPDATE
-         SET linked_user_id = EXCLUDED.linked_user_id,
-             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-             updated_at = NOW()`,
-        [authUser.id, requesterName, pending.email, pending.phone, pending.avatar_url, requesterId]
+      await ensureReciprocalContact(
+        authUser.id,
+        {
+          id: requesterId,
+          full_name: requesterName,
+          email: pending.email,
+          phone: pending.phone,
+          avatar_url: pending.avatar_url,
+        },
+        'Friend'
       );
       await ensureReciprocalContact(requesterId, authUser, 'Friend');
 
@@ -5350,8 +5638,20 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const targetDisplayName = (tokenRecord.full_name || tokenRecord.email?.split('@')[0] || 'Friend').trim();
         const requesterDisplayName = (authUser.full_name || authUser.email?.split('@')[0] || 'A user').trim();
 
-        // Already connected -> idempotent return, NO duplicate notifications
+        // Already connected -> ensure Saved People entries exist for both users without duplicate notifications
         if (existingConn.rows.some((r: any) => r.status === 'connected')) {
+          await ensureReciprocalContact(
+            authUser.id,
+            {
+              id: targetUserId,
+              full_name: targetDisplayName,
+              email: tokenRecord.email,
+              phone: tokenRecord.phone,
+              avatar_url: tokenRecord.avatar_url,
+            },
+            relationshipType
+          );
+          await ensureReciprocalContact(targetUserId, authUser, relationshipType);
           sendJson(res, 200, {
             success: true,
             status: 'connected',
@@ -5426,14 +5726,16 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         }
 
         // Add both users to each other's Saved People (udhar_contacts) immediately
-        await query(
-          `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (user_id, name) DO UPDATE
-           SET linked_user_id = EXCLUDED.linked_user_id,
-               photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-               updated_at = NOW()`,
-          [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
+        await ensureReciprocalContact(
+          authUser.id,
+          {
+            id: targetUserId,
+            full_name: targetDisplayName,
+            email: tokenRecord.email,
+            phone: tokenRecord.phone,
+            avatar_url: tokenRecord.avatar_url,
+          },
+          relationshipType
         );
         await ensureReciprocalContact(targetUserId, authUser, relationshipType);
 
@@ -7279,7 +7581,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           const upd = await client.query(
             `UPDATE public.udhar_transactions
              SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
-             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             WHERE link_id = $1 AND status <> 'disputed' AND COALESCE(notes, '') NOT LIKE '%"lifecycle_status":"deleted"%'
              RETURNING id`,
             [tx.link_id, deletedPackedNotes]
           );
@@ -9272,6 +9574,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
       const resDev = await recordDeviceInstallation({
         userId,
+        portalScope: body.portalScope,
         deviceType: body.deviceType,
         browser: body.browser,
         os: body.os,

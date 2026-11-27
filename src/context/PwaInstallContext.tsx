@@ -13,6 +13,8 @@ import {
   getPortalBranding,
   PortalBrandingInfo,
 } from '../lib/portalAuth';
+import { useExpense } from './ExpenseContext';
+import { getPortalIdentityFromSiteConfig } from '../lib/siteConfigDefaults';
 
 export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -186,8 +188,22 @@ export function syncDeviceRegistration(isInstalledApp?: boolean, portalOverride?
 }
 
 export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { siteConfig } = useExpense();
   const [portalScope, setPortalScope] = useState<AppPortalScope>(() => getCurrentPortalScope());
-  const portalBranding = useMemo(() => getPortalBranding(portalScope), [portalScope]);
+  const portalBranding = useMemo(() => {
+    const base = getPortalBranding(portalScope);
+    const live = getPortalIdentityFromSiteConfig(siteConfig, portalScope);
+    return {
+      ...base,
+      appName: live.appName || base.appName,
+      shortName: live.shortName || base.shortName,
+      tagline: live.tagline || base.tagline,
+      subtitle: live.tagline || base.subtitle,
+      logoUrl: live.logoUrl || base.logoUrl,
+      manifestUrl: `/api/pwa/manifest/${portalScope}?v=${siteConfig.version || 1}`,
+      fallbackIcon: live.pwaIconUrl || live.logoUrl || base.fallbackIcon,
+    };
+  }, [portalScope, siteConfig]);
   const storageKeys = useMemo(() => getPortalStorageKeys(portalScope), [portalScope]);
 
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -326,7 +342,15 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const isInstallable = Boolean(deferredPrompt) && !isInstalled;
 
+  const pwaEnabledForScope =
+    portalScope === 'myadmin'
+      ? siteConfig.pwa.adminAppInstallEnabled !== false
+      : portalScope === 'mystaff'
+      ? siteConfig.pwa.staffAppInstallEnabled !== false
+      : siteConfig.pwa.userAppInstallEnabled !== false;
+
   const canOfferInstall =
+    pwaEnabledForScope &&
     !isInstalled &&
     (portalScope !== 'user' ||
       isInstallable ||

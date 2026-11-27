@@ -302,7 +302,7 @@ test('Scenario 8 & 9: Edit audit diff, repayment preservation, and cancellation 
     true
   );
 
-  // I Borrowed (shared): blocked when Pending or Partially Settled; allowed ONLY once fully Settled
+  // I Borrowed (shared): deletable in active, partially settled, and settled states
   const borrowerPending = canCancelUdhar({
     direction: 'took',
     is_shared: true,
@@ -313,9 +313,7 @@ test('Scenario 8 & 9: Edit audit diff, repayment preservation, and cancellation 
     current_balance: 5000,
     repayments: [],
   });
-  assert.equal(borrowerPending.allowed, false);
-  assert.equal(borrowerPending.httpStatus, 403);
-  assert.match(borrowerPending.reason || '', /after it is fully settled/i);
+  assert.equal(borrowerPending.allowed, true);
 
   const borrowerPartial = canCancelUdhar({
     direction: 'took',
@@ -327,8 +325,7 @@ test('Scenario 8 & 9: Edit audit diff, repayment preservation, and cancellation 
     current_balance: 3000,
     repayments: [{ amount: 2000, status: 'confirmed' }],
   });
-  assert.equal(borrowerPartial.allowed, false);
-  assert.equal(borrowerPartial.httpStatus, 403);
+  assert.equal(borrowerPartial.allowed, true);
 
   const borrowerSettled = canCancelUdhar({
     direction: 'took',
@@ -342,23 +339,25 @@ test('Scenario 8 & 9: Edit audit diff, repayment preservation, and cancellation 
   });
   assert.equal(borrowerSettled.allowed, true);
 
-  // Tampered status='settled' with remaining balance must STILL be blocked by repayment recalculation
-  const tamperedSettled = canCancelUdhar({
-    direction: 'took',
-    is_shared: true,
-    counterpart_user_id: 'user-a',
-    status: 'settled',
-    original_amount: 5000,
-    paid_amount: 0,
-    current_balance: 0,
-    repayments: [],
-  });
-  assert.equal(tamperedSettled.allowed, false);
-  assert.equal(tamperedSettled.httpStatus, 403);
+  // Non-deleted rejected / sender-cancelled entries can also be deleted cleanly from history
+  assert.equal(canCancelUdhar({ status: 'rejected', deleted_at: null, repayments: [] }).allowed, true);
+  assert.equal(
+    canCancelUdhar({ status: 'cancelled', deleted_at: null, notes: '[MM_META:{"lifecycle_status":"cancelled"}]', repayments: [] }).allowed,
+    true
+  );
 
-  // Disputed or already cancelled entries remain blocked
+  // Disputed or already deleted entries remain blocked
   assert.equal(canCancelUdhar({ status: 'disputed', paid_amount: 0, repayments: [] }).allowed, false);
-  assert.equal(canCancelUdhar({ status: 'cancelled', paid_amount: 0, repayments: [] }).allowed, false);
+  assert.equal(canCancelUdhar({ status: 'deleted', paid_amount: 0, repayments: [] }).allowed, false);
+  assert.equal(
+    canCancelUdhar({
+      status: 'cancelled',
+      deleted_at: '2026-11-27T00:00:00Z',
+      notes: '[MM_META:{"lifecycle_status":"deleted"}]',
+      repayments: [],
+    }).allowed,
+    false
+  );
 });
 
 test('Repayment deletion guard & balance recalculation reopen settled Udhar accurately', () => {

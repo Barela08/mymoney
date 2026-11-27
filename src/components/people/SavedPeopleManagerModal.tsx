@@ -90,7 +90,12 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
   useEffect(() => {
     if (isOpen) {
+      setPendingIds({});
       fetchContacts();
+    } else {
+      setPendingIds({});
+      setLiveResults([]);
+      setLiveState('initial');
     }
   }, [isOpen]);
 
@@ -357,8 +362,27 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
       const res = await udharDeletionApi.disconnectConnection(contact.linked_user_id);
       toast.success('Disconnected', res.message || 'The Udhar connection was removed.');
       setPendingDisconnectContact(null);
+      if (contact.linked_user_id) {
+        const peerId = contact.linked_user_id;
+        setPendingIds((prev) => {
+          const next = { ...prev };
+          delete next[peerId];
+          return next;
+        });
+        setLiveResults((prev) =>
+          prev.map((u) =>
+            u.id === peerId
+              ? { ...u, connectionStatus: 'none', isAlreadyConnected: false, requestId: null }
+              : u
+          )
+        );
+      }
       await fetchContacts();
+      if (liveQuery.trim().length >= 2) {
+        void runLiveSearch(liveQuery);
+      }
       if (onContactsUpdated) onContactsUpdated();
+      onRequestsUpdated?.();
     } catch (err: any) {
       toast.error('Disconnect Failed', err?.message || 'Could not disconnect right now.');
     } finally {
@@ -494,12 +518,32 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
     const { id, name } = pendingDeleteContact;
     try {
       setIsDeletingContact(true);
+      const existingContact = contacts.find((c) => c.id === id);
       const res = await udharDeletionApi.deleteContact(id);
       if (res.success) {
         toast.info('Connection Removed', `${name} removed from both Saved People lists.`);
         setPendingDeleteContact(null);
+        const peerId = existingContact?.linked_user_id;
+        if (peerId) {
+          setPendingIds((prev) => {
+            const next = { ...prev };
+            delete next[peerId];
+            return next;
+          });
+          setLiveResults((prev) =>
+            prev.map((u) =>
+              u.id === peerId
+                ? { ...u, connectionStatus: 'none', isAlreadyConnected: false, requestId: null }
+                : u
+            )
+          );
+        }
         await fetchContacts();
+        if (liveQuery.trim().length >= 2) {
+          void runLiveSearch(liveQuery);
+        }
         if (onContactsUpdated) onContactsUpdated();
+        onRequestsUpdated?.();
       }
     } catch (err: any) {
       toast.error('Error', err.message);
@@ -903,7 +947,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                   {liveResults.map((u) => {
                     const isConnected = u.connectionStatus === 'connected' || u.isAlreadyConnected;
                     const isIncomingPending = !isConnected && u.connectionStatus === 'incoming_pending';
-                    const isPending = !isConnected && !isIncomingPending && (u.connectionStatus === 'pending' || pendingIds[u.id]);
+                    const isPending = !isConnected && !isIncomingPending && (u.connectionStatus === 'pending' || (u.connectionStatus !== 'none' && Boolean(pendingIds[u.id])));
                     return (
                       <div
                         key={u.id}

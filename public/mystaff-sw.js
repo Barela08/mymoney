@@ -261,3 +261,18 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'BRANDING_UPDATED') {
+    event.waitUntil(
+      caches.open(STAFF_CACHE_NAME).then((cache) =>
+        Promise.allSettled([
+          cache.delete('/mystaff-manifest.json'),
+          cache.delete('/staff-logo.png'),
+          cache.delete('/staff-favicon.png'),
+          cache.delete('/staff-icon-192.png'),
+        ])
+      )
+    );
+  }
+});

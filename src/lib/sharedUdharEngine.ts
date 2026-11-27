@@ -846,10 +846,8 @@ export function canSenderCancelUdhar(udhar: {
 /**
  * Deletion/cancellation guard:
  * - Already deleted or disputed transactions cannot be deleted.
- * - "I Gave" (`direction === 'gave'`) or local non-shared transactions can be deleted anytime
- *   (Pending Confirmation, Confirmed, Partially Settled, or Settled).
- * - Shared "I Borrowed" (`direction === 'took'` with `is_shared` / `counterpart_user_id`) CANNOT
- *   be deleted while Pending or Partially Settled; it can ONLY be deleted once fully Settled.
+ * - Any participant's active, settled, rejected, or sender-cancelled Udhar transaction
+ *   ("I Gave" or "I Borrowed", shared or local) can be deleted cleanly.
  */
 export function canCancelUdhar(udhar: {
   status: string;
@@ -865,7 +863,7 @@ export function canCancelUdhar(udhar: {
   repayments?: Array<{ amount?: number | string; status: string; deleted_at?: string | null }>;
 }): { allowed: boolean; httpStatus?: number; code?: string; reason?: string } {
   const lifecycle = normalizeUdharLifecycleStatus(udhar);
-  if (lifecycle === 'deleted' || Boolean(udhar.deleted_at) || udhar.status === 'cancelled') {
+  if (lifecycle === 'deleted' || Boolean(udhar.deleted_at)) {
     return {
       allowed: false,
       httpStatus: 404,
@@ -880,45 +878,6 @@ export function canCancelUdhar(udhar: {
       code: 'DISPUTED',
       reason: 'Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history.',
     };
-  }
-
-  const isShared = Boolean(udhar.is_shared ?? udhar.counterpart_user_id);
-  if (udhar.direction === 'took' && isShared) {
-    const activeRepayments = Array.isArray(udhar.repayments)
-      ? udhar.repayments.filter((r) => isActiveRepayment(r))
-      : [];
-
-    let isFullySettled = false;
-    if (udhar.original_amount !== undefined && activeRepayments.length > 0) {
-      const recalc = recalculateUdharFromRepayments({
-        originalAmount: udhar.original_amount,
-        repayments: activeRepayments.map((r) => ({
-          amount: r.amount ?? 0,
-          status: r.status,
-          deleted_at: r.deleted_at,
-        })),
-        currentStatus: udhar.status,
-      });
-      isFullySettled = recalc.isSettled && lifecycle === 'settled';
-    } else if (lifecycle === 'settled') {
-      const orig = roundMoney(parseFloat(String(udhar.original_amount ?? 0)) || 0);
-      const cur = roundMoney(parseFloat(String(udhar.current_balance ?? 0)) || 0);
-      const paid = roundMoney(parseFloat(String(udhar.paid_amount ?? orig)) || 0);
-      if (orig > 0) {
-        isFullySettled = cur <= 0.01 && paid >= orig - 0.01;
-      } else {
-        isFullySettled = cur <= 0.01;
-      }
-    }
-
-    if (!isFullySettled) {
-      return {
-        allowed: false,
-        httpStatus: 403,
-        code: 'BORROWER_REQUIRES_SETTLEMENT',
-        reason: 'You can delete this transaction after it is fully settled.',
-      };
-    }
   }
 
   return { allowed: true };

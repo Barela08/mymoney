@@ -28,6 +28,7 @@ import {
   dispatchNewUserWelcomeNotification,
   recordAdminNotification,
 } from './notificationService.js';
+import { getPublishedSiteConfig } from './siteControlCenter.js';
 import {
   logSecurityEvent,
   normalizeEmail,
@@ -1221,6 +1222,16 @@ export async function handleUserAccountExtensions(
   // D. GOOGLE AUTHENTICATION (FIREBASE ID TOKEN -> CANONICAL app_users.id)
   // --------------------------------------------------------------------------
   if (pathname === '/api/auth/google' && method === 'POST') {
+    const siteCfg = await getPublishedSiteConfig().catch(() => null);
+    if (siteCfg && (siteCfg.loginSettings.allowGoogleSignIn === false || siteCfg.loginSettings.allowLogin === false)) {
+      sendJson(res, 403, {
+        success: false,
+        code: 'GOOGLE_LOGIN_DISABLED',
+        message: 'Google Sign-In is currently disabled by an administrator.',
+      });
+      return true;
+    }
+
     const rate = await checkRateLimitAsync(
       `login:ip:${clientIp}`,
       RATE_LIMITS.LOGIN_IP.max,
@@ -1318,6 +1329,15 @@ export async function handleUserAccountExtensions(
     }
 
     // 3. Brand-new canonical app_users UUID (NEVER reuse Firebase UID as Supabase UUID!)
+    if (siteCfg && siteCfg.loginSettings.allowRegistration === false) {
+      sendJson(res, 403, {
+        success: false,
+        code: 'REGISTRATION_DISABLED',
+        message: 'New account registration is currently disabled by an administrator.',
+      });
+      return true;
+    }
+
     const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto.randomBytes(24).toString('hex')}`;
     const initialName = verified.name || verified.email.split('@')[0] || 'User';
     const initialMeta = { __profile_completed: false };
@@ -1621,6 +1641,15 @@ export async function handleUserAccountExtensions(
   }
 
   if (pathname === '/api/auth/passkey/login/options' && method === 'POST') {
+    const siteCfg = await getPublishedSiteConfig().catch(() => null);
+    if (siteCfg && (siteCfg.loginSettings.allowPasskeySignIn === false || siteCfg.loginSettings.allowLogin === false)) {
+      sendJson(res, 403, {
+        success: false,
+        code: 'PASSKEY_LOGIN_DISABLED',
+        message: 'Passkey Sign-In is currently disabled by an administrator.',
+      });
+      return true;
+    }
     let body: any = {};
     try {
       body = await parseJsonBody(req);
@@ -1658,6 +1687,15 @@ export async function handleUserAccountExtensions(
   }
 
   if (pathname === '/api/auth/passkey/login/verify' && method === 'POST') {
+    const siteCfg = await getPublishedSiteConfig().catch(() => null);
+    if (siteCfg && (siteCfg.loginSettings.allowPasskeySignIn === false || siteCfg.loginSettings.allowLogin === false)) {
+      sendJson(res, 403, {
+        success: false,
+        code: 'PASSKEY_LOGIN_DISABLED',
+        message: 'Passkey Sign-In is currently disabled by an administrator.',
+      });
+      return true;
+    }
     const rate = await checkRateLimitAsync(
       `login:ip:${clientIp}`,
       RATE_LIMITS.LOGIN_IP.max,

@@ -1,0 +1,1020 @@
+# ULTIMATE MASTER DEVELOPMENT PROMPT
+# MY MONEY MANAGER — SEPARATE ADMIN & STAFF APPS + COMPLETE WEBSITE CONTROL CENTER + REAL-TIME BRANDING + PWA INSTALLATION SYSTEM
+
+**Project:** My Money Manager by HackifyPro  
+**GitHub:** https://github.com/Barela08/mymoney  
+**Production:** https://mymoney.nileshbarela.site
+
+## 1. MAIN OBJECTIVE
+
+Upgrade the existing My Money Manager application into three separate, independently accessible application experiences:
+
+1. User Application
+2. Admin Application
+3. Staff Application
+
+All three applications must have:
+- Separate URLs.
+- Separate login experiences.
+- Separate app branding and logos.
+- Separate PWA installation experiences.
+- Separate app manifests and service-worker scopes.
+- Role-based permissions.
+- Appropriate notifications.
+- Responsive mobile and desktop layouts.
+
+Additionally, create a complete Website & App Management Control Center inside the Admin Panel.
+
+The Admin must be able to manage the website, application branding, logos, colors, app names, notifications, website content, and other configurable settings from one place.
+
+All configuration changes must synchronize across connected applications in real time without requiring users to manually refresh their pages.
+
+**IMPORTANT:** First inspect the existing codebase, framework, routing, authentication, database, hosting, PWA implementation, service workers, and notification architecture. Adapt the existing project rather than rebuilding it unnecessarily.
+
+Preserve existing users, financial records, transactions, Udhaar data, UPI QR functionality, and all existing modules.
+
+---
+
+# 2. THREE SEPARATE APPLICATIONS AND URLS
+
+Create three clearly separated application entry points.
+
+<escape>
+USER APP
+https://mymoney.nileshbarela.site
+
+ADMIN APP
+https://mymoney.nileshbarela.site/myadmin
+
+STAFF APP
+https://mymoney.nileshbarela.site/mystaff
+</escape>
+
+These routes must work independently.
+
+### A. User Application
+
+URL: `/`
+
+Purpose:
+- Normal user registration and login.
+- Dashboard.
+- Income and expenses.
+- Udhaar.
+- People.
+- UPI QR.
+- Transactions.
+- Notifications.
+- Reports.
+- Profile and settings.
+- Existing user features.
+
+Users must not be able to access admin or staff functionality.
+
+### B. Admin Application
+
+URL: `/myadmin`
+
+Purpose:
+- Dedicated admin login.
+- Admin dashboard.
+- User management.
+- Staff management.
+- Website management.
+- App branding management.
+- Logo management.
+- Notification management.
+- Application settings.
+- Security and audit logs.
+- All authorized administrative controls.
+
+Admin must not need to enter the normal user application to access admin functions.
+
+### C. Staff Application
+
+URL: `/mystaff`
+
+Purpose:
+- Dedicated staff login.
+- Staff dashboard.
+- Assigned tasks.
+- Authorized user support.
+- Permitted records and operations.
+- Staff notifications.
+- Staff profile.
+- Staff settings.
+
+Staff must only access the modules and actions explicitly permitted by their assigned role.
+
+---
+
+# 3. SEPARATE LOGIN AND AUTHENTICATION SYSTEM
+
+Admin, Staff, and Users must have separate login experiences.
+
+### Admin Login
+
+At `/myadmin`:
+
+- Display Admin App branding.
+- Display Admin App logo.
+- Admin-specific login UI.
+- Secure authentication.
+- Admin-only session handling.
+- Admin role verification from the backend.
+- Redirect authenticated admins to the Admin Dashboard.
+
+### Staff Login
+
+At `/mystaff`:
+
+- Display Staff App branding.
+- Display Staff App logo.
+- Staff-specific login UI.
+- Secure authentication.
+- Staff role verification from the backend.
+- Redirect authenticated staff to Staff Dashboard.
+
+### User Login
+
+At `/`:
+
+- Preserve existing user authentication.
+- Display User App branding.
+- Maintain existing login, registration, forgot-password, and reset-password functionality.
+
+### Security requirements
+
+- Do not trust frontend role values.
+- Verify roles on the backend.
+- Admin routes must reject normal users and staff.
+- Staff routes must reject normal users and unauthorized admins if the role policy requires it.
+- User routes must not expose administrative operations.
+- Protect APIs and database operations, not only frontend routes.
+- Implement secure session handling.
+- Implement logout and session expiration.
+- Prevent unauthorized URL access.
+- Redirect unauthorized users to the correct login page.
+- Never expose private credentials or service-role keys.
+
+### Separate login does not mean duplicate authentication databases
+
+Use the existing authentication provider and user records where appropriate.
+
+Separate the application entry points and authentication flows while maintaining a consistent and secure identity system.
+
+---
+
+# 4. SEPARATE APP BRANDING AND LOGOS
+
+Create four independently configurable branding identities:
+
+1. User App Logo
+2. Admin App Logo
+3. Staff App Logo
+4. Website Logo
+
+Each must have separate settings.
+
+### Admin Branding Management
+
+Inside Admin Panel:
+
+`Settings → Branding & Appearance`
+
+Create four separate management sections.
+
+#### User App Branding
+
+Admin can change:
+- User App logo.
+- User App name.
+- Short name.
+- App description.
+- Primary color.
+- Secondary color.
+- Accent color.
+- Login screen branding.
+- Dashboard branding.
+- Favicon.
+- PWA icon.
+- Splash-screen branding, where supported.
+
+#### Admin App Branding
+
+Admin can change:
+- Admin App logo.
+- Admin App name.
+- Short name.
+- Description.
+- Primary and secondary colors.
+- Admin login branding.
+- Admin dashboard branding.
+- Favicon.
+- PWA icon.
+- Splash-screen branding, where supported.
+
+#### Staff App Branding
+
+Admin can change:
+- Staff App logo.
+- Staff App name.
+- Short name.
+- Description.
+- Primary and secondary colors.
+- Staff login branding.
+- Staff dashboard branding.
+- Favicon.
+- PWA icon.
+- Splash-screen branding, where supported.
+
+#### Website Branding
+
+Admin can change:
+- Website logo.
+- Website favicon.
+- Website title.
+- Website description.
+- Website theme colors.
+- Header branding.
+- Footer branding.
+- Social sharing image.
+- Website identity settings.
+
+### Branding Upload Requirements
+
+Support:
+- PNG
+- JPG/JPEG
+- WebP
+- SVG, only with secure sanitization and validation.
+
+Provide:
+- Image preview.
+- Upload progress.
+- Replace image.
+- Save changes.
+- Cancel changes.
+- Validation for image size and dimensions.
+- Clear error and success messages.
+
+Do not allow an invalid or unsafe SVG to execute scripts.
+
+---
+
+# 5. COMPLETE WEBSITE MANAGEMENT CONTROL CENTER
+
+This is a major requirement.
+
+Add a dedicated section inside Admin Panel:
+
+`Website Management`
+
+The Admin should be able to manage the website and its configurable content from the Admin App without editing source code.
+
+### Website Management Dashboard
+
+Include the following modules:
+
+1. General Website Settings
+2. Branding & Logo
+3. Theme & Colors
+4. Homepage Management
+5. Header Management
+6. Footer Management
+7. Login & Registration Page Settings
+8. Website Content Management
+9. Announcements & Banners
+10. SEO Management
+11. Contact Information
+12. Social Links
+13. Legal Pages
+14. Maintenance Mode
+15. Feature Visibility
+16. PWA & Installation Settings
+17. Notification Settings
+18. Website Preview
+19. Publish Changes
+20. Change History
+
+### General Website Settings
+
+Admin can update:
+- Website name.
+- Website title.
+- Website description.
+- Website logo.
+- Contact email.
+- Contact phone.
+- Footer copyright.
+- Default language.
+- Default theme.
+- Public website settings.
+
+### Homepage Management
+
+Where the existing architecture supports configurable sections, Admin can manage:
+- Hero section.
+- Main heading.
+- Subheading.
+- Images.
+- Banners.
+- Announcement text.
+- Feature sections.
+- Call-to-action text.
+- Visibility of sections.
+
+Provide preview before publishing.
+
+### Header and Footer Management
+
+Admin can manage:
+- Logo.
+- Navigation labels.
+- Navigation visibility.
+- Footer text.
+- Contact details.
+- Social links.
+- Legal links.
+
+Do not expose private dashboard routes or protected pages through public navigation.
+
+### SEO Management
+
+Admin can manage:
+- Website title.
+- Meta description.
+- Open Graph image.
+- Favicon.
+- Canonical URL settings.
+- Robots settings where safe.
+- Sitemap configuration where supported.
+
+Do not allow arbitrary unsafe script injection into website pages.
+
+### Legal Pages
+
+Provide editable content for:
+- Privacy Policy.
+- Terms & Conditions.
+- Contact information.
+- Other existing legal pages.
+
+Preserve the existing public URLs wherever possible.
+
+### Maintenance Mode
+
+Admin can enable or disable maintenance mode.
+
+Requirements:
+- Show a configurable maintenance page to normal users.
+- Admin must retain access to the Admin Panel.
+- Authorized staff access must follow configured policy.
+- Do not lock the Admin out.
+- Provide a clear maintenance message.
+- Allow emergency bypass only for authorized administrators.
+
+---
+
+# 6. REAL-TIME GLOBAL UPDATE SYSTEM — WITHOUT PAGE REFRESH
+
+This is one of the most important requirements.
+
+When Admin changes any supported setting, connected applications must receive the update automatically.
+
+Examples:
+
+### Example 1: User App Logo
+
+1. Admin opens Branding.
+2. Admin uploads a new User App logo.
+3. Admin saves the change.
+4. Backend saves the new branding configuration.
+5. User App receives the update.
+6. Logo changes without manual refresh.
+
+### Example 2: Admin App Logo
+
+1. Admin changes Admin App logo.
+2. Save changes.
+3. Admin interface updates its branding.
+4. Other active Admin sessions receive the update.
+
+### Example 3: Staff App Logo
+
+1. Admin changes Staff App logo.
+2. Save changes.
+3. Active Staff App sessions receive the update.
+4. Staff users see the updated logo without refreshing.
+
+### Example 4: Website Content
+
+1. Admin edits homepage heading.
+2. Admin publishes changes.
+3. Public website receives the updated content.
+4. Connected website sessions update automatically.
+
+### Example 5: Theme
+
+When Admin changes a theme color:
+- Update relevant active interfaces.
+- Update CSS variables or the existing theme system.
+- Avoid a full-page reload.
+- Preserve the user's current route and form state.
+
+### Technical requirements
+
+Implement:
+- Backend-persisted configuration.
+- Real-time database subscriptions or an equivalent secure event system.
+- Configuration versioning.
+- Cache invalidation.
+- Client-side state synchronization.
+- Safe update handling.
+- Listener cleanup.
+- Reconnection handling.
+
+Do not use only localStorage as the source of truth.
+
+Backend configuration must remain authoritative.
+
+### Offline users
+
+If a user is offline:
+- Keep the last valid cached configuration.
+- Mark synchronization status appropriately.
+- Fetch the latest configuration after reconnecting.
+- Apply changes safely.
+- Do not display false success messages.
+
+### Important
+
+Do not force logout or reload users just because branding or website content changes.
+
+Updates should preserve:
+- Current page.
+- Current navigation.
+- Unsaved form data.
+- Active session.
+- User workflow.
+
+For configuration changes that genuinely require a reload, explain why and provide a safe update prompt instead of silently destroying the user's work.
+
+---
+
+# 7. SEPARATE PWA INSTALLATION FOR ALL THREE APPS
+
+All three applications must have independent installation experiences.
+
+### User App
+
+- Own PWA manifest.
+- Own app name.
+- Own short name.
+- Own icons.
+- Own theme color.
+- Own background color.
+- Own start URL.
+- Own installation prompt.
+
+### Admin App
+
+- Separate manifest.
+- Admin App name.
+- Admin App logo.
+- Admin-specific icons.
+- Admin-specific theme color.
+- Admin start URL: `/myadmin`.
+- Admin-specific installation experience.
+
+### Staff App
+
+- Separate manifest.
+- Staff App name.
+- Staff App logo.
+- Staff-specific icons.
+- Staff-specific theme color.
+- Staff start URL: `/mystaff`.
+- Staff-specific installation experience.
+
+### PWA isolation
+
+Use separate service-worker scopes wherever the architecture supports it.
+
+Ensure:
+- User App installation opens the User App.
+- Admin App installation opens `/myadmin`.
+- Staff App installation opens `/mystaff`.
+- Each installed app displays the correct branding.
+- Each application has appropriate navigation and login behavior.
+- Updates to one app do not accidentally break another app's cache or installation.
+
+Do not simply use one generic manifest for all three apps.
+
+### Install buttons
+
+Provide an Install App option in:
+- User App settings or existing install prompt.
+- Admin App settings.
+- Staff App settings.
+
+Display the installation prompt only when supported by the browser.
+
+If the app is already installed:
+- Do not repeatedly show the install prompt.
+- Show an Installed state or appropriate guidance.
+
+If installation is unavailable:
+- Display clear browser-specific installation instructions.
+
+### App icons and installed app updates
+
+When Admin replaces an app logo:
+
+1. Save the new image.
+2. Update the relevant manifest icon configuration.
+3. Use versioned icon URLs or safe cache-busting.
+4. Update the relevant service-worker cache.
+5. Notify active clients that branding has changed.
+6. Make updated icons available to supported browser/OS installation environments.
+
+Important technical limitation:
+
+Some browsers and operating systems cache installed PWA icons independently. A website cannot guarantee that every already-installed home-screen icon changes instantly on every device.
+
+Implement the best supported update mechanism and provide clear instructions when a browser or operating system requires reinstalling or refreshing the installed shortcut.
+
+Do not claim guaranteed immediate OS-level icon replacement.
+
+---
+
+# 8. SEPARATE NOTIFICATION SYSTEM AND BRANDING
+
+Provide dedicated notification configuration for:
+
+- User App.
+- Admin App.
+- Staff App.
+
+Each notification system should use the correct app identity and icon where supported.
+
+### User notifications
+
+Examples:
+- Udhaar requests.
+- Connection requests.
+- Payment-related updates.
+- Transaction reminders.
+- Account alerts.
+- Admin announcements.
+- Other existing user notifications.
+
+### Admin notifications
+
+Examples:
+- New user registration.
+- Important application alerts.
+- Staff activity.
+- System errors.
+- Security alerts.
+- Administrative events.
+
+### Staff notifications
+
+Examples:
+- New assigned task.
+- Task update.
+- Admin announcement.
+- Relevant operational alerts.
+- Staff account notifications.
+
+### Notification controls
+
+Admin can configure:
+- Notification title and content templates.
+- Notification categories.
+- Enable/disable notification categories.
+- Appropriate branding and icon.
+- Audience and role targeting.
+- Announcement scheduling, if supported.
+
+### Security
+
+- Users must not receive private admin notifications.
+- Staff must not receive notifications outside their permissions.
+- Admin notifications must be restricted to authorized administrators.
+- Never expose sensitive financial information in public push-notification payloads.
+- Validate notification permissions and audience on the backend.
+
+---
+
+# 9. ADMIN USER AND STAFF MANAGEMENT
+
+Create a complete role-based management system.
+
+### Admin can:
+
+- View users.
+- Search users.
+- View permitted user information.
+- Manage staff accounts.
+- Create staff accounts.
+- Assign staff roles.
+- Activate/deactivate staff.
+- Revoke sessions where supported.
+- Manage permissions.
+- View audit logs.
+- Manage application-wide settings.
+
+### Staff roles and permissions
+
+Create configurable permissions rather than giving every staff member full access.
+
+Examples:
+- Customer Support.
+- Transaction Support.
+- Read-Only Staff.
+- Operations Staff.
+
+Admin must be able to define:
+- Which modules a staff member can access.
+- Which records they can view.
+- Which actions they can perform.
+- Whether they can edit or only view information.
+
+### Security requirements
+
+- Admin-only operations must be protected on the backend.
+- Staff cannot promote themselves.
+- Staff cannot modify their own role.
+- Staff cannot access unrestricted user financial data.
+- Every sensitive admin/staff action must be logged.
+- Prevent privilege escalation.
+- Keep an audit trail of role and permission changes.
+
+---
+
+# 10. ADMIN GLOBAL CONFIGURATION MANAGEMENT
+
+Create one centralized configuration system.
+
+Organize settings into:
+
+- Website Configuration.
+- User App Configuration.
+- Admin App Configuration.
+- Staff App Configuration.
+- Branding Configuration.
+- Theme Configuration.
+- Notification Configuration.
+- PWA Configuration.
+- Feature Configuration.
+- Maintenance Configuration.
+- SEO Configuration.
+
+Every setting should have:
+- Unique configuration key.
+- Value.
+- Updated timestamp.
+- Updated by.
+- Version number.
+- Appropriate validation.
+
+### Save and Publish
+
+Use separate actions where necessary:
+
+- Save Draft.
+- Preview.
+- Publish Changes.
+- Restore Previous Version.
+
+Admin should see which settings are saved and which changes are published.
+
+For changes that affect active clients, publish the new configuration and broadcast a real-time update event.
+
+---
+
+# 11. PERFORMANCE — COMPLETE APPLICATION OPTIMIZATION
+
+The entire website and all three applications must work fast.
+
+Inspect and optimize:
+
+- Initial page loading.
+- Authentication.
+- Dashboard loading.
+- People/Udhaar.
+- Transaction history.
+- QR scanning and generation.
+- Confirmation codes.
+- Notifications.
+- Admin dashboard.
+- Staff dashboard.
+- Website management.
+- Branding updates.
+- Search and filters.
+- Real-time synchronization.
+- Navigation.
+- PWA startup.
+- Image uploads.
+
+### Performance requirements
+
+- Lazy-load non-critical components.
+- Optimize image sizes.
+- Use appropriate caching.
+- Avoid duplicate database requests.
+- Avoid unnecessary real-time listeners.
+- Clean up subscriptions.
+- Use pagination for large datasets.
+- Use database indexes where required.
+- Avoid loading the entire website configuration repeatedly.
+- Prevent duplicate backend writes.
+- Optimize bundle size.
+- Preserve responsive UI performance.
+
+### No unnecessary refreshes
+
+Do not reload the entire page for:
+- Logo updates.
+- Theme changes.
+- Website content updates.
+- Notification updates.
+- Normal configuration changes.
+- User/staff/admin status updates where real-time synchronization is supported.
+
+Use targeted state updates.
+
+---
+
+# 12. SECURITY AND DATA PROTECTION
+
+Implement strict role-based access control.
+
+### Admin protection
+
+- Verify admin identity on the backend.
+- Protect every admin API.
+- Restrict configuration changes.
+- Record audit logs.
+- Validate file uploads.
+- Prevent unauthorized branding changes.
+
+### Staff protection
+
+- Verify staff role and assigned permissions.
+- Restrict access to permitted modules.
+- Validate every operation on the backend.
+- Prevent access through manually entered URLs.
+
+### User protection
+
+- Preserve existing user authentication.
+- Prevent users from accessing staff/admin APIs.
+- Protect personal and financial information.
+
+### Configuration security
+
+- Public clients may read only settings intended for public display.
+- Private administrative configuration must never be exposed to users.
+- Restrict configuration writes to authorized admins.
+- Validate all configuration values.
+- Prevent arbitrary JavaScript or unsafe HTML injection.
+
+---
+
+# 13. DATABASE AND ARCHITECTURE
+
+First inspect the existing database.
+
+Do not duplicate existing collections or tables unnecessarily.
+
+Use the current backend architecture.
+
+Logically organize the data for:
+
+- Application configurations.
+- Branding settings.
+- Website settings.
+- PWA settings.
+- Notification settings.
+- Admin accounts and roles.
+- Staff accounts and permissions.
+- Configuration version history.
+- Audit logs.
+
+Implement appropriate database rules, transactions, and access policies.
+
+Use server-side authorization.
+
+Do not store private credentials in public configuration documents.
+
+Do not expose admin-only settings to normal users.
+
+---
+
+# 14. UI / UX REQUIREMENTS
+
+Keep the existing My Money Manager design language.
+
+Create distinct identities for:
+- User App.
+- Admin App.
+- Staff App.
+
+Each application should have:
+- Its own logo.
+- Its own login screen.
+- Its own dashboard.
+- Its own navigation.
+- Its own settings.
+- Its own install experience.
+
+The Admin Panel should have a professional management dashboard with clear sections and previews.
+
+The Staff Panel should remain simple and focused on assigned work.
+
+The User App must retain all existing user-facing functionality.
+
+All interfaces must be responsive for:
+- Desktop.
+- Laptop.
+- Tablet.
+- Mobile.
+- Installed PWA.
+
+Do not introduce unnecessary UI changes to existing user workflows.
+
+---
+
+# 15. TESTING AND VERIFICATION
+
+Test all three applications independently.
+
+### URL and authentication tests
+
+- Open User App.
+- Open `/myadmin`.
+- Open `/mystaff`.
+- Test Admin login.
+- Test Staff login.
+- Test normal User login.
+- Test unauthorized access.
+- Test direct URL access.
+- Test session expiration.
+- Test logout.
+
+### Branding tests
+
+- Change User App logo.
+- Verify active User App sessions update.
+- Change Admin App logo.
+- Verify Admin App updates.
+- Change Staff App logo.
+- Verify Staff App updates.
+- Change website logo.
+- Verify public website updates.
+- Change theme colors.
+- Verify relevant active interfaces update.
+- Verify refresh and new login retain the latest settings.
+
+### Website management tests
+
+- Change homepage content.
+- Publish changes.
+- Verify active website sessions update.
+- Change footer.
+- Change navigation.
+- Update SEO settings.
+- Update legal pages.
+- Enable/disable maintenance mode.
+- Verify preview and publishing behavior.
+
+### PWA tests
+
+- Install User App.
+- Install Admin App.
+- Install Staff App.
+- Verify correct app names.
+- Verify correct icons.
+- Verify correct start URLs.
+- Verify service-worker scopes.
+- Verify cache updates.
+- Test installed app startup after configuration changes.
+- Test browser-specific icon update behavior.
+
+### Notification tests
+
+- Test User notifications.
+- Test Admin notifications.
+- Test Staff notifications.
+- Verify the correct app identity and icon where supported.
+- Verify notification audience permissions.
+- Verify real-time unread count updates.
+
+### Real-time tests
+
+Use at least two separate accounts and devices/browsers.
+
+Verify that Admin changes appear without manual refresh.
+
+Test:
+- Network disconnection.
+- Reconnection.
+- Multiple active sessions.
+- Stale cache.
+- Service-worker updates.
+- Configuration version conflicts.
+- Failed uploads.
+- Failed publishing.
+
+### Regression tests
+
+Verify that existing functionality still works:
+
+- User login.
+- Registration.
+- Forgot password.
+- Dashboard.
+- Income and expenses.
+- Udhaar.
+- People.
+- QR and confirmation code.
+- UPI QR.
+- Transactions.
+- Notifications.
+- Reports.
+- Reminders.
+- Existing admin functions.
+
+---
+
+# 16. IMPLEMENTATION RULES
+
+1. Inspect the existing codebase first.
+2. Preserve existing architecture wherever practical.
+3. Do not rebuild the application from scratch.
+4. Do not reset the database.
+5. Do not delete existing user or financial data.
+6. Do not break existing routes or features.
+7. Separate Admin, Staff, and User experiences correctly.
+8. Enforce role-based authorization on the backend.
+9. Implement real-time configuration updates.
+10. Implement separate PWA manifests and appropriate service-worker scopes.
+11. Do not rely only on frontend role checks.
+12. Do not use mock data.
+13. Do not simulate real-time behavior using fake timers.
+14. Do not use unnecessary paid services.
+15. Do not expose private keys.
+16. Implement proper loading, error, and success states.
+17. Run build, lint, type checks, and relevant tests.
+18. Fix regressions before reporting completion.
+19. Report platform-specific PWA limitations honestly.
+20. Do not mark incomplete functionality as completed.
+
+---
+
+# 17. FINAL IMPLEMENTATION REPORT
+
+After implementation, provide:
+
+1. User App URL and implementation status.
+2. Admin App URL and implementation status.
+3. Staff App URL and implementation status.
+4. Separate authentication implementation.
+5. Role-based access control implementation.
+6. Branding management implementation.
+7. Website management implementation.
+8. Real-time configuration implementation.
+9. Notification separation implementation.
+10. PWA manifest and service-worker implementation.
+11. Icon and cache update implementation.
+12. Database changes.
+13. Security rules and permissions changes.
+14. Files/components modified.
+15. Build and test results.
+16. Any remaining browser/OS limitations.
+17. Any external configuration still required.
+
+# FINAL ACCEPTANCE CRITERIA
+
+The project is complete only when:
+
+- User, Admin, and Staff applications have separate URLs.
+- Admin login is separate from normal User login.
+- Staff login is separate from normal User login.
+- Each app has separate branding and logo settings.
+- Each app has its own appropriate PWA installation experience.
+- Admin can manage website content and supported settings from the Admin Panel.
+- Admin can update all four branding identities.
+- Active users receive supported configuration updates without manual refresh.
+- Active Staff and Admin sessions also synchronize changes.
+- Notification branding and audiences are correctly separated.
+- Installed apps receive supported manifest and service-worker updates.
+- All role permissions are enforced on the backend.
+- Existing application features and financial records remain intact.
+- The website and all three applications are responsive and optimized.
+- Critical functionality passes real tests.
+
+**FINAL INSTRUCTION:** Build this as a complete, production-ready multi-application management architecture inside the existing My Money Manager project. The Admin App must act as the centralized control center for the website and all app identities. Changes must be securely saved on the backend and synchronized in real time wherever technically supported. Do not deliver a visual-only dashboard or fake configuration system.

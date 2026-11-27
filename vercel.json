@@ -83,6 +83,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/robots.txt", "destination": "/api/[...all]?all=robots.txt" },
+    { "source": "/sitemap.xml", "destination": "/api/[...all]?all=sitemap.xml" },
     { "source": "/api/send-reset-email", "destination": "/api/send-reset-email" },
     { "source": "/api/(.*)", "destination": "/api/[...all]?all=$1" },
     {

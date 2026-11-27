@@ -23,7 +23,7 @@ import { AdminLoginPage } from './components/auth/AdminLoginPage';
 import { StaffLoginPage } from './components/auth/StaffLoginPage';
 import { AppDownloadPopup } from './components/common/AppDownloadPopup';
 import { TransactionCategory, TransactionSubcategory } from './types';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, EyeOff } from 'lucide-react';
 import { getPortalScopeFromLocation } from './lib/portalAuth';
 import { PwaInstallProvider, usePwaInstall } from './context/PwaInstallContext';
 import { PwaInstallBanner } from './components/common/PwaInstallBanner';
@@ -114,7 +114,7 @@ const SectionFallback: React.FC = () => (
 
 const MainContent: React.FC = () => {
   const { user, isAdmin, isStaff, isLoading, isRecoveryMode } = useAuth();
-  const { maintenanceSettings, refreshSiteConfig, dynamicSections, refreshTransactions, appBranding } = useExpense();
+  const { maintenanceSettings, refreshSiteConfig, dynamicSections, refreshTransactions, appBranding, siteConfig } = useExpense();
   const toast = useToast();
 
   const [routeLocation, setRouteLocation] = useState<{ pathname: string; hash: string }>(() => {
@@ -430,6 +430,20 @@ const MainContent: React.FC = () => {
 
   // Separate Staff Portal Route (/mystaff) — Strictly isolated Staff Login & Operations Desk
   if (isStaffRoute) {
+    const isStaffMaintenanceBlocked = Boolean(
+      maintenanceSettings.isEnabled &&
+        maintenanceSettings.allowStaffAccessDuringMaintenance === false &&
+        !isAdmin
+    );
+    if (isStaffMaintenanceBlocked) {
+      return (
+        <MaintenanceScreen
+          settings={maintenanceSettings}
+          onRefresh={refreshSiteConfig}
+        />
+      );
+    }
+
     if (!user) {
       return (
         <>
@@ -644,10 +658,27 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'ai_assistant' && (
-                    <AiAssistantSection
-                      initialPrompt={aiInitialPrompt}
-                      onClearInitialPrompt={() => setAiInitialPrompt(null)}
-                    />
+                    !isAdmin && !siteConfig.featureVisibility.aiAssistantEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          AI Financial Assistant is currently hidden by the administrator. Your saved data remains intact.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <AiAssistantSection
+                        initialPrompt={aiInitialPrompt}
+                        onClearInitialPrompt={() => setAiInitialPrompt(null)}
+                      />
+                    )
                   )}
 
                   {currentTab === 'expense_calendar' && (
@@ -667,19 +698,53 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'receipt_scanner' && (
-                    <ReceiptScannerSection />
+                    !isAdmin && !siteConfig.featureVisibility.receiptScannerEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          AI Receipt Scanner is currently hidden by the administrator. Your saved data remains intact.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <ReceiptScannerSection />
+                    )
                   )}
 
                   {currentTab === 'net_worth' && (
                     <NetWorthSection />
                   )}
-{currentTab === 'safe_to_spend' && (
-<SafeToSpendSection onSelectTab={setCurrentTab} />
-)}
+                  {currentTab === 'safe_to_spend' && (
+                    <SafeToSpendSection onSelectTab={setCurrentTab} />
+                  )}
 
-{currentTab === 'upi_qr' && (
-<UpiQrGeneratorSection onNavigate={setCurrentTab} />
-)}
+                  {currentTab === 'upi_qr' && (
+                    !isAdmin && !siteConfig.featureVisibility.upiQrEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          UPI QR tools are currently hidden by the administrator. Your saved data remains intact.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <UpiQrGeneratorSection onNavigate={setCurrentTab} />
+                    )
+                  )}
 
                   {currentTab === 'home' && (
                     <HomeSection onOpenAddModal={handleOpenAddModal} />
@@ -698,7 +763,24 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'people' && (
-                    <PeopleSection onOpenAddModal={handleOpenAddModal} />
+                    !isAdmin && !siteConfig.featureVisibility.udharEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          People &amp; Udhar ledger view is currently hidden by the administrator. Your records remain intact.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <PeopleSection onOpenAddModal={handleOpenAddModal} />
+                    )
                   )}
 
                   {currentTab === 'calculator' && (
@@ -706,7 +788,24 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'reports' && (
-                    <ReportsSection />
+                    !isAdmin && !siteConfig.featureVisibility.reportsEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Financial Reports view is currently hidden by the administrator. Your saved data remains intact.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <ReportsSection />
+                    )
                   )}
 
                   {currentTab === 'all_transactions' && (
@@ -742,10 +841,27 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'help_support' && (
-                    <HelpSupportSection
-                      key={`help-${helpInitialTab}`}
-                      initialTab={helpInitialTab}
-                    />
+                    !isAdmin && !siteConfig.featureVisibility.supportDeskEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Help &amp; Support desk is currently hidden by the administrator.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <HelpSupportSection
+                        key={`help-${helpInitialTab}`}
+                        initialTab={helpInitialTab}
+                      />
+                    )
                   )}
 
                   {currentTab === 'profile' && (
@@ -770,13 +886,30 @@ const MainContent: React.FC = () => {
                   )}
 
                   {currentTab === 'legal' && (
-                    <LegalCenterSection
-                      initialPolicyId={initialLegalPolicy}
-                      onNavigateToAccountDeletion={() => {
-                        setSettingsInitialTab('deletion');
-                        setCurrentTab('settings');
-                      }}
-                    />
+                    !isAdmin && !siteConfig.featureVisibility.legalCenterEnabled ? (
+                      <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3 max-w-md mx-auto my-8">
+                        <EyeOff className="w-8 h-8 text-slate-400 mx-auto" />
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Section Temporarily Hidden</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Legal &amp; Policy Center is currently hidden from navigation by the administrator.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentTab('dashboard')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    ) : (
+                      <LegalCenterSection
+                        initialPolicyId={initialLegalPolicy}
+                        onNavigateToAccountDeletion={() => {
+                          setSettingsInitialTab('deletion');
+                          setCurrentTab('settings');
+                        }}
+                      />
+                    )
                   )}
                 </Suspense>
               </main>

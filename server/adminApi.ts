@@ -4860,10 +4860,11 @@ export async function handleAdminApiRequest(
         return true;
       }
 
+      const resolvedAssignedTo = body.assigned_to || body.assignedTo || null;
       let assignedName = body.assigned_to_name || null;
       let assignedEmail = body.assigned_to_email || null;
-      if (body.assigned_to && !assignedEmail) {
-        const staffUser = await findAppUserFallbackById(String(body.assigned_to));
+      if (resolvedAssignedTo && !assignedEmail) {
+        const staffUser = await findAppUserFallbackById(String(resolvedAssignedTo));
         if (staffUser) {
           assignedName = staffUser.full_name || assignedName;
           assignedEmail = staffUser.email || assignedEmail;
@@ -4875,7 +4876,7 @@ export async function handleAdminApiRequest(
         description: String(body.description || ''),
         category: String(body.category || 'operations'),
         priority: body.priority,
-        assigned_to: body.assigned_to || null,
+        assigned_to: resolvedAssignedTo,
         assigned_to_name: assignedName,
         assigned_to_email: assignedEmail,
         assigned_by: auth.authUser.id,

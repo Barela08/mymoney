@@ -513,6 +513,7 @@ export interface FinancialSummary {
 }
 
 export interface PersonSummary {
+  contactId?: string | null;
   name: string;
   totalGiven: number;
   totalReceived: number;

@@ -1381,7 +1381,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto25 = require_utils2();
+    var crypto26 = require_utils2();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -1399,7 +1399,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto25.randomBytes(18).toString("base64");
+      const clientNonce = crypto26.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -1441,20 +1441,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto25.hashByName(hashName, peerCert);
+        const certHash = await crypto26.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto25.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto25.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto25.sha256(clientKey);
-      const clientSignature = await crypto25.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto26.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto26.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto26.sha256(clientKey);
+      const clientSignature = await crypto26.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto25.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto25.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto26.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto26.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -1657,15 +1657,15 @@ var require_pg_connection_string = __commonJS({
       if (config.sslnegotiation === "direct" && config.ssl === void 0) {
         config.ssl = true;
       }
-      const fs13 = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
+      const fs14 = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
       if (config.sslcert) {
-        config.ssl.cert = fs13.readFileSync(config.sslcert).toString();
+        config.ssl.cert = fs14.readFileSync(config.sslcert).toString();
       }
       if (config.sslkey) {
-        config.ssl.key = fs13.readFileSync(config.sslkey).toString();
+        config.ssl.key = fs14.readFileSync(config.sslkey).toString();
       }
       if (config.sslrootcert) {
-        config.ssl.ca = fs13.readFileSync(config.sslrootcert).toString();
+        config.ssl.ca = fs14.readFileSync(config.sslrootcert).toString();
       }
       if (options.useLibpqCompat && config.uselibpqcompat) {
         throw new Error("Both useLibpqCompat and uselibpqcompat are set. Please use only one of them.");
@@ -3493,7 +3493,7 @@ var require_split2 = __commonJS({
 var require_helper = __commonJS({
   "node_modules/pgpass/lib/helper.js"(exports, module) {
     "use strict";
-    var path11 = __require("path");
+    var path12 = __require("path");
     var Stream5 = __require("stream").Stream;
     var split = require_split2();
     var util3 = __require("util");
@@ -3532,7 +3532,7 @@ var require_helper = __commonJS({
     };
     module.exports.getFileName = function(rawEnv) {
       var env2 = rawEnv || process.env;
-      var file = env2.PGPASSFILE || (isWin ? path11.join(env2.APPDATA || "./", "postgresql", "pgpass.conf") : path11.join(env2.HOME || "./", ".pgpass"));
+      var file = env2.PGPASSFILE || (isWin ? path12.join(env2.APPDATA || "./", "postgresql", "pgpass.conf") : path12.join(env2.HOME || "./", ".pgpass"));
       return file;
     };
     module.exports.usePgPass = function(stats, fname) {
@@ -3664,16 +3664,16 @@ var require_helper = __commonJS({
 var require_lib = __commonJS({
   "node_modules/pgpass/lib/index.js"(exports, module) {
     "use strict";
-    var path11 = __require("path");
-    var fs13 = __require("fs");
+    var path12 = __require("path");
+    var fs14 = __require("fs");
     var helper = require_helper();
     module.exports = function(connInfo, cb) {
       var file = helper.getFileName();
-      fs13.stat(file, function(err, stat3) {
+      fs14.stat(file, function(err, stat3) {
         if (err || !helper.usePgPass(stat3, file)) {
           return cb(void 0);
         }
-        var st = fs13.createReadStream(file);
+        var st = fs14.createReadStream(file);
         helper.getPassword(connInfo, st, cb);
       });
     };
@@ -3693,7 +3693,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto25 = require_utils2();
+    var crypto26 = require_utils2();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -3948,7 +3948,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto25.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto26.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -8102,11 +8102,11 @@ var require_bn = __commonJS({
         var B = new BN(0);
         var C = new BN(0);
         var D = new BN(1);
-        var g2 = 0;
+        var g3 = 0;
         while (x2.isEven() && y.isEven()) {
           x2.iushrn(1);
           y.iushrn(1);
-          ++g2;
+          ++g3;
         }
         var yp = y.clone();
         var xp = x2.clone();
@@ -8148,7 +8148,7 @@ var require_bn = __commonJS({
         return {
           a: C,
           b: D,
-          gcd: y.iushln(g2)
+          gcd: y.iushln(g3)
         };
       };
       BN.prototype._invmp = function _invmp(p) {
@@ -8980,7 +8980,7 @@ var require_reporter = __commonJS({
       if (state.obj !== null)
         state.obj[key] = value;
     };
-    Reporter.prototype.path = function path11() {
+    Reporter.prototype.path = function path12() {
       return this._reporterState.path.join("/");
     };
     Reporter.prototype.enterObject = function enterObject() {
@@ -9021,8 +9021,8 @@ var require_reporter = __commonJS({
         errors: state.errors
       };
     };
-    function ReporterError(path11, msg) {
-      this.path = path11;
+    function ReporterError(path12, msg) {
+      this.path = path12;
       this.rethrow(msg);
     }
     inherits(ReporterError, Error);
@@ -10760,14 +10760,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports, module) {
     var Buffer4 = require_safe_buffer().Buffer;
-    var crypto25 = __require("crypto");
+    var crypto26 = __require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = __require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto25.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto26.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -10857,17 +10857,17 @@ var require_jwa = __commonJS({
       return function sign2(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto25.createHmac("sha" + bits, secret);
+        var hmac = crypto26.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual = "timingSafeEqual" in crypto25 ? function timingSafeEqual2(a, b) {
+    var timingSafeEqual = "timingSafeEqual" in crypto26 ? function timingSafeEqual2(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto25.timingSafeEqual(a, b);
+      return crypto26.timingSafeEqual(a, b);
     } : function timingSafeEqual2(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -10884,7 +10884,7 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto25.createSign("RSA-SHA" + bits);
+        var signer = crypto26.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -10894,7 +10894,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto25.createVerify("RSA-SHA" + bits);
+        var verifier = crypto26.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -10903,11 +10903,11 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto25.createSign("RSA-SHA" + bits);
+        var signer = crypto26.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto25.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto25.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto26.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto26.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -10917,12 +10917,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto25.createVerify("RSA-SHA" + bits);
+        var verifier = crypto26.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto25.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto25.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto26.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto26.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -11221,7 +11221,7 @@ var require_jws = __commonJS({
 var require_ece = __commonJS({
   "node_modules/http_ece/ece.js"(exports, module) {
     "use strict";
-    var crypto25 = __require("crypto");
+    var crypto26 = __require("crypto");
     var AES_GCM = "aes-128-gcm";
     var PAD_SIZE = { "aes128gcm": 1, "aesgcm": 2 };
     var TAG_LENGTH = 16;
@@ -11248,7 +11248,7 @@ var require_ece = __commonJS({
       return b;
     }
     function HMAC_hash(key, input) {
-      var hmac = crypto25.createHmac("sha256", key);
+      var hmac = crypto26.createHmac("sha256", key);
       hmac.update(input);
       return hmac.digest();
     }
@@ -11516,7 +11516,7 @@ var require_ece = __commonJS({
     function decryptRecord(key, counter, buffer, header, last) {
       keylog("decrypt", buffer);
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto25.createDecipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto26.createDecipheriv(AES_GCM, key.key, nonce);
       gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
       var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
       data = Buffer.concat([data, gcm.final()]);
@@ -11564,7 +11564,7 @@ var require_ece = __commonJS({
       keylog("encrypt", buffer);
       pad = pad || 0;
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto25.createCipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto26.createCipheriv(AES_GCM, key.key, nonce);
       var ciphertext = [];
       var padSize = PAD_SIZE[header.version];
       var padding = Buffer.alloc(pad + padSize);
@@ -11607,7 +11607,7 @@ var require_ece = __commonJS({
       }
       var header = parseParams(params);
       if (!header.salt) {
-        header.salt = crypto25.randomBytes(KEY_LENGTH);
+        header.salt = crypto26.randomBytes(KEY_LENGTH);
       }
       var result;
       if (header.version === "aes128gcm") {
@@ -17821,22 +17821,22 @@ var init_from = __esm({
     init_file();
     init_fetch_blob();
     ({ stat } = fs9);
-    blobFromSync = (path11, type) => fromBlob(statSync(path11), path11, type);
-    blobFrom = (path11, type) => stat(path11).then((stat3) => fromBlob(stat3, path11, type));
-    fileFrom = (path11, type) => stat(path11).then((stat3) => fromFile(stat3, path11, type));
-    fileFromSync = (path11, type) => fromFile(statSync(path11), path11, type);
-    fromBlob = (stat3, path11, type = "") => new fetch_blob_default([new BlobDataItem({
-      path: path11,
+    blobFromSync = (path12, type) => fromBlob(statSync(path12), path12, type);
+    blobFrom = (path12, type) => stat(path12).then((stat3) => fromBlob(stat3, path12, type));
+    fileFrom = (path12, type) => stat(path12).then((stat3) => fromFile(stat3, path12, type));
+    fileFromSync = (path12, type) => fromFile(statSync(path12), path12, type);
+    fromBlob = (stat3, path12, type = "") => new fetch_blob_default([new BlobDataItem({
+      path: path12,
       size: stat3.size,
       lastModified: stat3.mtimeMs,
       start: 0
     })], { type });
-    fromFile = (stat3, path11, type = "") => new file_default([new BlobDataItem({
-      path: path11,
+    fromFile = (stat3, path12, type = "") => new file_default([new BlobDataItem({
+      path: path12,
       size: stat3.size,
       lastModified: stat3.mtimeMs,
       start: 0
-    })], basename(path11), { type, lastModified: stat3.mtimeMs });
+    })], basename(path12), { type, lastModified: stat3.mtimeMs });
     BlobDataItem = class _BlobDataItem {
       #path;
       #start;
@@ -21192,22 +21192,22 @@ var require_bignumber = __commonJS({
           }
           str = x2.toFixed(dp, rm);
           if (x2.c) {
-            var i2, arr = str.split("."), g1 = +format2.groupSize, g2 = +format2.secondaryGroupSize, groupSeparator = format2.groupSeparator || "", intPart = arr[0], fractionPart = arr[1], isNeg = x2.s < 0, intDigits = isNeg ? intPart.slice(1) : intPart, len = intDigits.length;
-            if (g2) {
+            var i2, arr = str.split("."), g1 = +format2.groupSize, g22 = +format2.secondaryGroupSize, groupSeparator = format2.groupSeparator || "", intPart = arr[0], fractionPart = arr[1], isNeg = x2.s < 0, intDigits = isNeg ? intPart.slice(1) : intPart, len = intDigits.length;
+            if (g22) {
               i2 = g1;
-              g1 = g2;
-              g2 = i2;
+              g1 = g22;
+              g22 = i2;
               len -= i2;
             }
             if (g1 > 0 && len > 0) {
               i2 = len % g1 || g1;
               intPart = intDigits.substr(0, i2);
               for (; i2 < len; i2 += g1) intPart += groupSeparator + intDigits.substr(i2, g1);
-              if (g2 > 0) intPart += groupSeparator + intDigits.slice(i2);
+              if (g22 > 0) intPart += groupSeparator + intDigits.slice(i2);
               if (isNeg) intPart = "-" + intPart;
             }
-            str = fractionPart ? intPart + (format2.decimalSeparator || "") + ((g2 = +format2.fractionGroupSize) ? fractionPart.replace(
-              new RegExp("\\d{" + g2 + "}\\B", "g"),
+            str = fractionPart ? intPart + (format2.decimalSeparator || "") + ((g22 = +format2.fractionGroupSize) ? fractionPart.replace(
+              new RegExp("\\d{" + g22 + "}\\B", "g"),
               "$&" + (format2.fractionGroupSeparator || "")
             ) : fractionPart) : intPart;
           }
@@ -22681,22 +22681,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
-    var crypto25 = __require("crypto");
+    var crypto26 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto25.createHash("sha256").update(str).digest("base64");
+        return crypto26.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto25.randomBytes(count).toString("base64");
+        return crypto26.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto25.createVerify("RSA-SHA256");
+        const verifier = crypto26.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto25.createSign("RSA-SHA256");
+        const signer = crypto26.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -22714,7 +22714,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto25.createHash("sha256").update(str).digest("hex");
+        return crypto26.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -22726,7 +22726,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto25.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto26.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports.NodeCrypto = NodeCrypto;
@@ -22793,9 +22793,9 @@ var require_util2 = __commonJS({
     exports.removeUndefinedValuesInObject = removeUndefinedValuesInObject;
     exports.isValidFile = isValidFile;
     exports.getWellKnownCertificateConfigFileLocation = getWellKnownCertificateConfigFileLocation;
-    var fs13 = __require("fs");
-    var os7 = __require("os");
-    var path11 = __require("path");
+    var fs14 = __require("fs");
+    var os8 = __require("os");
+    var path12 = __require("path");
     var WELL_KNOWN_CERTIFICATE_CONFIG_FILE = "certificate_config.json";
     var CLOUDSDK_CONFIG_DIRECTORY = "gcloud";
     function snakeToCamel(str) {
@@ -22881,18 +22881,18 @@ var require_util2 = __commonJS({
     }
     async function isValidFile(filePath) {
       try {
-        const stats = await fs13.promises.lstat(filePath);
+        const stats = await fs14.promises.lstat(filePath);
         return stats.isFile();
       } catch (e2) {
         return false;
       }
     }
     function getWellKnownCertificateConfigFileLocation() {
-      const configDir = process.env.CLOUDSDK_CONFIG || (_isWindows() ? path11.join(process.env.APPDATA || "", CLOUDSDK_CONFIG_DIRECTORY) : path11.join(process.env.HOME || "", ".config", CLOUDSDK_CONFIG_DIRECTORY));
-      return path11.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
+      const configDir = process.env.CLOUDSDK_CONFIG || (_isWindows() ? path12.join(process.env.APPDATA || "", CLOUDSDK_CONFIG_DIRECTORY) : path12.join(process.env.HOME || "", ".config", CLOUDSDK_CONFIG_DIRECTORY));
+      return path12.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
     }
     function _isWindows() {
-      return os7.platform().startsWith("win");
+      return os8.platform().startsWith("win");
     }
   }
 });
@@ -23417,10 +23417,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto25 = (0, crypto_1.createCrypto)();
-        const randomString = crypto25.randomBytesBase64(96);
+        const crypto26 = (0, crypto_1.createCrypto)();
+        const randomString = crypto26.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto25.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto26.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -23861,7 +23861,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto25 = (0, crypto_1.createCrypto)();
+        const crypto26 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -23874,7 +23874,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto25.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto26.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -23885,7 +23885,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto25.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto26.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -23902,7 +23902,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto25.verify(cert, signed, signature);
+        const verified = await crypto26.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -24292,11 +24292,11 @@ var require_getCredentials = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getCredentials = getCredentials;
-    var path11 = __require("path");
-    var fs13 = __require("fs");
+    var path12 = __require("path");
+    var fs14 = __require("fs");
     var util_1 = __require("util");
     var errorWithCode_1 = require_errorWithCode();
-    var readFile = fs13.readFile ? (0, util_1.promisify)(fs13.readFile) : async () => {
+    var readFile = fs14.readFile ? (0, util_1.promisify)(fs14.readFile) : async () => {
       throw new errorWithCode_1.ErrorWithCode("use key rather than keyFile.", "MISSING_CREDENTIALS");
     };
     var ExtensionFiles;
@@ -24364,7 +24364,7 @@ var require_getCredentials = __commonJS({
        * @returns An instance of a class that implements ICredentialsProvider.
        */
       static create(keyFilePath) {
-        const keyFileExtension = path11.extname(keyFilePath);
+        const keyFileExtension = path12.extname(keyFilePath);
         switch (keyFileExtension) {
           case ExtensionFiles.JSON:
             return new JsonCredentialsProvider(keyFilePath);
@@ -25973,12 +25973,12 @@ var require_filesubjecttokensupplier = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FileSubjectTokenSupplier = void 0;
     var util_1 = __require("util");
-    var fs13 = __require("fs");
-    var readFile = (0, util_1.promisify)(fs13.readFile ?? (() => {
+    var fs14 = __require("fs");
+    var readFile = (0, util_1.promisify)(fs14.readFile ?? (() => {
     }));
-    var realpath = (0, util_1.promisify)(fs13.realpath ?? (() => {
+    var realpath = (0, util_1.promisify)(fs14.realpath ?? (() => {
     }));
-    var lstat = (0, util_1.promisify)(fs13.lstat ?? (() => {
+    var lstat = (0, util_1.promisify)(fs14.lstat ?? (() => {
     }));
     var FileSubjectTokenSupplier = class {
       filePath;
@@ -26096,7 +26096,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CertificateSubjectTokenSupplier = exports.InvalidConfigurationError = exports.CertificateSourceUnavailableError = exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = void 0;
     var util_1 = require_util2();
-    var fs13 = __require("fs");
+    var fs14 = __require("fs");
     var crypto_1 = __require("crypto");
     var https4 = __require("https");
     exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = "GOOGLE_API_CERTIFICATE_CONFIG";
@@ -26190,7 +26190,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
         const configPath = this.certificateConfigPath;
         let fileContents;
         try {
-          fileContents = await fs13.promises.readFile(configPath, "utf8");
+          fileContents = await fs14.promises.readFile(configPath, "utf8");
         } catch (err) {
           throw new CertificateSourceUnavailableError(`Failed to read certificate config file at: ${configPath}`);
         }
@@ -26215,14 +26215,14 @@ var require_certificatesubjecttokensupplier = __commonJS({
       async #getKeyAndCert(certPath, keyPath) {
         let cert, key;
         try {
-          cert = await fs13.promises.readFile(certPath);
+          cert = await fs14.promises.readFile(certPath);
           new crypto_1.X509Certificate(cert);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           throw new CertificateSourceUnavailableError(`Failed to read certificate file at ${certPath}: ${message}`);
         }
         try {
-          key = await fs13.promises.readFile(keyPath);
+          key = await fs14.promises.readFile(keyPath);
           (0, crypto_1.createPrivateKey)(key);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -26241,7 +26241,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
           return JSON.stringify([leafCert.raw.toString("base64")]);
         }
         try {
-          const chainPems = await fs13.promises.readFile(this.trustChainPath, "utf8");
+          const chainPems = await fs14.promises.readFile(this.trustChainPath, "utf8");
           const pemBlocks = chainPems.match(/-----BEGIN CERTIFICATE-----[^-]+-----END CERTIFICATE-----/g) ?? [];
           const chainCerts = pemBlocks.map((pem, index) => {
             try {
@@ -26472,14 +26472,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports.AwsRequestSigner = AwsRequestSigner;
-    async function sign2(crypto25, key, msg) {
-      return await crypto25.signWithHmacSha256(key, msg);
+    async function sign2(crypto26, key, msg) {
+      return await crypto26.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto25, key, dateStamp, region, serviceName) {
-      const kDate = await sign2(crypto25, `AWS4${key}`, dateStamp);
-      const kRegion = await sign2(crypto25, kDate, region);
-      const kService = await sign2(crypto25, kRegion, serviceName);
-      const kSigning = await sign2(crypto25, kService, "aws4_request");
+    async function getSigningKey(crypto26, key, dateStamp, region, serviceName) {
+      const kDate = await sign2(crypto26, `AWS4${key}`, dateStamp);
+      const kRegion = await sign2(crypto26, kDate, region);
+      const kService = await sign2(crypto26, kRegion, serviceName);
+      const kSigning = await sign2(crypto26, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -26943,7 +26943,7 @@ var require_pluggable_auth_handler = __commonJS({
     exports.PluggableAuthHandler = exports.ExecutableError = void 0;
     var executable_response_1 = require_executable_response();
     var childProcess = __require("child_process");
-    var fs13 = __require("fs");
+    var fs14 = __require("fs");
     var ExecutableError = class extends Error {
       /**
        * The exit code returned by the executable.
@@ -27028,14 +27028,14 @@ var require_pluggable_auth_handler = __commonJS({
         }
         let filePath;
         try {
-          filePath = await fs13.promises.realpath(this.outputFile);
+          filePath = await fs14.promises.realpath(this.outputFile);
         } catch {
           return void 0;
         }
-        if (!(await fs13.promises.lstat(filePath)).isFile()) {
+        if (!(await fs14.promises.lstat(filePath)).isFile()) {
           return void 0;
         }
-        const responseString = await fs13.promises.readFile(filePath, {
+        const responseString = await fs14.promises.readFile(filePath, {
           encoding: "utf8"
         });
         if (responseString === "") {
@@ -27445,8 +27445,8 @@ var require_gdchclient = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GdchClient = exports.GDCH_SERVICE_ACCOUNT_TYPE = void 0;
-    var crypto25 = __require("crypto");
-    var fs13 = __require("fs");
+    var crypto26 = __require("crypto");
+    var fs14 = __require("fs");
     var https4 = __require("https");
     var oauth2client_1 = require_oauth2client();
     var DEFAULT_LIFETIME_IN_SECONDS = 3600;
@@ -27636,7 +27636,7 @@ var require_gdchclient = __commonJS({
         const encodedHeader = this.base64UrlEncode(JSON.stringify(header));
         const encodedPayload = this.base64UrlEncode(JSON.stringify(payload));
         const signingInput = `${encodedHeader}.${encodedPayload}`;
-        const signature = crypto25.sign("sha256", Buffer.from(signingInput), {
+        const signature = crypto26.sign("sha256", Buffer.from(signingInput), {
           key: this.privateKey,
           dsaEncoding: "ieee-p1363"
         });
@@ -27669,7 +27669,7 @@ var require_gdchclient = __commonJS({
         const currentPath = this.caCertPath;
         this.caAgentPromise = (async () => {
           try {
-            const ca = await fs13.promises.readFile(currentPath);
+            const ca = await fs14.promises.readFile(currentPath);
             return new https4.Agent({ ca });
           } catch (err) {
             if (this.cachedCaCertPath === currentPath) {
@@ -27729,11 +27729,11 @@ var require_googleauth = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleAuth = exports.GoogleAuthExceptionMessages = void 0;
     var child_process_1 = __require("child_process");
-    var fs13 = __require("fs");
+    var fs14 = __require("fs");
     var gaxios_1 = require_src2();
     var gcpMetadata = require_src4();
-    var os7 = __require("os");
-    var path11 = __require("path");
+    var os8 = __require("os");
+    var path12 = __require("path");
     var crypto_1 = require_crypto3();
     var computeclient_1 = require_computeclient();
     var idtokenclient_1 = require_idtokenclient();
@@ -28018,20 +28018,20 @@ var require_googleauth = __commonJS({
         if (!configDir) {
           if (this._isWindows()) {
             if (process.env["APPDATA"]) {
-              configDir = path11.join(process.env["APPDATA"], "gcloud");
+              configDir = path12.join(process.env["APPDATA"], "gcloud");
             }
           } else {
             const home = process.env["HOME"];
             if (home) {
-              configDir = path11.join(home, ".config", "gcloud");
+              configDir = path12.join(home, ".config", "gcloud");
             }
           }
         }
         if (!configDir) {
           return null;
         }
-        const location = path11.join(configDir, "application_default_credentials.json");
-        if (!fs13.existsSync(location)) {
+        const location = path12.join(configDir, "application_default_credentials.json");
+        if (!fs14.existsSync(location)) {
           return null;
         }
         const client = await this._getApplicationCredentialsFromFilePath(location, options);
@@ -28048,8 +28048,8 @@ var require_googleauth = __commonJS({
           throw new Error("The file path is invalid.");
         }
         try {
-          filePath = fs13.realpathSync(filePath);
-          if (!fs13.lstatSync(filePath).isFile()) {
+          filePath = fs14.realpathSync(filePath);
+          if (!fs14.lstatSync(filePath).isFile()) {
             throw new Error();
           }
         } catch (err) {
@@ -28058,7 +28058,7 @@ var require_googleauth = __commonJS({
           }
           throw err;
         }
-        const readStream = fs13.createReadStream(filePath);
+        const readStream = fs14.createReadStream(filePath);
         return this.fromStream(readStream, options);
       }
       /**
@@ -28241,7 +28241,7 @@ var require_googleauth = __commonJS({
        * @api private
        */
       _isWindows() {
-        const sys = os7.platform();
+        const sys = os8.platform();
         if (sys && sys.length >= 3) {
           if (sys.substring(0, 3).toLowerCase() === "win") {
             return true;
@@ -28385,8 +28385,8 @@ var require_googleauth = __commonJS({
         if (this.jsonContent) {
           return this._cacheClientFromJSON(this.jsonContent, this.clientOptions);
         } else if (this.keyFilename) {
-          const filePath = path11.resolve(this.keyFilename);
-          const stream = fs13.createReadStream(filePath);
+          const filePath = path12.resolve(this.keyFilename);
+          const stream = fs14.createReadStream(filePath);
           return await this.fromStreamAsync(stream, this.clientOptions);
         } else if (this.apiKey) {
           const client = await this.fromAPIKey(this.apiKey, this.clientOptions);
@@ -28499,24 +28499,24 @@ var require_googleauth = __commonJS({
           const signed = await client.sign(data);
           return signed.signedBlob;
         }
-        const crypto25 = (0, crypto_1.createCrypto)();
+        const crypto26 = (0, crypto_1.createCrypto)();
         if (client instanceof jwtclient_1.JWT && client.key) {
-          const sign2 = await crypto25.sign(client.key, data);
+          const sign2 = await crypto26.sign(client.key, data);
           return sign2;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto25, creds.client_email, data, endpoint);
+        return this.signBlob(crypto26, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto25, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto26, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto25.encodeBase64StringUtf8(data)
+            payload: crypto26.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -32661,7 +32661,7 @@ var require_websocket_server = __commonJS({
 
 // server/api.ts
 import { parse as parseUrl2 } from "url";
-import crypto24 from "crypto";
+import crypto25 from "crypto";
 
 // node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -34838,7 +34838,1827 @@ async function logSecurityEvent(eventType, opts = {}) {
 }
 
 // server/auth.ts
+import crypto4 from "crypto";
+
+// server/supabaseRestFallback.ts
+import fs2 from "fs";
+import os from "os";
+import path2 from "path";
 import crypto3 from "crypto";
+var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
+var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+var PRIMARY_DATA_DIR = path2.resolve(process.cwd(), ".data", "runtime-store");
+var TMP_DATA_DIR = path2.resolve(os.tmpdir(), "mymoney-runtime-store");
+var memoryFallbackStore = /* @__PURE__ */ new Map();
+function resolveWritableStoreDir() {
+  try {
+    if (!fs2.existsSync(PRIMARY_DATA_DIR)) {
+      fs2.mkdirSync(PRIMARY_DATA_DIR, { recursive: true });
+    }
+    fs2.accessSync(PRIMARY_DATA_DIR, fs2.constants.W_OK);
+    return PRIMARY_DATA_DIR;
+  } catch {
+    try {
+      if (!fs2.existsSync(TMP_DATA_DIR)) {
+        fs2.mkdirSync(TMP_DATA_DIR, { recursive: true });
+      }
+      return TMP_DATA_DIR;
+    } catch {
+      return PRIMARY_DATA_DIR;
+    }
+  }
+}
+function safeStoreFile(baseDir, name2) {
+  const safeName = name2.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const resolved = path2.resolve(baseDir, safeName);
+  if (!resolved.startsWith(baseDir + path2.sep)) {
+    throw new Error("PATH_CONFINEMENT_VIOLATION");
+  }
+  return resolved;
+}
+function readJsonStore(fileName, defaultValue) {
+  const dirsToTry = [PRIMARY_DATA_DIR, TMP_DATA_DIR];
+  for (const dir of dirsToTry) {
+    try {
+      const file = safeStoreFile(dir, fileName);
+      if (fs2.existsSync(file)) {
+        const raw = fs2.readFileSync(file, "utf8");
+        if (raw.trim()) {
+          const parsed = JSON.parse(raw);
+          memoryFallbackStore.set(fileName, parsed);
+          return parsed;
+        }
+      }
+    } catch {
+    }
+  }
+  if (memoryFallbackStore.has(fileName)) {
+    return memoryFallbackStore.get(fileName);
+  }
+  return defaultValue;
+}
+function writeJsonStore(fileName, data) {
+  memoryFallbackStore.set(fileName, data);
+  try {
+    const baseDir = resolveWritableStoreDir();
+    const file = safeStoreFile(baseDir, fileName);
+    fs2.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.warn(`[RuntimeStore] Write warning (${fileName}):`, err?.message);
+  }
+}
+function getSupabaseRestConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
+  return { url, key };
+}
+async function sbRestRequest(restPath, options = {}) {
+  try {
+    const { url, key } = getSupabaseRestConfig();
+    const headers = {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: "application/json"
+    };
+    if (options.body !== void 0) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (options.prefer) {
+      headers["Prefer"] = options.prefer;
+    }
+    const response = await fetch(`${url}/rest/v1/${restPath}`, {
+      method: options.method || "GET",
+      headers,
+      body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
+    });
+    const text = await response.text();
+    let parsed = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+    }
+    if (!response.ok) {
+      const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
+      return { ok: false, status: response.status, data: null, error: errMsg };
+    }
+    return { ok: true, status: response.status, data: parsed };
+  } catch (err) {
+    return { ok: false, status: 0, data: null, error: err?.message || "Network error" };
+  }
+}
+function loadIntegrationsConfigFallback() {
+  return readJsonStore("integrations-config.json", {});
+}
+function saveIntegrationsConfigFallback(cfg) {
+  writeJsonStore("integrations-config.json", cfg);
+}
+async function insertFeedbackFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto3.randomUUID();
+  const record = {
+    id,
+    user_id: payload.user_id,
+    user_name: payload.user_name,
+    user_email: payload.user_email,
+    user_phone: payload.user_phone || null,
+    type: "feedback",
+    category: payload.category,
+    subject: payload.subject,
+    message: payload.message,
+    rating: payload.rating,
+    dpdp_consent: payload.dpdp_consent,
+    dpdp_consent_at: payload.dpdp_consent_at,
+    status: "new",
+    admin_notes: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    created_at: now,
+    updated_at: now
+  };
+  let savedRow = record;
+  const sbRes = await sbRestRequest("feedbacks", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      id: record.id,
+      user_id: record.user_id,
+      user_name: record.user_name,
+      user_email: record.user_email,
+      user_phone: record.user_phone,
+      type: "feedback",
+      category: record.category,
+      subject: record.subject,
+      message: record.message,
+      rating: record.rating,
+      dpdp_consent: record.dpdp_consent,
+      dpdp_consent_at: record.dpdp_consent_at,
+      status: "new",
+      created_at: now,
+      updated_at: now
+    }
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    savedRow = sbRes.data[0];
+  } else {
+    const retryRes = await sbRestRequest("feedbacks", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        user_id: record.user_id,
+        user_name: record.user_name,
+        user_email: record.user_email,
+        type: "feedback",
+        category: record.category,
+        subject: record.subject,
+        message: record.message,
+        rating: record.rating,
+        status: "new",
+        created_at: now,
+        updated_at: now
+      }
+    });
+    if (retryRes.ok && Array.isArray(retryRes.data) && retryRes.data[0]) {
+      savedRow = retryRes.data[0];
+    }
+  }
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  store.feedbacks = [savedRow, ...store.feedbacks.filter((f3) => f3.id !== savedRow.id)].slice(0, 500);
+  writeJsonStore("feedbacks.json", store);
+  return savedRow;
+}
+async function listFeedbacksFallback(filters) {
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  const sbRes = await sbRestRequest(
+    "feedbacks?type=eq.feedback&select=*&order=created_at.desc&limit=200"
+  );
+  const mergedMap = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) mergedMap.set(String(row.id), row);
+    }
+  }
+  for (const row of store.feedbacks) {
+    if (row?.id && !mergedMap.has(String(row.id))) {
+      mergedMap.set(String(row.id), row);
+    }
+  }
+  let allFeedbacks = Array.from(mergedMap.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  if (filters?.userId) {
+    allFeedbacks = allFeedbacks.filter((f3) => f3.user_id === filters.userId);
+  }
+  const total = allFeedbacks.length;
+  const ratedRows = allFeedbacks.filter((f3) => Number(f3.rating) > 0);
+  const avgRating = ratedRows.length > 0 ? Number((ratedRows.reduce((s2, f3) => s2 + Number(f3.rating || 0), 0) / ratedRows.length).toFixed(1)) : 0;
+  const metrics = {
+    total,
+    avg_rating: avgRating,
+    stars_5: allFeedbacks.filter((f3) => Number(f3.rating) === 5).length,
+    stars_4: allFeedbacks.filter((f3) => Number(f3.rating) === 4).length,
+    stars_3: allFeedbacks.filter((f3) => Number(f3.rating) === 3).length,
+    stars_2: allFeedbacks.filter((f3) => Number(f3.rating) === 2).length,
+    stars_1: allFeedbacks.filter((f3) => Number(f3.rating) === 1).length,
+    new_count: allFeedbacks.filter((f3) => f3.status === "new").length,
+    reviewed_count: allFeedbacks.filter((f3) => ["reviewed", "responded", "resolved"].includes(f3.status)).length,
+    resolved_count: allFeedbacks.filter((f3) => f3.status === "resolved").length
+  };
+  let filtered = allFeedbacks;
+  if (filters?.rating && filters.rating !== "all") {
+    const rNum = parseInt(filters.rating, 10);
+    filtered = filtered.filter((f3) => Number(f3.rating) === rNum);
+  }
+  if (filters?.category && filters.category !== "all") {
+    filtered = filtered.filter((f3) => f3.category === filters.category);
+  }
+  if (filters?.status && filters.status !== "all") {
+    filtered = filtered.filter((f3) => f3.status === filters.status);
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    filtered = filtered.filter(
+      (f3) => String(f3.user_name || "").toLowerCase().includes(q) || String(f3.user_email || "").toLowerCase().includes(q) || String(f3.message || "").toLowerCase().includes(q) || String(f3.subject || "").toLowerCase().includes(q)
+    );
+  }
+  return { feedbacks: filtered.slice(0, 150), metrics };
+}
+async function getFeedbackByIdFallback(id) {
+  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    return sbRes.data[0];
+  }
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  return store.feedbacks.find((f3) => f3.id === id) || null;
+}
+async function updateFeedbackFallback(id, updates) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const patch = {
+    updated_at: now,
+    reviewed_at: now
+  };
+  if (updates.status !== void 0) patch.status = updates.status;
+  if (updates.admin_notes !== void 0) patch.admin_notes = updates.admin_notes;
+  if (updates.reviewed_by !== void 0) patch.reviewed_by = updates.reviewed_by;
+  let updatedRow = null;
+  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body: patch
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    updatedRow = sbRes.data[0];
+  }
+  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
+  const idx = store.feedbacks.findIndex((f3) => f3.id === id);
+  if (idx >= 0) {
+    store.feedbacks[idx] = { ...store.feedbacks[idx], ...patch, ...updatedRow || {} };
+    updatedRow = store.feedbacks[idx];
+    writeJsonStore("feedbacks.json", store);
+  } else if (updatedRow) {
+    store.feedbacks.unshift(updatedRow);
+    writeJsonStore("feedbacks.json", store);
+  }
+  return updatedRow;
+}
+function readLocalUsersStore() {
+  return readJsonStore("app-users-local.json", {});
+}
+function upsertAppUserLocalFallback(user) {
+  if (!user?.id) return user;
+  const store = readLocalUsersStore();
+  const prev = store[String(user.id)] || {};
+  const merged = { ...prev, ...user };
+  store[String(user.id)] = merged;
+  writeJsonStore("app-users-local.json", store);
+  return merged;
+}
+async function findAppUserFallbackByEmail(email) {
+  const clean = String(email || "").trim().toLowerCase();
+  if (!clean) return null;
+  const local = Object.values(readLocalUsersStore()).find(
+    (u) => String(u?.email || "").trim().toLowerCase() === clean
+  );
+  if (local) return local;
+  const sbRes = await sbRestRequest(`app_users?email=ilike.${encodeURIComponent(clean)}&select=*&limit=1`);
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) return sbRes.data[0];
+  return null;
+}
+async function findAppUserFallbackById(userId) {
+  const clean = String(userId || "").trim();
+  if (!clean) return null;
+  const local = readLocalUsersStore()[clean];
+  if (local) return local;
+  const sbRes = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(clean)}&select=*&limit=1`);
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) return sbRes.data[0];
+  return null;
+}
+async function listAllAppUsersFallback() {
+  const usersMap = /* @__PURE__ */ new Map();
+  const appUsersRes = await sbRestRequest(
+    "app_users?select=id,email,full_name,phone,role,role_slug,status,custom_permissions,avatar_url,created_at,last_login_at&limit=1000"
+  );
+  if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
+    for (const u of appUsersRes.data) {
+      if (u?.id) usersMap.set(String(u.id), u);
+    }
+  }
+  const profilesRes = await sbRestRequest("profiles?select=id,email,full_name,role,avatar_url&limit=1000");
+  if (profilesRes.ok && Array.isArray(profilesRes.data)) {
+    for (const p of profilesRes.data) {
+      if (p?.id && !usersMap.has(String(p.id))) {
+        usersMap.set(String(p.id), p);
+      }
+    }
+  }
+  const localUsers = readLocalUsersStore();
+  for (const [id, u] of Object.entries(localUsers)) {
+    if (u && typeof u === "object") {
+      const prev = usersMap.get(id) || {};
+      usersMap.set(id, { ...prev, ...u });
+    }
+  }
+  return Array.from(usersMap.values());
+}
+function readNotifStore() {
+  const raw = readJsonStore("notifications.json", {});
+  return {
+    campaigns: Array.isArray(raw.campaigns) ? raw.campaigns : [],
+    banners: Array.isArray(raw.banners) ? raw.banners : [],
+    userNotifications: Array.isArray(raw.userNotifications) ? raw.userNotifications : [],
+    broadcastUserState: raw.broadcastUserState && typeof raw.broadcastUserState === "object" ? raw.broadcastUserState : {}
+  };
+}
+function writeNotifStore(store) {
+  store.campaigns = store.campaigns.slice(0, 200);
+  store.banners = store.banners.slice(0, 200);
+  store.userNotifications = store.userNotifications.slice(0, 2e3);
+  writeJsonStore("notifications.json", store);
+}
+async function createCampaignFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto3.randomUUID();
+  const record = {
+    id,
+    title: payload.title,
+    message: payload.message,
+    category: payload.category,
+    type: payload.type,
+    channels: payload.channels,
+    target_type: payload.target_type,
+    target_user_ids: payload.target_user_ids,
+    deep_link: payload.deep_link,
+    status: payload.status,
+    scheduled_for: payload.scheduled_for,
+    total_targets: 0,
+    delivered_count: 0,
+    failed_count: 0,
+    sent_at: null,
+    created_by: payload.created_by,
+    created_at: now,
+    updated_at: now
+  };
+  let saved = record;
+  const sbRes = await sbRestRequest("notification_campaigns", {
+    method: "POST",
+    prefer: "return=representation",
+    body: record
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    saved = sbRes.data[0];
+  }
+  const store = readNotifStore();
+  store.campaigns = [saved, ...store.campaigns.filter((c) => c.id !== saved.id)];
+  writeNotifStore(store);
+  return saved;
+}
+async function updateCampaignFallback(id, patch) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const nextPatch = { ...patch, updated_at: now };
+  await sbRestRequest(`notification_campaigns?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: nextPatch
+  });
+  const store = readNotifStore();
+  const idx = store.campaigns.findIndex((c) => c.id === id);
+  if (idx >= 0) {
+    store.campaigns[idx] = { ...store.campaigns[idx], ...nextPatch };
+    writeNotifStore(store);
+    return store.campaigns[idx];
+  }
+  return null;
+}
+async function listCampaignsFallback() {
+  const store = readNotifStore();
+  const sbRes = await sbRestRequest(
+    "notification_campaigns?select=*&order=created_at.desc&limit=100"
+  );
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const c of sbRes.data) {
+      if (c?.id) map2.set(String(c.id), c);
+    }
+  }
+  for (const c of store.campaigns) {
+    if (c?.id && !map2.has(String(c.id))) {
+      map2.set(String(c.id), c);
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+async function createBroadcastBannerFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto3.randomUUID();
+  const banner = {
+    id,
+    title: payload.title,
+    message: payload.message,
+    type: payload.type || "announcement",
+    target_user_id: payload.target_user_id || "all",
+    is_active: true,
+    created_by: payload.created_by,
+    created_at: now,
+    category: payload.category || "announcement",
+    deep_link: payload.deep_link || "dashboard"
+  };
+  let saved = banner;
+  const sbRes = await sbRestRequest("notifications", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      id: banner.id,
+      title: banner.title,
+      message: banner.message,
+      type: banner.type,
+      target_user_id: banner.target_user_id,
+      is_active: true,
+      created_by: banner.created_by,
+      created_at: now
+    }
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    saved = { ...banner, ...sbRes.data[0] };
+  }
+  const store = readNotifStore();
+  store.banners = [saved, ...store.banners.filter((b) => b.id !== saved.id)];
+  writeNotifStore(store);
+  return saved;
+}
+async function listBroadcastBannersFallback() {
+  const store = readNotifStore();
+  const sbRes = await sbRestRequest("notifications?select=*&order=created_at.desc&limit=100");
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const b of sbRes.data) {
+      if (b?.id) map2.set(String(b.id), b);
+    }
+  }
+  for (const b of store.banners) {
+    if (b?.id && !map2.has(String(b.id))) {
+      map2.set(String(b.id), b);
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+async function deactivateBroadcastBannerFallback(id) {
+  await sbRestRequest(`notifications?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { is_active: false }
+  });
+  const store = readNotifStore();
+  const idx = store.banners.findIndex((b) => b.id === id);
+  if (idx >= 0) {
+    store.banners[idx].is_active = false;
+    writeNotifStore(store);
+  }
+}
+async function purgeUdharNotificationsFallback(linkId, txId) {
+  if (!linkId && !txId) return;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const store = readNotifStore();
+  let changed = false;
+  for (const b of store.banners) {
+    if (b && b.is_active !== false && (linkId && b.related_entity_id === linkId || txId && b.related_entity_id === txId)) {
+      b.is_active = false;
+      changed = true;
+    }
+  }
+  for (const n of store.userNotifications) {
+    if (!n || n.is_deleted) continue;
+    const meta = n.metadata || {};
+    const matchesLink = Boolean(linkId) && (n.related_entity_id === linkId || meta.relatedEntityId === linkId || meta.linkId === linkId);
+    const matchesTx = Boolean(txId) && (n.related_entity_id === txId || meta.udharId === txId || meta.transactionId === txId);
+    if (matchesLink || matchesTx) {
+      n.is_deleted = true;
+      n.deleted_at = now;
+      changed = true;
+    }
+  }
+  if (changed) {
+    writeNotifStore(store);
+  }
+}
+async function insertUserNotificationFallback(params) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const id = crypto3.randomUUID();
+  const record = {
+    id,
+    user_id: params.user_id,
+    title: params.title,
+    message: params.message,
+    category: params.category || "general",
+    type: params.type || "info",
+    related_entity_type: params.related_entity_type || null,
+    related_entity_id: params.related_entity_id || null,
+    deep_link: params.deep_link || null,
+    dedupe_key: params.dedupe_key || null,
+    is_read: false,
+    read_at: null,
+    is_deleted: false,
+    deleted_at: null,
+    metadata: params.metadata || {},
+    created_at: now
+  };
+  let saved = record;
+  const sbRes = await sbRestRequest("user_notifications", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      id: record.id,
+      user_id: record.user_id,
+      title: record.title,
+      message: record.message,
+      category: record.category,
+      type: record.type,
+      related_entity_type: record.related_entity_type,
+      related_entity_id: record.related_entity_id,
+      deep_link: record.deep_link,
+      metadata: record.metadata,
+      is_read: false,
+      is_deleted: false,
+      created_at: now
+    }
+  });
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    saved = sbRes.data[0];
+  }
+  const store = readNotifStore();
+  if (params.dedupe_key) {
+    const dup = store.userNotifications.find(
+      (n) => n.user_id === params.user_id && (n.dedupe_key === params.dedupe_key || n.metadata?.dedupeKey === params.dedupe_key)
+    );
+    if (dup) return dup;
+  }
+  store.userNotifications = [saved, ...store.userNotifications.filter((n) => n.id !== saved.id)];
+  writeNotifStore(store);
+  return saved;
+}
+async function listUserNotificationsFallback(userId, options) {
+  const store = readNotifStore();
+  const userState = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  const sbUserRes = await sbRestRequest(
+    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=100`
+  );
+  const merged = /* @__PURE__ */ new Map();
+  if (sbUserRes.ok && Array.isArray(sbUserRes.data)) {
+    for (const n of sbUserRes.data) {
+      if (n?.id && !n.is_deleted) merged.set(String(n.id), n);
+    }
+  }
+  for (const n of store.userNotifications) {
+    if (n?.user_id === userId && !n.is_deleted && !merged.has(String(n.id))) {
+      merged.set(String(n.id), n);
+    }
+  }
+  const activeBanners = await listBroadcastBannersFallback();
+  const existingBroadcastIds = new Set(
+    Array.from(merged.values()).map((n) => n?.metadata?.broadcastId).filter(Boolean)
+  );
+  for (const b of activeBanners) {
+    if (!b?.is_active) continue;
+    if (b.target_user_id !== "all" && b.target_user_id !== userId) continue;
+    const virtualId = `broadcast_${b.id}`;
+    if (existingBroadcastIds.has(b.id) || userState.deletedIds.includes(virtualId) || merged.has(virtualId)) {
+      continue;
+    }
+    merged.set(virtualId, {
+      id: virtualId,
+      user_id: userId,
+      title: b.title,
+      message: b.message,
+      category: b.category || "announcement",
+      type: b.type || "announcement",
+      deep_link: b.deep_link || "dashboard",
+      is_read: userState.readIds.includes(virtualId),
+      is_deleted: false,
+      metadata: { broadcastId: b.id, isBroadcast: true },
+      created_at: b.created_at
+    });
+  }
+  let allList = Array.from(merged.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  const unreadCount = allList.filter((n) => !n.is_read).length;
+  if (options?.category && options.category !== "all") {
+    allList = allList.filter((n) => n.category === options.category);
+  }
+  if (options?.unreadOnly) {
+    allList = allList.filter((n) => !n.is_read);
+  }
+  const total = allList.length;
+  const page = options?.page || 1;
+  const limit = options?.limit || 20;
+  const offset = (page - 1) * limit;
+  return {
+    notifications: allList.slice(offset, offset + limit),
+    unreadCount,
+    total
+  };
+}
+async function markUserNotificationReadFallback(userId, notifId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const store = readNotifStore();
+  if (notifId.startsWith("broadcast_")) {
+    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+    if (!state.readIds.includes(notifId)) state.readIds.push(notifId);
+    store.broadcastUserState[userId] = state;
+    writeNotifStore(store);
+    return { id: notifId, user_id: userId, is_read: true, read_at: now };
+  }
+  await sbRestRequest(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "PATCH", body: { is_read: true, read_at: now } }
+  );
+  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
+  if (target) {
+    target.is_read = true;
+    target.read_at = now;
+    writeNotifStore(store);
+    return target;
+  }
+  return { id: notifId, user_id: userId, is_read: true, read_at: now };
+}
+async function markAllUserNotificationsReadFallback(userId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRestRequest(
+    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&is_read=eq.false`,
+    { method: "PATCH", body: { is_read: true, read_at: now } }
+  );
+  const store = readNotifStore();
+  for (const n of store.userNotifications) {
+    if (n.user_id === userId && !n.is_deleted) {
+      n.is_read = true;
+      n.read_at = now;
+    }
+  }
+  const activeBanners = await listBroadcastBannersFallback();
+  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  for (const b of activeBanners) {
+    const vid = `broadcast_${b.id}`;
+    if (!state.readIds.includes(vid)) state.readIds.push(vid);
+  }
+  store.broadcastUserState[userId] = state;
+  writeNotifStore(store);
+}
+async function deleteUserNotificationFallback(userId, notifId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const store = readNotifStore();
+  if (notifId.startsWith("broadcast_")) {
+    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+    if (!state.deletedIds.includes(notifId)) state.deletedIds.push(notifId);
+    store.broadcastUserState[userId] = state;
+    writeNotifStore(store);
+    return;
+  }
+  await sbRestRequest(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
+    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
+  );
+  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
+  if (target) {
+    target.is_deleted = true;
+    target.deleted_at = now;
+    writeNotifStore(store);
+  }
+}
+async function getUserNotificationByIdFallback(userId, notifId) {
+  if (!userId || !notifId) return null;
+  const sbRes = await sbRestRequest(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&limit=1`
+  );
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    return sbRes.data[0];
+  }
+  const store = readNotifStore();
+  return store.userNotifications.find(
+    (n) => n && n.id === notifId && n.user_id === userId && !n.is_deleted
+  ) || null;
+}
+async function updateConnectionRequestNotificationsFallback(params) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const requestId = params.requestId ? String(params.requestId) : null;
+  const requesterId = params.requesterId ? String(params.requesterId) : null;
+  const receiverId = params.receiverId ? String(params.receiverId) : null;
+  const targetUserIds = Array.from(new Set([receiverId, requesterId].filter(Boolean)));
+  for (const uid of targetUserIds) {
+    const sbRes = await sbRestRequest(
+      `user_notifications?user_id=eq.${encodeURIComponent(uid)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=50`
+    );
+    if (sbRes.ok && Array.isArray(sbRes.data)) {
+      for (const row of sbRes.data) {
+        const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+        const isConnReq = meta.actionType === "udhar_connection_request" || row?.related_entity_type === "user_connection";
+        if (!isConnReq) continue;
+        const matchesReqId = Boolean(
+          requestId && (row.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
+        );
+        const matchesPair = Boolean(
+          requesterId && receiverId && meta.actionType === "udhar_connection_request" && (meta.requesterId === requesterId && (meta.receiverId === receiverId || row.user_id === receiverId) || row.related_entity_id === requesterId && row.user_id === receiverId)
+        );
+        if (!matchesReqId && !matchesPair) continue;
+        if (meta.requestStatus && meta.requestStatus !== "pending") continue;
+        const nextMeta = {
+          ...meta,
+          requestStatus: params.status,
+          resolvedAt: now
+        };
+        await sbRestRequest(`user_notifications?id=eq.${encodeURIComponent(String(row.id))}`, {
+          method: "PATCH",
+          body: {
+            metadata: nextMeta,
+            is_read: true,
+            read_at: row.read_at || now
+          }
+        });
+      }
+    }
+  }
+  const store = readNotifStore();
+  let changed = false;
+  for (const n of store.userNotifications) {
+    if (!n || n.is_deleted) continue;
+    const meta = n.metadata && typeof n.metadata === "object" ? n.metadata : {};
+    const isConnReq = meta.actionType === "udhar_connection_request" || n.related_entity_type === "user_connection";
+    if (!isConnReq) continue;
+    const matchesReqId = Boolean(
+      requestId && (n.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
+    );
+    const matchesPair = Boolean(
+      requesterId && receiverId && meta.actionType === "udhar_connection_request" && (meta.requesterId === requesterId && (meta.receiverId === receiverId || n.user_id === receiverId) || n.related_entity_id === requesterId && n.user_id === receiverId)
+    );
+    if (!matchesReqId && !matchesPair) continue;
+    if (meta.requestStatus && meta.requestStatus !== "pending") continue;
+    n.metadata = {
+      ...meta,
+      requestStatus: params.status,
+      resolvedAt: now
+    };
+    n.is_read = true;
+    n.read_at = n.read_at || now;
+    changed = true;
+  }
+  if (changed) {
+    writeNotifStore(store);
+  }
+}
+async function clearAllUserNotificationsFallback(userId) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await sbRestRequest(
+    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false`,
+    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
+  );
+  const store = readNotifStore();
+  for (const n of store.userNotifications) {
+    if (n.user_id === userId && !n.is_deleted) {
+      n.is_deleted = true;
+      n.deleted_at = now;
+    }
+  }
+  const activeBanners = await listBroadcastBannersFallback();
+  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  for (const b of activeBanners) {
+    const vid = `broadcast_${b.id}`;
+    if (!state.deletedIds.includes(vid)) state.deletedIds.push(vid);
+  }
+  store.broadcastUserState[userId] = state;
+  writeNotifStore(store);
+}
+var DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: "tmpl_welcome_email",
+    slug: "welcome-email",
+    name: "Welcome & Account Verification",
+    category: "authentication",
+    subject: "Welcome to {{app_name}}! Your Account is Active",
+    variables: ["user_name", "user_email", "app_name", "company_name", "login_url", "support_email", "support_phone", "date"],
+    text_content: "Hi {{user_name}},\n\nWelcome to {{app_name}} by {{company_name}}! Your account ({{user_email}}) has been created successfully on {{date}}.\n\nLogin here: {{login_url}}\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Welcome to {{app_name}}!</h2><p style="margin: 6px 0 0; font-size: 12px; color: #a7f3d0;">by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account (<strong>{{user_email}}</strong>) is now active as of {{date}}.</p><p style="text-align: center; margin: 24px 0;"><a href="{{login_url}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Open {{app_name}}</a></p><p style="font-size: 12px; color: #64748b;">Need help? Reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_password_reset",
+    slug: "password-reset",
+    name: "Password Reset Request",
+    category: "security",
+    subject: "Reset Your {{app_name}} Password",
+    variables: ["user_name", "user_email", "app_name", "company_name", "reset_link", "support_email"],
+    text_content: "Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account ({{user_email}}).\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes. If you did not request this, contact {{support_email}}.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Password Reset Request</h2><p>Hi <strong>{{user_name}}</strong>, click below to reset the password for {{user_email}}:</p><p style="text-align: center; margin: 22px 0;"><a href="{{reset_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Reset Password</a></p><p style="font-size: 12px; color: #64748b;">Link expires in 15 minutes. Support: {{support_email}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_password_changed",
+    slug: "password-changed",
+    name: "Security Alert: Password Changed",
+    category: "security",
+    subject: "[Security Alert] Your Password Was Changed \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "app_name", "company_name", "date", "ip_address", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour password for {{app_name}} ({{user_email}}) was updated on {{date}} (IP: {{ip_address}}).\nAll previous sessions were revoked.\n\nIf you did not make this change, contact {{support_email}} immediately.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Security Alert: Password Changed</h2><p>Hi <strong>{{user_name}}</strong>, your password for {{user_email}} was updated on <strong>{{date}}</strong> (IP: {{ip_address}}).</p><p>All previous device sessions have been revoked for your protection.</p><p style="color: #b91c1c; font-weight: 600;">Not you? Contact {{support_email}} immediately.</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_feedback_confirmation",
+    slug: "feedback-confirmation",
+    name: "Feedback Received (User Confirmation)",
+    category: "support",
+    subject: "Thank You for Your Feedback (#{{feedback_id}}) \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "feedback_id", "rating", "category", "message", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback (#{{feedback_id}}) with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nMessage: {{message}}\n\nOur product team reviews every submission carefully.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Thank You for Your Feedback!</h2><p style="margin: 4px 0 0; font-size: 12px; color: #a7f3d0;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>We received your <strong>{{rating}}/5</strong> rating (Ref: <code>#{{feedback_id}}</code>, Category: {{category}}):</p><blockquote style="background: #f8fafc; border-left: 4px solid #059669; margin: 14px 0; padding: 12px 16px;">{{message}}</blockquote><p style="font-size: 12px; color: #64748b;">Support: {{support_email}}</p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_feedback_admin",
+    slug: "feedback-admin-alert",
+    name: "New User Feedback Alert (To Admin)",
+    category: "support",
+    subject: "[Admin Alert] New {{rating}}\u2605 Feedback (#{{feedback_id}}) from {{user_name}}",
+    variables: ["user_name", "user_email", "user_id", "feedback_id", "rating", "message", "submitted_at", "app_name", "company_name"],
+    text_content: "New User Feedback Received \u2014 {{app_name}} ({{company_name}})\n\nRef: #{{feedback_id}}\nFrom: {{user_name}} ({{user_email}})\nRating: {{rating}}/5\nSubmitted At: {{submitted_at}}\n\nMessage:\n{{message}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">New User Feedback (#{{feedback_id}})</h2><p><strong>User:</strong> {{user_name}} ({{user_email}})</p><p><strong>Rating:</strong> {{rating}}/5 \xB7 <strong>Submitted:</strong> {{submitted_at}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 12px;">{{message}}</div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_complaint_confirmation",
+    slug: "complaint-confirmation",
+    name: "Complaint Registered (User Confirmation)",
+    category: "support",
+    subject: "Complaint Registered (#{{ticket_number}}) \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour complaint #{{ticket_number}} has been registered with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nSubject: {{subject}}\nDetails: {{description}}\n\nOur support team will respond shortly.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Complaint Registered (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, we have logged your complaint under <strong>{{category}}</strong>.</p><p><strong>Subject:</strong> {{subject}}</p><div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need urgent help? Contact {{support_email}}.</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_complaint_admin",
+    slug: "complaint-admin-alert",
+    name: "New User Complaint Alert (To Admin)",
+    category: "support",
+    subject: "[Complaint Alert] #{{ticket_number}}: {{subject}}",
+    variables: ["user_name", "user_email", "user_phone", "ticket_number", "category", "subject", "description", "submitted_at", "app_name"],
+    text_content: "New Complaint Alert \u2014 {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}}, Phone: {{user_phone}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #fecaca; border-radius: 16px; padding: 24px;"><h2 style="color: #b91c1c; margin-top: 0;">New Complaint Alert (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}} \xB7 {{user_phone}})</p><p><strong>Category:</strong> {{category}} \xB7 <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_support_confirmation",
+    slug: "support-confirmation",
+    name: "Support Ticket Received (User Confirmation)",
+    category: "support",
+    subject: "Support Ticket Created (#{{ticket_number}}) \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYour support request #{{ticket_number}} has been received by {{app_name}} ({{company_name}}).\n\nSubject: {{subject}}\nCategory: {{category}}\nMessage: {{description}}\n\nWe will notify you by email and push alert when our team replies.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Support Ticket Created (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, thank you for contacting {{app_name}} Support.</p><p><strong>Subject:</strong> {{subject}} ({{category}})</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 14px;">Support: {{support_email}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_support_admin",
+    slug: "support-admin-alert",
+    name: "New Support Request Alert (To Admin)",
+    category: "support",
+    subject: "[Support Request] #{{ticket_number}}: {{subject}}",
+    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "submitted_at", "app_name"],
+    text_content: "New Support Ticket \u2014 {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #0f766e; margin-top: 0;">New Support Request (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}})</p><p><strong>Category:</strong> {{category}} \xB7 <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_admin_ticket_reply",
+    slug: "admin-ticket-reply",
+    name: "Admin Reply to User Support Ticket",
+    category: "support",
+    subject: "Re: [Ticket #{{ticket_number}}] {{original_subject}} \u2014 {{app_name}}",
+    variables: ["user_name", "ticket_number", "ticket_type", "original_subject", "admin_reply", "admin_name", "status", "app_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\n{{admin_name}} replied to your ticket #{{ticket_number}} ({{original_subject}}) [Status: {{status}}]:\n\n{{admin_reply}}\n\nBest regards,\n{{app_name}} Support",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Update on Ticket #{{ticket_number}}</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>{{admin_name}}</strong> posted a reply (Status: <strong>{{status}}</strong>):</p><div style="background: #f0fdf4; border-left: 4px solid #059669; padding: 14px; border-radius: 8px; margin: 14px 0;">{{admin_reply}}</div><p style="font-size: 12px; color: #64748b;">Subject: {{original_subject}} \xB7 Support: {{support_email}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_udhar_created",
+    slug: "udhar-created",
+    name: "Udhar Transaction Recorded",
+    category: "udhar",
+    subject: "Udhar Recorded: \u20B9{{amount}} with {{other_person_name}} \u2014 {{app_name}}",
+    variables: ["user_name", "other_person_name", "transaction_id", "amount", "direction_label", "description", "transaction_date", "status", "app_name"],
+    text_content: "Hi {{user_name}},\n\nA new Udhar entry (#{{transaction_id}}) of \u20B9{{amount}} ({{direction_label}}) with {{other_person_name}} was recorded on {{transaction_date}}.\n\nNotes: {{description}}\nStatus: {{status}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Transaction Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Amount:</strong> \u20B9{{amount}} ({{direction_label}})<br/><strong>With:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{transaction_date}}<br/><strong>Status:</strong> {{status}}</p><p>{{description}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_udhar_updated",
+    slug: "udhar-updated",
+    name: "Udhar Transaction Updated",
+    category: "udhar",
+    subject: "Udhar Updated: \u20B9{{amount}} with {{other_person_name}} \u2014 {{app_name}}",
+    variables: ["user_name", "other_person_name", "transaction_id", "amount", "direction_label", "description", "transaction_date", "status", "app_name"],
+    text_content: "Hi {{user_name}},\n\nUdhar entry #{{transaction_id}} with {{other_person_name}} was updated to \u20B9{{amount}} ({{direction_label}}) \xB7 Status: {{status}}.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Record Updated</h2><p>Hi <strong>{{user_name}}</strong>,</p><p>Record #{{transaction_id}} with <strong>{{other_person_name}}</strong> is now <strong>\u20B9{{amount}}</strong> ({{direction_label}} \xB7 {{status}}).</p><p>{{description}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_udhar_settled",
+    slug: "udhar-settled",
+    name: "Udhar Repayment / Settlement Notice",
+    category: "udhar",
+    subject: "Udhar Settlement: \u20B9{{amount_settled}} with {{other_person_name}} \u2014 {{app_name}}",
+    variables: ["user_name", "other_person_name", "transaction_id", "amount_settled", "updated_balance", "settlement_date", "app_name"],
+    text_content: "Hi {{user_name}},\n\nA settlement of \u20B9{{amount_settled}} with {{other_person_name}} (Ref #{{transaction_id}}) was recorded on {{settlement_date}}.\nRemaining Balance: \u20B9{{updated_balance}}.",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Settlement Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Settled Amount:</strong> \u20B9{{amount_settled}}<br/><strong>Party:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{settlement_date}}<br/><strong>Remaining Balance:</strong> \u20B9{{updated_balance}}</p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_contact_invitation",
+    slug: "contact-invitation",
+    name: "Contact Invitation to Join App",
+    category: "udhar",
+    subject: "{{inviter_name}} invited you to {{app_name}}",
+    variables: ["user_name", "inviter_name", "invite_link", "app_name", "company_name"],
+    text_content: "Hi {{user_name}},\n\n{{inviter_name}} invited you to track shared Udhar and finances on {{app_name}} by {{company_name}}.\nJoin here: {{invite_link}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">You are Invited to {{app_name}}!</h2><p>Hi <strong>{{user_name}}</strong>, <strong>{{inviter_name}}</strong> added you as a contact to track lending & repayments digitally.</p><p style="text-align: center; margin: 22px 0;"><a href="{{invite_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Accept Invitation</a></p></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_notification_alert",
+    slug: "notification-alert",
+    name: "Transaction, Budget & Security Alert Email",
+    category: "notifications",
+    subject: "{{title}} \u2014 {{app_name}}",
+    variables: ["user_name", "user_email", "title", "message", "category", "action_url", "action_text", "app_name", "company_name"],
+    text_content: "Hi {{user_name}},\n\n[{{category}}] {{title}}\n\n{{message}}\n\nOpen: {{action_url}}\n\n{{app_name}} by {{company_name}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 4px 0 0; font-size: 11px; color: #a7f3d0; text-transform: uppercase;">{{category}} \xB7 {{app_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 22px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 11px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_campaign_announcement",
+    slug: "campaign-announcement",
+    name: "Admin Broadcast & Campaign Announcement",
+    category: "broadcast",
+    subject: "{{title}} \u2014 {{app_name}} by {{company_name}}",
+    variables: ["user_name", "user_email", "title", "message", "category", "action_url", "action_text", "app_name", "company_name", "support_email"],
+    text_content: "Hi {{user_name}},\n\n{{title}}\n\n{{message}}\n\nOpen in App: {{action_url}}\n\nRegards,\n{{app_name}} ({{company_name}})",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden;"><div style="background: linear-gradient(135deg, #065f46, #047857); padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 6px 0 0; font-size: 12px; color: #d1fae5;">Official Announcement \xB7 {{company_name}}</p></div><div style="padding: 26px; color: #1e293b; font-size: 14px; line-height: 1.65;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 24px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p><p style="font-size: 12px; color: #64748b;">Questions? Contact {{support_email}}</p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  },
+  {
+    id: "tmpl_deletion_scheduled",
+    slug: "deletion-scheduled",
+    name: "Account Deletion Scheduled Notice",
+    category: "lifecycle",
+    subject: "[Notice] Account Deletion Scheduled (24-Hour Grace Period) \u2014 {{app_name}}",
+    variables: ["user_name", "app_name", "company_name", "scheduled_date", "support_email"],
+    text_content: "Hi {{user_name}},\n\nYou requested deletion of your {{app_name}} account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.\n\nSupport: {{support_email}}",
+    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #991b1b; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Account Deletion Scheduled</h2><p style="margin: 4px 0 0; font-size: 12px; color: #fecaca;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account deletion request has been scheduled for permanent purge on <strong>{{scheduled_date}}</strong> (24-hour statutory grace period).</p><p>If you changed your mind, log back into <strong>{{app_name}}</strong> anytime before that window ends to cancel deletion immediately.</p><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need help? Contact <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>`,
+    is_active: true,
+    is_custom: false,
+    is_customized: false,
+    version: 1,
+    updated_at: "2026-11-25T00:00:00.000Z"
+  }
+];
+function mergeTemplateRow(def, row, defaultSlugs) {
+  const slug = String(row.slug || def?.slug || "").trim();
+  const version2 = Number(row.version || 1);
+  const isCustom = !defaultSlugs.has(slug);
+  const isCustomized = isCustom ? true : Boolean(row.is_customized ?? version2 > 1);
+  if (def && !isCustomized && version2 <= 1) {
+    return {
+      ...def,
+      id: def.id,
+      slug: def.slug,
+      is_active: row.is_active !== void 0 ? Boolean(row.is_active) : def.is_active,
+      is_custom: false,
+      is_customized: false,
+      version: 1,
+      updated_at: def.updated_at || row.updated_at
+    };
+  }
+  return {
+    ...def,
+    ...row,
+    id: def?.id || String(row.id),
+    slug,
+    variables: Array.isArray(row.variables) ? row.variables : def?.variables || [],
+    is_custom: isCustom,
+    is_customized: isCustomized,
+    version: version2
+  };
+}
+async function listEmailTemplatesFallback() {
+  const sbRes = await sbRestRequest("email_templates?select=*&order=category.asc,name.asc");
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  const defaultSlugs = new Set(DEFAULT_EMAIL_TEMPLATES.map((t2) => t2.slug));
+  const map2 = /* @__PURE__ */ new Map();
+  for (const t2 of DEFAULT_EMAIL_TEMPLATES) {
+    map2.set(t2.slug, { ...t2 });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      const slug = String(row?.slug || "").trim();
+      if (!slug) continue;
+      const def = map2.get(slug);
+      map2.set(slug, mergeTemplateRow(def, row, defaultSlugs));
+    }
+  }
+  for (const row of stored.templates) {
+    const slug = String(row?.slug || "").trim();
+    if (!slug) continue;
+    const def = map2.get(slug);
+    map2.set(slug, mergeTemplateRow(def, row, defaultSlugs));
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => `${a.category || ""}:${a.name || ""}`.localeCompare(`${b.category || ""}:${b.name || ""}`)
+  );
+}
+async function updateEmailTemplateFallback(id, updates) {
+  const all = await listEmailTemplatesFallback();
+  const existing = all.find((t2) => t2.id === id || t2.slug === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    name: updates.name !== void 0 ? updates.name : existing.name,
+    category: updates.category !== void 0 ? updates.category : existing.category,
+    subject: updates.subject !== void 0 ? updates.subject : existing.subject,
+    html_content: updates.html_content !== void 0 ? updates.html_content : existing.html_content,
+    text_content: updates.text_content !== void 0 ? updates.text_content : existing.text_content,
+    variables: Array.isArray(updates.variables) ? updates.variables : existing.variables,
+    is_active: updates.is_active !== void 0 ? updates.is_active : existing.is_active,
+    is_customized: true,
+    version: Math.max(2, Number(existing.version || 1) + 1),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(existing.slug)}`, {
+    method: "PATCH",
+    body: {
+      name: updated.name,
+      category: updated.category,
+      subject: updated.subject,
+      html_content: updated.html_content,
+      text_content: updated.text_content,
+      variables: updated.variables,
+      is_active: updated.is_active,
+      version: updated.version,
+      updated_at: updated.updated_at
+    }
+  });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  stored.templates = [
+    updated,
+    ...stored.templates.filter((t2) => t2.id !== existing.id && t2.slug !== existing.slug)
+  ];
+  writeJsonStore("email-templates.json", stored);
+  return updated;
+}
+async function createEmailTemplateFallback(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const record = {
+    id: input.id || `custom_${crypto3.randomUUID().slice(0, 12)}`,
+    slug: input.slug,
+    name: input.name,
+    category: input.category || "custom",
+    subject: input.subject,
+    html_content: input.html_content,
+    text_content: input.text_content,
+    variables: Array.isArray(input.variables) ? input.variables : [],
+    is_active: input.is_active !== false,
+    is_custom: true,
+    is_customized: true,
+    version: 1,
+    created_at: now,
+    updated_at: now
+  };
+  await sbRestRequest("email_templates", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      slug: record.slug,
+      name: record.name,
+      category: record.category,
+      subject: record.subject,
+      html_content: record.html_content,
+      text_content: record.text_content,
+      variables: record.variables,
+      is_active: record.is_active,
+      version: 1,
+      created_at: now,
+      updated_at: now
+    }
+  });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  stored.templates = [record, ...stored.templates.filter((t2) => t2.id !== record.id && t2.slug !== record.slug)];
+  writeJsonStore("email-templates.json", stored);
+  return record;
+}
+async function resetEmailTemplateFallback(id) {
+  const def = DEFAULT_EMAIL_TEMPLATES.find((t2) => t2.id === id || t2.slug === id);
+  if (!def) return null;
+  const restored = {
+    ...def,
+    is_customized: false,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(def.slug)}`, {
+    method: "PATCH",
+    body: {
+      name: restored.name,
+      category: restored.category,
+      subject: restored.subject,
+      html_content: restored.html_content,
+      text_content: restored.text_content,
+      variables: restored.variables,
+      is_active: true,
+      version: 1,
+      updated_at: restored.updated_at
+    }
+  });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  stored.templates = stored.templates.filter((t2) => t2.id !== def.id && t2.slug !== def.slug);
+  writeJsonStore("email-templates.json", stored);
+  return restored;
+}
+async function deleteEmailTemplateFallback(id) {
+  if (DEFAULT_EMAIL_TEMPLATES.some((t2) => t2.id === id || t2.slug === id)) {
+    return false;
+  }
+  await sbRestRequest(`email_templates?or=(id.eq.${encodeURIComponent(id)},slug.eq.${encodeURIComponent(id)})`, { method: "DELETE" });
+  const stored = readJsonStore("email-templates.json", { templates: [] });
+  const before = stored.templates.length;
+  stored.templates = stored.templates.filter((t2) => t2.id !== id && t2.slug !== id);
+  writeJsonStore("email-templates.json", stored);
+  return stored.templates.length < before;
+}
+async function recordEmailLogFallback(entry) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const row = {
+    id: entry.id || crypto3.randomUUID(),
+    user_id: entry.user_id || null,
+    email: entry.email,
+    email_type: entry.email_type,
+    recipient_name: entry.recipient_name || "",
+    subject: entry.subject,
+    status: entry.status,
+    attempts: entry.attempts ?? 1,
+    max_attempts: 3,
+    last_error: entry.last_error || null,
+    trigger_event: entry.trigger_event || entry.email_type,
+    sent_at: entry.status === "sent" ? now : null,
+    created_at: now,
+    updated_at: now
+  };
+  const store = readJsonStore("email-logs.json", { logs: [] });
+  store.logs = [row, ...store.logs.filter((l) => l.id !== row.id)].slice(0, 200);
+  writeJsonStore("email-logs.json", store);
+  return row;
+}
+async function listEmailLogsFallback(status) {
+  const sbRes = await sbRestRequest("email_dispatch_logs?select=*&order=created_at.desc&limit=100");
+  const store = readJsonStore("email-logs.json", { logs: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of store.logs) {
+    if (row?.id && !map2.has(String(row.id))) {
+      map2.set(String(row.id), row);
+    }
+  }
+  let logs = Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+  if (status && status !== "all") {
+    logs = logs.filter((l) => l.status === status);
+  }
+  return logs.slice(0, 100);
+}
+async function getEmailLogByIdFallback(id) {
+  const logs = await listEmailLogsFallback();
+  return logs.find((l) => l.id === id) || null;
+}
+async function updateEmailLogFallback(id, patch) {
+  const store = readJsonStore("email-logs.json", { logs: [] });
+  const idx = store.logs.findIndex((l) => l.id === id);
+  if (idx >= 0) {
+    store.logs[idx] = { ...store.logs[idx], ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    writeJsonStore("email-logs.json", store);
+  }
+  await sbRestRequest(`email_dispatch_logs?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+  });
+}
+var DEFAULT_FEATURE_FLAGS = [
+  { id: "feat_ai_money_assistant", key: "ai_money_assistant", name: "AI Money Assistant", description: "Intelligent conversational & Voice Agent assistant for spending insights and guidance", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_smart_categorization", key: "smart_categorization", name: "Smart Transaction Categorization", description: "Auto-detecting category & subcategory from merchant and description", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_expense_calendar", key: "expense_calendar", name: "Expense Calendar View", description: "Day-by-day interactive financial timeline and spending heatmap", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_smart_financial_alerts", key: "smart_financial_alerts", name: "Smart Financial Alerts", description: "Proactive budget threshold warning and anomaly detection", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_receipt_scanner_ocr", key: "receipt_scanner_ocr", name: "Receipt Scanner OCR", description: "Optical character recognition to parse paper bills and receipts", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_net_worth_tracker", key: "net_worth_tracker", name: "Net Worth Tracker", description: "Consolidated asset, savings, and liability calculation", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_safe_to_spend", key: "safe_to_spend", name: "Safe-to-Spend Calculator", description: "Real-time liquidity buffer calculation after committed bills", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_udhar_ledger", key: "udhar_ledger", name: "Udhar / Debt Tracking Ledger", description: "Lending, borrowing, reminder dispatch, and settlement ledger", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_qr_linking", key: "qr_linking", name: "QR Code Device Pairing", description: "Quick scan peer connection and ledger reconciliation", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_calculator", key: "calculator", name: "Smart Financial Calculator", description: "Interactive standard, GST, offer, and group split calculation tools", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_push_notifications", key: "push_notifications", name: "Web Push & In-App Broadcasts", description: "PWA Web Push notifications and broadcast announcements", is_enabled: true, rollout_percentage: 100 },
+  { id: "feat_reports_export", key: "reports_export", name: "Financial Reports & PDF Export", description: "Downloadable summary statements and monthly analytics", is_enabled: true, rollout_percentage: 100 }
+];
+async function listFeatureFlagsFallback() {
+  const sbRes = await sbRestRequest("feature_flags?select=*&order=name.asc");
+  const stored = readJsonStore("feature-flags.json", { features: [] });
+  const mapByKey = /* @__PURE__ */ new Map();
+  for (const f3 of DEFAULT_FEATURE_FLAGS) {
+    mapByKey.set(f3.key, { ...f3 });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.key) mapByKey.set(String(row.key), row);
+    }
+  }
+  for (const row of stored.features) {
+    if (row?.key) mapByKey.set(String(row.key), row);
+  }
+  return Array.from(mapByKey.values()).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+}
+async function updateFeatureFlagFallback(id, updates) {
+  const all = await listFeatureFlagsFallback();
+  const existing = all.find((f3) => f3.id === id || f3.key === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    is_enabled: updates.is_enabled !== void 0 ? updates.is_enabled : existing.is_enabled,
+    rollout_percentage: updates.rollout_percentage !== void 0 ? updates.rollout_percentage : existing.rollout_percentage,
+    updated_by: updates.updated_by || "admin",
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await sbRestRequest(`feature_flags?id=eq.${encodeURIComponent(existing.id)}`, {
+    method: "PATCH",
+    body: {
+      is_enabled: updated.is_enabled,
+      rollout_percentage: updated.rollout_percentage,
+      updated_by: updated.updated_by,
+      updated_at: updated.updated_at
+    }
+  });
+  const stored = readJsonStore("feature-flags.json", { features: [] });
+  stored.features = [updated, ...stored.features.filter((f3) => f3.id !== existing.id && f3.key !== existing.key)];
+  writeJsonStore("feature-flags.json", stored);
+  return updated;
+}
+var DEFAULT_LEGAL_POLICIES = [
+  {
+    id: "legal_privacy_policy",
+    slug: "privacy-policy",
+    title: "Privacy Policy",
+    version: "2.1",
+    status: "published",
+    content: `# Privacy Policy \u2014 My Money Manager by HackifyPro
+Last Updated: November 2026
+
+At My Money Manager by HackifyPro, we respect your privacy and safeguard your personal financial records.
+All transaction entries, budgets, and Udhar balances are strictly user-scoped.
+Administrators cannot view your private financial transactions without an explicit, time-limited user consent grant.
+We comply with India's Digital Personal Data Protection (DPDP) Act 2023.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  },
+  {
+    id: "legal_terms_conditions",
+    slug: "terms-and-conditions",
+    title: "Terms & Conditions",
+    version: "2.0",
+    status: "published",
+    content: `# Terms and Conditions \u2014 My Money Manager by HackifyPro
+Last Updated: November 2026
+
+By accessing My Money Manager, you agree to these terms:
+1. Account Responsibility: Keep your password and devices secure.
+2. Acceptable Use: Do not attempt unauthorized access to APIs or other user records.
+3. Financial Insights: AI insights and calculators are informational aids, not regulated financial advice.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  },
+  {
+    id: "legal_data_retention",
+    slug: "data-retention-policy",
+    title: "Data Retention & Deletion Policy",
+    version: "1.5",
+    status: "published",
+    content: `# Data Retention & Deletion Policy
+Last Updated: November 2026
+
+1. Account Deletion: Initiating deletion starts a mandatory 24-hour grace window during which you may cancel.
+2. Permanent Purge: Once finalized, personal transactions, sessions, and profile records are permanently purged.
+3. Security Audit Logs: Minimal anonymized audit trails may be retained for fraud prevention and statutory compliance.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  },
+  {
+    id: "legal_cookie_policy",
+    slug: "cookie-policy",
+    title: "Cookie & Session Policy",
+    version: "1.2",
+    status: "published",
+    content: `# Cookie & Session Policy
+Last Updated: November 2026
+
+My Money Manager uses strictly necessary session storage and HttpOnly cookies for authentication security.
+No third-party advertising or cross-site tracking cookies are used.`,
+    updated_at: "2026-11-25T00:00:00.000Z",
+    published_at: "2026-11-25T00:00:00.000Z",
+    created_by: "HackifyPro Legal"
+  }
+];
+async function listLegalPoliciesFallback() {
+  const sbRes = await sbRestRequest("legal_policies?select=*&order=title.asc");
+  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  for (const p of DEFAULT_LEGAL_POLICIES) {
+    map2.set(p.slug, { ...p });
+  }
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.slug) map2.set(String(row.slug), row);
+    }
+  }
+  for (const row of stored.policies) {
+    if (row?.slug) map2.set(String(row.slug), row);
+  }
+  return Array.from(map2.values()).sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+}
+async function getLegalPolicyVersionsFallback(policyId) {
+  const sbRes = await sbRestRequest(
+    `legal_policy_versions?policy_id=eq.${encodeURIComponent(policyId)}&select=*&order=created_at.desc`
+  );
+  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
+  const versions = [];
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    versions.push(...sbRes.data);
+  }
+  for (const v of stored.versions) {
+    if (v.policy_id === policyId && !versions.some((x2) => x2.id === v.id)) {
+      versions.push(v);
+    }
+  }
+  if (versions.length === 0) {
+    const policies = await listLegalPoliciesFallback();
+    const match2 = policies.find((p) => p.id === policyId);
+    if (match2) {
+      versions.push({
+        id: `ver_${match2.id}_${match2.version}`,
+        policy_id: match2.id,
+        slug: match2.slug,
+        version: match2.version,
+        content: match2.content,
+        status: match2.status || "published",
+        created_by: match2.created_by || "System Admin",
+        published_at: match2.published_at || match2.updated_at,
+        created_at: match2.updated_at
+      });
+    }
+  }
+  return versions;
+}
+async function updateLegalPolicyFallback(policyId, updates) {
+  const all = await listLegalPoliciesFallback();
+  const existing = all.find((p) => p.id === policyId);
+  if (!existing) return null;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const updated = {
+    ...existing,
+    title: updates.title || existing.title,
+    version: updates.version || existing.version,
+    content: updates.content || existing.content,
+    status: updates.status || "published",
+    created_by: updates.created_by || "Admin",
+    published_at: now,
+    updated_at: now
+  };
+  await sbRestRequest(`legal_policies?id=eq.${encodeURIComponent(policyId)}`, {
+    method: "PATCH",
+    body: {
+      title: updated.title,
+      version: updated.version,
+      content: updated.content,
+      status: updated.status,
+      created_by: updated.created_by,
+      published_at: now,
+      updated_at: now
+    }
+  });
+  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
+  stored.policies = [updated, ...stored.policies.filter((p) => p.id !== policyId)];
+  stored.versions.unshift({
+    id: crypto3.randomUUID(),
+    policy_id: policyId,
+    slug: updated.slug,
+    version: updated.version,
+    content: updated.content,
+    status: updated.status,
+    created_by: updated.created_by,
+    published_at: now,
+    created_at: now
+  });
+  stored.versions = stored.versions.slice(0, 100);
+  writeJsonStore("legal-policies.json", stored);
+  return updated;
+}
+async function listUserActivityFallback(userId, userEmail) {
+  const email = userEmail || "";
+  const sbRes = await sbRestRequest(
+    `security_audit_logs?select=id,event_type,user_email,actor_role,ip_address,details,created_at&order=created_at.desc&limit=50`
+  );
+  if (!sbRes.ok || !Array.isArray(sbRes.data)) return [];
+  return sbRes.data.filter(
+    (row) => row.user_id === userId || email && String(row.user_email || "").toLowerCase() === email.toLowerCase()
+  );
+}
+async function listUserSessionsFallback(userId) {
+  const sbRes = await sbRestRequest(
+    `user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`
+  );
+  return sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
+}
+var DEFAULT_ADMIN_ROLES = [
+  {
+    id: "role_superadmin",
+    name: "Super Administrator",
+    slug: "superadmin",
+    description: "Full unrestricted control across My Money Manager Control Center.",
+    permissions: ["*"],
+    is_system: true
+  },
+  {
+    id: "role_admin",
+    name: "Administrator",
+    slug: "admin",
+    description: "Platform management across users, support, notifications, AI, and settings.",
+    permissions: [
+      "dashboard.view",
+      "users.view",
+      "users.update",
+      "users.suspend",
+      "users.financial_data.request",
+      "analytics.view",
+      "notifications.view",
+      "notifications.send",
+      "notifications.manage",
+      "features.manage",
+      "settings.manage",
+      "security.view",
+      "audit_logs.view",
+      "support.manage",
+      "ai.manage"
+    ],
+    is_system: true
+  },
+  {
+    id: "role_support",
+    name: "Support Specialist",
+    slug: "support",
+    description: "Handles user tickets, feedback replies, and read-only user assistance.",
+    permissions: ["dashboard.view", "users.view", "support.manage", "notifications.view", "audit_logs.view"],
+    is_system: true
+  },
+  {
+    id: "role_analyst",
+    name: "Operations Analyst",
+    slug: "analyst",
+    description: "Read-only access to metrics, analytics, and audit logs.",
+    permissions: ["dashboard.view", "users.view", "analytics.view", "audit_logs.view"],
+    is_system: true
+  }
+];
+async function listAdminRolesFallback() {
+  const sbRes = await sbRestRequest("admin_roles?select=*&order=is_system.desc,name.asc");
+  const stored = readJsonStore("admin-roles.json", { roles: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  for (const r2 of DEFAULT_ADMIN_ROLES) map2.set(r2.slug, { ...r2 });
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.slug) map2.set(String(row.slug), row);
+    }
+  }
+  for (const row of stored.roles) {
+    if (row?.slug) map2.set(String(row.slug), row);
+  }
+  return Array.from(map2.values());
+}
+async function updateAdminRoleFallback(id, updates) {
+  const all = await listAdminRolesFallback();
+  const existing = all.find((r2) => r2.id === id || r2.slug === id);
+  if (!existing) return null;
+  const updated = {
+    ...existing,
+    name: updates.name ?? existing.name,
+    permissions: updates.permissions ?? existing.permissions,
+    description: updates.description ?? existing.description,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const stored = readJsonStore("admin-roles.json", { roles: [] });
+  stored.roles = [updated, ...stored.roles.filter((r2) => r2.id !== existing.id)];
+  writeJsonStore("admin-roles.json", stored);
+  return updated;
+}
+async function createAdminRoleFallback(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const role = {
+    id: `role_${input.slug}_${Date.now().toString(36)}`,
+    name: input.name,
+    slug: input.slug,
+    description: input.description || "",
+    permissions: input.permissions,
+    is_system: false,
+    created_at: now,
+    updated_at: now
+  };
+  const stored = readJsonStore("admin-roles.json", { roles: [] });
+  stored.roles = [role, ...stored.roles.filter((r2) => r2.slug !== input.slug)];
+  writeJsonStore("admin-roles.json", stored);
+  await sbRestRequest("admin_roles", { method: "POST", body: role }).catch(() => {
+  });
+  return role;
+}
+async function deleteAdminRoleFallback(idOrSlug) {
+  const stored = readJsonStore("admin-roles.json", { roles: [] });
+  const before = stored.roles.length;
+  stored.roles = stored.roles.filter((r2) => r2.id !== idOrSlug && r2.slug !== idOrSlug);
+  if (stored.roles.length !== before) {
+    writeJsonStore("admin-roles.json", stored);
+  }
+  await sbRestRequest(`admin_roles?id=eq.${encodeURIComponent(idOrSlug)}`, { method: "DELETE" }).catch(() => {
+  });
+  return true;
+}
+async function listSecurityIncidentsFallback(status, severity) {
+  const sbRes = await sbRestRequest("security_incidents?select=*&order=created_at.desc&limit=100");
+  const stored = readJsonStore("security-incidents.json", { incidents: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) if (row?.id) map2.set(String(row.id), row);
+  }
+  for (const row of stored.incidents) if (row?.id) map2.set(String(row.id), row);
+  let rows = Array.from(map2.values());
+  if (status && status !== "all") rows = rows.filter((r2) => r2.status === status);
+  if (severity && severity !== "all") rows = rows.filter((r2) => r2.severity === severity);
+  return rows;
+}
+async function createSecurityIncidentFallback(payload) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const row = {
+    id: crypto3.randomUUID(),
+    title: payload.title,
+    severity: payload.severity || "medium",
+    description: payload.description || "",
+    user_email: payload.user_email || null,
+    status: "new",
+    created_at: now,
+    updated_at: now
+  };
+  const stored = readJsonStore("security-incidents.json", { incidents: [] });
+  stored.incidents = [row, ...stored.incidents].slice(0, 100);
+  writeJsonStore("security-incidents.json", stored);
+  return row;
+}
+async function getAdminDashboardStatsFallback() {
+  const users = await listAllAppUsersFallback();
+  const activeUsers = users.filter((u) => !u.status || u.status === "active").length;
+  const suspendedUsers = users.filter((u) => u.status === "suspended").length;
+  const inactiveUsers = users.filter((u) => u.status === "deactivated").length;
+  const logsRes = await sbRestRequest("security_audit_logs?select=id,event_type,user_email,actor_role,created_at,details&order=created_at.desc&limit=10");
+  const recentActivity = logsRes.ok && Array.isArray(logsRes.data) ? logsRes.data : [];
+  return {
+    stats: {
+      totalUsers: users.length,
+      newToday: 0,
+      newWeek: 0,
+      newMonth: users.length,
+      activeUsers,
+      suspendedUsers,
+      inactiveUsers,
+      pendingDeletions: 0,
+      failedLogins24h: 0,
+      lockedAccounts: 0,
+      activeSessions: activeUsers,
+      openIncidents: 0,
+      dbHealth: "Operational (Supabase REST Fallback)",
+      emailServiceStatus: process.env.SMTP_PASS ? "Operational (SMTP Configured)" : "SMTP_PASS Required"
+    },
+    charts: { registrations: [], logins: [] },
+    recentActivity
+  };
+}
+async function insertSupportTicketFallback(entry) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const payload = {
+    ticket_number: entry.ticket_number,
+    user_id: entry.user_id,
+    user_name: entry.user_name,
+    user_email: entry.user_email,
+    ticket_type: entry.ticket_type,
+    category: entry.category || "General",
+    subject: entry.subject,
+    description: entry.description,
+    priority: entry.priority || "normal",
+    status: entry.status || "open",
+    attachment_url: entry.attachment_url || null,
+    created_at: now,
+    updated_at: now
+  };
+  const sbRes = await sbRestRequest("support_tickets", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: payload
+  });
+  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto3.randomUUID(), ...payload };
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  store.tickets = [savedRow, ...store.tickets.filter((t2) => t2.id !== savedRow.id)].slice(0, 200);
+  writeJsonStore("support-tickets.json", store);
+  return savedRow;
+}
+async function listSupportTicketsFallback(userId) {
+  const pathSuffix = userId ? `support_tickets?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=100` : "support_tickets?select=*&order=created_at.desc&limit=150";
+  const sbRes = await sbRestRequest(pathSuffix);
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of store.tickets) {
+    if (row?.id && !map2.has(String(row.id))) {
+      if (!userId || row.user_id === userId) {
+        map2.set(String(row.id), row);
+      }
+    }
+  }
+  return Array.from(map2.values()).sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+async function getSupportTicketByIdFallback(ticketId, userId) {
+  const all = await listSupportTicketsFallback(userId);
+  return all.find((t2) => t2.id === ticketId && (!userId || t2.user_id === userId)) || null;
+}
+async function insertSupportTicketReplyFallback(entry) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const payload = {
+    ticket_id: entry.ticket_id,
+    sender_id: entry.sender_id || null,
+    sender_name: entry.sender_name,
+    sender_role: entry.sender_role,
+    sender_type: entry.sender_type,
+    message: entry.message,
+    message_type: entry.message_type || (entry.sender_type === "user" ? "user_message" : "admin_reply"),
+    is_internal: Boolean(entry.is_internal),
+    email_status: entry.email_status || "none",
+    delivery_error: entry.delivery_error || null,
+    created_at: now
+  };
+  const sbRes = await sbRestRequest("support_ticket_replies", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: payload
+  });
+  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto3.randomUUID(), ...payload };
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  store.replies = [...store.replies.filter((r2) => r2.id !== savedRow.id), savedRow].slice(-500);
+  writeJsonStore("support-tickets.json", store);
+  return savedRow;
+}
+async function getSupportTicketRepliesFallback(ticketId, includeInternal = false) {
+  const sbRes = await sbRestRequest(
+    `support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`
+  );
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  const map2 = /* @__PURE__ */ new Map();
+  if (sbRes.ok && Array.isArray(sbRes.data)) {
+    for (const row of sbRes.data) {
+      if (row?.id) map2.set(String(row.id), row);
+    }
+  }
+  for (const row of store.replies) {
+    if (row?.id && row.ticket_id === ticketId && !map2.has(String(row.id))) {
+      map2.set(String(row.id), row);
+    }
+  }
+  return Array.from(map2.values()).filter((r2) => includeInternal || !r2.is_internal).sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+}
+async function updateSupportTicketStatusFallback(ticketId, status) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const patch = {
+    status,
+    updated_at: now
+  };
+  if (status === "resolved" || status === "closed") {
+    patch.resolved_at = now;
+  }
+  await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+    method: "PATCH",
+    body: patch
+  });
+  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
+  const idx = store.tickets.findIndex((t2) => t2.id === ticketId);
+  if (idx >= 0) {
+    store.tickets[idx] = { ...store.tickets[idx], ...patch };
+    writeJsonStore("support-tickets.json", store);
+  }
+}
+
+// server/auth.ts
 var MAX_ACTIVE_SESSIONS = 3;
 var SessionLimitError = class extends Error {
   code = "MAX_SESSIONS_REACHED";
@@ -34872,28 +36692,28 @@ function parseUserAgentSummary(userAgent) {
   else if (/CriOS\/|Chrome\//i.test(ua) && !/Edg\//i.test(ua)) browser = "Chrome";
   else if (/Safari\//i.test(ua) && !/Chrome\/|CriOS\//i.test(ua)) browser = "Safari";
   else if (/node|undici|curl|playwright|vitest/i.test(ua)) browser = "API / App Client";
-  let os7 = "Unknown OS";
+  let os8 = "Unknown OS";
   let deviceType = "desktop";
   if (/iPad/i.test(ua)) {
-    os7 = "iPadOS";
+    os8 = "iPadOS";
     deviceType = "tablet";
   } else if (/iPhone|iPod/i.test(ua)) {
-    os7 = "iOS (iPhone)";
+    os8 = "iOS (iPhone)";
     deviceType = "mobile";
   } else if (/Android/i.test(ua)) {
-    os7 = "Android";
+    os8 = "Android";
     deviceType = /Mobile/i.test(ua) ? "mobile" : "tablet";
   } else if (/Windows NT/i.test(ua)) {
-    os7 = "Windows";
+    os8 = "Windows";
   } else if (/Macintosh|Mac OS X/i.test(ua)) {
-    os7 = "macOS";
+    os8 = "macOS";
   } else if (/CrOS/i.test(ua)) {
-    os7 = "ChromeOS";
+    os8 = "ChromeOS";
   } else if (/Linux/i.test(ua)) {
-    os7 = "Linux";
+    os8 = "Linux";
   }
-  const deviceName = os7 === "Unknown OS" ? browser : `${browser} on ${os7}`;
-  return { deviceName, browser, os: os7, deviceType };
+  const deviceName = os8 === "Unknown OS" ? browser : `${browser} on ${os8}`;
+  return { deviceName, browser, os: os8, deviceType };
 }
 var MASTER_ADMIN_EMAILS = /* @__PURE__ */ new Set(["hackifypro@gmail.com", "admin@mymoney.com"]);
 var NON_DISCOVERABLE_ROLES = /* @__PURE__ */ new Set(["admin", "superadmin", "support", "analyst"]);
@@ -34912,7 +36732,7 @@ function isDiscoverableNormalUser(user) {
   if (normalizedSlug && normalizedSlug !== "user") return false;
   return true;
 }
-var EPHEMERAL_FALLBACK_SECRET = crypto3.randomBytes(32).toString("hex");
+var EPHEMERAL_FALLBACK_SECRET = crypto4.randomBytes(32).toString("hex");
 function getFallbackTokenSecret() {
   return process.env.SESSION_SECRET || process.env.API_KEY_ENCRYPTION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || EPHEMERAL_FALLBACK_SECRET;
 }
@@ -34921,17 +36741,19 @@ function getAuthSupabaseRestConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
   return { url, key };
 }
+var revokedFallbackSessionsAt = /* @__PURE__ */ new Map();
 function signFallbackSessionToken(user, expiresAtMs) {
   const payload = Buffer.from(
     JSON.stringify({
       sub: user.id,
       role: user.role,
       email: String(user.email || "").toLowerCase().trim(),
+      iat: Date.now(),
       exp: expiresAtMs
     }),
     "utf8"
   ).toString("base64url");
-  const sig = crypto3.createHmac("sha256", getFallbackTokenSecret()).update(`mmf1.${payload}`).digest("base64url");
+  const sig = crypto4.createHmac("sha256", getFallbackTokenSecret()).update(`mmf1.${payload}`).digest("base64url");
   return `mmf1.${payload}.${sig}`;
 }
 function verifyFallbackSessionToken(token) {
@@ -34940,10 +36762,10 @@ function verifyFallbackSessionToken(token) {
   if (parts.length !== 3) return null;
   const [, payloadB64, providedSig] = parts;
   if (!payloadB64 || !providedSig) return null;
-  const expectedSig = crypto3.createHmac("sha256", getFallbackTokenSecret()).update(`mmf1.${payloadB64}`).digest("base64url");
+  const expectedSig = crypto4.createHmac("sha256", getFallbackTokenSecret()).update(`mmf1.${payloadB64}`).digest("base64url");
   const providedBuf = Buffer.from(providedSig, "utf8");
   const expectedBuf = Buffer.from(expectedSig, "utf8");
-  if (providedBuf.length !== expectedBuf.length || !crypto3.timingSafeEqual(providedBuf, expectedBuf)) {
+  if (providedBuf.length !== expectedBuf.length || !crypto4.timingSafeEqual(providedBuf, expectedBuf)) {
     return null;
   }
   try {
@@ -34951,11 +36773,17 @@ function verifyFallbackSessionToken(token) {
     if (!parsed?.sub || typeof parsed.exp !== "number" || parsed.exp <= Date.now()) {
       return null;
     }
+    const revokedAt = revokedFallbackSessionsAt.get(String(parsed.sub));
+    const tokenIat = typeof parsed.iat === "number" ? parsed.iat : 0;
+    if (revokedAt && tokenIat <= revokedAt) {
+      return null;
+    }
     return {
       userId: String(parsed.sub),
       role: String(parsed.role || "user"),
       email: String(parsed.email || ""),
-      exp: parsed.exp
+      exp: parsed.exp,
+      iat: tokenIat
     };
   } catch {
     return null;
@@ -35277,6 +37105,7 @@ async function revokeSession(sessionToken) {
   }
 }
 async function revokeAllUserSessions(userId) {
+  revokedFallbackSessionsAt.set(String(userId), Date.now());
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
@@ -35440,6 +37269,11 @@ async function resolveActiveUserById(userId) {
     } catch (err) {
       console.warn("resolveActiveUserById DB query failed, attempting Supabase REST fallback:", err);
     }
+  }
+  const localOrSb = await findAppUserFallbackById(userId);
+  if (localOrSb) {
+    if (localOrSb.status && localOrSb.status !== "active") return null;
+    return mapRowToAuthenticatedUser(localOrSb);
   }
   return await resolveUserViaSupabaseRest(userId);
 }
@@ -35961,7 +37795,7 @@ var resolve = (from, to) => {
 
 // node_modules/nodemailer/dist/esm/shared/index.js
 import util from "node:util";
-import fs2 from "node:fs";
+import fs3 from "node:fs";
 
 // node_modules/nodemailer/dist/esm/fetch/index.js
 import http from "node:http";
@@ -36179,11 +38013,11 @@ var Cookies = class {
   getPath(pathname) {
     const pathParts = (pathname || "/").split("/");
     pathParts.pop();
-    const path11 = pathParts.join("/").trim();
-    if (path11.charAt(0) !== "/") {
+    const path12 = pathParts.join("/").trim();
+    if (path12.charAt(0) !== "/") {
       return "/";
     }
-    return path11;
+    return path12;
   }
 };
 var cookies_default = Cookies;
@@ -36546,7 +38380,7 @@ var fetch_default = nmfetch;
 // node_modules/nodemailer/dist/esm/shared/index.js
 import dns2 from "node:dns";
 import net4 from "node:net";
-import os from "node:os";
+import os2 from "node:os";
 import urlModule from "node:url";
 import { finished } from "node:stream";
 var DNS_TTL = 5 * 60 * 1e3;
@@ -36559,7 +38393,7 @@ var _readNetworkInterfaces = () => {
   if (!networkInterfacesRead) {
     networkInterfacesRead = true;
     try {
-      networkInterfaces = os.networkInterfaces();
+      networkInterfaces = os2.networkInterfaces();
     } catch (_err) {
     }
   }
@@ -36978,7 +38812,7 @@ function resolveContentValue(data, key, options, callback) {
         });
         return;
       }
-      return resolveStream(fs2.createReadStream(content.path), callback);
+      return resolveStream(fs3.createReadStream(content.path), callback);
     }
   }
   if (typeof data[key].content === "string" && !["utf8", "usascii", "ascii"].includes(encoding)) {
@@ -37149,7 +38983,7 @@ function normalizeDomain(domain, toUnicode2) {
 }
 
 // node_modules/nodemailer/dist/esm/mime-funcs/mime-types.js
-import path2 from "node:path";
+import path3 from "node:path";
 var defaultMimeType = "application/octet-stream";
 var defaultExtension = "bin";
 var mimeTypes = /* @__PURE__ */ new Map([
@@ -39206,7 +41040,7 @@ function detectMimeType(filename) {
   if (!filename) {
     return defaultMimeType;
   }
-  const parsed = path2.parse(filename);
+  const parsed = path3.parse(filename);
   const extension2 = (parsed.ext.substr(1) || parsed.name || "").split("?").shift().trim().toLowerCase();
   const value = extensions.has(extension2) ? extensions.get(extension2) : defaultMimeType;
   if (Array.isArray(value)) {
@@ -39237,8 +41071,8 @@ function detectExtension(mimeType) {
 }
 
 // node_modules/nodemailer/dist/esm/mime-node/index.js
-import crypto4 from "node:crypto";
-import fs3 from "node:fs";
+import crypto5 from "node:crypto";
+import fs4 from "node:fs";
 import { PassThrough as PassThrough2, finished as finished2, pipeline } from "node:stream";
 
 // node_modules/nodemailer/dist/esm/base64/index.js
@@ -41090,7 +42924,7 @@ var MimeNode = class _MimeNode {
   constructor(contentType, options) {
     this.nodeCounter = 0;
     options = options || {};
-    this.baseBoundary = _stripBoundaryControls(options.baseBoundary || crypto4.randomBytes(8).toString("hex"));
+    this.baseBoundary = _stripBoundaryControls(options.baseBoundary || crypto5.randomBytes(8).toString("hex"));
     this.boundaryPrefix = _stripBoundaryControls(options.boundaryPrefix || "--_NmP");
     this.disableFileAccess = !!options.disableFileAccess;
     this.disableUrlAccess = !!options.disableUrlAccess;
@@ -41865,7 +43699,7 @@ var MimeNode = class _MimeNode {
         });
         return contentStream;
       }
-      return fs3.createReadStream(content.path);
+      return fs4.createReadStream(content.path);
     }
     if (content && typeof content.href === "string") {
       if (this._accessDisabled("disableUrlAccess")) {
@@ -42267,8 +44101,8 @@ var MimeNode = class _MimeNode {
   _generateMessageId() {
     return "<" + [2, 2, 2, 6].reduce(
       // crux to generate UUID-like random strings
-      (prev, len) => prev + "-" + crypto4.randomBytes(len).toString("hex"),
-      crypto4.randomBytes(4).toString("hex")
+      (prev, len) => prev + "-" + crypto5.randomBytes(len).toString("hex"),
+      crypto5.randomBytes(4).toString("hex")
     ) + "@" + // try to use the domain of the FROM address or fallback to server hostname
     (this.getEnvelope().from || this.hostname || "localhost").split("@").pop() + ">";
   }
@@ -42956,7 +44790,7 @@ var message_parser_default = MessageParser;
 
 // node_modules/nodemailer/dist/esm/dkim/relaxed-body.js
 import { Transform as Transform7 } from "node:stream";
-import crypto5 from "node:crypto";
+import crypto6 from "node:crypto";
 var CHAR_CR = 13;
 var CHAR_LF = 10;
 var CHAR_SPACE = 32;
@@ -42967,7 +44801,7 @@ var RelaxedBody = class extends Transform7 {
   constructor(options) {
     super();
     options = options || {};
-    this.bodyHash = crypto5.createHash(options.hashAlgo || "sha256");
+    this.bodyHash = crypto6.createHash(options.hashAlgo || "sha256");
     this.byteLength = 0;
     this.debug = options.debug;
     this._debugBody = options.debug ? [] : false;
@@ -43077,7 +44911,7 @@ var RelaxedBody = class extends Transform7 {
 var relaxed_body_default = RelaxedBody;
 
 // node_modules/nodemailer/dist/esm/dkim/sign.js
-import crypto6 from "node:crypto";
+import crypto7 from "node:crypto";
 function unsupportedHashAlgoError(hashAlgo) {
   const err = new Error('Unsupported DKIM hash algorithm "' + hashAlgo + '"');
   err.code = ECONFIG;
@@ -43092,7 +44926,7 @@ function sign(headers, hashAlgo, bodyHash, options) {
   canonicalizedHeaderData.headers += "dkim-signature:" + relaxedHeaderLine(dkimHeader);
   let signer;
   try {
-    signer = crypto6.createSign(("rsa-" + hashAlgo).toUpperCase());
+    signer = crypto7.createSign(("rsa-" + hashAlgo).toUpperCase());
   } catch (_E) {
     throw unsupportedHashAlgoError(hashAlgo);
   }
@@ -43157,9 +44991,9 @@ function relaxedHeaderLine(line) {
 
 // node_modules/nodemailer/dist/esm/dkim/index.js
 import { PassThrough as PassThrough3 } from "node:stream";
-import fs4 from "node:fs";
-import path3 from "node:path";
-import crypto7 from "node:crypto";
+import fs5 from "node:fs";
+import path4 from "node:path";
+import crypto8 from "node:crypto";
 var DKIM_ALGO = "sha256";
 var MAX_MESSAGE_SIZE = 10 * 1024 * 1024;
 var DKIMSigner = class {
@@ -43172,7 +45006,7 @@ var DKIMSigner = class {
     this.chunks = [];
     this.chunklen = 0;
     this.readPos = 0;
-    this.cachePath = this.cacheDir ? path3.join(this.cacheDir, "message." + Date.now() + "-" + crypto7.randomBytes(14).toString("hex")) : false;
+    this.cachePath = this.cacheDir ? path4.join(this.cacheDir, "message." + Date.now() + "-" + crypto8.randomBytes(14).toString("hex")) : false;
     this.cache = false;
     this.headers = false;
     this.bodyHash = false;
@@ -43208,10 +45042,10 @@ var DKIMSigner = class {
     const cache = this.cache;
     this.cache = false;
     cache.destroy();
-    fs4.unlink(this.cachePath, () => false);
+    fs5.unlink(this.cachePath, () => false);
   }
   createReadCache() {
-    this.cache = fs4.createReadStream(this.cachePath);
+    this.cache = fs5.createReadStream(this.cachePath);
     this.cache.once("error", (err) => this.fail(err));
     this.cache.once("close", () => {
       this.cleanup();
@@ -43274,7 +45108,7 @@ var DKIMSigner = class {
   }
   createWriteCache() {
     this.output.usingCache = true;
-    this.cache = fs4.createWriteStream(this.cachePath, { mode: 384 });
+    this.cache = fs5.createWriteStream(this.cachePath, { mode: 384 });
     this.cache.once("error", (err) => {
       this.relaxedBody.unpipe(this.cache);
       this.relaxedBody.on("readable", () => {
@@ -43782,7 +45616,7 @@ var MailMessage = class {
 // node_modules/nodemailer/dist/esm/mailer/index.js
 import net6 from "node:net";
 import dns3 from "node:dns";
-import crypto8 from "node:crypto";
+import crypto9 from "node:crypto";
 var DEFAULT_MAX_RECIPIENTS = 1e5;
 function isAbortSignal(value) {
   return typeof value === "object" && value !== null && "aborted" in value && typeof value.addEventListener === "function" && typeof value.removeEventListener === "function";
@@ -44142,7 +45976,7 @@ var Mail = class extends EventEmitter {
       }
       let cidCounter = 0;
       html = (html || "").toString().replace(/(<img\b[^<>]{0,1024} src\s{0,20}=[\s"']{0,20})(data:([^;"'<>\s]{1,255});[^"'>\s]+)/gi, (match2, prefix, dataUri, mimeType) => {
-        const cid = crypto8.randomBytes(10).toString("hex") + "@localhost";
+        const cid = crypto9.randomBytes(10).toString("hex") + "@localhost";
         if (!mail.data.attachments) {
           mail.data.attachments = [];
         }
@@ -44176,8 +46010,8 @@ import { EventEmitter as EventEmitter4 } from "node:events";
 import { EventEmitter as EventEmitter2 } from "node:events";
 import net7 from "node:net";
 import tls2 from "node:tls";
-import os2 from "node:os";
-import crypto9 from "node:crypto";
+import os3 from "node:os";
+import crypto10 from "node:crypto";
 
 // node_modules/nodemailer/dist/esm/smtp-connection/data-stream.js
 import { Transform as Transform8 } from "node:stream";
@@ -44342,7 +46176,7 @@ function maskAuthCommand(cmd) {
 var SMTPConnection = class extends EventEmitter2 {
   constructor(options) {
     super(options);
-    this.id = crypto9.randomBytes(8).toString("base64").replace(/\W/g, "");
+    this.id = crypto10.randomBytes(8).toString("base64").replace(/\W/g, "");
     this.stage = "init";
     this.options = options || {};
     if (this.options.requireTLS && (this.options.ignoreTLS || this.options.opportunisticTLS)) {
@@ -45698,7 +47532,7 @@ var SMTPConnection = class extends EventEmitter2 {
       return callback(this._formatError("Invalid login sequence while waiting for server challenge string", "EAUTH", str, "AUTH CRAM-MD5"));
     }
     const base64decoded = Buffer.from(challengeMatch[1], "base64").toString("ascii");
-    const hmacMD5 = crypto9.createHmac("md5", this._auth.credentials.pass);
+    const hmacMD5 = crypto10.createHmac("md5", this._auth.credentials.pass);
     hmacMD5.update(base64decoded);
     const prepended = this._auth.credentials.user + " " + hmacMD5.digest("hex");
     this._responseActions.push((str2) => {
@@ -46015,7 +47849,7 @@ var SMTPConnection = class extends EventEmitter2 {
   _getHostname() {
     let defaultHostname;
     try {
-      defaultHostname = os2.hostname() || "";
+      defaultHostname = os3.hostname() || "";
     } catch (_err) {
       defaultHostname = "localhost";
     }
@@ -46032,7 +47866,7 @@ var smtp_connection_default = SMTPConnection;
 
 // node_modules/nodemailer/dist/esm/xoauth2/index.js
 import { Stream } from "node:stream";
-import crypto10 from "node:crypto";
+import crypto11 from "node:crypto";
 var XOAuth2 = class extends Stream {
   constructor(options, logger) {
     super();
@@ -46355,7 +48189,7 @@ var XOAuth2 = class extends Stream {
    */
   jwtSignRS256(payload) {
     const signedPayload = ['{"alg":"RS256","typ":"JWT"}', JSON.stringify(payload)].map((val) => this.toBase64URL(val)).join(".");
-    const signature = crypto10.createSign("RSA-SHA256").update(signedPayload).sign(this.options.privateKey);
+    const signature = crypto11.createSign("RSA-SHA256").update(signedPayload).sign(this.options.privateKey);
     return signedPayload + "." + this.toBase64URL(signature);
   }
 };
@@ -48903,9 +50737,9 @@ import fs8 from "fs";
 import path7 from "path";
 
 // server/config.ts
-import fs5 from "fs";
-import os3 from "os";
-import path4 from "path";
+import fs6 from "fs";
+import os4 from "os";
+import path5 from "path";
 
 // node_modules/web-push/src/web-push-lib.js
 import https2 from "node:https";
@@ -49338,7 +51172,7 @@ var WebPushError = class extends Error {
 // node_modules/web-push/src/vapid-helper.js
 var import_asn1 = __toESM(require_asn1(), 1);
 var import_jws = __toESM(require_jws(), 1);
-import crypto11 from "node:crypto";
+import crypto12 from "node:crypto";
 import { URL as URL3 } from "node:url";
 
 // node_modules/web-push/src/web-push-constants.js
@@ -49380,7 +51214,7 @@ function toPEM(key) {
   });
 }
 function generateVAPIDKeys() {
-  const curve = crypto11.createECDH("prime256v1");
+  const curve = crypto12.createECDH("prime256v1");
   curve.generateKeys();
   let publicKeyBuffer = curve.getPublicKey();
   let privateKeyBuffer = curve.getPrivateKey();
@@ -49527,7 +51361,7 @@ function getVapidHeaders(audience, subject, publicKey, privateKey, contentEncodi
 
 // node_modules/web-push/src/encryption-helper.js
 var import_http_ece = __toESM(require_ece(), 1);
-import crypto12 from "node:crypto";
+import crypto13 from "node:crypto";
 function encrypt(userPublicKey, userAuth, payload, contentEncoding) {
   if (!userPublicKey) {
     throw new Error("No user public key provided for encryption.");
@@ -49553,9 +51387,9 @@ function encrypt(userPublicKey, userAuth, payload, contentEncoding) {
   if (typeof payload === "string" || payload instanceof String) {
     payload = Buffer.from(payload);
   }
-  const localCurve = crypto12.createECDH("prime256v1");
+  const localCurve = crypto13.createECDH("prime256v1");
   const localPublicKey = localCurve.generateKeys();
-  const salt = crypto12.randomBytes(16).toString("base64url");
+  const salt = crypto13.randomBytes(16).toString("base64url");
   const cipherText = import_http_ece.default.encrypt(payload, {
     version: contentEncoding,
     dh: userPublicKey,
@@ -49897,9 +51731,9 @@ var sendNotification = webPush.sendNotification.bind(webPush);
 
 // server/config.ts
 try {
-  const envPath = path4.resolve(process.cwd(), ".env");
-  if (fs5.existsSync(envPath)) {
-    const lines = fs5.readFileSync(envPath, "utf8").split("\n");
+  const envPath = path5.resolve(process.cwd(), ".env");
+  if (fs6.existsSync(envPath)) {
+    const lines = fs6.readFileSync(envPath, "utf8").split("\n");
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
@@ -49935,25 +51769,25 @@ function resolveVapidKeys() {
   if (isValidVapidKeyPair(envPublic, envPrivate)) {
     return { publicKey: envPublic, privateKey: envPrivate, isPersistent: true };
   }
-  const g2 = globalThis;
-  if (g2.__myMoneyVapidKeys && isValidVapidKeyPair(g2.__myMoneyVapidKeys.publicKey, g2.__myMoneyVapidKeys.privateKey)) {
-    return g2.__myMoneyVapidKeys;
+  const g3 = globalThis;
+  if (g3.__myMoneyVapidKeys && isValidVapidKeyPair(g3.__myMoneyVapidKeys.publicKey, g3.__myMoneyVapidKeys.privateKey)) {
+    return g3.__myMoneyVapidKeys;
   }
   const candidatePaths = [
-    path4.resolve(process.cwd(), ".data", "runtime-store", "vapid-keys.json"),
-    path4.resolve(os3.tmpdir(), "mymoney-vapid-keys.json")
+    path5.resolve(process.cwd(), ".data", "runtime-store", "vapid-keys.json"),
+    path5.resolve(os4.tmpdir(), "mymoney-vapid-keys.json")
   ];
   for (const filePath of candidatePaths) {
     try {
-      if (fs5.existsSync(filePath)) {
-        const parsed = JSON.parse(fs5.readFileSync(filePath, "utf8"));
+      if (fs6.existsSync(filePath)) {
+        const parsed = JSON.parse(fs6.readFileSync(filePath, "utf8"));
         if (isValidVapidKeyPair(parsed?.publicKey, parsed?.privateKey)) {
-          g2.__myMoneyVapidKeys = {
+          g3.__myMoneyVapidKeys = {
             publicKey: String(parsed.publicKey).trim(),
             privateKey: String(parsed.privateKey).trim(),
             isPersistent: true
           };
-          return g2.__myMoneyVapidKeys;
+          return g3.__myMoneyVapidKeys;
         }
       }
     } catch {
@@ -49963,8 +51797,8 @@ function resolveVapidKeys() {
   let persisted = false;
   for (const filePath of candidatePaths) {
     try {
-      fs5.mkdirSync(path4.dirname(filePath), { recursive: true });
-      fs5.writeFileSync(
+      fs6.mkdirSync(path5.dirname(filePath), { recursive: true });
+      fs6.writeFileSync(
         filePath,
         JSON.stringify(
           {
@@ -49982,12 +51816,12 @@ function resolveVapidKeys() {
     } catch {
     }
   }
-  g2.__myMoneyVapidKeys = {
+  g3.__myMoneyVapidKeys = {
     publicKey: generated.publicKey,
     privateKey: generated.privateKey,
     isPersistent: persisted
   };
-  return g2.__myMoneyVapidKeys;
+  return g3.__myMoneyVapidKeys;
 }
 var APP_CONFIG = {
   appName: process.env.APP_NAME || "My Money Manager",
@@ -50023,1752 +51857,6 @@ var APP_CONFIG = {
   })()
 };
 
-// server/supabaseRestFallback.ts
-import fs6 from "fs";
-import os4 from "os";
-import path5 from "path";
-import crypto13 from "crypto";
-var DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
-var DEFAULT_SUPABASE_KEY = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
-var PRIMARY_DATA_DIR = path5.resolve(process.cwd(), ".data", "runtime-store");
-var TMP_DATA_DIR = path5.resolve(os4.tmpdir(), "mymoney-runtime-store");
-var memoryFallbackStore = /* @__PURE__ */ new Map();
-function resolveWritableStoreDir() {
-  try {
-    if (!fs6.existsSync(PRIMARY_DATA_DIR)) {
-      fs6.mkdirSync(PRIMARY_DATA_DIR, { recursive: true });
-    }
-    fs6.accessSync(PRIMARY_DATA_DIR, fs6.constants.W_OK);
-    return PRIMARY_DATA_DIR;
-  } catch {
-    try {
-      if (!fs6.existsSync(TMP_DATA_DIR)) {
-        fs6.mkdirSync(TMP_DATA_DIR, { recursive: true });
-      }
-      return TMP_DATA_DIR;
-    } catch {
-      return PRIMARY_DATA_DIR;
-    }
-  }
-}
-function safeStoreFile(baseDir, name2) {
-  const safeName = name2.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const resolved = path5.resolve(baseDir, safeName);
-  if (!resolved.startsWith(baseDir + path5.sep)) {
-    throw new Error("PATH_CONFINEMENT_VIOLATION");
-  }
-  return resolved;
-}
-function readJsonStore(fileName, defaultValue) {
-  const dirsToTry = [PRIMARY_DATA_DIR, TMP_DATA_DIR];
-  for (const dir of dirsToTry) {
-    try {
-      const file = safeStoreFile(dir, fileName);
-      if (fs6.existsSync(file)) {
-        const raw = fs6.readFileSync(file, "utf8");
-        if (raw.trim()) {
-          const parsed = JSON.parse(raw);
-          memoryFallbackStore.set(fileName, parsed);
-          return parsed;
-        }
-      }
-    } catch {
-    }
-  }
-  if (memoryFallbackStore.has(fileName)) {
-    return memoryFallbackStore.get(fileName);
-  }
-  return defaultValue;
-}
-function writeJsonStore(fileName, data) {
-  memoryFallbackStore.set(fileName, data);
-  try {
-    const baseDir = resolveWritableStoreDir();
-    const file = safeStoreFile(baseDir, fileName);
-    fs6.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
-  } catch (err) {
-    console.warn(`[RuntimeStore] Write warning (${fileName}):`, err?.message);
-  }
-}
-function getSupabaseRestConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, "");
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
-  return { url, key };
-}
-async function sbRestRequest(restPath, options = {}) {
-  try {
-    const { url, key } = getSupabaseRestConfig();
-    const headers = {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      Accept: "application/json"
-    };
-    if (options.body !== void 0) {
-      headers["Content-Type"] = "application/json";
-    }
-    if (options.prefer) {
-      headers["Prefer"] = options.prefer;
-    }
-    const response = await fetch(`${url}/rest/v1/${restPath}`, {
-      method: options.method || "GET",
-      headers,
-      body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
-    });
-    const text = await response.text();
-    let parsed = null;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = text;
-      }
-    }
-    if (!response.ok) {
-      const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
-      return { ok: false, status: response.status, data: null, error: errMsg };
-    }
-    return { ok: true, status: response.status, data: parsed };
-  } catch (err) {
-    return { ok: false, status: 0, data: null, error: err?.message || "Network error" };
-  }
-}
-function loadIntegrationsConfigFallback() {
-  return readJsonStore("integrations-config.json", {});
-}
-function saveIntegrationsConfigFallback(cfg) {
-  writeJsonStore("integrations-config.json", cfg);
-}
-async function insertFeedbackFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto13.randomUUID();
-  const record = {
-    id,
-    user_id: payload.user_id,
-    user_name: payload.user_name,
-    user_email: payload.user_email,
-    user_phone: payload.user_phone || null,
-    type: "feedback",
-    category: payload.category,
-    subject: payload.subject,
-    message: payload.message,
-    rating: payload.rating,
-    dpdp_consent: payload.dpdp_consent,
-    dpdp_consent_at: payload.dpdp_consent_at,
-    status: "new",
-    admin_notes: null,
-    reviewed_by: null,
-    reviewed_at: null,
-    created_at: now,
-    updated_at: now
-  };
-  let savedRow = record;
-  const sbRes = await sbRestRequest("feedbacks", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      id: record.id,
-      user_id: record.user_id,
-      user_name: record.user_name,
-      user_email: record.user_email,
-      user_phone: record.user_phone,
-      type: "feedback",
-      category: record.category,
-      subject: record.subject,
-      message: record.message,
-      rating: record.rating,
-      dpdp_consent: record.dpdp_consent,
-      dpdp_consent_at: record.dpdp_consent_at,
-      status: "new",
-      created_at: now,
-      updated_at: now
-    }
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    savedRow = sbRes.data[0];
-  } else {
-    const retryRes = await sbRestRequest("feedbacks", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: record.user_id,
-        user_name: record.user_name,
-        user_email: record.user_email,
-        type: "feedback",
-        category: record.category,
-        subject: record.subject,
-        message: record.message,
-        rating: record.rating,
-        status: "new",
-        created_at: now,
-        updated_at: now
-      }
-    });
-    if (retryRes.ok && Array.isArray(retryRes.data) && retryRes.data[0]) {
-      savedRow = retryRes.data[0];
-    }
-  }
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  store.feedbacks = [savedRow, ...store.feedbacks.filter((f3) => f3.id !== savedRow.id)].slice(0, 500);
-  writeJsonStore("feedbacks.json", store);
-  return savedRow;
-}
-async function listFeedbacksFallback(filters) {
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  const sbRes = await sbRestRequest(
-    "feedbacks?type=eq.feedback&select=*&order=created_at.desc&limit=200"
-  );
-  const mergedMap = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.id) mergedMap.set(String(row.id), row);
-    }
-  }
-  for (const row of store.feedbacks) {
-    if (row?.id && !mergedMap.has(String(row.id))) {
-      mergedMap.set(String(row.id), row);
-    }
-  }
-  let allFeedbacks = Array.from(mergedMap.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-  if (filters?.userId) {
-    allFeedbacks = allFeedbacks.filter((f3) => f3.user_id === filters.userId);
-  }
-  const total = allFeedbacks.length;
-  const ratedRows = allFeedbacks.filter((f3) => Number(f3.rating) > 0);
-  const avgRating = ratedRows.length > 0 ? Number((ratedRows.reduce((s2, f3) => s2 + Number(f3.rating || 0), 0) / ratedRows.length).toFixed(1)) : 0;
-  const metrics = {
-    total,
-    avg_rating: avgRating,
-    stars_5: allFeedbacks.filter((f3) => Number(f3.rating) === 5).length,
-    stars_4: allFeedbacks.filter((f3) => Number(f3.rating) === 4).length,
-    stars_3: allFeedbacks.filter((f3) => Number(f3.rating) === 3).length,
-    stars_2: allFeedbacks.filter((f3) => Number(f3.rating) === 2).length,
-    stars_1: allFeedbacks.filter((f3) => Number(f3.rating) === 1).length,
-    new_count: allFeedbacks.filter((f3) => f3.status === "new").length,
-    reviewed_count: allFeedbacks.filter((f3) => ["reviewed", "responded", "resolved"].includes(f3.status)).length,
-    resolved_count: allFeedbacks.filter((f3) => f3.status === "resolved").length
-  };
-  let filtered = allFeedbacks;
-  if (filters?.rating && filters.rating !== "all") {
-    const rNum = parseInt(filters.rating, 10);
-    filtered = filtered.filter((f3) => Number(f3.rating) === rNum);
-  }
-  if (filters?.category && filters.category !== "all") {
-    filtered = filtered.filter((f3) => f3.category === filters.category);
-  }
-  if (filters?.status && filters.status !== "all") {
-    filtered = filtered.filter((f3) => f3.status === filters.status);
-  }
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    filtered = filtered.filter(
-      (f3) => String(f3.user_name || "").toLowerCase().includes(q) || String(f3.user_email || "").toLowerCase().includes(q) || String(f3.message || "").toLowerCase().includes(q) || String(f3.subject || "").toLowerCase().includes(q)
-    );
-  }
-  return { feedbacks: filtered.slice(0, 150), metrics };
-}
-async function getFeedbackByIdFallback(id) {
-  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    return sbRes.data[0];
-  }
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  return store.feedbacks.find((f3) => f3.id === id) || null;
-}
-async function updateFeedbackFallback(id, updates) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const patch = {
-    updated_at: now,
-    reviewed_at: now
-  };
-  if (updates.status !== void 0) patch.status = updates.status;
-  if (updates.admin_notes !== void 0) patch.admin_notes = updates.admin_notes;
-  if (updates.reviewed_by !== void 0) patch.reviewed_by = updates.reviewed_by;
-  let updatedRow = null;
-  const sbRes = await sbRestRequest(`feedbacks?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    prefer: "return=representation",
-    body: patch
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    updatedRow = sbRes.data[0];
-  }
-  const store = readJsonStore("feedbacks.json", { feedbacks: [] });
-  const idx = store.feedbacks.findIndex((f3) => f3.id === id);
-  if (idx >= 0) {
-    store.feedbacks[idx] = { ...store.feedbacks[idx], ...patch, ...updatedRow || {} };
-    updatedRow = store.feedbacks[idx];
-    writeJsonStore("feedbacks.json", store);
-  } else if (updatedRow) {
-    store.feedbacks.unshift(updatedRow);
-    writeJsonStore("feedbacks.json", store);
-  }
-  return updatedRow;
-}
-async function listAllAppUsersFallback() {
-  const usersMap = /* @__PURE__ */ new Map();
-  const appUsersRes = await sbRestRequest("app_users?select=id,email,full_name,role&limit=1000");
-  if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
-    for (const u of appUsersRes.data) {
-      if (u?.id) usersMap.set(String(u.id), u);
-    }
-  }
-  const profilesRes = await sbRestRequest("profiles?select=id,email,full_name&limit=1000");
-  if (profilesRes.ok && Array.isArray(profilesRes.data)) {
-    for (const p of profilesRes.data) {
-      if (p?.id && !usersMap.has(String(p.id))) {
-        usersMap.set(String(p.id), p);
-      }
-    }
-  }
-  return Array.from(usersMap.values());
-}
-function readNotifStore() {
-  const raw = readJsonStore("notifications.json", {});
-  return {
-    campaigns: Array.isArray(raw.campaigns) ? raw.campaigns : [],
-    banners: Array.isArray(raw.banners) ? raw.banners : [],
-    userNotifications: Array.isArray(raw.userNotifications) ? raw.userNotifications : [],
-    broadcastUserState: raw.broadcastUserState && typeof raw.broadcastUserState === "object" ? raw.broadcastUserState : {}
-  };
-}
-function writeNotifStore(store) {
-  store.campaigns = store.campaigns.slice(0, 200);
-  store.banners = store.banners.slice(0, 200);
-  store.userNotifications = store.userNotifications.slice(0, 2e3);
-  writeJsonStore("notifications.json", store);
-}
-async function createCampaignFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto13.randomUUID();
-  const record = {
-    id,
-    title: payload.title,
-    message: payload.message,
-    category: payload.category,
-    type: payload.type,
-    channels: payload.channels,
-    target_type: payload.target_type,
-    target_user_ids: payload.target_user_ids,
-    deep_link: payload.deep_link,
-    status: payload.status,
-    scheduled_for: payload.scheduled_for,
-    total_targets: 0,
-    delivered_count: 0,
-    failed_count: 0,
-    sent_at: null,
-    created_by: payload.created_by,
-    created_at: now,
-    updated_at: now
-  };
-  let saved = record;
-  const sbRes = await sbRestRequest("notification_campaigns", {
-    method: "POST",
-    prefer: "return=representation",
-    body: record
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    saved = sbRes.data[0];
-  }
-  const store = readNotifStore();
-  store.campaigns = [saved, ...store.campaigns.filter((c) => c.id !== saved.id)];
-  writeNotifStore(store);
-  return saved;
-}
-async function updateCampaignFallback(id, patch) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const nextPatch = { ...patch, updated_at: now };
-  await sbRestRequest(`notification_campaigns?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: nextPatch
-  });
-  const store = readNotifStore();
-  const idx = store.campaigns.findIndex((c) => c.id === id);
-  if (idx >= 0) {
-    store.campaigns[idx] = { ...store.campaigns[idx], ...nextPatch };
-    writeNotifStore(store);
-    return store.campaigns[idx];
-  }
-  return null;
-}
-async function listCampaignsFallback() {
-  const store = readNotifStore();
-  const sbRes = await sbRestRequest(
-    "notification_campaigns?select=*&order=created_at.desc&limit=100"
-  );
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const c of sbRes.data) {
-      if (c?.id) map2.set(String(c.id), c);
-    }
-  }
-  for (const c of store.campaigns) {
-    if (c?.id && !map2.has(String(c.id))) {
-      map2.set(String(c.id), c);
-    }
-  }
-  return Array.from(map2.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-}
-async function createBroadcastBannerFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto13.randomUUID();
-  const banner = {
-    id,
-    title: payload.title,
-    message: payload.message,
-    type: payload.type || "announcement",
-    target_user_id: payload.target_user_id || "all",
-    is_active: true,
-    created_by: payload.created_by,
-    created_at: now,
-    category: payload.category || "announcement",
-    deep_link: payload.deep_link || "dashboard"
-  };
-  let saved = banner;
-  const sbRes = await sbRestRequest("notifications", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      id: banner.id,
-      title: banner.title,
-      message: banner.message,
-      type: banner.type,
-      target_user_id: banner.target_user_id,
-      is_active: true,
-      created_by: banner.created_by,
-      created_at: now
-    }
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    saved = { ...banner, ...sbRes.data[0] };
-  }
-  const store = readNotifStore();
-  store.banners = [saved, ...store.banners.filter((b) => b.id !== saved.id)];
-  writeNotifStore(store);
-  return saved;
-}
-async function listBroadcastBannersFallback() {
-  const store = readNotifStore();
-  const sbRes = await sbRestRequest("notifications?select=*&order=created_at.desc&limit=100");
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const b of sbRes.data) {
-      if (b?.id) map2.set(String(b.id), b);
-    }
-  }
-  for (const b of store.banners) {
-    if (b?.id && !map2.has(String(b.id))) {
-      map2.set(String(b.id), b);
-    }
-  }
-  return Array.from(map2.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-}
-async function deactivateBroadcastBannerFallback(id) {
-  await sbRestRequest(`notifications?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: { is_active: false }
-  });
-  const store = readNotifStore();
-  const idx = store.banners.findIndex((b) => b.id === id);
-  if (idx >= 0) {
-    store.banners[idx].is_active = false;
-    writeNotifStore(store);
-  }
-}
-async function purgeUdharNotificationsFallback(linkId, txId) {
-  if (!linkId && !txId) return;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const store = readNotifStore();
-  let changed = false;
-  for (const b of store.banners) {
-    if (b && b.is_active !== false && (linkId && b.related_entity_id === linkId || txId && b.related_entity_id === txId)) {
-      b.is_active = false;
-      changed = true;
-    }
-  }
-  for (const n of store.userNotifications) {
-    if (!n || n.is_deleted) continue;
-    const meta = n.metadata || {};
-    const matchesLink = Boolean(linkId) && (n.related_entity_id === linkId || meta.relatedEntityId === linkId || meta.linkId === linkId);
-    const matchesTx = Boolean(txId) && (n.related_entity_id === txId || meta.udharId === txId || meta.transactionId === txId);
-    if (matchesLink || matchesTx) {
-      n.is_deleted = true;
-      n.deleted_at = now;
-      changed = true;
-    }
-  }
-  if (changed) {
-    writeNotifStore(store);
-  }
-}
-async function insertUserNotificationFallback(params) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const id = crypto13.randomUUID();
-  const record = {
-    id,
-    user_id: params.user_id,
-    title: params.title,
-    message: params.message,
-    category: params.category || "general",
-    type: params.type || "info",
-    related_entity_type: params.related_entity_type || null,
-    related_entity_id: params.related_entity_id || null,
-    deep_link: params.deep_link || null,
-    dedupe_key: params.dedupe_key || null,
-    is_read: false,
-    read_at: null,
-    is_deleted: false,
-    deleted_at: null,
-    metadata: params.metadata || {},
-    created_at: now
-  };
-  let saved = record;
-  const sbRes = await sbRestRequest("user_notifications", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      id: record.id,
-      user_id: record.user_id,
-      title: record.title,
-      message: record.message,
-      category: record.category,
-      type: record.type,
-      related_entity_type: record.related_entity_type,
-      related_entity_id: record.related_entity_id,
-      deep_link: record.deep_link,
-      metadata: record.metadata,
-      is_read: false,
-      is_deleted: false,
-      created_at: now
-    }
-  });
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    saved = sbRes.data[0];
-  }
-  const store = readNotifStore();
-  if (params.dedupe_key) {
-    const dup = store.userNotifications.find(
-      (n) => n.user_id === params.user_id && (n.dedupe_key === params.dedupe_key || n.metadata?.dedupeKey === params.dedupe_key)
-    );
-    if (dup) return dup;
-  }
-  store.userNotifications = [saved, ...store.userNotifications.filter((n) => n.id !== saved.id)];
-  writeNotifStore(store);
-  return saved;
-}
-async function listUserNotificationsFallback(userId, options) {
-  const store = readNotifStore();
-  const userState = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-  const sbUserRes = await sbRestRequest(
-    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=100`
-  );
-  const merged = /* @__PURE__ */ new Map();
-  if (sbUserRes.ok && Array.isArray(sbUserRes.data)) {
-    for (const n of sbUserRes.data) {
-      if (n?.id && !n.is_deleted) merged.set(String(n.id), n);
-    }
-  }
-  for (const n of store.userNotifications) {
-    if (n?.user_id === userId && !n.is_deleted && !merged.has(String(n.id))) {
-      merged.set(String(n.id), n);
-    }
-  }
-  const activeBanners = await listBroadcastBannersFallback();
-  const existingBroadcastIds = new Set(
-    Array.from(merged.values()).map((n) => n?.metadata?.broadcastId).filter(Boolean)
-  );
-  for (const b of activeBanners) {
-    if (!b?.is_active) continue;
-    if (b.target_user_id !== "all" && b.target_user_id !== userId) continue;
-    const virtualId = `broadcast_${b.id}`;
-    if (existingBroadcastIds.has(b.id) || userState.deletedIds.includes(virtualId) || merged.has(virtualId)) {
-      continue;
-    }
-    merged.set(virtualId, {
-      id: virtualId,
-      user_id: userId,
-      title: b.title,
-      message: b.message,
-      category: b.category || "announcement",
-      type: b.type || "announcement",
-      deep_link: b.deep_link || "dashboard",
-      is_read: userState.readIds.includes(virtualId),
-      is_deleted: false,
-      metadata: { broadcastId: b.id, isBroadcast: true },
-      created_at: b.created_at
-    });
-  }
-  let allList = Array.from(merged.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-  const unreadCount = allList.filter((n) => !n.is_read).length;
-  if (options?.category && options.category !== "all") {
-    allList = allList.filter((n) => n.category === options.category);
-  }
-  if (options?.unreadOnly) {
-    allList = allList.filter((n) => !n.is_read);
-  }
-  const total = allList.length;
-  const page = options?.page || 1;
-  const limit = options?.limit || 20;
-  const offset = (page - 1) * limit;
-  return {
-    notifications: allList.slice(offset, offset + limit),
-    unreadCount,
-    total
-  };
-}
-async function markUserNotificationReadFallback(userId, notifId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const store = readNotifStore();
-  if (notifId.startsWith("broadcast_")) {
-    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-    if (!state.readIds.includes(notifId)) state.readIds.push(notifId);
-    store.broadcastUserState[userId] = state;
-    writeNotifStore(store);
-    return { id: notifId, user_id: userId, is_read: true, read_at: now };
-  }
-  await sbRestRequest(
-    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
-    { method: "PATCH", body: { is_read: true, read_at: now } }
-  );
-  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
-  if (target) {
-    target.is_read = true;
-    target.read_at = now;
-    writeNotifStore(store);
-    return target;
-  }
-  return { id: notifId, user_id: userId, is_read: true, read_at: now };
-}
-async function markAllUserNotificationsReadFallback(userId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRestRequest(
-    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&is_read=eq.false`,
-    { method: "PATCH", body: { is_read: true, read_at: now } }
-  );
-  const store = readNotifStore();
-  for (const n of store.userNotifications) {
-    if (n.user_id === userId && !n.is_deleted) {
-      n.is_read = true;
-      n.read_at = now;
-    }
-  }
-  const activeBanners = await listBroadcastBannersFallback();
-  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-  for (const b of activeBanners) {
-    const vid = `broadcast_${b.id}`;
-    if (!state.readIds.includes(vid)) state.readIds.push(vid);
-  }
-  store.broadcastUserState[userId] = state;
-  writeNotifStore(store);
-}
-async function deleteUserNotificationFallback(userId, notifId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const store = readNotifStore();
-  if (notifId.startsWith("broadcast_")) {
-    const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-    if (!state.deletedIds.includes(notifId)) state.deletedIds.push(notifId);
-    store.broadcastUserState[userId] = state;
-    writeNotifStore(store);
-    return;
-  }
-  await sbRestRequest(
-    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}`,
-    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
-  );
-  const target = store.userNotifications.find((n) => n.id === notifId && n.user_id === userId);
-  if (target) {
-    target.is_deleted = true;
-    target.deleted_at = now;
-    writeNotifStore(store);
-  }
-}
-async function getUserNotificationByIdFallback(userId, notifId) {
-  if (!userId || !notifId) return null;
-  const sbRes = await sbRestRequest(
-    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&limit=1`
-  );
-  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
-    return sbRes.data[0];
-  }
-  const store = readNotifStore();
-  return store.userNotifications.find(
-    (n) => n && n.id === notifId && n.user_id === userId && !n.is_deleted
-  ) || null;
-}
-async function updateConnectionRequestNotificationsFallback(params) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const requestId = params.requestId ? String(params.requestId) : null;
-  const requesterId = params.requesterId ? String(params.requesterId) : null;
-  const receiverId = params.receiverId ? String(params.receiverId) : null;
-  const targetUserIds = Array.from(new Set([receiverId, requesterId].filter(Boolean)));
-  for (const uid of targetUserIds) {
-    const sbRes = await sbRestRequest(
-      `user_notifications?user_id=eq.${encodeURIComponent(uid)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=50`
-    );
-    if (sbRes.ok && Array.isArray(sbRes.data)) {
-      for (const row of sbRes.data) {
-        const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
-        const isConnReq = meta.actionType === "udhar_connection_request" || row?.related_entity_type === "user_connection";
-        if (!isConnReq) continue;
-        const matchesReqId = Boolean(
-          requestId && (row.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
-        );
-        const matchesPair = Boolean(
-          requesterId && receiverId && meta.actionType === "udhar_connection_request" && (meta.requesterId === requesterId && (meta.receiverId === receiverId || row.user_id === receiverId) || row.related_entity_id === requesterId && row.user_id === receiverId)
-        );
-        if (!matchesReqId && !matchesPair) continue;
-        if (meta.requestStatus && meta.requestStatus !== "pending") continue;
-        const nextMeta = {
-          ...meta,
-          requestStatus: params.status,
-          resolvedAt: now
-        };
-        await sbRestRequest(`user_notifications?id=eq.${encodeURIComponent(String(row.id))}`, {
-          method: "PATCH",
-          body: {
-            metadata: nextMeta,
-            is_read: true,
-            read_at: row.read_at || now
-          }
-        });
-      }
-    }
-  }
-  const store = readNotifStore();
-  let changed = false;
-  for (const n of store.userNotifications) {
-    if (!n || n.is_deleted) continue;
-    const meta = n.metadata && typeof n.metadata === "object" ? n.metadata : {};
-    const isConnReq = meta.actionType === "udhar_connection_request" || n.related_entity_type === "user_connection";
-    if (!isConnReq) continue;
-    const matchesReqId = Boolean(
-      requestId && (n.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
-    );
-    const matchesPair = Boolean(
-      requesterId && receiverId && meta.actionType === "udhar_connection_request" && (meta.requesterId === requesterId && (meta.receiverId === receiverId || n.user_id === receiverId) || n.related_entity_id === requesterId && n.user_id === receiverId)
-    );
-    if (!matchesReqId && !matchesPair) continue;
-    if (meta.requestStatus && meta.requestStatus !== "pending") continue;
-    n.metadata = {
-      ...meta,
-      requestStatus: params.status,
-      resolvedAt: now
-    };
-    n.is_read = true;
-    n.read_at = n.read_at || now;
-    changed = true;
-  }
-  if (changed) {
-    writeNotifStore(store);
-  }
-}
-async function clearAllUserNotificationsFallback(userId) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await sbRestRequest(
-    `user_notifications?user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false`,
-    { method: "PATCH", body: { is_deleted: true, deleted_at: now } }
-  );
-  const store = readNotifStore();
-  for (const n of store.userNotifications) {
-    if (n.user_id === userId && !n.is_deleted) {
-      n.is_deleted = true;
-      n.deleted_at = now;
-    }
-  }
-  const activeBanners = await listBroadcastBannersFallback();
-  const state = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-  for (const b of activeBanners) {
-    const vid = `broadcast_${b.id}`;
-    if (!state.deletedIds.includes(vid)) state.deletedIds.push(vid);
-  }
-  store.broadcastUserState[userId] = state;
-  writeNotifStore(store);
-}
-var DEFAULT_EMAIL_TEMPLATES = [
-  {
-    id: "tmpl_welcome_email",
-    slug: "welcome-email",
-    name: "Welcome & Account Verification",
-    category: "authentication",
-    subject: "Welcome to {{app_name}}! Your Account is Active",
-    variables: ["user_name", "user_email", "app_name", "company_name", "login_url", "support_email", "support_phone", "date"],
-    text_content: "Hi {{user_name}},\n\nWelcome to {{app_name}} by {{company_name}}! Your account ({{user_email}}) has been created successfully on {{date}}.\n\nLogin here: {{login_url}}\nNeed assistance? Contact {{support_email}}.\n\nBest regards,\n{{app_name}} Team",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Welcome to {{app_name}}!</h2><p style="margin: 6px 0 0; font-size: 12px; color: #a7f3d0;">by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account (<strong>{{user_email}}</strong>) is now active as of {{date}}.</p><p style="text-align: center; margin: 24px 0;"><a href="{{login_url}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Open {{app_name}}</a></p><p style="font-size: 12px; color: #64748b;">Need help? Reach out at <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_password_reset",
-    slug: "password-reset",
-    name: "Password Reset Request",
-    category: "security",
-    subject: "Reset Your {{app_name}} Password",
-    variables: ["user_name", "user_email", "app_name", "company_name", "reset_link", "support_email"],
-    text_content: "Hi {{user_name}},\n\nA password reset request was received for your {{app_name}} account ({{user_email}}).\n\nReset Link: {{reset_link}}\n\nThis link expires in 15 minutes. If you did not request this, contact {{support_email}}.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Password Reset Request</h2><p>Hi <strong>{{user_name}}</strong>, click below to reset the password for {{user_email}}:</p><p style="text-align: center; margin: 22px 0;"><a href="{{reset_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Reset Password</a></p><p style="font-size: 12px; color: #64748b;">Link expires in 15 minutes. Support: {{support_email}}</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_password_changed",
-    slug: "password-changed",
-    name: "Security Alert: Password Changed",
-    category: "security",
-    subject: "[Security Alert] Your Password Was Changed \u2014 {{app_name}}",
-    variables: ["user_name", "user_email", "app_name", "company_name", "date", "ip_address", "support_email"],
-    text_content: "Hi {{user_name}},\n\nYour password for {{app_name}} ({{user_email}}) was updated on {{date}} (IP: {{ip_address}}).\nAll previous sessions were revoked.\n\nIf you did not make this change, contact {{support_email}} immediately.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Security Alert: Password Changed</h2><p>Hi <strong>{{user_name}}</strong>, your password for {{user_email}} was updated on <strong>{{date}}</strong> (IP: {{ip_address}}).</p><p>All previous device sessions have been revoked for your protection.</p><p style="color: #b91c1c; font-weight: 600;">Not you? Contact {{support_email}} immediately.</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_feedback_confirmation",
-    slug: "feedback-confirmation",
-    name: "Feedback Received (User Confirmation)",
-    category: "support",
-    subject: "Thank You for Your Feedback (#{{feedback_id}}) \u2014 {{app_name}}",
-    variables: ["user_name", "user_email", "feedback_id", "rating", "category", "message", "app_name", "company_name", "support_email"],
-    text_content: "Hi {{user_name}},\n\nThank you for sharing your {{rating}}-star feedback (#{{feedback_id}}) with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nMessage: {{message}}\n\nOur product team reviews every submission carefully.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Thank You for Your Feedback!</h2><p style="margin: 4px 0 0; font-size: 12px; color: #a7f3d0;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>We received your <strong>{{rating}}/5</strong> rating (Ref: <code>#{{feedback_id}}</code>, Category: {{category}}):</p><blockquote style="background: #f8fafc; border-left: 4px solid #059669; margin: 14px 0; padding: 12px 16px;">{{message}}</blockquote><p style="font-size: 12px; color: #64748b;">Support: {{support_email}}</p></div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_feedback_admin",
-    slug: "feedback-admin-alert",
-    name: "New User Feedback Alert (To Admin)",
-    category: "support",
-    subject: "[Admin Alert] New {{rating}}\u2605 Feedback (#{{feedback_id}}) from {{user_name}}",
-    variables: ["user_name", "user_email", "user_id", "feedback_id", "rating", "message", "submitted_at", "app_name", "company_name"],
-    text_content: "New User Feedback Received \u2014 {{app_name}} ({{company_name}})\n\nRef: #{{feedback_id}}\nFrom: {{user_name}} ({{user_email}})\nRating: {{rating}}/5\nSubmitted At: {{submitted_at}}\n\nMessage:\n{{message}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">New User Feedback (#{{feedback_id}})</h2><p><strong>User:</strong> {{user_name}} ({{user_email}})</p><p><strong>Rating:</strong> {{rating}}/5 \xB7 <strong>Submitted:</strong> {{submitted_at}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 12px;">{{message}}</div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_complaint_confirmation",
-    slug: "complaint-confirmation",
-    name: "Complaint Registered (User Confirmation)",
-    category: "support",
-    subject: "Complaint Registered (#{{ticket_number}}) \u2014 {{app_name}}",
-    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "app_name", "company_name", "support_email"],
-    text_content: "Hi {{user_name}},\n\nYour complaint #{{ticket_number}} has been registered with {{app_name}} by {{company_name}}.\n\nCategory: {{category}}\nSubject: {{subject}}\nDetails: {{description}}\n\nOur support team will respond shortly.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Complaint Registered (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, we have logged your complaint under <strong>{{category}}</strong>.</p><p><strong>Subject:</strong> {{subject}}</p><div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need urgent help? Contact {{support_email}}.</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_complaint_admin",
-    slug: "complaint-admin-alert",
-    name: "New User Complaint Alert (To Admin)",
-    category: "support",
-    subject: "[Complaint Alert] #{{ticket_number}}: {{subject}}",
-    variables: ["user_name", "user_email", "user_phone", "ticket_number", "category", "subject", "description", "submitted_at", "app_name"],
-    text_content: "New Complaint Alert \u2014 {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}}, Phone: {{user_phone}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #fecaca; border-radius: 16px; padding: 24px;"><h2 style="color: #b91c1c; margin-top: 0;">New Complaint Alert (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}} \xB7 {{user_phone}})</p><p><strong>Category:</strong> {{category}} \xB7 <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_support_confirmation",
-    slug: "support-confirmation",
-    name: "Support Ticket Received (User Confirmation)",
-    category: "support",
-    subject: "Support Ticket Created (#{{ticket_number}}) \u2014 {{app_name}}",
-    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "app_name", "company_name", "support_email"],
-    text_content: "Hi {{user_name}},\n\nYour support request #{{ticket_number}} has been received by {{app_name}} ({{company_name}}).\n\nSubject: {{subject}}\nCategory: {{category}}\nMessage: {{description}}\n\nWe will notify you by email and push alert when our team replies.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Support Ticket Created (#{{ticket_number}})</h2><p>Hi <strong>{{user_name}}</strong>, thank you for contacting {{app_name}} Support.</p><p><strong>Subject:</strong> {{subject}} ({{category}})</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">{{description}}</div><p style="font-size: 12px; color: #64748b; margin-top: 14px;">Support: {{support_email}}</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_support_admin",
-    slug: "support-admin-alert",
-    name: "New Support Request Alert (To Admin)",
-    category: "support",
-    subject: "[Support Request] #{{ticket_number}}: {{subject}}",
-    variables: ["user_name", "user_email", "ticket_number", "category", "subject", "description", "submitted_at", "app_name"],
-    text_content: "New Support Ticket \u2014 {{app_name}}\n\nTicket: #{{ticket_number}}\nUser: {{user_name}} ({{user_email}})\nCategory: {{category}}\nSubject: {{subject}}\nSubmitted: {{submitted_at}}\n\nDescription:\n{{description}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #0f766e; margin-top: 0;">New Support Request (#{{ticket_number}})</h2><p><strong>From:</strong> {{user_name}} ({{user_email}})</p><p><strong>Category:</strong> {{category}} \xB7 <strong>Subject:</strong> {{subject}}</p><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">{{description}}</div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_admin_ticket_reply",
-    slug: "admin-ticket-reply",
-    name: "Admin Reply to User Support Ticket",
-    category: "support",
-    subject: "Re: [Ticket #{{ticket_number}}] {{original_subject}} \u2014 {{app_name}}",
-    variables: ["user_name", "ticket_number", "ticket_type", "original_subject", "admin_reply", "admin_name", "status", "app_name", "support_email"],
-    text_content: "Hi {{user_name}},\n\n{{admin_name}} replied to your ticket #{{ticket_number}} ({{original_subject}}) [Status: {{status}}]:\n\n{{admin_reply}}\n\nBest regards,\n{{app_name}} Support",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Update on Ticket #{{ticket_number}}</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>{{admin_name}}</strong> posted a reply (Status: <strong>{{status}}</strong>):</p><div style="background: #f0fdf4; border-left: 4px solid #059669; padding: 14px; border-radius: 8px; margin: 14px 0;">{{admin_reply}}</div><p style="font-size: 12px; color: #64748b;">Subject: {{original_subject}} \xB7 Support: {{support_email}}</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_udhar_created",
-    slug: "udhar-created",
-    name: "Udhar Transaction Recorded",
-    category: "udhar",
-    subject: "Udhar Recorded: \u20B9{{amount}} with {{other_person_name}} \u2014 {{app_name}}",
-    variables: ["user_name", "other_person_name", "transaction_id", "amount", "direction_label", "description", "transaction_date", "status", "app_name"],
-    text_content: "Hi {{user_name}},\n\nA new Udhar entry (#{{transaction_id}}) of \u20B9{{amount}} ({{direction_label}}) with {{other_person_name}} was recorded on {{transaction_date}}.\n\nNotes: {{description}}\nStatus: {{status}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Transaction Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Amount:</strong> \u20B9{{amount}} ({{direction_label}})<br/><strong>With:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{transaction_date}}<br/><strong>Status:</strong> {{status}}</p><p>{{description}}</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_udhar_updated",
-    slug: "udhar-updated",
-    name: "Udhar Transaction Updated",
-    category: "udhar",
-    subject: "Udhar Updated: \u20B9{{amount}} with {{other_person_name}} \u2014 {{app_name}}",
-    variables: ["user_name", "other_person_name", "transaction_id", "amount", "direction_label", "description", "transaction_date", "status", "app_name"],
-    text_content: "Hi {{user_name}},\n\nUdhar entry #{{transaction_id}} with {{other_person_name}} was updated to \u20B9{{amount}} ({{direction_label}}) \xB7 Status: {{status}}.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Record Updated</h2><p>Hi <strong>{{user_name}}</strong>,</p><p>Record #{{transaction_id}} with <strong>{{other_person_name}}</strong> is now <strong>\u20B9{{amount}}</strong> ({{direction_label}} \xB7 {{status}}).</p><p>{{description}}</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_udhar_settled",
-    slug: "udhar-settled",
-    name: "Udhar Repayment / Settlement Notice",
-    category: "udhar",
-    subject: "Udhar Settlement: \u20B9{{amount_settled}} with {{other_person_name}} \u2014 {{app_name}}",
-    variables: ["user_name", "other_person_name", "transaction_id", "amount_settled", "updated_balance", "settlement_date", "app_name"],
-    text_content: "Hi {{user_name}},\n\nA settlement of \u20B9{{amount_settled}} with {{other_person_name}} (Ref #{{transaction_id}}) was recorded on {{settlement_date}}.\nRemaining Balance: \u20B9{{updated_balance}}.",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">Udhar Settlement Recorded</h2><p>Hi <strong>{{user_name}}</strong>,</p><p><strong>Settled Amount:</strong> \u20B9{{amount_settled}}<br/><strong>Party:</strong> {{other_person_name}}<br/><strong>Date:</strong> {{settlement_date}}<br/><strong>Remaining Balance:</strong> \u20B9{{updated_balance}}</p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_contact_invitation",
-    slug: "contact-invitation",
-    name: "Contact Invitation to Join App",
-    category: "udhar",
-    subject: "{{inviter_name}} invited you to {{app_name}}",
-    variables: ["user_name", "inviter_name", "invite_link", "app_name", "company_name"],
-    text_content: "Hi {{user_name}},\n\n{{inviter_name}} invited you to track shared Udhar and finances on {{app_name}} by {{company_name}}.\nJoin here: {{invite_link}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px;"><h2 style="color: #065f46; margin-top: 0;">You are Invited to {{app_name}}!</h2><p>Hi <strong>{{user_name}}</strong>, <strong>{{inviter_name}}</strong> added you as a contact to track lending & repayments digitally.</p><p style="text-align: center; margin: 22px 0;"><a href="{{invite_link}}" style="background: #059669; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">Accept Invitation</a></p></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_notification_alert",
-    slug: "notification-alert",
-    name: "Transaction, Budget & Security Alert Email",
-    category: "notifications",
-    subject: "{{title}} \u2014 {{app_name}}",
-    variables: ["user_name", "user_email", "title", "message", "category", "action_url", "action_text", "app_name", "company_name"],
-    text_content: "Hi {{user_name}},\n\n[{{category}}] {{title}}\n\n{{message}}\n\nOpen: {{action_url}}\n\n{{app_name}} by {{company_name}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #065f46; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 4px 0 0; font-size: 11px; color: #a7f3d0; text-transform: uppercase;">{{category}} \xB7 {{app_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 22px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 11px 24px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p></div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_campaign_announcement",
-    slug: "campaign-announcement",
-    name: "Admin Broadcast & Campaign Announcement",
-    category: "broadcast",
-    subject: "{{title}} \u2014 {{app_name}} by {{company_name}}",
-    variables: ["user_name", "user_email", "title", "message", "category", "action_url", "action_text", "app_name", "company_name", "support_email"],
-    text_content: "Hi {{user_name}},\n\n{{title}}\n\n{{message}}\n\nOpen in App: {{action_url}}\n\nRegards,\n{{app_name}} ({{company_name}})",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden;"><div style="background: linear-gradient(135deg, #065f46, #047857); padding: 24px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">{{title}}</h2><p style="margin: 6px 0 0; font-size: 12px; color: #d1fae5;">Official Announcement \xB7 {{company_name}}</p></div><div style="padding: 26px; color: #1e293b; font-size: 14px; line-height: 1.65;"><p>Hi <strong>{{user_name}}</strong>,</p><p>{{message}}</p><p style="text-align: center; margin: 24px 0;"><a href="{{action_url}}" style="background: #059669; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 10px; font-weight: 700;">{{action_text}}</a></p><p style="font-size: 12px; color: #64748b;">Questions? Contact {{support_email}}</p></div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  },
-  {
-    id: "tmpl_deletion_scheduled",
-    slug: "deletion-scheduled",
-    name: "Account Deletion Scheduled Notice",
-    category: "lifecycle",
-    subject: "[Notice] Account Deletion Scheduled (24-Hour Grace Period) \u2014 {{app_name}}",
-    variables: ["user_name", "app_name", "company_name", "scheduled_date", "support_email"],
-    text_content: "Hi {{user_name}},\n\nYou requested deletion of your {{app_name}} account. It is scheduled for permanent purge on {{scheduled_date}} (24-hour statutory grace period).\n\nYou can cancel this deletion at any time before the scheduled date by logging in.\n\nSupport: {{support_email}}",
-    html_content: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;"><div style="background: #991b1b; padding: 20px; text-align: center; color: #ffffff;"><h2 style="margin: 0;">Account Deletion Scheduled</h2><p style="margin: 4px 0 0; font-size: 12px; color: #fecaca;">{{app_name}} by {{company_name}}</p></div><div style="padding: 24px; color: #1e293b; font-size: 14px; line-height: 1.6;"><p>Hi <strong>{{user_name}}</strong>,</p><p>Your account deletion request has been scheduled for permanent purge on <strong>{{scheduled_date}}</strong> (24-hour statutory grace period).</p><p>If you changed your mind, log back into <strong>{{app_name}}</strong> anytime before that window ends to cancel deletion immediately.</p><p style="font-size: 12px; color: #64748b; margin-top: 16px;">Need help? Contact <a href="mailto:{{support_email}}">{{support_email}}</a>.</p></div></div>`,
-    is_active: true,
-    is_custom: false,
-    is_customized: false,
-    version: 1,
-    updated_at: "2026-11-25T00:00:00.000Z"
-  }
-];
-function mergeTemplateRow(def, row, defaultSlugs) {
-  const slug = String(row.slug || def?.slug || "").trim();
-  const version2 = Number(row.version || 1);
-  const isCustom = !defaultSlugs.has(slug);
-  const isCustomized = isCustom ? true : Boolean(row.is_customized ?? version2 > 1);
-  if (def && !isCustomized && version2 <= 1) {
-    return {
-      ...def,
-      id: def.id,
-      slug: def.slug,
-      is_active: row.is_active !== void 0 ? Boolean(row.is_active) : def.is_active,
-      is_custom: false,
-      is_customized: false,
-      version: 1,
-      updated_at: def.updated_at || row.updated_at
-    };
-  }
-  return {
-    ...def,
-    ...row,
-    id: def?.id || String(row.id),
-    slug,
-    variables: Array.isArray(row.variables) ? row.variables : def?.variables || [],
-    is_custom: isCustom,
-    is_customized: isCustomized,
-    version: version2
-  };
-}
-async function listEmailTemplatesFallback() {
-  const sbRes = await sbRestRequest("email_templates?select=*&order=category.asc,name.asc");
-  const stored = readJsonStore("email-templates.json", { templates: [] });
-  const defaultSlugs = new Set(DEFAULT_EMAIL_TEMPLATES.map((t2) => t2.slug));
-  const map2 = /* @__PURE__ */ new Map();
-  for (const t2 of DEFAULT_EMAIL_TEMPLATES) {
-    map2.set(t2.slug, { ...t2 });
-  }
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      const slug = String(row?.slug || "").trim();
-      if (!slug) continue;
-      const def = map2.get(slug);
-      map2.set(slug, mergeTemplateRow(def, row, defaultSlugs));
-    }
-  }
-  for (const row of stored.templates) {
-    const slug = String(row?.slug || "").trim();
-    if (!slug) continue;
-    const def = map2.get(slug);
-    map2.set(slug, mergeTemplateRow(def, row, defaultSlugs));
-  }
-  return Array.from(map2.values()).sort(
-    (a, b) => `${a.category || ""}:${a.name || ""}`.localeCompare(`${b.category || ""}:${b.name || ""}`)
-  );
-}
-async function updateEmailTemplateFallback(id, updates) {
-  const all = await listEmailTemplatesFallback();
-  const existing = all.find((t2) => t2.id === id || t2.slug === id);
-  if (!existing) return null;
-  const updated = {
-    ...existing,
-    name: updates.name !== void 0 ? updates.name : existing.name,
-    category: updates.category !== void 0 ? updates.category : existing.category,
-    subject: updates.subject !== void 0 ? updates.subject : existing.subject,
-    html_content: updates.html_content !== void 0 ? updates.html_content : existing.html_content,
-    text_content: updates.text_content !== void 0 ? updates.text_content : existing.text_content,
-    variables: Array.isArray(updates.variables) ? updates.variables : existing.variables,
-    is_active: updates.is_active !== void 0 ? updates.is_active : existing.is_active,
-    is_customized: true,
-    version: Math.max(2, Number(existing.version || 1) + 1),
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(existing.slug)}`, {
-    method: "PATCH",
-    body: {
-      name: updated.name,
-      category: updated.category,
-      subject: updated.subject,
-      html_content: updated.html_content,
-      text_content: updated.text_content,
-      variables: updated.variables,
-      is_active: updated.is_active,
-      version: updated.version,
-      updated_at: updated.updated_at
-    }
-  });
-  const stored = readJsonStore("email-templates.json", { templates: [] });
-  stored.templates = [
-    updated,
-    ...stored.templates.filter((t2) => t2.id !== existing.id && t2.slug !== existing.slug)
-  ];
-  writeJsonStore("email-templates.json", stored);
-  return updated;
-}
-async function createEmailTemplateFallback(input) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const record = {
-    id: input.id || `custom_${crypto13.randomUUID().slice(0, 12)}`,
-    slug: input.slug,
-    name: input.name,
-    category: input.category || "custom",
-    subject: input.subject,
-    html_content: input.html_content,
-    text_content: input.text_content,
-    variables: Array.isArray(input.variables) ? input.variables : [],
-    is_active: input.is_active !== false,
-    is_custom: true,
-    is_customized: true,
-    version: 1,
-    created_at: now,
-    updated_at: now
-  };
-  await sbRestRequest("email_templates", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      slug: record.slug,
-      name: record.name,
-      category: record.category,
-      subject: record.subject,
-      html_content: record.html_content,
-      text_content: record.text_content,
-      variables: record.variables,
-      is_active: record.is_active,
-      version: 1,
-      created_at: now,
-      updated_at: now
-    }
-  });
-  const stored = readJsonStore("email-templates.json", { templates: [] });
-  stored.templates = [record, ...stored.templates.filter((t2) => t2.id !== record.id && t2.slug !== record.slug)];
-  writeJsonStore("email-templates.json", stored);
-  return record;
-}
-async function resetEmailTemplateFallback(id) {
-  const def = DEFAULT_EMAIL_TEMPLATES.find((t2) => t2.id === id || t2.slug === id);
-  if (!def) return null;
-  const restored = {
-    ...def,
-    is_customized: false,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await sbRestRequest(`email_templates?slug=eq.${encodeURIComponent(def.slug)}`, {
-    method: "PATCH",
-    body: {
-      name: restored.name,
-      category: restored.category,
-      subject: restored.subject,
-      html_content: restored.html_content,
-      text_content: restored.text_content,
-      variables: restored.variables,
-      is_active: true,
-      version: 1,
-      updated_at: restored.updated_at
-    }
-  });
-  const stored = readJsonStore("email-templates.json", { templates: [] });
-  stored.templates = stored.templates.filter((t2) => t2.id !== def.id && t2.slug !== def.slug);
-  writeJsonStore("email-templates.json", stored);
-  return restored;
-}
-async function deleteEmailTemplateFallback(id) {
-  if (DEFAULT_EMAIL_TEMPLATES.some((t2) => t2.id === id || t2.slug === id)) {
-    return false;
-  }
-  await sbRestRequest(`email_templates?or=(id.eq.${encodeURIComponent(id)},slug.eq.${encodeURIComponent(id)})`, { method: "DELETE" });
-  const stored = readJsonStore("email-templates.json", { templates: [] });
-  const before = stored.templates.length;
-  stored.templates = stored.templates.filter((t2) => t2.id !== id && t2.slug !== id);
-  writeJsonStore("email-templates.json", stored);
-  return stored.templates.length < before;
-}
-async function recordEmailLogFallback(entry) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const row = {
-    id: entry.id || crypto13.randomUUID(),
-    user_id: entry.user_id || null,
-    email: entry.email,
-    email_type: entry.email_type,
-    recipient_name: entry.recipient_name || "",
-    subject: entry.subject,
-    status: entry.status,
-    attempts: entry.attempts ?? 1,
-    max_attempts: 3,
-    last_error: entry.last_error || null,
-    trigger_event: entry.trigger_event || entry.email_type,
-    sent_at: entry.status === "sent" ? now : null,
-    created_at: now,
-    updated_at: now
-  };
-  const store = readJsonStore("email-logs.json", { logs: [] });
-  store.logs = [row, ...store.logs.filter((l) => l.id !== row.id)].slice(0, 200);
-  writeJsonStore("email-logs.json", store);
-  return row;
-}
-async function listEmailLogsFallback(status) {
-  const sbRes = await sbRestRequest("email_dispatch_logs?select=*&order=created_at.desc&limit=100");
-  const store = readJsonStore("email-logs.json", { logs: [] });
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.id) map2.set(String(row.id), row);
-    }
-  }
-  for (const row of store.logs) {
-    if (row?.id && !map2.has(String(row.id))) {
-      map2.set(String(row.id), row);
-    }
-  }
-  let logs = Array.from(map2.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-  if (status && status !== "all") {
-    logs = logs.filter((l) => l.status === status);
-  }
-  return logs.slice(0, 100);
-}
-async function getEmailLogByIdFallback(id) {
-  const logs = await listEmailLogsFallback();
-  return logs.find((l) => l.id === id) || null;
-}
-async function updateEmailLogFallback(id, patch) {
-  const store = readJsonStore("email-logs.json", { logs: [] });
-  const idx = store.logs.findIndex((l) => l.id === id);
-  if (idx >= 0) {
-    store.logs[idx] = { ...store.logs[idx], ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-    writeJsonStore("email-logs.json", store);
-  }
-  await sbRestRequest(`email_dispatch_logs?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: { ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
-  });
-}
-var DEFAULT_FEATURE_FLAGS = [
-  { id: "feat_ai_money_assistant", key: "ai_money_assistant", name: "AI Money Assistant", description: "Intelligent conversational & Voice Agent assistant for spending insights and guidance", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_smart_categorization", key: "smart_categorization", name: "Smart Transaction Categorization", description: "Auto-detecting category & subcategory from merchant and description", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_expense_calendar", key: "expense_calendar", name: "Expense Calendar View", description: "Day-by-day interactive financial timeline and spending heatmap", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_smart_financial_alerts", key: "smart_financial_alerts", name: "Smart Financial Alerts", description: "Proactive budget threshold warning and anomaly detection", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_receipt_scanner_ocr", key: "receipt_scanner_ocr", name: "Receipt Scanner OCR", description: "Optical character recognition to parse paper bills and receipts", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_net_worth_tracker", key: "net_worth_tracker", name: "Net Worth Tracker", description: "Consolidated asset, savings, and liability calculation", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_safe_to_spend", key: "safe_to_spend", name: "Safe-to-Spend Calculator", description: "Real-time liquidity buffer calculation after committed bills", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_udhar_ledger", key: "udhar_ledger", name: "Udhar / Debt Tracking Ledger", description: "Lending, borrowing, reminder dispatch, and settlement ledger", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_qr_linking", key: "qr_linking", name: "QR Code Device Pairing", description: "Quick scan peer connection and ledger reconciliation", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_calculator", key: "calculator", name: "Smart Financial Calculator", description: "Interactive standard, GST, offer, and group split calculation tools", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_push_notifications", key: "push_notifications", name: "Web Push & In-App Broadcasts", description: "PWA Web Push notifications and broadcast announcements", is_enabled: true, rollout_percentage: 100 },
-  { id: "feat_reports_export", key: "reports_export", name: "Financial Reports & PDF Export", description: "Downloadable summary statements and monthly analytics", is_enabled: true, rollout_percentage: 100 }
-];
-async function listFeatureFlagsFallback() {
-  const sbRes = await sbRestRequest("feature_flags?select=*&order=name.asc");
-  const stored = readJsonStore("feature-flags.json", { features: [] });
-  const mapByKey = /* @__PURE__ */ new Map();
-  for (const f3 of DEFAULT_FEATURE_FLAGS) {
-    mapByKey.set(f3.key, { ...f3 });
-  }
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.key) mapByKey.set(String(row.key), row);
-    }
-  }
-  for (const row of stored.features) {
-    if (row?.key) mapByKey.set(String(row.key), row);
-  }
-  return Array.from(mapByKey.values()).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-}
-async function updateFeatureFlagFallback(id, updates) {
-  const all = await listFeatureFlagsFallback();
-  const existing = all.find((f3) => f3.id === id || f3.key === id);
-  if (!existing) return null;
-  const updated = {
-    ...existing,
-    is_enabled: updates.is_enabled !== void 0 ? updates.is_enabled : existing.is_enabled,
-    rollout_percentage: updates.rollout_percentage !== void 0 ? updates.rollout_percentage : existing.rollout_percentage,
-    updated_by: updates.updated_by || "admin",
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await sbRestRequest(`feature_flags?id=eq.${encodeURIComponent(existing.id)}`, {
-    method: "PATCH",
-    body: {
-      is_enabled: updated.is_enabled,
-      rollout_percentage: updated.rollout_percentage,
-      updated_by: updated.updated_by,
-      updated_at: updated.updated_at
-    }
-  });
-  const stored = readJsonStore("feature-flags.json", { features: [] });
-  stored.features = [updated, ...stored.features.filter((f3) => f3.id !== existing.id && f3.key !== existing.key)];
-  writeJsonStore("feature-flags.json", stored);
-  return updated;
-}
-var DEFAULT_LEGAL_POLICIES = [
-  {
-    id: "legal_privacy_policy",
-    slug: "privacy-policy",
-    title: "Privacy Policy",
-    version: "2.1",
-    status: "published",
-    content: `# Privacy Policy \u2014 My Money Manager by HackifyPro
-Last Updated: November 2026
-
-At My Money Manager by HackifyPro, we respect your privacy and safeguard your personal financial records.
-All transaction entries, budgets, and Udhar balances are strictly user-scoped.
-Administrators cannot view your private financial transactions without an explicit, time-limited user consent grant.
-We comply with India's Digital Personal Data Protection (DPDP) Act 2023.`,
-    updated_at: "2026-11-25T00:00:00.000Z",
-    published_at: "2026-11-25T00:00:00.000Z",
-    created_by: "HackifyPro Legal"
-  },
-  {
-    id: "legal_terms_conditions",
-    slug: "terms-and-conditions",
-    title: "Terms & Conditions",
-    version: "2.0",
-    status: "published",
-    content: `# Terms and Conditions \u2014 My Money Manager by HackifyPro
-Last Updated: November 2026
-
-By accessing My Money Manager, you agree to these terms:
-1. Account Responsibility: Keep your password and devices secure.
-2. Acceptable Use: Do not attempt unauthorized access to APIs or other user records.
-3. Financial Insights: AI insights and calculators are informational aids, not regulated financial advice.`,
-    updated_at: "2026-11-25T00:00:00.000Z",
-    published_at: "2026-11-25T00:00:00.000Z",
-    created_by: "HackifyPro Legal"
-  },
-  {
-    id: "legal_data_retention",
-    slug: "data-retention-policy",
-    title: "Data Retention & Deletion Policy",
-    version: "1.5",
-    status: "published",
-    content: `# Data Retention & Deletion Policy
-Last Updated: November 2026
-
-1. Account Deletion: Initiating deletion starts a mandatory 24-hour grace window during which you may cancel.
-2. Permanent Purge: Once finalized, personal transactions, sessions, and profile records are permanently purged.
-3. Security Audit Logs: Minimal anonymized audit trails may be retained for fraud prevention and statutory compliance.`,
-    updated_at: "2026-11-25T00:00:00.000Z",
-    published_at: "2026-11-25T00:00:00.000Z",
-    created_by: "HackifyPro Legal"
-  },
-  {
-    id: "legal_cookie_policy",
-    slug: "cookie-policy",
-    title: "Cookie & Session Policy",
-    version: "1.2",
-    status: "published",
-    content: `# Cookie & Session Policy
-Last Updated: November 2026
-
-My Money Manager uses strictly necessary session storage and HttpOnly cookies for authentication security.
-No third-party advertising or cross-site tracking cookies are used.`,
-    updated_at: "2026-11-25T00:00:00.000Z",
-    published_at: "2026-11-25T00:00:00.000Z",
-    created_by: "HackifyPro Legal"
-  }
-];
-async function listLegalPoliciesFallback() {
-  const sbRes = await sbRestRequest("legal_policies?select=*&order=title.asc");
-  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
-  const map2 = /* @__PURE__ */ new Map();
-  for (const p of DEFAULT_LEGAL_POLICIES) {
-    map2.set(p.slug, { ...p });
-  }
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.slug) map2.set(String(row.slug), row);
-    }
-  }
-  for (const row of stored.policies) {
-    if (row?.slug) map2.set(String(row.slug), row);
-  }
-  return Array.from(map2.values()).sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
-}
-async function getLegalPolicyVersionsFallback(policyId) {
-  const sbRes = await sbRestRequest(
-    `legal_policy_versions?policy_id=eq.${encodeURIComponent(policyId)}&select=*&order=created_at.desc`
-  );
-  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
-  const versions = [];
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    versions.push(...sbRes.data);
-  }
-  for (const v of stored.versions) {
-    if (v.policy_id === policyId && !versions.some((x2) => x2.id === v.id)) {
-      versions.push(v);
-    }
-  }
-  if (versions.length === 0) {
-    const policies = await listLegalPoliciesFallback();
-    const match2 = policies.find((p) => p.id === policyId);
-    if (match2) {
-      versions.push({
-        id: `ver_${match2.id}_${match2.version}`,
-        policy_id: match2.id,
-        slug: match2.slug,
-        version: match2.version,
-        content: match2.content,
-        status: match2.status || "published",
-        created_by: match2.created_by || "System Admin",
-        published_at: match2.published_at || match2.updated_at,
-        created_at: match2.updated_at
-      });
-    }
-  }
-  return versions;
-}
-async function updateLegalPolicyFallback(policyId, updates) {
-  const all = await listLegalPoliciesFallback();
-  const existing = all.find((p) => p.id === policyId);
-  if (!existing) return null;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const updated = {
-    ...existing,
-    title: updates.title || existing.title,
-    version: updates.version || existing.version,
-    content: updates.content || existing.content,
-    status: updates.status || "published",
-    created_by: updates.created_by || "Admin",
-    published_at: now,
-    updated_at: now
-  };
-  await sbRestRequest(`legal_policies?id=eq.${encodeURIComponent(policyId)}`, {
-    method: "PATCH",
-    body: {
-      title: updated.title,
-      version: updated.version,
-      content: updated.content,
-      status: updated.status,
-      created_by: updated.created_by,
-      published_at: now,
-      updated_at: now
-    }
-  });
-  const stored = readJsonStore("legal-policies.json", { policies: [], versions: [] });
-  stored.policies = [updated, ...stored.policies.filter((p) => p.id !== policyId)];
-  stored.versions.unshift({
-    id: crypto13.randomUUID(),
-    policy_id: policyId,
-    slug: updated.slug,
-    version: updated.version,
-    content: updated.content,
-    status: updated.status,
-    created_by: updated.created_by,
-    published_at: now,
-    created_at: now
-  });
-  stored.versions = stored.versions.slice(0, 100);
-  writeJsonStore("legal-policies.json", stored);
-  return updated;
-}
-async function listUserActivityFallback(userId, userEmail) {
-  const email = userEmail || "";
-  const sbRes = await sbRestRequest(
-    `security_audit_logs?select=id,event_type,user_email,actor_role,ip_address,details,created_at&order=created_at.desc&limit=50`
-  );
-  if (!sbRes.ok || !Array.isArray(sbRes.data)) return [];
-  return sbRes.data.filter(
-    (row) => row.user_id === userId || email && String(row.user_email || "").toLowerCase() === email.toLowerCase()
-  );
-}
-async function listUserSessionsFallback(userId) {
-  const sbRes = await sbRestRequest(
-    `user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`
-  );
-  return sbRes.ok && Array.isArray(sbRes.data) ? sbRes.data : [];
-}
-var DEFAULT_ADMIN_ROLES = [
-  {
-    id: "role_superadmin",
-    name: "Super Administrator",
-    slug: "superadmin",
-    description: "Full unrestricted control across My Money Manager Control Center.",
-    permissions: ["*"],
-    is_system: true
-  },
-  {
-    id: "role_admin",
-    name: "Administrator",
-    slug: "admin",
-    description: "Platform management across users, support, notifications, AI, and settings.",
-    permissions: [
-      "dashboard.view",
-      "users.view",
-      "users.update",
-      "users.suspend",
-      "users.financial_data.request",
-      "analytics.view",
-      "notifications.view",
-      "notifications.send",
-      "notifications.manage",
-      "features.manage",
-      "settings.manage",
-      "security.view",
-      "audit_logs.view",
-      "support.manage",
-      "ai.manage"
-    ],
-    is_system: true
-  },
-  {
-    id: "role_support",
-    name: "Support Specialist",
-    slug: "support",
-    description: "Handles user tickets, feedback replies, and read-only user assistance.",
-    permissions: ["dashboard.view", "users.view", "support.manage", "notifications.view", "audit_logs.view"],
-    is_system: true
-  },
-  {
-    id: "role_analyst",
-    name: "Operations Analyst",
-    slug: "analyst",
-    description: "Read-only access to metrics, analytics, and audit logs.",
-    permissions: ["dashboard.view", "users.view", "analytics.view", "audit_logs.view"],
-    is_system: true
-  }
-];
-async function listAdminRolesFallback() {
-  const sbRes = await sbRestRequest("admin_roles?select=*&order=is_system.desc,name.asc");
-  const stored = readJsonStore("admin-roles.json", { roles: [] });
-  const map2 = /* @__PURE__ */ new Map();
-  for (const r2 of DEFAULT_ADMIN_ROLES) map2.set(r2.slug, { ...r2 });
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.slug) map2.set(String(row.slug), row);
-    }
-  }
-  for (const row of stored.roles) {
-    if (row?.slug) map2.set(String(row.slug), row);
-  }
-  return Array.from(map2.values());
-}
-async function updateAdminRoleFallback(id, updates) {
-  const all = await listAdminRolesFallback();
-  const existing = all.find((r2) => r2.id === id || r2.slug === id);
-  if (!existing) return null;
-  const updated = {
-    ...existing,
-    permissions: updates.permissions ?? existing.permissions,
-    description: updates.description ?? existing.description,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  const stored = readJsonStore("admin-roles.json", { roles: [] });
-  stored.roles = [updated, ...stored.roles.filter((r2) => r2.id !== existing.id)];
-  writeJsonStore("admin-roles.json", stored);
-  return updated;
-}
-async function listSecurityIncidentsFallback(status, severity) {
-  const sbRes = await sbRestRequest("security_incidents?select=*&order=created_at.desc&limit=100");
-  const stored = readJsonStore("security-incidents.json", { incidents: [] });
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) if (row?.id) map2.set(String(row.id), row);
-  }
-  for (const row of stored.incidents) if (row?.id) map2.set(String(row.id), row);
-  let rows = Array.from(map2.values());
-  if (status && status !== "all") rows = rows.filter((r2) => r2.status === status);
-  if (severity && severity !== "all") rows = rows.filter((r2) => r2.severity === severity);
-  return rows;
-}
-async function createSecurityIncidentFallback(payload) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const row = {
-    id: crypto13.randomUUID(),
-    title: payload.title,
-    severity: payload.severity || "medium",
-    description: payload.description || "",
-    user_email: payload.user_email || null,
-    status: "new",
-    created_at: now,
-    updated_at: now
-  };
-  const stored = readJsonStore("security-incidents.json", { incidents: [] });
-  stored.incidents = [row, ...stored.incidents].slice(0, 100);
-  writeJsonStore("security-incidents.json", stored);
-  return row;
-}
-async function getAdminDashboardStatsFallback() {
-  const users = await listAllAppUsersFallback();
-  const activeUsers = users.filter((u) => !u.status || u.status === "active").length;
-  const suspendedUsers = users.filter((u) => u.status === "suspended").length;
-  const inactiveUsers = users.filter((u) => u.status === "deactivated").length;
-  const logsRes = await sbRestRequest("security_audit_logs?select=id,event_type,user_email,actor_role,created_at,details&order=created_at.desc&limit=10");
-  const recentActivity = logsRes.ok && Array.isArray(logsRes.data) ? logsRes.data : [];
-  return {
-    stats: {
-      totalUsers: users.length,
-      newToday: 0,
-      newWeek: 0,
-      newMonth: users.length,
-      activeUsers,
-      suspendedUsers,
-      inactiveUsers,
-      pendingDeletions: 0,
-      failedLogins24h: 0,
-      lockedAccounts: 0,
-      activeSessions: activeUsers,
-      openIncidents: 0,
-      dbHealth: "Operational (Supabase REST Fallback)",
-      emailServiceStatus: process.env.SMTP_PASS ? "Operational (SMTP Configured)" : "SMTP_PASS Required"
-    },
-    charts: { registrations: [], logins: [] },
-    recentActivity
-  };
-}
-async function insertSupportTicketFallback(entry) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const payload = {
-    ticket_number: entry.ticket_number,
-    user_id: entry.user_id,
-    user_name: entry.user_name,
-    user_email: entry.user_email,
-    ticket_type: entry.ticket_type,
-    category: entry.category || "General",
-    subject: entry.subject,
-    description: entry.description,
-    priority: entry.priority || "normal",
-    status: entry.status || "open",
-    attachment_url: entry.attachment_url || null,
-    created_at: now,
-    updated_at: now
-  };
-  const sbRes = await sbRestRequest("support_tickets", {
-    method: "POST",
-    headers: { Prefer: "return=representation" },
-    body: payload
-  });
-  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto13.randomUUID(), ...payload };
-  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
-  store.tickets = [savedRow, ...store.tickets.filter((t2) => t2.id !== savedRow.id)].slice(0, 200);
-  writeJsonStore("support-tickets.json", store);
-  return savedRow;
-}
-async function listSupportTicketsFallback(userId) {
-  const pathSuffix = userId ? `support_tickets?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=100` : "support_tickets?select=*&order=created_at.desc&limit=150";
-  const sbRes = await sbRestRequest(pathSuffix);
-  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.id) map2.set(String(row.id), row);
-    }
-  }
-  for (const row of store.tickets) {
-    if (row?.id && !map2.has(String(row.id))) {
-      if (!userId || row.user_id === userId) {
-        map2.set(String(row.id), row);
-      }
-    }
-  }
-  return Array.from(map2.values()).sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  );
-}
-async function getSupportTicketByIdFallback(ticketId, userId) {
-  const all = await listSupportTicketsFallback(userId);
-  return all.find((t2) => t2.id === ticketId && (!userId || t2.user_id === userId)) || null;
-}
-async function insertSupportTicketReplyFallback(entry) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const payload = {
-    ticket_id: entry.ticket_id,
-    sender_id: entry.sender_id || null,
-    sender_name: entry.sender_name,
-    sender_role: entry.sender_role,
-    sender_type: entry.sender_type,
-    message: entry.message,
-    message_type: entry.message_type || (entry.sender_type === "user" ? "user_message" : "admin_reply"),
-    is_internal: Boolean(entry.is_internal),
-    email_status: entry.email_status || "none",
-    delivery_error: entry.delivery_error || null,
-    created_at: now
-  };
-  const sbRes = await sbRestRequest("support_ticket_replies", {
-    method: "POST",
-    headers: { Prefer: "return=representation" },
-    body: payload
-  });
-  const savedRow = sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0] ? sbRes.data[0] : { id: crypto13.randomUUID(), ...payload };
-  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
-  store.replies = [...store.replies.filter((r2) => r2.id !== savedRow.id), savedRow].slice(-500);
-  writeJsonStore("support-tickets.json", store);
-  return savedRow;
-}
-async function getSupportTicketRepliesFallback(ticketId, includeInternal = false) {
-  const sbRes = await sbRestRequest(
-    `support_ticket_replies?ticket_id=eq.${encodeURIComponent(ticketId)}&select=*&order=created_at.asc`
-  );
-  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
-  const map2 = /* @__PURE__ */ new Map();
-  if (sbRes.ok && Array.isArray(sbRes.data)) {
-    for (const row of sbRes.data) {
-      if (row?.id) map2.set(String(row.id), row);
-    }
-  }
-  for (const row of store.replies) {
-    if (row?.id && row.ticket_id === ticketId && !map2.has(String(row.id))) {
-      map2.set(String(row.id), row);
-    }
-  }
-  return Array.from(map2.values()).filter((r2) => includeInternal || !r2.is_internal).sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-}
-async function updateSupportTicketStatusFallback(ticketId, status) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const patch = {
-    status,
-    updated_at: now
-  };
-  if (status === "resolved" || status === "closed") {
-    patch.resolved_at = now;
-  }
-  await sbRestRequest(`support_tickets?id=eq.${encodeURIComponent(ticketId)}`, {
-    method: "PATCH",
-    body: patch
-  });
-  const store = readJsonStore("support-tickets.json", { tickets: [], replies: [] });
-  const idx = store.tickets.findIndex((t2) => t2.id === ticketId);
-  if (idx >= 0) {
-    store.tickets[idx] = { ...store.tickets[idx], ...patch };
-    writeJsonStore("support-tickets.json", store);
-  }
-}
-
 // server/adminSettingsStore.ts
 import crypto14 from "crypto";
 import fs7 from "fs";
@@ -51778,7 +51866,9 @@ var DEFAULT_MAINTENANCE_CONFIG = {
   isEnabled: false,
   title: "My Money Manager is Under Scheduled Maintenance",
   message: "We are upgrading our secure financial infrastructure to deliver better performance and security. Normal services will resume shortly.",
-  expectedRestoration: "Within 2 hours"
+  expectedRestoration: "Within 2 hours",
+  allowStaffAccessDuringMaintenance: true,
+  emergencyBypassEnabled: true
 };
 var DEFAULT_APP_POPUP_CONFIG = {
   enabled: true,
@@ -51921,6 +52011,8 @@ function normalizeMaintenanceConfig(raw) {
     title: typeof raw?.title === "string" && raw.title.trim() ? raw.title.trim().slice(0, 140) : DEFAULT_MAINTENANCE_CONFIG.title,
     message: typeof raw?.message === "string" && raw.message.trim() ? raw.message.trim().slice(0, 600) : DEFAULT_MAINTENANCE_CONFIG.message,
     expectedRestoration: typeof raw?.expectedRestoration === "string" && raw.expectedRestoration.trim() ? raw.expectedRestoration.trim().slice(0, 100) : DEFAULT_MAINTENANCE_CONFIG.expectedRestoration,
+    allowStaffAccessDuringMaintenance: typeof raw?.allowStaffAccessDuringMaintenance === "boolean" ? raw.allowStaffAccessDuringMaintenance : DEFAULT_MAINTENANCE_CONFIG.allowStaffAccessDuringMaintenance,
+    emergencyBypassEnabled: typeof raw?.emergencyBypassEnabled === "boolean" ? raw.emergencyBypassEnabled : DEFAULT_MAINTENANCE_CONFIG.emergencyBypassEnabled,
     updatedAt: typeof raw?.updatedAt === "string" ? raw.updatedAt : void 0,
     updatedBy: typeof raw?.updatedBy === "string" ? raw.updatedBy : void 0
   };
@@ -56279,7 +56371,7 @@ function __await(v) {
 }
 function __asyncGenerator(thisArg, _arguments, generator) {
   if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-  var g2 = generator.apply(thisArg, _arguments || []), i2, q = [];
+  var g3 = generator.apply(thisArg, _arguments || []), i2, q = [];
   return i2 = Object.create((typeof AsyncIterator === "function" ? AsyncIterator : Object).prototype), verb("next"), verb("throw"), verb("return", awaitReturn), i2[Symbol.asyncIterator] = function() {
     return this;
   }, i2;
@@ -56289,7 +56381,7 @@ function __asyncGenerator(thisArg, _arguments, generator) {
     };
   }
   function verb(n, f3) {
-    if (g2[n]) {
+    if (g3[n]) {
       i2[n] = function(v) {
         return new Promise(function(a, b) {
           q.push([n, v, a, b]) > 1 || resume2(n, v);
@@ -56300,7 +56392,7 @@ function __asyncGenerator(thisArg, _arguments, generator) {
   }
   function resume2(n, v) {
     try {
-      step(g2[n](v));
+      step(g3[n](v));
     } catch (e2) {
       settle(q[0][3], e2);
     }
@@ -56949,9 +57041,9 @@ async function buildWebRTCSignalingHeaders(parentClient, url, extraHeaders) {
   return headers;
 }
 function resolveDefaultPeerConnectionFactory() {
-  const g2 = globalThis;
-  if (typeof g2.RTCPeerConnection === "function") {
-    const Ctor = g2.RTCPeerConnection;
+  const g3 = globalThis;
+  if (typeof g3.RTCPeerConnection === "function") {
+    const Ctor = g3.RTCPeerConnection;
     return (configuration) => new Ctor(configuration);
   }
   return void 0;
@@ -57040,9 +57132,9 @@ var InteractionWebRTCTransport = class {
     return this._audioElement;
   }
   createStreamFromTracks(tracks) {
-    const g2 = globalThis;
-    if (typeof g2.MediaStream === "function") {
-      return new g2.MediaStream(tracks);
+    const g3 = globalThis;
+    if (typeof g3.MediaStream === "function") {
+      return new g3.MediaStream(tracks);
     }
     const copy = [...tracks];
     return {
@@ -61373,7 +61465,7 @@ var Batches = class extends BaseModule {
       params
     );
     const urlParams = body["_url"];
-    const path11 = formatMap("{model}:batchGenerateContent", urlParams);
+    const path12 = formatMap("{model}:batchGenerateContent", urlParams);
     const batch = body["batch"];
     const inputConfig = batch["inputConfig"];
     const requestsWrapper = inputConfig["requests"];
@@ -61394,7 +61486,7 @@ var Batches = class extends BaseModule {
     delete body["config"];
     delete body["_url"];
     delete body["_query"];
-    return { path: path11, body };
+    return { path: path12, body };
   }
   // Helper function to get the first GCS URI
   getGcsUri(src) {
@@ -61450,16 +61542,16 @@ var Batches = class extends BaseModule {
   async createInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = createBatchJobParametersToVertex(this.apiClient, params);
-      path11 = formatMap("batchPredictionJobs", body["_url"]);
+      path12 = formatMap("batchPredictionJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -61474,12 +61566,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = createBatchJobParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{model}:batchGenerateContent", body["_url"]);
+      path12 = formatMap("{model}:batchGenerateContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -61504,18 +61596,18 @@ var Batches = class extends BaseModule {
   async createEmbeddingsInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createEmbeddingsBatchJobParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{model}:asyncBatchEmbedContent", body["_url"]);
+      path12 = formatMap("{model}:asyncBatchEmbedContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -61544,16 +61636,16 @@ var Batches = class extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getBatchJobParametersToVertex(this.apiClient, params);
-      path11 = formatMap("batchPredictionJobs/{name}", body["_url"]);
+      path12 = formatMap("batchPredictionJobs/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -61568,12 +61660,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = getBatchJobParametersToMldev(this.apiClient, params);
-      path11 = formatMap("batches/{name}", body["_url"]);
+      path12 = formatMap("batches/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -61601,16 +61693,16 @@ var Batches = class extends BaseModule {
    */
   async cancel(params) {
     var _a2, _b, _c, _d;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = cancelBatchJobParametersToVertex(this.apiClient, params);
-      path11 = formatMap("batchPredictionJobs/{name}:cancel", body["_url"]);
+      path12 = formatMap("batchPredictionJobs/{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -61619,12 +61711,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = cancelBatchJobParametersToMldev(this.apiClient, params);
-      path11 = formatMap("batches/{name}:cancel", body["_url"]);
+      path12 = formatMap("batches/{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -61636,16 +61728,16 @@ var Batches = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listBatchJobsParametersToVertex(params);
-      path11 = formatMap("batchPredictionJobs", body["_url"]);
+      path12 = formatMap("batchPredictionJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -61668,12 +61760,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = listBatchJobsParametersToMldev(params);
-      path11 = formatMap("batches", body["_url"]);
+      path12 = formatMap("batches", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -61710,16 +61802,16 @@ var Batches = class extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteBatchJobParametersToVertex(this.apiClient, params);
-      path11 = formatMap("batchPredictionJobs/{name}", body["_url"]);
+      path12 = formatMap("batchPredictionJobs/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -61740,12 +61832,12 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = deleteBatchJobParametersToMldev(this.apiClient, params);
-      path11 = formatMap("batches/{name}", body["_url"]);
+      path12 = formatMap("batches/{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -62746,16 +62838,16 @@ var Caches = class extends BaseModule {
   async create(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = createCachedContentParametersToVertex(this.apiClient, params);
-      path11 = formatMap("cachedContents", body["_url"]);
+      path12 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -62769,12 +62861,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = createCachedContentParametersToMldev(this.apiClient, params);
-      path11 = formatMap("cachedContents", body["_url"]);
+      path12 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -62802,16 +62894,16 @@ var Caches = class extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getCachedContentParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -62825,12 +62917,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = getCachedContentParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -62858,16 +62950,16 @@ var Caches = class extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteCachedContentParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -62890,12 +62982,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = deleteCachedContentParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -62935,16 +63027,16 @@ var Caches = class extends BaseModule {
   async update(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = updateCachedContentParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -62958,12 +63050,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = updateCachedContentParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -62980,16 +63072,16 @@ var Caches = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listCachedContentsParametersToVertex(params);
-      path11 = formatMap("cachedContents", body["_url"]);
+      path12 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -63012,12 +63104,12 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = listCachedContentsParametersToMldev(params);
-      path11 = formatMap("cachedContents", body["_url"]);
+      path12 = formatMap("cachedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -63557,18 +63649,18 @@ var Files$1 = class Files extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listFilesParametersToMldev(params);
-      path11 = formatMap("files", body["_url"]);
+      path12 = formatMap("files", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -63594,18 +63686,18 @@ var Files$1 = class Files extends BaseModule {
   async createInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createFileParametersToMldev(params);
-      path11 = formatMap("upload/{api_version}/files", body["_url"]);
+      path12 = formatMap("upload/{api_version}/files", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -63640,18 +63732,18 @@ var Files$1 = class Files extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getFileParametersToMldev(params);
-      path11 = formatMap("files/{file}", body["_url"]);
+      path12 = formatMap("files/{file}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -63681,18 +63773,18 @@ var Files$1 = class Files extends BaseModule {
   async delete(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteFileParametersToMldev(params);
-      path11 = formatMap("files/{file}", body["_url"]);
+      path12 = formatMap("files/{file}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -63718,18 +63810,18 @@ var Files$1 = class Files extends BaseModule {
   async registerFilesInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = internalRegisterFilesParametersToMldev(params);
-      path11 = formatMap("files:register", body["_url"]);
+      path12 = formatMap("files:register", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -65671,16 +65763,16 @@ var ClientSDK = class {
   }
   _createRequest(context, conf, options) {
     var _a2, _b, _c, _d, _e;
-    const { method, path: path11, query: query2, headers: opHeaders, security } = conf;
+    const { method, path: path12, query: query2, headers: opHeaders, security } = conf;
     const base2 = (_a2 = conf.baseURL) !== null && _a2 !== void 0 ? _a2 : this._baseURL;
     if (!base2) {
       return ERR(new InvalidRequestError("No base URL provided for operation"));
     }
     const baseURL = new URL(base2);
     let reqURL;
-    if (path11) {
+    if (path12) {
       baseURL.pathname = baseURL.pathname.replace(/\/+$/, "") + "/";
-      reqURL = new URL(path11, baseURL);
+      reqURL = new URL(path12, baseURL);
       if (!reqURL.search && baseURL.search) {
         reqURL.search = baseURL.search;
       }
@@ -66300,7 +66392,7 @@ async function $do$D(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/agents")(pathParams);
+  const path12 = pathToFunc("/{api_version}/agents")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -66331,7 +66423,7 @@ async function $do$D(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -66375,7 +66467,7 @@ async function $do$C(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66405,7 +66497,7 @@ async function $do$C(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66449,7 +66541,7 @@ async function $do$B(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66479,7 +66571,7 @@ async function $do$B(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66521,7 +66613,7 @@ async function $do$A(client, api_version, page_size, page_token, parent, options
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/agents")(pathParams);
+  const path12 = pathToFunc("/{api_version}/agents")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token,
@@ -66556,7 +66648,7 @@ async function $do$A(client, api_version, page_size, page_token, parent, options
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -66624,7 +66716,7 @@ async function $do$z(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/credentials")(pathParams);
+  const path12 = pathToFunc("/{api_version}/credentials")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -66655,7 +66747,7 @@ async function $do$z(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -66699,7 +66791,7 @@ async function $do$y(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66729,7 +66821,7 @@ async function $do$y(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66773,7 +66865,7 @@ async function $do$x(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -66803,7 +66895,7 @@ async function $do$x(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -66844,7 +66936,7 @@ async function $do$w(client, api_version, page_size, page_token, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/credentials")(pathParams);
+  const path12 = pathToFunc("/{api_version}/credentials")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token
@@ -66878,7 +66970,7 @@ async function $do$w(client, api_version, page_size, page_token, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -66925,7 +67017,7 @@ async function $do$v(client, id, body, api_version, update_mask, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const query2 = encodeFormQuery({
     "update_mask": payload.update_mask
   });
@@ -66959,7 +67051,7 @@ async function $do$v(client, id, body, api_version, update_mask, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body: body$,
@@ -67034,7 +67126,7 @@ async function $do$u(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/decisions")(pathParams);
+  const path12 = pathToFunc("/{api_version}/decisions")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -67065,7 +67157,7 @@ async function $do$u(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -67114,7 +67206,7 @@ async function $do$t(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/environments")(pathParams);
+  const path12 = pathToFunc("/{api_version}/environments")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -67145,7 +67237,7 @@ async function $do$t(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -67189,7 +67281,7 @@ async function $do$s(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -67219,7 +67311,7 @@ async function $do$s(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -67263,7 +67355,7 @@ async function $do$r(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -67293,7 +67385,7 @@ async function $do$r(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -67335,7 +67427,7 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/environments")(pathParams);
+  const path12 = pathToFunc("/{api_version}/environments")(pathParams);
   const query2 = encodeFormQuery({
     "mode": payload === null || payload === void 0 ? void 0 : payload.mode,
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
@@ -67370,7 +67462,7 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -67397,14 +67489,14 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
   }
   return [result, { status: "complete", request: req, response }];
 }
-function environmentsFilesList(client, environment, path11, api_version, page_size, page_token, recursive, options) {
-  return new APIPromise($do$p(client, environment, path11, api_version, page_size, page_token, recursive, options));
+function environmentsFilesList(client, environment, path12, api_version, page_size, page_token, recursive, options) {
+  return new APIPromise($do$p(client, environment, path12, api_version, page_size, page_token, recursive, options));
 }
-async function $do$p(client, environment, path11, api_version, page_size, page_token, recursive, options) {
+async function $do$p(client, environment, path12, api_version, page_size, page_token, recursive, options) {
   var _a2, _b, _c;
   const input = {
     environment,
-    path: path11,
+    path: path12,
     api_version,
     page_size,
     page_token,
@@ -67489,18 +67581,18 @@ var Files2 = class extends ClientSDK {
   /**
    * Retrieves file metadata or directory contents from an environment's snapshot. To download file content, use the download URL returned in the response.
    */
-  list(environment, path11, params, options) {
-    return unwrapAsAPIPromise(environmentsFilesList(this, environment, path11, params === null || params === void 0 ? void 0 : params.api_version, params === null || params === void 0 ? void 0 : params.page_size, params === null || params === void 0 ? void 0 : params.page_token, params === null || params === void 0 ? void 0 : params.recursive, options));
+  list(environment, path12, params, options) {
+    return unwrapAsAPIPromise(environmentsFilesList(this, environment, path12, params === null || params === void 0 ? void 0 : params.api_version, params === null || params === void 0 ? void 0 : params.page_size, params === null || params === void 0 ? void 0 : params.page_token, params === null || params === void 0 ? void 0 : params.recursive, options));
   }
 };
-function environmentsInternalStartUpload(client, environment, path11, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
-  return new APIPromise($do$o(client, environment, path11, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options));
+function environmentsInternalStartUpload(client, environment, path12, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
+  return new APIPromise($do$o(client, environment, path12, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options));
 }
-async function $do$o(client, environment, path11, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
+async function $do$o(client, environment, path12, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
   var _a2, _b, _c;
   const input = {
     environment,
-    path: path11,
+    path: path12,
     "X-Goog-Upload-Command": x_goog_upload_command,
     "X-Goog-Upload-Header-Content-Length": x_goog_upload_header_content_length,
     "X-Goog-Upload-Header-Content-Type": x_goog_upload_header_content_type,
@@ -67601,8 +67693,8 @@ var Internal = class extends ClientSDK {
    * Upload the file bytes to the URL returned in the `X-Goog-Upload-URL`
    * response header, using the resumable upload protocol.
    */
-  startUpload(environment, path11, params, options) {
-    return unwrapAsAPIPromise(environmentsInternalStartUpload(this, environment, path11, params["X-Goog-Upload-Command"], params["X-Goog-Upload-Header-Content-Length"], params["X-Goog-Upload-Header-Content-Type"], params["X-Goog-Upload-Protocol"], params.api_version, params.extract, params.overwrite, options));
+  startUpload(environment, path12, params, options) {
+    return unwrapAsAPIPromise(environmentsInternalStartUpload(this, environment, path12, params["X-Goog-Upload-Command"], params["X-Goog-Upload-Header-Content-Length"], params["X-Goog-Upload-Header-Content-Type"], params["X-Goog-Upload-Protocol"], params.api_version, params.extract, params.overwrite, options));
   }
 };
 var Environments = class extends ClientSDK {
@@ -67737,7 +67829,7 @@ async function $do$n(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}/cancel")(pathParams);
+  const path12 = pathToFunc("/{api_version}/interactions/{interactionsId}/cancel")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -67767,7 +67859,7 @@ async function $do$n(client, id, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -67810,7 +67902,7 @@ async function $do$m(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/interactions")(pathParams);
+  const path12 = pathToFunc("/{api_version}/interactions")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: ((_b = input === null || input === void 0 ? void 0 : input.body) === null || _b === void 0 ? void 0 : _b.stream) ? "text/event-stream" : "application/json"
@@ -67841,7 +67933,7 @@ async function $do$m(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -67891,7 +67983,7 @@ async function $do$l(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -67921,7 +68013,7 @@ async function $do$l(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -67971,7 +68063,7 @@ async function $do$k(client, id, api_version, include_input, last_event_id, stre
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
   const query2 = encodeFormQuery({
     "include_input": payload.include_input,
     "last_event_id": payload.last_event_id,
@@ -68006,7 +68098,7 @@ async function $do$k(client, id, api_version, include_input, last_event_id, stre
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -68058,7 +68150,7 @@ async function $do$j(client, interaction_id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens")(pathParams);
+  const path12 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -68089,7 +68181,7 @@ async function $do$j(client, interaction_id, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -68138,7 +68230,7 @@ async function $do$i(client, interaction_id, auth_token, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens/{auth_tokensId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens/{auth_tokensId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -68168,7 +68260,7 @@ async function $do$i(client, interaction_id, auth_token, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -68249,7 +68341,7 @@ async function $do$h(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/triggers")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -68280,7 +68372,7 @@ async function $do$h(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -68324,7 +68416,7 @@ async function $do$g(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -68354,7 +68446,7 @@ async function $do$g(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -68398,7 +68490,7 @@ async function $do$f(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -68428,7 +68520,7 @@ async function $do$f(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -68474,7 +68566,7 @@ async function $do$e(client, trigger_id, api_version, page_size, page_token, opt
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload.page_size,
     "page_token": payload.page_token
@@ -68508,7 +68600,7 @@ async function $do$e(client, trigger_id, api_version, page_size, page_token, opt
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -68551,7 +68643,7 @@ async function $do$d(client, api_version, filter, page_size, page_token, options
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/triggers")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers")(pathParams);
   const query2 = encodeFormQuery({
     "filter": payload === null || payload === void 0 ? void 0 : payload.filter,
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
@@ -68586,7 +68678,7 @@ async function $do$d(client, api_version, filter, page_size, page_token, options
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -68631,7 +68723,7 @@ async function $do$c(client, trigger_id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -68661,7 +68753,7 @@ async function $do$c(client, trigger_id, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -68706,7 +68798,7 @@ async function $do$b(client, id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -68737,7 +68829,7 @@ async function $do$b(client, id, body, api_version, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -68824,7 +68916,7 @@ async function $do$a(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/voices")(pathParams);
+  const path12 = pathToFunc("/{api_version}/voices")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -68855,7 +68947,7 @@ async function $do$a(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -68899,7 +68991,7 @@ async function $do$9(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -68929,7 +69021,7 @@ async function $do$9(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -68973,7 +69065,7 @@ async function $do$8(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -69003,7 +69095,7 @@ async function $do$8(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -69053,7 +69145,7 @@ async function $do$7(client, api_version, accent, contexts, gender, language_cod
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/voices")(pathParams);
+  const path12 = pathToFunc("/{api_version}/voices")(pathParams);
   const query2 = encodeFormQuery({
     "accent": payload === null || payload === void 0 ? void 0 : payload.accent,
     "context": payload === null || payload === void 0 ? void 0 : payload.contexts,
@@ -69096,7 +69188,7 @@ async function $do$7(client, api_version, accent, contexts, gender, language_cod
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -69169,7 +69261,7 @@ async function $do$6(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -69200,7 +69292,7 @@ async function $do$6(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -69244,7 +69336,7 @@ async function $do$5(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -69274,7 +69366,7 @@ async function $do$5(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -69318,7 +69410,7 @@ async function $do$4(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -69348,7 +69440,7 @@ async function $do$4(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -69389,7 +69481,7 @@ async function $do$3(client, api_version, page_size, page_token, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token
@@ -69423,7 +69515,7 @@ async function $do$3(client, api_version, page_size, page_token, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body,
@@ -69469,7 +69561,7 @@ async function $do$2(client, id, api_version, body, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks/{id}:ping")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks/{id}:ping")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -69500,7 +69592,7 @@ async function $do$2(client, id, api_version, body, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -69545,7 +69637,7 @@ async function $do$1(client, id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks/{id}:rotateSigningSecret")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks/{id}:rotateSigningSecret")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -69576,7 +69668,7 @@ async function $do$1(client, id, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -69622,7 +69714,7 @@ async function $do(client, id, body, api_version, update_mask, options) {
       charEncoding: "percent"
     })
   };
-  const path11 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path12 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const query2 = encodeFormQuery({
     "update_mask": payload.update_mask
   });
@@ -69656,7 +69748,7 @@ async function $do(client, id, body, api_version, update_mask, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path11,
+    path: path12,
     headers,
     query: query2,
     body: body$,
@@ -70370,8 +70462,8 @@ var GeminiNextGenEnvironmentFiles = class {
       try {
         const req = globalThis.require;
         if (req) {
-          const fs13 = req("fs");
-          buffer = fs13.readFileSync(params.file);
+          const fs14 = req("fs");
+          buffer = fs14.readFileSync(params.file);
         }
       } catch (_j) {
       }
@@ -70379,8 +70471,8 @@ var GeminiNextGenEnvironmentFiles = class {
         try {
           const mod = (_b = (_a2 = globalThis.process.mainModule) === null || _a2 === void 0 ? void 0 : _a2.require) !== null && _b !== void 0 ? _b : globalThis.require;
           if (mod) {
-            const fs13 = mod("fs");
-            buffer = fs13.readFileSync(params.file);
+            const fs14 = mod("fs");
+            buffer = fs14.readFileSync(params.file);
           }
         } catch (_k) {
         }
@@ -76083,15 +76175,15 @@ var ApiClient = class {
       throw new Error("HTTP options are not correctly set.");
     }
   }
-  resolveApiVersionInPath(path11, apiVersion) {
+  resolveApiVersionInPath(path12, apiVersion) {
     const placeholder = "{api_version}";
     if (apiVersion !== "") {
-      return path11.replaceAll(placeholder, apiVersion);
+      return path12.replaceAll(placeholder, apiVersion);
     }
-    return path11.replaceAll(`${placeholder}/`, "").replaceAll(`/${placeholder}`, "").replaceAll(placeholder, "");
+    return path12.replaceAll(`${placeholder}/`, "").replaceAll(`/${placeholder}`, "").replaceAll(placeholder, "");
   }
-  constructUrl(path11, httpOptions, prependProjectLocation) {
-    if (path11.includes("{api_version}")) {
+  constructUrl(path12, httpOptions, prependProjectLocation) {
+    if (path12.includes("{api_version}")) {
       if (!httpOptions || httpOptions.baseUrl === void 0 || httpOptions.apiVersion === void 0) {
         throw new Error("HTTP options are not correctly set.");
       }
@@ -76100,7 +76192,7 @@ var ApiClient = class {
       if (prependProjectLocation) {
         urlElement2.push(this.getBaseResourcePath());
       }
-      const resolvedPath = this.resolveApiVersionInPath(path11, httpOptions.apiVersion);
+      const resolvedPath = this.resolveApiVersionInPath(path12, httpOptions.apiVersion);
       if (resolvedPath !== "") {
         urlElement2.push(resolvedPath);
       }
@@ -76110,8 +76202,8 @@ var ApiClient = class {
     if (prependProjectLocation) {
       urlElement.push(this.getBaseResourcePath());
     }
-    if (path11 !== "") {
-      urlElement.push(path11);
+    if (path12 !== "") {
+      urlElement.push(path12);
     }
     const url = new URL(`${urlElement.join("/")}`);
     return url;
@@ -76413,13 +76505,13 @@ var ApiClient = class {
     if (mimeType === void 0 || mimeType === "") {
       throw new Error("Can not determine mimeType. Please provide mimeType in the config.");
     }
-    const path11 = `upload/{api_version}/${fileSearchStoreName}:uploadToFileSearchStore`;
+    const path12 = `upload/{api_version}/${fileSearchStoreName}:uploadToFileSearchStore`;
     const fileName = this.getFileName(file);
     const body = {};
     if (config != null) {
       uploadToFileSearchStoreConfigToMldev(config, body);
     }
-    const uploadUrl = await this.fetchUploadUrl(path11, sizeBytes, mimeType, fileName, body, config === null || config === void 0 ? void 0 : config.httpOptions);
+    const uploadUrl = await this.fetchUploadUrl(path12, sizeBytes, mimeType, fileName, body, config === null || config === void 0 ? void 0 : config.httpOptions);
     return uploader.uploadToFileSearchStore(file, uploadUrl, this);
   }
   /**
@@ -76432,11 +76524,11 @@ var ApiClient = class {
     const downloader = this.clientOptions.downloader;
     await downloader.download(params, this);
   }
-  async fetchUploadUrl(path11, sizeBytes, mimeType, fileName, body, configHttpOptions) {
+  async fetchUploadUrl(path12, sizeBytes, mimeType, fileName, body, configHttpOptions) {
     var _a2;
     const httpOptions = Object.assign(Object.assign({}, configHttpOptions), { headers: Object.assign(Object.assign(Object.assign({}, configHttpOptions === null || configHttpOptions === void 0 ? void 0 : configHttpOptions.headers), { "Content-Type": "application/json", "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start", "X-Goog-Upload-Header-Content-Length": `${sizeBytes}`, "X-Goog-Upload-Header-Content-Type": `${mimeType}` }), fileName ? { "X-Goog-Upload-File-Name": fileName } : {}) });
     const httpResponse = await this.request({
-      path: path11,
+      path: path12,
       body: JSON.stringify(body),
       httpMethod: "POST",
       httpOptions
@@ -78229,16 +78321,16 @@ var Models = class _Models extends BaseModule {
   async generateContentInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateContentParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:generateContent", body["_url"]);
+      path12 = formatMap("{model}:generateContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78261,12 +78353,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = generateContentParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{model}:generateContent", body["_url"]);
+      path12 = formatMap("{model}:generateContent", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78292,17 +78384,17 @@ var Models = class _Models extends BaseModule {
   async generateContentStreamInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateContentParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
+      path12 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       const apiClient = this.apiClient;
       response = apiClient.requestStream({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78338,13 +78430,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = generateContentParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
+      path12 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       const apiClient = this.apiClient;
       response = apiClient.requestStream({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78404,7 +78496,7 @@ var Models = class _Models extends BaseModule {
   async embedContentInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = embedContentParametersPrivateToVertex(this.apiClient, params, params);
@@ -78414,12 +78506,12 @@ var Models = class _Models extends BaseModule {
       } else if (params.embeddingApiType === EmbeddingApiType.EMBED_CONTENT) {
         endpointUrl = "{model}:embedContent";
       }
-      path11 = formatMap(endpointUrl, body["_url"]);
+      path12 = formatMap(endpointUrl, body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78442,12 +78534,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = embedContentParametersPrivateToMldev(this.apiClient, params);
-      path11 = formatMap("{model}:batchEmbedContents", body["_url"]);
+      path12 = formatMap("{model}:batchEmbedContents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78476,16 +78568,16 @@ var Models = class _Models extends BaseModule {
   async generateImagesInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateImagesParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:predict", body["_url"]);
+      path12 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78516,16 +78608,16 @@ var Models = class _Models extends BaseModule {
   async editImageInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = editImageParametersInternalToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:predict", body["_url"]);
+      path12 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78556,16 +78648,16 @@ var Models = class _Models extends BaseModule {
   async upscaleImageInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = upscaleImageAPIParametersInternalToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:predict", body["_url"]);
+      path12 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78617,16 +78709,16 @@ var Models = class _Models extends BaseModule {
   async recontextImage(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = recontextImageParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:predict", body["_url"]);
+      path12 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78668,16 +78760,16 @@ var Models = class _Models extends BaseModule {
   async segmentImage(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = segmentImageParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:predict", body["_url"]);
+      path12 = formatMap("{model}:predict", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -78707,16 +78799,16 @@ var Models = class _Models extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getModelParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -78731,12 +78823,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = getModelParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -78754,16 +78846,16 @@ var Models = class _Models extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listModelsParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{models_url}", body["_url"]);
+      path12 = formatMap("{models_url}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -78786,12 +78878,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = listModelsParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{models_url}", body["_url"]);
+      path12 = formatMap("{models_url}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -78834,16 +78926,16 @@ var Models = class _Models extends BaseModule {
   async update(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = updateModelParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}", body["_url"]);
+      path12 = formatMap("{model}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -78858,12 +78950,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = updateModelParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
@@ -78892,16 +78984,16 @@ var Models = class _Models extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteModelParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -78924,12 +79016,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = deleteModelParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -78971,16 +79063,16 @@ var Models = class _Models extends BaseModule {
   async countTokens(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = countTokensParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:countTokens", body["_url"]);
+      path12 = formatMap("{model}:countTokens", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79003,12 +79095,12 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = countTokensParametersToMldev(this.apiClient, params);
-      path11 = formatMap("{model}:countTokens", body["_url"]);
+      path12 = formatMap("{model}:countTokens", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79052,16 +79144,16 @@ var Models = class _Models extends BaseModule {
   async computeTokens(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = computeTokensParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:computeTokens", body["_url"]);
+      path12 = formatMap("{model}:computeTokens", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79092,16 +79184,16 @@ var Models = class _Models extends BaseModule {
   async generateVideosInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateVideosParametersToVertex(this.apiClient, params);
-      path11 = formatMap("{model}:predictLongRunning", body["_url"]);
+      path12 = formatMap("{model}:predictLongRunning", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79208,16 +79300,16 @@ var Operations = class extends BaseModule {
   async getVideosOperationInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getOperationParametersToVertex(params);
-      path11 = formatMap("{operationName}", body["_url"]);
+      path12 = formatMap("{operationName}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -79229,12 +79321,12 @@ var Operations = class extends BaseModule {
       return response;
     } else {
       const body = getOperationParametersToMldev(params);
-      path11 = formatMap("{operationName}", body["_url"]);
+      path12 = formatMap("{operationName}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -79249,16 +79341,16 @@ var Operations = class extends BaseModule {
   async fetchPredictVideosOperationInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = fetchPredictOperationParametersToVertex(params);
-      path11 = formatMap("{resourceName}:fetchPredictOperation", body["_url"]);
+      path12 = formatMap("{resourceName}:fetchPredictOperation", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -79939,20 +80031,20 @@ var Tokens = class extends BaseModule {
   async create(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("The client.tokens.create method is only supported by the Gemini Developer API.");
     } else {
       const body = createAuthTokenParametersToMldev(this.apiClient, params);
-      path11 = formatMap("auth_tokens", body["_url"]);
+      path12 = formatMap("auth_tokens", body["_url"]);
       queryParams = body["_query"];
       delete body["config"];
       delete body["_url"];
       delete body["_query"];
       const transformedBody = convertBidiSetupToTokenSetup(body, params.config);
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(transformedBody),
         httpMethod: "POST",
@@ -80062,18 +80154,18 @@ var Documents = class extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getDocumentParametersToMldev(params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -80094,18 +80186,18 @@ var Documents = class extends BaseModule {
    */
   async delete(params) {
     var _a2, _b;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteDocumentParametersToMldev(params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -80117,18 +80209,18 @@ var Documents = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listDocumentsParametersToMldev(params);
-      path11 = formatMap("{parent}/documents", body["_url"]);
+      path12 = formatMap("{parent}/documents", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -80245,18 +80337,18 @@ var FileSearchStores = class extends BaseModule {
   async create(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createFileSearchStoreParametersToMldev(this.apiClient, params);
-      path11 = formatMap("fileSearchStores", body["_url"]);
+      path12 = formatMap("fileSearchStores", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -80279,18 +80371,18 @@ var FileSearchStores = class extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getFileSearchStoreParametersToMldev(params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -80311,18 +80403,18 @@ var FileSearchStores = class extends BaseModule {
    */
   async delete(params) {
     var _a2, _b;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteFileSearchStoreParametersToMldev(params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
@@ -80334,18 +80426,18 @@ var FileSearchStores = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listFileSearchStoresParametersToMldev(params);
-      path11 = formatMap("fileSearchStores", body["_url"]);
+      path12 = formatMap("fileSearchStores", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -80365,18 +80457,18 @@ var FileSearchStores = class extends BaseModule {
   async uploadToFileSearchStoreInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = uploadToFileSearchStoreParametersToMldev(params);
-      path11 = formatMap("upload/{api_version}/{file_search_store_name}:uploadToFileSearchStore", body["_url"]);
+      path12 = formatMap("upload/{api_version}/{file_search_store_name}:uploadToFileSearchStore", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -80404,18 +80496,18 @@ var FileSearchStores = class extends BaseModule {
   async importFile(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = importFileParametersToMldev(params);
-      path11 = formatMap("{file_search_store_name}:importFile", body["_url"]);
+      path12 = formatMap("{file_search_store_name}:importFile", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -82222,16 +82314,16 @@ var Tunings = class extends BaseModule {
   async getInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = getTuningJobParametersToVertex(params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -82252,12 +82344,12 @@ var Tunings = class extends BaseModule {
       });
     } else {
       const body = getTuningJobParametersToMldev(params);
-      path11 = formatMap("{name}", body["_url"]);
+      path12 = formatMap("{name}", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -82281,16 +82373,16 @@ var Tunings = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = listTuningJobsParametersToVertex(params);
-      path11 = formatMap("tuningJobs", body["_url"]);
+      path12 = formatMap("tuningJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "GET",
@@ -82329,16 +82421,16 @@ var Tunings = class extends BaseModule {
   async cancel(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = cancelTuningJobParametersToVertex(params);
-      path11 = formatMap("{name}:cancel", body["_url"]);
+      path12 = formatMap("{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -82361,12 +82453,12 @@ var Tunings = class extends BaseModule {
       });
     } else {
       const body = cancelTuningJobParametersToMldev(params);
-      path11 = formatMap("{name}:cancel", body["_url"]);
+      path12 = formatMap("{name}:cancel", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -82392,16 +82484,16 @@ var Tunings = class extends BaseModule {
   async tuneInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = createTuningJobParametersPrivateToVertex(params, params);
-      path11 = formatMap("tuningJobs", body["_url"]);
+      path12 = formatMap("tuningJobs", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -82427,18 +82519,18 @@ var Tunings = class extends BaseModule {
   async tuneMldevInternal(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createTuningJobParametersPrivateToMldev(params);
-      path11 = formatMap("tunedModels", body["_url"]);
+      path12 = formatMap("tunedModels", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -82462,16 +82554,16 @@ var Tunings = class extends BaseModule {
   async validateReward(params) {
     var _a2, _b;
     let response;
-    let path11 = "";
+    let path12 = "";
     let queryParams = {};
     if (this.apiClient.isVertexAI()) {
       const body = validateRewardParametersToVertex(params);
-      path11 = formatMap("{parent}/tuningJobs:validateReinforcementTuningReward", body["_url"]);
+      path12 = formatMap("{parent}/tuningJobs:validateReinforcementTuningReward", body["_url"]);
       queryParams = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path11,
+        path: path12,
         queryParams,
         body: JSON.stringify(body),
         httpMethod: "POST",
@@ -83415,11 +83507,1685 @@ RULES:
   }
 }
 
-// server/notificationService.ts
+// server/siteControlCenter.ts
+import crypto16 from "crypto";
 import fs11 from "fs";
 import os6 from "os";
 import path9 from "path";
-import crypto16 from "crypto";
+
+// src/lib/svgSanitizer.ts
+var MAX_SVG_BYTES = 512 * 1024;
+var MAX_RASTER_BYTES = 2 * 1024 * 1024;
+var DISALLOWED_SVG_TAGS = [
+  "script",
+  "foreignobject",
+  "iframe",
+  "object",
+  "embed",
+  "applet",
+  "meta",
+  "link",
+  "base",
+  "animate",
+  "animatemotion",
+  "animatetransform",
+  "set",
+  "handler",
+  "listener"
+];
+function decodeSvgBase64OrUtf8(raw) {
+  const trimmed = String(raw || "").trim();
+  const base64Prefix = /^data:image\/svg\+xml;base64,/i;
+  if (base64Prefix.test(trimmed)) {
+    const b64 = trimmed.replace(base64Prefix, "");
+    if (typeof Buffer !== "undefined") {
+      return { isDataUrl: true, svgText: Buffer.from(b64, "base64").toString("utf8") };
+    }
+    const bin = atob(b64);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return { isDataUrl: true, svgText: new TextDecoder("utf-8").decode(bytes) };
+  }
+  const utf8Prefix = /^data:image\/svg\+xml[^,]*,/i;
+  if (utf8Prefix.test(trimmed)) {
+    const body = trimmed.replace(utf8Prefix, "");
+    try {
+      return { isDataUrl: true, svgText: decodeURIComponent(body) };
+    } catch {
+      return { isDataUrl: true, svgText: body };
+    }
+  }
+  return { isDataUrl: false, svgText: trimmed };
+}
+function encodeUtf8ToBase64(text) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(text, "utf8").toString("base64");
+  }
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i2 = 0; i2 < bytes.length; i2++) {
+    bin += String.fromCharCode(bytes[i2]);
+  }
+  return btoa(bin);
+}
+function validateAndSanitizeSvg(rawInput) {
+  const { svgText } = decodeSvgBase64OrUtf8(rawInput);
+  const cleanedRaw = svgText.replace(/^\uFEFF/, "").trim();
+  if (!cleanedRaw) {
+    return { valid: false, error: "SVG content is empty." };
+  }
+  const byteSize = typeof Buffer !== "undefined" ? Buffer.byteLength(cleanedRaw, "utf8") : new TextEncoder().encode(cleanedRaw).byteLength;
+  if (byteSize > MAX_SVG_BYTES) {
+    return { valid: false, error: "SVG file exceeds maximum allowed size (512 KB)." };
+  }
+  const stripped = cleanedRaw.replace(/<\?xml[\s\S]*?\?>/gi, "").replace(/<!DOCTYPE[\s\S]*?>/gi, "").replace(/<!ENTITY[\s\S]*?>/gi, "").replace(/<!--[\s\S]*?-->/g, "").trim();
+  if (!/^<svg[\s>]/i.test(stripped) || !/<\/svg>\s*$/i.test(stripped)) {
+    return { valid: false, error: "Invalid SVG markup: root <svg> element is required." };
+  }
+  for (const tag of DISALLOWED_SVG_TAGS) {
+    const tagRe = new RegExp(`<\\s*\\/?\\s*(?:[a-z0-9_-]+:)?${tag}\\b`, "i");
+    if (tagRe.test(stripped)) {
+      return {
+        valid: false,
+        error: `SVG rejected for security: disallowed <${tag}> element detected.`
+      };
+    }
+  }
+  if (/[\s\/]on[a-z0-9_-]+\s*=/i.test(stripped)) {
+    return {
+      valid: false,
+      error: "SVG rejected for security: inline event handler attributes (on*) are not allowed."
+    };
+  }
+  if (/(?:javascript|vbscript)\s*:|data\s*:\s*(?:text\/html|application\/|text\/javascript)/i.test(stripped)) {
+    return {
+      valid: false,
+      error: "SVG rejected for security: executable javascript:/data: URI scheme detected."
+    };
+  }
+  if (/@import\b|expression\s*\(|url\s*\(\s*['"]?\s*(?:https?:|\/\/)/i.test(stripped)) {
+    return {
+      valid: false,
+      error: "SVG rejected for security: external stylesheet/URL references inside SVG are blocked."
+    };
+  }
+  if (/(?:href|xlink:href|src)\s*=\s*['"]\s*(?:https?:|\/\/)/i.test(stripped)) {
+    return {
+      valid: false,
+      error: "SVG rejected for security: external href/src attributes inside SVG are blocked."
+    };
+  }
+  const safeStyleStripped = stripped.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_match, css) => {
+    const cleanCss = String(css || "");
+    if (/url\s*\(|@import|expression|behavior|-moz-binding|javascript/i.test(cleanCss)) {
+      return "";
+    }
+    return `<style>${cleanCss}</style>`;
+  });
+  let width;
+  let height;
+  const openTagMatch = safeStyleStripped.match(/^<svg\b([^>]*)>/i);
+  if (openTagMatch) {
+    const attrs = openTagMatch[1] || "";
+    const wMatch = attrs.match(/\bwidth\s*=\s*['"](\d+(?:\.\d+)?)(?:px)?['"]/i);
+    const hMatch = attrs.match(/\bheight\s*=\s*['"](\d+(?:\.\d+)?)(?:px)?['"]/i);
+    if (wMatch) width = Math.round(Number(wMatch[1]));
+    if (hMatch) height = Math.round(Number(hMatch[1]));
+    if (!width || !height) {
+      const vbMatch = attrs.match(/\bviewBox\s*=\s*['"]\s*[-\d.]+\s+[-\d.]+\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*['"]/i);
+      if (vbMatch) {
+        width = width || Math.round(Number(vbMatch[1]));
+        height = height || Math.round(Number(vbMatch[2]));
+      }
+    }
+  }
+  const finalSvg = safeStyleStripped.trim();
+  const base64 = encodeUtf8ToBase64(finalSvg);
+  return {
+    valid: true,
+    mimeType: "image/svg+xml",
+    sanitizedSvg: finalSvg,
+    sanitizedDataUrl: `data:image/svg+xml;base64,${base64}`,
+    byteSize: typeof Buffer !== "undefined" ? Buffer.byteLength(finalSvg, "utf8") : new TextEncoder().encode(finalSvg).byteLength,
+    width: width || 256,
+    height: height || 256
+  };
+}
+function validateBrandingImageInput(rawDataOrUrl, options) {
+  const input = String(rawDataOrUrl || "").trim();
+  if (!input) {
+    return { valid: false, error: "Image payload is required." };
+  }
+  if (input.startsWith("/") && !input.startsWith("//")) {
+    if (/^\/[a-zA-Z0-9._\-\/?=&]+$/.test(input)) {
+      return {
+        valid: true,
+        mimeType: input.endsWith(".svg") ? "image/svg+xml" : "image/png",
+        sanitizedDataUrl: input,
+        width: options?.width,
+        height: options?.height
+      };
+    }
+    return { valid: false, error: "Invalid relative asset URL." };
+  }
+  if (/^data:image\/svg\+xml/i.test(input) || /^<\?xml/i.test(input) || /^<svg[\s>]/i.test(input)) {
+    return validateAndSanitizeSvg(input);
+  }
+  const rasterMatch = input.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i);
+  if (!rasterMatch) {
+    return {
+      valid: false,
+      error: "Unsupported format. Please upload PNG, JPG/JPEG, WebP, GIF, or sanitized SVG."
+    };
+  }
+  const mime = rasterMatch[1].toLowerCase() === "image/jpg" ? "image/jpeg" : rasterMatch[1].toLowerCase();
+  const b64 = rasterMatch[2];
+  const approxBytes = Math.floor(b64.length * 3 / 4);
+  if (approxBytes > MAX_RASTER_BYTES) {
+    return { valid: false, error: "Image file size must be 2 MB or smaller." };
+  }
+  if (options?.width && (options.width < 16 || options.width > 4096)) {
+    return { valid: false, error: "Image width must be between 16px and 4096px." };
+  }
+  if (options?.height && (options.height < 16 || options.height > 4096)) {
+    return { valid: false, error: "Image height must be between 16px and 4096px." };
+  }
+  return {
+    valid: true,
+    mimeType: mime,
+    sanitizedDataUrl: `data:${mime};base64,${b64}`,
+    byteSize: approxBytes,
+    width: options?.width,
+    height: options?.height
+  };
+}
+function sanitizeHexColor(input, fallback) {
+  const val = String(input || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) return val.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(val)) {
+    const r2 = val[1];
+    const g3 = val[2];
+    const b = val[3];
+    return `#${r2}${r2}${g3}${g3}${b}${b}`.toLowerCase();
+  }
+  return fallback;
+}
+
+// server/siteControlCenter.ts
+var PRIMARY_DATA_DIR3 = path9.resolve(process.cwd(), ".data", "runtime-store");
+var TMP_DATA_DIR3 = path9.resolve(os6.tmpdir(), "mymoney-runtime-store");
+var CONTROL_CENTER_SETTING_KEY = "site_control_center_published";
+var CONTROL_CENTER_DRAFT_KEY = "site_control_center_draft";
+var CONTROL_CENTER_FILE = "site-control-center.json";
+var BRANDING_ASSETS_FILE = "branding-assets.json";
+var STAFF_TASKS_FILE = "staff-tasks.json";
+var g2 = globalThis;
+if (!g2.__mmBrandingAssetsCache) g2.__mmBrandingAssetsCache = {};
+if (!g2.__mmSseClients) g2.__mmSseClients = /* @__PURE__ */ new Set();
+function resolveWritableDir() {
+  try {
+    if (!fs11.existsSync(PRIMARY_DATA_DIR3)) {
+      fs11.mkdirSync(PRIMARY_DATA_DIR3, { recursive: true });
+    }
+    fs11.accessSync(PRIMARY_DATA_DIR3, fs11.constants.W_OK);
+    return PRIMARY_DATA_DIR3;
+  } catch {
+    try {
+      if (!fs11.existsSync(TMP_DATA_DIR3)) {
+        fs11.mkdirSync(TMP_DATA_DIR3, { recursive: true });
+      }
+      return TMP_DATA_DIR3;
+    } catch {
+      return PRIMARY_DATA_DIR3;
+    }
+  }
+}
+function safeFilePath(baseDir, fileName) {
+  const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const resolved = path9.resolve(baseDir, cleanName);
+  if (!resolved.startsWith(baseDir + path9.sep)) {
+    throw new Error("PATH_CONFINEMENT_VIOLATION");
+  }
+  return resolved;
+}
+function readJsonStore2(fileName) {
+  for (const dir of [PRIMARY_DATA_DIR3, TMP_DATA_DIR3]) {
+    try {
+      const target = safeFilePath(dir, fileName);
+      if (fs11.existsSync(target)) {
+        const raw = fs11.readFileSync(target, "utf8");
+        if (raw.trim()) return JSON.parse(raw);
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+function writeJsonStore2(fileName, data) {
+  try {
+    const dir = resolveWritableDir();
+    const target = safeFilePath(dir, fileName);
+    fs11.writeFileSync(target, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.warn(`[SiteControlCenter] Write notice (${fileName}):`, err?.message);
+  }
+}
+function sanitizeSafeHrefOrRoute(raw, fallback) {
+  const s2 = String(raw || "").trim();
+  if (!s2) return fallback;
+  if (s2.startsWith("/") && !s2.startsWith("//")) {
+    if (/[\r\n\0]/.test(s2)) return fallback;
+    return s2.slice(0, 300);
+  }
+  if (s2.startsWith("#")) {
+    return s2.slice(0, 120);
+  }
+  try {
+    const parsed = new URL(s2);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString().slice(0, 400);
+    }
+  } catch {
+  }
+  return fallback;
+}
+function sanitizePublicNavigationTarget(raw, fallback) {
+  const clean = sanitizeSafeHrefOrRoute(raw, fallback);
+  const lower2 = clean.toLowerCase();
+  if (lower2.startsWith("/myadmin") || lower2.startsWith("/admin") || lower2.startsWith("/mystaff") || lower2.includes("#myadmin") || lower2.includes("#mystaff")) {
+    return fallback;
+  }
+  return clean;
+}
+function sanitizeAssetRef(raw, fallback) {
+  const val = String(raw || "").trim();
+  if (!val) return fallback;
+  if (val.startsWith("/api/branding/assets/")) return val;
+  if (val.startsWith("/") && !val.startsWith("//") && /^\/[a-zA-Z0-9._\-\/?=&]+$/.test(val)) {
+    return val;
+  }
+  const checked = validateBrandingImageInput(val);
+  if (checked.valid && checked.sanitizedDataUrl) {
+    return checked.sanitizedDataUrl;
+  }
+  return fallback;
+}
+function createDefaultSiteControlCenterConfig() {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    version: 1,
+    updatedAt: now,
+    updatedBy: "system",
+    publishedAt: now,
+    branding: {
+      user_app: {
+        appName: "My Money Manager",
+        shortName: "My Money",
+        tagline: "A product of HackifyPro",
+        description: "Personal & shared finance ledger, Udhaar tracker, UPI QR & smart financial insights.",
+        logoUrl: "/logo.jpg",
+        faviconUrl: "/icon-192.png",
+        pwaIconUrl: "/icon-192.png",
+        primaryColor: "#10b981",
+        secondaryColor: "#059669",
+        accentColor: "#3b82f6",
+        backgroundColor: "#0f172a",
+        themeColor: "#10b981",
+        loginTitle: "My Money Manager",
+        loginSubtitle: "Personal Finance, Room Budgets, Udhar Ledger & UPI QR",
+        dashboardHeading: "Financial Overview",
+        splashHeadline: "My Money Manager",
+        splashTagline: "A product of HackifyPro"
+      },
+      admin_app: {
+        appName: "My Money Manager Admin",
+        shortName: "MM Admin",
+        tagline: "A product of HackifyPro \xB7 Admin Security Gateway",
+        description: "Dedicated administration console, Website Control Center, Staff RBAC & real-time alerts.",
+        logoUrl: "/admin-logo.png",
+        faviconUrl: "/admin-favicon.png",
+        pwaIconUrl: "/admin-icon-192.png",
+        primaryColor: "#10b981",
+        secondaryColor: "#0f172a",
+        accentColor: "#14b8a6",
+        backgroundColor: "#020617",
+        themeColor: "#10b981",
+        loginTitle: "My Money Manager Admin",
+        loginSubtitle: "Dedicated administration portal (/myadmin) for platform & website governance.",
+        dashboardHeading: "Control Center",
+        splashHeadline: "My Money Manager Admin",
+        splashTagline: "A product of HackifyPro \xB7 Control Center"
+      },
+      staff_app: {
+        appName: "My Money Manager Staff",
+        shortName: "MM Staff",
+        tagline: "A product of HackifyPro \xB7 Staff Operations Desk",
+        description: "Dedicated staff workspace for assigned tasks, support desk, and authorized operations.",
+        logoUrl: "/staff-logo.png",
+        faviconUrl: "/staff-favicon.png",
+        pwaIconUrl: "/staff-icon-192.png",
+        primaryColor: "#6366f1",
+        secondaryColor: "#312e81",
+        accentColor: "#06b6d4",
+        backgroundColor: "#020617",
+        themeColor: "#4f46e5",
+        loginTitle: "My Money Manager Staff",
+        loginSubtitle: "Dedicated staff portal (/mystaff) for support & assigned operations.",
+        dashboardHeading: "Staff Operations",
+        splashHeadline: "My Money Manager Staff",
+        splashTagline: "A product of HackifyPro \xB7 Staff Desk"
+      },
+      website: {
+        siteName: "My Money Manager",
+        siteTitle: "My Money Manager by HackifyPro \u2014 Personal Finance, Udhaar & UPI Ledger",
+        siteDescription: "Track daily income & expenses, manage shared room/Udhaar ledgers with 2-way sync, scan receipts, and generate UPI QR codes.",
+        logoUrl: "/logo.jpg",
+        faviconUrl: "/icon-192.png",
+        ogImageUrl: "/icon-512.png",
+        primaryColor: "#10b981",
+        secondaryColor: "#0f172a",
+        accentColor: "#3b82f6",
+        headerBadgeText: "A product of HackifyPro",
+        footerBrandText: "My Money Manager by HackifyPro",
+        defaultLanguage: "en",
+        defaultTheme: "system"
+      }
+    },
+    homepage: {
+      showHero: true,
+      heroBadge: "Trusted Personal Finance & Shared Udhaar Ledger",
+      heroHeading: "Master Every Rupee, Room Split & Udhaar Seamlessly",
+      heroSubheading: "Real-time shared People & Udhaar sync, instant QR connections, UPI auto-detection, smart AI insights, and offline-ready PWA experience.",
+      heroImageUrl: "/icon-512.png",
+      primaryCtaText: "Sign In to Dashboard",
+      secondaryCtaText: "Create Free Account",
+      showAnnouncementStrip: true,
+      showFeatureSection: true,
+      featureSectionHeading: "Everything Built for Smart Daily Money Control",
+      featureCards: [
+        {
+          id: "feat-udhaar",
+          title: "Two-Way Udhaar & People Sync",
+          description: "Search requests, instant QR pairing, real-time balances, and full dispute protection.",
+          visible: true
+        },
+        {
+          id: "feat-upi",
+          title: "Instant UPI QR & Smart Alerts",
+          description: "Generate personalized UPI payment QRs and stay ahead of bills & budgets.",
+          visible: true
+        },
+        {
+          id: "feat-reports",
+          title: "AI Insights & Net Worth Reports",
+          description: "Visual category breakdowns, Safe-to-Spend metrics, and exportable statements.",
+          visible: true
+        }
+      ],
+      showSecurityTrustSection: true,
+      securityTrustText: "Bank-grade session protection, granular privacy consents & encrypted server secrets."
+    },
+    header: {
+      showBrandLogo: true,
+      showBrandName: true,
+      showInstallButton: true,
+      showNotificationBell: true,
+      navLinks: [
+        { id: "nav-features", label: "Features", target: "#features", visible: true },
+        { id: "nav-support", label: "Help & Support", target: "/#help", visible: true },
+        { id: "nav-legal", label: "Privacy & Legal", target: "/#privacy-policy", visible: true }
+      ]
+    },
+    footer: {
+      copyrightText: "\xA9 2026 My Money Manager by HackifyPro. All rights reserved.",
+      supportEmail: "hackifypro@gmail.com",
+      supportPhone: "+91 9669412829",
+      companyName: "HackifyPro Technologies",
+      address: "India",
+      showLegalLinks: true,
+      showSocialLinks: true,
+      socialLinks: {
+        github: "https://github.com/Barela08/mymoney",
+        twitter: "",
+        linkedin: "",
+        instagram: "",
+        youtube: "",
+        website: "https://mymoney.nileshbarela.site"
+      }
+    },
+    loginSettings: {
+      allowLogin: true,
+      allowRegistration: true,
+      allowGoogleSignIn: true,
+      allowPasskeySignIn: true,
+      loginHeadline: "Welcome Back",
+      loginSubheadline: "Sign in to access your real-time synced finance & Udhaar workspace.",
+      registerHeadline: "Create Your Free Account",
+      registerSubheadline: "Start tracking expenses, room budgets, and 2-way Udhaar ledgers.",
+      loginBannerText: "",
+      showAppDownloadOnLogin: true
+    },
+    announcement: {
+      enabled: false,
+      title: "Platform Update",
+      message: "",
+      severity: "info",
+      ctaLabel: "Learn More",
+      ctaTarget: "/",
+      dismissible: true
+    },
+    seo: {
+      title: "My Money Manager by HackifyPro \u2014 Smart Personal Finance & Udhaar Tracker",
+      metaDescription: "Manage daily income, expenses, room splits, 2-way Udhaar connections, and UPI QR codes in real time.",
+      ogTitle: "My Money Manager by HackifyPro",
+      ogDescription: "Personal & shared finance ledger with real-time Udhaar sync and smart insights.",
+      ogImageUrl: "/icon-512.png",
+      faviconUrl: "/icon-192.png",
+      canonicalUrl: "https://mymoney.nileshbarela.site",
+      robotsAllowIndex: true,
+      robotsDisallowPaths: ["/myadmin", "/mystaff", "/api/"],
+      sitemapEnabled: true,
+      sitemapExtraPaths: ["/", "/privacy-policy", "/terms-of-service"]
+    },
+    featureVisibility: {
+      udharEnabled: true,
+      upiQrEnabled: true,
+      aiAssistantEnabled: true,
+      receiptScannerEnabled: true,
+      reportsEnabled: true,
+      supportDeskEnabled: true,
+      legalCenterEnabled: true,
+      publicWelcomeHeroEnabled: true
+    },
+    pwa: {
+      userAppInstallEnabled: true,
+      adminAppInstallEnabled: true,
+      staffAppInstallEnabled: true,
+      showDownloadPopup: true,
+      autoPromptDelaySeconds: 12,
+      offlineFallbackEnabled: true
+    },
+    notifications: {
+      userAppName: "My Money Manager",
+      userIconUrl: "/icon-192.png",
+      adminAppName: "My Money Manager Admin",
+      adminIconUrl: "/admin-icon-192.png",
+      staffAppName: "My Money Manager Staff",
+      staffIconUrl: "/staff-icon-192.png",
+      categories: {
+        user: {
+          udhar: true,
+          connection_requests: true,
+          transactions: true,
+          reminders: true,
+          security: true,
+          announcements: true
+        },
+        admin: {
+          new_user: true,
+          staff_activity: true,
+          system_errors: true,
+          security_alerts: true,
+          support_tickets: true,
+          app_installations: true
+        },
+        staff: {
+          assigned_task: true,
+          task_updates: true,
+          announcements: true,
+          support_queue: true,
+          account_alerts: true
+        }
+      },
+      templates: [
+        {
+          key: "user_udhar_request",
+          audience: "user",
+          category: "udhar",
+          enabled: true,
+          titleTemplate: "{{senderName}} recorded an Udhaar entry",
+          bodyTemplate: "{{title}} ({{amount}}) is waiting for your review in People & Udhaar."
+        },
+        {
+          key: "user_qr_connected",
+          audience: "user",
+          category: "connection_requests",
+          enabled: true,
+          titleTemplate: "New People Connection",
+          bodyTemplate: "{{senderName}} added you using your {{methodLabel}}."
+        },
+        {
+          key: "admin_new_registration",
+          audience: "admin",
+          category: "new_user",
+          enabled: true,
+          titleTemplate: "New User Registered \xB7 {{appName}}",
+          bodyTemplate: "{{userName}} ({{userEmail}}) created a new account."
+        },
+        {
+          key: "staff_task_assigned",
+          audience: "staff",
+          category: "assigned_task",
+          enabled: true,
+          titleTemplate: "New Assigned Task: {{taskTitle}}",
+          bodyTemplate: "Priority: {{priority}}. Assigned by {{assignedBy}} in Staff Operations."
+        }
+      ]
+    },
+    maintenance: { ...DEFAULT_MAINTENANCE_CONFIG },
+    appPopup: { ...DEFAULT_APP_POPUP_CONFIG },
+    contentBlocks: {
+      aboutSummary: "My Money Manager by HackifyPro helps individuals, roommates, and small groups manage shared expenses and Udhaar transparently.",
+      supportNotice: "Support team operates Mon\u2013Sat 9:00 AM to 7:00 PM IST.",
+      securityGuarantee: "All private credentials stay encrypted server-side and are never exposed to clients."
+    }
+  };
+}
+function normalizeIdentity(raw, def) {
+  return {
+    appName: String(raw?.appName || def.appName).trim().slice(0, 80) || def.appName,
+    shortName: String(raw?.shortName || def.shortName).trim().slice(0, 24) || def.shortName,
+    tagline: String(raw?.tagline || def.tagline).trim().slice(0, 140) || def.tagline,
+    description: String(raw?.description || def.description).trim().slice(0, 320) || def.description,
+    logoUrl: sanitizeAssetRef(raw?.logoUrl, def.logoUrl),
+    faviconUrl: sanitizeAssetRef(raw?.faviconUrl, def.faviconUrl),
+    pwaIconUrl: sanitizeAssetRef(raw?.pwaIconUrl, def.pwaIconUrl),
+    primaryColor: sanitizeHexColor(raw?.primaryColor, def.primaryColor),
+    secondaryColor: sanitizeHexColor(raw?.secondaryColor, def.secondaryColor),
+    accentColor: sanitizeHexColor(raw?.accentColor, def.accentColor),
+    backgroundColor: sanitizeHexColor(raw?.backgroundColor, def.backgroundColor),
+    themeColor: sanitizeHexColor(raw?.themeColor, def.themeColor),
+    loginTitle: String(raw?.loginTitle || def.loginTitle).trim().slice(0, 80) || def.loginTitle,
+    loginSubtitle: String(raw?.loginSubtitle || def.loginSubtitle).trim().slice(0, 220) || def.loginSubtitle,
+    dashboardHeading: String(raw?.dashboardHeading || def.dashboardHeading).trim().slice(0, 80) || def.dashboardHeading,
+    splashHeadline: String(raw?.splashHeadline || def.splashHeadline).trim().slice(0, 80) || def.splashHeadline,
+    splashTagline: String(raw?.splashTagline || def.splashTagline).trim().slice(0, 120) || def.splashTagline
+  };
+}
+function normalizeSiteControlCenterConfig(raw) {
+  const def = createDefaultSiteControlCenterConfig();
+  const r2 = raw && typeof raw === "object" ? raw : {};
+  const navLinksRaw = Array.isArray(r2.header?.navLinks) ? r2.header.navLinks : def.header.navLinks;
+  const navLinks = navLinksRaw.slice(0, 10).map((item, idx) => ({
+    id: String(item?.id || `nav-${idx}`).slice(0, 40),
+    label: String(item?.label || "Link").trim().slice(0, 40) || "Link",
+    target: sanitizePublicNavigationTarget(item?.target, "/"),
+    visible: typeof item?.visible === "boolean" ? item.visible : true
+  }));
+  const cardsRaw = Array.isArray(r2.homepage?.featureCards) ? r2.homepage.featureCards : def.homepage.featureCards;
+  const featureCards = cardsRaw.slice(0, 9).map((c, idx) => ({
+    id: String(c?.id || `feat-${idx}`).slice(0, 40),
+    title: String(c?.title || "Feature").trim().slice(0, 80) || "Feature",
+    description: String(c?.description || "").trim().slice(0, 240),
+    visible: typeof c?.visible === "boolean" ? c.visible : true
+  }));
+  const userBrand = normalizeIdentity(r2.branding?.user_app, def.branding.user_app);
+  const adminBrand = normalizeIdentity(r2.branding?.admin_app, def.branding.admin_app);
+  const staffBrand = normalizeIdentity(r2.branding?.staff_app, def.branding.staff_app);
+  const webRaw = r2.branding?.website || {};
+  const websiteBrand = {
+    siteName: String(webRaw.siteName || def.branding.website.siteName).trim().slice(0, 80) || def.branding.website.siteName,
+    siteTitle: String(webRaw.siteTitle || def.branding.website.siteTitle).trim().slice(0, 140) || def.branding.website.siteTitle,
+    siteDescription: String(webRaw.siteDescription || def.branding.website.siteDescription).trim().slice(0, 320) || def.branding.website.siteDescription,
+    logoUrl: sanitizeAssetRef(webRaw.logoUrl, def.branding.website.logoUrl),
+    faviconUrl: sanitizeAssetRef(webRaw.faviconUrl, def.branding.website.faviconUrl),
+    ogImageUrl: sanitizeAssetRef(webRaw.ogImageUrl, def.branding.website.ogImageUrl),
+    primaryColor: sanitizeHexColor(webRaw.primaryColor, def.branding.website.primaryColor),
+    secondaryColor: sanitizeHexColor(webRaw.secondaryColor, def.branding.website.secondaryColor),
+    accentColor: sanitizeHexColor(webRaw.accentColor, def.branding.website.accentColor),
+    headerBadgeText: String(webRaw.headerBadgeText ?? def.branding.website.headerBadgeText).trim().slice(0, 80),
+    footerBrandText: String(webRaw.footerBrandText || def.branding.website.footerBrandText).trim().slice(0, 100),
+    defaultLanguage: String(webRaw.defaultLanguage || def.branding.website.defaultLanguage).trim().slice(0, 12) || "en",
+    defaultTheme: ["light", "dark", "system"].includes(webRaw.defaultTheme) ? webRaw.defaultTheme : def.branding.website.defaultTheme
+  };
+  const templatesRaw = Array.isArray(r2.notifications?.templates) ? r2.notifications.templates : def.notifications.templates;
+  const normalizeBoolMap = (incoming, base2) => {
+    const out = { ...base2 };
+    if (incoming && typeof incoming === "object") {
+      for (const key of Object.keys(base2)) {
+        if (typeof incoming[key] === "boolean") out[key] = incoming[key];
+      }
+    }
+    return out;
+  };
+  return {
+    version: Number.isFinite(Number(r2.version)) && Number(r2.version) >= 1 ? Math.floor(Number(r2.version)) : 1,
+    updatedAt: typeof r2.updatedAt === "string" && r2.updatedAt ? r2.updatedAt : def.updatedAt,
+    updatedBy: typeof r2.updatedBy === "string" && r2.updatedBy ? r2.updatedBy : def.updatedBy,
+    publishedAt: typeof r2.publishedAt === "string" ? r2.publishedAt : def.publishedAt,
+    branding: {
+      user_app: userBrand,
+      admin_app: adminBrand,
+      staff_app: staffBrand,
+      website: websiteBrand
+    },
+    homepage: {
+      showHero: typeof r2.homepage?.showHero === "boolean" ? r2.homepage.showHero : def.homepage.showHero,
+      heroBadge: String(r2.homepage?.heroBadge ?? def.homepage.heroBadge).trim().slice(0, 120),
+      heroHeading: String(r2.homepage?.heroHeading || def.homepage.heroHeading).trim().slice(0, 160),
+      heroSubheading: String(r2.homepage?.heroSubheading || def.homepage.heroSubheading).trim().slice(0, 420),
+      heroImageUrl: sanitizeAssetRef(r2.homepage?.heroImageUrl, def.homepage.heroImageUrl),
+      primaryCtaText: String(r2.homepage?.primaryCtaText || def.homepage.primaryCtaText).trim().slice(0, 60),
+      secondaryCtaText: String(r2.homepage?.secondaryCtaText || def.homepage.secondaryCtaText).trim().slice(0, 60),
+      showAnnouncementStrip: typeof r2.homepage?.showAnnouncementStrip === "boolean" ? r2.homepage.showAnnouncementStrip : def.homepage.showAnnouncementStrip,
+      showFeatureSection: typeof r2.homepage?.showFeatureSection === "boolean" ? r2.homepage.showFeatureSection : def.homepage.showFeatureSection,
+      featureSectionHeading: String(
+        r2.homepage?.featureSectionHeading || def.homepage.featureSectionHeading
+      ).trim().slice(0, 120),
+      featureCards,
+      showSecurityTrustSection: typeof r2.homepage?.showSecurityTrustSection === "boolean" ? r2.homepage.showSecurityTrustSection : def.homepage.showSecurityTrustSection,
+      securityTrustText: String(r2.homepage?.securityTrustText || def.homepage.securityTrustText).trim().slice(0, 240)
+    },
+    header: {
+      showBrandLogo: typeof r2.header?.showBrandLogo === "boolean" ? r2.header.showBrandLogo : def.header.showBrandLogo,
+      showBrandName: typeof r2.header?.showBrandName === "boolean" ? r2.header.showBrandName : def.header.showBrandName,
+      showInstallButton: typeof r2.header?.showInstallButton === "boolean" ? r2.header.showInstallButton : def.header.showInstallButton,
+      showNotificationBell: typeof r2.header?.showNotificationBell === "boolean" ? r2.header.showNotificationBell : def.header.showNotificationBell,
+      navLinks
+    },
+    footer: {
+      copyrightText: String(r2.footer?.copyrightText || def.footer.copyrightText).trim().slice(0, 180),
+      supportEmail: String(r2.footer?.supportEmail || def.footer.supportEmail).trim().slice(0, 120),
+      supportPhone: String(r2.footer?.supportPhone || def.footer.supportPhone).trim().slice(0, 40),
+      companyName: String(r2.footer?.companyName || def.footer.companyName).trim().slice(0, 100),
+      address: String(r2.footer?.address ?? def.footer.address).trim().slice(0, 160),
+      showLegalLinks: typeof r2.footer?.showLegalLinks === "boolean" ? r2.footer.showLegalLinks : def.footer.showLegalLinks,
+      showSocialLinks: typeof r2.footer?.showSocialLinks === "boolean" ? r2.footer.showSocialLinks : def.footer.showSocialLinks,
+      socialLinks: {
+        github: sanitizeSafeHrefOrRoute(r2.footer?.socialLinks?.github, def.footer.socialLinks.github),
+        twitter: r2.footer?.socialLinks?.twitter ? sanitizeSafeHrefOrRoute(r2.footer.socialLinks.twitter, "") : "",
+        linkedin: r2.footer?.socialLinks?.linkedin ? sanitizeSafeHrefOrRoute(r2.footer.socialLinks.linkedin, "") : "",
+        instagram: r2.footer?.socialLinks?.instagram ? sanitizeSafeHrefOrRoute(r2.footer.socialLinks.instagram, "") : "",
+        youtube: r2.footer?.socialLinks?.youtube ? sanitizeSafeHrefOrRoute(r2.footer.socialLinks.youtube, "") : "",
+        website: sanitizeSafeHrefOrRoute(r2.footer?.socialLinks?.website, def.footer.socialLinks.website)
+      }
+    },
+    loginSettings: {
+      allowLogin: typeof r2.loginSettings?.allowLogin === "boolean" ? r2.loginSettings.allowLogin : def.loginSettings.allowLogin,
+      allowRegistration: typeof r2.loginSettings?.allowRegistration === "boolean" ? r2.loginSettings.allowRegistration : def.loginSettings.allowRegistration,
+      allowGoogleSignIn: typeof r2.loginSettings?.allowGoogleSignIn === "boolean" ? r2.loginSettings.allowGoogleSignIn : def.loginSettings.allowGoogleSignIn,
+      allowPasskeySignIn: typeof r2.loginSettings?.allowPasskeySignIn === "boolean" ? r2.loginSettings.allowPasskeySignIn : def.loginSettings.allowPasskeySignIn,
+      loginHeadline: String(r2.loginSettings?.loginHeadline || def.loginSettings.loginHeadline).trim().slice(0, 100),
+      loginSubheadline: String(
+        r2.loginSettings?.loginSubheadline || def.loginSettings.loginSubheadline
+      ).trim().slice(0, 220),
+      registerHeadline: String(
+        r2.loginSettings?.registerHeadline || def.loginSettings.registerHeadline
+      ).trim().slice(0, 100),
+      registerSubheadline: String(
+        r2.loginSettings?.registerSubheadline || def.loginSettings.registerSubheadline
+      ).trim().slice(0, 220),
+      loginBannerText: String(r2.loginSettings?.loginBannerText ?? "").trim().slice(0, 240),
+      showAppDownloadOnLogin: typeof r2.loginSettings?.showAppDownloadOnLogin === "boolean" ? r2.loginSettings.showAppDownloadOnLogin : def.loginSettings.showAppDownloadOnLogin
+    },
+    announcement: {
+      enabled: typeof r2.announcement?.enabled === "boolean" ? r2.announcement.enabled : def.announcement.enabled,
+      title: String(r2.announcement?.title || def.announcement.title).trim().slice(0, 100),
+      message: String(r2.announcement?.message ?? def.announcement.message).trim().slice(0, 320),
+      severity: ["info", "success", "warning", "announcement"].includes(r2.announcement?.severity) ? r2.announcement.severity : "info",
+      ctaLabel: String(r2.announcement?.ctaLabel || def.announcement.ctaLabel).trim().slice(0, 40),
+      ctaTarget: sanitizePublicNavigationTarget(r2.announcement?.ctaTarget, "/"),
+      dismissible: typeof r2.announcement?.dismissible === "boolean" ? r2.announcement.dismissible : def.announcement.dismissible
+    },
+    seo: {
+      title: String(r2.seo?.title || def.seo.title).trim().slice(0, 140),
+      metaDescription: String(r2.seo?.metaDescription || def.seo.metaDescription).trim().slice(0, 320),
+      ogTitle: String(r2.seo?.ogTitle || def.seo.ogTitle).trim().slice(0, 140),
+      ogDescription: String(r2.seo?.ogDescription || def.seo.ogDescription).trim().slice(0, 320),
+      ogImageUrl: sanitizeAssetRef(r2.seo?.ogImageUrl, def.seo.ogImageUrl),
+      faviconUrl: sanitizeAssetRef(r2.seo?.faviconUrl, def.seo.faviconUrl),
+      canonicalUrl: sanitizeSafeHrefOrRoute(r2.seo?.canonicalUrl, def.seo.canonicalUrl),
+      robotsAllowIndex: typeof r2.seo?.robotsAllowIndex === "boolean" ? r2.seo.robotsAllowIndex : def.seo.robotsAllowIndex,
+      robotsDisallowPaths: Array.isArray(r2.seo?.robotsDisallowPaths) ? r2.seo.robotsDisallowPaths.slice(0, 20).map((p) => String(p || "").trim()).filter((p) => p.startsWith("/") && !/[\r\n]/.test(p)) : def.seo.robotsDisallowPaths,
+      sitemapEnabled: typeof r2.seo?.sitemapEnabled === "boolean" ? r2.seo.sitemapEnabled : def.seo.sitemapEnabled,
+      sitemapExtraPaths: Array.isArray(r2.seo?.sitemapExtraPaths) ? r2.seo.sitemapExtraPaths.slice(0, 25).map((p) => sanitizePublicNavigationTarget(p, "/")) : def.seo.sitemapExtraPaths
+    },
+    featureVisibility: {
+      udharEnabled: typeof r2.featureVisibility?.udharEnabled === "boolean" ? r2.featureVisibility.udharEnabled : def.featureVisibility.udharEnabled,
+      upiQrEnabled: typeof r2.featureVisibility?.upiQrEnabled === "boolean" ? r2.featureVisibility.upiQrEnabled : def.featureVisibility.upiQrEnabled,
+      aiAssistantEnabled: typeof r2.featureVisibility?.aiAssistantEnabled === "boolean" ? r2.featureVisibility.aiAssistantEnabled : def.featureVisibility.aiAssistantEnabled,
+      receiptScannerEnabled: typeof r2.featureVisibility?.receiptScannerEnabled === "boolean" ? r2.featureVisibility.receiptScannerEnabled : def.featureVisibility.receiptScannerEnabled,
+      reportsEnabled: typeof r2.featureVisibility?.reportsEnabled === "boolean" ? r2.featureVisibility.reportsEnabled : def.featureVisibility.reportsEnabled,
+      supportDeskEnabled: typeof r2.featureVisibility?.supportDeskEnabled === "boolean" ? r2.featureVisibility.supportDeskEnabled : def.featureVisibility.supportDeskEnabled,
+      legalCenterEnabled: typeof r2.featureVisibility?.legalCenterEnabled === "boolean" ? r2.featureVisibility.legalCenterEnabled : def.featureVisibility.legalCenterEnabled,
+      publicWelcomeHeroEnabled: typeof r2.featureVisibility?.publicWelcomeHeroEnabled === "boolean" ? r2.featureVisibility.publicWelcomeHeroEnabled : def.featureVisibility.publicWelcomeHeroEnabled
+    },
+    pwa: {
+      userAppInstallEnabled: typeof r2.pwa?.userAppInstallEnabled === "boolean" ? r2.pwa.userAppInstallEnabled : def.pwa.userAppInstallEnabled,
+      adminAppInstallEnabled: typeof r2.pwa?.adminAppInstallEnabled === "boolean" ? r2.pwa.adminAppInstallEnabled : def.pwa.adminAppInstallEnabled,
+      staffAppInstallEnabled: typeof r2.pwa?.staffAppInstallEnabled === "boolean" ? r2.pwa.staffAppInstallEnabled : def.pwa.staffAppInstallEnabled,
+      showDownloadPopup: typeof r2.pwa?.showDownloadPopup === "boolean" ? r2.pwa.showDownloadPopup : def.pwa.showDownloadPopup,
+      autoPromptDelaySeconds: Math.min(
+        120,
+        Math.max(3, Number(r2.pwa?.autoPromptDelaySeconds) || def.pwa.autoPromptDelaySeconds)
+      ),
+      offlineFallbackEnabled: typeof r2.pwa?.offlineFallbackEnabled === "boolean" ? r2.pwa.offlineFallbackEnabled : def.pwa.offlineFallbackEnabled
+    },
+    notifications: {
+      userAppName: String(r2.notifications?.userAppName || userBrand.appName).trim().slice(0, 80),
+      userIconUrl: sanitizeAssetRef(r2.notifications?.userIconUrl, userBrand.pwaIconUrl),
+      adminAppName: String(r2.notifications?.adminAppName || adminBrand.appName).trim().slice(0, 80),
+      adminIconUrl: sanitizeAssetRef(r2.notifications?.adminIconUrl, adminBrand.pwaIconUrl),
+      staffAppName: String(r2.notifications?.staffAppName || staffBrand.appName).trim().slice(0, 80),
+      staffIconUrl: sanitizeAssetRef(r2.notifications?.staffIconUrl, staffBrand.pwaIconUrl),
+      categories: {
+        user: normalizeBoolMap(r2.notifications?.categories?.user, def.notifications.categories.user),
+        admin: normalizeBoolMap(r2.notifications?.categories?.admin, def.notifications.categories.admin),
+        staff: normalizeBoolMap(r2.notifications?.categories?.staff, def.notifications.categories.staff)
+      },
+      templates: templatesRaw.slice(0, 30).map((t2, idx) => ({
+        key: String(t2?.key || `tpl_${idx}`).trim().slice(0, 64),
+        audience: ["user", "admin", "staff"].includes(t2?.audience) ? t2.audience : "user",
+        category: String(t2?.category || "general").trim().slice(0, 40),
+        enabled: typeof t2?.enabled === "boolean" ? t2.enabled : true,
+        titleTemplate: String(t2?.titleTemplate || "").trim().slice(0, 140),
+        bodyTemplate: String(t2?.bodyTemplate || "").trim().slice(0, 320)
+      }))
+    },
+    maintenance: {
+      isEnabled: typeof r2.maintenance?.isEnabled === "boolean" ? r2.maintenance.isEnabled : def.maintenance.isEnabled,
+      title: String(r2.maintenance?.title || def.maintenance.title).trim().slice(0, 140),
+      message: String(r2.maintenance?.message || def.maintenance.message).trim().slice(0, 600),
+      expectedRestoration: String(
+        r2.maintenance?.expectedRestoration || def.maintenance.expectedRestoration
+      ).trim().slice(0, 100),
+      allowStaffAccessDuringMaintenance: typeof r2.maintenance?.allowStaffAccessDuringMaintenance === "boolean" ? r2.maintenance.allowStaffAccessDuringMaintenance : true,
+      emergencyBypassEnabled: typeof r2.maintenance?.emergencyBypassEnabled === "boolean" ? r2.maintenance.emergencyBypassEnabled : true,
+      updatedAt: typeof r2.maintenance?.updatedAt === "string" ? r2.maintenance.updatedAt : void 0,
+      updatedBy: typeof r2.maintenance?.updatedBy === "string" ? r2.maintenance.updatedBy : void 0
+    },
+    appPopup: {
+      enabled: typeof r2.appPopup?.enabled === "boolean" ? r2.appPopup.enabled : def.appPopup.enabled,
+      downloadUrl: sanitizePublicNavigationTarget(r2.appPopup?.downloadUrl, def.appPopup.downloadUrl),
+      title: String(r2.appPopup?.title || def.appPopup.title).trim().slice(0, 80),
+      description: String(r2.appPopup?.description || def.appPopup.description).trim().slice(0, 220),
+      buttonLabel: String(r2.appPopup?.buttonLabel || def.appPopup.buttonLabel).trim().slice(0, 32),
+      updatedAt: typeof r2.appPopup?.updatedAt === "string" ? r2.appPopup.updatedAt : void 0,
+      updatedBy: typeof r2.appPopup?.updatedBy === "string" ? r2.appPopup.updatedBy : void 0
+    },
+    contentBlocks: {
+      aboutSummary: String(r2.contentBlocks?.aboutSummary || def.contentBlocks.aboutSummary).trim().slice(0, 600),
+      supportNotice: String(r2.contentBlocks?.supportNotice || def.contentBlocks.supportNotice).trim().slice(0, 300),
+      securityGuarantee: String(
+        r2.contentBlocks?.securityGuarantee || def.contentBlocks.securityGuarantee
+      ).trim().slice(0, 300)
+    }
+  };
+}
+async function loadEnvelope() {
+  if (g2.__mmControlCenterCache) {
+    return g2.__mmControlCenterCache;
+  }
+  let local = readJsonStore2(CONTROL_CENTER_FILE);
+  let remotePublished = null;
+  let remoteDraft = null;
+  let remoteVersions = [];
+  if (isDatabaseAvailable()) {
+    try {
+      const [settingsRes, verRes] = await Promise.all([
+        query(`SELECT key, value FROM public.app_settings WHERE key IN ($1, $2)`, [
+          CONTROL_CENTER_SETTING_KEY,
+          CONTROL_CENTER_DRAFT_KEY
+        ]),
+        query(
+          `SELECT id, version, status, summary, created_by, created_at, published_at, config
+           FROM public.platform_config_versions
+           ORDER BY version DESC
+           LIMIT 30`
+        ).catch(() => ({ rows: [] }))
+      ]);
+      for (const row of settingsRes.rows || []) {
+        if (row.key === CONTROL_CENTER_SETTING_KEY) remotePublished = row.value;
+        if (row.key === CONTROL_CENTER_DRAFT_KEY) remoteDraft = row.value;
+      }
+      if (Array.isArray(verRes.rows) && verRes.rows.length > 0) {
+        remoteVersions = verRes.rows.map((v) => ({
+          id: String(v.id),
+          version: Number(v.version) || 1,
+          status: v.status || "published",
+          summary: String(v.summary || "Configuration update"),
+          createdBy: String(v.created_by || "admin"),
+          createdAt: v.created_at ? new Date(v.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+          publishedAt: v.published_at ? new Date(v.published_at).toISOString() : null,
+          config: normalizeSiteControlCenterConfig(v.config)
+        }));
+      }
+    } catch {
+    }
+  } else {
+    const sbRes = await sbRestRequest(
+      `app_settings?key=in.(${CONTROL_CENTER_SETTING_KEY},${CONTROL_CENTER_DRAFT_KEY})&select=key,value`
+    ).catch(() => ({ ok: false, data: null }));
+    if (sbRes.ok && Array.isArray(sbRes.data)) {
+      for (const row of sbRes.data) {
+        if (row.key === CONTROL_CENTER_SETTING_KEY) remotePublished = row.value;
+        if (row.key === CONTROL_CENTER_DRAFT_KEY) remoteDraft = row.value;
+      }
+    }
+  }
+  const publishedSource = (() => {
+    if (remotePublished && local?.published) {
+      const rVer = Number(remotePublished.version || 0);
+      const lVer = Number(local.published.version || 0);
+      if (rVer > lVer) return remotePublished;
+      if (lVer > rVer) return local.published;
+      return Date.parse(remotePublished.updatedAt || "") >= Date.parse(local.published.updatedAt || "") ? remotePublished : local.published;
+    }
+    return remotePublished || local?.published || createDefaultSiteControlCenterConfig();
+  })();
+  const [maint, popup] = await Promise.all([
+    getMaintenanceSettings().catch(() => DEFAULT_MAINTENANCE_CONFIG),
+    getAppPopupSettings().catch(() => DEFAULT_APP_POPUP_CONFIG)
+  ]);
+  const published = normalizeSiteControlCenterConfig({
+    ...publishedSource,
+    maintenance: { ...publishedSource?.maintenance, ...maint },
+    appPopup: { ...publishedSource?.appPopup, ...popup }
+  });
+  const draft = remoteDraft ? normalizeSiteControlCenterConfig(remoteDraft) : local?.draft ? normalizeSiteControlCenterConfig(local.draft) : null;
+  const versions = remoteVersions.length > 0 ? remoteVersions : Array.isArray(local?.versions) && local.versions.length > 0 ? local.versions.map((v) => ({ ...v, config: normalizeSiteControlCenterConfig(v.config) })) : [
+    {
+      id: `ver-${published.version}`,
+      version: published.version,
+      status: "published",
+      summary: "Initial baseline configuration",
+      createdBy: published.updatedBy || "system",
+      createdAt: published.updatedAt,
+      publishedAt: published.publishedAt,
+      config: published
+    }
+  ];
+  const envelope = { published, draft, versions };
+  g2.__mmControlCenterCache = envelope;
+  writeJsonStore2(CONTROL_CENTER_FILE, envelope);
+  return envelope;
+}
+async function persistEnvelope(envelope, actor) {
+  g2.__mmControlCenterCache = envelope;
+  writeJsonStore2(CONTROL_CENTER_FILE, envelope);
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+         VALUES ($1, $2::jsonb, NOW(), $3)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+        [CONTROL_CENTER_SETTING_KEY, JSON.stringify(envelope.published), actor?.id || null]
+      );
+      if (envelope.draft) {
+        await query(
+          `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+           VALUES ($1, $2::jsonb, NOW(), $3)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+          [CONTROL_CENTER_DRAFT_KEY, JSON.stringify(envelope.draft), actor?.id || null]
+        );
+      } else {
+        await query(`DELETE FROM public.app_settings WHERE key = $1`, [CONTROL_CENTER_DRAFT_KEY]).catch(() => {
+        });
+      }
+      const legacyBrand = {
+        appName: envelope.published.branding.user_app.appName,
+        subTitle: envelope.published.branding.user_app.tagline,
+        logoUrl: envelope.published.branding.user_app.logoUrl,
+        brandTitle: envelope.published.branding.user_app.appName,
+        companyName: envelope.published.footer.companyName,
+        footerText: envelope.published.footer.copyrightText,
+        supportEmail: envelope.published.footer.supportEmail,
+        supportPhone: envelope.published.footer.supportPhone,
+        allowRegistration: envelope.published.loginSettings.allowRegistration,
+        allowLogin: envelope.published.loginSettings.allowLogin
+      };
+      await query(
+        `INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+         VALUES ('app_branding', $1::jsonb, NOW(), $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+        [JSON.stringify(legacyBrand), actor?.id || null]
+      ).catch(() => {
+      });
+    } catch (err) {
+      console.warn("[SiteControlCenter] DB persist notice:", err?.message);
+    }
+  } else {
+    await Promise.allSettled([
+      sbRestRequest("app_settings?on_conflict=key", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates",
+        body: {
+          key: CONTROL_CENTER_SETTING_KEY,
+          value: envelope.published,
+          updated_at: envelope.published.updatedAt
+        }
+      }),
+      envelope.draft ? sbRestRequest("app_settings?on_conflict=key", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates",
+        body: {
+          key: CONTROL_CENTER_DRAFT_KEY,
+          value: envelope.draft,
+          updated_at: envelope.draft.updatedAt
+        }
+      }) : Promise.resolve()
+    ]);
+  }
+}
+async function getControlCenterAdminState() {
+  const env2 = await loadEnvelope();
+  return {
+    published: env2.published,
+    draft: env2.draft,
+    hasUnpublishedDraft: Boolean(env2.draft),
+    versions: env2.versions
+  };
+}
+async function getPublishedSiteConfig() {
+  const env2 = await loadEnvelope();
+  return env2.published;
+}
+async function getPublicSiteConfigPayload() {
+  const published = await getPublishedSiteConfig();
+  return {
+    success: true,
+    version: published.version,
+    updatedAt: published.updatedAt,
+    maintenance: published.maintenance,
+    appPopup: published.appPopup,
+    siteConfig: published,
+    syncSource: "live"
+  };
+}
+function deepMergeConfig(base2, patch) {
+  const merged = {
+    ...base2,
+    ...patch,
+    branding: {
+      user_app: { ...base2.branding.user_app, ...patch.branding?.user_app || {} },
+      admin_app: { ...base2.branding.admin_app, ...patch.branding?.admin_app || {} },
+      staff_app: { ...base2.branding.staff_app, ...patch.branding?.staff_app || {} },
+      website: { ...base2.branding.website, ...patch.branding?.website || {} }
+    },
+    homepage: { ...base2.homepage, ...patch.homepage || {} },
+    header: { ...base2.header, ...patch.header || {} },
+    footer: {
+      ...base2.footer,
+      ...patch.footer || {},
+      socialLinks: {
+        ...base2.footer.socialLinks,
+        ...patch.footer?.socialLinks || {}
+      }
+    },
+    loginSettings: { ...base2.loginSettings, ...patch.loginSettings || {} },
+    announcement: { ...base2.announcement, ...patch.announcement || {} },
+    seo: { ...base2.seo, ...patch.seo || {} },
+    featureVisibility: { ...base2.featureVisibility, ...patch.featureVisibility || {} },
+    pwa: { ...base2.pwa, ...patch.pwa || {} },
+    notifications: {
+      ...base2.notifications,
+      ...patch.notifications || {},
+      categories: {
+        user: { ...base2.notifications.categories.user, ...patch.notifications?.categories?.user || {} },
+        admin: { ...base2.notifications.categories.admin, ...patch.notifications?.categories?.admin || {} },
+        staff: { ...base2.notifications.categories.staff, ...patch.notifications?.categories?.staff || {} }
+      }
+    },
+    maintenance: { ...base2.maintenance, ...patch.maintenance || {} },
+    appPopup: { ...base2.appPopup, ...patch.appPopup || {} },
+    contentBlocks: { ...base2.contentBlocks, ...patch.contentBlocks || {} }
+  };
+  return normalizeSiteControlCenterConfig(merged);
+}
+async function saveControlCenterDraft(patch, actor) {
+  const env2 = await loadEnvelope();
+  const base2 = env2.draft || env2.published;
+  const nextDraft = deepMergeConfig(base2, {
+    ...patch,
+    version: env2.published.version,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedBy: actor.email || "admin"
+  });
+  env2.draft = nextDraft;
+  await persistEnvelope(env2, actor);
+  return { draft: nextDraft, published: env2.published };
+}
+async function publishControlCenterChanges(options, actor) {
+  const env2 = await loadEnvelope();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const nextVersion = Math.max(env2.published.version, ...env2.versions.map((v) => v.version) || [1]) + 1;
+  const candidateBase = env2.draft || env2.published;
+  const nextPublished = deepMergeConfig(candidateBase, {
+    ...options.configPatch || {},
+    version: nextVersion,
+    updatedAt: now,
+    updatedBy: actor.email || "admin",
+    publishedAt: now
+  });
+  const [savedMaint, savedPopup] = await Promise.all([
+    saveMaintenanceSettings(nextPublished.maintenance, actor),
+    saveAppPopupSettings(nextPublished.appPopup, actor).catch(() => nextPublished.appPopup)
+  ]);
+  nextPublished.maintenance = { ...nextPublished.maintenance, ...savedMaint };
+  nextPublished.appPopup = { ...nextPublished.appPopup, ...savedPopup };
+  const summary = String(options.summary || "Published control center updates").trim().slice(0, 180);
+  const versionEntry = {
+    id: crypto16.randomUUID(),
+    version: nextVersion,
+    status: "published",
+    summary,
+    createdBy: actor.email || "admin",
+    createdAt: now,
+    publishedAt: now,
+    config: nextPublished
+  };
+  if (isDatabaseAvailable()) {
+    await query(
+      `INSERT INTO public.platform_config_versions (id, version, status, config, summary, created_by, created_at, published_at)
+       VALUES ($1, $2, 'published', $3::jsonb, $4, $5, NOW(), NOW())`,
+      [versionEntry.id, nextVersion, JSON.stringify(nextPublished), summary, actor.email || "admin"]
+    ).catch(() => {
+    });
+  }
+  env2.published = nextPublished;
+  env2.draft = null;
+  env2.versions = [
+    versionEntry,
+    ...env2.versions.map((v) => ({ ...v, status: v.status === "published" ? "archived" : v.status }))
+  ].slice(0, 30);
+  await persistEnvelope(env2, actor);
+  await broadcastSiteConfigEvent("config_updated");
+  return { published: env2.published, versions: env2.versions };
+}
+async function restoreControlCenterVersion(versionIdOrNumber, actor) {
+  const env2 = await loadEnvelope();
+  const target = env2.versions.find(
+    (v) => v.id === String(versionIdOrNumber) || String(v.version) === String(versionIdOrNumber)
+  );
+  if (!target) return null;
+  const { published, versions } = await publishControlCenterChanges(
+    {
+      configPatch: target.config,
+      summary: `Restored configuration from v${target.version}`
+    },
+    actor
+  );
+  return { restored: published, versions };
+}
+async function discardControlCenterDraft(actor) {
+  const env2 = await loadEnvelope();
+  env2.draft = null;
+  await persistEnvelope(env2, actor);
+}
+async function syncMaintenanceIntoControlCenter(actor) {
+  const env2 = await loadEnvelope();
+  const [maint, popup] = await Promise.all([getMaintenanceSettings(), getAppPopupSettings()]);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  env2.published = normalizeSiteControlCenterConfig({
+    ...env2.published,
+    version: env2.published.version + 1,
+    updatedAt: now,
+    updatedBy: actor.email || "admin",
+    publishedAt: now,
+    maintenance: maint,
+    appPopup: popup
+  });
+  await persistEnvelope(env2, actor);
+  await broadcastSiteConfigEvent("config_updated");
+}
+function loadAssetsStore() {
+  const existing = g2.__mmBrandingAssetsCache || {};
+  const fromDisk = readJsonStore2(BRANDING_ASSETS_FILE);
+  if (fromDisk) {
+    g2.__mmBrandingAssetsCache = { ...fromDisk, ...existing };
+  }
+  return g2.__mmBrandingAssetsCache;
+}
+async function saveSanitizedBrandingAsset(params) {
+  const check = validateBrandingImageInput(params.dataUrl, {
+    width: params.width,
+    height: params.height
+  });
+  if (!check.valid || !check.sanitizedDataUrl || !check.mimeType) {
+    return { success: false, error: check.error || "Invalid branding image." };
+  }
+  const assetId = `${params.scope}_${params.slot}_${Date.now()}_${crypto16.randomBytes(4).toString("hex")}`;
+  const dataContent = check.mimeType === "image/svg+xml" && check.sanitizedSvg ? check.sanitizedSvg : check.sanitizedDataUrl;
+  const sha256 = crypto16.createHash("sha256").update(dataContent).digest("hex");
+  const asset = {
+    id: assetId,
+    scope: params.scope,
+    slot: params.slot,
+    mimeType: check.mimeType,
+    dataContent,
+    width: check.width,
+    height: check.height,
+    byteSize: check.byteSize || Buffer.byteLength(dataContent, "utf8"),
+    sha256,
+    createdBy: params.actorEmail,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const store = loadAssetsStore();
+  store[assetId] = asset;
+  const entries = Object.values(store).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 80);
+  const compact = {};
+  for (const e2 of entries) compact[e2.id] = e2;
+  g2.__mmBrandingAssetsCache = compact;
+  writeJsonStore2(BRANDING_ASSETS_FILE, compact);
+  if (isDatabaseAvailable()) {
+    await query(
+      `INSERT INTO public.branding_assets (id, scope, slot, mime_type, data_content, width, height, byte_size, sha256, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        asset.id,
+        asset.scope,
+        asset.slot,
+        asset.mimeType,
+        asset.dataContent,
+        asset.width || null,
+        asset.height || null,
+        asset.byteSize,
+        asset.sha256,
+        asset.createdBy
+      ]
+    ).catch(() => {
+    });
+  }
+  return {
+    success: true,
+    asset: {
+      id: asset.id,
+      url: `/api/branding/assets/${encodeURIComponent(asset.id)}`,
+      mimeType: asset.mimeType,
+      width: asset.width,
+      height: asset.height,
+      byteSize: asset.byteSize
+    }
+  };
+}
+async function getBrandingAssetById(assetId) {
+  const cleanId = String(assetId || "").trim();
+  if (!cleanId || !/^[a-zA-Z0-9_-]{4,120}$/.test(cleanId)) return null;
+  const store = loadAssetsStore();
+  if (store[cleanId]) return store[cleanId];
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(`SELECT * FROM public.branding_assets WHERE id = $1 LIMIT 1`, [cleanId]);
+      if (res.rows[0]) {
+        const row = res.rows[0];
+        const asset = {
+          id: String(row.id),
+          scope: row.scope,
+          slot: row.slot,
+          mimeType: row.mime_type,
+          dataContent: row.data_content,
+          width: row.width || void 0,
+          height: row.height || void 0,
+          byteSize: Number(row.byte_size) || 0,
+          sha256: row.sha256 || "",
+          createdBy: row.created_by || "admin",
+          createdAt: row.created_at ? new Date(row.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+        };
+        store[cleanId] = asset;
+        return asset;
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+function serveBrandingAssetResponse(res, asset) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  if (asset.mimeType === "image/svg+xml") {
+    const recheck = validateBrandingImageInput(asset.dataContent);
+    const svgBody = recheck.valid && recheck.sanitizedSvg ? recheck.sanitizedSvg : '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+    res.writeHead(200, {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "public, max-age=31536000, immutable"
+    });
+    res.end(svgBody);
+    return;
+  }
+  const b64Match = asset.dataContent.match(/^data:[^;]+;base64,(.+)$/);
+  if (b64Match) {
+    const buf = Buffer.from(b64Match[1], "base64");
+    res.writeHead(200, {
+      "Content-Type": asset.mimeType,
+      "Content-Length": String(buf.length),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "public, max-age=31536000, immutable"
+    });
+    res.end(buf);
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+}
+async function subscribeSiteConfigSse(req, res, sinceVersion) {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  const payload = await getPublicSiteConfigPayload();
+  const initialEvent = !sinceVersion || payload.version > sinceVersion ? "config_updated" : "connected";
+  res.write(`event: ${initialEvent}
+data: ${JSON.stringify(payload)}
+
+`);
+  const clientId = crypto16.randomUUID();
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: heartbeat ${Date.now()}
+
+`);
+    } catch {
+      cleanup();
+    }
+  }, 25e3);
+  const clientRecord = { id: clientId, res, heartbeat };
+  g2.__mmSseClients?.add(clientRecord);
+  const cleanup = () => {
+    clearInterval(heartbeat);
+    g2.__mmSseClients?.delete(clientRecord);
+  };
+  req.on("close", cleanup);
+  req.on("error", cleanup);
+}
+async function broadcastSiteConfigEvent(eventName = "config_updated") {
+  if (!g2.__mmSseClients || g2.__mmSseClients.size === 0) return;
+  const payload = await getPublicSiteConfigPayload();
+  const frame = `event: ${eventName}
+data: ${JSON.stringify(payload)}
+
+`;
+  for (const client of Array.from(g2.__mmSseClients)) {
+    try {
+      if (!client.res.writableEnded) {
+        client.res.write(frame);
+      } else {
+        clearInterval(client.heartbeat);
+        g2.__mmSseClients.delete(client);
+      }
+    } catch {
+      clearInterval(client.heartbeat);
+      g2.__mmSseClients.delete(client);
+    }
+  }
+}
+async function buildDynamicPwaManifest(scope, hostHeader) {
+  const cfg = await getPublishedSiteConfig();
+  const version2 = cfg.version || 1;
+  const isAdminSubdomain = Boolean(hostHeader && hostHeader.toLowerCase().startsWith("admin."));
+  if (scope === "myadmin") {
+    const b2 = cfg.branding.admin_app;
+    const customIcon2 = b2.pwaIconUrl || b2.logoUrl;
+    const isCustomUploaded2 = customIcon2.startsWith("/api/branding/assets/") || customIcon2.startsWith("data:");
+    const startUrl = isAdminSubdomain ? "/" : "/myadmin";
+    const swScope = isAdminSubdomain ? "/" : "/myadmin";
+    return {
+      id: isAdminSubdomain ? "mymoney-admin-subdomain-pwa" : "mymoney-myadmin-pwa",
+      name: b2.appName,
+      short_name: b2.shortName,
+      description: b2.description,
+      start_url: startUrl,
+      scope: swScope,
+      display: "standalone",
+      orientation: "portrait-primary",
+      background_color: b2.backgroundColor,
+      theme_color: b2.themeColor,
+      categories: ["business", "productivity", "security"],
+      icons: [
+        ...isCustomUploaded2 ? [
+          {
+            src: `/api/pwa/icon/myadmin?v=${version2}&size=192`,
+            sizes: "192x192",
+            type: customIcon2.includes("svg") ? "image/svg+xml" : "image/png",
+            purpose: "any"
+          },
+          {
+            src: `/api/pwa/icon/myadmin?v=${version2}&size=512`,
+            sizes: "512x512",
+            type: customIcon2.includes("svg") ? "image/svg+xml" : "image/png",
+            purpose: "any maskable"
+          }
+        ] : [],
+        { src: `/admin-icon-192.png?v=${version2}`, sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: `/admin-icon-512.png?v=${version2}`, sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: `/admin-icon-512-maskable.png?v=${version2}`, sizes: "512x512", type: "image/png", purpose: "maskable" }
+      ]
+    };
+  }
+  if (scope === "mystaff") {
+    const b2 = cfg.branding.staff_app;
+    const customIcon2 = b2.pwaIconUrl || b2.logoUrl;
+    const isCustomUploaded2 = customIcon2.startsWith("/api/branding/assets/") || customIcon2.startsWith("data:");
+    return {
+      id: "mymoney-mystaff-pwa",
+      name: b2.appName,
+      short_name: b2.shortName,
+      description: b2.description,
+      start_url: "/mystaff",
+      scope: "/mystaff",
+      display: "standalone",
+      orientation: "portrait-primary",
+      background_color: b2.backgroundColor,
+      theme_color: b2.themeColor,
+      categories: ["business", "productivity"],
+      icons: [
+        ...isCustomUploaded2 ? [
+          {
+            src: `/api/pwa/icon/mystaff?v=${version2}&size=192`,
+            sizes: "192x192",
+            type: customIcon2.includes("svg") ? "image/svg+xml" : "image/png",
+            purpose: "any"
+          },
+          {
+            src: `/api/pwa/icon/mystaff?v=${version2}&size=512`,
+            sizes: "512x512",
+            type: customIcon2.includes("svg") ? "image/svg+xml" : "image/png",
+            purpose: "any maskable"
+          }
+        ] : [],
+        { src: `/staff-icon-192.png?v=${version2}`, sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: `/staff-icon-512.png?v=${version2}`, sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: `/staff-icon-512-maskable.png?v=${version2}`, sizes: "512x512", type: "image/png", purpose: "maskable" }
+      ]
+    };
+  }
+  const b = cfg.branding.user_app;
+  const customIcon = b.pwaIconUrl || b.logoUrl;
+  const isCustomUploaded = customIcon.startsWith("/api/branding/assets/") || customIcon.startsWith("data:");
+  return {
+    id: "mymoney-user-pwa",
+    name: b.appName,
+    short_name: b.shortName,
+    description: b.description,
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait-primary",
+    background_color: b.backgroundColor,
+    theme_color: b.themeColor,
+    categories: ["finance", "productivity"],
+    icons: [
+      ...isCustomUploaded ? [
+        {
+          src: `/api/pwa/icon/user?v=${version2}&size=192`,
+          sizes: "192x192",
+          type: customIcon.includes("svg") ? "image/svg+xml" : "image/png",
+          purpose: "any"
+        },
+        {
+          src: `/api/pwa/icon/user?v=${version2}&size=512`,
+          sizes: "512x512",
+          type: customIcon.includes("svg") ? "image/svg+xml" : "image/png",
+          purpose: "any maskable"
+        }
+      ] : [],
+      { src: `/icon-192.png?v=${version2}`, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: `/icon-512.png?v=${version2}`, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: `/icon-512-maskable.png?v=${version2}`, sizes: "512x512", type: "image/png", purpose: "maskable" }
+    ]
+  };
+}
+async function resolveDynamicPwaIcon(scope, res) {
+  const cfg = await getPublishedSiteConfig();
+  const rawIcon = scope === "myadmin" ? cfg.branding.admin_app.pwaIconUrl || cfg.branding.admin_app.logoUrl : scope === "mystaff" ? cfg.branding.staff_app.pwaIconUrl || cfg.branding.staff_app.logoUrl : cfg.branding.user_app.pwaIconUrl || cfg.branding.user_app.logoUrl;
+  if (rawIcon.startsWith("/api/branding/assets/")) {
+    const assetId = rawIcon.replace("/api/branding/assets/", "").split("?")[0];
+    const asset = await getBrandingAssetById(assetId);
+    if (asset) {
+      serveBrandingAssetResponse(res, asset);
+      return;
+    }
+  }
+  if (rawIcon.startsWith("data:")) {
+    const check = validateBrandingImageInput(rawIcon);
+    if (check.valid && check.mimeType) {
+      serveBrandingAssetResponse(res, {
+        id: `inline-${scope}`,
+        scope: scope === "myadmin" ? "admin_app" : scope === "mystaff" ? "staff_app" : "user_app",
+        slot: "pwa_icon",
+        mimeType: check.mimeType,
+        dataContent: check.mimeType === "image/svg+xml" && check.sanitizedSvg ? check.sanitizedSvg : check.sanitizedDataUrl || rawIcon,
+        byteSize: check.byteSize || 0,
+        sha256: "",
+        createdBy: "system",
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return;
+    }
+  }
+  const fallbackStatic = scope === "myadmin" ? "/admin-icon-192.png" : scope === "mystaff" ? "/staff-icon-192.png" : "/icon-192.png";
+  res.writeHead(302, { Location: fallbackStatic, "Cache-Control": "no-cache" });
+  res.end();
+}
+async function generateRobotsTxt() {
+  const cfg = await getPublishedSiteConfig();
+  const base2 = (cfg.seo.canonicalUrl || "https://mymoney.nileshbarela.site").replace(/\/+$/, "");
+  if (!cfg.seo.robotsAllowIndex) {
+    return `User-agent: *
+Disallow: /
+`;
+  }
+  const disallows = Array.from(/* @__PURE__ */ new Set(["/myadmin", "/mystaff", "/api/", ...cfg.seo.robotsDisallowPaths || []]));
+  const lines = ["User-agent: *", "Allow: /", ...disallows.map((d) => `Disallow: ${d}`)];
+  if (cfg.seo.sitemapEnabled) {
+    lines.push(`Sitemap: ${base2}/sitemap.xml`);
+  }
+  return lines.join("\n") + "\n";
+}
+async function generateSitemapXml() {
+  const cfg = await getPublishedSiteConfig();
+  if (!cfg.seo.sitemapEnabled) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>
+`;
+  }
+  const base2 = (cfg.seo.canonicalUrl || "https://mymoney.nileshbarela.site").replace(/\/+$/, "");
+  const paths = Array.from(/* @__PURE__ */ new Set(["/", ...cfg.seo.sitemapExtraPaths || []])).filter(
+    (p) => !p.startsWith("/myadmin") && !p.startsWith("/mystaff") && !p.startsWith("/api")
+  );
+  const lastmod = (cfg.updatedAt || (/* @__PURE__ */ new Date()).toISOString()).slice(0, 10);
+  const urls = paths.map(
+    (p) => `  <url>
+    <loc>${base2}${p === "/" ? "/" : p}</loc>
+    <lastmod>${lastmod}</lastmod>
+  </url>`
+  ).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`;
+}
+function loadStaffTasksLocal() {
+  if (g2.__mmStaffTasksCache) return g2.__mmStaffTasksCache;
+  const fromDisk = readJsonStore2(STAFF_TASKS_FILE);
+  g2.__mmStaffTasksCache = Array.isArray(fromDisk) ? fromDisk : [];
+  return g2.__mmStaffTasksCache;
+}
+function saveStaffTasksLocal(tasks) {
+  g2.__mmStaffTasksCache = tasks;
+  writeJsonStore2(STAFF_TASKS_FILE, tasks);
+}
+async function listStaffTasks(filter) {
+  if (isDatabaseAvailable()) {
+    try {
+      const conditions = [];
+      const params = [];
+      if (filter?.assignedTo) {
+        params.push(filter.assignedTo);
+        conditions.push(`(t.assigned_to = $${params.length} OR t.assigned_to IS NULL)`);
+      }
+      if (filter?.status && filter.status !== "all") {
+        params.push(filter.status);
+        conditions.push(`t.status = $${params.length}`);
+      }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const res = await query(
+        `SELECT t.*, u1.full_name AS assigned_to_name, u1.email AS assigned_to_email,
+                u2.full_name AS assigned_by_name
+         FROM public.staff_tasks t
+         LEFT JOIN public.app_users u1 ON u1.id = t.assigned_to
+         LEFT JOIN public.app_users u2 ON u2.id = t.assigned_by
+         ${where}
+         ORDER BY CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, t.updated_at DESC
+         LIMIT 200`,
+        params
+      );
+      if (Array.isArray(res.rows)) {
+        return res.rows.map((r2) => ({
+          id: String(r2.id),
+          title: String(r2.title),
+          description: String(r2.description || ""),
+          category: String(r2.category || "operations"),
+          priority: r2.priority || "medium",
+          status: r2.status || "open",
+          assigned_to: r2.assigned_to || null,
+          assigned_to_name: r2.assigned_to_name || null,
+          assigned_to_email: r2.assigned_to_email || null,
+          assigned_by: r2.assigned_by || null,
+          assigned_by_name: r2.assigned_by_name || null,
+          related_user_id: r2.related_user_id || null,
+          related_ticket_id: r2.related_ticket_id || null,
+          due_at: r2.due_at ? new Date(r2.due_at).toISOString() : null,
+          metadata: r2.metadata || {},
+          created_at: r2.created_at ? new Date(r2.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: r2.updated_at ? new Date(r2.updated_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+        }));
+      }
+    } catch {
+    }
+  }
+  let list = loadStaffTasksLocal();
+  if (filter?.assignedTo) {
+    list = list.filter((t2) => !t2.assigned_to || t2.assigned_to === filter.assignedTo);
+  }
+  if (filter?.status && filter.status !== "all") {
+    list = list.filter((t2) => t2.status === filter.status);
+  }
+  return list;
+}
+async function createStaffTask(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const priority = ["low", "medium", "high", "urgent"].includes(String(input.priority)) ? input.priority : "medium";
+  const task = {
+    id: crypto16.randomUUID(),
+    title: String(input.title || "").trim().slice(0, 140),
+    description: String(input.description || "").trim().slice(0, 1e3),
+    category: String(input.category || "operations").trim().slice(0, 50),
+    priority,
+    status: "open",
+    assigned_to: input.assigned_to || null,
+    assigned_to_name: input.assigned_to_name || null,
+    assigned_to_email: input.assigned_to_email || null,
+    assigned_by: input.assigned_by,
+    assigned_by_name: input.assigned_by_name || "Admin",
+    due_at: input.due_at || null,
+    metadata: {},
+    created_at: now,
+    updated_at: now
+  };
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `INSERT INTO public.staff_tasks (id, title, description, category, priority, status, assigned_to, assigned_by, due_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, NOW(), NOW())
+         RETURNING *`,
+        [
+          task.id,
+          task.title,
+          task.description,
+          task.category,
+          task.priority,
+          task.assigned_to,
+          task.assigned_by,
+          task.due_at
+        ]
+      );
+      if (res.rows[0]) {
+        task.created_at = new Date(res.rows[0].created_at).toISOString();
+        task.updated_at = new Date(res.rows[0].updated_at).toISOString();
+      }
+    } catch {
+    }
+  }
+  const list = loadStaffTasksLocal();
+  saveStaffTasksLocal([task, ...list].slice(0, 250));
+  return task;
+}
+async function updateStaffTask(taskId, updates) {
+  const validStatus = /* @__PURE__ */ new Set(["open", "in_progress", "completed", "blocked", "cancelled"]);
+  const validPriority = /* @__PURE__ */ new Set(["low", "medium", "high", "urgent"]);
+  const nextStatus = updates.status && validStatus.has(updates.status) ? updates.status : void 0;
+  const nextPriority = updates.priority && validPriority.has(updates.priority) ? updates.priority : void 0;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.staff_tasks
+         SET status = COALESCE($1, status),
+             priority = COALESCE($2, priority),
+             assigned_to = COALESCE($3, assigned_to),
+             title = COALESCE($4, title),
+             description = COALESCE($5, description),
+             updated_at = NOW()
+         WHERE id = $6
+         RETURNING *`,
+        [
+          nextStatus || null,
+          nextPriority || null,
+          updates.assigned_to !== void 0 ? updates.assigned_to : null,
+          updates.title ? updates.title.trim().slice(0, 140) : null,
+          updates.description !== void 0 ? updates.description.trim().slice(0, 1e3) : null,
+          taskId
+        ]
+      );
+      if (res.rows[0]) {
+        const r2 = res.rows[0];
+        const updated2 = {
+          id: String(r2.id),
+          title: r2.title,
+          description: r2.description || "",
+          category: r2.category || "operations",
+          priority: r2.priority,
+          status: r2.status,
+          assigned_to: r2.assigned_to || null,
+          assigned_by: r2.assigned_by || null,
+          due_at: r2.due_at ? new Date(r2.due_at).toISOString() : null,
+          metadata: r2.metadata || {},
+          created_at: new Date(r2.created_at).toISOString(),
+          updated_at: new Date(r2.updated_at).toISOString()
+        };
+        const list2 = loadStaffTasksLocal();
+        saveStaffTasksLocal(list2.map((t2) => t2.id === taskId ? { ...t2, ...updated2 } : t2));
+        return updated2;
+      }
+    } catch {
+    }
+  }
+  const list = loadStaffTasksLocal();
+  const idx = list.findIndex((t2) => t2.id === taskId);
+  if (idx === -1) return null;
+  const updated = {
+    ...list[idx],
+    ...nextStatus ? { status: nextStatus } : {},
+    ...nextPriority ? { priority: nextPriority } : {},
+    ...updates.assigned_to !== void 0 ? { assigned_to: updates.assigned_to } : {},
+    ...updates.title ? { title: updates.title.trim().slice(0, 140) } : {},
+    ...updates.description !== void 0 ? { description: updates.description.trim().slice(0, 1e3) } : {},
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  list[idx] = updated;
+  saveStaffTasksLocal(list);
+  return updated;
+}
+
+// server/notificationService.ts
+import fs12 from "fs";
+import os7 from "os";
+import path10 from "path";
+import crypto17 from "crypto";
 
 // server/notificationEmailTemplates.ts
 function generateCampaignEmail(data) {
@@ -83707,20 +85473,20 @@ var DEFAULT_PREFERENCES = {
   quiet_hours_end: "07:00",
   privacy_hide_amounts: true
 };
-var PRIMARY_PUSH_FALLBACK_DIR = path9.resolve(process.cwd(), ".data", "push-notifications");
-var TMP_PUSH_FALLBACK_DIR = path9.resolve(os6.tmpdir(), "mymoney-push-notifications");
+var PRIMARY_PUSH_FALLBACK_DIR = path10.resolve(process.cwd(), ".data", "push-notifications");
+var TMP_PUSH_FALLBACK_DIR = path10.resolve(os7.tmpdir(), "mymoney-push-notifications");
 var memoryPushStore = /* @__PURE__ */ new Map();
 function resolveWritablePushDir() {
   try {
-    if (!fs11.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
-      fs11.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
+    if (!fs12.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
+      fs12.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
     }
-    fs11.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs11.constants.W_OK);
+    fs12.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs12.constants.W_OK);
     return PRIMARY_PUSH_FALLBACK_DIR;
   } catch {
     try {
-      if (!fs11.existsSync(TMP_PUSH_FALLBACK_DIR)) {
-        fs11.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
+      if (!fs12.existsSync(TMP_PUSH_FALLBACK_DIR)) {
+        fs12.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
       }
       return TMP_PUSH_FALLBACK_DIR;
     } catch {
@@ -83729,9 +85495,9 @@ function resolveWritablePushDir() {
   }
 }
 function safeUserPushFile(baseDir, userId) {
-  const safeId = crypto16.createHash("sha256").update(String(userId || "unknown")).digest("hex");
-  const resolved = path9.resolve(baseDir, `${safeId}.json`);
-  if (!resolved.startsWith(baseDir + path9.sep)) {
+  const safeId = crypto17.createHash("sha256").update(String(userId || "unknown")).digest("hex");
+  const resolved = path10.resolve(baseDir, `${safeId}.json`);
+  if (!resolved.startsWith(baseDir + path10.sep)) {
     throw new Error("Invalid storage path");
   }
   return resolved;
@@ -83740,8 +85506,8 @@ function readLocalStore(userId) {
   for (const dir of [PRIMARY_PUSH_FALLBACK_DIR, TMP_PUSH_FALLBACK_DIR]) {
     try {
       const file = safeUserPushFile(dir, userId);
-      if (fs11.existsSync(file)) {
-        const parsed = JSON.parse(fs11.readFileSync(file, "utf8"));
+      if (fs12.existsSync(file)) {
+        const parsed = JSON.parse(fs12.readFileSync(file, "utf8"));
         const store = {
           preferences: { ...DEFAULT_PREFERENCES, ...parsed.preferences || {} },
           subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
@@ -83784,13 +85550,13 @@ function writeLocalStore(userId, store) {
   try {
     const baseDir = resolveWritablePushDir();
     const file = safeUserPushFile(baseDir, userId);
-    fs11.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
+    fs12.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
     console.warn("[Push] Local fallback write notice:", err?.message || err);
   }
 }
 function hashEndpoint(endpoint) {
-  return crypto16.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
+  return crypto17.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
 }
 function formatEndpointPreview(endpoint) {
   try {
@@ -83852,9 +85618,15 @@ function buildSafeDeepLinkUrl(deepLink) {
     "/notifications",
     "/receipt-scanner",
     "/net-worth",
-    "/safe-to-spend"
+    "/safe-to-spend",
+    "/myadmin",
+    "/mystaff"
   ]);
-  if (pathRoutes.has(clean)) return clean;
+  if (pathRoutes.has(clean) || clean.startsWith("/myadmin/") || clean.startsWith("/mystaff/")) {
+    return clean;
+  }
+  if (clean === "admin") return "/myadmin";
+  if (clean === "staff") return "/mystaff";
   if (clean.startsWith("/#")) return clean;
   if (clean.startsWith("/")) {
     const slug = clean.replace(/^\/+/, "");
@@ -84146,7 +85918,7 @@ async function registerPushSubscription(params) {
   const local = readLocalStore(params.userId);
   const existingIdx = local.subscriptions.findIndex((s2) => s2.endpoint === endpoint);
   const record = {
-    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto16.randomUUID()),
+    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto17.randomUUID()),
     user_id: params.userId,
     endpoint,
     p256dh,
@@ -84386,7 +86158,7 @@ function recordLocalDedupeKey(userId, dedupeKey) {
 function appendLocalDeliveryLog(userId, log) {
   const local = readLocalStore(userId);
   local.deliveryLogs.unshift({
-    id: crypto16.randomUUID(),
+    id: crypto17.randomUUID(),
     ...log,
     created_at: (/* @__PURE__ */ new Date()).toISOString()
   });
@@ -84551,14 +86323,19 @@ async function createNotification(params) {
       const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}-${notificationId || timestamp}`);
       const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
       const isConnRequest = metadata?.actionType === "udhar_connection_request";
+      const siteCfg = await getPublishedSiteConfig().catch(() => null);
+      const audience = params.audience || "user";
+      const resolvedIcon = params.iconUrl || (audience === "admin" ? siteCfg?.notifications?.adminIconUrl || "/admin-icon-192.png" : audience === "staff" ? siteCfg?.notifications?.staffIconUrl || "/staff-icon-192.png" : siteCfg?.notifications?.userIconUrl || "/icon-192.png");
+      const resolvedBadge = audience === "admin" ? "/admin-badge-96.png" : "/notification-badge-96.png";
       const pushPayload = JSON.stringify({
         title: pushTitle,
         body: pushBody,
-        icon: "/icon-192.png",
-        badge: "/notification-badge-96.png",
+        icon: resolvedIcon,
+        badge: resolvedBadge,
         tag: notifTag,
         category,
         type,
+        audience,
         timestamp,
         renotify: true,
         silent: soundMuted,
@@ -84571,6 +86348,7 @@ async function createNotification(params) {
         ] : void 0,
         data: {
           url: targetUrl,
+          audience,
           notificationId: notificationId || null,
           category,
           type,
@@ -85395,17 +87173,20 @@ async function recordDeviceInstallation(params) {
     userId,
     deviceType = "desktop",
     browser = "Chrome",
-    os: os7 = "Unknown OS",
+    os: os8 = "Unknown OS",
     userAgent = "",
     isInstalled = false,
     installationStatus = isInstalled ? "installed_pwa" : "browser",
     pushPermission = "default",
     pushSubscriptionStatus = "none",
-    ipAddress = ""
+    ipAddress = "",
+    portalScope = "user"
   } = params;
   if (!userId) {
     throw new Error("userId is required for device installation registration");
   }
+  const normalizedScope = portalScope === "myadmin" || portalScope === "mystaff" ? portalScope : "user";
+  const scopeLabel = normalizedScope === "myadmin" ? "Admin App" : normalizedScope === "mystaff" ? "Staff App" : "User App";
   let isNewInstall = false;
   const now = /* @__PURE__ */ new Date();
   const installedAt = isInstalled ? now.toISOString() : null;
@@ -85414,7 +87195,7 @@ async function recordDeviceInstallation(params) {
       const existing = await query(
         `SELECT id, is_installed, installed_at FROM public.installed_devices
          WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
-        [userId, browser, os7, deviceType]
+        [userId, browser, os8, deviceType]
       );
       if (existing.rows.length > 0) {
         const prev2 = existing.rows[0];
@@ -85451,14 +87232,14 @@ async function recordDeviceInstallation(params) {
           if (isNewInstall) {
             recordAdminNotification({
               eventType: "pwa_install",
-              title: "PWA Installed by User",
-              message: `User has installed My Money Manager on ${browser} (${os7}, ${deviceType}).`,
+              title: `${scopeLabel} Installed`,
+              message: `User installed ${scopeLabel} on ${browser} (${os8}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os7, installedAt }
+              metadata: { deviceType, browser, os: os8, portalScope: normalizedScope, installedAt }
             }).catch(() => {
             });
           }
-          return { success: true, isNewInstall, record: record2 };
+          return { success: true, isNewInstall, record: { ...record2, portal_scope: normalizedScope } };
         }
       } else {
         if (isInstalled) {
@@ -85473,7 +87254,7 @@ async function recordDeviceInstallation(params) {
             userId,
             deviceType,
             browser,
-            os7,
+            os8,
             userAgent,
             installationStatus,
             isInstalled,
@@ -85488,20 +87269,20 @@ async function recordDeviceInstallation(params) {
           if (isNewInstall) {
             recordAdminNotification({
               eventType: "pwa_install",
-              title: "PWA Installed by User",
-              message: `User has installed My Money Manager on ${browser} (${os7}, ${deviceType}).`,
+              title: `${scopeLabel} Installed`,
+              message: `User installed ${scopeLabel} on ${browser} (${os8}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os7, installedAt }
+              metadata: { deviceType, browser, os: os8, portalScope: normalizedScope, installedAt }
             }).catch(() => {
             });
           }
-          return { success: true, isNewInstall, record: record2 };
+          return { success: true, isNewInstall, record: { ...record2, portal_scope: normalizedScope } };
         }
       }
     } catch {
     }
   }
-  const key = `${userId}:${browser}:${os7}:${deviceType}`;
+  const key = `${userId}:${normalizedScope}:${browser}:${os8}:${deviceType}`;
   const prev = localInstalledDevices.get(key);
   if (!prev?.is_installed && isInstalled) {
     isNewInstall = true;
@@ -85509,9 +87290,10 @@ async function recordDeviceInstallation(params) {
   const record = {
     id: prev?.id || `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     user_id: userId,
+    portal_scope: normalizedScope,
     device_type: deviceType,
     browser,
-    os: os7,
+    os: os8,
     user_agent: userAgent,
     installation_status: installationStatus,
     is_installed: isInstalled,
@@ -85522,6 +87304,16 @@ async function recordDeviceInstallation(params) {
     last_delivery_result: prev?.last_delivery_result || "none"
   };
   localInstalledDevices.set(key, record);
+  if (isNewInstall) {
+    recordAdminNotification({
+      eventType: "pwa_install",
+      title: `${scopeLabel} Installed`,
+      message: `User installed ${scopeLabel} on ${browser} (${os8}, ${deviceType}).`,
+      userId,
+      metadata: { deviceType, browser, os: os8, portalScope: normalizedScope, installedAt }
+    }).catch(() => {
+    });
+  }
   return { success: true, isNewInstall, record };
 }
 async function getAdminInstalledDevices(filters) {
@@ -85617,11 +87409,23 @@ async function recordAdminNotification(params) {
     );
   } catch {
   }
+  const siteCfg = await getPublishedSiteConfig().catch(() => null);
+  const ccAdminCats = siteCfg?.notifications?.categories?.admin || {};
+  const categoryKeyMap = {
+    new_user: "new_user",
+    pwa_install: "app_installations",
+    support_ticket: "support_tickets",
+    critical_alert: "security_alerts",
+    push_failure: "system_errors"
+  };
+  const ccEnabled = ccAdminCats[categoryKeyMap[eventType]] !== false;
   const prefs = await getAdminNotificationPreferences();
-  const isAlertEnabled = eventType === "new_user" && prefs.alert_new_user_registration || eventType === "pwa_install" && prefs.alert_app_installation || eventType === "support_ticket" && prefs.alert_support_ticket || eventType === "critical_alert" && prefs.alert_critical_security || eventType === "push_failure" && prefs.alert_push_failure;
+  const isAlertEnabled = ccEnabled && (eventType === "new_user" && prefs.alert_new_user_registration || eventType === "pwa_install" && prefs.alert_app_installation || eventType === "support_ticket" && prefs.alert_support_ticket || eventType === "critical_alert" && prefs.alert_critical_security || eventType === "push_failure" && prefs.alert_push_failure);
   if (!isAlertEnabled) {
     return true;
   }
+  const adminAppLabel = siteCfg?.notifications?.adminAppName || "Admin Alert";
+  const adminIconUrl = siteCfg?.notifications?.adminIconUrl || "/admin-icon-192.png";
   try {
     let adminRows = [];
     if (isDatabaseAvailable()) {
@@ -85637,12 +87441,14 @@ async function recordAdminNotification(params) {
     for (const a of adminRows) {
       createNotification({
         userId: a.id,
-        title: `[Admin Alert] ${title}`,
+        title: `[${adminAppLabel}] ${title}`,
         message,
         category: "security",
         type: eventType === "critical_alert" ? "error" : "info",
+        audience: "admin",
+        iconUrl: adminIconUrl,
         channels: prefs.delivery_channel === "inapp_only" ? ["in_app"] : ["in_app", "push"],
-        deepLink: "admin",
+        deepLink: "/myadmin",
         skipPreferenceCheck: true
       }).catch(() => {
       });
@@ -85765,6 +87571,114 @@ async function dispatchNewUserWelcomeNotification(params) {
     }
   });
 }
+var STAFF_NOTIFS_FILE = path10.resolve(PRIMARY_PUSH_FALLBACK_DIR, "staff-notifications.json");
+var TMP_STAFF_NOTIFS_FILE = path10.resolve(TMP_PUSH_FALLBACK_DIR, "staff-notifications.json");
+var memoryStaffNotifications = null;
+function readStaffNotifs() {
+  if (memoryStaffNotifications) return memoryStaffNotifications;
+  for (const target of [STAFF_NOTIFS_FILE, TMP_STAFF_NOTIFS_FILE]) {
+    try {
+      if (fs12.existsSync(target)) {
+        const parsed = JSON.parse(fs12.readFileSync(target, "utf8"));
+        if (Array.isArray(parsed)) {
+          memoryStaffNotifications = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+    }
+  }
+  memoryStaffNotifications = [];
+  return [];
+}
+function writeStaffNotifs(items) {
+  const sliced = items.slice(0, 200);
+  memoryStaffNotifications = sliced;
+  try {
+    const dir = resolveWritablePushDir();
+    fs12.writeFileSync(path10.resolve(dir, "staff-notifications.json"), JSON.stringify(sliced, null, 2), "utf8");
+  } catch {
+  }
+}
+async function recordStaffNotification(params) {
+  const siteCfg = await getPublishedSiteConfig().catch(() => null);
+  const catEnabled = siteCfg?.notifications?.categories?.staff?.[params.eventType] !== false;
+  const staffAppName = siteCfg?.notifications?.staffAppName || "My Money Manager Staff";
+  const staffIconUrl = siteCfg?.notifications?.staffIconUrl || "/staff-icon-192.png";
+  const record = {
+    id: `snot_${Date.now()}_${crypto17.randomBytes(3).toString("hex")}`,
+    staff_user_id: params.staffUserId || null,
+    event_type: params.eventType,
+    title: params.title,
+    message: params.message,
+    deep_link: params.deepLink || "/mystaff",
+    metadata: {
+      ...params.metadata || {},
+      audience: "staff",
+      appName: staffAppName,
+      iconUrl: staffIconUrl
+    },
+    is_read: false,
+    read_by: [],
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (!catEnabled) return record;
+  const list = readStaffNotifs();
+  list.unshift(record);
+  writeStaffNotifs(list);
+  if (params.staffUserId) {
+    createNotification({
+      userId: params.staffUserId,
+      title: `[${staffAppName}] ${params.title}`,
+      message: params.message,
+      category: "support",
+      type: "info",
+      audience: "staff",
+      iconUrl: staffIconUrl,
+      deepLink: params.deepLink || "/mystaff",
+      channels: ["push"],
+      skipPreferenceCheck: true,
+      metadata: {
+        audience: "staff",
+        staffNotificationId: record.id,
+        ...params.metadata || {}
+      }
+    }).catch(() => {
+    });
+  }
+  return record;
+}
+async function getStaffNotifications(staffUserId, limit = 50) {
+  const all = readStaffNotifs();
+  return all.filter((n) => !n.staff_user_id || n.staff_user_id === staffUserId).slice(0, limit).map((n) => ({
+    ...n,
+    is_read: n.is_read || n.read_by.includes(staffUserId)
+  }));
+}
+async function markStaffNotificationRead(id, staffUserId) {
+  const all = readStaffNotifs();
+  let changed = false;
+  for (const n of all) {
+    if (n.id === id && (!n.staff_user_id || n.staff_user_id === staffUserId)) {
+      if (!n.read_by.includes(staffUserId)) n.read_by.push(staffUserId);
+      if (n.staff_user_id === staffUserId) n.is_read = true;
+      changed = true;
+    }
+  }
+  if (changed) writeStaffNotifs(all);
+  return changed;
+}
+async function markAllStaffNotificationsRead(staffUserId) {
+  const all = readStaffNotifs();
+  for (const n of all) {
+    if (!n.staff_user_id || n.staff_user_id === staffUserId) {
+      if (!n.read_by.includes(staffUserId)) n.read_by.push(staffUserId);
+      if (n.staff_user_id === staffUserId) n.is_read = true;
+    }
+  }
+  writeStaffNotifs(all);
+  return true;
+}
 
 // server/adminApi.ts
 function sendJson(res, statusCode, data) {
@@ -85854,12 +87768,21 @@ async function verifyAdminAuth(req, res, requiredPermission) {
   );
   const role = isMasterAdmin ? "superadmin" : (authUser.role_slug || authUser.role || "user").toLowerCase().trim();
   let roleRecord = null;
-  try {
-    const roleRes = await query("SELECT slug, permissions FROM public.admin_roles WHERE slug = $1", [role]);
-    if (roleRes.rows.length > 0) {
-      roleRecord = roleRes.rows[0];
+  if (isDatabaseAvailable()) {
+    try {
+      const roleRes = await query("SELECT slug, permissions FROM public.admin_roles WHERE LOWER(slug) = $1", [role]);
+      if (roleRes.rows.length > 0) {
+        roleRecord = roleRes.rows[0];
+      }
+    } catch (e2) {
     }
-  } catch (e2) {
+  }
+  if (!roleRecord) {
+    try {
+      const fbRoles = await listAdminRolesFallback();
+      roleRecord = fbRoles.find((r2) => String(r2.slug || "").toLowerCase().trim() === role) || null;
+    } catch {
+    }
   }
   if (!isMasterAdmin && !["superadmin", "admin", "support", "analyst"].includes(role) && !roleRecord) {
     sendJson(res, 403, { success: false, message: "Access Denied: Administrative authorization required." });
@@ -87733,6 +89656,101 @@ ${noteLine}` : noteLine;
       sendJson(res, 200, { success: true, message: "Role permissions updated successfully." });
       return true;
     }
+    if (pathname === "/api/admin/roles" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "roles.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const name2 = String(body.name || "").trim().slice(0, 60);
+      const rawSlug = String(body.slug || name2).toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+      const description = String(body.description || "").trim().slice(0, 300);
+      if (!name2 || name2.length < 2 || !rawSlug || rawSlug.length < 2) {
+        sendJson(res, 400, { success: false, message: "Valid role name and slug are required." });
+        return true;
+      }
+      if (["superadmin", "admin", "support", "analyst", "user", "anonymous"].includes(rawSlug)) {
+        sendJson(res, 409, { success: false, message: `Role slug "${rawSlug}" is reserved.` });
+        return true;
+      }
+      const rawPerms = Array.isArray(body.permissions) ? body.permissions : ["dashboard.view", "users.view"];
+      const safePermissions = rawPerms.slice(0, 60).map((p) => String(p || "").trim()).filter((p) => p.length > 0 && p.length <= 64 && /^[a-z0-9_.*]+$/.test(p));
+      if (safePermissions.includes("*") && auth.role !== "superadmin") {
+        sendJson(res, 403, { success: false, message: "Only a superadmin can assign wildcard (*) permissions." });
+        return true;
+      }
+      const existingRoles = await listAdminRolesFallback();
+      if (existingRoles.some((r2) => String(r2.slug || "").toLowerCase() === rawSlug)) {
+        sendJson(res, 409, { success: false, message: `A role with slug "${rawSlug}" already exists.` });
+        return true;
+      }
+      let createdRole = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const ins = await query(
+            `INSERT INTO public.admin_roles (name, slug, description, permissions, is_system, created_at, updated_at)
+             VALUES ($1, $2, $3, $4::jsonb, FALSE, NOW(), NOW())
+             RETURNING *`,
+            [name2, rawSlug, description, JSON.stringify(safePermissions)]
+          );
+          createdRole = ins.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!createdRole) {
+        createdRole = await createAdminRoleFallback({
+          name: name2,
+          slug: rawSlug,
+          description,
+          permissions: safePermissions
+        });
+      }
+      await logSecurityEvent("ADMIN_CUSTOM_ROLE_CREATED", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { roleSlug: rawSlug, permissions: safePermissions }
+      }).catch(() => {
+      });
+      sendJson(res, 201, {
+        success: true,
+        message: `Custom role "${name2}" created successfully.`,
+        role: createdRole
+      });
+      return true;
+    }
+    const roleDeleteMatch = pathname.match(/^\/api\/admin\/roles\/([a-zA-Z0-9_-]+)$/);
+    if (roleDeleteMatch && method === "DELETE") {
+      const auth = await verifyAdminAuth(req, res, "roles.manage");
+      if (!auth) return true;
+      const roleId = roleDeleteMatch[1];
+      const protectedIds = /* @__PURE__ */ new Set(["role_superadmin", "role_admin", "role_support", "role_analyst", "superadmin", "admin", "support", "analyst"]);
+      if (protectedIds.has(roleId.toLowerCase())) {
+        sendJson(res, 400, { success: false, message: "Built-in system roles cannot be deleted." });
+        return true;
+      }
+      let deleted = false;
+      if (isDatabaseAvailable()) {
+        try {
+          const check = await query(`SELECT id, slug, is_system FROM public.admin_roles WHERE id::text = $1 OR slug = $1 LIMIT 1`, [roleId]);
+          if (check.rows[0]?.is_system) {
+            sendJson(res, 400, { success: false, message: "Built-in system roles cannot be deleted." });
+            return true;
+          }
+          const delRes = await query(`DELETE FROM public.admin_roles WHERE (id::text = $1 OR slug = $1) AND is_system = FALSE RETURNING id`, [roleId]);
+          deleted = delRes.rows.length > 0;
+        } catch {
+        }
+      }
+      await deleteAdminRoleFallback(roleId);
+      await logSecurityEvent("ADMIN_CUSTOM_ROLE_DELETED", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { roleId, deleted }
+      }).catch(() => {
+      });
+      sendJson(res, 200, { success: true, message: "Custom role deleted successfully." });
+      return true;
+    }
     if (pathname === "/api/admin/features" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "features.manage");
       if (!auth) return true;
@@ -88911,16 +90929,20 @@ ${noteLine}` : noteLine;
       }
       if (admins.length === 0) {
         const fbUsers = await listAllAppUsersFallback();
-        admins = fbUsers.filter((u) => ["admin", "superadmin", "support", "analyst"].includes(String(u.role || "").toLowerCase()));
+        admins = fbUsers.filter((u) => {
+          const r2 = String(u.role || "").toLowerCase();
+          const rs = String(u.role_slug || "").toLowerCase();
+          return ["admin", "superadmin", "support", "analyst"].includes(r2) || rs && rs !== "user";
+        });
       }
       sendJson(res, 200, { success: true, admins });
       return true;
     }
-    if (pathname === "/api/admin/admins" && method === "POST") {
+    if ((pathname === "/api/admin/admins" || pathname === "/api/admin/staff") && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "admins.create");
       if (!auth) return true;
       const body = await parseJsonBody(req);
-      const { email, role, customPermissions } = body;
+      const { email, role, customPermissions, fullName, full_name, phone, password, mode } = body;
       if (!email || !String(email).includes("@")) {
         sendJson(res, 400, { success: false, message: "Valid email address is required." });
         return true;
@@ -88957,21 +90979,118 @@ ${noteLine}` : noteLine;
         sendJson(res, 403, { success: false, message: "Only a superadmin can grant wildcard (*) custom permissions." });
         return true;
       }
-      const trimmedEmail = String(email).trim();
+      const trimmedEmail = String(email).trim().toLowerCase();
       let targetUser = null;
       if (isDatabaseAvailable()) {
         try {
-          const userRes = await query("SELECT id, full_name, email, role FROM public.app_users WHERE LOWER(email) = LOWER($1)", [trimmedEmail]);
+          const userRes = await query("SELECT id, full_name, email, role, status FROM public.app_users WHERE LOWER(email) = LOWER($1)", [trimmedEmail]);
           targetUser = userRes.rows[0] || null;
         } catch {
         }
       }
       if (!targetUser) {
-        const fbUsers = await listAllAppUsersFallback();
-        targetUser = fbUsers.find((u) => String(u.email || "").toLowerCase() === trimmedEmail.toLowerCase()) || null;
+        targetUser = await findAppUserFallbackByEmail(trimmedEmail);
+      }
+      if (!targetUser && (mode === "create" || typeof password === "string" && password.length > 0)) {
+        const cleanName = String(fullName || full_name || "").trim();
+        const rawPass = String(password || "");
+        const cleanPhone = String(phone || "").trim() || null;
+        if (!cleanName || cleanName.length < 2) {
+          sendJson(res, 400, { success: false, message: "Full name (min 2 chars) is required to create a new staff account." });
+          return true;
+        }
+        const passVal = validatePasswordPolicy(rawPass);
+        if (!passVal.isValid) {
+          sendJson(res, 400, { success: false, message: passVal.errors[0] || "Password does not meet security policy." });
+          return true;
+        }
+        const passwordHash = await hashPassword(rawPass);
+        const nextRoleSlug2 = assignedRole === "user" ? null : assignedRole;
+        const baseRole2 = ["superadmin", "admin", "support", "analyst", "user"].includes(assignedRole) ? assignedRole : "support";
+        const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+        if (isDatabaseAvailable()) {
+          try {
+            const ins = await query(
+              `INSERT INTO public.app_users (
+                full_name, email, phone, password_hash, role, role_slug, custom_permissions, status, email_verified, created_at, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'active', TRUE, NOW(), NOW())
+              RETURNING *`,
+              [cleanName, trimmedEmail, cleanPhone, passwordHash, baseRole2, nextRoleSlug2, JSON.stringify(safeCustomPerms)]
+            );
+            targetUser = ins.rows[0] || null;
+          } catch {
+          }
+        }
+        if (!targetUser) {
+          const newId = generateCryptoToken(16);
+          const sbIns = await sbRestRequest("app_users", {
+            method: "POST",
+            prefer: "return=representation",
+            body: {
+              full_name: cleanName,
+              email: trimmedEmail,
+              phone: cleanPhone,
+              password_hash: passwordHash,
+              role: baseRole2,
+              role_slug: nextRoleSlug2,
+              custom_permissions: safeCustomPerms,
+              status: "active",
+              email_verified: true,
+              created_at: nowIso,
+              updated_at: nowIso
+            }
+          });
+          targetUser = sbIns.ok && Array.isArray(sbIns.data) && sbIns.data[0] ? sbIns.data[0] : upsertAppUserLocalFallback({
+            id: newId,
+            full_name: cleanName,
+            email: trimmedEmail,
+            phone: cleanPhone,
+            password_hash: passwordHash,
+            role: baseRole2,
+            role_slug: nextRoleSlug2,
+            custom_permissions: safeCustomPerms,
+            status: "active",
+            email_verified: true,
+            created_at: nowIso,
+            updated_at: nowIso
+          });
+        }
+        await logSecurityEvent("STAFF_ACCOUNT_CREATED", {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { targetUserId: targetUser.id, targetEmail: trimmedEmail, assignedRole }
+        }).catch(() => {
+        });
+        await recordStaffNotification({
+          staffUserId: targetUser.id,
+          eventType: "account_alerts",
+          title: "Welcome to Staff Operations",
+          message: `Your staff account (${assignedRole}) was provisioned by ${auth.authUser.email}.`,
+          deepLink: "/mystaff"
+        }).catch(() => {
+        });
+        sendJson(res, 201, {
+          success: true,
+          message: `New staff account created for ${trimmedEmail} with [${assignedRole}] access.`,
+          staff: {
+            id: targetUser.id,
+            full_name: targetUser.full_name,
+            email: targetUser.email,
+            phone: targetUser.phone || null,
+            role: targetUser.role,
+            role_slug: targetUser.role_slug,
+            status: targetUser.status,
+            custom_permissions: targetUser.custom_permissions
+          }
+        });
+        return true;
       }
       if (!targetUser) {
-        sendJson(res, 404, { success: false, message: "User with this email is not registered. User must register before receiving admin credentials." });
+        sendJson(res, 404, {
+          success: false,
+          message: 'User with this email is not registered. Either choose "Create New Staff Account" with a password, or ask them to register first.'
+        });
         return true;
       }
       if (isProtectedMasterAdmin(targetUser.email)) {
@@ -88983,6 +91102,7 @@ ${noteLine}` : noteLine;
         return true;
       }
       const nextRoleSlug = assignedRole === "user" ? null : assignedRole;
+      const baseRole = ["superadmin", "admin", "support", "analyst", "user"].includes(assignedRole) ? assignedRole : "support";
       if (isDatabaseAvailable()) {
         try {
           await query(`
@@ -88992,7 +91112,7 @@ ${noteLine}` : noteLine;
                 custom_permissions = $3,
                 updated_at = NOW()
             WHERE id = $4
-          `, [assignedRole, nextRoleSlug, JSON.stringify(safeCustomPerms), targetUser.id]);
+          `, [baseRole, nextRoleSlug, JSON.stringify(safeCustomPerms), targetUser.id]);
           await revokeAllUserSessions(targetUser.id).catch(() => 0);
           await logSecurityEvent("ADMIN_ROLE_ASSIGNED", {
             userEmail: auth.authUser.email,
@@ -89007,7 +91127,7 @@ ${noteLine}` : noteLine;
         sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUser.id)}`, {
           method: "PATCH",
           body: {
-            role: assignedRole,
+            role: baseRole,
             role_slug: nextRoleSlug,
             custom_permissions: safeCustomPerms,
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -89015,12 +91135,111 @@ ${noteLine}` : noteLine;
         }),
         sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUser.id)}`, {
           method: "PATCH",
-          body: { role: assignedRole }
+          body: { role: baseRole }
         })
       ]);
+      upsertAppUserLocalFallback({
+        ...targetUser,
+        role: baseRole,
+        role_slug: nextRoleSlug,
+        custom_permissions: safeCustomPerms,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await revokeAllUserSessions(targetUser.id).catch(() => 0);
       sendJson(res, 200, {
         success: true,
         message: `User ${targetUser.email} has been granted [${assignedRole}] privileges.`
+      });
+      return true;
+    }
+    const staffStatusMatch = pathname.match(/^\/api\/admin\/admins\/([a-zA-Z0-9_-]+)\/status$/);
+    if (staffStatusMatch && (method === "PUT" || method === "PATCH")) {
+      const auth = await verifyAdminAuth(req, res, "admins.revoke");
+      if (!auth) return true;
+      const targetId = staffStatusMatch[1];
+      const body = await parseJsonBody(req);
+      const nextStatus = String(body.status || "").toLowerCase().trim();
+      if (!["active", "suspended", "deactivated"].includes(nextStatus)) {
+        sendJson(res, 400, { success: false, message: "Status must be active, suspended, or deactivated." });
+        return true;
+      }
+      let target = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const r2 = await query("SELECT id, email, role, status FROM public.app_users WHERE id = $1", [targetId]);
+          target = r2.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!target) target = await findAppUserFallbackById(targetId);
+      if (!target) {
+        sendJson(res, 404, { success: false, message: "Staff/Admin account not found." });
+        return true;
+      }
+      if (isProtectedMasterAdmin(target.email)) {
+        sendJson(res, 403, { success: false, message: "Protected master administrator status cannot be altered." });
+        return true;
+      }
+      if (targetId === auth.authUser.id && nextStatus !== "active") {
+        sendJson(res, 400, { success: false, message: "You cannot suspend or deactivate your own account." });
+        return true;
+      }
+      if (isDatabaseAvailable()) {
+        await query(`UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2`, [nextStatus, targetId]).catch(() => {
+        });
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetId)}`, {
+        method: "PATCH",
+        body: { status: nextStatus, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+      }).catch(() => {
+      });
+      upsertAppUserLocalFallback({ ...target, status: nextStatus, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      if (nextStatus !== "active") {
+        await revokeAllUserSessions(targetId).catch(() => 0);
+      }
+      await logSecurityEvent("STAFF_ACCOUNT_STATUS_UPDATED", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { targetUserId: targetId, targetEmail: target.email, nextStatus }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: `Account ${target.email} is now ${nextStatus}.`
+      });
+      return true;
+    }
+    const staffRevokeSessionsMatch = pathname.match(/^\/api\/admin\/admins\/([a-zA-Z0-9_-]+)\/revoke-sessions$/);
+    if (staffRevokeSessionsMatch && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "admins.revoke");
+      if (!auth) return true;
+      const targetId = staffRevokeSessionsMatch[1];
+      let target = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const r2 = await query("SELECT id, email FROM public.app_users WHERE id = $1", [targetId]);
+          target = r2.rows[0] || null;
+        } catch {
+        }
+      }
+      if (!target) target = await findAppUserFallbackById(targetId);
+      if (!target) {
+        sendJson(res, 404, { success: false, message: "Account not found." });
+        return true;
+      }
+      const revokedCount = await revokeAllUserSessions(targetId);
+      await logSecurityEvent("STAFF_SESSIONS_REVOKED", {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { targetUserId: targetId, targetEmail: target.email, revokedCount }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: `Active sessions revoked for ${target.email}.`,
+        revokedCount
       });
       return true;
     }
@@ -89038,8 +91257,7 @@ ${noteLine}` : noteLine;
         }
       }
       if (!target) {
-        const fbUsers = await listAllAppUsersFallback();
-        target = fbUsers.find((u) => u.id === targetId) || null;
+        target = await findAppUserFallbackById(targetId);
       }
       if (!target) {
         sendJson(res, 404, { success: false, message: "Admin user not found." });
@@ -89086,6 +91304,14 @@ ${noteLine}` : noteLine;
           })
         ]);
       }
+      upsertAppUserLocalFallback({
+        ...target,
+        role: "user",
+        role_slug: null,
+        custom_permissions: [],
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await revokeAllUserSessions(targetId).catch(() => 0);
       sendJson(res, 200, { success: true, message: `Administrative privileges revoked for ${target.email}.` });
       return true;
     }
@@ -89262,6 +91488,8 @@ ${noteLine}` : noteLine;
         } catch {
         }
       }
+      await syncMaintenanceIntoControlCenter({ id: auth.authUser.id, email: auth.authUser.email }).catch(() => {
+      });
       sendJson(res, 200, { success: true, message: "Application settings saved successfully." });
       return true;
     }
@@ -89280,6 +91508,8 @@ ${noteLine}` : noteLine;
       const title = String(body.title || "").trim();
       const message = String(body.message || "").trim();
       const expectedRestoration = String(body.expectedRestoration || "").trim();
+      const allowStaffAccessDuringMaintenance = typeof body.allowStaffAccessDuringMaintenance === "boolean" ? body.allowStaffAccessDuringMaintenance : void 0;
+      const emergencyBypassEnabled = typeof body.emergencyBypassEnabled === "boolean" ? body.emergencyBypassEnabled : void 0;
       if (!title || title.length < 3) {
         sendJson(res, 400, { success: false, message: "Maintenance splash title must be at least 3 characters." });
         return true;
@@ -89293,16 +91523,24 @@ ${noteLine}` : noteLine;
           isEnabled,
           title,
           message,
-          expectedRestoration: expectedRestoration || "Within 2 hours"
+          expectedRestoration: expectedRestoration || "Within 2 hours",
+          ...allowStaffAccessDuringMaintenance !== void 0 ? { allowStaffAccessDuringMaintenance } : {},
+          ...emergencyBypassEnabled !== void 0 ? { emergencyBypassEnabled } : {}
         },
         { id: auth.authUser.id, email: auth.authUser.email }
       );
+      await syncMaintenanceIntoControlCenter({ id: auth.authUser.id, email: auth.authUser.email }).catch(() => {
+      });
       await logSecurityEvent("MAINTENANCE_MODE_UPDATED", {
         userId: auth.authUser.id,
         userEmail: auth.authUser.email,
         actorRole: auth.role,
         ipAddress: clientIp,
-        details: { isEnabled: maintenance.isEnabled, title: maintenance.title }
+        details: {
+          isEnabled: maintenance.isEnabled,
+          title: maintenance.title,
+          allowStaffAccessDuringMaintenance: maintenance.allowStaffAccessDuringMaintenance
+        }
       }).catch(() => {
       });
       sendJson(res, 200, {
@@ -89346,6 +91584,8 @@ ${noteLine}` : noteLine;
         },
         { id: auth.authUser.id, email: auth.authUser.email }
       );
+      await syncMaintenanceIntoControlCenter({ id: auth.authUser.id, email: auth.authUser.email }).catch(() => {
+      });
       await logSecurityEvent("APP_POPUP_SETTINGS_UPDATED", {
         userId: auth.authUser.id,
         userEmail: auth.authUser.email,
@@ -89359,6 +91599,241 @@ ${noteLine}` : noteLine;
         message: "App Download Popup settings saved successfully.",
         appPopup
       });
+      return true;
+    }
+    if (pathname === "/api/admin/control-center" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const state = await getControlCenterAdminState();
+      sendJson(res, 200, { success: true, ...state });
+      return true;
+    }
+    if (pathname === "/api/admin/control-center/draft" && method === "PUT") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const patch = body?.config && typeof body.config === "object" ? body.config : body;
+      const result = await saveControlCenterDraft(patch || {}, {
+        id: auth.authUser.id,
+        email: auth.authUser.email
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: "Control center draft saved.",
+        draft: result.draft,
+        published: result.published,
+        hasUnpublishedDraft: true
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/control-center/draft" && method === "DELETE") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      await discardControlCenterDraft({ id: auth.authUser.id, email: auth.authUser.email });
+      const state = await getControlCenterAdminState();
+      sendJson(res, 200, {
+        success: true,
+        message: "Unpublished draft discarded.",
+        ...state
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/control-center/publish" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const configPatch = body?.config && typeof body.config === "object" ? body.config : void 0;
+      const summary = typeof body?.summary === "string" ? body.summary : "Published control center updates";
+      const { published, versions } = await publishControlCenterChanges(
+        { configPatch, summary },
+        { id: auth.authUser.id, email: auth.authUser.email }
+      );
+      await logSecurityEvent("WEBSITE_CONTROL_CENTER_PUBLISHED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { version: published.version, summary }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: `Configuration v${published.version} published globally in real time.`,
+        published,
+        draft: null,
+        hasUnpublishedDraft: false,
+        versions
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/control-center/restore" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const versionTarget = body?.versionId ?? body?.version;
+      if (!versionTarget) {
+        sendJson(res, 400, { success: false, message: "versionId or version is required." });
+        return true;
+      }
+      const result = await restoreControlCenterVersion(versionTarget, {
+        id: auth.authUser.id,
+        email: auth.authUser.email
+      });
+      if (!result) {
+        sendJson(res, 404, { success: false, message: "Requested configuration version not found." });
+        return true;
+      }
+      await logSecurityEvent("WEBSITE_CONTROL_CENTER_RESTORED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { restoredFrom: versionTarget, newVersion: result.restored.version }
+      }).catch(() => {
+      });
+      sendJson(res, 200, {
+        success: true,
+        message: `Configuration restored and published live as v${result.restored.version}.`,
+        published: result.restored,
+        draft: null,
+        hasUnpublishedDraft: false,
+        versions: result.versions
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/control-center/upload-asset" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "settings.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const allowedScopes = /* @__PURE__ */ new Set(["user_app", "admin_app", "staff_app", "website", "general"]);
+      const allowedSlots = /* @__PURE__ */ new Set(["logo", "favicon", "pwa_icon", "og_image", "hero_image", "banner", "splash"]);
+      const scope = allowedScopes.has(String(body.scope)) ? body.scope : "general";
+      const slot = allowedSlots.has(String(body.slot)) ? body.slot : "logo";
+      const dataUrl = String(body.dataUrl || body.content || "").trim();
+      const saved = await saveSanitizedBrandingAsset({
+        scope,
+        slot,
+        dataUrl,
+        width: typeof body.width === "number" ? body.width : void 0,
+        height: typeof body.height === "number" ? body.height : void 0,
+        actorEmail: auth.authUser.email
+      });
+      if (!saved.success || !saved.asset) {
+        await logSecurityEvent("BRANDING_ASSET_REJECTED", {
+          userId: auth.authUser.id,
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { scope, slot, reason: saved.error }
+        }).catch(() => {
+        });
+        sendJson(res, 400, { success: false, message: saved.error || "Branding image rejected." });
+        return true;
+      }
+      await logSecurityEvent("BRANDING_ASSET_UPLOADED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { assetId: saved.asset.id, scope, slot, mimeType: saved.asset.mimeType, byteSize: saved.asset.byteSize }
+      }).catch(() => {
+      });
+      sendJson(res, 201, {
+        success: true,
+        message: "Branding asset validated, sanitized, and stored.",
+        asset: saved.asset
+      });
+      return true;
+    }
+    if (pathname === "/api/admin/staff-tasks" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "support.read");
+      if (!auth) return true;
+      const status = typeof parsedUrl.query.status === "string" ? parsedUrl.query.status : void 0;
+      const assignedTo = typeof parsedUrl.query.assignedTo === "string" ? parsedUrl.query.assignedTo : void 0;
+      const tasks = await listStaffTasks({ status, assignedTo });
+      sendJson(res, 200, { success: true, tasks });
+      return true;
+    }
+    if (pathname === "/api/admin/staff-tasks" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "support.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const title = String(body.title || "").trim();
+      if (title.length < 3) {
+        sendJson(res, 400, { success: false, message: "Task title must be at least 3 characters." });
+        return true;
+      }
+      const resolvedAssignedTo = body.assigned_to || body.assignedTo || null;
+      let assignedName = body.assigned_to_name || null;
+      let assignedEmail = body.assigned_to_email || null;
+      if (resolvedAssignedTo && !assignedEmail) {
+        const staffUser = await findAppUserFallbackById(String(resolvedAssignedTo));
+        if (staffUser) {
+          assignedName = staffUser.full_name || assignedName;
+          assignedEmail = staffUser.email || assignedEmail;
+        }
+      }
+      const task = await createStaffTask({
+        title,
+        description: String(body.description || ""),
+        category: String(body.category || "operations"),
+        priority: body.priority,
+        assigned_to: resolvedAssignedTo,
+        assigned_to_name: assignedName,
+        assigned_to_email: assignedEmail,
+        assigned_by: auth.authUser.id,
+        assigned_by_name: auth.authUser.full_name || auth.authUser.email,
+        due_at: body.due_at || null
+      });
+      await recordStaffNotification({
+        staffUserId: task.assigned_to,
+        eventType: "assigned_task",
+        title: `New Task: ${task.title}`,
+        message: `Priority: ${task.priority.toUpperCase()} \xB7 Assigned by ${auth.authUser.full_name || auth.authUser.email}`,
+        deepLink: "/mystaff",
+        metadata: { taskId: task.id, priority: task.priority }
+      }).catch(() => {
+      });
+      await logSecurityEvent("STAFF_TASK_CREATED", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { taskId: task.id, assignedTo: task.assigned_to }
+      }).catch(() => {
+      });
+      sendJson(res, 201, { success: true, message: "Staff task assigned.", task });
+      return true;
+    }
+    const adminTaskPatchMatch = pathname.match(/^\/api\/admin\/staff-tasks\/([a-zA-Z0-9_-]+)$/);
+    if (adminTaskPatchMatch && (method === "PATCH" || method === "PUT")) {
+      const auth = await verifyAdminAuth(req, res, "support.manage");
+      if (!auth) return true;
+      const taskId = adminTaskPatchMatch[1];
+      const body = await parseJsonBody(req);
+      const updated = await updateStaffTask(taskId, {
+        status: body.status,
+        priority: body.priority,
+        assigned_to: body.assigned_to,
+        title: body.title,
+        description: body.description
+      });
+      if (!updated) {
+        sendJson(res, 404, { success: false, message: "Staff task not found." });
+        return true;
+      }
+      if (updated.assigned_to) {
+        await recordStaffNotification({
+          staffUserId: updated.assigned_to,
+          eventType: "task_updates",
+          title: `Task Updated: ${updated.title}`,
+          message: `Status is now ${updated.status.replace("_", " ")}.`,
+          deepLink: "/mystaff",
+          metadata: { taskId: updated.id, status: updated.status }
+        }).catch(() => {
+        });
+      }
+      sendJson(res, 200, { success: true, task: updated });
       return true;
     }
     if (pathname === "/api/admin/api-settings" && method === "GET") {
@@ -89750,15 +92225,15 @@ ${noteLine}` : noteLine;
 }
 
 // server/aiFinanceApi.ts
-import crypto22 from "crypto";
-import fs12 from "fs";
-import path10 from "path";
+import crypto23 from "crypto";
+import fs13 from "fs";
+import path11 from "path";
 
 // server/privacyConsentApi.ts
-import crypto21 from "crypto";
+import crypto22 from "crypto";
 
 // server/supabaseRestUdhar.ts
-import crypto17 from "crypto";
+import crypto18 from "crypto";
 
 // src/lib/sharedUdharEngine.ts
 function roundMoney(value) {
@@ -90424,7 +92899,7 @@ function getRestConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY2;
   return { url, key };
 }
-async function sbRest(path11, options = {}) {
+async function sbRest(path12, options = {}) {
   const { url, key } = getRestConfig();
   const headers = {
     apikey: key,
@@ -90437,7 +92912,7 @@ async function sbRest(path11, options = {}) {
   if (options.prefer) {
     headers["Prefer"] = options.prefer;
   }
-  const response = await fetch(`${url}/rest/v1/${path11}`, {
+  const response = await fetch(`${url}/rest/v1/${path12}`, {
     method: options.method || "GET",
     headers,
     body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
@@ -92093,8 +94568,8 @@ async function getMyQrRest(authUser) {
     pairingCode = existing.data[0].pairing_code;
     expiresAt = existing.data[0].expires_at || expiresAt;
   } else {
-    pairingToken = crypto17.randomBytes(32).toString("hex");
-    pairingCode = `MM-${crypto17.randomBytes(3).toString("hex").toUpperCase()}`;
+    pairingToken = crypto18.randomBytes(32).toString("hex");
+    pairingCode = `MM-${crypto18.randomBytes(3).toString("hex").toUpperCase()}`;
     const ins = await sbRest("qr_pairing_tokens", {
       method: "POST",
       prefer: "return=representation",
@@ -92140,8 +94615,8 @@ async function regenerateQrRest(authUser) {
     method: "PATCH",
     body: { used: true }
   });
-  const pairingToken = crypto17.randomBytes(32).toString("hex");
-  const pairingCode = `MM-${crypto17.randomBytes(3).toString("hex").toUpperCase()}`;
+  const pairingToken = crypto18.randomBytes(32).toString("hex");
+  const pairingCode = `MM-${crypto18.randomBytes(3).toString("hex").toUpperCase()}`;
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
   const ins = await sbRest("qr_pairing_tokens", {
     method: "POST",
@@ -92592,7 +95067,7 @@ async function createUdharTransactionRest(authUser, body) {
   if (!counterpartName) {
     return { status: 400, body: { success: false, message: "Person's name is required." } };
   }
-  const linkId = crypto17.randomUUID();
+  const linkId = crypto18.randomUUID();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   if (registeredUser) {
     const isInstantQr = verifiedCreationMethod === "qr" || verifiedCreationMethod === "code";
@@ -93870,7 +96345,7 @@ function isValidOptionalConsentCategory(value) {
 }
 
 // server/userAccountExtensions.ts
-import crypto20 from "crypto";
+import crypto21 from "crypto";
 
 // src/lib/upiQrUtils.ts
 var UPI_CONSENT_PURPOSE = "upi_qr_storage";
@@ -93914,7 +96389,7 @@ function sanitizeUpiText(raw, maxLen) {
 }
 
 // server/webauthn.ts
-import crypto18 from "crypto";
+import crypto19 from "crypto";
 var CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 var challengeStore = /* @__PURE__ */ new Map();
 function pruneChallenges() {
@@ -93933,8 +96408,8 @@ function bufferToBase64Url(buf) {
 }
 function issueWebAuthnChallenge(params) {
   pruneChallenges();
-  const challengeId = crypto18.randomBytes(16).toString("hex");
-  const challenge = bufferToBase64Url(crypto18.randomBytes(32));
+  const challengeId = crypto19.randomBytes(16).toString("hex");
+  const challenge = bufferToBase64Url(crypto19.randomBytes(32));
   const expiresAt = Date.now() + CHALLENGE_TTL_MS;
   challengeStore.set(challengeId, {
     challenge,
@@ -94055,7 +96530,7 @@ function coseKeyMapToSpkiPem(coseMap) {
     if (!Buffer.isBuffer(x2) || !Buffer.isBuffer(y)) {
       throw new Error("Invalid COSE EC2 public key coordinates");
     }
-    const keyObj = crypto18.createPublicKey({
+    const keyObj = crypto19.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -94075,7 +96550,7 @@ function coseKeyMapToSpkiPem(coseMap) {
     if (!Buffer.isBuffer(n) || !Buffer.isBuffer(e2)) {
       throw new Error("Invalid COSE RSA public key components");
     }
-    const keyObj = crypto18.createPublicKey({
+    const keyObj = crypto19.createPublicKey({
       key: {
         kty: "RSA",
         n: bufferToBase64Url(n),
@@ -94112,8 +96587,8 @@ function extractCredentialFromAttestation(params) {
     throw new Error("Invalid authenticatorData in attestationObject.");
   }
   const rpIdHash = authData.subarray(0, 32);
-  const expectedRpIdHash = crypto18.createHash("sha256").update(params.expectedRpId).digest();
-  if (!crypto18.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+  const expectedRpIdHash = crypto19.createHash("sha256").update(params.expectedRpId).digest();
+  if (!crypto19.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
     throw new Error("WebAuthn RP ID hash verification failed.");
   }
   const flags = authData[32];
@@ -94139,7 +96614,7 @@ function extractCredentialFromAttestation(params) {
   } catch (err) {
     if (params.publicKeySpkiBase64) {
       const der = base64UrlToBuffer(params.publicKeySpkiBase64);
-      const pubKey = crypto18.createPublicKey({ key: der, format: "der", type: "spki" });
+      const pubKey = crypto19.createPublicKey({ key: der, format: "der", type: "spki" });
       publicKeySpki = pubKey.export({ type: "spki", format: "pem" }).toString();
       algorithm = pubKey.asymmetricKeyType === "rsa" ? -257 : -7;
     } else {
@@ -94169,8 +96644,8 @@ function verifyPasskeyAssertion(params) {
       return { valid: false, newCounter: params.previousCounter, error: "Malformed authenticatorData." };
     }
     const rpIdHash = authDataBuf.subarray(0, 32);
-    const expectedRpIdHash = crypto18.createHash("sha256").update(params.expectedRpId).digest();
-    if (!crypto18.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+    const expectedRpIdHash = crypto19.createHash("sha256").update(params.expectedRpId).digest();
+    if (!crypto19.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
       return { valid: false, newCounter: params.previousCounter, error: "Passkey RP ID mismatch." };
     }
     const flags = authDataBuf[32];
@@ -94185,11 +96660,11 @@ function verifyPasskeyAssertion(params) {
         error: "Passkey signCount replay check failed. Please re-register this passkey."
       };
     }
-    const clientDataHash = crypto18.createHash("sha256").update(clientDataBuf).digest();
+    const clientDataHash = crypto19.createHash("sha256").update(clientDataBuf).digest();
     const signedData = Buffer.concat([authDataBuf, clientDataHash]);
     const sigBuf = base64UrlToBuffer(params.signature);
-    const publicKey = crypto18.createPublicKey(params.publicKeySpki);
-    const ok = crypto18.verify("sha256", signedData, publicKey, sigBuf);
+    const publicKey = crypto19.createPublicKey(params.publicKeySpki);
+    const ok = crypto19.verify("sha256", signedData, publicKey, sigBuf);
     if (!ok) {
       return { valid: false, newCounter: params.previousCounter, error: "Passkey cryptographic signature invalid." };
     }
@@ -94230,7 +96705,7 @@ function resolveRpContext(reqHeaders) {
 }
 
 // server/firebaseVerify.ts
-import crypto19 from "crypto";
+import crypto20 from "crypto";
 var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 var cachedCerts = null;
 var cachedCertsExpiresAt = 0;
@@ -94273,7 +96748,7 @@ function verifyFirebaseJwtWithKey(idToken, publicKeyOrCert, expectedProjectId, n
   }
   const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, "utf8");
   const signature = base64UrlToBuffer2(sigB64);
-  const verified = crypto19.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
+  const verified = crypto20.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
   if (!verified) {
     throw new Error("Firebase ID token signature verification failed.");
   }
@@ -94343,7 +96818,7 @@ function getSbConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
   return { url, key };
 }
-async function sbRest2(path11, opts = {}) {
+async function sbRest2(path12, opts = {}) {
   const { url, key } = getSbConfig();
   const headers = {
     apikey: key,
@@ -94353,7 +96828,7 @@ async function sbRest2(path11, opts = {}) {
   if (opts.body !== void 0) headers["Content-Type"] = "application/json";
   if (opts.prefer) headers["Prefer"] = opts.prefer;
   try {
-    const res = await fetch(`${url}/rest/v1/${path11}`, {
+    const res = await fetch(`${url}/rest/v1/${path12}`, {
       method: opts.method || "GET",
       headers,
       body: opts.body !== void 0 ? JSON.stringify(opts.body) : void 0
@@ -94566,7 +97041,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
     };
   }
   let savedRecord = {
-    id: crypto20.randomUUID(),
+    id: crypto21.randomUUID(),
     userId,
     upiId: payload.upiId,
     payeeName: payload.payeeName,
@@ -94577,7 +97052,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
   await setUserPrivateMeta(userId, (prev) => {
     const existing = prev.__upi_profile;
     savedRecord = {
-      id: existing?.id || crypto20.randomUUID(),
+      id: existing?.id || crypto21.randomUUID(),
       userId,
       upiId: payload.upiId,
       payeeName: payload.payeeName,
@@ -94830,7 +97305,7 @@ async function saveIdentityForUser(userId, provider, providerUid, providerEmail,
     };
   }
   const record = {
-    id: crypto20.randomUUID(),
+    id: crypto21.randomUUID(),
     userId,
     provider,
     providerUid,
@@ -95026,7 +97501,7 @@ async function savePasskeyForUser(pk) {
   }
   const created = {
     ...pk,
-    id: crypto20.randomUUID(),
+    id: crypto21.randomUUID(),
     createdAt: nowIso,
     lastUsedAt: null
   };
@@ -95353,6 +97828,15 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
     return true;
   }
   if (pathname === "/api/auth/google" && method === "POST") {
+    const siteCfg = await getPublishedSiteConfig().catch(() => null);
+    if (siteCfg && (siteCfg.loginSettings.allowGoogleSignIn === false || siteCfg.loginSettings.allowLogin === false)) {
+      sendJson2(res, 403, {
+        success: false,
+        code: "GOOGLE_LOGIN_DISABLED",
+        message: "Google Sign-In is currently disabled by an administrator."
+      });
+      return true;
+    }
     const rate = await checkRateLimitAsync(
       `login:ip:${clientIp}`,
       RATE_LIMITS.LOGIN_IP.max,
@@ -95438,7 +97922,15 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       });
       return true;
     }
-    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto20.randomBytes(24).toString("hex")}`;
+    if (siteCfg && siteCfg.loginSettings.allowRegistration === false) {
+      sendJson2(res, 403, {
+        success: false,
+        code: "REGISTRATION_DISABLED",
+        message: "New account registration is currently disabled by an administrator."
+      });
+      return true;
+    }
+    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto21.randomBytes(24).toString("hex")}`;
     const initialName = verified.name || verified.email.split("@")[0] || "User";
     const initialMeta = { __profile_completed: false };
     let createdUser = null;
@@ -95701,6 +98193,15 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
     return true;
   }
   if (pathname === "/api/auth/passkey/login/options" && method === "POST") {
+    const siteCfg = await getPublishedSiteConfig().catch(() => null);
+    if (siteCfg && (siteCfg.loginSettings.allowPasskeySignIn === false || siteCfg.loginSettings.allowLogin === false)) {
+      sendJson2(res, 403, {
+        success: false,
+        code: "PASSKEY_LOGIN_DISABLED",
+        message: "Passkey Sign-In is currently disabled by an administrator."
+      });
+      return true;
+    }
     let body = {};
     try {
       body = await parseJsonBody2(req);
@@ -95735,6 +98236,15 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
     return true;
   }
   if (pathname === "/api/auth/passkey/login/verify" && method === "POST") {
+    const siteCfg = await getPublishedSiteConfig().catch(() => null);
+    if (siteCfg && (siteCfg.loginSettings.allowPasskeySignIn === false || siteCfg.loginSettings.allowLogin === false)) {
+      sendJson2(res, 403, {
+        success: false,
+        code: "PASSKEY_LOGIN_DISABLED",
+        message: "Passkey Sign-In is currently disabled by an administrator."
+      });
+      return true;
+    }
     const rate = await checkRateLimitAsync(
       `login:ip:${clientIp}`,
       RATE_LIMITS.LOGIN_IP.max,
@@ -96361,7 +98871,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source);
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto21.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto22.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, batch_id: batchId },
       language
@@ -96490,7 +99000,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source || "settings_manage_consent");
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto21.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto22.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, via_withdraw_all: true, batch_id: batchId },
       language
@@ -97032,11 +99542,11 @@ function defaultUserStore() {
     receiptRecords: []
   };
 }
-var DATA_DIR = path10.resolve(process.cwd(), ".data", "ai-finance");
+var DATA_DIR = path11.resolve(process.cwd(), ".data", "ai-finance");
 function safeUserFilePath(userId) {
-  const hash2 = crypto22.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
-  const resolved = path10.resolve(DATA_DIR, `u_${hash2}.json`);
-  if (!resolved.startsWith(DATA_DIR + path10.sep)) {
+  const hash2 = crypto23.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
+  const resolved = path11.resolve(DATA_DIR, `u_${hash2}.json`);
+  if (!resolved.startsWith(DATA_DIR + path11.sep)) {
     throw new Error("PATH_CONFINEMENT_VIOLATION");
   }
   return resolved;
@@ -97044,8 +99554,8 @@ function safeUserFilePath(userId) {
 function readUserStore(userId) {
   try {
     const filePath = safeUserFilePath(userId);
-    if (!fs12.existsSync(filePath)) return defaultUserStore();
-    const raw = fs12.readFileSync(filePath, "utf8");
+    if (!fs13.existsSync(filePath)) return defaultUserStore();
+    const raw = fs13.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return {
       ...defaultUserStore(),
@@ -97073,11 +99583,11 @@ function readUserStore(userId) {
 }
 function writeUserStore(userId, store) {
   try {
-    if (!fs12.existsSync(DATA_DIR)) {
-      fs12.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs13.existsSync(DATA_DIR)) {
+      fs13.mkdirSync(DATA_DIR, { recursive: true });
     }
     const filePath = safeUserFilePath(userId);
-    fs12.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf8");
+    fs13.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
     console.warn("[AI Finance Store] Persistence warning:", err?.message);
   }
@@ -97177,7 +99687,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const title = String(body.title || "New Financial Chat").trim().slice(0, 120) || "New Financial Chat";
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const conv = {
-        id: `conv_${Date.now()}_${crypto22.randomBytes(4).toString("hex")}`,
+        id: `conv_${Date.now()}_${crypto23.randomBytes(4).toString("hex")}`,
         user_id: userId,
         title,
         created_at: now,
@@ -97360,10 +99870,10 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           amount: safeNum(b?.amount),
           dueDay: Math.max(1, Math.min(31, Math.round(safeNum(b?.dueDay)) || 1))
         })) : [],
-        savingsGoals: Array.isArray(rawCtx.savingsGoals) ? rawCtx.savingsGoals.slice(0, 30).map((g2) => ({
-          title: safeStr(g2?.title, 80),
-          current: safeNum(g2?.current),
-          target: safeNum(g2?.target)
+        savingsGoals: Array.isArray(rawCtx.savingsGoals) ? rawCtx.savingsGoals.slice(0, 30).map((g3) => ({
+          title: safeStr(g3?.title, 80),
+          current: safeNum(g3?.current),
+          target: safeNum(g3?.target)
         })) : [],
         udharSummary: {
           totalReceivable: safeNum(rawUdhar.totalReceivable),
@@ -97385,7 +99895,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       if (!conv) {
         conv = {
-          id: convId || `conv_${Date.now()}_${crypto22.randomBytes(4).toString("hex")}`,
+          id: convId || `conv_${Date.now()}_${crypto23.randomBytes(4).toString("hex")}`,
           user_id: userId,
           title: question.slice(0, 64),
           created_at: now,
@@ -97619,7 +100129,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         sendJson4(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
         return true;
       }
-      const fileHash = crypto22.createHash("sha256").update(base64Data).digest("hex");
+      const fileHash = crypto23.createHash("sha256").update(base64Data).digest("hex");
       try {
         const extraction = await extractReceiptWithOcr({ base64Image: base64Data, mimeType });
         const store = readUserStore(userId);
@@ -97661,7 +100171,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       const record = {
-        id: `rcpt_${Date.now()}_${crypto22.randomBytes(3).toString("hex")}`,
+        id: `rcpt_${Date.now()}_${crypto23.randomBytes(3).toString("hex")}`,
         user_id: userId,
         transaction_id: body.transaction_id || null,
         file_hash: String(body.file_hash || ""),
@@ -97709,7 +100219,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const asset = {
-        id: body.id || `asset_${Date.now()}_${crypto22.randomBytes(3).toString("hex")}`,
+        id: body.id || `asset_${Date.now()}_${crypto23.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_value: Math.round(currentValue * 100) / 100,
@@ -97765,7 +100275,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const liability = {
-        id: body.id || `liab_${Date.now()}_${crypto22.randomBytes(3).toString("hex")}`,
+        id: body.id || `liab_${Date.now()}_${crypto23.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_balance: Math.round(currentBalance * 100) / 100,
@@ -97985,7 +100495,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
 }
 
 // server/upiDetectionApi.ts
-import crypto23 from "crypto";
+import crypto24 from "crypto";
 
 // src/lib/upiDetectionEngine.ts
 var PARSER_VERSION = "1.0.0";
@@ -98743,7 +101253,7 @@ async function listUserDetected(userId) {
 async function appendDetectionEvent(userId, event) {
   const fullEvent = {
     ...event,
-    id: `upi_evt_${crypto23.randomBytes(6).toString("hex")}`,
+    id: `upi_evt_${crypto24.randomBytes(6).toString("hex")}`,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   if (!isDatabaseAvailable()) {
@@ -99457,7 +101967,7 @@ async function handleApiRequest(req, res) {
     }
   }
   const method = req.method?.toUpperCase() || "GET";
-  if (!pathname.startsWith("/api/")) {
+  if (!pathname.startsWith("/api/") && pathname !== "/robots.txt" && pathname !== "/sitemap.xml") {
     return false;
   }
   const clientIp = getClientIp2(req);
@@ -99533,22 +102043,80 @@ async function handleApiRequest(req, res) {
   }
   if (pathname === "/api/public/site-config" && method === "GET") {
     try {
+      const payload = await getPublicSiteConfigPayload();
+      sendJson6(res, 200, payload);
+    } catch {
       const [maintenance, appPopup] = await Promise.all([
-        getMaintenanceSettings(),
-        getAppPopupSettings()
+        getMaintenanceSettings().catch(() => ({ isEnabled: false })),
+        getAppPopupSettings().catch(() => ({ enabled: true, downloadUrl: "/#install" }))
       ]);
       sendJson6(res, 200, {
         success: true,
+        version: 1,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
         maintenance,
         appPopup
       });
-    } catch {
-      sendJson6(res, 200, {
-        success: true,
-        maintenance: { isEnabled: false },
-        appPopup: { enabled: true, downloadUrl: "/#install" }
-      });
     }
+    return true;
+  }
+  if (pathname === "/api/public/site-config/stream" && method === "GET") {
+    const parsed2 = parseUrl2(req.url || "", true);
+    const sinceParam = typeof parsed2.query.v === "string" ? parseInt(parsed2.query.v, 10) : typeof req.headers["last-event-id"] === "string" ? parseInt(req.headers["last-event-id"], 10) : void 0;
+    await subscribeSiteConfigSse(
+      req,
+      res,
+      Number.isFinite(sinceParam) ? sinceParam : void 0
+    );
+    return true;
+  }
+  const brandingAssetMatch = pathname.match(/^\/api\/branding\/assets\/([a-zA-Z0-9._-]+)$/);
+  if (brandingAssetMatch && method === "GET") {
+    const asset = await getBrandingAssetById(brandingAssetMatch[1]);
+    if (!asset) {
+      sendJson6(res, 404, { success: false, message: "Branding asset not found." });
+      return true;
+    }
+    serveBrandingAssetResponse(res, asset);
+    return true;
+  }
+  const pwaManifestMatch = pathname.match(/^\/api\/pwa\/manifest\/(user|myadmin|mystaff)$/);
+  if (pwaManifestMatch && method === "GET") {
+    const scope = pwaManifestMatch[1];
+    const hostHeader2 = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+    const manifest = await buildDynamicPwaManifest(scope, hostHeader2);
+    res.writeHead(200, {
+      "Content-Type": "application/manifest+json; charset=utf-8",
+      "Cache-Control": "no-cache, must-revalidate",
+      "X-Content-Type-Options": "nosniff"
+    });
+    res.end(JSON.stringify(manifest, null, 2));
+    return true;
+  }
+  const pwaIconMatch = pathname.match(/^\/api\/pwa\/icon\/(user|myadmin|mystaff)$/);
+  if (pwaIconMatch && method === "GET") {
+    const scope = pwaIconMatch[1];
+    await resolveDynamicPwaIcon(scope, res);
+    return true;
+  }
+  if ((pathname === "/robots.txt" || pathname === "/api/robots.txt") && method === "GET") {
+    const body = await generateRobotsTxt();
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=60, must-revalidate",
+      "X-Content-Type-Options": "nosniff"
+    });
+    res.end(body);
+    return true;
+  }
+  if ((pathname === "/sitemap.xml" || pathname === "/api/sitemap.xml") && method === "GET") {
+    const xml = await generateSitemapXml();
+    res.writeHead(200, {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Cache-Control": "public, max-age=60, must-revalidate",
+      "X-Content-Type-Options": "nosniff"
+    });
+    res.end(xml);
     return true;
   }
   try {
@@ -99770,6 +102338,17 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/staff/auth/login" && method === "POST") {
+      const maintCheck = await getMaintenanceSettings().catch(() => ({ isEnabled: false, allowStaffAccessDuringMaintenance: true }));
+      if (maintCheck?.isEnabled && maintCheck?.allowStaffAccessDuringMaintenance === false) {
+        sendJson6(res, 503, {
+          success: false,
+          code: "MAINTENANCE_MODE",
+          maintenance: true,
+          message: maintCheck.message || "Platform maintenance is active and staff access is temporarily paused.",
+          expectedRestoration: maintCheck.expectedRestoration
+        });
+        return true;
+      }
       const body = await parseJsonBody6(req);
       const email = normalizeEmail(body.email || "");
       const password = String(body.password || "");
@@ -99978,23 +102557,136 @@ async function handleApiRequest(req, res) {
       const handled = await handleAdminApiRequest(req, res, pathname, method);
       if (handled) return true;
     }
-    const isMaintenanceExemptPath = pathname === "/api/health" || pathname === "/api/public/site-config" || pathname.startsWith("/api/admin/") || pathname === "/api/staff/auth/login" || pathname === "/api/auth/me" || pathname === "/api/auth/logout" || pathname === "/api/auth/logout-all-devices";
+    const isMaintenanceExemptPath = pathname === "/api/health" || pathname === "/api/public/site-config" || pathname === "/api/public/site-config/stream" || pathname.startsWith("/api/branding/assets/") || pathname.startsWith("/api/pwa/") || pathname === "/api/robots.txt" || pathname === "/api/sitemap.xml" || pathname === "/robots.txt" || pathname === "/sitemap.xml" || pathname.startsWith("/api/admin/") || pathname === "/api/staff/auth/login" || pathname === "/api/auth/me" || pathname === "/api/auth/logout" || pathname === "/api/auth/logout-all-devices";
     if (!isMaintenanceExemptPath && await isMaintenanceModeEnabled()) {
+      const maint = await getMaintenanceSettings();
       const reqUser = await authenticateRequest(req);
       const reqEmail = (reqUser?.email || "").toLowerCase().trim();
       const reqRole = (reqUser?.role || "").toLowerCase().trim();
       const reqSlug = (reqUser?.role_slug || "").toLowerCase().trim();
-      const isReqAdmin = Boolean(
-        reqUser && (reqEmail === "hackifypro@gmail.com" || reqEmail === "admin@mymoney.com" || ["superadmin", "admin", "support", "analyst"].includes(reqRole) || reqSlug && reqSlug !== "user" && reqSlug !== "anonymous")
+      const isPureAdmin = Boolean(
+        reqUser && (reqEmail === "hackifypro@gmail.com" || reqEmail === "admin@mymoney.com" || ["superadmin", "admin"].includes(reqRole) || ["superadmin", "admin"].includes(reqSlug))
       );
-      if (!isReqAdmin) {
-        const maint = await getMaintenanceSettings();
+      const isStaffMember = Boolean(
+        reqUser && !isPureAdmin && (["support", "analyst"].includes(reqRole) || reqSlug && reqSlug !== "user" && reqSlug !== "anonymous")
+      );
+      const canBypass = isPureAdmin || isStaffMember && maint.allowStaffAccessDuringMaintenance !== false;
+      if (!canBypass) {
         sendJson6(res, 503, {
           success: false,
           code: "MAINTENANCE_MODE",
           maintenance: true,
           message: maint.message || "Platform is currently undergoing scheduled maintenance. Please check back shortly.",
           expectedRestoration: maint.expectedRestoration
+        });
+        return true;
+      }
+    }
+    if (pathname.startsWith("/api/staff/")) {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Staff authentication required." });
+        return true;
+      }
+      const staffRole = String(authUser.role || "user").toLowerCase().trim();
+      const staffSlug = String(authUser.role_slug || "").toLowerCase().trim();
+      const effectiveStaffRole = staffSlug && staffSlug !== "user" ? staffSlug : staffRole;
+      const isMaster = (authUser.email || "").toLowerCase().trim() === "hackifypro@gmail.com" || (authUser.email || "").toLowerCase().trim() === "admin@mymoney.com";
+      let isVerifiedStaff = !isMaster && !["superadmin", "admin"].includes(effectiveStaffRole) && (["support", "analyst"].includes(staffRole) || ["support", "analyst"].includes(staffSlug));
+      if (!isVerifiedStaff && !isMaster && !["superadmin", "admin"].includes(effectiveStaffRole) && effectiveStaffRole !== "user" && effectiveStaffRole !== "anonymous") {
+        try {
+          const fbRoles = await listAdminRolesFallback();
+          if (fbRoles.some((r2) => String(r2.slug || "").toLowerCase().trim() === effectiveStaffRole)) {
+            isVerifiedStaff = true;
+          }
+        } catch {
+        }
+        if (!isVerifiedStaff && isDatabaseAvailable()) {
+          try {
+            const roleCheck = await query("SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1", [effectiveStaffRole]);
+            if (roleCheck.rows.length > 0) isVerifiedStaff = true;
+          } catch {
+          }
+        }
+      }
+      const allowReadForSuperadmin = ["superadmin", "admin"].includes(effectiveStaffRole) || isMaster;
+      if (!isVerifiedStaff && !allowReadForSuperadmin) {
+        sendJson6(res, 403, {
+          success: false,
+          code: "STAFF_ROLE_REQUIRED",
+          message: "Access Denied: Staff role authorization required for /api/staff/* endpoints."
+        });
+        return true;
+      }
+      if (pathname === "/api/staff/tasks" && method === "GET") {
+        const parsed2 = parseUrl2(req.url || "", true);
+        const status = typeof parsed2.query.status === "string" ? parsed2.query.status : void 0;
+        const tasks = await listStaffTasks({ assignedTo: allowReadForSuperadmin ? void 0 : authUser.id, status });
+        const allForCounts = await listStaffTasks({ assignedTo: allowReadForSuperadmin ? void 0 : authUser.id });
+        const counts = {
+          total: allForCounts.length,
+          open: allForCounts.filter((t2) => t2.status === "open").length,
+          in_progress: allForCounts.filter((t2) => t2.status === "in_progress").length,
+          completed: allForCounts.filter((t2) => t2.status === "completed").length,
+          blocked: allForCounts.filter((t2) => t2.status === "blocked").length
+        };
+        sendJson6(res, 200, { success: true, tasks, counts });
+        return true;
+      }
+      const staffTaskPatchMatch = pathname.match(/^\/api\/staff\/tasks\/([a-zA-Z0-9_-]+)$/);
+      if (staffTaskPatchMatch && (method === "PATCH" || method === "PUT")) {
+        const taskId = staffTaskPatchMatch[1];
+        const body = await parseJsonBody6(req);
+        const allowedStatuses = /* @__PURE__ */ new Set(["open", "in_progress", "completed", "blocked"]);
+        if (!body.status || !allowedStatuses.has(String(body.status))) {
+          sendJson6(res, 400, {
+            success: false,
+            message: "Staff members can only update task status to open, in_progress, completed, or blocked."
+          });
+          return true;
+        }
+        const visibleTasks = await listStaffTasks({ assignedTo: allowReadForSuperadmin ? void 0 : authUser.id });
+        const existingTask = visibleTasks.find((t2) => t2.id === taskId);
+        if (!existingTask) {
+          sendJson6(res, 404, { success: false, message: "Assigned task not found for your staff account." });
+          return true;
+        }
+        const updated = await updateStaffTask(taskId, {
+          status: body.status
+        });
+        await logSecurityEvent("STAFF_TASK_STATUS_UPDATED", {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          actorRole: effectiveStaffRole,
+          ipAddress: clientIp,
+          details: { taskId, newStatus: body.status }
+        }).catch(() => {
+        });
+        sendJson6(res, 200, { success: true, message: "Task status updated.", task: updated });
+        return true;
+      }
+      if (pathname === "/api/staff/notifications" && method === "GET") {
+        const notifications = await getStaffNotifications(authUser.id, 60);
+        const unreadCount = notifications.filter((n) => !n.is_read).length;
+        sendJson6(res, 200, { success: true, notifications, unreadCount });
+        return true;
+      }
+      const staffNotifReadMatch = pathname.match(/^\/api\/staff\/notifications\/([a-zA-Z0-9_-]+)\/read$/);
+      if (staffNotifReadMatch && method === "POST") {
+        await markStaffNotificationRead(staffNotifReadMatch[1], authUser.id);
+        sendJson6(res, 200, { success: true, message: "Notification marked as read." });
+        return true;
+      }
+      if (pathname === "/api/staff/notifications/read-all" && method === "POST") {
+        await markAllStaffNotificationsRead(authUser.id);
+        sendJson6(res, 200, { success: true, message: "All staff notifications marked as read." });
+        return true;
+      }
+      if (pathname === "/api/staff/profile" && method === "GET") {
+        sendJson6(res, 200, {
+          success: true,
+          staff: sanitizeUserOutput(authUser),
+          portalRole: effectiveStaffRole
         });
         return true;
       }
@@ -100012,6 +102704,15 @@ async function handleApiRequest(req, res) {
       if (handled) return true;
     }
     if (pathname === "/api/auth/register" && method === "POST") {
+      const siteCfg = await getPublishedSiteConfig().catch(() => null);
+      if (siteCfg && siteCfg.loginSettings.allowRegistration === false) {
+        sendJson6(res, 403, {
+          success: false,
+          code: "REGISTRATION_DISABLED",
+          message: "New user registration is currently disabled by an administrator."
+        });
+        return true;
+      }
       const rate = await checkRateLimitAsync(`signup:ip:${clientIp}`, RATE_LIMITS.SIGNUP_IP.max, RATE_LIMITS.SIGNUP_IP.windowMs, RATE_LIMITS.SIGNUP_IP.op);
       if (!rate.allowed) {
         sendRateLimitExceeded(res, rate);
@@ -100146,6 +102847,15 @@ async function handleApiRequest(req, res) {
       return true;
     }
     if (pathname === "/api/auth/login" && method === "POST") {
+      const siteCfg = await getPublishedSiteConfig().catch(() => null);
+      if (siteCfg && siteCfg.loginSettings.allowLogin === false) {
+        sendJson6(res, 403, {
+          success: false,
+          code: "LOGIN_DISABLED",
+          message: "User login is temporarily paused by an administrator. Please check back shortly."
+        });
+        return true;
+      }
       const body = await parseJsonBody6(req);
       const email = normalizeEmail(body.email || "");
       const password = body.password || "";
@@ -101831,7 +104541,7 @@ async function handleApiRequest(req, res) {
     if (pathname === "/api/account/deletion/process-expired" && method === "POST") {
       const cronSecret = process.env.CRON_SECRET || "";
       const providedCron = String(req.headers["x-cron-secret"] || "").trim();
-      const validCron = cronSecret.length >= 16 && providedCron.length === cronSecret.length && crypto24.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
+      const validCron = cronSecret.length >= 16 && providedCron.length === cronSecret.length && crypto25.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
       if (!validCron) {
         const authUser = await authenticateRequest(req);
         if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
@@ -103141,7 +105851,7 @@ async function handleApiRequest(req, res) {
         });
         return true;
       }
-      const tokenHash = crypto24.randomBytes(32).toString("hex");
+      const tokenHash = crypto25.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1e3);
       const appBaseUrl = process.env.APP_URL || "http://localhost:3000";
       const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
@@ -103331,8 +106041,8 @@ async function handleApiRequest(req, res) {
           if (tokenRes.rows[0].expires_at) expiresAt = tokenRes.rows[0].expires_at;
         }
         if (!pairingToken) {
-          pairingToken = crypto24.randomBytes(32).toString("hex");
-          pairingCode = `MM-${crypto24.randomBytes(3).toString("hex").toUpperCase()}`;
+          pairingToken = crypto25.randomBytes(32).toString("hex");
+          pairingCode = `MM-${crypto25.randomBytes(3).toString("hex").toUpperCase()}`;
           await query(
             `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
              VALUES ($1, $2, $3, FALSE, $4)`,
@@ -103518,8 +106228,8 @@ async function handleApiRequest(req, res) {
       }
       try {
         await query("UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1", [authUser.id]);
-        const pairingToken = crypto24.randomBytes(32).toString("hex");
-        const pairingCode = `MM-${crypto24.randomBytes(3).toString("hex").toUpperCase()}`;
+        const pairingToken = crypto25.randomBytes(32).toString("hex");
+        const pairingCode = `MM-${crypto25.randomBytes(3).toString("hex").toUpperCase()}`;
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
         await query(
           `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
@@ -104042,7 +106752,7 @@ async function handleApiRequest(req, res) {
         sendJson6(res, 400, { success: false, message: "Person's name is required." });
         return true;
       }
-      const linkId = crypto24.randomUUID();
+      const linkId = crypto25.randomUUID();
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const client = await pool.connect();
       try {
@@ -107038,6 +109748,7 @@ async function handleApiRequest(req, res) {
       const userId = authUser.id;
       const resDev = await recordDeviceInstallation({
         userId,
+        portalScope: body.portalScope,
         deviceType: body.deviceType,
         browser: body.browser,
         os: body.os,

@@ -251,7 +251,7 @@ export function createDefaultSiteControlCenterConfig(): SiteControlCenterConfig 
       },
     },
     homepage: {
-      showHero: true,
+      showHero: false,
       heroBadge: 'Trusted Personal Finance & Shared Udhaar Ledger',
       heroHeading: 'Master Every Rupee, Room Split & Udhaar Seamlessly',
       heroSubheading:
@@ -299,11 +299,11 @@ export function createDefaultSiteControlCenterConfig(): SiteControlCenterConfig 
     footer: {
       copyrightText: '© 2026 My Money Manager by HackifyPro. All rights reserved.',
       supportEmail: 'hackifypro@gmail.com',
-      supportPhone: '+91 9669412829',
+      supportPhone: '+919669412829',
       companyName: 'HackifyPro Technologies',
       address: 'India',
       showLegalLinks: true,
-      showSocialLinks: true,
+      showSocialLinks: false,
       socialLinks: {
         github: 'https://github.com/Barela08/mymoney',
         twitter: '',
@@ -356,7 +356,7 @@ export function createDefaultSiteControlCenterConfig(): SiteControlCenterConfig 
       reportsEnabled: true,
       supportDeskEnabled: true,
       legalCenterEnabled: true,
-      publicWelcomeHeroEnabled: true,
+      publicWelcomeHeroEnabled: false,
     },
     pwa: {
       userAppInstallEnabled: true,

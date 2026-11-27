@@ -15,8 +15,10 @@ import {
   Shield,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
+import { sanitizePublicUrl } from '../../lib/siteConfigDefaults';
 
 interface StaffLoginPageProps {
   onReturnHome?: () => void;
@@ -25,8 +27,10 @@ interface StaffLoginPageProps {
 
 export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, onGoToAdmin }) => {
   const { staffLogin } = useAuth();
-  const { isInstalled, triggerInstallPrompt, compatibility } = usePwaInstall();
+  const { siteConfig } = useExpense();
+  const { isInstalled, canOfferInstall, triggerInstallPrompt, compatibility } = usePwaInstall();
   const toast = useToast();
+  const staffBrand = siteConfig.branding.staff_app;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -63,9 +67,9 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, on
     try {
       const res = await triggerInstallPrompt();
       if (res.status === 'accepted') {
-        toast.success('Installing Staff App', 'My Money Manager Staff is being installed to your device.');
+        toast.success('Installing Staff App', `${staffBrand.appName} is being installed to your device.`);
       } else if (res.status === 'already_installed') {
-        toast.info('Already Installed', 'My Money Manager Staff is already running as an installed app.');
+        toast.info('Already Installed', `${staffBrand.appName} is already running as an installed app.`);
       }
     } finally {
       setIsInstallingApp(false);
@@ -119,27 +123,27 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, on
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-2 z-10">
         <div className="flex items-center gap-2.5 min-w-0">
           <img
-            src="/staff-logo.png"
-            alt="My Money Manager Staff by HackifyPro"
+            src={sanitizePublicUrl(staffBrand.logoUrl, '/staff-logo.png')}
+            alt={staffBrand.appName || 'My Money Manager Staff'}
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).src = '/staff-icon-192.png';
             }}
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-indigo-500/40 shadow-lg shrink-0 bg-indigo-950"
           />
           <div className="min-w-0">
-            <span className="text-sm font-black tracking-tight text-white block">
-              <span className="sm:hidden">MM Staff</span>
-              <span className="hidden sm:inline">My Money Manager Staff</span>
+            <span className="text-sm font-black tracking-tight text-white block truncate">
+              <span className="sm:hidden">{staffBrand.shortName || 'MM Staff'}</span>
+              <span className="hidden sm:inline">{staffBrand.appName || 'My Money Manager Staff'}</span>
             </span>
-            <span className="text-[11px] font-semibold text-indigo-400 block">
+            <span className="text-[11px] font-semibold text-indigo-400 block truncate">
               <span className="sm:hidden">HackifyPro · Operations</span>
-              <span className="hidden sm:inline">A product of HackifyPro · Staff Operations Desk</span>
+              <span className="hidden sm:inline">{staffBrand.tagline || 'A product of HackifyPro · Staff Operations Desk'}</span>
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {!isInstalled ? (
+          {!isInstalled && canOfferInstall ? (
             <button
               type="button"
               onClick={handleInstallStaffApp}
@@ -151,12 +155,12 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, on
               <span className="hidden sm:inline">Download Staff App</span>
               <span className="sm:hidden">Install App</span>
             </button>
-          ) : (
+          ) : isInstalled ? (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-[11px] font-bold text-indigo-300">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Staff App Installed</span>
             </span>
-          )}
+          ) : null}
 
           <button
             type="button"
@@ -182,10 +186,11 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, on
               Authorized Staff Portal (/mystaff)
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Staff Member Sign In
+              {staffBrand.loginTitle || 'Staff Member Sign In'}
             </h1>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Sign in with your Support Agent, Analyst, or assigned Staff account to handle user tickets, complaints, and operations.
+              {staffBrand.loginSubtitle ||
+                'Sign in with your Support Agent, Analyst, or assigned Staff account to handle user tickets, complaints, and operations.'}
             </p>
           </div>
 
@@ -285,7 +290,7 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, on
           </form>
 
           {/* Dedicated Staff App Download Card */}
-          {!isInstalled && (
+          {!isInstalled && canOfferInstall && (
             <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/25 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center shrink-0">
@@ -330,7 +335,7 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({ onReturnHome, on
 
       {/* Footer */}
       <footer className="text-center text-[11px] text-slate-500 z-10">
-        My Money Manager Staff — A product of HackifyPro
+        {staffBrand.appName} — {siteConfig.footer.companyName || 'HackifyPro'}
       </footer>
     </div>
   );

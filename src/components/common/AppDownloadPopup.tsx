@@ -5,6 +5,7 @@ import { getPortalStorageKeys, usePwaInstall } from '../../context/PwaInstallCon
 import { useAuth } from '../../context/AuthContext';
 import { isRunningStandalone } from '../../lib/pwaUtils';
 import { AppPortalScope, getPortalBranding } from '../../lib/portalAuth';
+import { getPortalIdentityFromSiteConfig } from '../../lib/siteConfigDefaults';
 
 interface AppDownloadPopupProps {
   isAdminRoute: boolean;
@@ -266,12 +267,13 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   hasBottomMobileNav,
   portalScope: portalScopeProp,
 }) => {
-  const { appPopupSettings, appBranding } = useExpense();
+  const { appPopupSettings, appBranding, siteConfig } = useExpense();
   const {
     portalScope: contextScope,
     triggerInstallPrompt,
     openInstallModal,
     isInstalled,
+    canOfferInstall,
     isModalOpen,
     isScannerActive,
     activeModalCount,
@@ -282,6 +284,7 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
 
   const activeScope = portalScopeProp || contextScope || 'user';
   const scopeBranding = getPortalBranding(activeScope);
+  const liveIdentity = getPortalIdentityFromSiteConfig(siteConfig, activeScope);
   const isDedicatedPortal = activeScope === 'myadmin' || activeScope === 'mystaff';
   const isAuthView = !user;
 
@@ -437,7 +440,10 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   const isInternalInstallAction =
     isDedicatedPortal || safeHref === '/#install' || safeHref === '#install' || safeHref === '/#app-install';
   const isExternal = !isDedicatedPortal && /^https?:\/\//i.test(safeHref);
-  const isEnabled = isInternalInstallAction ? true : appPopupSettings?.enabled !== false;
+  const isEnabled =
+    canOfferInstall &&
+    siteConfig.pwa.showDownloadPopup !== false &&
+    (isInternalInstallAction ? true : appPopupSettings?.enabled !== false);
 
   if (
     !hasMountSettled ||
@@ -492,24 +498,24 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   };
 
   const appTitle = isDedicatedPortal
-    ? scopeBranding.appName
-    : appBranding?.appName?.trim() || 'My Money Manager';
+    ? liveIdentity.appName || scopeBranding.appName
+    : liveIdentity.appName || appBranding?.appName?.trim() || 'My Money Manager';
   const appLogo = isDedicatedPortal
-    ? scopeBranding.fallbackIcon
-    : sanitizeLogoUrl(appBranding?.logoUrl);
+    ? sanitizeLogoUrl(liveIdentity.logoUrl) || scopeBranding.fallbackIcon
+    : sanitizeLogoUrl(liveIdentity.logoUrl || appBranding?.logoUrl);
 
   const displayTitle = isDedicatedPortal
-    ? `Install ${scopeBranding.appName}`
+    ? `Install ${appTitle}`
     : !appPopupSettings?.title?.trim() || appPopupSettings.title.trim() === 'Get the My Money Manager App'
-    ? 'Install My Money Manager'
+    ? `Install ${appTitle}`
     : appPopupSettings.title.trim();
 
   const displayDesc = isDedicatedPortal
-    ? scopeBranding.subtitle
+    ? liveIdentity.description || scopeBranding.subtitle
     : !appPopupSettings?.description?.trim() ||
       appPopupSettings.description.trim() ===
         'Install our fast, offline-ready app for instant expense tracking & UPI alerts.'
-    ? 'Install the app for a faster experience and easy access from your home screen.'
+    ? liveIdentity.description || 'Install the app for a faster experience and easy access from your home screen.'
     : appPopupSettings.description.trim();
 
   const displayBtnLabel = isDedicatedPortal

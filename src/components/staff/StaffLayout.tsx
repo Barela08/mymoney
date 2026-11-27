@@ -17,22 +17,28 @@ import {
   CheckCircle2,
   Headset,
   CheckCheck,
+  ClipboardCheck,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useExpense } from '../../context/ExpenseContext';
 import { usePwaInstall } from '../../context/PwaInstallContext';
 import { useToast } from '../../context/ToastContext';
 import { hasPortalPermission, resolveEffectiveRoleSlug } from '../../lib/portalAuth';
-import { adminClient } from '../../lib/adminApi';
+import { staffClient } from '../../lib/staffApi';
+import { sanitizePublicUrl } from '../../lib/siteConfigDefaults';
 
 export type StaffSectionKey =
   | 'overview'
+  | 'tasks'
   | 'support'
   | 'users'
   | 'financial_access'
   | 'analytics'
   | 'database'
   | 'audit_logs'
-  | 'notifications';
+  | 'notifications'
+  | 'staff_settings';
 
 interface StaffNavItem {
   key: StaffSectionKey;
@@ -43,6 +49,7 @@ interface StaffNavItem {
 
 const STAFF_NAV_ITEMS: StaffNavItem[] = [
   { key: 'overview', label: 'Staff Workspace', icon: LayoutDashboard },
+  { key: 'tasks', label: 'Assigned Tasks', icon: ClipboardCheck },
   { key: 'support', label: 'Support & Feedback', icon: MessageSquare, requiredPermission: 'support.read' },
   { key: 'users', label: 'User Directory', icon: Users, requiredPermission: 'users.read' },
   {
@@ -54,7 +61,8 @@ const STAFF_NAV_ITEMS: StaffNavItem[] = [
   { key: 'analytics', label: 'Platform Analytics', icon: BarChart3, requiredPermission: 'analytics.read' },
   { key: 'audit_logs', label: 'Audit Trail', icon: FileCode, requiredPermission: 'audit.read' },
   { key: 'database', label: 'Database Overview', icon: Database, requiredPermission: 'database.view' },
-  { key: 'notifications', label: 'Staff Notifications', icon: Bell, requiredPermission: 'notifications.view' },
+  { key: 'notifications', label: 'Staff Notifications', icon: Bell },
+  { key: 'staff_settings', label: 'Staff Profile & App', icon: Settings },
 ];
 
 interface StaffLayoutProps {
@@ -71,8 +79,10 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
   children,
 }) => {
   const { user, portalPermissions, logout } = useAuth();
-  const { isInstalled, triggerInstallPrompt } = usePwaInstall();
+  const { siteConfig } = useExpense();
+  const { isInstalled, canOfferInstall, triggerInstallPrompt } = usePwaInstall();
   const toast = useToast();
+  const staffBrand = siteConfig.branding.staff_app;
 
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
@@ -93,9 +103,8 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
     visibleNavItems.find((i) => i.key === currentSection)?.label || 'Staff Workspace';
 
   const loadNotifications = async () => {
-    if (!hasPortalPermission(portalPermissions, 'notifications.view')) return;
     try {
-      const res = await adminClient.getAdminNotifications();
+      const res = await staffClient.getNotifications();
       if (res?.success && Array.isArray(res.notifications)) {
         setStaffNotifs(res.notifications);
       }
@@ -112,7 +121,7 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
 
   const handleMarkAllRead = async () => {
     try {
-      await adminClient.markAllAdminNotificationsRead();
+      await staffClient.markAllNotificationsRead();
       setStaffNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
     } catch {}
   };
@@ -123,7 +132,7 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
     try {
       const res = await triggerInstallPrompt();
       if (res.status === 'accepted') {
-        toast.success('Installing Staff App', 'My Money Manager Staff is installing on your device.');
+        toast.success('Installing Staff App', `${staffBrand.appName} is installing on your device.`);
       }
     } finally {
       setIsInstalling(false);
@@ -146,8 +155,8 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
 
           <div className="flex items-center gap-2.5 min-w-0">
             <img
-              src="/staff-logo.png"
-              alt="My Money Manager Staff"
+              src={sanitizePublicUrl(staffBrand.logoUrl, '/staff-logo.png')}
+              alt={staffBrand.appName || 'My Money Manager Staff'}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/staff-icon-192.png';
               }}
@@ -156,21 +165,21 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-sm tracking-tight text-slate-900 dark:text-slate-100 truncate">
-                  My Money Manager Staff
+                  {staffBrand.appName || 'My Money Manager Staff'}
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
                   {roleDisplayLabel}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block truncate">
-                A product of HackifyPro · Staff Operations Portal (/mystaff)
+                {staffBrand.tagline || 'A product of HackifyPro · Staff Operations Portal (/mystaff)'}
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {!isInstalled ? (
+          {!isInstalled && canOfferInstall ? (
             <button
               type="button"
               onClick={handleInstallApp}
@@ -182,69 +191,71 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
               <span className="hidden sm:inline">Download Staff App</span>
               <span className="sm:hidden">Install App</span>
             </button>
-          ) : (
+          ) : isInstalled ? (
             <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Staff App Installed</span>
             </span>
-          )}
+          ) : null}
 
-          {hasPortalPermission(portalPermissions, 'notifications.view') && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsAlertsOpen((v) => !v)}
-                className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer relative"
-                aria-label="Staff Notifications"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-black flex items-center justify-center">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-
-              {isAlertsOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                    <h4 className="font-bold text-xs">Staff Operations Feed</h4>
-                    {unreadCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleMarkAllRead}
-                        className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <CheckCheck className="w-3 h-3" />
-                        <span>Mark all read</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-72 overflow-y-auto space-y-2">
-                    {staffNotifs.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-4">No notifications right now.</p>
-                    ) : (
-                      staffNotifs.slice(0, 8).map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => {
-                            if (hasPortalPermission(portalPermissions, 'support.read')) {
-                              onSelectSection('support');
-                            }
-                            setIsAlertsOpen(false);
-                          }}
-                          className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs space-y-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <p className="font-bold text-slate-900 dark:text-slate-100 truncate">{n.title}</p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">{n.message}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsAlertsOpen((v) => !v)}
+              className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer relative"
+              aria-label="Staff Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-black flex items-center justify-center">
+                  {unreadCount}
+                </span>
               )}
-            </div>
-          )}
+            </button>
+
+            {isAlertsOpen && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                  <h4 className="font-bold text-xs">Staff Operations Feed</h4>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      <span>Mark all read</span>
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-72 overflow-y-auto space-y-2">
+                  {staffNotifs.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-4">No notifications right now.</p>
+                  ) : (
+                    staffNotifs.slice(0, 8).map((n) => (
+                      <div
+                        key={n.id}
+                        onClick={async () => {
+                          try {
+                            await staffClient.markNotificationRead(n.id);
+                            setStaffNotifs((prev) =>
+                              prev.map((item) => (item.id === n.id ? { ...item, is_read: true } : item))
+                            );
+                          } catch {}
+                          onSelectSection('tasks');
+                          setIsAlertsOpen(false);
+                        }}
+                        className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs space-y-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        <p className="font-bold text-slate-900 dark:text-slate-100 truncate">{n.title}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">{n.message}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {onExitStaff && (
             <button
@@ -292,7 +303,7 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
           </div>
 
           {/* Dedicated Staff App Install Box in Sidebar */}
-          {!isInstalled && (
+          {!isInstalled && canOfferInstall && (
             <div className="px-4 pb-3">
               <button
                 type="button"
@@ -377,7 +388,7 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
               </div>
 
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                {!isInstalled && (
+                {!isInstalled && canOfferInstall && (
                   <button
                     type="button"
                     onClick={() => {

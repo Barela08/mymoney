@@ -10,7 +10,13 @@ import {
   AppDownloadPopupSettings,
   AppBrandingSettings,
   BroadcastNotification,
+  SiteControlCenterConfig,
 } from '../types';
+import {
+  DEFAULT_SITE_CONTROL_CENTER_CONFIG,
+  getPortalIdentityFromSiteConfig,
+  normalizeClientSiteConfig,
+} from '../lib/siteConfigDefaults';
 import {
   getSupabaseClient,
   fetchTransactionsFromSupabase,
@@ -93,7 +99,11 @@ interface ExpenseContextType {
   updateSection: (id: string, updates: Partial<DynamicSection>) => Promise<boolean>;
   deleteSection: (id: string) => Promise<boolean>;
 
-  // App Settings, Maintenance Mode & App Download Popup
+  // App Settings, Maintenance Mode, App Download Popup & Unified Website Control Center
+  siteConfig: SiteControlCenterConfig;
+  siteConfigVersion: number;
+  configSyncStatus: 'live' | 'offline' | 'reconnecting' | 'cached';
+  applyLiveSiteConfig: (nextCfg: SiteControlCenterConfig, broadcast?: boolean) => void;
   maintenanceSettings: MaintenanceSettings;
   refreshSiteConfig: () => Promise<void>;
   updateMaintenanceSettings: (settings: Partial<MaintenanceSettings>) => Promise<boolean>;
@@ -119,6 +129,8 @@ const LOCAL_SECTIONS_KEY = 'my_money_sections_cache';
 const LOCAL_MAINTENANCE_KEY = 'my_money_maintenance_cache';
 const LOCAL_APP_POPUP_KEY = 'my_money_app_popup_cache';
 const LOCAL_BRANDING_KEY = 'my_money_branding_cache';
+const LOCAL_SITE_CONFIG_KEY = 'mm_site_control_center_cache';
+const SITE_CONFIG_BROADCAST_CHANNEL = 'mm_site_config_sync';
 
 const DEFAULT_SECTIONS: DynamicSection[] = [
   { id: 'home', name: 'Received Money', icon: 'ArrowDownLeft', description: 'Salary, business, freelancing & all money received', display_order: 1, is_enabled: true },
@@ -248,40 +260,191 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
-  // Live-sync browser tab title and favicon while isolating /myadmin and /mystaff portal identities
+  const [siteConfig, setSiteConfig] = useState<SiteControlCenterConfig>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_SITE_CONFIG_KEY);
+      if (saved) {
+        return normalizeClientSiteConfig(JSON.parse(saved));
+      }
+    } catch {}
+    return DEFAULT_SITE_CONTROL_CENTER_CONFIG;
+  });
+  const [configSyncStatus, setConfigSyncStatus] = useState<'live' | 'offline' | 'reconnecting' | 'cached'>(
+    typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'cached'
+  );
+  const siteConfigVersion = siteConfig.version || 1;
+  const lastNotifiedSwVersionRef = React.useRef<number>(siteConfigVersion);
+
+  const applyLiveSiteConfig = useCallback((rawCfg: any, broadcast: boolean = false) => {
+    const normalized = normalizeClientSiteConfig(rawCfg);
+    setSiteConfig(normalized);
+    try {
+      localStorage.setItem(LOCAL_SITE_CONFIG_KEY, JSON.stringify(normalized));
+    } catch {}
+
+    if (normalized.maintenance) {
+      setMaintenanceSettings(normalized.maintenance);
+      try {
+        localStorage.setItem(LOCAL_MAINTENANCE_KEY, JSON.stringify(normalized.maintenance));
+      } catch {}
+    }
+
+    if (normalized.appPopup) {
+      const mergedPopup = { ...DEFAULT_APP_POPUP, ...normalized.appPopup };
+      setAppPopupSettings(mergedPopup);
+      try {
+        localStorage.setItem(LOCAL_APP_POPUP_KEY, JSON.stringify(mergedPopup));
+      } catch {}
+    }
+
+    const derivedBranding: AppBrandingSettings = {
+      ...DEFAULT_BRANDING,
+      appName: normalized.branding.user_app.appName || DEFAULT_BRANDING.appName,
+      subTitle: normalized.branding.user_app.tagline || DEFAULT_BRANDING.subTitle,
+      logoUrl: sanitizeLogoUrl(normalized.branding.user_app.logoUrl),
+      brandTitle: normalized.branding.user_app.appName || DEFAULT_BRANDING.appName,
+      companyName: normalized.footer.companyName || 'HackifyPro',
+      footerText: normalized.footer.copyrightText,
+      supportEmail: normalized.footer.supportEmail,
+      supportPhone: normalized.footer.supportPhone,
+      allowLogin: normalized.loginSettings.allowLogin,
+      allowRegistration: normalized.loginSettings.allowRegistration,
+    };
+    setAppBranding(derivedBranding);
+    try {
+      localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(derivedBranding));
+    } catch {}
+
+    if (broadcast && typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel(SITE_CONFIG_BROADCAST_CHANNEL);
+        bc.postMessage({ type: 'site_config_updated', siteConfig: normalized });
+        bc.close();
+      } catch {}
+    }
+  }, []);
+
+  // Live-sync CSS variables, <title>, meta tags, favicons, and dynamic PWA manifest links across all 3 portals without page refresh
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const syncTitleAndFavicon = () => {
+    const syncDomAndHead = () => {
       const scope = getCurrentPortalScope();
+      const identity = getPortalIdentityFromSiteConfig(siteConfig, scope);
+      const webBrand = siteConfig.branding.website;
+      const version = siteConfig.version || 1;
+
+      const rootStyle = document.documentElement.style;
+      rootStyle.setProperty('--mm-primary', identity.primaryColor || '#10b981');
+      rootStyle.setProperty('--mm-secondary', identity.secondaryColor || '#0f172a');
+      rootStyle.setProperty('--mm-accent', identity.accentColor || '#14b8a6');
+      rootStyle.setProperty('--mm-bg', identity.backgroundColor || '#f8fafc');
+      rootStyle.setProperty('--mm-theme', identity.themeColor || identity.primaryColor || '#10b981');
+
+      const setMetaTag = (selector: string, attrName: 'name' | 'property', attrValue: string, content: string) => {
+        if (!content) return;
+        let el = document.querySelector<HTMLMetaElement>(selector);
+        if (!el) {
+          el = document.createElement('meta');
+          el.setAttribute(attrName, attrValue);
+          document.head.appendChild(el);
+        }
+        el.content = content;
+      };
+
       const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      const appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+      const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+      const manifestPath = `/api/pwa/manifest/${scope}?v=${version}`;
+
       if (scope === 'myadmin') {
-        document.title = 'My Money Manager Admin — HackifyPro';
-        if (favicon) favicon.href = '/admin-favicon.png';
-        return;
+        document.title = identity.tagline
+          ? `${identity.appName} — ${identity.tagline}`
+          : identity.appName;
+        if (favicon) favicon.href = identity.faviconUrl || '/admin-favicon.png';
+        if (appleIcon) appleIcon.href = identity.pwaIconUrl || '/admin-apple-touch-icon.png';
+        if (manifestLink && manifestLink.getAttribute('href') !== manifestPath) {
+          manifestLink.setAttribute('href', manifestPath);
+        }
+        setMetaTag('meta[name="theme-color"]', 'name', 'theme-color', identity.themeColor || '#059669');
+      } else if (scope === 'mystaff') {
+        document.title = identity.tagline
+          ? `${identity.appName} — ${identity.tagline}`
+          : identity.appName;
+        if (favicon) favicon.href = identity.faviconUrl || '/staff-favicon.png';
+        if (appleIcon) appleIcon.href = identity.pwaIconUrl || '/staff-apple-touch-icon.png';
+        if (manifestLink && manifestLink.getAttribute('href') !== manifestPath) {
+          manifestLink.setAttribute('href', manifestPath);
+        }
+        setMetaTag('meta[name="theme-color"]', 'name', 'theme-color', identity.themeColor || '#4f46e5');
+      } else {
+        const titleText =
+          siteConfig.seo.title ||
+          webBrand.siteTitle ||
+          (identity.tagline ? `${identity.appName} — ${identity.tagline}` : identity.appName);
+        document.title = titleText;
+        if (favicon) {
+          favicon.href = siteConfig.seo.faviconUrl || identity.faviconUrl || sanitizeLogoUrl(identity.logoUrl);
+        }
+        if (appleIcon) appleIcon.href = identity.pwaIconUrl || '/apple-touch-icon.png';
+        if (manifestLink && manifestLink.getAttribute('href') !== manifestPath) {
+          manifestLink.setAttribute('href', manifestPath);
+        }
+        setMetaTag('meta[name="theme-color"]', 'name', 'theme-color', identity.themeColor || '#10b981');
+        setMetaTag(
+          'meta[name="description"]',
+          'name',
+          'description',
+          siteConfig.seo.metaDescription || webBrand.siteDescription
+        );
+        setMetaTag('meta[property="og:title"]', 'property', 'og:title', siteConfig.seo.ogTitle || titleText);
+        setMetaTag(
+          'meta[property="og:description"]',
+          'property',
+          'og:description',
+          siteConfig.seo.ogDescription || siteConfig.seo.metaDescription
+        );
+        setMetaTag(
+          'meta[property="og:image"]',
+          'property',
+          'og:image',
+          siteConfig.seo.ogImageUrl || webBrand.ogImageUrl
+        );
+        if (siteConfig.seo.canonicalUrl) {
+          let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+          if (!canonical) {
+            canonical = document.createElement('link');
+            canonical.rel = 'canonical';
+            document.head.appendChild(canonical);
+          }
+          canonical.href = siteConfig.seo.canonicalUrl;
+        }
       }
-      if (scope === 'mystaff') {
-        document.title = 'My Money Manager Staff — HackifyPro';
-        if (favicon) favicon.href = '/staff-favicon.png';
-        return;
-      }
-      const title = appBranding.appName?.trim() || 'My Money Manager';
-      const sub = appBranding.subTitle?.trim() || 'by HackifyPro';
-      document.title = sub ? `${title} — ${sub}` : title;
-      const safeLogo = sanitizeLogoUrl(appBranding.logoUrl);
-      if (favicon) {
-        favicon.href = safeLogo;
+
+      if (
+        typeof navigator !== 'undefined' &&
+        'serviceWorker' in navigator &&
+        version > lastNotifiedSwVersionRef.current
+      ) {
+        lastNotifiedSwVersionRef.current = version;
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((reg) => {
+            reg.active?.postMessage({ type: 'BRANDING_UPDATED', scope, version });
+            reg.update().catch(() => {});
+          });
+        }).catch(() => {});
       }
     };
-    syncTitleAndFavicon();
-    window.addEventListener('popstate', syncTitleAndFavicon);
-    window.addEventListener('hashchange', syncTitleAndFavicon);
-    window.addEventListener('mymoney:portal-change', syncTitleAndFavicon);
+
+    syncDomAndHead();
+    window.addEventListener('popstate', syncDomAndHead);
+    window.addEventListener('hashchange', syncDomAndHead);
+    window.addEventListener('mymoney:portal-change', syncDomAndHead);
     return () => {
-      window.removeEventListener('popstate', syncTitleAndFavicon);
-      window.removeEventListener('hashchange', syncTitleAndFavicon);
-      window.removeEventListener('mymoney:portal-change', syncTitleAndFavicon);
+      window.removeEventListener('popstate', syncDomAndHead);
+      window.removeEventListener('hashchange', syncDomAndHead);
+      window.removeEventListener('mymoney:portal-change', syncDomAndHead);
     };
-  }, [appBranding.appName, appBranding.subTitle, appBranding.logoUrl]);
+  }, [siteConfig]);
 
   const [notifications, setNotifications] = useState<BroadcastNotification[]>([]);
 
@@ -617,7 +780,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsSyncing(false);
   }, [user, isAdmin, getPendingQueue, savePendingQueue, persistLocally, getUserTxStorageKey]);
 
-  // Load public site config (Maintenance Mode + App Download Popup + Branding) even for unauthenticated visitors
+  // Load public site config (all non-secret Control Center modules + maintenance + popup)
   const fetchPublicSiteConfig = useCallback(async () => {
     try {
       const [siteRes, maintSupa, popupSupa, brandSupa] = await Promise.all([
@@ -628,6 +791,12 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
         fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
       ]);
+
+      if (siteRes?.siteConfig) {
+        applyLiveSiteConfig(siteRes.siteConfig, false);
+        setConfigSyncStatus('live');
+        return;
+      }
 
       const serverMaint = siteRes?.maintenance as MaintenanceSettings | undefined;
       const resolvedMaint = (() => {
@@ -668,16 +837,90 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(normalizedBrand));
       }
     } catch {
-      // Keep cached values if offline
+      setConfigSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'cached');
     }
-  }, []);
+  }, [applyLiveSiteConfig]);
 
+  // Real-time Global Configuration Sync: EventSource SSE + BroadcastChannel + online/focus catch-up
   useEffect(() => {
     fetchPublicSiteConfig();
+
+    let es: EventSource | null = null;
+    let reconnectTimer: number | null = null;
+    let disposed = false;
+    let attempt = 0;
+
+    const connectSse = () => {
+      if (disposed || typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setConfigSyncStatus('offline');
+        return;
+      }
+      try {
+        es = new EventSource(`/api/public/site-config/stream?v=${siteConfigVersion}`);
+        const handleSsePayload = (ev: MessageEvent) => {
+          try {
+            const parsed = JSON.parse(ev.data);
+            if (parsed?.siteConfig) {
+              applyLiveSiteConfig(parsed.siteConfig, true);
+              setConfigSyncStatus('live');
+              attempt = 0;
+            }
+          } catch {}
+        };
+        es.addEventListener('connected', (ev) => {
+          attempt = 0;
+          setConfigSyncStatus('live');
+          handleSsePayload(ev as MessageEvent);
+        });
+        es.addEventListener('config_updated', (ev) => handleSsePayload(ev as MessageEvent));
+        es.addEventListener('maintenance_changed', (ev) => handleSsePayload(ev as MessageEvent));
+        es.onopen = () => {
+          attempt = 0;
+          setConfigSyncStatus('live');
+        };
+        es.onerror = () => {
+          if (es) {
+            es.close();
+            es = null;
+          }
+          if (disposed) return;
+          setConfigSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'reconnecting');
+          attempt += 1;
+          const delayMs = Math.min(30000, 1500 * Math.pow(2, Math.min(attempt, 4)));
+          if (reconnectTimer) window.clearTimeout(reconnectTimer);
+          reconnectTimer = window.setTimeout(connectSse, delayMs);
+        };
+      } catch {}
+    };
+
+    connectSse();
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel(SITE_CONFIG_BROADCAST_CHANNEL);
+        bc.onmessage = (msg) => {
+          if (msg.data?.type === 'site_config_updated' && msg.data?.siteConfig) {
+            applyLiveSiteConfig(msg.data.siteConfig, false);
+          }
+        };
+      } catch {}
+    }
+
     const handleFocus = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchPublicSiteConfig();
+        if (!es) connectSse();
       }
+    };
+    const handleOnlineSync = () => {
+      setConfigSyncStatus('reconnecting');
+      fetchPublicSiteConfig();
+      connectSse();
+    };
+    const handleOfflineSync = () => {
+      setConfigSyncStatus('offline');
     };
     const handleMaintenanceDetected = (ev: Event) => {
       const detail = (ev as CustomEvent<{ message?: string; expectedRestoration?: string }>).detail || {};
@@ -696,21 +939,31 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       fetchPublicSiteConfig();
     };
+
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnlineSync);
+    window.addEventListener('offline', handleOfflineSync);
     document.addEventListener('visibilitychange', handleFocus);
     window.addEventListener('mymoney:maintenance-detected', handleMaintenanceDetected);
-    const interval = setInterval(() => {
+    const interval = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchPublicSiteConfig();
       }
-    }, 30000);
+    }, 45000);
+
     return () => {
+      disposed = true;
+      if (es) es.close();
+      if (bc) bc.close();
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleOnlineSync);
+      window.removeEventListener('offline', handleOfflineSync);
       document.removeEventListener('visibilitychange', handleFocus);
       window.removeEventListener('mymoney:maintenance-detected', handleMaintenanceDetected);
-      clearInterval(interval);
+      window.clearInterval(interval);
     };
-  }, [fetchPublicSiteConfig]);
+  }, [fetchPublicSiteConfig, applyLiveSiteConfig]);
 
   // Initial load, multi-device Realtime subscription, and mobile tab wake/focus listener
   useEffect(() => {
@@ -1471,6 +1724,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const map = new Map<
       string,
       {
+        contactId?: string | null;
         displayName: string;
         given: number;
         received: number;
@@ -1510,6 +1764,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (!map.has(key)) {
         map.set(key, {
+          contactId: c.id || null,
           displayName: displayName || c.linked_user_name || 'Connected User',
           given: udharGiven,
           received: udharTaken,
@@ -1569,6 +1824,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         : Math.round((val.given - val.received) * 100) / 100;
       const totalCount = val.udharHasBalances ? Math.max(val.udharTxCount, val.txs.length) : val.txs.length;
       list.push({
+        contactId: val.contactId || null,
         name: val.displayName,
         totalGiven: val.given,
         totalReceived: val.received,
@@ -1718,6 +1974,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addSection,
         updateSection,
         deleteSection,
+        siteConfig,
+        siteConfigVersion,
+        configSyncStatus,
+        applyLiveSiteConfig,
         maintenanceSettings,
         refreshSiteConfig: fetchPublicSiteConfig,
         updateMaintenanceSettings,

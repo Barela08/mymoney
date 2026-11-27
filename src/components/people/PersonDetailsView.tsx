@@ -67,7 +67,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   udharLoaded = false,
   onRefreshUdhar,
 }) => {
-  const { settlePersonUdhar, permanentDeletePersonTransactions, refreshTransactions, refreshNotifications } = useExpense();
+  const { settlePersonUdhar, deleteTransaction, permanentDeletePersonTransactions, refreshTransactions, refreshNotifications } = useExpense();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -86,6 +86,7 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
   const [pendingConfirmAction, setPendingConfirmAction] = useState<
     | { type: 'settle_single'; tx: UdharTransactionItem }
     | { type: 'delete_single'; tx: UdharTransactionItem }
+    | { type: 'delete_manual_tx'; tx: Transaction }
     | { type: 'delete_repayment'; tx: UdharTransactionItem; rep: UdharRepayment }
     | { type: 'reject_request'; tx: UdharTransactionItem }
     | { type: 'cancel_request'; tx: UdharTransactionItem }
@@ -263,6 +264,13 @@ export const PersonDetailsView: React.FC<PersonDetailsViewProps> = ({
           if (onRefreshUdhar) await onRefreshUdhar();
           await refreshTransactions();
           await refreshNotifications();
+        }
+      } else if (pendingConfirmAction.type === 'delete_manual_tx') {
+        const deleted = await deleteTransaction(pendingConfirmAction.tx.id);
+        if (deleted) {
+          toast.success('Entry Deleted', 'Ledger transaction removed and balance recalculated.');
+          if (onRefreshUdhar) await onRefreshUdhar();
+          await refreshTransactions();
         }
       } else if (pendingConfirmAction.type === 'delete_history') {
         await permanentDeletePersonTransactions(person.name);
@@ -746,7 +754,7 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                             )}
                           </>
                         )}
-                        {deleteGuard.allowed ? (
+                        {deleteGuard.allowed && (
                           <button
                             type="button"
                             onClick={() => handleDeleteSingleTx(tx)}
@@ -756,25 +764,9 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                           >
                             Delete
                           </button>
-                        ) : !isGave && isLinked && !isDisputed ? (
-                          <button
-                            type="button"
-                            disabled
-                            data-testid={`udhar-delete-disabled-${tx.id}`}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-semibold cursor-not-allowed opacity-75"
-                            title="You can delete this transaction after it is fully settled."
-                          >
-                            Delete
-                          </button>
-                        ) : null}
+                        )}
                       </div>
                     </div>
-
-                    {!isGave && isLinked && !isDisputed && !deleteGuard.allowed && (
-                      <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
-                        You can delete this transaction after it is fully settled.
-                      </p>
-                    )}
 
                     {/* Expanded Repayments / Settlement History */}
                     {isRepaymentsExpanded && (
@@ -941,17 +933,28 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <div
-                      className={`font-black text-sm sm:text-base font-sans ${
-                        isGiven ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {isGiven ? '-' : '+'} {formatINR(tx.amount)}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <div
+                        className={`font-black text-sm sm:text-base font-sans ${
+                          isGiven ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        {isGiven ? '-' : '+'} {formatINR(tx.amount)}
+                      </div>
+                      <span className="text-[9.5px] uppercase font-bold text-slate-400">
+                        {isGiven ? 'Given (उधार दिया)' : 'Received (वापस मिला)'}
+                      </span>
                     </div>
-                    <span className="text-[9.5px] uppercase font-bold text-slate-400">
-                      {isGiven ? 'Given (उधार दिया)' : 'Received (वापस मिला)'}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingConfirmAction({ type: 'delete_manual_tx', tx })}
+                      data-testid={`manual-udhar-delete-btn-${tx.id}`}
+                      className="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                      title="Delete this entry"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               );
@@ -1024,6 +1027,8 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                   ? 'Are you sure you want to reject this Udhaar request?'
                   : pendingConfirmAction.type === 'cancel_request'
                   ? 'Cancel Pending Udhaar Request?'
+                  : pendingConfirmAction.type === 'delete_manual_tx'
+                  ? 'Delete This Entry?'
                   : `Clear All History for ${person.name}?`}
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
@@ -1046,6 +1051,12 @@ className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md
                       : ''}
                     ? Any repayments linked only to this entry will also be removed; remaining Udhar transactions with{' '}
                     {person.name} stay untouched and totals recalculate immediately.
+                  </>
+                ) : pendingConfirmAction.type === 'delete_manual_tx' ? (
+                  <>
+                    Delete this ledger entry of{' '}
+                    <strong>{formatINR(Number(pendingConfirmAction.tx.amount) || 0)}</strong>{' '}
+                    ({pendingConfirmAction.tx.title}) for <strong>{person.name}</strong>?
                   </>
                 ) : pendingConfirmAction.type === 'delete_repayment' ? (
                   <>

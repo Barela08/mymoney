@@ -775,6 +775,90 @@ export const adminClient = {
   async getDatabaseDiagnostics() {
     return adminRequest('/api/admin/system/database', { method: 'GET' });
   },
+
+  // 18. Website & Multi-App Control Center
+  async getControlCenterState() {
+    return adminRequest('/api/admin/control-center', { method: 'GET' });
+  },
+
+  async saveControlCenterDraft(config: Record<string, any>) {
+    return adminRequest('/api/admin/control-center/draft', {
+      method: 'PUT',
+      body: JSON.stringify({ config }),
+    });
+  },
+
+  async discardControlCenterDraft() {
+    return adminRequest('/api/admin/control-center/draft', { method: 'DELETE' });
+  },
+
+  async publishControlCenterChanges(data?: { config?: Record<string, any>; summary?: string }) {
+    return adminRequest('/api/admin/control-center/publish', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
+  async restoreControlCenterVersion(versionId: string | number) {
+    return adminRequest('/api/admin/control-center/restore', {
+      method: 'POST',
+      body: JSON.stringify(
+        typeof versionId === 'number' ? { version: versionId } : { versionId }
+      ),
+    });
+  },
+
+  async uploadBrandingAsset(data: {
+    scope: 'user_app' | 'admin_app' | 'staff_app' | 'website' | 'general';
+    slot: 'logo' | 'favicon' | 'pwa_icon' | 'og_image' | 'hero_image' | 'banner' | 'splash';
+    dataUrl: string;
+    width?: number;
+    height?: number;
+  }) {
+    return adminRequest('/api/admin/control-center/upload-asset', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // 19. Admin Staff Tasks Assignment & Governance
+  async getStaffTasks(params?: { status?: string; assignedTo?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.status && params.status !== 'all') qs.append('status', params.status);
+    if (params?.assignedTo) qs.append('assignedTo', params.assignedTo);
+    const query = qs.toString();
+    return adminRequest(`/api/admin/staff-tasks${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  async createStaffTask(data: {
+    title: string;
+    description?: string;
+    category?: string;
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+    assigned_to?: string | null;
+    due_at?: string | null;
+  }) {
+    return adminRequest('/api/admin/staff-tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateStaffTask(
+    id: string,
+    data: {
+      status?: string;
+      priority?: string;
+      assigned_to?: string | null;
+      title?: string;
+      description?: string;
+    }
+  ) {
+    return adminRequest(`/api/admin/staff-tasks/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 export interface AdminApiSettings {

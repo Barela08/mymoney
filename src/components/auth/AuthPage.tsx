@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  Wallet,
   Lock,
   Mail,
   User,
@@ -13,8 +12,6 @@ import {
   AlertCircle,
   RotateCcw,
   KeyRound,
-  Copy,
-  Check,
   Sparkles,
   ShieldCheck,
   Clock,
@@ -22,6 +19,9 @@ import {
   Laptop,
   Smartphone,
   LogOut,
+  X,
+  Megaphone,
+  Globe,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
@@ -40,12 +40,18 @@ export const AuthPage: React.FC = () => {
     completePasswordReset,
     isRecoveryMode,
     recoveryToken,
-    recoveryEmail,
     setIsRecoveryMode,
-    setRecoveryToken,
   } = useAuth();
-  const { appBranding } = useExpense();
+  const { appBranding, siteConfig } = useExpense();
   const toast = useToast();
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false);
+
+  const userBrand = siteConfig.branding.user_app;
+  const webBrand = siteConfig.branding.website;
+  const loginCfg = siteConfig.loginSettings;
+  const homepageCfg = siteConfig.homepage;
+  const footerCfg = siteConfig.footer;
+  const announcementCfg = siteConfig.announcement;
 
   const getInitialMode = (): 'login' | 'register' | 'forgot_password' | 'reset_password' => {
     if (typeof window === 'undefined') return 'login';
@@ -65,6 +71,10 @@ export const AuthPage: React.FC = () => {
   };
 
   const [mode, setMode] = useState<'login' | 'register' | 'forgot_password' | 'reset_password'>(getInitialMode);
+  const showHeroSplit =
+    (mode === 'login' || mode === 'register') &&
+    siteConfig.featureVisibility.publicWelcomeHeroEnabled &&
+    homepageCfg.showHero;
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -312,6 +322,10 @@ export const AuthPage: React.FC = () => {
 
     // 3. Register Mode
     if (mode === 'register') {
+      if (!loginCfg.allowRegistration) {
+        setErrorMessage('New account registrations are currently paused by the administrator.');
+        return;
+      }
       if (!name.trim()) {
         setErrorMessage('Please enter your full name.');
         return;
@@ -328,6 +342,11 @@ export const AuthPage: React.FC = () => {
         setErrorMessage('Passwords do not match. Please verify both password fields.');
         return;
       }
+    }
+
+    if (mode === 'login' && !loginCfg.allowLogin) {
+      setErrorMessage('User sign-in is temporarily paused by the administrator. Please check back shortly.');
+      return;
     }
 
     // 4. Submit Login or Register
@@ -383,63 +402,204 @@ export const AuthPage: React.FC = () => {
     }
   };
 
+  const resolvedLogoUrl = userBrand.logoUrl || appBranding?.logoUrl || '/logo.jpg';
+  const resolvedAppName = userBrand.appName || appBranding?.appName || 'My Money Manager';
+  const resolvedTagline =
+    userBrand.tagline ||
+    (appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
+      ? appBranding.subTitle
+      : 'A product of HackifyPro');
+
+  const visibleFeatureCards = (homepageCfg.featureCards || []).filter((c) => c.visible !== false);
+  const socialEntries = footerCfg.showSocialLinks
+    ? Object.entries(footerCfg.socialLinks || {}).filter(([, url]) => Boolean(url && String(url).trim()))
+    : [];
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 px-4 transition-colors">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        {/* Brand Header */}
-        <div className="flex flex-col items-center justify-center gap-2 mb-3">
-          <img
-            src={appBranding?.logoUrl || '/logo.jpg'}
-            alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
-            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
-            className="w-16 h-16 rounded-2xl object-cover shadow-xl shadow-emerald-600/30 border-2 border-emerald-500/40"
-          />
-          <div className="text-center">
-            <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-              {appBranding?.appName || 'My Money Manager'}
-            </h1>
-            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-              {appBranding?.subTitle && appBranding.subTitle !== 'by HackifyPro'
-                ? appBranding.subTitle
-                : 'A product of HackifyPro'}
-            </p>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col transition-colors">
+      {/* Live Site Announcement Strip */}
+      {announcementCfg.enabled && announcementCfg.message && !announcementDismissed && (
+        <div
+          className={`w-full px-4 py-2.5 text-xs font-semibold border-b ${
+            announcementCfg.severity === 'announcement'
+              ? 'bg-indigo-600 text-white border-indigo-700'
+              : announcementCfg.severity === 'warning'
+              ? 'bg-amber-400 text-slate-950 border-amber-500'
+              : announcementCfg.severity === 'success'
+              ? 'bg-emerald-600 text-white border-emerald-700'
+              : 'bg-slate-900 dark:bg-slate-800 text-white border-slate-800 dark:border-slate-700'
+          }`}
+        >
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Megaphone className="w-3.5 h-3.5 shrink-0" />
+              <p className="truncate sm:whitespace-normal">
+                {announcementCfg.title ? <strong className="mr-1.5">{announcementCfg.title}:</strong> : null}
+                <span>{announcementCfg.message}</span>
+              </p>
+            </div>
+            {announcementCfg.dismissible && (
+              <button
+                type="button"
+                onClick={() => setAnnouncementDismissed(true)}
+                aria-label="Dismiss announcement"
+                className="p-1 rounded-lg hover:bg-black/15 cursor-pointer shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
+      )}
 
-        <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-2">
-          Personal Finance, Room Budgets, Udhar Ledger &amp; UPI QR
-        </p>
-      </div>
+      <div className="flex-1 flex flex-col justify-center py-8 sm:py-12 sm:px-6 lg:px-8 px-4">
+        <div
+          className={
+            showHeroSplit
+              ? 'w-full max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center'
+              : 'w-full'
+          }
+        >
+          {showHeroSplit ? (
+            <div className="lg:col-span-6 space-y-5">
+              <div className="flex items-center gap-3.5">
+                <img
+                  src={resolvedLogoUrl}
+                  alt={`${resolvedAppName} ${resolvedTagline}`}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
+                  className="w-14 h-14 rounded-2xl object-cover shadow-lg shadow-emerald-600/25 border-2 border-emerald-500/40 shrink-0"
+                />
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                    {resolvedAppName}
+                  </h2>
+                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    {resolvedTagline}
+                  </p>
+                </div>
+              </div>
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white dark:bg-slate-900 py-8 px-6 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 rounded-3xl border border-slate-200 dark:border-slate-800 transition-colors">
-          {/* Form Tabs (Only when not in forgot/reset password mode) */}
-          {mode !== 'forgot_password' && mode !== 'reset_password' && (
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl mb-6">
-              <button
-                type="button"
-                onClick={() => navigateToMode('login')}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                  mode === 'login'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => navigateToMode('register')}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                  mode === 'register'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-                }`}
-              >
-                Create Account
-              </button>
+              {homepageCfg.heroBadge && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/80 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  <span>{homepageCfg.heroBadge}</span>
+                </div>
+              )}
+
+              <div className="space-y-2.5">
+                <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
+                  {homepageCfg.heroHeading}
+                </h1>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
+                  {homepageCfg.heroSubheading}
+                </p>
+              </div>
+
+              {homepageCfg.showFeatureSection && visibleFeatureCards.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2.5 pt-1">
+                  {visibleFeatureCards.slice(0, 3).map((card) => (
+                    <div
+                      key={card.id}
+                      className="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 shadow-xs"
+                    >
+                      <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{card.title}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                        {card.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {homepageCfg.showSecurityTrustSection && homepageCfg.securityTrustText && (
+                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/60">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {homepageCfg.securityTrustText}
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="sm:mx-auto sm:w-full sm:max-w-md mb-6">
+              {/* Brand Header */}
+              <div className="flex flex-col items-center justify-center gap-2 mb-3">
+                <img
+                  src={resolvedLogoUrl}
+                  alt={`${resolvedAppName} ${resolvedTagline}`}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
+                  className="w-16 h-16 rounded-2xl object-cover shadow-xl shadow-emerald-600/30 border-2 border-emerald-500/40"
+                />
+                <div className="text-center">
+                  <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                    {resolvedAppName}
+                  </h1>
+                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    {resolvedTagline}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-2">
+                {userBrand.description || 'Personal Finance, Room Budgets, Udhar Ledger & UPI QR'}
+              </p>
             </div>
           )}
+
+          <div className={showHeroSplit ? 'lg:col-span-6 w-full max-w-md mx-auto lg:ml-auto' : 'sm:mx-auto sm:w-full sm:max-w-md'}>
+            <div className="bg-white dark:bg-slate-900 py-7 px-6 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 rounded-3xl border border-slate-200 dark:border-slate-800 transition-colors">
+              {/* Live Login / Register Card Title */}
+              {(mode === 'login' || mode === 'register') && (
+                <div className="mb-4 text-center sm:text-left">
+                  <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
+                    {mode === 'register'
+                      ? loginCfg.registerHeadline || 'Create your financial workspace'
+                      : loginCfg.loginHeadline || userBrand.loginTitle || 'Welcome back'}
+                  </h2>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {mode === 'register'
+                      ? loginCfg.registerSubheadline || 'Free personal ledger with consent-verified Udhar.'
+                      : loginCfg.loginSubheadline || userBrand.loginSubtitle}
+                  </p>
+                </div>
+              )}
+
+              {/* Custom Login Banner */}
+              {(mode === 'login' || mode === 'register') && loginCfg.loginBannerText && (
+                <div className="mb-4 p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-900 text-xs text-sky-800 dark:text-sky-200 font-medium">
+                  {loginCfg.loginBannerText}
+                </div>
+              )}
+
+              {/* Form Tabs (Only when not in forgot/reset password mode) */}
+              {mode !== 'forgot_password' && mode !== 'reset_password' && (
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl mb-6">
+                  <button
+                    type="button"
+                    onClick={() => navigateToMode('login')}
+                    className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+                      mode === 'login'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  {loginCfg.allowRegistration && (
+                    <button
+                      type="button"
+                      onClick={() => navigateToMode('register')}
+                      className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+                        mode === 'register'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                      }`}
+                    >
+                      Create Account
+                    </button>
+                  )}
+                </div>
+              )}
 
           {/* Reset Password Header */}
           {mode === 'reset_password' && (
@@ -642,8 +802,39 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
-          {/* Form (Rendered when not in checking/invalid reset mode) */}
-          {(mode !== 'reset_password' || tokenStatus === 'valid') && (
+          {/* Admin Paused Login / Registration Guards */}
+          {mode === 'register' && !loginCfg.allowRegistration && (
+            <div className="py-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  New Registrations Temporarily Paused
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+                  The administrator has temporarily paused public sign-ups. Existing users can continue signing in.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateToMode('login')}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          )}
+
+          {mode === 'login' && !loginCfg.allowLogin && (
+            <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 font-semibold">
+              User sign-in is temporarily paused by the administrator. Please check back shortly.
+            </div>
+          )}
+
+          {/* Form (Rendered when not in checking/invalid reset mode or paused registration) */}
+          {((mode !== 'reset_password' || tokenStatus === 'valid') &&
+            !(mode === 'register' && !loginCfg.allowRegistration)) && (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Full Name (Register Only) */}
               {mode === 'register' && (
@@ -855,7 +1046,7 @@ export const AuthPage: React.FC = () => {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || (mode === 'login' && !loginCfg.allowLogin)}
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (
@@ -880,7 +1071,9 @@ export const AuthPage: React.FC = () => {
           )}
 
           {/* Unified Alternative Sign-In Methods: Google Auth & Passkey (WebAuthn) */}
-          {(mode === 'login' || mode === 'register') && (
+          {(mode === 'login' || (mode === 'register' && loginCfg.allowRegistration)) &&
+            (loginCfg.allowGoogleSignIn || loginCfg.allowPasskeySignIn) &&
+            !(mode === 'login' && !loginCfg.allowLogin) && (
             <div className="mt-5 space-y-3">
               <div className="relative flex items-center justify-center">
                 <div className="w-full border-t border-slate-200 dark:border-slate-800" />
@@ -890,7 +1083,14 @@ export const AuthPage: React.FC = () => {
                 <div className="w-full border-t border-slate-200 dark:border-slate-800" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div
+                className={`grid gap-2.5 ${
+                  loginCfg.allowGoogleSignIn && loginCfg.allowPasskeySignIn
+                    ? 'grid-cols-1 sm:grid-cols-2'
+                    : 'grid-cols-1'
+                }`}
+              >
+                {loginCfg.allowGoogleSignIn && (
                 <button
                   type="button"
                   disabled={isSubmitting}
@@ -939,7 +1139,9 @@ export const AuthPage: React.FC = () => {
                   </svg>
                   <span>Google</span>
                 </button>
+                )}
 
+                {loginCfg.allowPasskeySignIn && (
                 <button
                   type="button"
                   disabled={isSubmitting}
@@ -971,6 +1173,7 @@ export const AuthPage: React.FC = () => {
                   <Fingerprint className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>Passkey</span>
                 </button>
+                )}
               </div>
             </div>
           )}
@@ -1015,7 +1218,7 @@ export const AuthPage: React.FC = () => {
               </button>
             )}
 
-            {mode === 'login' && (
+            {mode === 'login' && loginCfg.allowRegistration && (
               <p className="text-slate-500 dark:text-slate-400">
                 Don't have an account?{' '}
                 <button
@@ -1043,11 +1246,54 @@ export const AuthPage: React.FC = () => {
           </div>
         </div>
       </div>
+        </div>
+      </div>
 
       {/* Consistent Product Branding Footer */}
-      <p className="mt-6 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
-        {appBranding?.appName || 'My Money Manager'} — A product of HackifyPro
-      </p>
+      <footer className="py-5 px-4 border-t border-slate-200/70 dark:border-slate-800/80 bg-white/60 dark:bg-slate-900/40">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="text-center sm:text-left">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              {webBrand.footerBrandText || `${resolvedAppName} — A product of ${footerCfg.companyName || 'HackifyPro'}`}
+            </span>
+            {footerCfg.copyrightText && <span className="ml-2">· {footerCfg.copyrightText}</span>}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {footerCfg.supportEmail && (
+              <a href={`mailto:${footerCfg.supportEmail}`} className="hover:text-emerald-600 dark:hover:text-emerald-400">
+                {footerCfg.supportEmail}
+              </a>
+            )}
+            {footerCfg.supportPhone && (
+              <a href={`tel:${footerCfg.supportPhone.replace(/\s+/g, '')}`} className="hover:text-emerald-600 dark:hover:text-emerald-400">
+                {footerCfg.supportPhone}
+              </a>
+            )}
+            {footerCfg.showLegalLinks && (
+              <button
+                type="button"
+                onClick={() => setIsPrivacyNoticeOpen(true)}
+                className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+              >
+                Privacy Notice
+              </button>
+            )}
+            {socialEntries.map(([network, url]) => (
+              <a
+                key={network}
+                href={String(url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 capitalize hover:text-emerald-600 dark:hover:text-emerald-400"
+              >
+                <Globe className="w-3 h-3" />
+                <span>{network}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </footer>
 
       {/* Standalone Trilingual Privacy Notice (read-only informational preview before login) */}
       <PrivacyNoticeModal

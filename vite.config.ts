@@ -73,7 +73,12 @@ function backendApiPlugin(): Plugin {
     name: 'backend-api-plugin',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (req.url && req.url.startsWith('/api')) {
+        const cleanPath = (req.url || '').split('?')[0];
+        if (
+          cleanPath.startsWith('/api') ||
+          cleanPath === '/robots.txt' ||
+          cleanPath === '/sitemap.xml'
+        ) {
           try {
             const apiModule = await server.ssrLoadModule('./server/api.ts');
             const handled = await apiModule.handleApiRequest(req, res);

@@ -12,7 +12,11 @@ interface MaintenanceScreenProps {
 
 export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, onRefresh }) => {
   const { user, logout } = useAuth();
-  const { appBranding } = useExpense();
+  const { appBranding, siteConfig } = useExpense();
+  const supportEmail = siteConfig?.footer?.supportEmail || SUPPORT_CONTACT.email;
+  const supportPhone = siteConfig?.footer?.supportPhone || SUPPORT_CONTACT.displayPhone;
+  const companyName = siteConfig?.footer?.companyName || SUPPORT_CONTACT.companyName;
+  const telHref = `tel:${supportPhone.replace(/[^\d+]/g, '')}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-slate-100 flex flex-col justify-between p-6 sm:p-12 relative overflow-hidden select-none">
@@ -24,17 +28,17 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, 
       <header className="flex items-center justify-between z-10 max-w-4xl w-full mx-auto">
         <div className="flex items-center gap-3">
           <img
-            src={appBranding?.logoUrl || '/logo.jpg'}
-            alt={`${appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
+            src={siteConfig?.branding?.user_app?.logoUrl || appBranding?.logoUrl || '/logo.jpg'}
+            alt={`${siteConfig?.branding?.user_app?.appName || appBranding?.appName || 'My Money Manager'} ${appBranding?.subTitle || 'by HackifyPro'}`}
             onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
             className="w-12 h-12 rounded-2xl object-cover shadow-xl border border-emerald-500/40"
           />
           <div>
             <h1 className="text-lg font-black tracking-tight text-white">
-              {appBranding?.appName || 'My Money Manager'}
+              {siteConfig?.branding?.user_app?.appName || appBranding?.appName || 'My Money Manager'}
             </h1>
             <p className="text-xs font-semibold text-emerald-400">
-              {appBranding?.subTitle || 'by HackifyPro'}
+              {siteConfig?.branding?.user_app?.tagline || appBranding?.subTitle || 'by HackifyPro'}
             </p>
           </div>
         </div>
@@ -101,24 +105,24 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({ settings, 
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-400">
           <a
-            href={SUPPORT_CONTACT.telUrl}
+            href={telHref}
             className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1 font-medium"
           >
             <Phone className="w-3 h-3 text-emerald-400" />
-            <span>{SUPPORT_CONTACT.displayPhone}</span>
+            <span>{supportPhone}</span>
           </a>
           <span className="text-slate-600">•</span>
           <a
-            href={SUPPORT_CONTACT.mailToUrl}
+            href={`mailto:${supportEmail}`}
             className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1 font-medium"
           >
             <Mail className="w-3 h-3 text-emerald-400" />
-            <span>{SUPPORT_CONTACT.email}</span>
+            <span>{supportEmail}</span>
           </a>
         </div>
         <p className="text-[11px] flex items-center justify-center gap-1.5 text-slate-500 pt-1">
           <Shield className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Enterprise Defense-in-Depth Architecture · {SUPPORT_CONTACT.companyName}</span>
+          <span>Enterprise Defense-in-Depth Architecture · {companyName}</span>
         </p>
       </footer>
     </div>

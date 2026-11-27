@@ -111,7 +111,7 @@ async function runAll() {
   });
 
   // Test 3: Settlement & Delete Permissions (Lender vs Borrower)
-  await runTest('Unsettled borrower delete returns 403; settled borrower delete is allowed', () => {
+  await runTest('Lender-only settlement guard remains strict while both parties can delete Udhar transactions', () => {
     const lenderUserId = 'lender-123';
     const borrowerUserId = 'borrower-456';
 
@@ -125,7 +125,7 @@ async function runAll() {
       status: 'confirmed',
     };
 
-    // Settle guard test
+    // Settle guard test (still lender-only)
     const canSettle = (_authUser: { id: string }, tx: typeof transactionFromBorrowerPerspective) => {
       if (tx.counterpart_user_id && tx.direction === 'took') {
         return {
@@ -137,13 +137,13 @@ async function runAll() {
       return { status: 200, allowed: true };
     };
 
-    // Delete guard test (Part 3: shared I Borrowed only deletable after full settlement)
+    // Delete guard test: both lender and borrower can delete non-disputed Udhar transactions
     const canDelete = (_authUser: { id: string }, tx: typeof transactionFromBorrowerPerspective) => {
-      if (tx.counterpart_user_id && tx.direction === 'took' && tx.current_balance > 0.01) {
+      if (tx.status === 'disputed') {
         return {
-          status: 403,
+          status: 409,
           allowed: false,
-          message: 'You can delete this transaction after it is fully settled.',
+          message: 'Disputed Udhar records cannot be deleted.',
         };
       }
       return { status: 200, allowed: true };
@@ -154,10 +154,10 @@ async function runAll() {
     assert.strictEqual(settleResult.status, 403, 'Borrower settle attempt must return 403');
     assert.strictEqual(settleResult.allowed, false);
 
-    // When unsettled borrower calls delete
+    // When borrower calls delete on active Udhar
     const deleteResult = canDelete({ id: borrowerUserId }, transactionFromBorrowerPerspective);
-    assert.strictEqual(deleteResult.status, 403, 'Unsettled borrower delete attempt must return 403');
-    assert.strictEqual(deleteResult.allowed, false);
+    assert.strictEqual(deleteResult.status, 200, 'Borrower delete attempt on Udhar entry is allowed');
+    assert.strictEqual(deleteResult.allowed, true);
 
     // When settled borrower calls delete
     const settledBorrowerDeleteResult = canDelete(

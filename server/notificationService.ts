@@ -2297,6 +2297,7 @@ export interface RecordDeviceInstallationParams {
   pushPermission?: string;
   pushSubscriptionStatus?: string;
   ipAddress?: string;
+  portalScope?: 'user' | 'myadmin' | 'mystaff';
 }
 
 // In-memory fallback cache for resilience when PostgreSQL is offline or mocking
@@ -2316,11 +2317,17 @@ export async function recordDeviceInstallation(
     pushPermission = 'default',
     pushSubscriptionStatus = 'none',
     ipAddress = '',
+    portalScope = 'user',
   } = params;
 
   if (!userId) {
     throw new Error('userId is required for device installation registration');
   }
+
+  const normalizedScope: 'user' | 'myadmin' | 'mystaff' =
+    portalScope === 'myadmin' || portalScope === 'mystaff' ? portalScope : 'user';
+  const scopeLabel =
+    normalizedScope === 'myadmin' ? 'Admin App' : normalizedScope === 'mystaff' ? 'Staff App' : 'User App';
 
   let isNewInstall = false;
   const now = new Date();
@@ -2372,14 +2379,14 @@ export async function recordDeviceInstallation(
           if (isNewInstall) {
             recordAdminNotification({
               eventType: 'pwa_install',
-              title: 'PWA Installed by User',
-              message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+              title: `${scopeLabel} Installed`,
+              message: `User installed ${scopeLabel} on ${browser} (${os}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os, installedAt },
+              metadata: { deviceType, browser, os, portalScope: normalizedScope, installedAt },
             }).catch(() => {});
           }
 
-          return { success: true, isNewInstall, record };
+          return { success: true, isNewInstall, record: { ...record, portal_scope: normalizedScope } };
         }
       } else {
         if (isInstalled) {
@@ -2411,14 +2418,14 @@ export async function recordDeviceInstallation(
           if (isNewInstall) {
             recordAdminNotification({
               eventType: 'pwa_install',
-              title: 'PWA Installed by User',
-              message: `User has installed My Money Manager on ${browser} (${os}, ${deviceType}).`,
+              title: `${scopeLabel} Installed`,
+              message: `User installed ${scopeLabel} on ${browser} (${os}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os, installedAt },
+              metadata: { deviceType, browser, os, portalScope: normalizedScope, installedAt },
             }).catch(() => {});
           }
 
-          return { success: true, isNewInstall, record };
+          return { success: true, isNewInstall, record: { ...record, portal_scope: normalizedScope } };
         }
       }
     } catch {
@@ -2427,7 +2434,7 @@ export async function recordDeviceInstallation(
   }
 
   // In-memory fallback
-  const key = `${userId}:${browser}:${os}:${deviceType}`;
+  const key = `${userId}:${normalizedScope}:${browser}:${os}:${deviceType}`;
   const prev = localInstalledDevices.get(key);
   if (!prev?.is_installed && isInstalled) {
     isNewInstall = true;
@@ -2435,6 +2442,7 @@ export async function recordDeviceInstallation(
   const record = {
     id: prev?.id || `dev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     user_id: userId,
+    portal_scope: normalizedScope,
     device_type: deviceType,
     browser,
     os,
@@ -2448,6 +2456,15 @@ export async function recordDeviceInstallation(
     last_delivery_result: prev?.last_delivery_result || 'none',
   };
   localInstalledDevices.set(key, record);
+  if (isNewInstall) {
+    recordAdminNotification({
+      eventType: 'pwa_install',
+      title: `${scopeLabel} Installed`,
+      message: `User installed ${scopeLabel} on ${browser} (${os}, ${deviceType}).`,
+      userId,
+      metadata: { deviceType, browser, os, portalScope: normalizedScope, installedAt },
+    }).catch(() => {});
+  }
   return { success: true, isNewInstall, record };
 }
 

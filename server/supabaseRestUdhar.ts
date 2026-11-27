@@ -811,7 +811,12 @@ export async function connectUserRest(
     };
   }
 
-  // Case 4: Create a NEW pending connection request (Method A never bypasses acceptance)
+  // Case 4: Remove any stale non-active rows in either direction, then create a NEW pending connection request
+  await sbRest(
+    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetUserId)}),and(user_a_id.eq.${encodeURIComponent(targetUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&status=in.(deleted,rejected,cancelled)`,
+    { method: 'DELETE' }
+  ).catch(() => {});
+
   const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, 'pending', {
     relationship_type: relationshipType,
     requested_via: requestedVia,
@@ -3719,7 +3724,7 @@ export async function cancelUdharRest(authUser: AuthenticatedUser, txId: string,
 
   if (!softDelRes.ok && softDelRes.status === 400) {
     softDelRes = await sbRest<any[]>(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(disputed)`,
       {
         method: 'PATCH',
         prefer: 'return=representation',

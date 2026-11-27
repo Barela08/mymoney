@@ -269,15 +269,23 @@ export const PwaInstallModal: React.FC = () => {
             <p className="text-[11px] text-center text-slate-400 dark:text-slate-500">
               Closing this guide will remind you again in 1 minute while {appName} is not installed.
             </p>
+            <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 leading-relaxed">
+              Note: If app branding or icons are updated later, browsers refresh manifests &amp; tabs automatically, while OS home-screen shortcuts may require re-adding.
+            </p>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={handleDismiss}
-            className="w-full py-2.5 px-4 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
-          >
-            Close
-          </button>
+          <div className="space-y-2">
+            <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 leading-relaxed">
+              Launcher note: Existing OS home-screen icons are cached by Android/iOS/Desktop after install.
+            </p>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="w-full py-2.5 px-4 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
         )}
       </div>
     </div>

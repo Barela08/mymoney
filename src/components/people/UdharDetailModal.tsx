@@ -789,7 +789,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
               </button>
             )}
 
-            {!isCancelled && cancelGuard.allowed ? (
+            {lifecycle !== 'deleted' && cancelGuard.allowed && (
               <button
                 type="button"
                 onClick={() => setIsCancelConfirmOpen(true)}
@@ -799,23 +799,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Entry</span>
               </button>
-            ) : !isCancelled && isTwoSided && !isLender && activeTx.status !== 'disputed' ? (
-              <div className="w-full pt-1 flex items-center justify-between gap-2">
-                <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
-                  You can delete this transaction after it is fully settled.
-                </p>
-                <button
-                  type="button"
-                  disabled
-                  data-testid="modal-delete-udhar-disabled-btn"
-                  className="py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-semibold flex items-center gap-1.5 cursor-not-allowed opacity-75 shrink-0"
-                  title="You can delete this transaction after it is fully settled."
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete Entry</span>
-                </button>
-              </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>
