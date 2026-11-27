@@ -34839,6 +34839,62 @@ async function logSecurityEvent(eventType, opts = {}) {
 
 // server/auth.ts
 import crypto3 from "crypto";
+var MAX_ACTIVE_SESSIONS = 3;
+var SessionLimitError = class extends Error {
+  code = "MAX_SESSIONS_REACHED";
+  status = 409;
+  maxSessions;
+  activeSessions;
+  constructor(activeSessions, maxSessions = MAX_ACTIVE_SESSIONS) {
+    super(
+      `Maximum ${maxSessions} concurrent logins allowed per account. Please log out from one of your active devices to continue.`
+    );
+    this.name = "SessionLimitError";
+    this.maxSessions = maxSessions;
+    this.activeSessions = activeSessions;
+  }
+};
+function parseUserAgentSummary(userAgent) {
+  const ua = String(userAgent || "").trim();
+  if (!ua) {
+    return {
+      deviceName: "Unknown Browser",
+      browser: "Unknown Browser",
+      os: "Unknown OS",
+      deviceType: "desktop"
+    };
+  }
+  let browser = "Web Browser";
+  if (/Edg\//i.test(ua)) browser = "Microsoft Edge";
+  else if (/OPR\/|Opera/i.test(ua)) browser = "Opera";
+  else if (/SamsungBrowser/i.test(ua)) browser = "Samsung Internet";
+  else if (/Firefox\/|FxiOS\//i.test(ua)) browser = "Firefox";
+  else if (/CriOS\/|Chrome\//i.test(ua) && !/Edg\//i.test(ua)) browser = "Chrome";
+  else if (/Safari\//i.test(ua) && !/Chrome\/|CriOS\//i.test(ua)) browser = "Safari";
+  else if (/node|undici|curl|playwright|vitest/i.test(ua)) browser = "API / App Client";
+  let os7 = "Unknown OS";
+  let deviceType = "desktop";
+  if (/iPad/i.test(ua)) {
+    os7 = "iPadOS";
+    deviceType = "tablet";
+  } else if (/iPhone|iPod/i.test(ua)) {
+    os7 = "iOS (iPhone)";
+    deviceType = "mobile";
+  } else if (/Android/i.test(ua)) {
+    os7 = "Android";
+    deviceType = /Mobile/i.test(ua) ? "mobile" : "tablet";
+  } else if (/Windows NT/i.test(ua)) {
+    os7 = "Windows";
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    os7 = "macOS";
+  } else if (/CrOS/i.test(ua)) {
+    os7 = "ChromeOS";
+  } else if (/Linux/i.test(ua)) {
+    os7 = "Linux";
+  }
+  const deviceName = os7 === "Unknown OS" ? browser : `${browser} on ${os7}`;
+  return { deviceName, browser, os: os7, deviceType };
+}
 var MASTER_ADMIN_EMAILS = /* @__PURE__ */ new Set(["hackifypro@gmail.com", "admin@mymoney.com"]);
 var NON_DISCOVERABLE_ROLES = /* @__PURE__ */ new Set(["admin", "superadmin", "support", "analyst"]);
 function isMasterAdminAccountEmail(email) {
@@ -34905,7 +34961,138 @@ function verifyFallbackSessionToken(token) {
 }
 var SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1e3;
 var REMEMBER_ME_LIFETIME_MS = 30 * 24 * 60 * 60 * 1e3;
+async function listActiveSessionsForUser(userId, currentSessionToken) {
+  if (!userId) return [];
+  const currentHash = currentSessionToken && !currentSessionToken.startsWith("mmf1.") && !currentSessionToken.startsWith("direct_") ? hashToken(currentSessionToken) : null;
+  const mapRows = (rows) => {
+    const nowMs = Date.now();
+    return rows.filter((r2) => !r2.is_revoked && r2.expires_at && new Date(r2.expires_at).getTime() > nowMs).sort((a, b) => {
+      const aTime = new Date(a.last_active_at || a.created_at || 0).getTime();
+      const bTime = new Date(b.last_active_at || b.created_at || 0).getTime();
+      return bTime - aTime;
+    }).map((r2) => {
+      const parsed = parseUserAgentSummary(r2.user_agent);
+      return {
+        id: String(r2.id),
+        deviceName: parsed.deviceName,
+        deviceType: parsed.deviceType,
+        browser: parsed.browser,
+        os: parsed.os,
+        ipAddress: r2.ip_address ? String(r2.ip_address) : null,
+        createdAt: r2.created_at ? new Date(r2.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+        lastActiveAt: r2.last_active_at ? new Date(r2.last_active_at).toISOString() : null,
+        expiresAt: new Date(r2.expires_at).toISOString(),
+        isCurrent: Boolean(currentHash && r2.session_token_hash === currentHash)
+      };
+    });
+  };
+  if (isDatabaseAvailable()) {
+    try {
+      await query(
+        `UPDATE public.user_sessions SET is_revoked = TRUE
+         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at <= NOW()`,
+        [userId]
+      ).catch(() => {
+      });
+      const res = await query(
+        `SELECT id, session_token_hash, user_agent, ip_address, expires_at, is_revoked, created_at, last_active_at
+         FROM public.user_sessions
+         WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()
+         ORDER BY COALESCE(last_active_at, created_at) DESC`,
+        [userId]
+      );
+      return mapRows(res.rows || []);
+    } catch (err) {
+      console.warn("listActiveSessionsForUser PG query failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false&select=id,session_token_hash,user_agent,ip_address,expires_at,is_revoked,created_at,last_active_at&order=created_at.desc&limit=20`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json"
+        }
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      if (Array.isArray(rows)) {
+        const nowMs = Date.now();
+        for (const r2 of rows) {
+          if (r2?.id && r2?.expires_at && new Date(r2.expires_at).getTime() <= nowMs) {
+            fetch(`${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(r2.id)}`, {
+              method: "PATCH",
+              headers: {
+                apikey: key,
+                Authorization: `Bearer ${key}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ is_revoked: true })
+            }).catch(() => {
+            });
+          }
+        }
+        return mapRows(rows);
+      }
+    }
+  } catch (err) {
+    console.warn("listActiveSessionsForUser Supabase REST notice:", err?.message);
+  }
+  return [];
+}
+async function revokeUserSessionById(userId, sessionId) {
+  if (!userId || !sessionId) return false;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `UPDATE public.user_sessions
+         SET is_revoked = TRUE
+         WHERE id = $1 AND user_id = $2 AND is_revoked = FALSE
+         RETURNING id`,
+        [sessionId, userId]
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      console.warn("revokeUserSessionById PG update failed, attempting Supabase REST:", err?.message);
+    }
+  }
+  try {
+    const { url, key } = getAuthSupabaseRestConfig();
+    const restRes = await fetch(
+      `${url}/rest/v1/user_sessions?id=eq.${encodeURIComponent(sessionId)}&user_id=eq.${encodeURIComponent(userId)}&is_revoked=eq.false`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify({ is_revoked: true })
+      }
+    );
+    if (restRes.ok) {
+      const rows = await restRes.json().catch(() => []);
+      return Array.isArray(rows) && rows.length > 0;
+    }
+  } catch (err) {
+    console.warn("revokeUserSessionById Supabase REST notice:", err?.message);
+  }
+  return false;
+}
 async function createSession(userId, opts = {}) {
+  if (opts.replaceSessionId) {
+    await revokeUserSessionById(userId, opts.replaceSessionId);
+  }
+  const activeSessions = await listActiveSessionsForUser(userId);
+  if (activeSessions.length >= MAX_ACTIVE_SESSIONS) {
+    throw new SessionLimitError(activeSessions, MAX_ACTIVE_SESSIONS);
+  }
   const sessionToken = generateCryptoToken(32);
   const sessionTokenHash = hashToken(sessionToken);
   const duration = opts.rememberMe ? REMEMBER_ME_LIFETIME_MS : SESSION_LIFETIME_MS;
@@ -34913,8 +35100,8 @@ async function createSession(userId, opts = {}) {
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
-        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO public.user_sessions (user_id, session_token_hash, user_agent, ip_address, expires_at, last_active_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
          RETURNING id`,
         [userId, sessionTokenHash, opts.userAgent || null, opts.ipAddress || null, expiresAt]
       );
@@ -34932,6 +35119,7 @@ async function createSession(userId, opts = {}) {
   }
   try {
     const { url, key } = getAuthSupabaseRestConfig();
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const restRes = await fetch(`${url}/rest/v1/user_sessions`, {
       method: "POST",
       headers: {
@@ -34947,6 +35135,7 @@ async function createSession(userId, opts = {}) {
         user_agent: opts.userAgent || null,
         ip_address: opts.ipAddress || null,
         expires_at: expiresAt.toISOString(),
+        last_active_at: nowIso,
         is_revoked: false
       })
     });
@@ -35230,7 +35419,32 @@ async function authenticateRequest(req) {
         if (Array.isArray(sessRows) && sessRows.length > 0) {
           const s2 = sessRows[0];
           if (new Date(s2.expires_at) >= /* @__PURE__ */ new Date()) {
-            return await resolveUserViaSupabaseRest(s2.user_id);
+            const user = await resolveUserViaSupabaseRest(s2.user_id);
+            if (user && s2.id) {
+              fetch(`${supabaseUrl}/rest/v1/user_sessions?id=eq.${encodeURIComponent(s2.id)}`, {
+                method: "PATCH",
+                headers: {
+                  apikey: supabaseKey,
+                  Authorization: `Bearer ${supabaseKey}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ last_active_at: (/* @__PURE__ */ new Date()).toISOString() })
+              }).catch(() => {
+              });
+            }
+            return user;
+          }
+          if (s2.id) {
+            fetch(`${supabaseUrl}/rest/v1/user_sessions?id=eq.${encodeURIComponent(s2.id)}`, {
+              method: "PATCH",
+              headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ is_revoked: true })
+            }).catch(() => {
+            });
           }
         }
       }
@@ -85255,6 +85469,27 @@ async function saveAdminNotificationPreferences(payload, adminId) {
   }
   return localAdminPreferences;
 }
+async function dispatchNewUserWelcomeNotification(params) {
+  const firstName = String(params.fullName || "").trim().split(/\s+/)[0] || String(params.email || "").split("@")[0] || "Friend";
+  return createNotification({
+    userId: params.userId,
+    title: "Welcome to My Money Manager!",
+    message: `Hi ${firstName}, your account is ready! Start tracking daily expenses, managing room budgets, scanning receipts, and settling Udhar via QR.`,
+    category: "system",
+    type: "success",
+    relatedEntityType: "user_registration",
+    relatedEntityId: params.userId,
+    deepLink: "dashboard",
+    dedupeKey: `welcome_in_app:${params.userId}`,
+    channels: ["in_app"],
+    skipPreferenceCheck: true,
+    metadata: {
+      event: "welcome_signup",
+      provider: params.provider || "email",
+      email: String(params.email || "").toLowerCase().trim()
+    }
+  });
+}
 
 // server/adminApi.ts
 function sendJson(res, statusCode, data) {
@@ -89414,15 +89649,14 @@ function validateUdharEdit(current, updates) {
     changes
   };
 }
+function isActiveRepayment(repayment) {
+  if (!repayment) return false;
+  if (repayment.deleted_at) return false;
+  return repayment.status !== "deleted" && repayment.status !== "cancelled";
+}
 function canCancelUdhar(udhar) {
-  if (udhar.status === "cancelled") {
-    return { allowed: false, reason: "This Udhar is already cancelled." };
-  }
-  if (udhar.status === "settled") {
-    return {
-      allowed: false,
-      reason: "Settled Udhar records cannot be deleted or cancelled. Keep settled history for audit integrity."
-    };
+  if (udhar.status === "cancelled" || Boolean(udhar.deleted_at)) {
+    return { allowed: false, reason: "This Udhar is already deleted." };
   }
   if (udhar.status === "disputed") {
     return {
@@ -89430,17 +89664,61 @@ function canCancelUdhar(udhar) {
       reason: "Disputed Udhar records cannot be deleted or cancelled. Resolve the dispute or record a correction to preserve audit history."
     };
   }
-  const paidAmt = parseFloat(String(udhar.paid_amount ?? 0)) || 0;
-  const activeRepayments = (udhar.repayments || []).filter(
-    (r2) => r2.status === "confirmed" || r2.status === "pending_confirmation"
-  );
-  if (paidAmt > 0.01 || activeRepayments.length > 0) {
+  return { allowed: true };
+}
+function canDeleteRepayment(params) {
+  const { isShared, direction, actorUserId, repayment } = params;
+  if (!isActiveRepayment(repayment)) {
+    return { allowed: false, httpStatus: 404, reason: "This repayment has already been deleted." };
+  }
+  if (repayment.status === "disputed") {
     return {
       allowed: false,
-      reason: "Cannot cancel an Udhar that already has repayments recorded. Use Edit or record a balancing adjustment instead to preserve audit history."
+      httpStatus: 409,
+      reason: "Disputed repayments cannot be deleted directly. Resolve the dispute first."
     };
   }
-  return { allowed: true };
+  const isLenderOrManual = !isShared || direction === "gave";
+  if (isLenderOrManual) {
+    return { allowed: true };
+  }
+  const isOwnPendingClaim = repayment.status === "pending_confirmation" && Boolean(actorUserId) && repayment.recorded_by_user_id === actorUserId;
+  if (isOwnPendingClaim) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    httpStatus: 403,
+    reason: "Only the lender can delete confirmed or lender-recorded repayments."
+  };
+}
+function recalculateUdharFromRepayments(params) {
+  const originalAmount = roundMoney(parseFloat(String(params.originalAmount)) || 0);
+  const activeConfirmedSum = (params.repayments || []).filter((r2) => isActiveRepayment(r2) && r2.status === "confirmed").reduce((sum, r2) => sum + (parseFloat(String(r2.amount)) || 0), 0);
+  const paidAmount = roundMoney(Math.min(originalAmount, Math.max(0, activeConfirmedSum)));
+  const rawRemaining = roundMoney(Math.max(0, originalAmount - paidAmount));
+  const isSettled = rawRemaining <= 0.01 && originalAmount > 0;
+  const remainingBalance = isSettled ? 0 : rawRemaining;
+  const prev = params.currentStatus;
+  let nextStatus = "confirmed";
+  if (prev === "cancelled") {
+    nextStatus = "cancelled";
+  } else if (prev === "disputed") {
+    nextStatus = "disputed";
+  } else if (isSettled) {
+    nextStatus = "settled";
+  } else if (prev === "pending_confirmation") {
+    nextStatus = "pending_confirmation";
+  } else {
+    nextStatus = "confirmed";
+  }
+  return {
+    originalAmount,
+    paidAmount,
+    remainingBalance,
+    isSettled,
+    nextStatus
+  };
 }
 function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
   let totalGiven = 0;
@@ -89479,7 +89757,9 @@ function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Dat
       overdueAmount += cur;
     }
     if (Array.isArray(tx.repayments)) {
-      pendingRepaymentCount += tx.repayments.filter((r2) => r2.status === "pending_confirmation").length;
+      pendingRepaymentCount += tx.repayments.filter(
+        (r2) => isActiveRepayment(r2) && r2.status === "pending_confirmation"
+      ).length;
     }
   }
   const netBalance = roundMoney(youWillReceive - youWillPay);
@@ -89524,7 +89804,9 @@ function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE
       pendingConfirmationsCount += 1;
     }
     if (Array.isArray(tx.repayments)) {
-      pendingConfirmationsCount += tx.repayments.filter((r2) => r2.status === "pending_confirmation").length;
+      pendingConfirmationsCount += tx.repayments.filter(
+        (r2) => isActiveRepayment(r2) && r2.status === "pending_confirmation"
+      ).length;
     }
   }
   return {
@@ -89666,7 +89948,7 @@ function enrichTransactionRow(row, userMap, repayments, editHistory) {
     clean_notes: note || null,
     notes: note || null,
     attachment_url: row.attachment_url || meta.attachment_url || null,
-    repayments: repayments.map((rep) => {
+    repayments: repayments.filter((rep) => isActiveRepayment(rep)).map((rep) => {
       const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
       const recorder = rep.recorded_by_user_id ? userMap.get(rep.recorded_by_user_id) : null;
       return {
@@ -90662,7 +90944,7 @@ async function getContactsWithBalancesRest(authUser) {
     let lastDate = null;
     let pendingCount = 0;
     for (const t2 of matchingTxs) {
-      if (t2.status === "cancelled") continue;
+      if (t2.status === "cancelled" || t2.deleted_at) continue;
       const orig = parseFloat(t2.original_amount) || 0;
       const cur = parseFloat(t2.current_balance) || 0;
       const isSettled = t2.status === "settled" || cur <= 0.01;
@@ -90689,7 +90971,7 @@ async function getContactsWithBalancesRest(authUser) {
       outstanding_payable: roundMoney(payable),
       net_balance: roundMoney(receivable - payable),
       last_transaction_date: lastDate,
-      total_transactions_count: matchingTxs.filter((t2) => t2.status !== "cancelled").length,
+      total_transactions_count: matchingTxs.filter((t2) => t2.status !== "cancelled" && !t2.deleted_at).length,
       pending_transactions_count: pendingCount,
       is_registered: Boolean(c.linked_user_id)
     };
@@ -90713,14 +90995,14 @@ async function saveContactRest(authUser, body) {
       return { status: 400, body: { success: false, message: "You cannot add yourself as a contact." } };
     }
     const targetRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status`
+      `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
     );
     if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
       return { status: 404, body: { success: false, message: "Selected user account was not found." } };
     }
     const target = targetRes.data[0];
-    if (target.deletion_status && target.deletion_status !== "none") {
-      return { status: 403, body: { success: false, message: "Selected user account is unavailable." } };
+    if (!isDiscoverableNormalUser(target)) {
+      return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for Udhar connections." } };
     }
     if (await isBlockedBetween(authUser.id, target.id)) {
       return { status: 403, body: { success: false, message: "Cannot connect with a blocked account." } };
@@ -90826,7 +91108,7 @@ async function linkContactRest(authUser, contactId, registeredUserId) {
   }
   const [contactRes, targetRes] = await Promise.all([
     sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
-    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`)
+    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`)
   ]);
   if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
     return { status: 404, body: { success: false, message: "Contact not found." } };
@@ -90836,8 +91118,8 @@ async function linkContactRest(authUser, contactId, registeredUserId) {
   }
   const contact = contactRes.data[0];
   const target = targetRes.data[0];
-  if (target.deletion_status && target.deletion_status !== "none") {
-    return { status: 403, body: { success: false, message: "Target user account is unavailable." } };
+  if (!isDiscoverableNormalUser(target)) {
+    return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is not eligible for Udhar connections." } };
   }
   if (await isBlockedBetween(authUser.id, target.id)) {
     return { status: 403, body: { success: false, message: "Cannot link with a blocked account." } };
@@ -91005,13 +91287,13 @@ async function resolveQrRest(authUser, body) {
     };
   }
   const qrRecord = tokRes.data[0];
-  if (qrRecord.used) {
+  if (qrRecord.used || qrRecord.is_single_use && qrRecord.used_at) {
     return {
       status: 410,
       body: {
         success: false,
         code: "QR_REVOKED",
-        message: "This pairing QR has been revoked. Ask your friend to share their new Udhar Pairing QR."
+        message: "This pairing QR has already been used or revoked. Ask your friend to share their new Udhar Pairing QR."
       }
     };
   }
@@ -91036,7 +91318,7 @@ async function resolveQrRest(authUser, body) {
     };
   }
   const userRes = await sbRest(
-    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified&limit=1`
+    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status,is_verified&limit=1`
   );
   if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
     return {
@@ -91045,10 +91327,10 @@ async function resolveQrRest(authUser, body) {
     };
   }
   const owner = userRes.data[0];
-  if (owner.status !== "active" || owner.deletion_status && owner.deletion_status !== "none") {
+  if (!isDiscoverableNormalUser(owner)) {
     return {
       status: 403,
-      body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is deactivated or unavailable." }
+      body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is unavailable for Udhar connections." }
     };
   }
   if (await isBlockedBetween(authUser.id, owner.id)) {
@@ -91113,7 +91395,7 @@ async function getUdharTransactionsRest(authUser) {
   if (!txRes.ok) {
     return { status: 503, body: { success: false, message: "Unable to load Udhar ledger right now." } };
   }
-  const rawTxs = txRes.data || [];
+  const rawTxs = (txRes.data || []).filter((t2) => t2.status !== "cancelled" && !t2.deleted_at);
   const linkIds = Array.from(new Set(rawTxs.map((t2) => t2.link_id).filter(Boolean)));
   const txIds = rawTxs.map((t2) => t2.id).filter(Boolean);
   let repaymentsRows = [];
@@ -91128,7 +91410,7 @@ async function getUdharTransactionsRest(authUser) {
         `udhar_edit_history?link_id=in.(${encodeURIComponent(inLinks)})&order=created_at.desc`
       )
     ]);
-    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data;
+    if (repRes.ok && Array.isArray(repRes.data)) repaymentsRows = repRes.data.filter((r2) => isActiveRepayment(r2));
     if (histRes.ok && Array.isArray(histRes.data)) historyRows = histRes.data;
   }
   const allUserIds = [
@@ -91214,16 +91496,17 @@ async function createUdharTransactionRest(authUser, body) {
   let registeredUser = null;
   if (counterpartUserId && counterpartUserId !== authUser.id) {
     const uRes = await sbRest(
-      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,deletion_status&limit=1`
+      `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
     );
     if (uRes.ok && uRes.data && uRes.data.length > 0) {
       const u = uRes.data[0];
-      if (!u.deletion_status || u.deletion_status === "none") {
-        if (await isBlockedBetween(authUser.id, u.id)) {
-          return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
-        }
-        registeredUser = u;
+      if (!isDiscoverableNormalUser(u)) {
+        return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for shared Udhar connections." } };
       }
+      if (await isBlockedBetween(authUser.id, u.id)) {
+        return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
+      }
+      registeredUser = u;
     }
   }
   const packedNotes = packStructuredNote(plainNotes, {
@@ -91364,6 +91647,12 @@ async function confirmUdharTransactionRest(authUser, txId) {
     return { status: 404, body: { success: false, message: "Transaction not found." } };
   }
   const tx = txRes.data[0];
+  if (tx.is_initiator) {
+    return {
+      status: 403,
+      body: { success: false, message: "Only the recipient counterpart can confirm this transaction." }
+    };
+  }
   await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
     method: "PATCH",
     body: { status: "confirmed", confirmation_status: "confirmed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
@@ -91440,7 +91729,7 @@ async function repayUdharRest(authUser, txId, body) {
   const existingRepsRes = await sbRest(
     `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
   );
-  const existingReps = existingRepsRes.ok && Array.isArray(existingRepsRes.data) ? existingRepsRes.data : [];
+  const existingReps = existingRepsRes.ok && Array.isArray(existingRepsRes.data) ? existingRepsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
   const confirmedPaid = roundMoney(
     existingReps.filter((r2) => r2.status === "confirmed").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
   );
@@ -91536,6 +91825,9 @@ async function confirmRepaymentRest(authUser, repaymentId) {
     return { status: 404, body: { success: false, message: "Repayment record not found." } };
   }
   const rep = repRes.data[0];
+  if (!isActiveRepayment(rep)) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
   if (rep.status === "confirmed") {
     return { status: 400, body: { success: false, message: "This repayment is already confirmed." } };
   }
@@ -91557,8 +91849,9 @@ async function confirmRepaymentRest(authUser, repaymentId) {
   const allRepsRes = await sbRest(
     `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
   );
+  const activeConfirmedReps = (allRepsRes.data || []).filter((r2) => isActiveRepayment(r2));
   const totalConfirmed = roundMoney(
-    (allRepsRes.data || []).reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+    activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
   );
   const origAmt = parseFloat(tx.original_amount) || 0;
   const newBalance = roundMoney(Math.max(0, origAmt - totalConfirmed));
@@ -91599,6 +91892,9 @@ async function rejectRepaymentRest(authUser, repaymentId, reason) {
     return { status: 404, body: { success: false, message: "Repayment record not found." } };
   }
   const rep = repRes.data[0];
+  if (!isActiveRepayment(rep)) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
   const txRes = await sbRest(
     `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
@@ -91632,17 +91928,27 @@ async function rejectRepaymentRest(authUser, repaymentId, reason) {
 }
 async function editUdharRest(authUser, txId, body) {
   const txRes = await sbRest(
-    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&or=(user_id.eq.${encodeURIComponent(authUser.id)},counterpart_user_id.eq.${encodeURIComponent(authUser.id)})&limit=1`
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
   if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
     return { status: 404, body: { success: false, message: "Transaction not found." } };
   }
   const tx = txRes.data[0];
+  if (tx.counterpart_user_id && tx.direction === "took") {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        message: "Only the lender who gave the money can edit this Udhar transaction."
+      }
+    };
+  }
   const repsRes = await sbRest(
     `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.confirmed`
   );
+  const activeConfirmedReps = (repsRes.data || []).filter((r2) => isActiveRepayment(r2));
   const confirmedPaid = roundMoney(
-    (repsRes.data || []).reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
+    activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
   );
   const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
   const editReason = (body.reason_for_edit || body.reason || body.edit_reason || "").trim();
@@ -91759,13 +92065,53 @@ async function settleUdharRest(authUser, txId, body) {
   if (tx.status === "settled" || currentBal <= 0.01) {
     return { status: 400, body: { success: false, message: "This transaction is already settled." } };
   }
-  if (tx.status === "cancelled") {
+  if (tx.status === "cancelled" || tx.deleted_at) {
     return { status: 400, body: { success: false, message: "Cannot settle a cancelled transaction." } };
+  }
+  if (tx.status === "disputed") {
+    return { status: 409, body: { success: false, message: "Cannot settle a disputed transaction. Resolve the dispute first." } };
   }
   const settleDate = body.settlement_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
   const paymentMethod = (body.payment_method || "UPI").trim();
   const notes = (body.notes || "Settled in full").trim();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  let patchRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        current_balance: 0,
+        paid_amount: parseFloat(tx.original_amount) || 0,
+        status: "settled",
+        settled_at: nowIso,
+        settled_by: authUser.id,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok && patchRes.status === 400) {
+    patchRes = await sbRest(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          current_balance: 0,
+          paid_amount: parseFloat(tx.original_amount) || 0,
+          status: "settled",
+          settled_at: nowIso,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, message: patchRes.error || "Failed to settle transaction." } };
+  }
+  if (!Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return { status: 409, body: { success: false, message: "This transaction has already been settled or modified." } };
+  }
   await sbRest("udhar_repayments", {
     method: "POST",
     prefer: "return=minimal",
@@ -91780,16 +92126,6 @@ async function settleUdharRest(authUser, txId, body) {
       status: "confirmed",
       confirmed_at: nowIso,
       confirmed_by: authUser.id
-    }
-  });
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      current_balance: 0,
-      paid_amount: parseFloat(tx.original_amount) || 0,
-      status: "settled",
-      settled_at: nowIso,
-      updated_at: nowIso
     }
   });
   if (tx.counterpart_user_id) {
@@ -91807,11 +92143,13 @@ async function settleUdharRest(authUser, txId, body) {
     body: {
       success: true,
       message: `Udhar with ${tx.counterpart_name} settled in full.`,
-      isSettled: true
+      isSettled: true,
+      settledAt: nowIso,
+      settledBy: authUser.id
     }
   };
 }
-async function cancelUdharRest(authUser, txId) {
+async function cancelUdharRest(authUser, txId, reason) {
   const txRes = await sbRest(
     `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
   );
@@ -91828,39 +92166,78 @@ async function cancelUdharRest(authUser, txId) {
       }
     };
   }
-  const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&select=status`);
-  const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data : [];
+  const repsRes = await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`);
+  const repayments = repsRes.ok && Array.isArray(repsRes.data) ? repsRes.data.filter((r2) => isActiveRepayment(r2)) : [];
   const guard = canCancelUdhar({
     status: tx.status,
+    deleted_at: tx.deleted_at,
     paid_amount: tx.paid_amount,
     repayments
   });
   if (!guard.allowed) {
     return { status: 409, body: { success: false, message: guard.reason } };
   }
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const softDelRes = await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: {
-      status: "cancelled",
-      current_balance: 0,
-      deleted_at: nowIso,
-      deleted_by: authUser.id,
-      updated_at: nowIso
-    }
-  });
-  if (!softDelRes.ok) {
-    await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+  let softDelRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+    {
       method: "PATCH",
-      body: { status: "cancelled", current_balance: 0, updated_at: nowIso }
-    });
+      prefer: "return=representation",
+      body: {
+        status: "cancelled",
+        current_balance: 0,
+        paid_amount: 0,
+        deleted_at: nowIso,
+        deleted_by: authUser.id,
+        deletion_reason: cleanReason,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!softDelRes.ok && softDelRes.status === 400) {
+    softDelRes = await sbRest(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: { status: "cancelled", current_balance: 0, paid_amount: 0, updated_at: nowIso }
+      }
+    );
+  }
+  if (!softDelRes.ok) {
+    return { status: 503, body: { success: false, message: softDelRes.error || "Failed to delete transaction." } };
+  }
+  if (!Array.isArray(softDelRes.data) || softDelRes.data.length === 0) {
+    return { status: 409, body: { success: false, message: "This transaction cannot be deleted in its current state." } };
+  }
+  if (repayments.length > 0) {
+    const repDelRes = await sbRest(
+      `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`,
+      {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: {
+          status: "deleted",
+          deleted_at: nowIso,
+          deleted_by: authUser.id,
+          deletion_reason: cleanReason || "Parent Udhar deleted"
+        }
+      }
+    );
+    if (!repDelRes.ok && repDelRes.status === 400) {
+      await sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
+        method: "DELETE",
+        prefer: "return=minimal"
+      });
+    }
   }
   if (tx.counterpart_user_id) {
     await createTargetedNotificationRest({
       targetUserId: tx.counterpart_user_id,
       actorUserId: authUser.id,
       title: `Udhar Removed by ${authUser.full_name}`,
-      message: `${authUser.full_name} deleted the pending Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      message: `${authUser.full_name} deleted the Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
       type: "udhar_cancelled",
       relatedEntityId: tx.link_id
     });
@@ -91871,7 +92248,132 @@ async function cancelUdharRest(authUser, txId) {
       success: true,
       deletedTransactionId: tx.id,
       linkId: tx.link_id,
+      deletedAt: nowIso,
+      deletedBy: authUser.id,
       message: "Udhar entry deleted successfully. Totals have been recalculated."
+    }
+  };
+}
+async function deleteRepaymentRest(authUser, repaymentId, reason) {
+  const repRes = await sbRest(`udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}&limit=1`);
+  if (!repRes.ok || !repRes.data || repRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Repayment record not found." } };
+  }
+  const rep = repRes.data[0];
+  const txRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(rep.link_id)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Associated Udhar transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  if (tx.status === "cancelled" || tx.deleted_at) {
+    return { status: 409, body: { success: false, message: "Associated Udhar has already been deleted." } };
+  }
+  if (tx.status === "disputed") {
+    return { status: 409, body: { success: false, message: "Cannot delete repayments on a disputed Udhar. Resolve the dispute first." } };
+  }
+  const guard = canDeleteRepayment({
+    isShared: Boolean(tx.counterpart_user_id),
+    direction: tx.direction,
+    actorUserId: authUser.id,
+    repayment: rep
+  });
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, message: guard.reason || "Not authorized to delete this repayment." } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
+  let repDelRes = await sbRest(
+    `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "deleted",
+        deleted_at: nowIso,
+        deleted_by: authUser.id,
+        deletion_reason: cleanReason
+      }
+    }
+  );
+  if (!repDelRes.ok && repDelRes.status === 400) {
+    repDelRes = await sbRest(
+      `udhar_repayments?id=eq.${encodeURIComponent(repaymentId)}`,
+      {
+        method: "DELETE",
+        prefer: "return=representation"
+      }
+    );
+  }
+  if (!repDelRes.ok) {
+    return { status: 503, body: { success: false, message: repDelRes.error || "Failed to delete repayment." } };
+  }
+  const remainingRepsRes = await sbRest(
+    `udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}`
+  );
+  const remainingReps = remainingRepsRes.ok && Array.isArray(remainingRepsRes.data) ? remainingRepsRes.data.filter((r2) => r2.id !== repaymentId && isActiveRepayment(r2)) : [];
+  const recalc = recalculateUdharFromRepayments({
+    originalAmount: tx.original_amount,
+    repayments: remainingReps,
+    currentStatus: tx.status
+  });
+  let parentUpdateRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        paid_amount: recalc.paidAmount,
+        current_balance: recalc.remainingBalance,
+        status: recalc.nextStatus,
+        settled_at: recalc.isSettled ? tx.settled_at || nowIso : null,
+        settled_by: recalc.isSettled ? tx.settled_by || authUser.id : null,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!parentUpdateRes.ok && parentUpdateRes.status === 400) {
+    parentUpdateRes = await sbRest(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=neq.cancelled`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          paid_amount: recalc.paidAmount,
+          current_balance: recalc.remainingBalance,
+          status: recalc.nextStatus,
+          settled_at: recalc.isSettled ? tx.settled_at || nowIso : null,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!parentUpdateRes.ok) {
+    return { status: 503, body: { success: false, message: parentUpdateRes.error || "Failed to recalculate Udhar balance." } };
+  }
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Repayment Deleted by ${authUser.full_name}`,
+      message: `${authUser.full_name} deleted a repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Updated balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`,
+      type: "repayment_deleted",
+      relatedEntityId: tx.link_id
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      deletedRepaymentId: repaymentId,
+      transactionId: tx.id,
+      linkId: tx.link_id,
+      paidAmount: recalc.paidAmount,
+      remainingBalance: recalc.remainingBalance,
+      udharStatus: recalc.nextStatus,
+      isSettled: recalc.isSettled,
+      message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} deleted. Remaining balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`
     }
   };
 }
@@ -91887,7 +92389,7 @@ async function getUdharHistoryRest(authUser, txId) {
     sbRest(`udhar_repayments?link_id=eq.${encodeURIComponent(tx.link_id)}&order=repayment_date.desc,created_at.desc`),
     sbRest(`udhar_edit_history?link_id=eq.${encodeURIComponent(tx.link_id)}&order=created_at.desc`)
   ]);
-  const reps = repsRes.data || [];
+  const reps = (repsRes.data || []).filter((r2) => isActiveRepayment(r2));
   const hist = histRes.data || [];
   const userIds = [
     tx.counterpart_user_id,
@@ -93455,12 +93957,35 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
         sendJson2(res, 403, { success: false, message: "Your account is not active. Please contact support." });
         return true;
       }
-      const session2 = await createSession(userRow.id, {
-        rememberMe: true,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: userRow.role, email: userRow.email }
-      });
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session2;
+      try {
+        session2 = await createSession(userRow.id, {
+          rememberMe: true,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: userRow.role, email: userRow.email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("GOOGLE_LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: userRow.id,
+            userEmail: userRow.email,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson2(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       setSessionCookie(res, session2.sessionToken, session2.expiresAt);
       const outUser2 = sanitizeUserOutput(userRow);
       sendJson2(res, 200, {
@@ -93534,6 +94059,26 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       user: { role: "user", email: createdUser.email }
     });
     setSessionCookie(res, session.sessionToken, session.expiresAt);
+    await dispatchNewUserWelcomeNotification({
+      userId: createdUser.id,
+      fullName: createdUser.full_name,
+      email: createdUser.email,
+      provider: "google"
+    }).catch((err) => {
+      console.error("[Google Welcome In-App Notification Error]:", err);
+    });
+    sendWelcomeEmail(createdUser.email, createdUser.full_name, createdUser.id).catch((err) => {
+      console.error("[Google Welcome Email Error]:", err);
+    });
+    recordAdminNotification({
+      eventType: "new_user",
+      title: "New User Registered (Google)",
+      message: `${createdUser.full_name} (${createdUser.email}) signed up via Google.`,
+      userId: createdUser.id,
+      userEmail: createdUser.email,
+      metadata: { role: "user", provider: "google", registeredAt: (/* @__PURE__ */ new Date()).toISOString() }
+    }).catch(() => {
+    });
     await logSecurityEvent("GOOGLE_USER_REGISTERED", {
       userId: createdUser.id,
       userEmail: createdUser.email,
@@ -93813,12 +94358,35 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       return true;
     }
     await updatePasskeyUsage(stored, check.newCounter);
-    const session = await createSession(userRow.id, {
-      rememberMe: true,
-      userAgent,
-      ipAddress: clientIp,
-      user: { role: userRow.role, email: userRow.email }
-    });
+    const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+    let session;
+    try {
+      session = await createSession(userRow.id, {
+        rememberMe: true,
+        userAgent,
+        ipAddress: clientIp,
+        user: { role: userRow.role, email: userRow.email },
+        replaceSessionId
+      });
+    } catch (sessionErr) {
+      if (sessionErr instanceof SessionLimitError) {
+        await logSecurityEvent("PASSKEY_LOGIN_BLOCKED_MAX_SESSIONS", {
+          userId: userRow.id,
+          userEmail: userRow.email,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson2(res, 409, {
+          success: false,
+          code: sessionErr.code,
+          message: sessionErr.message,
+          maxSessions: sessionErr.maxSessions,
+          activeSessions: sessionErr.activeSessions
+        });
+        return true;
+      }
+      throw sessionErr;
+    }
     setSessionCookie(res, session.sessionToken, session.expiresAt);
     await logSecurityEvent("PASSKEY_LOGIN_SUCCESS", {
       userId: userRow.id,
@@ -97154,6 +97722,39 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
 }
 
 // server/api.ts
+async function syncSupabaseAuthPassword(email, newPassword) {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+  if (!serviceKey || !supabaseUrl || !email) return;
+  try {
+    const listRes = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?page=1&per_page=100`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          Accept: "application/json"
+        }
+      }
+    );
+    if (!listRes.ok) return;
+    const listData = await listRes.json().catch(() => null);
+    const users = Array.isArray(listData?.users) ? listData.users : [];
+    const target = users.find((u) => String(u?.email || "").trim().toLowerCase() === email.trim().toLowerCase());
+    if (!target?.id) return;
+    await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(target.id)}`, {
+      method: "PUT",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ password: newPassword })
+    });
+  } catch (err) {
+    console.warn("[Supabase Auth Password Sync Notice]:", err);
+  }
+}
 async function parseJsonBody6(req) {
   if (req.body !== void 0 && req.body !== null) {
     if (typeof req.body === "object") {
@@ -97503,12 +98104,36 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      const session = await createSession(userRecord.id, {
-        rememberMe,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: effectiveRole, email }
-      });
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session;
+      try {
+        session = await createSession(userRecord.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: effectiveRole, email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("ADMIN_LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRole,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson6(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       const sessionToken = session.sessionToken;
       const expiresAt = session.expiresAt;
       setSessionCookie2(res, sessionToken, expiresAt);
@@ -97668,6 +98293,14 @@ async function handleApiRequest(req, res) {
         user: { role: "user", email }
       });
       setSessionCookie2(res, session.sessionToken, session.expiresAt);
+      await dispatchNewUserWelcomeNotification({
+        userId: newUser.id,
+        fullName: newUser.full_name,
+        email,
+        provider: "email"
+      }).catch((err) => {
+        console.error("[Welcome In-App Notification Error]:", err);
+      });
       sendWelcomeEmail(email, newUser.full_name, newUser.id).catch((err) => {
         console.error("[Welcome Email Background Error]:", err);
       });
@@ -97806,12 +98439,36 @@ async function handleApiRequest(req, res) {
         }).catch(() => {
         });
       }
-      const session = await createSession(user.id, {
-        rememberMe,
-        userAgent,
-        ipAddress: clientIp,
-        user: { role: user.role, email }
-      });
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session;
+      try {
+        session = await createSession(user.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: user.role, email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: user.id,
+            userEmail: email,
+            actorRole: user.role,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson6(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
       setSessionCookie2(res, session.sessionToken, session.expiresAt);
       await resetRateLimitAsync(`login:ip:${clientIp}`);
       await resetRateLimitAsync(`login:account:${email}`);
@@ -97832,7 +98489,7 @@ async function handleApiRequest(req, res) {
     }
     if (pathname === "/api/auth/logout" && method === "POST") {
       const authUser = await authenticateRequest(req);
-      const token = (req.headers["authorization"]?.slice(7) || "").trim();
+      const token = extractSessionToken(req);
       if (token) {
         await revokeSession(token);
       }
@@ -97859,6 +98516,70 @@ async function handleApiRequest(req, res) {
       sendJson6(res, 200, { success: true, message: "All active sessions on all devices have been revoked." });
       return true;
     }
+    if (pathname === "/api/auth/sessions" && method === "GET") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const token = extractSessionToken(req);
+      const sessions = await listActiveSessionsForUser(authUser.id, token);
+      sendJson6(res, 200, {
+        success: true,
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: sessions.length,
+        sessions
+      });
+      return true;
+    }
+    if (pathname.startsWith("/api/auth/sessions/") && method === "DELETE") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const sessionId = decodeURIComponent(pathname.slice("/api/auth/sessions/".length)).trim();
+      if (!sessionId || !/^[a-zA-Z0-9_-]{4,100}$/.test(sessionId)) {
+        sendJson6(res, 400, { success: false, message: "Invalid session ID." });
+        return true;
+      }
+      const token = extractSessionToken(req);
+      const beforeSessions = await listActiveSessionsForUser(authUser.id, token);
+      const targetSession = beforeSessions.find((s2) => s2.id === sessionId);
+      if (!targetSession) {
+        sendJson6(res, 404, { success: false, message: "Active session not found." });
+        return true;
+      }
+      const revoked = await revokeUserSessionById(authUser.id, sessionId);
+      if (!revoked) {
+        sendJson6(res, 404, { success: false, message: "Active session not found or already logged out." });
+        return true;
+      }
+      if (targetSession.isCurrent) {
+        clearSessionCookie(res);
+      }
+      await logSecurityEvent("USER_SESSION_REVOKED", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        ipAddress: clientIp,
+        metadata: {
+          revokedSessionId: sessionId,
+          deviceName: targetSession.deviceName,
+          revokedCurrent: targetSession.isCurrent
+        }
+      }).catch(() => {
+      });
+      const remaining = await listActiveSessionsForUser(authUser.id, targetSession.isCurrent ? null : token);
+      sendJson6(res, 200, {
+        success: true,
+        message: targetSession.isCurrent ? "Current session logged out successfully." : `${targetSession.deviceName} has been logged out remotely.`,
+        revokedCurrent: targetSession.isCurrent,
+        maxSessions: MAX_ACTIVE_SESSIONS,
+        activeCount: remaining.length,
+        sessions: remaining
+      });
+      return true;
+    }
     if (pathname === "/api/auth/me" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -97880,12 +98601,8 @@ async function handleApiRequest(req, res) {
         }
         let activeSessionsCount = 1;
         try {
-          const sessRes = await query(
-            `SELECT COUNT(*) as count FROM public.user_sessions 
-             WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW()`,
-            [authUser.id]
-          );
-          activeSessionsCount = parseInt(sessRes.rows[0]?.count || "1");
+          const activeList = await listActiveSessionsForUser(authUser.id, extractSessionToken(req));
+          activeSessionsCount = activeList.length || 1;
         } catch {
           activeSessionsCount = 1;
         }
@@ -98231,11 +98948,21 @@ async function handleApiRequest(req, res) {
       }
       const appBase = process.env.APP_BASE_URL || "https://mymoney.nileshbarela.site";
       const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
-      await sendPasswordResetEmail(user.email, user.full_name, resetLink);
+      const emailSent = await sendPasswordResetEmail(user.email, user.full_name, resetLink);
+      if (!emailSent) {
+        console.warn("[Forgot Password] SMTP delivery failed or SMTP credentials are not configured.");
+        await logSecurityEvent("FORGOT_PASSWORD_SMTP_FAILED", {
+          userId: user.id,
+          userEmail: user.email,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+      }
       await logSecurityEvent("FORGOT_PASSWORD_LINK_GENERATED", {
         userId: user.id,
         userEmail: user.email,
-        ipAddress: clientIp
+        ipAddress: clientIp,
+        details: { emailSent }
       }).catch(() => {
       });
       sendJson6(res, 200, standardResponse);
@@ -98370,19 +99097,53 @@ async function handleApiRequest(req, res) {
       const passwordHash = await hashPassword(newPassword);
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       if (isDatabaseAvailable()) {
-        await query(
-          `UPDATE public.app_users 
-           SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL 
-           WHERE id = $2`,
-          [passwordHash, record.user_id]
-        );
-        await query(
-          `UPDATE public.password_resets 
-           SET used = TRUE, used_at = NOW() 
-           WHERE id = $1`,
-          [record.id]
-        );
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const claimRes = await client.query(
+            `UPDATE public.password_resets
+             SET used = TRUE, used_at = NOW()
+             WHERE id = $1 AND used = FALSE AND expires_at > NOW()
+             RETURNING id`,
+            [record.id]
+          );
+          if (claimRes.rows.length === 0) {
+            await client.query("ROLLBACK");
+            sendJson6(res, 400, {
+              success: false,
+              message: "This reset link is invalid, expired, or has already been used. Please request a new one."
+            });
+            return true;
+          }
+          await client.query(
+            `UPDATE public.app_users
+             SET password_hash = $1, password_changed_at = NOW(), force_password_reset = FALSE, failed_login_attempts = 0, locked_until = NULL
+             WHERE id = $2`,
+            [passwordHash, record.user_id]
+          );
+          await client.query("COMMIT");
+        } catch (txErr) {
+          await client.query("ROLLBACK");
+          throw txErr;
+        } finally {
+          client.release();
+        }
       } else {
+        const claimRest = await sbRestRequest(
+          `password_resets?id=eq.${encodeURIComponent(record.id)}&used=eq.false`,
+          {
+            method: "PATCH",
+            prefer: "return=representation",
+            body: { used: true, used_at: nowIso }
+          }
+        );
+        if (!claimRest.ok || !Array.isArray(claimRest.data) || claimRest.data.length === 0) {
+          sendJson6(res, 400, {
+            success: false,
+            message: "This reset link is invalid, expired, or has already been used. Please request a new one."
+          });
+          return true;
+        }
         const updUser = await sbRestRequest(`app_users?id=eq.${encodeURIComponent(record.user_id)}`, {
           method: "PATCH",
           body: {
@@ -98398,12 +99159,9 @@ async function handleApiRequest(req, res) {
           sendJson6(res, 503, { success: false, message: "Failed to update password right now. Please retry." });
           return true;
         }
-        await sbRestRequest(`password_resets?id=eq.${encodeURIComponent(record.id)}`, {
-          method: "PATCH",
-          body: { used: true, used_at: nowIso }
-        }).catch(() => {
-        });
       }
+      await syncSupabaseAuthPassword(record.email, newPassword).catch(() => {
+      });
       await revokeAllUserSessions(record.user_id);
       await resetRateLimitAsync(`reset_pass:session:${tokenHash}`);
       await resetRateLimitAsync(`login:account:${record.email}`);
@@ -99358,12 +100116,16 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const targetRes = await query(
-          `SELECT id, full_name, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [linkedUserId]
         );
-        if (targetRes.rows.length === 0 || targetRes.rows[0].status !== "active" || targetRes.rows[0].deletion_status !== "none") {
-          sendJson6(res, 404, { success: false, message: "Selected user account is unavailable." });
+        if (targetRes.rows.length === 0) {
+          sendJson6(res, 404, { success: false, message: "Selected user account was not found." });
+          return true;
+        }
+        if (!isDiscoverableNormalUser(targetRes.rows[0])) {
+          sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for Udhar connections." });
           return true;
         }
       }
@@ -99497,12 +100259,16 @@ async function handleApiRequest(req, res) {
       }
       const contact = contactRes.rows[0];
       const targetUserRes = await query(
-        `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+        `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
          FROM public.app_users WHERE id = $1`,
         [registeredUserId]
       );
-      if (targetUserRes.rows.length === 0 || targetUserRes.rows[0].status !== "active" || targetUserRes.rows[0].deletion_status !== "none") {
-        sendJson6(res, 404, { success: false, message: "Registered user not found or unavailable." });
+      if (targetUserRes.rows.length === 0) {
+        sendJson6(res, 404, { success: false, message: "Registered user not found." });
+        return true;
+      }
+      if (!isDiscoverableNormalUser(targetUserRes.rows[0])) {
+        sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is not eligible for Udhar connections." });
         return true;
       }
       await query(
@@ -100344,8 +101110,8 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const tokenRes = await query(
-          `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used,
-                  u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+          `SELECT t.id, t.user_id, t.pairing_token, t.pairing_code, t.expires_at, t.used, t.is_single_use, t.used_at,
+                  u.id as account_id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
                   COALESCE(u.deletion_status, 'none') AS deletion_status
            FROM public.qr_pairing_tokens t
            JOIN public.app_users u ON t.user_id = u.id
@@ -100362,11 +101128,11 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const qrRecord = tokenRes.rows[0];
-        if (qrRecord.used) {
+        if (qrRecord.used || qrRecord.is_single_use && qrRecord.used_at) {
           sendJson6(res, 410, {
             success: false,
             code: "QR_REVOKED",
-            message: "This pairing QR has been revoked. Ask your friend to share their newer Udhar Pairing QR."
+            message: "This pairing QR has already been used or revoked. Ask your friend to share their newer Udhar Pairing QR."
           });
           return true;
         }
@@ -100378,11 +101144,11 @@ async function handleApiRequest(req, res) {
           });
           return true;
         }
-        if (qrRecord.status !== "active" || qrRecord.deletion_status !== "none") {
+        if (!isDiscoverableNormalUser(qrRecord)) {
           sendJson6(res, 403, {
             success: false,
             code: "ACCOUNT_UNAVAILABLE",
-            message: "This user account is currently deactivated or unavailable."
+            message: "This user account is currently deactivated or unavailable for Udhar connections."
           });
           return true;
         }
@@ -100511,7 +101277,7 @@ async function handleApiRequest(req, res) {
         const pairingCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
         const relationshipType = (body.relationshipType || "Friend").trim();
         const tokenRes = await query(
-          `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.status,
+          `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
                   COALESCE(u.deletion_status, 'none') AS deletion_status
            FROM public.qr_pairing_tokens t
            JOIN public.app_users u ON t.user_id = u.id
@@ -100528,7 +101294,7 @@ async function handleApiRequest(req, res) {
         }
         const tokenRecord = tokenRes.rows[0];
         const targetUserId = tokenRecord.user_id;
-        if (tokenRecord.status !== "active" || tokenRecord.deletion_status !== "none") {
+        if (!isDiscoverableNormalUser(tokenRecord)) {
           sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is currently deactivated or unavailable." });
           return true;
         }
@@ -100761,6 +101527,7 @@ async function handleApiRequest(req, res) {
       }
       const repaymentsByUdhar = {};
       for (const rep of repayRes.rows) {
+        if (!isActiveRepayment(rep)) continue;
         const key = rep.tx_id || rep.udhar_id;
         if (!repaymentsByUdhar[key]) repaymentsByUdhar[key] = [];
         const { note: repNote, meta: repMeta } = unpackStructuredNote(rep.notes);
@@ -100777,7 +101544,8 @@ async function handleApiRequest(req, res) {
         if (!editHistoryByLink[hist.link_id]) editHistoryByLink[hist.link_id] = [];
         editHistoryByLink[hist.link_id].push(hist);
       }
-      const transactions = txRes.rows.map((r2) => {
+      const activeTxRows = txRes.rows.filter((r2) => r2.status !== "cancelled" && !r2.deleted_at);
+      const transactions = activeTxRows.map((r2) => {
         const orig = parseFloat(r2.original_amount) || 0;
         const cur = parseFloat(r2.current_balance) || 0;
         const computedPaid = Math.max(0, roundMoney(orig - cur));
@@ -100871,11 +101639,15 @@ async function handleApiRequest(req, res) {
       let registeredUser = null;
       if (counterpartUserId && counterpartUserId !== authUser.id) {
         const uCheck = await query(
-          `SELECT id, full_name, email, status, COALESCE(deletion_status, 'none') AS deletion_status
+          `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
           [counterpartUserId]
         );
-        if (uCheck.rows.length > 0 && uCheck.rows[0].status === "active" && uCheck.rows[0].deletion_status === "none") {
+        if (uCheck.rows.length > 0) {
+          if (!isDiscoverableNormalUser(uCheck.rows[0])) {
+            sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for shared Udhar connections." });
+            return true;
+          }
           const blk = await query(
             `SELECT 1 FROM public.user_connections
              WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
@@ -101066,6 +101838,10 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const tx = txRes.rows[0];
+      if (tx.is_initiator) {
+        sendJson6(res, 403, { success: false, message: "Only the recipient counterpart can confirm this transaction." });
+        return true;
+      }
       await query(
         `UPDATE public.udhar_transactions 
          SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
@@ -101316,6 +102092,10 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const rep = repRes.rows[0];
+      if (!isActiveRepayment(rep)) {
+        sendJson6(res, 404, { success: false, message: "Repayment record not found." });
+        return true;
+      }
       if (rep.status === "confirmed") {
         sendJson6(res, 400, { success: false, message: "This repayment has already been confirmed." });
         return true;
@@ -101413,6 +102193,10 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const rep = repRes.rows[0];
+      if (!isActiveRepayment(rep)) {
+        sendJson6(res, 404, { success: false, message: "Repayment record not found." });
+        return true;
+      }
       const txRes = await query(
         `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2`,
         [rep.link_id, authUser.id]
@@ -101474,7 +102258,7 @@ async function handleApiRequest(req, res) {
       try {
         await client.query("BEGIN");
         const txRes = await client.query(
-          "SELECT * FROM public.udhar_transactions WHERE id = $1 AND (user_id = $2 OR counterpart_user_id = $2) FOR UPDATE",
+          "SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE",
           [txId, authUser.id]
         );
         if (txRes.rows.length === 0) {
@@ -101483,6 +102267,14 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === "took") {
+          await client.query("ROLLBACK");
+          sendJson6(res, 403, {
+            success: false,
+            message: "Only the lender who gave the money can edit this Udhar transaction."
+          });
+          return true;
+        }
         const repaySumRes = await client.query(
           `SELECT COALESCE(SUM(amount), 0) AS total_repaid
            FROM public.udhar_repayments
@@ -101667,9 +102459,14 @@ async function handleApiRequest(req, res) {
           sendJson6(res, 400, { success: false, message: "This transaction is already settled." });
           return true;
         }
-        if (tx.status === "cancelled") {
+        if (tx.status === "cancelled" || tx.deleted_at) {
           await client.query("ROLLBACK");
           sendJson6(res, 400, { success: false, message: "Cannot settle a cancelled transaction." });
+          return true;
+        }
+        if (tx.status === "disputed") {
+          await client.query("ROLLBACK");
+          sendJson6(res, 409, { success: false, message: "Cannot settle a disputed transaction. Resolve the dispute first." });
           return true;
         }
         await client.query(
@@ -101679,12 +102476,24 @@ async function handleApiRequest(req, res) {
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', NOW(), $8)`,
           [tx.link_id, tx.id, authUser.id, currentBal, settleDate, paymentMethod, notes, authUser.id]
         );
-        await client.query(
-          `UPDATE public.udhar_transactions 
-           SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
-           WHERE link_id = $1`,
-          [tx.link_id]
-        );
+        await client.query("SAVEPOINT settle_audit_cols");
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), settled_by = $2, updated_at = NOW() 
+             WHERE link_id = $1`,
+            [tx.link_id, authUser.id]
+          );
+          await client.query("RELEASE SAVEPOINT settle_audit_cols");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT settle_audit_cols");
+          await client.query(
+            `UPDATE public.udhar_transactions 
+             SET current_balance = 0, paid_amount = original_amount, status = 'settled', settled_at = NOW(), updated_at = NOW() 
+             WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
         if (tx.counterpart_user_id) {
           await client.query(
             `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
@@ -101744,78 +102553,287 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const txId = deleteTxMatch[1];
+      const body = await parseJsonBody6(req).catch(() => ({}));
+      const deletionReason = typeof body?.reason === "string" ? body.reason.trim() : typeof body?.deletion_reason === "string" ? body.deletion_reason.trim() : "";
       if (!isDatabaseAvailable()) {
-        const restRes = await cancelUdharRest(authUser, txId);
+        const restRes = await cancelUdharRest(authUser, txId, deletionReason);
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
-      const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
-      if (txRes.rows.length === 0) {
-        sendJson6(res, 404, { success: false, message: "Transaction not found." });
-        return true;
-      }
-      const tx = txRes.rows[0];
-      if (tx.counterpart_user_id && tx.direction === "took") {
-        sendJson6(res, 403, {
-          success: false,
-          message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
-        });
-        return true;
-      }
-      const repsRes = await query(
-        `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
-        [tx.link_id]
-      );
-      const guard = canCancelUdhar({
-        status: tx.status,
-        paid_amount: tx.paid_amount,
-        repayments: repsRes.rows
-      });
-      if (!guard.allowed) {
-        sendJson6(res, 409, {
-          success: false,
-          message: guard.reason
-        });
-        return true;
-      }
-      await query(
-        `UPDATE public.udhar_transactions
-      SET status = 'cancelled', current_balance = 0, updated_at = NOW(),
-      deleted_at = NOW(), deleted_by = $2
-      WHERE link_id = $1`,
-        [tx.link_id, authUser.id]
-      ).catch(async () => {
-        await query(
-          `UPDATE public.udhar_transactions
-      SET status = 'cancelled', current_balance = 0, updated_at = NOW()
-      WHERE link_id = $1`,
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const txRes = await client.query(
+          "SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2 FOR UPDATE",
+          [txId, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query("ROLLBACK");
+          sendJson6(res, 404, { success: false, message: "Transaction not found." });
+          return true;
+        }
+        const tx = txRes.rows[0];
+        if (tx.counterpart_user_id && tx.direction === "took") {
+          await client.query("ROLLBACK");
+          sendJson6(res, 403, {
+            success: false,
+            message: "Only the lender who gave the money can delete or cancel an Udhar transaction. Borrowers cannot delete transactions."
+          });
+          return true;
+        }
+        const repsRes = await client.query(
+          `SELECT status FROM public.udhar_repayments WHERE link_id = $1`,
           [tx.link_id]
         );
-      });
-      if (tx.counterpart_user_id) {
-        await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-           VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
-          [
-            `Udhar Cancelled by ${authUser.full_name}`,
-            `${authUser.full_name} has cancelled the transaction of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
-            tx.counterpart_user_id,
-            tx.link_id,
-            authUser.id
-          ]
-        ).catch(() => {
+        const guard = canCancelUdhar({
+          status: tx.status,
+          deleted_at: tx.deleted_at,
+          paid_amount: tx.paid_amount,
+          repayments: repsRes.rows.filter((r2) => isActiveRepayment(r2))
         });
+        if (!guard.allowed) {
+          await client.query("ROLLBACK");
+          sendJson6(res, 409, {
+            success: false,
+            message: guard.reason
+          });
+          return true;
+        }
+        const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        await client.query("SAVEPOINT delete_audit_cols");
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
+                 deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE link_id = $1`,
+            [tx.link_id, authUser.id, cleanReason]
+          );
+          await client.query("RELEASE SAVEPOINT delete_audit_cols");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT delete_audit_cols");
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
+             WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
+        await client.query("SAVEPOINT delete_reps_soft");
+        try {
+          await client.query(
+            `UPDATE public.udhar_repayments
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE link_id = $1 AND status NOT IN ('deleted', 'cancelled')`,
+            [tx.link_id, authUser.id, cleanReason || "Parent Udhar deleted"]
+          );
+          await client.query("RELEASE SAVEPOINT delete_reps_soft");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT delete_reps_soft");
+          await client.query(
+            `DELETE FROM public.udhar_repayments WHERE link_id = $1`,
+            [tx.link_id]
+          );
+        }
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'udhar_cancelled', $3, $4, $5, TRUE)`,
+            [
+              `Udhar Removed by ${authUser.full_name}`,
+              `${authUser.full_name} deleted the Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id
+            ]
+          ).catch(() => {
+          });
+        }
+        await client.query("COMMIT");
+        await logSecurityEvent("UDHAR_CANCELLED", {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount, reason: cleanReason }
+        });
+        sendJson6(res, 200, {
+          success: true,
+          deletedTransactionId: tx.id,
+          linkId: tx.link_id,
+          message: "Udhar entry deleted successfully. Totals have been recalculated."
+        });
+        return true;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
       }
-      await logSecurityEvent("UDHAR_CANCELLED", {
-        userId: authUser.id,
-        userEmail: authUser.email,
-        details: { txId, linkId: tx.link_id, originalAmount: tx.original_amount }
-      });
-      sendJson6(res, 200, {
-        success: true,
-        message: "Transaction cancelled successfully. Balances updated."
-      });
-      return true;
+    }
+    const deleteRepaymentMatch = pathname.match(/^\/api\/udhar\/repayments\/([a-zA-Z0-9_-]+)$/);
+    if (deleteRepaymentMatch && method === "DELETE") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const rate = await checkRateLimitAsync(`udhar_rep_delete:${authUser.id}`, RATE_LIMITS.UDHAR_DELETE.max, RATE_LIMITS.UDHAR_DELETE.windowMs, RATE_LIMITS.UDHAR_DELETE.op);
+      if (!rate.allowed) {
+        sendRateLimitExceeded(res, rate);
+        return true;
+      }
+      const repaymentId = deleteRepaymentMatch[1];
+      const body = await parseJsonBody6(req).catch(() => ({}));
+      const deletionReason = typeof body?.reason === "string" ? body.reason.trim() : typeof body?.deletion_reason === "string" ? body.deletion_reason.trim() : "";
+      if (!isDatabaseAvailable()) {
+        const restRes = await deleteRepaymentRest(authUser, repaymentId, deletionReason);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const repRes = await client.query(
+          `SELECT * FROM public.udhar_repayments WHERE id = $1 FOR UPDATE`,
+          [repaymentId]
+        );
+        if (repRes.rows.length === 0 || !isActiveRepayment(repRes.rows[0])) {
+          await client.query("ROLLBACK");
+          sendJson6(res, 404, { success: false, message: "Repayment record not found." });
+          return true;
+        }
+        const rep = repRes.rows[0];
+        const txRes = await client.query(
+          `SELECT * FROM public.udhar_transactions WHERE link_id = $1 AND user_id = $2 FOR UPDATE`,
+          [rep.link_id, authUser.id]
+        );
+        if (txRes.rows.length === 0) {
+          await client.query("ROLLBACK");
+          sendJson6(res, 404, { success: false, message: "Associated Udhar transaction not found." });
+          return true;
+        }
+        const tx = txRes.rows[0];
+        if (tx.status === "cancelled" || tx.deleted_at) {
+          await client.query("ROLLBACK");
+          sendJson6(res, 409, { success: false, message: "Associated Udhar has already been deleted." });
+          return true;
+        }
+        if (tx.status === "disputed") {
+          await client.query("ROLLBACK");
+          sendJson6(res, 409, { success: false, message: "Cannot delete repayments on a disputed Udhar. Resolve the dispute first." });
+          return true;
+        }
+        const guard = canDeleteRepayment({
+          isShared: Boolean(tx.counterpart_user_id),
+          direction: tx.direction,
+          actorUserId: authUser.id,
+          repayment: rep
+        });
+        if (!guard.allowed) {
+          await client.query("ROLLBACK");
+          sendJson6(res, guard.httpStatus || 403, { success: false, message: guard.reason || "Not authorized to delete this repayment." });
+          return true;
+        }
+        const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        await client.query("SAVEPOINT delete_single_rep_soft");
+        try {
+          await client.query(
+            `UPDATE public.udhar_repayments
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
+             WHERE id = $1`,
+            [repaymentId, authUser.id, cleanReason]
+          );
+          await client.query("RELEASE SAVEPOINT delete_single_rep_soft");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT delete_single_rep_soft");
+          await client.query(
+            `DELETE FROM public.udhar_repayments WHERE id = $1`,
+            [repaymentId]
+          );
+        }
+        const remRepsRes = await client.query(
+          `SELECT id, amount, status FROM public.udhar_repayments WHERE link_id = $1`,
+          [tx.link_id]
+        );
+        const remainingReps = remRepsRes.rows.filter((r2) => r2.id !== repaymentId && isActiveRepayment(r2));
+        const recalc = recalculateUdharFromRepayments({
+          originalAmount: tx.original_amount,
+          repayments: remainingReps,
+          currentStatus: tx.status
+        });
+        await client.query("SAVEPOINT recalc_parent_udhar_cols");
+        try {
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET paid_amount = $1,
+                 current_balance = $2,
+                 status = $3,
+                 settled_at = CASE WHEN $4 = TRUE THEN COALESCE(settled_at, NOW()) ELSE NULL END,
+                 settled_by = CASE WHEN $4 = TRUE THEN COALESCE(settled_by, $5) ELSE NULL END,
+                 updated_at = NOW()
+             WHERE link_id = $6 AND status <> 'cancelled'`,
+            [recalc.paidAmount, recalc.remainingBalance, recalc.nextStatus, recalc.isSettled, authUser.id, tx.link_id]
+          );
+          await client.query("RELEASE SAVEPOINT recalc_parent_udhar_cols");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT recalc_parent_udhar_cols");
+          await client.query(
+            `UPDATE public.udhar_transactions
+             SET paid_amount = $1,
+                 current_balance = $2,
+                 status = $3,
+                 settled_at = CASE WHEN $4 = TRUE THEN COALESCE(settled_at, NOW()) ELSE NULL END,
+                 updated_at = NOW()
+             WHERE link_id = $5 AND status <> 'cancelled'`,
+            [recalc.paidAmount, recalc.remainingBalance, recalc.nextStatus, recalc.isSettled, tx.link_id]
+          );
+        }
+        if (tx.counterpart_user_id) {
+          await client.query(
+            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+             VALUES ($1, $2, 'repayment_deleted', $3, $4, $5, TRUE)`,
+            [
+              `Repayment Deleted by ${authUser.full_name}`,
+              `${authUser.full_name} deleted a repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")}. Updated balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`,
+              tx.counterpart_user_id,
+              tx.link_id,
+              authUser.id
+            ]
+          ).catch(() => {
+          });
+        }
+        await client.query("COMMIT");
+        await logSecurityEvent("UDHAR_REPAYMENT_DELETED", {
+          userId: authUser.id,
+          userEmail: authUser.email,
+          details: {
+            repaymentId,
+            txId: tx.id,
+            linkId: tx.link_id,
+            deletedAmount: rep.amount,
+            paidAmount: recalc.paidAmount,
+            remainingBalance: recalc.remainingBalance,
+            udharStatus: recalc.nextStatus,
+            reason: cleanReason
+          }
+        });
+        sendJson6(res, 200, {
+          success: true,
+          deletedRepaymentId: repaymentId,
+          transactionId: tx.id,
+          linkId: tx.link_id,
+          paidAmount: recalc.paidAmount,
+          remainingBalance: recalc.remainingBalance,
+          udharStatus: recalc.nextStatus,
+          isSettled: recalc.isSettled,
+          message: `Repayment of \u20B9${parseFloat(rep.amount).toLocaleString("en-IN")} deleted. Remaining balance: \u20B9${recalc.remainingBalance.toLocaleString("en-IN")}.`
+        });
+        return true;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     }
     const historyTxMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/history$/);
     if (historyTxMatch && method === "GET") {
@@ -101867,7 +102885,7 @@ async function handleApiRequest(req, res) {
          ORDER BY r.repayment_date DESC, r.created_at DESC`,
         [tx.link_id]
       );
-      const repayments = repaymentsRes.rows.map((r2) => {
+      const repayments = repaymentsRes.rows.filter((r2) => isActiveRepayment(r2)).map((r2) => {
         const { note: repNote, meta: repMeta } = unpackStructuredNote(r2.notes);
         return {
           ...r2,

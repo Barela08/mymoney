@@ -5,12 +5,22 @@ import {
   getStoredSessionToken,
   setStoredSessionToken,
   setStoredAuthUser,
+  type ActiveDeviceSession,
 } from '../lib/authApi';
 import { getSupabaseClient } from '../lib/supabase';
 import { syncDeviceRegistration } from './PwaInstallContext';
 import { clearUpiProfileCache } from '../lib/upiProfileApi';
 import { signInWithFirebaseGoogle } from '../lib/firebaseClient';
 import { loginWithPasskeyOnDevice } from '../lib/webauthnClient';
+
+export interface LoginResult {
+  success: boolean;
+  message?: string;
+  code?: string;
+  maxSessions?: number;
+  activeSessions?: ActiveDeviceSession[];
+  requiresAdmin?: boolean;
+}
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -21,14 +31,20 @@ interface AuthContextType {
   recoveryEmail: string | null;
   setIsRecoveryMode: React.Dispatch<React.SetStateAction<boolean>>;
   setRecoveryToken: React.Dispatch<React.SetStateAction<string | null>>;
-  login: (email: string, pass: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>;
-  loginWithGoogle: () => Promise<{ success: boolean; message?: string; code?: string }>;
-  loginWithPasskey: (email?: string) => Promise<{ success: boolean; message?: string }>;
+  login: (
+    email: string,
+    pass: string,
+    rememberMe?: boolean,
+    replaceSessionId?: string
+  ) => Promise<LoginResult>;
+  loginWithGoogle: (replaceSessionId?: string) => Promise<LoginResult>;
+  loginWithPasskey: (email?: string, replaceSessionId?: string) => Promise<LoginResult>;
   adminLogin: (
     email: string,
     pass: string,
-    rememberMe?: boolean
-  ) => Promise<{ success: boolean; message?: string; requiresAdmin?: boolean }>;
+    rememberMe?: boolean,
+    replaceSessionId?: string
+  ) => Promise<LoginResult>;
   register: (
     name: string,
     email: string,
@@ -226,21 +242,82 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUserProfile();
   }, [refreshUserProfile]);
 
-  // Login handler with Dual-Layer multi-device sync
-  const login = async (email: string, pass: string, rememberMe: boolean = false) => {
+  // Automatically log out this browser if its session was revoked remotely from another device
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleRemoteRevoked = () => {
+      clearUpiProfileCache();
+      setStoredSessionToken(null);
+      setStoredAuthUser(null);
+      setUser(null);
+    };
+    window.addEventListener('mymoney:session-revoked', handleRemoteRevoked);
+
+    if (!user) {
+      return () => {
+        window.removeEventListener('mymoney:session-revoked', handleRemoteRevoked);
+      };
+    }
+
+    const verifySessionAlive = () => {
+      const token = getStoredSessionToken();
+      if (!token) return;
+      authApi.getMe().catch((err: any) => {
+        if (err?.status === 401 || err?.status === 403) {
+          handleRemoteRevoked();
+        }
+      });
+    };
+
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        verifySessionAlive();
+      }
+    };
+
+    const interval = setInterval(verifySessionAlive, 30000);
+    window.addEventListener('focus', verifySessionAlive);
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('mymoney:session-revoked', handleRemoteRevoked);
+      window.removeEventListener('focus', verifySessionAlive);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [user]);
+
+  // Login handler with Dual-Layer multi-device sync and strict 3-session enforcement
+  const login = async (
+    email: string,
+    pass: string,
+    rememberMe: boolean = false,
+    replaceSessionId?: string
+  ): Promise<LoginResult> => {
     const supabase = getSupabaseClient();
 
     // 1. Authenticate with backend API
     let apiSuccess = false;
     let apiMessage = '';
     try {
-      const res = await authApi.login({ email, password: pass, rememberMe });
+      const res = await authApi.login({ email, password: pass, rememberMe, replaceSessionId });
       if (res.success && res.user) {
         setUser(res.user);
         apiSuccess = true;
         apiMessage = res.message;
       }
     } catch (err: any) {
+      if (err?.data?.code === 'MAX_SESSIONS_REACHED' || err?.status === 409) {
+        return {
+          success: false,
+          code: 'MAX_SESSIONS_REACHED',
+          message:
+            err.message ||
+            'Maximum 3 concurrent logins allowed per account. Please log out from one device first.',
+          maxSessions: err?.data?.maxSessions || 3,
+          activeSessions: err?.data?.activeSessions || [],
+        };
+      }
       if (err?.data?.code === 'MAINTENANCE_MODE' || (err?.status === 503 && err?.data?.maintenance)) {
         return {
           success: false,
@@ -329,10 +406,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Dedicated Admin Portal Login handler (/admin) — strictly requires admin role
-  const adminLogin = async (email: string, pass: string, rememberMe: boolean = false) => {
+  const adminLogin = async (
+    email: string,
+    pass: string,
+    rememberMe: boolean = false,
+    replaceSessionId?: string
+  ): Promise<LoginResult> => {
     const supabase = getSupabaseClient();
     try {
-      const res = await authApi.adminLogin({ email, password: pass, rememberMe });
+      const res = await authApi.adminLogin({ email, password: pass, rememberMe, replaceSessionId });
       if (res.success && res.user) {
         setUser(res.user);
         if (supabase) {
@@ -356,6 +438,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       return {
         success: false,
+        code: err?.data?.code,
+        maxSessions: err?.data?.maxSessions,
+        activeSessions: err?.data?.activeSessions,
         message: err?.message || 'Administrator authentication failed.',
         requiresAdmin: Boolean(err?.data?.code === 'ADMIN_ROLE_REQUIRED' || err?.status === 403),
       };
@@ -567,10 +652,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Google Sign-In via Firebase Auth -> server-verified canonical app_users.id
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (replaceSessionId?: string): Promise<LoginResult> => {
     try {
       const { idToken } = await signInWithFirebaseGoogle();
-      const res = await authApi.loginWithGoogle(idToken);
+      const res = await authApi.loginWithGoogle(idToken, replaceSessionId);
       if (res.success && res.user) {
         setUser(res.user);
         setStoredAuthUser(res.user);
@@ -582,15 +667,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return {
         success: false,
         code: err?.data?.code,
+        maxSessions: err?.data?.maxSessions,
+        activeSessions: err?.data?.activeSessions,
         message: err?.message || 'Google sign-in failed.',
       };
     }
   };
 
   // Passkey (WebAuthn) Sign-In -> server-verified canonical app_users.id
-  const loginWithPasskey = async (email?: string) => {
+  const loginWithPasskey = async (email?: string, replaceSessionId?: string): Promise<LoginResult> => {
     try {
-      const res = await loginWithPasskeyOnDevice(email);
+      const res = await loginWithPasskeyOnDevice(email, replaceSessionId);
       if (res.success && res.user && res.sessionToken) {
         setStoredSessionToken(res.sessionToken);
         setStoredAuthUser(res.user);
@@ -600,7 +687,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return { success: false, message: res.message || 'Passkey sign-in failed.' };
     } catch (err: any) {
-      return { success: false, message: err?.message || 'Passkey sign-in failed.' };
+      return {
+        success: false,
+        code: err?.data?.code,
+        maxSessions: err?.data?.maxSessions,
+        activeSessions: err?.data?.activeSessions,
+        message: err?.message || 'Passkey sign-in failed.',
+      };
     }
   };
 

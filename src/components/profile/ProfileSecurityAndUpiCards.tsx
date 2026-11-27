@@ -14,9 +14,14 @@ import {
   Link2,
   Unlink,
   Mail,
+  Laptop,
+  Smartphone,
+  Tablet,
+  LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authApi, type SecurityMethodsData } from '../../lib/authApi';
+import { authApi, type SecurityMethodsData, type ActiveDeviceSession } from '../../lib/authApi';
 import { upiProfileApi, type UpiProfileChangedDetail } from '../../lib/upiProfileApi';
 import { doesUpiProfileBelongToUser, type UpiProfileRecord } from '../../lib/upiQrUtils';
 import { UpiSetupModal } from '../upi/UpiSetupModal';
@@ -24,7 +29,7 @@ import { isPasskeySupported, registerPasskeyOnDevice } from '../../lib/webauthnC
 import { isFirebaseGoogleConfigured, signInWithFirebaseGoogle } from '../../lib/firebaseClient';
 
 export const ProfileSecurityAndUpiCards: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const currentUserId = user?.id || user?.uid || null;
 
   // Saved UPI QR state
@@ -45,6 +50,13 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
   const [removingPasskeyId, setRemovingPasskeyId] = useState<string | null>(null);
   const [googleActionLoading, setGoogleActionLoading] = useState(false);
 
+  // Active Sessions (Max 3 Devices) state
+  const [sessions, setSessions] = useState<ActiveDeviceSession[]>([]);
+  const [maxSessions, setMaxSessions] = useState<number>(3);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [sessionsFeedback, setSessionsFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const loadAll = useCallback(async (forceUpiRefresh = false) => {
     if (!currentUserId) {
       setUpiProfile(null);
@@ -52,14 +64,18 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
       setUpiConsentVersion(null);
       setUpiLoading(false);
       setSecLoading(false);
+      setSessions([]);
+      setSessionsLoading(false);
       return;
     }
     setUpiLoading(true);
     setSecLoading(true);
+    setSessionsLoading(true);
     try {
-      const [upiRes, secRes] = await Promise.allSettled([
+      const [upiRes, secRes, sessRes] = await Promise.allSettled([
         upiProfileApi.getProfile({ forceRefresh: forceUpiRefresh }),
         authApi.getSecurityMethods(),
+        authApi.getActiveSessions(),
       ]);
       if (upiRes.status === 'fulfilled' && upiRes.value.success) {
         const owned =
@@ -74,9 +90,14 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
       if (secRes.status === 'fulfilled' && secRes.value.success) {
         setSecurity(secRes.value.security);
       }
+      if (sessRes.status === 'fulfilled' && sessRes.value.success) {
+        setSessions(sessRes.value.sessions || []);
+        setMaxSessions(sessRes.value.maxSessions || 3);
+      }
     } finally {
       setUpiLoading(false);
       setSecLoading(false);
+      setSessionsLoading(false);
     }
   }, [currentUserId]);
 
@@ -169,6 +190,62 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
       setSecFeedback({ type: 'error', text: err?.message || 'Could not unlink Google account.' });
     } finally {
       setGoogleActionLoading(false);
+    }
+  };
+
+  const refreshSessionsOnly = async () => {
+    setSessionsFeedback(null);
+    setSessionsLoading(true);
+    try {
+      const res = await authApi.getActiveSessions();
+      if (res.success) {
+        setSessions(res.sessions || []);
+        setMaxSessions(res.maxSessions || 3);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('mymoney:sessions-changed', {
+              detail: { count: (res.sessions || []).length },
+            })
+          );
+        }
+      }
+    } catch (err: any) {
+      setSessionsFeedback({ type: 'error', text: err?.message || 'Unable to load active devices.' });
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const handleRevokeSession = async (session: ActiveDeviceSession) => {
+    setSessionsFeedback(null);
+    setRevokingSessionId(session.id);
+    try {
+      if (session.isCurrent) {
+        await logout();
+        return;
+      }
+      const res = await authApi.revokeSession(session.id);
+      if (res.success) {
+        setSessions(res.sessions || []);
+        setSessionsFeedback({
+          type: 'success',
+          text: res.message || `${session.deviceName} logged out.`,
+        });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('mymoney:sessions-changed', {
+              detail: { count: (res.sessions || []).length },
+            })
+          );
+        }
+      }
+    } catch (err: any) {
+      setSessionsFeedback({
+        type: 'error',
+        text: err?.message || 'Could not log out that device.',
+      });
+    } finally {
+      setRevokingSessionId(null);
     }
   };
 
@@ -437,6 +514,147 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Active Login Devices (Strict Max 3 Concurrent Logins) */}
+      <div
+        data-testid="settings-active-sessions-card"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Laptop className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+                <span>Active Login Devices</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    sessions.length >= maxSessions
+                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  {sessions.length} / {maxSessions} Active
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Your account can stay logged in at up to {maxSessions} places at a time. Remotely log out any device anytime.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshSessionsOnly}
+            disabled={sessionsLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer self-start sm:self-auto disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${sessionsLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        {sessionsFeedback && (
+          <div
+            className={`flex items-start gap-2 p-3 rounded-xl text-xs border ${
+              sessionsFeedback.type === 'success'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+            }`}
+          >
+            {sessionsFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            )}
+            <span>{sessionsFeedback.text}</span>
+          </div>
+        )}
+
+        {sessionsLoading ? (
+          <div className="flex items-center gap-2 text-xs text-slate-500 py-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Checking logged-in devices...</span>
+          </div>
+        ) : sessions.length === 0 ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Only your current browser session is active.
+          </p>
+        ) : (
+          <div className="space-y-2.5">
+            {sessions.map((sess) => {
+              const DeviceIcon =
+                sess.deviceType === 'mobile'
+                  ? Smartphone
+                  : sess.deviceType === 'tablet'
+                  ? Tablet
+                  : Laptop;
+              const activityDate = sess.lastActiveAt || sess.createdAt;
+              return (
+                <div
+                  key={sess.id}
+                  data-testid={`active-session-row-${sess.id}`}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border ${
+                    sess.isCurrent
+                      ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/70'
+                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/70 dark:border-slate-700/70'
+                  }`}
+                >
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        sess.isCurrent
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      <DeviceIcon className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {sess.deviceName}
+                        </p>
+                        {sess.isCurrent && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white">
+                            This Device
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {sess.ipAddress ? `IP: ${sess.ipAddress} · ` : ''}
+                        Last active:{' '}
+                        {activityDate
+                          ? new Date(activityDate).toLocaleString('en-IN', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })
+                          : 'Active now'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeSession(sess)}
+                    disabled={revokingSessionId === sess.id}
+                    data-testid={`logout-session-btn-${sess.id}`}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 border border-rose-200 dark:border-rose-900 shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    {revokingSessionId === sess.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <LogOut className="w-3.5 h-3.5" />
+                    )}
+                    <span>{sess.isCurrent ? 'Sign Out' : 'Log Out'}</span>
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

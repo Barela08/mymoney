@@ -15,6 +15,10 @@ const DOWNLOADED_STORAGE_KEY = 'my_money_app_downloaded_confirmed';
 const DOWNLOADED_COOKIE_NAME = 'mymoney_app_downloaded';
 const AUTH_SESSION_DISMISSED_KEY = 'my_money_popup_auth_dismissed';
 const APP_SESSION_DISMISSED_KEY = 'my_money_popup_app_dismissed';
+const AUTH_DISMISSED_AT_KEY = 'my_money_popup_auth_dismissed_at';
+const APP_DISMISSED_AT_KEY = 'my_money_popup_app_dismissed_at';
+
+export const POPUP_REPROMPT_DELAY_MS = 60_000;
 
 // Legacy keys to clean up so users are not blocked by old 7-day cookie
 const LEGACY_POPUP_STORAGE_KEY = 'my_money_app_popup_action';
@@ -66,37 +70,77 @@ export function markAppAsDownloaded(): void {
 }
 
 /**
- * Temporarily dismisses the popup for the current view/session:
+ * Temporarily dismisses the popup for the current view and starts a 1-minute cooldown:
  * - If cancelled on login/auth view, dismisses ONLY for the auth view.
- * - When user logs in, auth view dismiss does not affect the authenticated dashboard view!
+ * - Reappears automatically after POPUP_REPROMPT_DELAY_MS (60 seconds) if not installed.
  */
-export function dismissPopupForCurrentView(isAuthView: boolean): void {
+export function dismissPopupForCurrentView(isAuthView: boolean, now: number = Date.now()): void {
   if (typeof window === 'undefined') return;
   try {
     if (isAuthView) {
       sessionStorage.setItem(AUTH_SESSION_DISMISSED_KEY, 'true');
+      sessionStorage.setItem(AUTH_DISMISSED_AT_KEY, String(now));
     } else {
       sessionStorage.setItem(APP_SESSION_DISMISSED_KEY, 'true');
+      sessionStorage.setItem(APP_DISMISSED_AT_KEY, String(now));
+    }
+  } catch {}
+}
+
+export function clearDismissalForView(isAuthView: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (isAuthView) {
+      sessionStorage.removeItem(AUTH_SESSION_DISMISSED_KEY);
+      sessionStorage.removeItem(AUTH_DISMISSED_AT_KEY);
+    } else {
+      sessionStorage.removeItem(APP_SESSION_DISMISSED_KEY);
+      sessionStorage.removeItem(APP_DISMISSED_AT_KEY);
     }
   } catch {}
 }
 
 /**
- * Checks if dismissed for the given view in this session.
+ * Returns remaining milliseconds (0 if ready to display immediately) for the 1-minute re-appear rule.
  */
-function isDismissedForView(isAuthView: boolean): boolean {
-  if (typeof window === 'undefined') return false;
-  if (window.location?.hash === '#install') return false;
+export function getPopupRemainingCooldownMs(isAuthView: boolean, now: number = Date.now()): number {
+  if (typeof window === 'undefined') return 0;
+  if (window.location?.hash === '#install') return 0;
+
+  const flagKey = isAuthView ? AUTH_SESSION_DISMISSED_KEY : APP_SESSION_DISMISSED_KEY;
+  const atKey = isAuthView ? AUTH_DISMISSED_AT_KEY : APP_DISMISSED_AT_KEY;
 
   try {
-    if (isAuthView) {
-      return sessionStorage.getItem(AUTH_SESSION_DISMISSED_KEY) === 'true';
-    } else {
-      return sessionStorage.getItem(APP_SESSION_DISMISSED_KEY) === 'true';
+    const isMarked = sessionStorage.getItem(flagKey) === 'true';
+    if (!isMarked) {
+      sessionStorage.removeItem(atKey);
+      return 0;
     }
+
+    const rawAt = sessionStorage.getItem(atKey);
+    if (rawAt) {
+      const dismissedAt = parseInt(rawAt, 10);
+      if (Number.isFinite(dismissedAt)) {
+        const elapsed = now - dismissedAt;
+        if (elapsed >= 0 && elapsed < POPUP_REPROMPT_DELAY_MS) {
+          return POPUP_REPROMPT_DELAY_MS - elapsed;
+        }
+        clearDismissalForView(isAuthView);
+        return 0;
+      }
+    }
+
+    return POPUP_REPROMPT_DELAY_MS;
   } catch {
-    return false;
+    return 0;
   }
+}
+
+/**
+ * Checks if dismissed for the given view within the active 1-minute cooldown window.
+ */
+export function isDismissedForView(isAuthView: boolean, now: number = Date.now()): boolean {
+  return getPopupRemainingCooldownMs(isAuthView, now) > 0;
 }
 
 /**
@@ -142,17 +186,15 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   hasBottomMobileNav,
 }) => {
   const { appPopupSettings, appBranding } = useExpense();
-  const { triggerInstallPrompt, isInstalled } = usePwaInstall();
+  const { triggerInstallPrompt, openInstallModal, isInstalled } = usePwaInstall();
   const { user } = useAuth();
 
   const isAuthView = !user;
 
   const computeIsHidden = useCallback(() => {
-    // 1. If user already downloaded or installed, NEVER show
     if (isAppDownloadedOrInstalled(isInstalled)) {
       return true;
     }
-    // 2. If user cancelled on the current view (auth vs dashboard), suppress for this view
     if (isDismissedForView(isAuthView)) {
       return true;
     }
@@ -160,20 +202,37 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   }, [isInstalled, isAuthView]);
 
   const [isHidden, setIsHidden] = useState<boolean>(computeIsHidden);
+  const [dismissTick, setDismissTick] = useState<number>(0);
 
   // On mount: clean up legacy 7-day dismissals
   useEffect(() => {
     cleanupLegacyDismissals();
   }, []);
 
-  // When user logs in or out, or install status changes, re-evaluate!
-  // If user cancelled on login page, then logs in: isAuthView becomes false,
-  // so computeIsHidden() returns false and the popup appears on the dashboard!
+  // Re-evaluate visibility and schedule exact 1-minute re-appear if user cancelled without installing.
+  // While visible and not installed, never auto-hide on its own.
   useEffect(() => {
-    setIsHidden(computeIsHidden());
-  }, [computeIsHidden]);
+    if (isAppDownloadedOrInstalled(isInstalled)) {
+      setIsHidden(true);
+      return;
+    }
 
-  // Popup is visible by default unless explicitly disabled by admin, suppressed by user, or in standalone app mode
+    const remainingMs = getPopupRemainingCooldownMs(isAuthView);
+    if (remainingMs <= 0) {
+      setIsHidden(false);
+      return;
+    }
+
+    setIsHidden(true);
+    const timer = window.setTimeout(() => {
+      clearDismissalForView(isAuthView);
+      setIsHidden(false);
+    }, remainingMs);
+
+    return () => window.clearTimeout(timer);
+  }, [isInstalled, isAuthView, dismissTick]);
+
+  // Popup is visible by default unless explicitly disabled by admin, suppressed after cancel cooldown, or already installed
   const isEnabled = appPopupSettings?.enabled !== false;
 
   if (isAdminRoute || isMaintenanceBlocked || !isEnabled || isHidden) {
@@ -187,6 +246,7 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
   const handleDismiss = () => {
     dismissPopupForCurrentView(isAuthView);
     setIsHidden(true);
+    setDismissTick((t) => t + 1);
   };
 
   const handleDownloadClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -197,19 +257,22 @@ export const AppDownloadPopup: React.FC<AppDownloadPopupProps> = ({
         if (result.status === 'accepted' || result.status === 'already_installed') {
           markAppAsDownloaded();
           setIsHidden(true);
-        } else if (result.status === 'manual_guide') {
-          markAppAsDownloaded();
-          setIsHidden(true);
-        } else {
-          // Native prompt was dismissed / cancelled without installing
+        } else if (result.status === 'dismissed') {
+          // User cancelled native install dialog without downloading: hide and re-show in 1 minute
           dismissPopupForCurrentView(isAuthView);
           setIsHidden(true);
+          setDismissTick((t) => t + 1);
+        } else {
+          // Manual guide / native prompt unavailable yet: open install instructions modal
+          // without marking as downloaded and without permanently hiding the popup
+          openInstallModal();
         }
       } catch (err) {
         console.warn('Install prompt error:', err);
+        openInstallModal();
       }
     } else {
-      // External store or download link
+      // External store or APK download link
       markAppAsDownloaded();
       setIsHidden(true);
     }

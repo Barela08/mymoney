@@ -19,11 +19,14 @@ import {
   ShieldCheck,
   Clock,
   Fingerprint,
+  Laptop,
+  Smartphone,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
-import { authApi } from '../../lib/authApi';
+import { authApi, type ActiveDeviceSession } from '../../lib/authApi';
 import { PrivacyNoticeModal } from '../privacy/PrivacyNoticeModal';
 import type { ConsentLanguage } from '../../lib/privacyConsent';
 
@@ -74,6 +77,11 @@ export const AuthPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
+  const [maxSessionsPrompt, setMaxSessionsPrompt] = useState<{
+    sessions: ActiveDeviceSession[];
+    maxSessions: number;
+    method: 'email' | 'google' | 'passkey';
+  } | null>(null);
 
   // Navigate between auth modes and synchronize URL
   const navigateToMode = (newMode: 'login' | 'register' | 'forgot_password' | 'reset_password') => {
@@ -81,6 +89,7 @@ export const AuthPage: React.FC = () => {
     setErrorMessage(null);
     setValidationErrors([]);
     setResetSuccessMessage(null);
+    setMaxSessionsPrompt(null);
 
     if (typeof window !== 'undefined') {
       if (newMode === 'forgot_password') {
@@ -232,6 +241,7 @@ export const AuthPage: React.FC = () => {
     setErrorMessage(null);
     setValidationErrors([]);
     setResetSuccessMessage(null);
+    setMaxSessionsPrompt(null);
 
     // 1. Reset Password Mode
     if (mode === 'reset_password') {
@@ -343,6 +353,13 @@ export const AuthPage: React.FC = () => {
           }
         } else {
           setErrorMessage(res.message || 'Login failed. Please check your credentials.');
+          if (res.code === 'MAX_SESSIONS_REACHED' && Array.isArray(res.activeSessions)) {
+            setMaxSessionsPrompt({
+              sessions: res.activeSessions,
+              maxSessions: res.maxSessions || 3,
+              method: 'email',
+            });
+          }
         }
       } else {
         const res = await register(name, email, password, confirmPassword, phone);
@@ -480,6 +497,84 @@ export const AuthPage: React.FC = () => {
                     ))}
                   </ul>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* 3-Device Concurrent Login Limit Prompt */}
+          {maxSessionsPrompt && (
+            <div className="mb-5 p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-2xl space-y-3">
+              <div className="flex items-start gap-2.5">
+                <Laptop className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                    Active on {maxSessionsPrompt.sessions.length} / {maxSessionsPrompt.maxSessions} Devices
+                  </p>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                    Select a device below to log it out and sign in here immediately:
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {maxSessionsPrompt.sessions.map((sess) => (
+                  <div
+                    key={sess.id}
+                    className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-900/60"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {sess.deviceType === 'mobile' ? (
+                        <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      ) : (
+                        <Laptop className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">
+                          {sess.deviceName}
+                        </p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {sess.ipAddress ? `${sess.ipAddress} · ` : ''}
+                          {new Date(sess.lastActiveAt || sess.createdAt).toLocaleString('en-IN', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={async () => {
+                        setErrorMessage(null);
+                        setIsSubmitting(true);
+                        try {
+                          const retryRes =
+                            maxSessionsPrompt.method === 'google'
+                              ? await loginWithGoogle(sess.id)
+                              : maxSessionsPrompt.method === 'passkey'
+                              ? await loginWithPasskey(email.trim() || undefined, sess.id)
+                              : await login(email, password, rememberMe, sess.id);
+
+                          if (retryRes.success) {
+                            setMaxSessionsPrompt(null);
+                            toast.success('Signed In!', 'Replaced old device session securely.');
+                            if (typeof window !== 'undefined') {
+                              window.history.replaceState(null, '', '/');
+                              window.dispatchEvent(new PopStateEvent('popstate'));
+                            }
+                          } else {
+                            setErrorMessage(retryRes.message || 'Could not sign in.');
+                          }
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      <span>Log Out &amp; Sign In</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -795,6 +890,7 @@ export const AuthPage: React.FC = () => {
                   data-testid="auth-google-btn"
                   onClick={async () => {
                     setErrorMessage(null);
+                    setMaxSessionsPrompt(null);
                     setIsSubmitting(true);
                     try {
                       const res = await loginWithGoogle();
@@ -802,6 +898,13 @@ export const AuthPage: React.FC = () => {
                         toast.success('Signed In', res.message || 'Authenticated with Google.');
                       } else {
                         setErrorMessage(res.message || 'Google sign-in could not be completed.');
+                        if (res.code === 'MAX_SESSIONS_REACHED' && Array.isArray(res.activeSessions)) {
+                          setMaxSessionsPrompt({
+                            sessions: res.activeSessions,
+                            maxSessions: res.maxSessions || 3,
+                            method: 'google',
+                          });
+                        }
                       }
                     } finally {
                       setIsSubmitting(false);
@@ -836,6 +939,7 @@ export const AuthPage: React.FC = () => {
                   data-testid="auth-passkey-btn"
                   onClick={async () => {
                     setErrorMessage(null);
+                    setMaxSessionsPrompt(null);
                     setIsSubmitting(true);
                     try {
                       const res = await loginWithPasskey(email.trim() || undefined);
@@ -843,6 +947,13 @@ export const AuthPage: React.FC = () => {
                         toast.success('Signed In', res.message || 'Authenticated with Passkey.');
                       } else {
                         setErrorMessage(res.message || 'Passkey sign-in could not be completed.');
+                        if (res.code === 'MAX_SESSIONS_REACHED' && Array.isArray(res.activeSessions)) {
+                          setMaxSessionsPrompt({
+                            sessions: res.activeSessions,
+                            maxSessions: res.maxSessions || 3,
+                            method: 'passkey',
+                          });
+                        }
                       }
                     } finally {
                       setIsSubmitting(false);
