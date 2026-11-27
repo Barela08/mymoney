@@ -169,6 +169,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         const res = await udharDeletionApi.settleUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Settled', res.message || 'This Udhar entry is now marked settled.');
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           await fetchUdharData();
           await refreshTransactions();
         }
@@ -176,6 +177,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         const res = await udharDeletionApi.cancelUdharTransaction(pendingConfirmAction.tx.id);
         if (res.success) {
           toast.success('Transaction Deleted', res.message || 'Udhar entry deleted and totals recalculated.');
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           await fetchUdharData();
           await refreshTransactions();
         }
@@ -183,6 +185,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         const res = await udharDeletionApi.deleteRepayment(pendingConfirmAction.rep.id);
         if (res.success) {
           toast.success('Repayment Deleted', res.message || 'Repayment deleted and Udhar balance recalculated.');
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
           await fetchUdharData();
           await refreshTransactions();
         }

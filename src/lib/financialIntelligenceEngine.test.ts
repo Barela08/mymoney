@@ -18,7 +18,9 @@ import {
   validateReceiptFileSignature,
   detectDuplicateReceipt,
   buildAiFinancialContext,
+  computeCategoryTotalsAndCashflow,
 } from './financialIntelligenceEngine';
+import { isSafeAttachmentUrl } from './attachmentUtils';
 import type { Transaction } from '../types';
 import type { UserBudget, RecurringBill, SavingsGoal } from './financialFeaturesApi';
 
@@ -404,4 +406,78 @@ test('Safe-to-Spend: supports Daily, Weekly, and Monthly focus periods accuratel
   assert.equal(weeklyRes.safeToSpendPeriod, weeklyRes.safeToSpendThisWeek);
   assert.equal(monthlyRes.safeToSpendPeriod, 10000);
 });
+
+// 11. UNIFIED CATEGORY TOTALS, MULTI-ITEM BATCH & CUSTOM SUBCATEGORY TESTS
+test('Unified Accounting: sums multi-item batch rows once without double-counting and includes custom room subcategories', () => {
+  const txs: Transaction[] = [
+    // Salary + Borrowed Udhar
+    makeTx({ id: 'inc1', category: 'home', subcategory: 'salary', transaction_type: 'income', amount: 30000 }),
+    makeTx({
+      id: 'inc2',
+      category: 'received',
+      subcategory: 'udhar_received',
+      transaction_type: 'income',
+      amount: 5000,
+      metadata: { financial_classification: 'borrowed' },
+    }),
+    // 3-item batch sharing batch_combined_amount = 900 (200 + 300 + 400 = 900)
+    makeTx({
+      id: 'b1',
+      category: 'room',
+      subcategory: 'grocery',
+      amount: 200,
+      metadata: { batch_id: 'batch_1', batch_index: 1, batch_total: 3, batch_combined_amount: 900 },
+    }),
+    makeTx({
+      id: 'b2',
+      category: 'food',
+      subcategory: 'snacks',
+      amount: 300,
+      metadata: { batch_id: 'batch_1', batch_index: 2, batch_total: 3, batch_combined_amount: 900 },
+    }),
+    makeTx({
+      id: 'b3',
+      category: 'other',
+      subcategory: 'emi_loan',
+      amount: 400,
+      metadata: { batch_id: 'batch_1', batch_index: 3, batch_total: 3, batch_combined_amount: 900 },
+    }),
+    // Custom subcategory under 'room' (must still sum into totalRoomExpenses)
+    makeTx({
+      id: 'r_custom',
+      category: 'room',
+      subcategory: 'other_expense',
+      amount: 650,
+      metadata: { custom_category_label: 'Water Bill', category_label: 'Water Bill' },
+    }),
+    // Transfer and Udhar must be excluded from personal income/expense
+    makeTx({ id: 'tr1', category: 'other', transaction_type: 'transfer', amount: 1500 }),
+    makeTx({ id: 'ud1', category: 'people', subcategory: 'money_given', transaction_type: 'expense', amount: 1200 }),
+  ];
+
+  const breakdown = computeCategoryTotalsAndCashflow(txs);
+  assert.equal(breakdown.totalIncome, 30000); // Salary only (borrowed excluded)
+  assert.equal(breakdown.totalBorrowedReceived, 5000);
+  assert.equal(breakdown.totalGrocery, 200);
+  assert.equal(breakdown.totalRoomOther, 650);
+  assert.equal(breakdown.totalRoomExpenses, 850); // 200 + 650
+  assert.equal(breakdown.totalFoodExpenses, 300);
+  assert.equal(breakdown.totalOtherExpenses, 400);
+  assert.equal(breakdown.totalExpenses, 1550); // 850 + 300 + 400 (no batch double counting!)
+  assert.equal(breakdown.totalMoneyGiven, 1200);
+});
+
+// 12. ATTACHMENT URL SAFETY TESTS
+test('Attachment Security: accepts only safe image data URLs and HTTP(S) URLs', () => {
+  assert.equal(isSafeAttachmentUrl('data:image/jpeg;base64,/9j/4AAQSkZJRg=='), true);
+  assert.equal(isSafeAttachmentUrl('data:image/png;base64,iVBORw0KGgo='), true);
+  assert.equal(isSafeAttachmentUrl('https://cdn.example.com/receipt.jpg'), true);
+
+  assert.equal(isSafeAttachmentUrl('javascript:alert(1)'), false);
+  assert.equal(isSafeAttachmentUrl('data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='), false);
+  assert.equal(isSafeAttachmentUrl('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='), false);
+  assert.equal(isSafeAttachmentUrl(''), false);
+  assert.equal(isSafeAttachmentUrl(null), false);
+});
+
 

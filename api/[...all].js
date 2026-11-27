@@ -95321,38 +95321,46 @@ function normalizeMerchantKey(raw) {
 function getDisplayCategoryLabel(category, subcategory) {
   if (category === "food") {
     if (subcategory === "delivery") return "Food Delivery";
-    if (subcategory === "beverages") return "Chai & Coffee";
-    if (subcategory === "restaurant") return "Restaurant & Dining";
-    if (subcategory === "mess_tiffin") return "Mess & Tiffin";
+    if (subcategory === "beverages") return "Beverages";
+    if (subcategory === "snacks") return "Snacks";
+    if (subcategory === "restaurant") return "Restaurant";
+    if (subcategory === "mess_tiffin") return "Mess / Tiffin";
+    if (subcategory === "other_food") return "Other Food";
     return "Food & Dining";
   }
   if (category === "room") {
-    if (subcategory === "grocery") return "Groceries";
+    if (subcategory === "grocery") return "Grocery Expenses";
     if (subcategory === "rent") return "Room Rent";
     if (subcategory === "electricity") return "Electricity Bill";
-    if (subcategory === "gas") return "Gas / LPG";
-    return "Room & Utilities";
+    if (subcategory === "gas") return "Gas Expenses";
+    return "Room";
   }
   if (category === "other") {
-    if (subcategory === "travel") return "Travel & Fuel";
+    if (subcategory === "travel") return "Travel";
     if (subcategory === "shopping") return "Shopping";
-    if (subcategory === "health") return "Medical & Health";
-    if (subcategory === "bills") return "Bills & Subscriptions";
+    if (subcategory === "health") return "Medical / Health";
+    if (subcategory === "bills") return "Bills";
+    if (subcategory === "emi_loan") return "EMI / Loan";
     if (subcategory === "entertainment") return "Entertainment";
     if (subcategory === "education") return "Education";
     if (subcategory === "personal_care") return "Personal Care";
-    return "Other Expense";
+    if (subcategory === "other_expense" || subcategory === "other_general") return "Other Expenses";
+    return "Other Expenses";
   }
   if (category === "home" || category === "received") {
     if (subcategory === "home_expense") return "Home Expense";
-    if (subcategory === "salary") return "Salary Income";
-    if (subcategory === "freelance") return "Freelance Income";
-    if (subcategory === "business") return "Business Income";
-    if (subcategory === "loan_received") return "Borrowed / Loan";
+    if (subcategory === "salary") return "Salary";
+    if (subcategory === "freelancing" || subcategory === "freelance") return "Freelance";
+    if (subcategory === "business") return "Business";
+    if (subcategory === "family" || subcategory === "received_home") return "Received from Person";
+    if (subcategory === "gift") return "Gift";
+    if (subcategory === "refund") return "Refund";
+    if (subcategory === "loan_received" || subcategory === "udhar_received") return "Borrowed / Loan";
+    if (subcategory === "other_income") return "Other Income";
     return "Received Money";
   }
   if (category === "people") return "People (Udhar)";
-  return "Other Expense";
+  return "Other Expenses";
 }
 var DETERMINISTIC_RULES = [
   // Food Delivery & Dining

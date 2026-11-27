@@ -65,38 +65,176 @@ export function normalizeMerchantKey(raw: string): string {
 export function getDisplayCategoryLabel(category: TransactionCategory, subcategory?: string): string {
   if (category === 'food') {
     if (subcategory === 'delivery') return 'Food Delivery';
-    if (subcategory === 'beverages') return 'Chai & Coffee';
-    if (subcategory === 'restaurant') return 'Restaurant & Dining';
-    if (subcategory === 'mess_tiffin') return 'Mess & Tiffin';
+    if (subcategory === 'beverages') return 'Beverages';
+    if (subcategory === 'snacks') return 'Snacks';
+    if (subcategory === 'restaurant') return 'Restaurant';
+    if (subcategory === 'mess_tiffin') return 'Mess / Tiffin';
+    if (subcategory === 'other_food') return 'Other Food';
     return 'Food & Dining';
   }
   if (category === 'room') {
-    if (subcategory === 'grocery') return 'Groceries';
+    if (subcategory === 'grocery') return 'Grocery Expenses';
     if (subcategory === 'rent') return 'Room Rent';
     if (subcategory === 'electricity') return 'Electricity Bill';
-    if (subcategory === 'gas') return 'Gas / LPG';
-    return 'Room & Utilities';
+    if (subcategory === 'gas') return 'Gas Expenses';
+    return 'Room';
   }
   if (category === 'other') {
-    if (subcategory === 'travel') return 'Travel & Fuel';
+    if (subcategory === 'travel') return 'Travel';
     if (subcategory === 'shopping') return 'Shopping';
-    if (subcategory === 'health') return 'Medical & Health';
-    if (subcategory === 'bills') return 'Bills & Subscriptions';
+    if (subcategory === 'health') return 'Medical / Health';
+    if (subcategory === 'bills') return 'Bills';
+    if (subcategory === 'emi_loan') return 'EMI / Loan';
     if (subcategory === 'entertainment') return 'Entertainment';
     if (subcategory === 'education') return 'Education';
     if (subcategory === 'personal_care') return 'Personal Care';
-    return 'Other Expense';
+    if (subcategory === 'other_expense' || subcategory === 'other_general') return 'Other Expenses';
+    return 'Other Expenses';
   }
   if (category === 'home' || category === 'received') {
     if (subcategory === 'home_expense') return 'Home Expense';
-    if (subcategory === 'salary') return 'Salary Income';
-    if (subcategory === 'freelance') return 'Freelance Income';
-    if (subcategory === 'business') return 'Business Income';
-    if (subcategory === 'loan_received') return 'Borrowed / Loan';
+    if (subcategory === 'salary') return 'Salary';
+    if (subcategory === 'freelancing' || subcategory === 'freelance') return 'Freelance';
+    if (subcategory === 'business') return 'Business';
+    if (subcategory === 'family' || subcategory === 'received_home') return 'Received from Person';
+    if (subcategory === 'gift') return 'Gift';
+    if (subcategory === 'refund') return 'Refund';
+    if (subcategory === 'loan_received' || subcategory === 'udhar_received') return 'Borrowed / Loan';
+    if (subcategory === 'other_income') return 'Other Income';
     return 'Received Money';
   }
   if (category === 'people') return 'People (Udhar)';
-  return 'Other Expense';
+  return 'Other Expenses';
+}
+
+export interface CategoryCashflowBreakdown {
+  totalReceivedMoney: number;
+  totalEarnedIncome: number;
+  totalOtherIncome: number;
+  totalBorrowedReceived: number;
+  totalIncome: number;
+  totalHomeSpent: number;
+  totalGas: number;
+  totalGrocery: number;
+  totalRent: number;
+  totalElectricity: number;
+  totalRoomOther: number;
+  totalRoomExpenses: number;
+  totalFoodExpenses: number;
+  totalOtherExpenses: number;
+  totalExpenses: number;
+  availableBalance: number;
+  totalMoneyGiven: number;
+  totalMoneyReceived: number;
+  netPeopleBalance: number;
+}
+
+/**
+ * Canonical paise-safe accounting breakdown.
+ * - Excludes soft-deleted rows and own-account transfers.
+ * - Excludes Udhar (category === 'people') from personal Income/Expense totals.
+ * - Excludes borrowed funds (loan_received, udhar_received) from earned/other Income.
+ * - Sums ALL room subcategories (including custom user-defined subcategories).
+ * - Counts each batch line-item cleanly once without double-counting batch_combined_amount.
+ */
+export function computeCategoryTotalsAndCashflow(transactions: Transaction[]): CategoryCashflowBreakdown {
+  let homeReceivedP = 0;
+  let homeSpentP = 0;
+  let earnedIncomeP = 0;
+  let otherIncomeP = 0;
+  let borrowedReceivedP = 0;
+  let gasP = 0;
+  let groceryP = 0;
+  let rentP = 0;
+  let electricityP = 0;
+  let roomOtherP = 0;
+  let foodP = 0;
+  let otherP = 0;
+  let moneyGivenP = 0;
+  let moneyReceivedP = 0;
+
+  for (const tx of transactions) {
+    if (!tx || tx.is_deleted || isTransferTransaction(tx)) continue;
+    const amtP = toPaise(Number(tx.amount) || 0);
+    if (amtP <= 0) continue;
+
+    if (tx.category === 'home' || tx.category === 'received') {
+      if (tx.subcategory === 'home_expense' || tx.transaction_type === 'expense') {
+        homeSpentP += amtP;
+      } else {
+        homeReceivedP += amtP;
+        const cls = tx.metadata?.financial_classification || classifyFinancialTransaction(tx.subcategory);
+        if (cls === 'earned_income') {
+          earnedIncomeP += amtP;
+        } else if (cls === 'borrowed') {
+          borrowedReceivedP += amtP;
+        } else {
+          otherIncomeP += amtP;
+        }
+      }
+      continue;
+    }
+
+    if (tx.category === 'room') {
+      if (tx.transaction_type === 'income') {
+        homeReceivedP += amtP;
+        otherIncomeP += amtP;
+      } else {
+        if (tx.subcategory === 'gas') gasP += amtP;
+        else if (tx.subcategory === 'grocery') groceryP += amtP;
+        else if (tx.subcategory === 'rent') rentP += amtP;
+        else if (tx.subcategory === 'electricity') electricityP += amtP;
+        else roomOtherP += amtP;
+      }
+      continue;
+    }
+
+    if (tx.category === 'food') {
+      if (tx.transaction_type !== 'income') {
+        foodP += amtP;
+      }
+      continue;
+    }
+
+    if (tx.category === 'other') {
+      if (tx.transaction_type !== 'income') {
+        otherP += amtP;
+      }
+      continue;
+    }
+
+    if (tx.category === 'people') {
+      if (tx.subcategory === 'money_given') moneyGivenP += amtP;
+      else if (tx.subcategory === 'money_received') moneyReceivedP += amtP;
+    }
+  }
+
+  const roomExpensesP = gasP + groceryP + rentP + electricityP + roomOtherP;
+  const totalExpensesP = homeSpentP + roomExpensesP + foodP + otherP;
+  const totalIncomeP = earnedIncomeP + otherIncomeP;
+  const availableBalanceP = homeReceivedP - totalExpensesP;
+
+  return {
+    totalReceivedMoney: fromPaise(homeReceivedP),
+    totalEarnedIncome: fromPaise(earnedIncomeP),
+    totalOtherIncome: fromPaise(otherIncomeP),
+    totalBorrowedReceived: fromPaise(borrowedReceivedP),
+    totalIncome: fromPaise(totalIncomeP),
+    totalHomeSpent: fromPaise(homeSpentP),
+    totalGas: fromPaise(gasP),
+    totalGrocery: fromPaise(groceryP),
+    totalRent: fromPaise(rentP),
+    totalElectricity: fromPaise(electricityP),
+    totalRoomOther: fromPaise(roomOtherP),
+    totalRoomExpenses: fromPaise(roomExpensesP),
+    totalFoodExpenses: fromPaise(foodP),
+    totalOtherExpenses: fromPaise(otherP),
+    totalExpenses: fromPaise(totalExpensesP),
+    availableBalance: fromPaise(availableBalanceP),
+    totalMoneyGiven: fromPaise(moneyGivenP),
+    totalMoneyReceived: fromPaise(moneyReceivedP),
+    netPeopleBalance: fromPaise(moneyGivenP - moneyReceivedP),
+  };
 }
 
 export function formatLocalDateKey(dateObj: Date): string {

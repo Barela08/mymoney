@@ -50,11 +50,18 @@ import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
   onOpenAddModal: (category?: any, subcategory?: any) => void;
+  onOpenFilteredTransactions?: (category: string, subcategory?: string) => void;
   onOpenScanQr?: () => void;
   onAskAiPrompt?: (prompt: string) => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenAddModal, onOpenScanQr, onAskAiPrompt }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  onNavigate,
+  onOpenAddModal,
+  onOpenFilteredTransactions,
+  onOpenScanQr,
+  onAskAiPrompt,
+}) => {
   const { transactions, summary, deleteTransaction, restoreTransaction, isLoading } = useExpense();
   const { user, isAdmin } = useAuth();
   const { isPushSupported, pushPermission, enablePush } = useNotifications();
@@ -573,10 +580,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             {/* Actions */}
             <div className="mt-5 space-y-2">
               <button
-                onClick={() => onNavigate('home')}
+                onClick={() =>
+                  onOpenFilteredTransactions
+                    ? onOpenFilteredTransactions('home')
+                    : onNavigate('all_transactions')
+                }
                 className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
-                <span>Open Received</span>
+                <span>View Received</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
@@ -624,10 +635,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             {/* Actions */}
             <div className="mt-5 space-y-2">
               <button
-                onClick={() => onNavigate('room')}
+                onClick={() =>
+                  onOpenFilteredTransactions
+                    ? onOpenFilteredTransactions('room')
+                    : onNavigate('all_transactions')
+                }
                 className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
-                <span>Open room</span>
+                <span>View Room</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
@@ -675,10 +690,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             {/* Actions */}
             <div className="mt-5 space-y-2">
               <button
-                onClick={() => onNavigate('food')}
+                onClick={() =>
+                  onOpenFilteredTransactions
+                    ? onOpenFilteredTransactions('food')
+                    : onNavigate('all_transactions')
+                }
                 className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
-                <span>Open food</span>
+                <span>View Food</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
@@ -726,10 +745,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             {/* Actions */}
             <div className="mt-5 space-y-2">
               <button
-                onClick={() => onNavigate('other')}
+                onClick={() =>
+                  onOpenFilteredTransactions
+                    ? onOpenFilteredTransactions('other')
+                    : onNavigate('all_transactions')
+                }
                 className="w-full h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer"
               >
-                <span>Open other</span>
+                <span>View Other</span>
                 <ChevronRight className="w-4 h-4 stroke-[1.75]" />
               </button>
               <button
@@ -819,7 +842,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
               subtitle="All credited funds"
               icon={ArrowDownLeft}
               variant="income"
-              onClick={() => onNavigate('home')}
+              onClick={() =>
+                onOpenFilteredTransactions
+                  ? onOpenFilteredTransactions('home')
+                  : onNavigate('all_transactions')
+              }
             />
             <StatCard
               title="Total Expenses"

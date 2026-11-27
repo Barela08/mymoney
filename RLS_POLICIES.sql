@@ -82,9 +82,9 @@ CREATE TRIGGER on_auth_user_created
 CREATE TABLE IF NOT EXISTS public.transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
-    category TEXT NOT NULL CHECK (category IN ('home', 'room', 'other', 'people')),
+    category TEXT NOT NULL CHECK (category IN ('home', 'received', 'room', 'food', 'other', 'people')),
     subcategory TEXT NOT NULL,
-    transaction_type TEXT NOT NULL CHECK (transaction_type IN ('income', 'expense')),
+    transaction_type TEXT NOT NULL CHECK (transaction_type IN ('income', 'expense', 'transfer')),
     amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0 AND amount <= 100000000.00),
     title TEXT NOT NULL CHECK (LENGTH(title) <= 250),
     description TEXT,

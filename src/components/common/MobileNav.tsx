@@ -117,34 +117,31 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   const navItems: MobileNavItem[] = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'home' as NavTab, label: 'Received Money', icon: ArrowDownLeft, badge: formatINR(summary.totalReceivedMoney || summary.totalHomeReceived) },
-    { id: 'room' as NavTab, label: 'Room Section', icon: DoorOpen, badge: formatINR(summary.totalRoomExpenses) },
-    { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, badge: formatINR(summary.totalFoodExpenses) },
-    { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, badge: formatINR(summary.totalOtherExpenses) },
-    { id: 'people' as NavTab, label: 'People Section (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
+    { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, count: summary.totalTransactionsCount },
+    { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, badge: formatINR(summary.netPeopleBalance) },
     { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
-    { id: 'all_transactions' as NavTab, label: 'All Transactions Ledger', icon: ListOrdered, count: summary.totalTransactionsCount },
-    { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
-    { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
-    { id: 'net_worth' as NavTab, label: 'Net Worth Tracker', icon: Landmark },
-    { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
-    { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
-    { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
+    { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
     { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
     { id: 'recurring_bills' as NavTab, label: 'Recurring Bills', icon: CalendarClock },
-    { id: 'notifications' as NavTab, label: 'Notification Center', icon: Bell },
+    { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
+    { id: 'net_worth' as NavTab, label: 'Net Worth Tracker', icon: Landmark },
+    { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
     { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
+    { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
+    { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
+    { id: 'receipt_scanner' as NavTab, label: 'Receipt Scanner (OCR)', icon: Receipt },
     ...customSections.map((sec) => ({
       id: sec.id as NavTab,
       label: sec.name,
       icon: iconMap[sec.icon] || FolderKanban,
     })),
-    { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, count: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
+    { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
+    { id: 'profile' as NavTab, label: 'My Account', icon: User },
+    { id: 'settings' as NavTab, label: 'Settings', icon: Settings },
     { id: 'help_support' as NavTab, label: 'Help & Feedback', icon: HelpCircle },
-    { id: 'profile' as NavTab, label: 'Profile & Account', icon: User },
-    { id: 'settings' as NavTab, label: 'Application Settings', icon: Settings },
+    { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: ShieldCheck },
     ...(isAdmin ? [{ id: 'admin' as NavTab, label: 'Admin Control', icon: Shield }] : []),
   ];
 
@@ -254,6 +251,21 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           }`}>
             {formatINR(summary.availableBalance)}
           </div>
+        </div>
+
+        {/* Unified Add Transaction CTA */}
+        <div className="px-4 pb-2">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenAddModal();
+            }}
+            className="w-full min-h-[42px] flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.2]" />
+            <span>+ Add Transaction</span>
+          </button>
         </div>
 
         {/* Navigation list */}
@@ -743,71 +755,57 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               </button>
             </div>
 
-            {/* Categories & Policies List in More Sheet */}
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 px-2 pb-1">
-                Categories and support
-              </p>
+            {/* Unified Add Transaction & Tools Shortcut in More Sheet */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMoreSheetOpen(false);
+                  onOpenAddModal();
+                }}
+                className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4 stroke-[2.4]" />
+                <span>+ Add Transaction</span>
+              </button>
+
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   onClick={() => {
                     setIsMoreSheetOpen(false);
-                    onSelectTab('home');
+                    onSelectTab('recycle_bin');
                   }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
-                  <ArrowDownLeft className="w-4 h-4 text-emerald-500" />
-                  <span>Received Money</span>
+                  <Trash2 className="w-4 h-4 text-slate-500" />
+                  <span>Recycle Bin</span>
                 </button>
                 <button
                   onClick={() => {
                     setIsMoreSheetOpen(false);
-                    onSelectTab('room');
+                    onSelectTab('settings');
                   }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
-                  <DoorOpen className="w-4 h-4 text-blue-500" />
-                  <span>Room Expense</span>
+                  <Settings className="w-4 h-4 text-slate-500" />
+                  <span>Settings</span>
                 </button>
-                <button
-                  onClick={() => {
-                    setIsMoreSheetOpen(false);
-                    onSelectTab('food');
-                  }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
-                >
-                  <Utensils className="w-4 h-4 text-orange-500" />
-                  <span>Food & Dining</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setIsMoreSheetOpen(false);
-                    onSelectTab('other');
-                  }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
-                >
-                  <ShoppingBag className="w-4 h-4 text-purple-500" />
-                  <span>Other Expense</span>
-                </button>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between gap-2">
                 <button
                   onClick={() => {
                     setIsMoreSheetOpen(false);
                     if (onOpenHelpModal) onOpenHelpModal('help');
                   }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
                   <HelpCircle className="w-4 h-4 text-emerald-500" />
-                  <span>Help & Support</span>
+                  <span>Help &amp; Support</span>
                 </button>
                 <button
                   onClick={() => {
                     setIsMoreSheetOpen(false);
                     onSelectTab('legal');
                   }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
                 >
                   <ShieldCheck className="w-4 h-4 text-blue-500" />
                   <span>Privacy Policy</span>

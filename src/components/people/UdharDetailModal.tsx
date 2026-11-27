@@ -116,6 +116,13 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
   const todayStr = new Date().toISOString().split('T')[0];
   const isOverdue = activeTx.due_date && activeTx.due_date < todayStr && !isSettled && !isCancelled && currentBal > 0;
 
+  const notifyUdharChanged = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
+    }
+    if (onRefreshUdhar) onRefreshUdhar();
+  };
+
   const handleSettleTransaction = async (notes?: string) => {
     try {
       setIsSettlingTx(true);
@@ -126,7 +133,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         toast.success('Udhar Settled', res.message || 'Transaction marked as settled.');
         setIsSettleModalOpen(false);
         await fetchDetails();
-        if (onRefreshUdhar) onRefreshUdhar();
+        notifyUdharChanged();
       }
     } catch (err: any) {
       toast.error('Settlement Failed', err.message || 'Could not settle this transaction.');
@@ -142,7 +149,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
       if (res.success) {
         toast.success('Udhar Deleted', res.message || 'Udhar entry deleted.');
         setIsCancelConfirmOpen(false);
-        if (onRefreshUdhar) onRefreshUdhar();
+        notifyUdharChanged();
         onClose();
       }
     } catch (err: any) {
@@ -161,7 +168,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         toast.success('Repayment Deleted', res.message);
         setDeletingRepayment(null);
         await fetchDetails();
-        if (onRefreshUdhar) onRefreshUdhar();
+        notifyUdharChanged();
       }
     } catch (err: any) {
       toast.error('Deletion Failed', err.message || 'Could not delete this repayment.');
@@ -177,7 +184,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
       if (res.success) {
         toast.success('Repayment Confirmed', res.message);
         await fetchDetails();
-        if (onRefreshUdhar) onRefreshUdhar();
+        notifyUdharChanged();
       }
     } catch (err: any) {
       toast.error('Confirmation Failed', err.message);
@@ -201,7 +208,7 @@ export const UdharDetailModal: React.FC<UdharDetailModalProps> = ({
         setRejectingRepaymentId(null);
         setRejectionReason('');
         await fetchDetails();
-        if (onRefreshUdhar) onRefreshUdhar();
+        notifyUdharChanged();
       }
     } catch (err: any) {
       toast.error('Action Failed', err.message);

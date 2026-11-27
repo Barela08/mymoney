@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { X, Edit3, Calendar, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Edit3, Camera, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { useExpense } from '../../context/ExpenseContext';
 import { useToast } from '../../context/ToastContext';
 import { Transaction, TransactionType } from '../../types';
-import { formatDisplayDate, formatDisplayTime } from '../../lib/dateUtils';
+import { formatDisplayDate } from '../../lib/dateUtils';
 import { UnsavedChangesModal } from '../common/states';
+import { processImageAttachment, isSafeAttachmentUrl } from '../../lib/attachmentUtils';
 
 interface EditTransactionModalProps {
   transaction: Transaction | null;
@@ -29,8 +30,18 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [time, setTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [type, setType] = useState<TransactionType>('expense');
+  const [paymentMethod, setPaymentMethod] = useState<string>('upi');
+  const [utr, setUtr] = useState<string>('');
+  const [categoryLabel, setCategoryLabel] = useState<string>('');
+  const [attachmentUrl, setAttachmentUrl] = useState<string>('');
+  const [attachmentName, setAttachmentName] = useState<string>('');
+  const [attachmentMime, setAttachmentMime] = useState<string>('');
+  const [attachmentSize, setAttachmentSize] = useState<number>(0);
+  const [isProcessingImage, setIsProcessingImage] = useState<boolean>(false);
 
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (transaction && isOpen) {
@@ -43,6 +54,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       setTime(transaction.transaction_time || '');
       setNotes(transaction.notes || '');
       setType(transaction.transaction_type);
+      setPaymentMethod(transaction.metadata?.payment_method || 'upi');
+      setUtr(transaction.metadata?.utr || '');
+      setCategoryLabel(transaction.metadata?.custom_category_label || transaction.metadata?.category_label || '');
+      const existingUrl = transaction.metadata?.attachment_url;
+      setAttachmentUrl(isSafeAttachmentUrl(existingUrl) ? String(existingUrl) : '');
+      setAttachmentName(transaction.metadata?.attachment_name || '');
+      setAttachmentMime(transaction.metadata?.attachment_mime || '');
+      setAttachmentSize(Number(transaction.metadata?.attachment_size) || 0);
     }
   }, [transaction, isOpen]);
 
@@ -55,7 +74,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       (transaction.transaction_date || '') !== date ||
       (transaction.transaction_time || '') !== time ||
       (transaction.notes || '') !== notes ||
-      transaction.transaction_type !== type
+      transaction.transaction_type !== type ||
+      (transaction.metadata?.payment_method || 'upi') !== paymentMethod ||
+      (transaction.metadata?.utr || '') !== utr ||
+      (transaction.metadata?.custom_category_label || transaction.metadata?.category_label || '') !== categoryLabel ||
+      (isSafeAttachmentUrl(transaction.metadata?.attachment_url) ? String(transaction.metadata?.attachment_url) : '') !== attachmentUrl
     )
   );
 
@@ -72,7 +95,6 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     onClose();
   };
 
-  // Nielsen Heuristic: User Control & Freedom — Escape key handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen && !showUnsavedConfirm) {
@@ -84,6 +106,24 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   }, [isOpen, isDirty, showUnsavedConfirm]);
 
   if (!isOpen || !transaction) return null;
+
+  const handleFileSelected = async (file?: File | null) => {
+    if (!file) return;
+    setIsProcessingImage(true);
+    try {
+      const res = await processImageAttachment(file);
+      if (!res.valid || !res.dataUrl) {
+        toast.error('Invalid Attachment', res.error || 'Please pick a valid JPEG, PNG, or WEBP image.');
+        return;
+      }
+      setAttachmentUrl(res.dataUrl);
+      setAttachmentName(res.fileName || 'receipt.jpg');
+      setAttachmentMime(res.mimeType || 'image/jpeg');
+      setAttachmentSize(res.sizeBytes || 0);
+    } finally {
+      setIsProcessingImage(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,6 +151,19 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
         transaction_time: time,
         notes: notes.trim() || undefined,
         transaction_type: type,
+        metadata: {
+          payment_method: paymentMethod,
+          utr: (paymentMethod === 'upi' || paymentMethod === 'bank_transfer') && utr.trim() ? utr.trim() : undefined,
+          category_label: categoryLabel.trim() || transaction.metadata?.category_label,
+          custom_category_label:
+            transaction.metadata?.custom_category_label && categoryLabel.trim()
+              ? categoryLabel.trim()
+              : transaction.metadata?.custom_category_label,
+          attachment_url: attachmentUrl && isSafeAttachmentUrl(attachmentUrl) ? attachmentUrl : undefined,
+          attachment_name: attachmentUrl ? attachmentName || 'receipt.jpg' : undefined,
+          attachment_mime: attachmentUrl ? attachmentMime || 'image/jpeg' : undefined,
+          attachment_size: attachmentUrl ? attachmentSize || undefined : undefined,
+        },
       });
 
       toast.success('Record Updated', `Transaction "${title}" was successfully updated.`);
@@ -136,15 +189,15 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 Edit Transaction
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Category: <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">{transaction.category === 'home' ? 'Received Money' : transaction.category}</span>
+                Category: <span className="capitalize font-semibold text-slate-700 dark:text-slate-300">{transaction.category === 'home' || transaction.category === 'received' ? 'Received Money' : transaction.category}</span>
                 {' · '}
-                Created on {formatDisplayDate(transaction.created_at.slice(0, 10))} (original creation timestamp preserved)
+                Created {formatDisplayDate(transaction.created_at.slice(0, 10))}
               </p>
             </div>
           </div>
           <button
             onClick={handleAttemptClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -168,7 +221,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 required
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold text-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -187,24 +240,39 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             />
           </div>
 
-          {/* Purpose / Description */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Purpose / Description
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          {/* Purpose / Description & Custom Label */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Purpose / Description
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Category Label
+              </label>
+              <input
+                type="text"
+                maxLength={40}
+                value={categoryLabel}
+                onChange={(e) => setCategoryLabel(e.target.value)}
+                placeholder="e.g. Grocery Expenses"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           {/* Person Name (if applicable) */}
           {(transaction.category === 'people' || transaction.person_name) && (
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Person's Name
+                Person&apos;s Name
               </label>
               <input
                 type="text"
@@ -214,6 +282,42 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               />
             </div>
           )}
+
+          {/* Payment Method & UTR */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Payment Method
+              </label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="upi">UPI</option>
+                <option value="cash">Cash</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="card">Card</option>
+                <option value="wallet">Wallet</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            {(paymentMethod === 'upi' || paymentMethod === 'bank_transfer') && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  UTR / Reference ID
+                </label>
+                <input
+                  type="text"
+                  maxLength={64}
+                  value={utr}
+                  onChange={(e) => setUtr(e.target.value)}
+                  placeholder="Optional reference"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Date & Time fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
@@ -258,13 +362,101 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             />
           </div>
 
+          {/* Receipt / Photo Attachment */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Receipt / Screenshot Attachment
+            </label>
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                void handleFileSelected(f);
+              }}
+            />
+            <input
+              ref={uploadRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                void handleFileSelected(f);
+              }}
+            />
+
+            {attachmentUrl && isSafeAttachmentUrl(attachmentUrl) ? (
+              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                <img
+                  src={attachmentUrl}
+                  alt="Receipt attachment"
+                  className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                    {attachmentName || 'Receipt Image'}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => uploadRef.current?.click()}
+                      className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    >
+                      Replace
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-600">·</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachmentUrl('');
+                        setAttachmentName('');
+                        setAttachmentMime('');
+                        setAttachmentSize(0);
+                      }}
+                      className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isProcessingImage}
+                  onClick={() => cameraRef.current?.click()}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  {isProcessingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5 text-emerald-600" />}
+                  <span>Take Photo</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessingImage}
+                  onClick={() => uploadRef.current?.click()}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  {isProcessingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5 text-blue-600" />}
+                  <span>Upload Image</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
             <button
               type="button"
               onClick={handleAttemptClose}
               disabled={isSubmitting}
-              className="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
+              className="px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer"
             >
               Cancel
             </button>

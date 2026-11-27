@@ -37,6 +37,7 @@ export type TransactionSubcategory =
   | 'personal_care'
   | 'education'
   | 'bills'
+  | 'emi_loan'
   | 'other_expense'
   | 'other_general'
   // People subcategories
@@ -57,6 +58,16 @@ export interface TransactionMetadata {
   financial_classification?: 'earned_income' | 'other_income' | 'borrowed' | string;
   attachment_url?: string;
   attachment_name?: string;
+  attachment_mime?: string;
+  attachment_size?: number;
+  // Multi-item combined entry metadata (child items only; never store a separate parent sum row)
+  batch_id?: string;
+  batch_index?: number;
+  batch_total?: number;
+  batch_combined_amount?: number;
+  // Custom category label
+  category_label?: string;
+  custom_category_label?: string;
   // Grocery specific
   grocery_item?: string;
   quantity?: string;
@@ -66,6 +77,7 @@ export interface TransactionMetadata {
   billing_month?: string;
   // Gas specific
   paid_by?: string;
+  gas_provider?: string;
   // Food specific
   food_item?: string;
   restaurant_name?: string;

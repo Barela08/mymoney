@@ -32,7 +32,7 @@ import {
   deactivateNotificationInSupabase,
 } from '../lib/supabase';
 import { getCurrentISTDate, getCurrentISTTime, formatDisplayTime, getPresetDateRange } from '../lib/dateUtils';
-import { classifyFinancialTransaction } from '../lib/receivedMoneyCategories';
+import { computeCategoryTotalsAndCashflow } from '../lib/financialIntelligenceEngine';
 import { useAuth } from './AuthContext';
 import {
   validateTransactionPayload,
@@ -56,6 +56,7 @@ interface ExpenseContextType {
   setFilterOptions: React.Dispatch<React.SetStateAction<FilterOptions>>;
   filteredTransactions: Transaction[];
   addTransaction: (payload: NewTransactionPayload) => Promise<Transaction>;
+  addTransactionBatch: (payloads: NewTransactionPayload[]) => Promise<Transaction[]>;
   editTransaction: (id: string, updates: Partial<NewTransactionPayload>) => Promise<Transaction>;
   deleteTransaction: (id: string) => Promise<boolean>;
   clearAllTransactions: () => Promise<void>;
@@ -815,6 +816,93 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return newTx;
   };
 
+  // Add batch of 1-3 combined transaction items (each saved individually with shared batch_id)
+  const addTransactionBatch = async (payloads: NewTransactionPayload[]): Promise<Transaction[]> => {
+    if (!user) {
+      throw new SecurityAuthorizationError('Authentication required: You must be logged in to record transactions.');
+    }
+    if (!Array.isArray(payloads) || payloads.length === 0) {
+      throw new Error('At least one transaction item is required.');
+    }
+    if (payloads.length > 3) {
+      throw new Error('Maximum 3 combined items can be saved in one batch.');
+    }
+    if (!checkClientFinancialRateLimit(30)) {
+      throw new Error('You have made too many attempts. Please try again after some time.');
+    }
+
+    const sanitizedList: NewTransactionPayload[] = [];
+    for (let i = 0; i < payloads.length; i++) {
+      const validation = validateTransactionPayload(payloads[i], user.uid);
+      if (!validation.isValid || !validation.sanitizedPayload) {
+        throw new Error(`Item ${i + 1}: ${validation.errors.join(' ')}`);
+      }
+      sanitizedList.push(validation.sanitizedPayload);
+    }
+
+    const batchId = payloads.length > 1 ? `batch_${generateSecureUUID()}` : undefined;
+    const nowIso = new Date().toISOString();
+    const combinedAmount = Math.round(sanitizedList.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
+
+    const newTxs: Transaction[] = sanitizedList.map((clean, idx) => ({
+      id: generateSecureUUID(),
+      user_id: user.uid,
+      user_email: user.email,
+      category: clean.category,
+      subcategory: clean.subcategory,
+      transaction_type: clean.transaction_type,
+      amount: clean.amount,
+      title: clean.title,
+      description: clean.description,
+      person_name: clean.person_name,
+      transaction_date: clean.transaction_date || getCurrentISTDate(),
+      transaction_time: clean.transaction_time || getCurrentISTTime(),
+      notes: clean.notes,
+      metadata: {
+        ...(clean.metadata || {}),
+        ...(batchId
+          ? {
+              batch_id: batchId,
+              batch_index: idx + 1,
+              batch_total: sanitizedList.length,
+              batch_combined_amount: combinedAmount,
+            }
+          : {}),
+      },
+      is_deleted: false,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }));
+
+    setAllTransactions((prev) => {
+      const updated = [...newTxs.slice().reverse(), ...prev];
+      persistLocally(updated);
+      return updated;
+    });
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      for (const txItem of newTxs) {
+        saveTransactionToSupabase(txItem)
+          .then((saved) => {
+            setIsSupabaseConnected(true);
+            setAllTransactions((prev) => {
+              const updated = prev.map((t) => (t.id === txItem.id ? { ...saved, user_email: user.email } : t));
+              persistLocally(updated);
+              return updated;
+            });
+          })
+          .catch((err: any) => {
+            console.warn('Supabase batch save notice, queued locally:', err.message);
+            const q = getPendingQueue(user.uid);
+            savePendingQueue(user.uid, [...q.filter((t) => t.id !== txItem.id), txItem]);
+          });
+      }
+    }
+
+    return newTxs;
+  };
+
   // Edit transaction
   const editTransaction = async (id: string, updates: Partial<NewTransactionPayload>): Promise<Transaction> => {
     if (!user) {
@@ -1228,108 +1316,32 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Summary calculated exclusively from the current user's visible transactions
+  // Summary calculated exclusively from the current user's visible transactions (paise-safe canonical engine)
   const summary: FinancialSummary = useMemo(() => {
-    let totalHomeReceived = 0;
-    let totalHomeSpent = 0;
-    let totalReceivedMoney = 0;
-    let totalEarnedIncome = 0;
-    let totalOtherIncome = 0;
-    let totalBorrowedReceived = 0;
-
-    let totalGas = 0;
-    let totalGrocery = 0;
-    let totalRent = 0;
-    let totalElectricity = 0;
-    let totalFoodExpenses = 0;
-    let totalOtherExpenses = 0;
-    let totalMoneyGiven = 0;
-    let totalMoneyReceived = 0;
-
-    const round2 = (v: number) => Math.round(v * 100) / 100;
-
-    for (const tx of userTransactions) {
-      // Transfers between own accounts are never counted as income or expenses
-      if (tx.transaction_type === 'transfer' || tx.metadata?.is_transfer === true) {
-        continue;
-      }
-
-      const amt = Number(tx.amount) || 0;
-
-      // Handle Received Money (category === 'home' or 'received')
-      if (tx.category === 'home' || tx.category === 'received') {
-        if (tx.subcategory === 'home_expense') {
-          totalHomeSpent += amt;
-        } else {
-          totalHomeReceived += amt;
-          totalReceivedMoney += amt;
-
-          const classification = classifyFinancialTransaction(tx.subcategory);
-          if (classification === 'earned_income') {
-            totalEarnedIncome += amt;
-          } else if (classification === 'borrowed') {
-            totalBorrowedReceived += amt;
-          } else {
-            totalOtherIncome += amt;
-          }
-        }
-      }
-
-      if (tx.category === 'room') {
-        if (tx.subcategory === 'gas') totalGas += amt;
-        else if (tx.subcategory === 'grocery') totalGrocery += amt;
-        else if (tx.subcategory === 'rent') totalRent += amt;
-        else if (tx.subcategory === 'electricity') totalElectricity += amt;
-      }
-
-      if (tx.category === 'food') {
-        totalFoodExpenses += amt;
-      }
-
-      if (tx.category === 'other') {
-        totalOtherExpenses += amt;
-      }
-
-      if (tx.category === 'people') {
-        if (tx.subcategory === 'money_given') {
-          totalMoneyGiven += amt;
-        } else if (tx.subcategory === 'money_received') {
-          totalMoneyReceived += amt;
-        }
-      }
-    }
-
-    const totalRoomExpenses = round2(totalGas + totalGrocery + totalRent + totalElectricity);
-    const remainingHomeBalance = round2(totalHomeReceived - totalHomeSpent);
-    const netPeopleBalance = round2(totalMoneyGiven - totalMoneyReceived);
-
-    const totalExpenses = round2(totalHomeSpent + totalRoomExpenses + totalFoodExpenses + totalOtherExpenses);
-    // Earned income + Other income (excluding loans/udhar) represents pure income/profit
-    const totalIncome = round2(totalEarnedIncome + totalOtherIncome);
-    // Available balance reflects actual liquid cash in hand
-    const availableBalance = round2(totalReceivedMoney - totalExpenses);
+    const calc = computeCategoryTotalsAndCashflow(userTransactions);
+    const remainingHomeBalance = Math.round((calc.totalReceivedMoney - calc.totalHomeSpent) * 100) / 100;
 
     return {
-      totalIncome,
-      totalExpenses,
-      availableBalance,
-      totalReceivedMoney: round2(totalReceivedMoney),
-      totalEarnedIncome: round2(totalEarnedIncome),
-      totalOtherIncome: round2(totalOtherIncome),
-      totalBorrowedReceived: round2(totalBorrowedReceived),
-      totalHomeReceived: round2(totalHomeReceived),
-      totalHomeSpent: round2(totalHomeSpent),
+      totalIncome: calc.totalIncome,
+      totalExpenses: calc.totalExpenses,
+      availableBalance: calc.availableBalance,
+      totalReceivedMoney: calc.totalReceivedMoney,
+      totalEarnedIncome: calc.totalEarnedIncome,
+      totalOtherIncome: calc.totalOtherIncome,
+      totalBorrowedReceived: calc.totalBorrowedReceived,
+      totalHomeReceived: calc.totalReceivedMoney,
+      totalHomeSpent: calc.totalHomeSpent,
       remainingHomeBalance,
-      totalGas: round2(totalGas),
-      totalGrocery: round2(totalGrocery),
-      totalRent: round2(totalRent),
-      totalElectricity: round2(totalElectricity),
-      totalRoomExpenses,
-      totalFoodExpenses: round2(totalFoodExpenses),
-      totalOtherExpenses: round2(totalOtherExpenses),
-      totalMoneyGiven: round2(totalMoneyGiven),
-      totalMoneyReceived: round2(totalMoneyReceived),
-      netPeopleBalance,
+      totalGas: calc.totalGas,
+      totalGrocery: calc.totalGrocery,
+      totalRent: calc.totalRent,
+      totalElectricity: calc.totalElectricity,
+      totalRoomExpenses: calc.totalRoomExpenses,
+      totalFoodExpenses: calc.totalFoodExpenses,
+      totalOtherExpenses: calc.totalOtherExpenses,
+      totalMoneyGiven: calc.totalMoneyGiven,
+      totalMoneyReceived: calc.totalMoneyReceived,
+      netPeopleBalance: calc.netPeopleBalance,
       totalTransactionsCount: userTransactions.length,
     };
   }, [userTransactions]);
@@ -1522,6 +1534,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setFilterOptions,
         filteredTransactions,
         addTransaction,
+        addTransactionBatch,
         editTransaction,
         deleteTransaction,
         clearAllTransactions,

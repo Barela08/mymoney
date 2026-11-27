@@ -139,11 +139,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Money Management',
       items: [
-        { id: 'home' as NavTab, label: 'Received Money', icon: ArrowDownLeft, countBadge: formatINR(summary.totalReceivedMoney || summary.totalHomeReceived) },
-        { id: 'room' as NavTab, label: 'Room Expenses', icon: DoorOpen, countBadge: formatINR(summary.totalRoomExpenses) },
-        { id: 'food' as NavTab, label: 'Food & Dining', icon: Utensils, countBadge: formatINR(summary.totalFoodExpenses) },
-        { id: 'other' as NavTab, label: 'Other Expenses', icon: ShoppingBag, countBadge: formatINR(summary.totalOtherExpenses) },
+        {
+          id: 'add_transaction_cta' as NavTab,
+          label: '+ Add Transaction',
+          icon: PlusCircle,
+          onClick: onOpenAddModal,
+        },
         { id: 'all_transactions' as NavTab, label: 'All Transactions', icon: ListOrdered, badgeNum: summary.totalTransactionsCount },
+        { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
         ...customSections.map((sec) => ({
           id: sec.id as NavTab,
           label: sec.name,
@@ -152,7 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'Planning',
+      title: 'Financial Planning',
       items: [
         { id: 'budget' as NavTab, label: 'Monthly Budget', icon: PieChart },
         { id: 'savings_goals' as NavTab, label: 'Savings Goals', icon: Target },
@@ -162,18 +165,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Financial Tools',
       items: [
-        { id: 'people' as NavTab, label: 'People (Udhar)', icon: Users, countBadge: formatINR(summary.netPeopleBalance) },
         { id: 'upi_qr' as NavTab, label: 'UPI QR', icon: QrCode },
+        { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
         { id: 'expense_calendar' as NavTab, label: 'Expense Calendar', icon: Calendar },
         { id: 'net_worth' as NavTab, label: 'Net Worth', icon: Landmark },
         { id: 'safe_to_spend' as NavTab, label: 'Safe-to-Spend', icon: ShieldCheck },
-        { id: 'calculator' as NavTab, label: 'Calculator', icon: Calculator },
         { id: 'reports' as NavTab, label: 'Reports & Analytics', icon: BarChart3 },
         { id: 'recycle_bin' as NavTab, label: 'Recycle Bin', icon: Trash2, badgeNum: recycleBinTransactions.length > 0 ? recycleBinTransactions.length : undefined },
       ],
     },
     {
-      title: 'Intelligence',
+      title: 'Smart Features',
       items: [
         { id: 'ai_assistant' as NavTab, label: 'AI Money Assistant', icon: Sparkles },
         { id: 'smart_alerts' as NavTab, label: 'Smart Alerts', icon: Bell },
@@ -181,9 +183,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'Account',
+      title: 'Account & Support',
       items: [
-        { id: 'profile' as NavTab, label: 'Profile', icon: User },
+        { id: 'profile' as NavTab, label: 'My Account', icon: User },
         { id: 'settings' as NavTab, label: 'Settings', icon: Settings },
         { id: 'notifications' as NavTab, label: 'Notifications', icon: Bell },
         {
@@ -192,6 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: HelpCircle,
           onClick: onOpenHelpModal ? () => onOpenHelpModal('help') : undefined,
         },
+        { id: 'legal' as NavTab, label: 'Privacy & Legal', icon: Scale },
       ],
     },
     ...(isAdmin ? [{
@@ -241,10 +244,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Quick Add Button */}
         <button
           onClick={onOpenAddModal}
-          className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-medium text-xs sm:text-sm transition-colors cursor-pointer"
+          className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-semibold text-xs sm:text-sm transition-colors cursor-pointer shadow-xs"
         >
-          <PlusCircle className="w-4 h-4 stroke-[2]" />
-          <span>Add transaction</span>
+          <PlusCircle className="w-4 h-4 stroke-[2.2]" />
+          <span>+ Add Transaction</span>
         </button>
       </div>
 

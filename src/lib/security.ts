@@ -109,8 +109,34 @@ export function validateAmount(amount: unknown): AmountValidationResult {
   return { isValid: true, value: rounded };
 }
 
-const ALLOWED_CATEGORIES: TransactionCategory[] = ['home', 'room', 'food', 'other', 'people'];
-const ALLOWED_TYPES: TransactionType[] = ['income', 'expense'];
+const ALLOWED_CATEGORIES: TransactionCategory[] = ['home', 'received', 'room', 'food', 'other', 'people'];
+const ALLOWED_TYPES: TransactionType[] = ['income', 'expense', 'transfer'];
+
+export function sanitizeTransactionMetadata(raw: unknown): Record<string, any> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const result: Record<string, any> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const cleanKey = sanitizeInput(k).slice(0, 64);
+    if (!cleanKey) continue;
+    if (cleanKey === 'attachment_url') {
+      if (typeof v === 'string') {
+        const trimmed = v.trim();
+        const isSafeImageData = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed);
+        const isSafeHttp = /^https?:\/\//i.test(trimmed) && !/javascript\s*:|data\s*:/i.test(trimmed);
+        if (isSafeImageData || isSafeHttp) {
+          result[cleanKey] = trimmed;
+        }
+      }
+      continue;
+    }
+    if (typeof v === 'string') {
+      result[cleanKey] = sanitizeInput(v);
+    } else if (typeof v === 'number' || typeof v === 'boolean' || v === null) {
+      result[cleanKey] = v;
+    }
+  }
+  return result;
+}
 
 export interface PayloadValidationResult {
   isValid: boolean;
@@ -142,7 +168,7 @@ export function validateTransactionPayload(payload: unknown, currentUserId?: str
 
   // Transaction type validation
   if (!ALLOWED_TYPES.includes(p.transaction_type)) {
-    errors.push(`Invalid transaction type "${p.transaction_type}". Allowed: income, expense.`);
+    errors.push(`Invalid transaction type "${p.transaction_type}". Allowed: income, expense, transfer.`);
   }
 
   // Subcategory validation
@@ -184,7 +210,7 @@ export function validateTransactionPayload(payload: unknown, currentUserId?: str
     transaction_date: p.transaction_date ? sanitizeInput(p.transaction_date) : undefined,
     transaction_time: p.transaction_time ? sanitizeInput(p.transaction_time) : undefined,
     notes: p.notes ? sanitizeInput(p.notes) : undefined,
-    metadata: typeof p.metadata === 'object' && p.metadata !== null ? p.metadata : {},
+    metadata: sanitizeTransactionMetadata(p.metadata),
   };
 
   return { isValid: true, sanitizedPayload, errors: [] };

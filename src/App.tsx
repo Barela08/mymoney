@@ -267,6 +267,8 @@ const MainContent: React.FC = () => {
   const [modalInitialAmount, setModalInitialAmount] = useState<string | undefined>(undefined);
   const [modalInitialTitle, setModalInitialTitle] = useState<string | undefined>(undefined);
   const [modalInitialDate, setModalInitialDate] = useState<string | undefined>(undefined);
+  const [txInitialCategory, setTxInitialCategory] = useState<string>('all');
+  const [txInitialSubcategory, setTxInitialSubcategory] = useState<string>('all');
 
   // Help & Feedback state (single page at help_support)
   const [helpInitialTab, setHelpInitialTab] = useState<'help' | 'feedback' | 'complaint' | 'dpdp'>('feedback');
@@ -534,6 +536,11 @@ return (
                     <DashboardView
                       onNavigate={setCurrentTab}
                       onOpenAddModal={handleOpenAddModal}
+                      onOpenFilteredTransactions={(category, subcategory) => {
+                        setTxInitialCategory(category || 'all');
+                        setTxInitialSubcategory(subcategory || 'all');
+                        setCurrentTab('all_transactions');
+                      }}
                       onOpenScanQr={() => setIsScanQrOpen(true)}
                       onAskAiPrompt={handleAskAiPrompt}
                     />
@@ -602,7 +609,11 @@ return (
                   )}
 
                   {currentTab === 'all_transactions' && (
-                    <AllTransactionsSection onOpenAddModal={handleOpenAddModal} />
+                    <AllTransactionsSection
+                      onOpenAddModal={handleOpenAddModal}
+                      initialCategoryFilter={txInitialCategory}
+                      initialSubcategoryFilter={txInitialSubcategory}
+                    />
                   )}
 
                   {currentTab === 'recycle_bin' && (

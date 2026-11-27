@@ -28,6 +28,12 @@ import { SkeletonCardsGrid, SkeletonChart } from '../common/states';
 import { formatINR, formatDisplayDate, getPresetDateRange } from '../../lib/dateUtils';
 import { udharDeletionApi, UdharSummaryData } from '../../lib/udharDeletionApi';
 import { subscribeToSupabaseUdharRealtime } from '../../lib/supabase';
+import {
+  isTransferTransaction,
+  isBorrowedTransaction,
+  toPaise,
+  fromPaise,
+} from '../../lib/financialIntelligenceEngine';
 
 export const ReportsSection: React.FC = () => {
   const { transactions, isLoading } = useExpense();
@@ -83,55 +89,64 @@ export const ReportsSection: React.FC = () => {
     return list;
   }, [transactions, preset, customStart, customEnd]);
 
-  // Aggregated totals for the selected period
+  // Aggregated totals for the selected period (paise-safe, transfers & borrowed funds excluded from income/expense)
   const metrics = useMemo(() => {
-    let income = 0;
-    let expenses = 0;
-    let homeExp = 0;
-    let roomExp = 0;
-    let foodExp = 0;
-    let otherExp = 0;
-    let gasExp = 0;
-    let groceryExp = 0;
-    let rentExp = 0;
-    let elecExp = 0;
+    let incomeP = 0;
+    let expensesP = 0;
+    let homeExpP = 0;
+    let roomExpP = 0;
+    let foodExpP = 0;
+    let otherExpP = 0;
+    let gasExpP = 0;
+    let groceryExpP = 0;
+    let rentExpP = 0;
+    let elecExpP = 0;
+    let roomOtherExpP = 0;
 
     for (const tx of filteredTxs) {
-      const amt = Number(tx.amount) || 0;
-      if (tx.transaction_type === 'income' && tx.category !== 'people') {
-        income += amt;
-      }
-      if (tx.transaction_type === 'expense' && tx.category !== 'people') {
-        expenses += amt;
-        if (tx.category === 'home') homeExp += amt;
-        if (tx.category === 'room') {
-          roomExp += amt;
-          if (tx.subcategory === 'gas') gasExp += amt;
-          else if (tx.subcategory === 'grocery') groceryExp += amt;
-          else if (tx.subcategory === 'rent') rentExp += amt;
-          else if (tx.subcategory === 'electricity') elecExp += amt;
+      if (tx.category === 'people' || isTransferTransaction(tx)) continue;
+      const amtP = toPaise(Number(tx.amount) || 0);
+      if (amtP <= 0) continue;
+
+      if (tx.transaction_type === 'income') {
+        if (!isBorrowedTransaction(tx)) {
+          incomeP += amtP;
         }
-        if (tx.category === 'food') foodExp += amt;
-        if (tx.category === 'other') otherExp += amt;
+      } else if (tx.transaction_type === 'expense') {
+        expensesP += amtP;
+        if (tx.category === 'home' || tx.category === 'received') homeExpP += amtP;
+        else if (tx.category === 'room') {
+          roomExpP += amtP;
+          if (tx.subcategory === 'gas') gasExpP += amtP;
+          else if (tx.subcategory === 'grocery') groceryExpP += amtP;
+          else if (tx.subcategory === 'rent') rentExpP += amtP;
+          else if (tx.subcategory === 'electricity') elecExpP += amtP;
+          else roomOtherExpP += amtP;
+        } else if (tx.category === 'food') foodExpP += amtP;
+        else if (tx.category === 'other') otherExpP += amtP;
+        else otherExpP += amtP;
       }
     }
 
-    const netBalance = income - expenses;
-    const savingsRate = income > 0 ? Math.round(((income - expenses) / income) * 100) : 0;
+    const income = fromPaise(incomeP);
+    const expenses = fromPaise(expensesP);
+    const netBalance = fromPaise(incomeP - expensesP);
+    const savingsRate = incomeP > 0 ? Math.round(((incomeP - expensesP) / incomeP) * 100) : 0;
 
     return {
       income,
       expenses,
       netBalance,
       savingsRate,
-      homeExp,
-      roomExp,
-      foodExp,
-      otherExp,
-      gasExp,
-      groceryExp,
-      rentExp,
-      elecExp,
+      homeExp: fromPaise(homeExpP),
+      roomExp: fromPaise(roomExpP),
+      foodExp: fromPaise(foodExpP),
+      otherExp: fromPaise(otherExpP),
+      gasExp: fromPaise(gasExpP),
+      groceryExp: fromPaise(groceryExpP),
+      rentExp: fromPaise(rentExpP),
+      elecExp: fromPaise(elecExpP),
+      roomOtherExp: fromPaise(roomOtherExpP),
     };
   }, [filteredTxs]);
 
@@ -143,6 +158,7 @@ export const ReportsSection: React.FC = () => {
       { name: 'Room (Grocery)', value: metrics.groceryExp, color: '#06b6d4' },
       { name: 'Room (Rent)', value: metrics.rentExp, color: '#3b82f6' },
       { name: 'Room (Electricity)', value: metrics.elecExp, color: '#eab308' },
+      { name: 'Room (Other)', value: metrics.roomOtherExp, color: '#6366f1' },
       { name: 'Food & Dining', value: metrics.foodExp, color: '#f97316' },
       { name: 'Other Expenses', value: metrics.otherExp, color: '#a855f7' },
     ].filter((item) => item.value > 0);
@@ -152,11 +168,13 @@ export const ReportsSection: React.FC = () => {
 
   // Time-series chart data (Daily or Monthly)
   const timeSeriesData = useMemo(() => {
-    const map = new Map<string, { label: string; income: number; expenses: number }>();
+    const map = new Map<string, { label: string; incomeP: number; expensesP: number }>();
 
     for (const tx of filteredTxs) {
-      if (tx.category === 'people') continue;
-      const amt = Number(tx.amount) || 0;
+      if (tx.category === 'people' || isTransferTransaction(tx)) continue;
+      if (tx.transaction_type === 'income' && isBorrowedTransaction(tx)) continue;
+      const amtP = toPaise(Number(tx.amount) || 0);
+      if (amtP <= 0) continue;
 
       let key = tx.transaction_date;
       let label = formatDisplayDate(tx.transaction_date);
@@ -174,15 +192,22 @@ export const ReportsSection: React.FC = () => {
       }
 
       if (!map.has(key)) {
-        map.set(key, { label, income: 0, expenses: 0 });
+        map.set(key, { label, incomeP: 0, expensesP: 0 });
       }
       const entry = map.get(key)!;
-      if (tx.transaction_type === 'income') entry.income += amt;
-      else entry.expenses += amt;
+      if (tx.transaction_type === 'income') entry.incomeP += amtP;
+      else if (tx.transaction_type === 'expense') entry.expensesP += amtP;
     }
 
     const sortedKeys = Array.from(map.keys()).sort();
-    return sortedKeys.map((k) => map.get(k)!);
+    return sortedKeys.map((k) => {
+      const e = map.get(k)!;
+      return {
+        label: e.label,
+        income: fromPaise(e.incomeP),
+        expenses: fromPaise(e.expensesP),
+      };
+    });
   }, [filteredTxs, granularity]);
 
   // Export to CSV functionality

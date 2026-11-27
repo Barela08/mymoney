@@ -73,10 +73,10 @@ export const BudgetSection: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isModalOpen, isSaving]);
 
-  // Compute current month's real spend per category
+  // Compute current month's real spend per category (paise-safe, transfers & Udhar excluded)
   const currentMonthPrefix = getCurrentISTDate().slice(0, 7); // YYYY-MM
   const monthSpending = useMemo(() => {
-    const spending: Record<string, number> = {
+    const paise: Record<string, number> = {
       food: 0,
       room: 0,
       home: 0,
@@ -84,23 +84,33 @@ export const BudgetSection: React.FC = () => {
     };
 
     for (const tx of transactions) {
+      if (tx.is_deleted || tx.category === 'people' || tx.transaction_type === 'transfer' || tx.metadata?.is_transfer) {
+        continue;
+      }
       if (tx.transaction_type === 'expense' && tx.transaction_date.startsWith(currentMonthPrefix)) {
-        const cat = tx.category.toLowerCase();
-        if (spending[cat] !== undefined) {
-          spending[cat] += Number(tx.amount) || 0;
+        const rawCat = tx.category.toLowerCase();
+        const cat = rawCat === 'received' ? 'home' : rawCat;
+        const amtP = Math.round((Number(tx.amount) || 0) * 100);
+        if (paise[cat] !== undefined) {
+          paise[cat] += amtP;
         } else {
-          spending['other'] = (spending['other'] || 0) + (Number(tx.amount) || 0);
+          paise['other'] += amtP;
         }
       }
     }
 
-    return spending;
+    return {
+      food: paise.food / 100,
+      room: paise.room / 100,
+      home: paise.home / 100,
+      other: paise.other / 100,
+    } as Record<string, number>;
   }, [transactions, currentMonthPrefix]);
 
   // Overall totals
   const totalBudgetLimit = budgets.reduce((sum, b) => sum + Number(b.monthly_limit), 0);
-  const totalBudgetSpent = budgets.reduce((sum, b) => sum + (monthSpending[b.category] || 0), 0);
-  const totalRemaining = Math.max(0, totalBudgetLimit - totalBudgetSpent);
+  const totalBudgetSpent = Math.round(budgets.reduce((sum, b) => sum + (monthSpending[b.category] || 0), 0) * 100) / 100;
+  const totalRemaining = Math.max(0, Math.round((totalBudgetLimit - totalBudgetSpent) * 100) / 100);
   const overallUtilization = totalBudgetLimit > 0 ? Math.round((totalBudgetSpent / totalBudgetLimit) * 100) : 0;
 
   // Open modal for add or edit
