@@ -25,15 +25,9 @@ import { formatDisplayDate } from '../../../lib/dateUtils';
 
 interface AdminUsersTabProps {
   initialStatusFilter?: string;
-  selectedUserId?: string | null;
-  onClearSelectedUser?: () => void;
 }
 
-export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
-  initialStatusFilter = 'all',
-  selectedUserId = null,
-  onClearSelectedUser,
-}) => {
+export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ initialStatusFilter = 'all' }) => {
   const toast = useToast();
   const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,10 +49,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const [selectedUserForSessions, setSelectedUserForSessions] = useState<any>(null);
   const [userSessions, setUserSessions] = useState<any[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
-
-  const [selectedUserForDetails, setSelectedUserForDetails] = useState<any>(null);
-  const [detailsSessions, setDetailsSessions] = useState<any[]>([]);
-  const [isLoadingDetailsSessions, setIsLoadingDetailsSessions] = useState(false);
 
   // Status Confirmation Modal
   const [pendingStatusAction, setPendingStatusAction] = useState<{
@@ -90,31 +80,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   useEffect(() => {
     loadUsers();
   }, [statusFilter]);
-
-  const handleOpenUserDetails = async (u: any) => {
-    setSelectedUserForDetails(u);
-    setIsLoadingDetailsSessions(true);
-    try {
-      const res = await adminClient.getUserSessions(u.id);
-      if (res.success) {
-        setDetailsSessions(res.sessions || []);
-      } else {
-        setDetailsSessions([]);
-      }
-    } catch {
-      setDetailsSessions([]);
-    } finally {
-      setIsLoadingDetailsSessions(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedUserId || users.length === 0) return;
-    const matched = users.find((u) => u.id === selectedUserId || u.uid === selectedUserId);
-    if (matched) {
-      void handleOpenUserDetails(matched);
-    }
-  }, [selectedUserId, users]);
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -384,15 +349,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
                     <td className="p-3.5 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        {/* View Full User Details */}
-                        <button
-                          onClick={() => handleOpenUserDetails(u)}
-                          title="View User Details"
-                          className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-
                         {/* View Activity */}
                         <button
                           onClick={() => handleOpenActivity(u)}
@@ -659,144 +615,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20"
               >
                 Delete Permanently
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* User Details Modal (Opened directly from notifications or View Details) */}
-      {selectedUserForDetails && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div
-            data-testid="admin-user-details-modal"
-            className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 max-h-[88vh] flex flex-col"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 font-black text-sm flex items-center justify-center shrink-0">
-                  {(selectedUserForDetails.fullName || selectedUserForDetails.email || 'U').charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-black text-base text-slate-900 dark:text-slate-100 truncate">
-                    {selectedUserForDetails.fullName || selectedUserForDetails.displayName || 'User Account'}
-                  </h3>
-                  <p className="text-xs font-mono text-slate-500 truncate">{selectedUserForDetails.email}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedUserForDetails(null);
-                  onClearSelectedUser?.();
-                }}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
-                aria-label="Close User Details"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">User ID</p>
-                  <p className="font-mono font-bold text-slate-800 dark:text-slate-200 mt-0.5 break-all">
-                    {selectedUserForDetails.id}
-                  </p>
-                </div>
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Account Status &amp; Role</p>
-                  <p className="font-bold text-slate-800 dark:text-slate-200 mt-0.5 capitalize">
-                    {selectedUserForDetails.status || 'active'} · {selectedUserForDetails.role || 'user'}
-                  </p>
-                </div>
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Registered At</p>
-                  <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                    {selectedUserForDetails.createdAt
-                      ? new Date(selectedUserForDetails.createdAt).toLocaleString()
-                      : 'Recent'}
-                  </p>
-                </div>
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Last Login &amp; Phone</p>
-                  <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                    {selectedUserForDetails.lastLoginAt
-                      ? new Date(selectedUserForDetails.lastLoginAt).toLocaleString()
-                      : 'Pending'}{' '}
-                    {selectedUserForDetails.phone ? `· ${selectedUserForDetails.phone}` : ''}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Active Device Sessions ({detailsSessions.filter((s) => !s.is_revoked).length} / 3)
-                </p>
-                {isLoadingDetailsSessions ? (
-                  <p className="text-slate-400 py-3">Loading user sessions...</p>
-                ) : detailsSessions.length === 0 ? (
-                  <p className="text-slate-400 py-2">No active sessions recorded.</p>
-                ) : (
-                  detailsSessions.map((s) => (
-                    <div
-                      key={s.id}
-                      className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                          {s.device_name || s.browser || 'Web Session'} {s.os ? `(${s.os})` : ''}
-                        </p>
-                        <p className="text-[11px] text-slate-400">
-                          IP: {s.ip_address || 'Unknown'} · Last Active:{' '}
-                          {s.last_active_at ? new Date(s.last_active_at).toLocaleString() : 'N/A'}
-                        </p>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
-                          s.is_revoked
-                            ? 'bg-slate-200 text-slate-600'
-                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                        }`}
-                      >
-                        {s.is_revoked ? 'Revoked' : 'Active'}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = selectedUserForDetails;
-                  setSelectedUserForDetails(null);
-                  onClearSelectedUser?.();
-                  void handleOpenActivity(target);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
-              >
-                Activity History
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleRevokeSessions(selectedUserForDetails)}
-                className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-xs font-bold text-amber-700 dark:text-amber-300 cursor-pointer"
-              >
-                Revoke All Sessions
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedUserForDetails(null);
-                  onClearSelectedUser?.();
-                }}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
-              >
-                Close
               </button>
             </div>
           </div>

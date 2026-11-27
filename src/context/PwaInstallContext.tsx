@@ -1,12 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  ACTIVE_REMINDER_DELAY_MS,
-  ActiveReminderState,
+  DEFAULT_DISMISS_COOLDOWN_MS,
   detectPlatformCompatibility,
-  getActiveElapsedMs,
+  isInstallSuggestionSuppressed,
   isRunningStandalone,
   PlatformCompatibilityInfo,
-  transitionActiveReminderVisibility,
 } from '../lib/pwaUtils';
 
 export interface BeforeInstallPromptEvent extends Event {
@@ -28,7 +26,7 @@ export type InstallPromptResult =
 interface PwaInstallContextType {
   /** Native beforeinstallprompt event has been captured and is ready to invoke */
   isInstallable: boolean;
-  /** App is confirmed installed (standalone display mode, related app, or confirmed appinstalled) */
+  /** App is confirmed installed (standalone display mode or appinstalled event fired) */
   isInstalled: boolean;
   /** Legacy convenience flag for iOS Safari */
   isIOS: boolean;
@@ -42,14 +40,11 @@ interface PwaInstallContextType {
   closeInstallModal: () => void;
   /** Triggers native browser install prompt when supported, otherwise opens platform-specific guide */
   triggerInstallPrompt: () => Promise<InstallPromptResult>;
-  /** True when user explicitly dismissed/cancelled the install reminder in this visit */
+  /** True when the user dismissed an install suggestion during this session or cooldown window */
   isBannerDismissed: boolean;
-  /** True once 60s active page visibility has elapsed while app is not installed */
-  isReminderReady: boolean;
-  /** Dismiss install prompt/suggestion without marking installed */
+  /** Dismiss install prompt/suggestion without installing */
   dismissBanner: () => void;
-  /** Mark app as installed permanently while installed */
-  markInstalledConfirmed: () => void;
+  /** Reset dismissal state if user explicitly re-opens install UI */
   isScannerActive: boolean;
   setScannerActive: (active: boolean) => void;
   activeModalCount: number;
@@ -61,8 +56,6 @@ const PwaInstallContext = createContext<PwaInstallContextType | undefined>(undef
 
 const DISMISSED_STORAGE_KEY = 'my_money_pwa_install_dismissed_at';
 const SESSION_DISMISSED_KEY = 'my_money_pwa_install_session_dismissed';
-const INSTALLED_STORAGE_KEY = 'my_money_app_downloaded_confirmed';
-const INSTALLED_COOKIE_NAME = 'mymoney_app_downloaded';
 
 function readPersistedDismissedAt(): number | null {
   try {
@@ -81,37 +74,6 @@ function readSessionDismissed(): boolean {
   } catch {
     return false;
   }
-}
-
-function readPersistedInstalledFlag(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (isRunningStandalone()) return true;
-  try {
-    if (localStorage.getItem(INSTALLED_STORAGE_KEY) === 'true') return true;
-  } catch {}
-  try {
-    if (typeof document !== 'undefined' && document.cookie.includes(`${INSTALLED_COOKIE_NAME}=downloaded`)) {
-      return true;
-    }
-  } catch {}
-  return false;
-}
-
-function persistConfirmedInstallFlag() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(INSTALLED_STORAGE_KEY, 'true');
-    const secureFlag = window.location?.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${INSTALLED_COOKIE_NAME}=downloaded; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax${secureFlag}`;
-  } catch {}
-}
-
-function clearConfirmedInstallFlag() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(INSTALLED_STORAGE_KEY);
-    document.cookie = `${INSTALLED_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
-  } catch {}
 }
 
 /**
@@ -166,20 +128,15 @@ export function syncDeviceRegistration(isInstalledApp?: boolean) {
 
 export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState<boolean>(() => readPersistedInstalledFlag());
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => isRunningStandalone());
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
   const [activeModalCount, setActiveModalCount] = useState<number>(0);
 
   const [sessionDismissed, setSessionDismissed] = useState<boolean>(() => readSessionDismissed());
-  const [, setPersistedDismissedAt] = useState<number | null>(() => readPersistedDismissedAt());
-  const [isReminderReady, setIsReminderReady] = useState<boolean>(false);
-
-  const reminderTimerStateRef = useRef<ActiveReminderState>({
-    accumulatedMs: 0,
-    visibleSinceMs:
-      typeof document !== 'undefined' && document.visibilityState === 'hidden' ? null : Date.now(),
-  });
+  const [persistedDismissedAt, setPersistedDismissedAt] = useState<number | null>(() =>
+    readPersistedDismissedAt()
+  );
 
   const compatibility = useMemo<PlatformCompatibilityInfo>(() => {
     if (typeof window === 'undefined') {
@@ -193,24 +150,30 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const isIOS = compatibility.platform === 'ios_safari';
 
-  const markInstalledConfirmed = useCallback(() => {
-    setIsInstalled(true);
-    setDeferredPrompt(null);
-    setIsModalOpen(false);
-    setIsReminderReady(false);
-    persistConfirmedInstallFlag();
-    syncDeviceRegistration(true);
-  }, []);
-
-  // 1. Detect installed/uninstalled transitions (standalone media query, related apps, beforeinstallprompt, appinstalled)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const standalone = isRunningStandalone();
-    if (standalone) {
-      markInstalledConfirmed();
-    }
+    const persistConfirmedInstallFlag = () => {
+      try {
+        localStorage.setItem('my_money_app_downloaded_confirmed', 'true');
+        const secureFlag = window.location?.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `mymoney_app_downloaded=downloaded; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax${secureFlag}`;
+      } catch {}
+    };
 
+    const updateStandalone = () => {
+      const standalone = isRunningStandalone();
+      if (standalone) {
+        setIsInstalled(true);
+        setDeferredPrompt(null);
+        setIsModalOpen(false);
+        persistConfirmedInstallFlag();
+      }
+    };
+
+    updateStandalone();
+
+    // Check installed related apps on Chromium where supported
     const navWithRelated = navigator as Navigator & {
       getInstalledRelatedApps?: () => Promise<Array<{ platform: string; url?: string }>>;
     };
@@ -219,14 +182,9 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         .getInstalledRelatedApps()
         .then((apps) => {
           if (Array.isArray(apps) && apps.length > 0) {
-            markInstalledConfirmed();
-          } else if (!isRunningStandalone()) {
-            // If Chromium confirms no installed related app and we are not standalone,
-            // allow uninstalled users to see install reminder if previously uninstalled.
-            if (localStorage.getItem(INSTALLED_STORAGE_KEY) === 'true' && apps.length === 0) {
-              clearConfirmedInstallFlag();
-              setIsInstalled(false);
-            }
+            setIsInstalled(true);
+            setDeferredPrompt(null);
+            persistConfirmedInstallFlag();
           }
         })
         .catch(() => {});
@@ -235,29 +193,30 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const standaloneMql = window.matchMedia?.('(display-mode: standalone)');
     const handleDisplayModeChange = (e: MediaQueryListEvent) => {
       if (e.matches) {
-        markInstalledConfirmed();
-      } else if (!isRunningStandalone()) {
-        clearConfirmedInstallFlag();
-        setIsInstalled(false);
+        setIsInstalled(true);
+        setDeferredPrompt(null);
+        setIsModalOpen(false);
+        persistConfirmedInstallFlag();
       }
     };
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       if (!isRunningStandalone()) {
-        // Browser fired beforeinstallprompt -> app is confirmed NOT currently installed!
-        // If previously installed & later uninstalled, allow reminder to appear again.
-        clearConfirmedInstallFlag();
-        setIsInstalled(false);
         setDeferredPrompt(e as BeforeInstallPromptEvent);
       }
     };
 
     const handleAppInstalled = () => {
-      markInstalledConfirmed();
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      setIsModalOpen(false);
+      persistConfirmedInstallFlag();
+      syncDeviceRegistration(true);
     };
 
-    syncDeviceRegistration(standalone);
+    // Register initial device and PWA installation state
+    syncDeviceRegistration(isRunningStandalone());
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
@@ -268,84 +227,34 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       window.removeEventListener('appinstalled', handleAppInstalled);
       standaloneMql?.removeEventListener?.('change', handleDisplayModeChange);
     };
-  }, [markInstalledConfirmed]);
-
-  // 2. Active-page 60-second timer (pauses when tab is hidden, persists across internal navigation, never repeats once ready)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (isInstalled || sessionDismissed) {
-      setIsReminderReady(false);
-      return;
-    }
-
-    let timerId: number | null = null;
-
-    const scheduleRemainingCheck = () => {
-      if (timerId !== null) {
-        window.clearTimeout(timerId);
-        timerId = null;
-      }
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        return;
-      }
-      const elapsed = getActiveElapsedMs(reminderTimerStateRef.current, Date.now());
-      const remaining = Math.max(0, ACTIVE_REMINDER_DELAY_MS - elapsed);
-      if (remaining <= 0) {
-        setIsReminderReady(true);
-        return;
-      }
-      timerId = window.setTimeout(() => {
-        setIsReminderReady(true);
-      }, remaining);
-    };
-
-    const handleVisibilityChange = () => {
-      const visible = document.visibilityState !== 'hidden';
-      reminderTimerStateRef.current = transitionActiveReminderVisibility(
-        reminderTimerStateRef.current,
-        visible,
-        Date.now()
-      );
-      scheduleRemainingCheck();
-    };
-
-    // Start / resume immediately while visible
-    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
-      reminderTimerStateRef.current = transitionActiveReminderVisibility(
-        reminderTimerStateRef.current,
-        true,
-        Date.now()
-      );
-    }
-    scheduleRemainingCheck();
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (timerId !== null) {
-        window.clearTimeout(timerId);
-      }
-    };
-  }, [isInstalled, sessionDismissed]);
+  }, []);
 
   const isInstallable = Boolean(deferredPrompt) && !isInstalled;
 
+  // Show the header Install App button ONLY when not installed AND either:
+  // 1) Browser fired native `beforeinstallprompt` (Chrome/Edge Desktop & Android), OR
+  // 2) Browser is Safari iOS/iPadOS or Safari macOS where manual Home Screen/Dock installation is supported.
   const canOfferInstall =
     !isInstalled &&
     (isInstallable ||
       compatibility.platform === 'ios_safari' ||
       compatibility.platform === 'macos_safari');
 
-  // Dismissal is per-visit (`sessionStorage`) + records dismissal timestamp preference (`localStorage`)
-  // separately from `isInstalled` so future visits re-prompt when still uninstalled.
-  const isBannerDismissed = sessionDismissed;
+  const isBannerDismissed = useMemo(
+    () =>
+      isInstallSuggestionSuppressed({
+        sessionDismissed,
+        persistedDismissedAt,
+        cooldownMs: DEFAULT_DISMISS_COOLDOWN_MS,
+      }),
+    [sessionDismissed, persistedDismissedAt]
+  );
 
   const dismissBanner = useCallback(() => {
     const now = Date.now();
     setSessionDismissed(true);
     setPersistedDismissedAt(now);
     setIsModalOpen(false);
-    setIsReminderReady(false);
     try {
       sessionStorage.setItem(SESSION_DISMISSED_KEY, 'true');
       localStorage.setItem(DISMISSED_STORAGE_KEY, String(now));
@@ -380,15 +289,17 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       try {
         await deferredPrompt.prompt();
         const choice = await deferredPrompt.userChoice;
+        // Per Chromium spec, each BeforeInstallPromptEvent can only be used once
         setDeferredPrompt(null);
 
         if (choice.outcome === 'accepted') {
+          // Wait for `appinstalled` to confirm, while closing our modal immediately.
+          // Note: We do NOT fake success if the user cancels.
           setIsModalOpen(false);
-          markInstalledConfirmed();
           return { status: 'accepted' };
         }
 
-        // User cancelled native dialog: hide without marking installed
+        // User dismissed/cancelled native prompt: do NOT mark installed; record dismissal
         dismissBanner();
         return { status: 'dismissed' };
       } catch (err) {
@@ -399,10 +310,16 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     }
 
-    setIsModalOpen(true);
-    return { status: 'manual_guide' };
-  }, [isInstalled, deferredPrompt, dismissBanner, markInstalledConfirmed]);
+    // Native prompt unavailable (e.g., iOS Safari, macOS Safari, or manual guide requested)
+    if (compatibility.supportsManualInstall) {
+      setIsModalOpen(true);
+      return { status: 'manual_guide' };
+    }
 
+    return { status: 'unavailable' };
+  }, [isInstalled, deferredPrompt, dismissBanner, compatibility.supportsManualInstall]);
+
+  // Promotional suggestion visibility (never shown if installed or dismissed)
   const isBannerVisible =
     canOfferInstall && !isBannerDismissed && !isScannerActive && activeModalCount === 0;
 
@@ -419,9 +336,7 @@ export const PwaInstallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         closeInstallModal,
         triggerInstallPrompt,
         isBannerDismissed,
-        isReminderReady,
         dismissBanner,
-        markInstalledConfirmed,
         isScannerActive,
         setScannerActive,
         activeModalCount,

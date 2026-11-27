@@ -46,7 +46,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const [currentSection, setCurrentSectionState] = React.useState<AdminSectionKey>(getInitialSection);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   // Keep state in sync with URL hash for deep-linking & back/forward navigation
   React.useEffect(() => {
@@ -61,21 +60,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, []);
 
   const setCurrentSection = (section: AdminSectionKey) => {
-    if (section !== 'users') {
-      setSelectedUserId(null);
-    }
     setCurrentSectionState(section);
     if (typeof window !== 'undefined') {
       window.location.hash = `#admin=${section}`;
-    }
-  };
-
-  const handleOpenUserFromNotification = (userId: string) => {
-    if (!userId) return;
-    setSelectedUserId(userId);
-    setCurrentSectionState('users');
-    if (typeof window !== 'undefined') {
-      window.location.hash = '#admin=users';
     }
   };
 
@@ -134,25 +121,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       case 'dashboard':
         return <AdminOverviewTab />;
       case 'users':
-        return (
-          <AdminUsersTab
-            initialStatusFilter="all"
-            selectedUserId={selectedUserId}
-            onClearSelectedUser={() => setSelectedUserId(null)}
-          />
-        );
+        return <AdminUsersTab initialStatusFilter="all" />;
       case 'installed_devices':
         return <AdminInstalledDevicesTab />;
       case 'admins':
         return <AdminAccountsTab />;
       case 'activity':
-        return (
-          <AdminUsersTab
-            initialStatusFilter="all"
-            selectedUserId={selectedUserId}
-            onClearSelectedUser={() => setSelectedUserId(null)}
-          />
-        );
+        return <AdminUsersTab initialStatusFilter="all" />;
       case 'financial_access':
         return <AdminFinancialAccessTab />;
       case 'transactions':
@@ -170,7 +145,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       case 'email_templates':
         return <AdminEmailsTab initialSubView="templates" />;
       case 'notifications':
-        return <AdminNotificationsTab onOpenUser={handleOpenUserFromNotification} />;
+        return <AdminNotificationsTab />;
       case 'support':
         return <AdminSupportTab />;
       case 'legal':
@@ -201,7 +176,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     <AdminLayout
       currentSection={currentSection}
       onSelectSection={setCurrentSection}
-      onOpenUser={handleOpenUserFromNotification}
       onExitAdmin={onExit}
     >
       {renderSectionContent()}

@@ -15,10 +15,6 @@ import {
   createBroadcastBannerFallback,
   updateCampaignFallback,
   listCampaignsFallback,
-  listAdminNotificationsFallback,
-  recordAdminNotificationFallback,
-  markAdminNotificationReadFallback,
-  markAllAdminNotificationsReadFallback,
   sbRestRequest,
 } from './supabaseRestFallback.js';
 
@@ -2431,13 +2427,8 @@ export interface AdminNotificationRecord {
   title: string;
   message: string;
   user_id?: string;
-  user_name?: string;
   user_email?: string;
-  registered_at?: string;
-  registration_status?: string;
-  dedupe_key?: string;
   metadata?: Record<string, any>;
-  status?: 'unread' | 'read';
   is_read: boolean;
   read_at?: string | null;
   created_at: string;
@@ -2461,116 +2452,36 @@ export async function recordAdminNotification(params: {
   title: string;
   message: string;
   userId?: string;
-  userName?: string;
   userEmail?: string;
-  registeredAt?: string;
-  registrationStatus?: string;
-  dedupeKey?: string;
   metadata?: Record<string, any>;
 }): Promise<boolean> {
-  const {
-    eventType,
-    title,
-    message,
-    userId,
-    userName,
-    userEmail,
-    registeredAt,
-    registrationStatus = 'active',
-    dedupeKey,
-    metadata = {},
-  } = params;
-
-  const effectiveDedupeKey =
-    dedupeKey || (eventType === 'new_user' && userId ? `new_user:${userId}` : undefined);
-
-  if (effectiveDedupeKey) {
-    const existingLocal = localAdminNotifications.find((n) => n.dedupe_key === effectiveDedupeKey);
-    if (existingLocal) return true;
-  }
-
-  const nowIso = new Date().toISOString();
-  const effectiveRegisteredAt = registeredAt || metadata.registeredAt || nowIso;
-  const enrichedMetadata = {
-    ...metadata,
-    userName: userName || metadata.userName || null,
-    userEmail: userEmail || metadata.userEmail || null,
-    userId: userId || metadata.userId || null,
-    registeredAt: effectiveRegisteredAt,
-    registrationStatus: registrationStatus || metadata.registrationStatus || 'active',
-    dedupeKey: effectiveDedupeKey || null,
-  };
+  const { eventType, title, message, userId, userEmail, metadata = {} } = params;
 
   const localRecord: AdminNotificationRecord = {
-    id: crypto.randomUUID(),
+    id: `anot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     event_type: eventType,
     title,
     message,
     user_id: userId,
-    user_name: userName || metadata.userName,
     user_email: userEmail,
-    registered_at: effectiveRegisteredAt,
-    registration_status: registrationStatus,
-    dedupe_key: effectiveDedupeKey,
-    metadata: enrichedMetadata,
-    status: 'unread',
+    metadata,
     is_read: false,
-    read_at: null,
-    created_at: nowIso,
+    created_at: new Date().toISOString(),
   };
-
-  const fbResult = await recordAdminNotificationFallback({
-    id: localRecord.id,
-    dedupe_key: effectiveDedupeKey,
-    event_type: eventType,
-    title,
-    message,
-    user_id: userId || null,
-    user_name: localRecord.user_name || null,
-    user_email: userEmail || null,
-    registered_at: effectiveRegisteredAt,
-    registration_status: registrationStatus,
-    metadata: enrichedMetadata,
-    is_read: false,
-    read_at: null,
-    created_at: nowIso,
-  });
-
-  if (fbResult.deduplicated) {
-    return true;
-  }
-
   localAdminNotifications.unshift(localRecord);
 
-  if (isDatabaseAvailable()) {
-    try {
-      if (effectiveDedupeKey) {
-        const dup = await query(
-          `SELECT id FROM public.admin_notifications WHERE event_type = $1 AND user_id = $2 LIMIT 1`,
-          [eventType, userId || null]
-        );
-        if (dup.rows.length > 0) return true;
-      }
-      await query(
-        `INSERT INTO public.admin_notifications
-         (id, event_type, title, message, user_id, user_email, metadata, is_read, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())`,
-        [
-          localRecord.id,
-          eventType,
-          title,
-          message,
-          userId || null,
-          userEmail || null,
-          JSON.stringify(enrichedMetadata),
-        ]
-      );
-    } catch {
-      // Already tracked in fallback JSON + Supabase REST + localAdminNotifications
-    }
+  try {
+    await query(
+      `INSERT INTO public.admin_notifications
+       (event_type, title, message, user_id, user_email, metadata, is_read, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())`,
+      [eventType, title, message, userId || null, userEmail || null, JSON.stringify(metadata)]
+    );
+  } catch {
+    // Already tracked in localAdminNotifications
   }
 
-  // Check admin alert preference before dispatching live push/in-app copy to admin accounts
+  // Check admin alert preference & quiet hours before dispatching live push to admins
   const prefs = await getAdminNotificationPreferences();
   const isAlertEnabled =
     (eventType === 'new_user' && prefs.alert_new_user_registration) ||
@@ -2605,13 +2516,9 @@ export async function recordAdminNotification(params: {
         message,
         category: 'security',
         type: eventType === 'critical_alert' ? 'error' : 'info',
-        relatedEntityType: eventType === 'new_user' ? 'user_registration' : undefined,
-        relatedEntityId: userId,
-        dedupeKey: effectiveDedupeKey ? `admin:${a.id}:${effectiveDedupeKey}` : undefined,
         channels: prefs.delivery_channel === 'inapp_only' ? ['in_app'] : ['in_app', 'push'],
         deepLink: 'admin',
         skipPreferenceCheck: true,
-        metadata: enrichedMetadata,
       }).catch(() => {});
     }
   } catch {}
@@ -2619,105 +2526,46 @@ export async function recordAdminNotification(params: {
   return true;
 }
 
-function normalizeAdminNotificationRow(row: any): AdminNotificationRecord {
-  const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-  const isRead = Boolean(row?.is_read);
-  return {
-    id: String(row.id),
-    event_type: row.event_type,
-    title: row.title,
-    message: row.message,
-    user_id: row.user_id || meta.userId || undefined,
-    user_name: row.user_name || meta.userName || undefined,
-    user_email: row.user_email || meta.userEmail || undefined,
-    registered_at: row.registered_at || meta.registeredAt || row.created_at,
-    registration_status: row.registration_status || meta.registrationStatus || 'active',
-    dedupe_key: row.dedupe_key || meta.dedupeKey || undefined,
-    metadata: meta,
-    status: isRead ? 'read' : 'unread',
-    is_read: isRead,
-    read_at: row.read_at || null,
-    created_at: row.created_at,
-  };
-}
-
 export async function getAdminNotifications(limit = 50): Promise<AdminNotificationRecord[]> {
-  const merged = new Map<string, AdminNotificationRecord>();
-
-  if (isDatabaseAvailable()) {
-    try {
-      const res = await query(
-        `SELECT * FROM public.admin_notifications
-         ORDER BY created_at DESC
-         LIMIT $1`,
-        [limit]
-      );
-      for (const r of res.rows || []) {
-        const norm = normalizeAdminNotificationRow(r);
-        merged.set(norm.id, norm);
-      }
-    } catch {}
-  }
-
-  const fbRows = await listAdminNotificationsFallback(limit).catch(() => []);
-  for (const r of fbRows) {
-    const norm = normalizeAdminNotificationRow(r);
-    if (!merged.has(norm.id)) {
-      merged.set(norm.id, norm);
+  try {
+    const res = await query(
+      `SELECT * FROM public.admin_notifications
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    if (res.rows && res.rows.length > 0) {
+      return res.rows;
     }
-  }
-
-  for (const r of localAdminNotifications) {
-    const norm = normalizeAdminNotificationRow(r);
-    if (!merged.has(norm.id)) {
-      merged.set(norm.id, norm);
-    }
-  }
-
-  return Array.from(merged.values())
-    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-    .slice(0, limit);
+  } catch {}
+  return localAdminNotifications.slice(0, limit);
 }
 
 export async function markAdminNotificationRead(id: string): Promise<boolean> {
-  if (!id) return false;
-  const nowIso = new Date().toISOString();
-
-  const found = localAdminNotifications.find((n) => n.id === id);
-  if (found) {
-    found.is_read = true;
-    found.status = 'read';
-    found.read_at = found.read_at || nowIso;
+  try {
+    await query(
+      `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
+      [id]
+    );
+  } catch {
+    const found = localAdminNotifications.find((n) => n.id === id);
+    if (found) {
+      found.is_read = true;
+      found.read_at = new Date().toISOString();
+    }
   }
-
-  if (isDatabaseAvailable()) {
-    try {
-      await query(
-        `UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE id = $1`,
-        [id]
-      );
-    } catch {}
-  }
-
-  await markAdminNotificationReadFallback(id).catch(() => false);
   return true;
 }
 
 export async function markAllAdminNotificationsRead(): Promise<boolean> {
-  const nowIso = new Date().toISOString();
-  localAdminNotifications.forEach((n) => {
-    n.is_read = true;
-    n.status = 'read';
-    n.read_at = n.read_at || nowIso;
-  });
-
-  if (isDatabaseAvailable()) {
-    try {
-      await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
-    } catch {}
+  try {
+    await query(`UPDATE public.admin_notifications SET is_read = TRUE, read_at = NOW() WHERE is_read = FALSE`);
+  } catch {
+    localAdminNotifications.forEach((n) => {
+      n.is_read = true;
+      n.read_at = new Date().toISOString();
+    });
   }
-
-  await markAllAdminNotificationsReadFallback().catch(() => 0);
   return true;
 }
 
@@ -2783,7 +2631,7 @@ export async function dispatchNewUserWelcomeNotification(params: {
   userId: string;
   fullName?: string | null;
   email: string;
-  provider?: 'email' | 'google' | 'passkey';
+  provider?: 'email' | 'google';
 }): Promise<{ success: boolean; notificationId?: string; deduplicated?: boolean }> {
   const firstName =
     String(params.fullName || '')
@@ -2795,7 +2643,7 @@ export async function dispatchNewUserWelcomeNotification(params: {
   return createNotification({
     userId: params.userId,
     title: 'Welcome to My Money Manager!',
-    message: `Welcome to My Money Manager, ${firstName}! Your account is ready — track income & expenses, manage transactions, use UPI QR, settle Udhar, and explore financial reports.`,
+    message: `Hi ${firstName}, your account is ready! Start tracking daily expenses, managing room budgets, scanning receipts, and settling Udhar via QR.`,
     category: 'system',
     type: 'success',
     relatedEntityType: 'user_registration',
