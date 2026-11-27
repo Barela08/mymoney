@@ -422,15 +422,15 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
       const showContactHint = isConnected || isSelf;
       return {
         id: u.id,
-        displayName: u.full_name || u.username || 'My Money User',
-        fullName: u.full_name || u.username || 'My Money User',
-        username: u.username || null,
+        displayName: u.full_name || (u.email ? u.email.split('@')[0] : 'My Money User'),
+        fullName: u.full_name || (u.email ? u.email.split('@')[0] : 'My Money User'),
+        username: u.email ? u.email.split('@')[0] : null,
         accountIndicator: 'My Money Manager Account',
         emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : undefined,
         phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
         avatarUrl: u.avatar_url || null,
         isSelf,
-        isVerified: Boolean(u.is_verified ?? true),
+        isVerified: Boolean(u.email_verified ?? true),
         connectionStatus,
         requestId: connEntry?.requestId || null,
         isAlreadyConnected: isConnected,
@@ -460,7 +460,7 @@ export async function connectUserRest(
   }
 
   const targetRes = await sbRest<any[]>(
-    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified`
+    `app_users?id=eq.${encodeURIComponent(targetUserId)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified`
   );
   if (!targetRes.ok || !targetRes.data || targetRes.data.length === 0) {
     return { status: 404, body: { success: false, code: 'NOT_FOUND', message: 'User account not found.' } };

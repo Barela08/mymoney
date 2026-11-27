@@ -89436,7 +89436,7 @@ async function fetchUsersByIds(ids) {
   if (uniqueIds.length === 0) return map2;
   const inList = uniqueIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
   const res = await sbRest(
-    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username`
+    `app_users?id=in.(${encodeURIComponent(inList)})&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified`
   );
   if (res.ok && Array.isArray(res.data)) {
     for (const u of res.data) {
@@ -89599,13 +89599,13 @@ async function searchUsersRest(authUser, rawQuery) {
   const escaped = classified.normalized.replace(/[%*,()]/g, "");
   let queryPath = "";
   if (classified.mode === "email_exact") {
-    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=5`;
+    queryPath = `app_users?status=eq.active&email=ilike.${encodeURIComponent(escaped)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified,role&limit=5`;
   } else if (classified.mode === "phone_exact") {
     const tail = classified.last10Digits;
-    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&limit=15`;
+    queryPath = `app_users?status=eq.active&or=(phone.ilike.*${encodeURIComponent(tail)}*,phone.ilike.*${encodeURIComponent(classified.digitsOnly)}*)&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified,role&limit=15`;
   } else {
-    const orClauses = [`full_name.ilike.*${escaped}*`, `username.ilike.*${escaped}*`];
-    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified,username,role&order=full_name.asc&limit=20`;
+    const orClauses = [`full_name.ilike.*${escaped}*`, `email.ilike.*${escaped}*`];
+    queryPath = `app_users?status=eq.active&or=(${encodeURIComponent(orClauses.join(","))})&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified,role&order=full_name.asc&limit=20`;
   }
   const usersRes = await sbRest(queryPath);
   if (!usersRes.ok) {
@@ -89673,15 +89673,15 @@ async function searchUsersRest(authUser, rawQuery) {
     const showContactHint = isConnected || isSelf;
     return {
       id: u.id,
-      displayName: u.full_name || u.username || "My Money User",
-      fullName: u.full_name || u.username || "My Money User",
-      username: u.username || null,
+      displayName: u.full_name || (u.email ? u.email.split("@")[0] : "My Money User"),
+      fullName: u.full_name || (u.email ? u.email.split("@")[0] : "My Money User"),
+      username: u.email ? u.email.split("@")[0] : null,
       accountIndicator: "My Money Manager Account",
       emailMasked: showContactHint ? maskEmailForPrivacy(u.email) : void 0,
       phoneMasked: showContactHint ? maskPhoneForPrivacy(u.phone) : null,
       avatarUrl: u.avatar_url || null,
       isSelf,
-      isVerified: Boolean(u.is_verified ?? true),
+      isVerified: Boolean(u.email_verified ?? true),
       connectionStatus,
       requestId: connEntry?.requestId || null,
       isAlreadyConnected: isConnected,
