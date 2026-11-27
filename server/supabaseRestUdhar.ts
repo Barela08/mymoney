@@ -1533,7 +1533,7 @@ export async function resolveQrRest(authUser: AuthenticatedUser, body: any) {
   }
 
   const userRes = await sbRest<any[]>(
-    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,is_verified&limit=1`
+    `app_users?id=eq.${encodeURIComponent(qrRecord.user_id)}&select=id,full_name,email,phone,avatar_url,status,deletion_status,email_verified&limit=1`
   );
   if (!userRes.ok || !userRes.data || userRes.data.length === 0) {
     return {
