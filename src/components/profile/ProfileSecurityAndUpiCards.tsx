@@ -546,7 +546,7 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
         )}
       </div>
 
-      {/* 3. Active Login Devices (Strict Max 3 Concurrent Logins) */}
+      {/* 3. Logged-in Devices (Strict Max 3 Concurrent Logins) */}
       <div
         data-testid="settings-active-sessions-card"
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4"
@@ -558,7 +558,7 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
             </div>
             <div>
               <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
-                <span>Active Login Devices</span>
+                <span>Logged-in Devices</span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                     sessions.length >= maxSessions
@@ -570,20 +570,34 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
                 </span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Your account can stay logged in at up to {maxSessions} places at a time. Remotely log out any device anytime.
+                Your account allows a maximum of 3 active devices. Review and manage your active sessions below.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={refreshSessionsOnly}
-            disabled={sessionsLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer self-start sm:self-auto disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${sessionsLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {sessions.filter((s) => !s.isCurrent).length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsConfirmRevokeAllOtherOpen(true)}
+                disabled={isRevokingAllOther || sessionsLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Logout all other devices</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={refreshSessionsOnly}
+              disabled={sessionsLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${sessionsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
         </div>
 
         {sessionsFeedback && (
@@ -647,14 +661,30 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
                         <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                           {sess.deviceName}
                         </p>
-                        {sess.isCurrent && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white">
-                            This Device
-                          </span>
-                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            sess.isCurrent
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {sess.isCurrent ? 'Current Device' : 'Active'}
+                        </span>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        {sess.ipAddress ? `IP: ${sess.ipAddress} · ` : ''}
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          Browser: {sess.browser || 'Browser'}
+                        </span>
+                        {sess.os ? <span> · OS: {sess.os}</span> : null}
+                        {sess.ipAddress ? ` · IP: ${sess.ipAddress}` : ''}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Logged in:{' '}
+                        {new Date(sess.createdAt).toLocaleString('en-IN', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                        {' · '}
                         Last active:{' '}
                         {activityDate
                           ? new Date(activityDate).toLocaleString('en-IN', {
@@ -668,7 +698,7 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => handleRevokeSession(sess)}
+                    onClick={() => setSessionToRevoke(sess)}
                     disabled={revokingSessionId === sess.id}
                     data-testid={`logout-session-btn-${sess.id}`}
                     className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 border border-rose-200 dark:border-rose-900 shrink-0 cursor-pointer disabled:opacity-50"
@@ -678,7 +708,7 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
                     ) : (
                       <LogOut className="w-3.5 h-3.5" />
                     )}
-                    <span>{sess.isCurrent ? 'Sign Out' : 'Log Out'}</span>
+                    <span>{sess.isCurrent ? 'Logout from this device' : 'Logout'}</span>
                   </button>
                 </div>
               );
@@ -686,6 +716,42 @@ export const ProfileSecurityAndUpiCards: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Single Session Revoke Confirmation Modal */}
+      {sessionToRevoke && (
+        <ConfirmModal
+          isOpen={true}
+          title={sessionToRevoke.isCurrent ? 'Log Out From This Device?' : 'Terminate Remote Session?'}
+          message={`Are you sure you want to log out ${sessionToRevoke.deviceName}? ${
+            sessionToRevoke.isCurrent
+              ? 'You will be signed out from this browser immediately.'
+              : 'That device will lose access and be forced to sign in again on its next interaction.'
+          }`}
+          confirmLabel={sessionToRevoke.isCurrent ? 'Sign Out Now' : 'Terminate Device Session'}
+          cancelLabel="Cancel"
+          isDestructive={true}
+          onConfirm={() => {
+            const target = sessionToRevoke;
+            setSessionToRevoke(null);
+            void handleRevokeSession(target);
+          }}
+          onCancel={() => setSessionToRevoke(null)}
+        />
+      )}
+
+      {/* Logout All Other Devices Confirmation Modal */}
+      {isConfirmRevokeAllOtherOpen && (
+        <ConfirmModal
+          isOpen={true}
+          title="Logout From All Other Devices?"
+          message="Are you sure you want to log out of all other active sessions? Only this current device will stay logged in."
+          confirmLabel="Logout All Others"
+          cancelLabel="Cancel"
+          isDestructive={true}
+          onConfirm={handleLogoutAllOtherDevices}
+          onCancel={() => setIsConfirmRevokeAllOtherOpen(false)}
+        />
+      )}
 
       {/* UPI Setup / Edit Modal */}
       <UpiSetupModal
