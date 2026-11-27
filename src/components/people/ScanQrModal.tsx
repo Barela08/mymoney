@@ -113,6 +113,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   const streamGenerationRef = useRef<number>(0);
   const lastDecodeAtRef = useRef<number>(0);
   const lastScannedPayloadRef = useRef<{ data: string; at: number } | null>(null);
+  const barcodeDetectorRef = useRef<any>(null);
 
   useEffect(() => {
     setScannerActive(isOpen);
@@ -289,55 +290,87 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     [toast]
   );
 
-  // Frame scanning loop (downscaled to max 640px for fast mobile/PWA QR decoding)
+  // Frame scanning loop (supports native hardware BarcodeDetector + jsQR fallback)
   const scanFrame = useCallback(function tick() {
-    if (!isScanningActiveRef.current || !videoRef.current || !canvasRef.current) return;
+    if (!isScanningActiveRef.current || !videoRef.current) return;
 
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      animFrameRef.current = requestAnimationFrame(tick);
+      return;
+    }
 
-    if (ctx && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
-      const now = performance.now();
-      if (now - lastDecodeAtRef.current < 120) {
-        animFrameRef.current = requestAnimationFrame(tick);
-        return;
+    const now = performance.now();
+    if (now - lastDecodeAtRef.current < 100) {
+      animFrameRef.current = requestAnimationFrame(tick);
+      return;
+    }
+    lastDecodeAtRef.current = now;
+
+    // 1. Hardware-accelerated BarcodeDetector (Chrome / Android / Chromium webviews)
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      if (!barcodeDetectorRef.current) {
+        try {
+          barcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+        } catch {
+          barcodeDetectorRef.current = null;
+        }
       }
-      lastDecodeAtRef.current = now;
 
-      const maxDim = Math.max(video.videoWidth, video.videoHeight);
-      const scale = maxDim > 640 ? 640 / maxDim : 1;
-      const targetW = Math.max(1, Math.round(video.videoWidth * scale));
-      const targetH = Math.max(1, Math.round(video.videoHeight * scale));
+      if (barcodeDetectorRef.current) {
+        barcodeDetectorRef.current
+          .detect(video)
+          .then((barcodes: any[]) => {
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              const raw = barcodes[0].rawValue;
+              const last = lastScannedPayloadRef.current;
+              if (last && last.data === raw && Date.now() - last.at < 2000) return;
+              lastScannedPayloadRef.current = { data: raw, at: Date.now() };
+              stopCamera();
+              void resolveRawInput(raw);
+            }
+          })
+          .catch(() => {});
+      }
+    }
 
-      if (canvas.width !== targetW) canvas.width = targetW;
-      if (canvas.height !== targetH) canvas.height = targetH;
+    // 2. Pure Canvas + jsQR fallback (iOS Safari / Firefox / Desktop)
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        const maxDim = Math.max(video.videoWidth, video.videoHeight);
+        const scale = maxDim > 640 ? 640 / maxDim : 1;
+        const targetW = Math.max(1, Math.round(video.videoWidth * scale));
+        const targetH = Math.max(1, Math.round(video.videoHeight * scale));
 
-      ctx.drawImage(video, 0, 0, targetW, targetH);
+        if (canvas.width !== targetW) canvas.width = targetW;
+        if (canvas.height !== targetH) canvas.height = targetH;
 
-      const imageData = ctx.getImageData(0, 0, targetW, targetH);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'attemptBoth',
-      });
+        ctx.drawImage(video, 0, 0, targetW, targetH);
+        const imageData = ctx.getImageData(0, 0, targetW, targetH);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth',
+        });
 
-      if (code && code.data) {
-        const last = lastScannedPayloadRef.current;
-        if (last && last.data === code.data && Date.now() - last.at < 2000) {
-          animFrameRef.current = requestAnimationFrame(tick);
+        if (code && code.data) {
+          const last = lastScannedPayloadRef.current;
+          if (last && last.data === code.data && Date.now() - last.at < 2000) {
+            animFrameRef.current = requestAnimationFrame(tick);
+            return;
+          }
+          lastScannedPayloadRef.current = { data: code.data, at: Date.now() };
+          stopCamera();
+          void resolveRawInput(code.data);
           return;
         }
-        lastScannedPayloadRef.current = { data: code.data, at: Date.now() };
-        stopCamera();
-        void resolveRawInput(code.data);
-        return;
       }
     }
 
     animFrameRef.current = requestAnimationFrame(tick);
   }, [stopCamera, resolveRawInput]);
 
-  // Start camera with progressive fallback and race protection.
-  // Only a real getUserMedia failure is reported as a camera problem.
+  // Start camera with progressive fallback ladder and race protection.
   const startCamera = useCallback(
     async (deviceIdOverride?: string | null, facingModeOverride?: 'environment' | 'user') => {
       stopCamera();
@@ -368,24 +401,66 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
       const targetFacing = facingModeOverride || facingMode;
 
       try {
-        let stream: MediaStream | null = null;
+        const attempts: MediaStreamConstraints[] = [];
 
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
+        // Attempt A: target deviceId if available
+        if (targetDeviceId) {
+          attempts.push({
             audio: false,
-            video: targetDeviceId
-              ? { deviceId: { exact: targetDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-              : { facingMode: { ideal: targetFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            video: { deviceId: { exact: targetDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
           });
-        } catch {
+          attempts.push({
+            audio: false,
+            video: { deviceId: { exact: targetDeviceId } },
+          });
+        }
+
+        // Attempt B: desired facingMode with ideal 720p
+        attempts.push({
+          audio: false,
+          video: { facingMode: { ideal: targetFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+
+        // Attempt C: desired facingMode loose
+        attempts.push({
+          audio: false,
+          video: { facingMode: { ideal: targetFacing } },
+        });
+
+        // Attempt D: opposite facingMode (webcams, front-camera only laptops, external cameras)
+        attempts.push({
+          audio: false,
+          video: { facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' } },
+        });
+
+        // Attempt E: any available video input
+        attempts.push({
+          audio: false,
+          video: true,
+        });
+
+        let stream: MediaStream | null = null;
+        let lastErr: any = null;
+
+        for (const constraints of attempts) {
           try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: false,
-              video: { facingMode: targetFacing },
-            });
-          } catch {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            if (stream) break;
+          } catch (e: any) {
+            lastErr = e;
+            // Stop cascading if user explicitly dismissed or denied camera permission
+            if (
+              e?.name === 'NotAllowedError' ||
+              e?.name === 'PermissionDeniedError' ||
+              e?.name === 'SecurityError'
+            ) {
+              break;
+            }
           }
+        }
+
+        if (!stream) {
+          throw lastErr || new Error('Could not start camera stream.');
         }
 
         // A newer start (or a close) happened while we waited for permission.
@@ -400,6 +475,15 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           setCurrentDeviceId(videoTrack.getSettings().deviceId || null);
         }
         setSupportsTorch(Boolean(videoTrack?.getCapabilities && "torch" in (videoTrack.getCapabilities() as any)));
+
+        if (videoTrack) {
+          videoTrack.onended = () => {
+            if (generation === streamGenerationRef.current) {
+              setCameraStatus('idle');
+              setCameraError('Camera stream was closed or disconnected.');
+            }
+          };
+        }
 
         let video = videoRef.current;
         if (!video) {
@@ -418,6 +502,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         video.srcObject = stream;
         video.setAttribute('playsinline', 'true');
         video.setAttribute('webkit-playsinline', 'true');
+        (video as any).playsInline = true;
+        (video as any).autoplay = true;
         video.muted = true;
 
         // Wait for real frame dimensions before decoding anything.
@@ -425,7 +511,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
           if (video && video.readyState >= 1) return resolve();
           const done = () => resolve();
           video?.addEventListener('loadedmetadata', done, { once: true });
-          setTimeout(done, 2000);
+          setTimeout(done, 1500);
         });
 
         if (video) {
@@ -444,7 +530,11 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         setIsScanningPaused(false);
         scanFrame();
 
-        await refreshDevices();
+        try {
+          await refreshDevices();
+        } catch {
+          // ignore
+        }
       } catch (err: any) {
         if (generation !== streamGenerationRef.current) return;
         const isPermissionDenied =
@@ -565,34 +655,88 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    const selectedFile = file;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0, img.width, img.height);
-        const imageData = ctx.getImageData(0, 0, img.width, img.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
+    setIsResolving(true);
+    setScanError(null);
 
-        if (code && code.data) {
-          void resolveRawInput(code.data);
-        } else {
-          setScanError({
-            title: 'QR Not Detected',
-            message:
-              'Could not decode a QR code from this image. Try a clearer screenshot or enter the pairing code manually.',
-          });
-          toast.error('QR Not Detected', 'Could not find a valid QR code in this image.');
-        }
+    // 1. If BarcodeDetector is available, try fast native bitmap decode
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      try {
+        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+        createImageBitmap(selectedFile)
+          .then((bitmap) => detector.detect(bitmap))
+          .then((barcodes: any[]) => {
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              setIsResolving(false);
+              void resolveRawInput(barcodes[0].rawValue);
+              return;
+            }
+            fallbackCanvasDecode();
+          })
+          .catch(() => fallbackCanvasDecode());
+        return;
+      } catch {
+        // Fall back to canvas
+      }
+    }
+
+    fallbackCanvasDecode();
+
+    function fallbackCanvasDecode() {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = Math.max(img.width, img.height);
+          const scales = [1, 1000 / maxDim, 600 / maxDim].filter(
+            (s, idx, arr) => s <= 1 && (idx === 0 || s < arr[idx - 1] - 0.1)
+          );
+
+          let decodedCode: string | null = null;
+          for (const scale of scales) {
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) continue;
+            ctx.drawImage(img, 0, 0, w, h);
+            const imageData = ctx.getImageData(0, 0, w, h);
+            const code = jsQR(imageData.data, w, h, {
+              inversionAttempts: 'attemptBoth',
+            });
+            if (code && code.data) {
+              decodedCode = code.data;
+              break;
+            }
+          }
+
+          setIsResolving(false);
+          if (decodedCode) {
+            void resolveRawInput(decodedCode);
+          } else {
+            setScanError({
+              title: 'QR Not Detected',
+              message:
+                'Could not decode a QR code from this image. Try a clearer screenshot or enter the pairing code manually.',
+            });
+            toast.error('QR Not Detected', 'Could not find a valid QR code in this image.');
+          }
+        };
+        img.onerror = () => {
+          setIsResolving(false);
+          toast.error('Image Error', 'Failed to read the selected image file.');
+        };
+        img.src = event.target?.result as string;
       };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+      reader.onerror = () => {
+        setIsResolving(false);
+        toast.error('File Error', 'Failed to read the selected file.');
+      };
+      reader.readAsDataURL(selectedFile);
+    }
   };
 
   const handleManualCodeSubmit = async (e: React.FormEvent) => {
@@ -1319,28 +1463,48 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
                 {cameraError ? (
                   <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-xs text-amber-800 dark:text-amber-300 space-y-3">
-                    <p className="leading-relaxed">{cameraError}</p>
+                    <div className="flex items-start gap-2">
+                      <CameraOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-bold leading-snug">{cameraError}</p>
+                        <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                          If camera access is blocked in your browser, tap 🔒 in the address bar to allow Camera, or use an alternative method below:
+                        </p>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2 flex-wrap pt-1">
                       <button
                         type="button"
-                        onClick={() => void startCamera()}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors cursor-pointer"
+                        onClick={() => {
+                          setCurrentDeviceId(null);
+                          void startCamera(null);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                       >
-                        Retry Camera
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Retry Camera</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => setActiveTab('upload')}
-                        className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-[11px] transition-colors cursor-pointer"
+                        onClick={() => {
+                          setActiveTab('upload');
+                          setScanError(null);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold text-[11px] transition-colors flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs"
                       >
-                        Upload QR Image
+                        <Upload className="w-3.5 h-3.5 text-blue-500" />
+                        <span>Upload QR Image</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => setActiveTab('code')}
-                        className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-[11px] transition-colors cursor-pointer"
+                        onClick={() => {
+                          setActiveTab('code');
+                          setScanError(null);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold text-[11px] transition-colors flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs"
                       >
-                        Enter Code Manually
+                        <Keyboard className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Enter Code Manually</span>
                       </button>
                     </div>
                   </div>
