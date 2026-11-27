@@ -53,10 +53,10 @@ export const QrSuccessModal: React.FC<QrSuccessModalProps> = ({
             Connection Established
           </span>
           <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-2">
-            Mutual Link Active!
+            Connection Added Successfully
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            You and <strong>{connectedPerson.name}</strong> are now linked for instant two-way Udhar sync.
+            <strong>{connectedPerson.name}</strong> has been added to your Saved People.
           </p>
         </div>
 

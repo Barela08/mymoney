@@ -1,7 +1,11 @@
 import crypto from 'crypto';
 import { isDiscoverableNormalUser, type AuthenticatedUser } from './auth.js';
 import { purgeUdharNotificationsFallback } from './supabaseRestFallback.js';
-import { createNotification } from './notificationService.js';
+import {
+  createNotification,
+  notifyQrConnected,
+  updateConnectionRequestNotificationsState,
+} from './notificationService.js';
 import {
   normalizeSearchQuery,
   classifyLiveSearchQuery,
@@ -178,17 +182,45 @@ async function isBlockedBetween(userAId: string, userBId: string): Promise<boole
 async function upsertUserConnectionRest(
   userAId: string,
   userBId: string,
-  status: 'pending' | 'connected' | 'rejected'
+  status: 'pending' | 'connected' | 'rejected' | 'cancelled' | 'deleted',
+  meta?: {
+    relationship_type?: string;
+    requested_via?: string;
+    connection_method?: string;
+    consented_at?: string | null;
+    responded_at?: string | null;
+    cancelled_at?: string | null;
+    deleted_at?: string | null;
+    deleted_by?: string | null;
+  }
 ): Promise<{ ok: boolean; status: number; data: any[] | null; error?: string }> {
-  const res = await sbRest<any[]>('user_connections?on_conflict=user_a_id,user_b_id', {
+  const nowIso = new Date().toISOString();
+  const baseBody = { user_a_id: userAId, user_b_id: userBId, status };
+  const cleanMeta: Record<string, any> = {};
+  if (meta) {
+    for (const [k, v] of Object.entries(meta)) {
+      if (v !== undefined) cleanMeta[k] = v;
+    }
+    cleanMeta.updated_at = nowIso;
+  }
+  const fullBody = { ...baseBody, ...cleanMeta };
+
+  let res = await sbRest<any[]>('user_connections?on_conflict=user_a_id,user_b_id', {
     method: 'POST',
     prefer: 'resolution=merge-duplicates,return=representation',
-    body: { user_a_id: userAId, user_b_id: userBId, status },
+    body: fullBody,
   });
+  if (!res.ok && res.status === 400 && Object.keys(cleanMeta).length > 0 && !String(res.error || '').includes('23514')) {
+    res = await sbRest<any[]>('user_connections?on_conflict=user_a_id,user_b_id', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=representation',
+      body: baseBody,
+    });
+  }
   if (res.ok) return res;
 
   const errText = String(res.error || '');
-  // If database rejects 'pending' via check constraint, let caller handle legacy fallback
+  // If database rejects status via check constraint, let caller handle cleanly
   if (errText.includes('user_connections_status_check') || errText.includes('23514')) {
     return res;
   }
@@ -198,18 +230,34 @@ async function upsertUserConnectionRest(
     `user_connections?user_a_id=eq.${encodeURIComponent(userAId)}&user_b_id=eq.${encodeURIComponent(userBId)}&select=id,status&limit=1`
   );
   if (existing.ok && existing.data && existing.data.length > 0) {
-    return sbRest<any[]>(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+    let patchRes = await sbRest<any[]>(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
       method: 'PATCH',
       prefer: 'return=representation',
-      body: { status },
+      body: { status, ...cleanMeta },
     });
+    if (!patchRes.ok && patchRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(patchRes.error || '').includes('23514')) {
+      patchRes = await sbRest<any[]>(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: { status },
+      });
+    }
+    return patchRes;
   }
 
-  return sbRest<any[]>('user_connections', {
+  let insRes = await sbRest<any[]>('user_connections', {
     method: 'POST',
     prefer: 'return=representation',
-    body: { user_a_id: userAId, user_b_id: userBId, status },
+    body: fullBody,
   });
+  if (!insRes.ok && insRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(insRes.error || '').includes('23514')) {
+    insRes = await sbRest<any[]>('user_connections', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: baseBody,
+    });
+  }
+  return insRes;
 }
 
 async function upsertUdharContactRest(payload: {
@@ -294,12 +342,24 @@ async function upsertUdharContactRest(payload: {
 async function ensureConnectionAndReciprocalContactsRest(
   authUser: AuthenticatedUser,
   targetUser: { id: string; full_name: string; email?: string | null; phone?: string | null; avatar_url?: string | null },
-  relationshipType: string = 'Friend'
-): Promise<{ ok: boolean; error?: string }> {
+  relationshipType: string = 'Friend',
+  opts?: { connectionMethod?: 'SEARCH' | 'QR_CODE' | 'CONFIRMATION_CODE' | 'LINK'; requestedVia?: string }
+): Promise<{ ok: boolean; error?: string; connectionId?: string | null }> {
+  const nowIso = new Date().toISOString();
+  const connMeta = {
+    relationship_type: relationshipType || 'Friend',
+    requested_via: opts?.requestedVia || 'search',
+    connection_method: opts?.connectionMethod || 'SEARCH',
+    consented_at: nowIso,
+    responded_at: nowIso,
+    deleted_at: null,
+    deleted_by: null,
+    cancelled_at: null,
+  };
   // 1. Bidirectional user_connections
   const [connAB, connBA] = await Promise.all([
-    upsertUserConnectionRest(authUser.id, targetUser.id, 'connected'),
-    upsertUserConnectionRest(targetUser.id, authUser.id, 'connected'),
+    upsertUserConnectionRest(authUser.id, targetUser.id, 'connected', connMeta),
+    upsertUserConnectionRest(targetUser.id, authUser.id, 'connected', connMeta),
   ]);
   if (!connAB.ok && !connBA.ok) {
     return {
@@ -307,8 +367,7 @@ async function ensureConnectionAndReciprocalContactsRest(
       error: connAB.error || connBA.error || 'Failed to establish connection record.',
     };
   }
-
-  const nowIso = new Date().toISOString();
+  const connectionId = connAB.data?.[0]?.id || connBA.data?.[0]?.id || null;
   const targetName = (targetUser.full_name || targetUser.email?.split('@')[0] || 'User').trim();
   const myName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
 
@@ -377,7 +436,7 @@ async function ensureConnectionAndReciprocalContactsRest(
     }).catch(() => {});
   }
 
-  return { ok: true };
+  return { ok: true, connectionId };
 }
 
 async function createTargetedNotificationRest(params: {
@@ -737,6 +796,7 @@ export async function connectUserRest(
         success: true,
         status: 'pending',
         alreadyPending: true,
+        deduplicated: true,
         requestId: outgoingPending.id || `${authUser.id}:${targetUserId}`,
         message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
         connectedUser: {
@@ -751,60 +811,20 @@ export async function connectUserRest(
     };
   }
 
-  // Case 4: Create a NEW pending connection request (with 42P10 fallback + legacy 23514 fallback)
-  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, 'pending');
+  // Case 4: Create a NEW pending connection request (Method A never bypasses acceptance)
+  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, 'pending', {
+    relationship_type: relationshipType,
+    requested_via: requestedVia,
+    connection_method: 'SEARCH',
+    responded_at: null,
+    consented_at: null,
+    cancelled_at: null,
+    deleted_at: null,
+    deleted_by: null,
+  });
 
   if (!insRes.ok) {
     const errText = String(insRes.error || '');
-    const isStatusConstraint =
-      errText.includes('user_connections_status_check') || errText.includes('23514');
-
-    if (isStatusConstraint) {
-      // Live Supabase table has not yet migrated user_connections_status_check to allow 'pending'.
-      // Establish a verified mutual connection + reciprocal Udhar contacts immediately.
-      const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, target, relationshipType);
-      if (!syncRes.ok) {
-        return {
-          status: 503,
-          body: {
-            success: false,
-            code: 'REQUEST_FAILED',
-            message: syncRes.error || 'Unable to save connection right now. Please try again.',
-          },
-        };
-      }
-
-      await createTargetedNotificationRest({
-        targetUserId: target.id,
-        actorUserId: authUser.id,
-        title: 'New Udhar Connection',
-        message: `${requesterName} connected with you on My Money Manager Udhar.`,
-        type: 'connection_accepted',
-        category: 'udhar',
-        deepLink: 'people',
-        relatedEntityId: authUser.id,
-      }).catch(() => {});
-
-      return {
-        status: 200,
-        body: {
-          success: true,
-          status: 'connected',
-          alreadyConnected: false,
-          alreadyPending: false,
-          message: `Connected with ${targetName}! Added to your Saved People.`,
-          connectedUser: {
-            id: target.id,
-            name: targetName,
-            displayName: targetName,
-            fullName: targetName,
-            avatarUrl: target.avatar_url || null,
-            isVerified: Boolean(target.is_verified ?? true),
-          },
-        },
-      };
-    }
-
     console.error('[connectUserRest failed]:', insRes.status, errText);
     return {
       status: 503,
@@ -830,10 +850,16 @@ export async function connectUserRest(
     metadata: {
       actionType: 'udhar_connection_request',
       requestId: String(requestId),
+      connectionId: String(requestId),
+      requesterId: authUser.id,
       requesterUserId: authUser.id,
+      receiverId: target.id,
       requesterName,
+      requesterAvatar: authUser.avatar_url || null,
       requestedVia,
+      connectionMethod: 'SEARCH',
       relationshipType,
+      requestStatus: 'pending',
     },
   });
 
@@ -842,6 +868,7 @@ export async function connectUserRest(
     body: {
       success: true,
       status: 'pending',
+      connectionMethod: 'SEARCH',
       alreadyConnected: false,
       alreadyPending: false,
       requestId: String(requestId),
@@ -859,9 +886,14 @@ export async function connectUserRest(
 }
 
 export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
-  const connRes = await sbRest<any[]>(
-    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
+  let connRes = await sbRest<any[]>(
+    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,relationship_type,requested_via,connection_method,created_at,updated_at,responded_at&order=created_at.desc`
   );
+  if (!connRes.ok && connRes.status === 400) {
+    connRes = await sbRest<any[]>(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
+    );
+  }
   if (!connRes.ok) {
     return { status: 503, body: { success: false, message: 'Unable to load connection requests right now.' } };
   }
@@ -882,22 +914,30 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
         const u = userMap.get(r.user_a_id);
         incoming.push({
           id: r.id,
+          direction: 'incoming',
           requesterUserId: r.user_a_id,
           displayName: u?.full_name || 'My Money User',
           avatarUrl: u?.avatar_url || null,
           isVerified: Boolean(u?.is_verified ?? true),
           status: 'pending',
+          relationshipType: r.relationship_type || 'Friend',
+          requestedVia: r.requested_via || 'search',
+          connectionMethod: r.connection_method || 'SEARCH',
           createdAt: r.created_at,
         });
       } else if (r.user_a_id === authUser.id) {
         const u = userMap.get(r.user_b_id);
         outgoing.push({
           id: r.id,
+          direction: 'outgoing',
           targetUserId: r.user_b_id,
           displayName: u?.full_name || 'My Money User',
           avatarUrl: u?.avatar_url || null,
           isVerified: Boolean(u?.is_verified ?? true),
           status: 'pending',
+          relationshipType: r.relationship_type || 'Friend',
+          requestedVia: r.requested_via || 'search',
+          connectionMethod: r.connection_method || 'SEARCH',
           createdAt: r.created_at,
         });
       }
@@ -912,6 +952,8 @@ export async function getConnectionRequestsRest(authUser: AuthenticatedUser) {
           avatarUrl: u?.avatar_url || null,
           isVerified: Boolean(u?.is_verified ?? true),
           status: 'connected',
+          relationshipType: r.relationship_type || 'Friend',
+          connectionMethod: r.connection_method || 'SEARCH',
           createdAt: r.created_at,
         });
       }
@@ -959,10 +1001,25 @@ export async function acceptConnectionRequestRest(authUser: AuthenticatedUser, r
     return { status: 404, body: { success: false, message: 'Requester account is no longer active.' } };
   }
 
-  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, requester, 'Friend');
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(
+    authUser,
+    requester,
+    pendingRow.relationship_type || 'Friend',
+    {
+      connectionMethod: pendingRow.connection_method || 'SEARCH',
+      requestedVia: pendingRow.requested_via || 'search',
+    }
+  );
   if (!syncRes.ok) {
     return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: syncRes.error || 'Failed to finalize connection.' } };
   }
+
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: requester.id,
+    receiverId: authUser.id,
+    status: 'accepted',
+  }).catch(() => {});
 
   const acceptorName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
   const requesterName = (requester.full_name || requester.email?.split('@')[0] || 'Friend').trim();
@@ -970,12 +1027,19 @@ export async function acceptConnectionRequestRest(authUser: AuthenticatedUser, r
   await createTargetedNotificationRest({
     targetUserId: requester.id,
     actorUserId: authUser.id,
-    title: 'Udhar Connection Accepted',
-    message: `${acceptorName} accepted your Udhar connection request. You can now track shared Udhar together.`,
+    title: 'Connection Request Accepted',
+    message: `${acceptorName} accepted your connection request. Added to your Saved People.`,
     type: 'connection_accepted',
     category: 'udhar',
     deepLink: 'people',
     relatedEntityId: authUser.id,
+    metadata: {
+      actionType: 'udhar_connection_accepted',
+      acceptorId: authUser.id,
+      acceptorName,
+      acceptorAvatar: authUser.avatar_url || null,
+      connectionId: syncRes.connectionId || String(pendingRow.id),
+    },
   });
 
   return {
@@ -1019,13 +1083,27 @@ export async function rejectConnectionRequestRest(authUser: AuthenticatedUser, r
   }
 
   const pendingRow = reqRes.data[0];
-  const patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+  const nowIso = new Date().toISOString();
+  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
     method: 'PATCH',
-    body: { status: 'rejected' },
+    body: { status: 'rejected', responded_at: nowIso, updated_at: nowIso },
   });
+  if (!patchRes.ok && patchRes.status === 400) {
+    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: 'PATCH',
+      body: { status: 'rejected' },
+    });
+  }
   if (!patchRes.ok) {
     return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to decline request right now.' } };
   }
+
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: pendingRow.user_a_id,
+    receiverId: authUser.id,
+    status: 'rejected',
+  }).catch(() => {});
 
   const rejectorName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
   await createTargetedNotificationRest({
@@ -1049,49 +1127,202 @@ export async function rejectConnectionRequestRest(authUser: AuthenticatedUser, r
   };
 }
 
+export async function cancelConnectionRequestRest(authUser: AuthenticatedUser, requestIdOrUserId: string) {
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: 'Valid connection request ID is required.' } };
+  }
+
+  let queryPath = '';
+  if (parsedKey.kind === 'uuid' && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_b_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === 'composite' && parsedKey.targetUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&user_b_id=eq.${encodeURIComponent(parsedKey.targetUserId)}&status=eq.pending&limit=1`;
+  } else {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&id=eq.${encodeURIComponent(requestIdOrUserId.trim())}&limit=1`;
+  }
+
+  const reqRes = await sbRest<any[]>(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to verify pending request right now.' } };
+  }
+  if (!reqRes.data || reqRes.data.length === 0) {
+    return { status: 404, body: { success: false, code: 'REQUEST_NOT_FOUND', message: 'Pending outgoing connection request not found.' } };
+  }
+
+  const pendingRow = reqRes.data[0];
+  const nowIso = new Date().toISOString();
+  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+    method: 'PATCH',
+    body: { status: 'cancelled', cancelled_at: nowIso, updated_at: nowIso },
+  });
+  if (!patchRes.ok && patchRes.status === 400 && !String(patchRes.error || '').includes('23514')) {
+    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: 'PATCH',
+      body: { status: 'cancelled' },
+    });
+  }
+  if (!patchRes.ok && String(patchRes.error || '').includes('23514')) {
+    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: 'DELETE',
+    });
+  }
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, code: 'REQUEST_FAILED', message: 'Unable to cancel connection request right now.' } };
+  }
+
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: authUser.id,
+    receiverId: pendingRow.user_b_id,
+    status: 'cancelled',
+  }).catch(() => {});
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: 'cancelled',
+      requestId: String(pendingRow.id),
+      message: 'Connection request cancelled.',
+    },
+  };
+}
+
+export async function removeSavedConnectionRest(authUser: AuthenticatedUser, targetOrContactId: string) {
+  const rawId = (targetOrContactId || '').trim();
+  if (!rawId) {
+    return { status: 400, body: { success: false, message: 'Contact or peer user ID is required.' } };
+  }
+
+  let contactRow: any = null;
+  let peerUserId: string | null = null;
+
+  if (rawId.startsWith('conn_')) {
+    peerUserId = rawId.slice(5).trim() || null;
+  } else {
+    const ownedContactRes = await sbRest<any[]>(
+      `udhar_contacts?id=eq.${encodeURIComponent(rawId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+    );
+    if (ownedContactRes.ok && ownedContactRes.data && ownedContactRes.data.length > 0) {
+      contactRow = ownedContactRes.data[0];
+      peerUserId = contactRow.linked_user_id || null;
+    } else {
+      peerUserId = rawId;
+    }
+  }
+
+  if (!contactRow && !peerUserId) {
+    return { status: 404, body: { success: false, message: 'Saved connection not found.' } };
+  }
+
+  // Ownership / participation check when rawId wasn't a direct owned contact ID
+  if (!contactRow && peerUserId) {
+    const [peerContactsRes, peerConnsRes] = await Promise.all([
+      sbRest<any[]>(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}&limit=1`
+      ),
+      sbRest<any[]>(
+        `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+      ),
+    ]);
+    const hasContact = Boolean(peerContactsRes.ok && peerContactsRes.data && peerContactsRes.data.length > 0);
+    const hasConnection = Boolean(
+      peerConnsRes.ok &&
+        peerConnsRes.data &&
+        peerConnsRes.data.some((c) => c.status !== 'deleted')
+    );
+    if (!hasContact && !hasConnection) {
+      return { status: 404, body: { success: false, message: 'Saved connection not found.' } };
+    }
+  }
+
+  // Delete explicit contact row if found
+  if (contactRow?.id) {
+    const delOwn = await sbRest(
+      `udhar_contacts?id=eq.${encodeURIComponent(contactRow.id)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+      { method: 'DELETE' }
+    );
+    if (!delOwn.ok) {
+      return { status: 500, body: { success: false, message: delOwn.error || 'Failed to remove saved contact.' } };
+    }
+  }
+
+  // Instant two-sided removal of reciprocal Saved People entries + user_connections
+  if (peerUserId && peerUserId !== authUser.id) {
+    const nowIso = new Date().toISOString();
+    await Promise.all([
+      sbRest(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}`,
+        { method: 'DELETE' }
+      ).catch(() => {}),
+      sbRest(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(peerUserId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`,
+        { method: 'DELETE' }
+      ).catch(() => {}),
+    ]);
+
+    const connPatchFilter = `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`;
+    let connDelRes = await sbRest(connPatchFilter, {
+      method: 'PATCH',
+      body: { status: 'deleted', deleted_at: nowIso, deleted_by: authUser.id, updated_at: nowIso },
+    });
+    if (!connDelRes.ok && connDelRes.status === 400 && !String(connDelRes.error || '').includes('23514')) {
+      connDelRes = await sbRest(connPatchFilter, {
+        method: 'PATCH',
+        body: { status: 'deleted' },
+      });
+    }
+    if (!connDelRes.ok && String(connDelRes.error || '').includes('23514')) {
+      await sbRest(connPatchFilter, { method: 'DELETE' }).catch(() => {});
+    }
+
+    await Promise.all([
+      updateConnectionRequestNotificationsState({
+        requesterId: authUser.id,
+        receiverId: peerUserId,
+        status: 'cancelled',
+      }).catch(() => {}),
+      updateConnectionRequestNotificationsState({
+        requesterId: peerUserId,
+        receiverId: authUser.id,
+        status: 'cancelled',
+      }).catch(() => {}),
+    ]);
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      removed: true,
+      twoSided: Boolean(peerUserId && peerUserId !== authUser.id),
+      peerUserId,
+      preservedTransactions: true,
+      message: 'Connection removed from Saved People. Existing Udhaar history remains preserved.',
+    },
+  };
+}
+
 export async function disconnectUserRest(authUser: AuthenticatedUser, targetUserId: string) {
   const targetId = (targetUserId || '').trim();
   if (!targetId) {
     return { status: 400, body: { success: false, message: 'Target user ID is required.' } };
   }
-
-  // Mark connection rows disconnected/deleted in both directions
-  await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetId)}),and(user_a_id.eq.${encodeURIComponent(targetId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`,
-    { method: 'DELETE' }
-  );
-
-  // Unlink linked_user_id on contacts while preserving past Udhar records
-  const nowIso = new Date().toISOString();
-  await Promise.all([
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetId)}`, {
-      method: 'PATCH',
-      body: { linked_user_id: null, updated_at: nowIso },
-    }).catch(() => {}),
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(targetId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`, {
-      method: 'PATCH',
-      body: { linked_user_id: null, updated_at: nowIso },
-    }).catch(() => {}),
-  ]);
-
-  const actorName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
-  await createTargetedNotificationRest({
-    targetUserId: targetId,
-    actorUserId: authUser.id,
-    title: 'Udhar Connection Disconnected',
-    message: `${actorName} disconnected their Udhar pairing with you. Your existing Udhar history remains preserved.`,
-    type: 'connection_disconnected',
-    category: 'udhar',
-    deepLink: 'people',
-    relatedEntityId: authUser.id,
-  });
+  const removal = await removeSavedConnectionRest(authUser, targetId);
+  if (removal.status !== 200) {
+    return removal;
+  }
 
   return {
     status: 200,
     body: {
       success: true,
       status: 'disconnected',
-      message: 'Disconnected successfully. Existing Udhar transaction history has been preserved.',
+      twoSided: true,
+      preservedTransactions: true,
+      message: 'Connection removed from both Saved People lists. Existing Udhar transaction history has been preserved.',
     },
   };
 }
@@ -1361,15 +1592,10 @@ async function buildMergedDirectoryForUserRest(
     }
   }
 
-  const txPeerIds = activeTxs
-    .map((t) => t.counterpart_user_id)
-    .filter((id): id is string => Boolean(id && id !== authUser.id));
-
   const allUserIds = Array.from(
     new Set([
       ...rawContacts.map((r) => r.linked_user_id).filter(Boolean),
       ...Array.from(connectedPeerIds),
-      ...txPeerIds,
     ])
   );
   const userMap = await fetchUsersByIds(allUserIds);
@@ -1410,47 +1636,6 @@ async function buildMergedDirectoryForUserRest(
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-  }
-
-  // Synthesize missing entries for active (non-deleted) Udhar counterparts
-  for (const t of activeTxs) {
-    if (normalizeUdharLifecycleStatus(t) === 'deleted') continue;
-    const linkedId = t.counterpart_user_id || null;
-    const rawName = (t.counterpart_name || '').trim();
-    const normName = rawName.toLowerCase();
-    if (linkedId) {
-      if (seenLinkedIds.has(linkedId)) continue;
-      const u = userMap.get(linkedId);
-      seenLinkedIds.add(linkedId);
-      deduped.push({
-        id: `tx_peer_${linkedId}`,
-        user_id: authUser.id,
-        name: (u?.full_name || rawName || 'Connected User').trim(),
-        email: u?.email ? maskEmailForPrivacy(u.email) : null,
-        phone: null,
-        photo_url: u?.avatar_url || null,
-        relationship_type: 'Friend',
-        notes: null,
-        linked_user_id: linkedId,
-        created_at: t.created_at || new Date().toISOString(),
-        updated_at: t.updated_at || new Date().toISOString(),
-      });
-    } else if (normName && !seenUnlinkedNames.has(normName)) {
-      seenUnlinkedNames.add(normName);
-      deduped.push({
-        id: `tx_local_${normName.replace(/[^a-z0-9]/g, '_')}`,
-        user_id: authUser.id,
-        name: rawName,
-        email: null,
-        phone: null,
-        photo_url: null,
-        relationship_type: 'Friend',
-        notes: null,
-        linked_user_id: null,
-        created_at: t.created_at || new Date().toISOString(),
-        updated_at: t.updated_at || new Date().toISOString(),
-      });
-    }
   }
 
   deduped.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -1590,13 +1775,27 @@ export async function saveContactRest(authUser: AuthenticatedUser, body: any) {
     return { status: 400, body: { success: false, message: "Person's name is required." } };
   }
 
-  // IMPORTANT SECURITY RULE: NEVER silently auto-link manual contacts by name match!
-  // Only link if an explicit verified linked_user_id was selected via Search/QR/Link flow.
-  let verifiedTarget: any = null;
+  // IMPORTANT SECURITY RULE: NEVER silently auto-link manual contacts by name match,
+  // and NEVER create an active connected entry for a searched registered user without Method A acceptance!
   if (requestedLinkedUserId) {
     if (requestedLinkedUserId === authUser.id) {
       return { status: 400, body: { success: false, message: 'You cannot add yourself as a contact.' } };
     }
+    const pairRes = await sbRest<any[]>(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(requestedLinkedUserId)}),and(user_a_id.eq.${encodeURIComponent(requestedLinkedUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+    );
+    const isAlreadyConnected = Boolean(
+      pairRes.ok && pairRes.data && pairRes.data.some((r) => r.status === 'connected')
+    );
+
+    if (!isAlreadyConnected) {
+      return connectUserRest(authUser, {
+        targetUserId: requestedLinkedUserId,
+        relationshipType,
+        requestedVia: 'search',
+      });
+    }
+
     const targetRes = await sbRest<any[]>(
       `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
     );
@@ -1604,42 +1803,48 @@ export async function saveContactRest(authUser: AuthenticatedUser, body: any) {
       return { status: 404, body: { success: false, message: 'Selected user account was not found.' } };
     }
     const target = targetRes.data[0];
-    if (!isDiscoverableNormalUser(target)) {
-      return { status: 403, body: { success: false, code: 'ACCOUNT_UNAVAILABLE', message: 'Selected user account is not eligible for Udhar connections.' } };
+    const nowIso = new Date().toISOString();
+    const upsertRes = await upsertUdharContactRest({
+      user_id: authUser.id,
+      name: target.full_name || name,
+      email: target.email || null,
+      phone: target.phone || null,
+      photo_url: target.avatar_url || photoUrl,
+      relationship_type: relationshipType,
+      notes: notes || null,
+      linked_user_id: target.id,
+      updated_at: nowIso,
+    });
+    if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
+      return { status: 500, body: { success: false, message: upsertRes.error || 'Failed to save contact.' } };
     }
-    if (await isBlockedBetween(authUser.id, target.id)) {
-      return { status: 403, body: { success: false, message: 'Cannot connect with a blocked account.' } };
-    }
-    verifiedTarget = target;
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: 'connected',
+        contact: upsertRes.data[0],
+        reciprocallyLinked: true,
+      },
+    };
   }
 
   const nowIso = new Date().toISOString();
   const payload = {
     user_id: authUser.id,
-    name: verifiedTarget ? verifiedTarget.full_name : name,
-    email: verifiedTarget ? verifiedTarget.email : (email || null),
-    phone: verifiedTarget ? verifiedTarget.phone : (phone || null),
-    photo_url: verifiedTarget ? (verifiedTarget.avatar_url || photoUrl) : photoUrl,
+    name,
+    email: email || null,
+    phone: phone || null,
+    photo_url: photoUrl,
     relationship_type: relationshipType,
     notes: notes || null,
-    linked_user_id: verifiedTarget ? verifiedTarget.id : null,
+    linked_user_id: null,
     updated_at: nowIso,
   };
 
   const upsertRes = await upsertUdharContactRest(payload);
-
   if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
     return { status: 500, body: { success: false, message: upsertRes.error || 'Failed to save contact.' } };
-  }
-
-  if (verifiedTarget) {
-    const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
-    if (!syncRes.ok) {
-      return {
-        status: 503,
-        body: { success: false, message: syncRes.error || 'Saved contact locally, but failed to sync reciprocal connection.' },
-      };
-    }
   }
 
   return {
@@ -1647,7 +1852,7 @@ export async function saveContactRest(authUser: AuthenticatedUser, body: any) {
     body: {
       success: true,
       contact: upsertRes.data[0],
-      reciprocallyLinked: Boolean(verifiedTarget),
+      reciprocallyLinked: false,
     },
   };
 }
@@ -1706,14 +1911,7 @@ export async function updateContactRest(authUser: AuthenticatedUser, contactId: 
 }
 
 export async function deleteContactRest(authUser: AuthenticatedUser, contactId: string) {
-  const res = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
-    { method: 'DELETE' }
-  );
-  if (!res.ok) {
-    return { status: 500, body: { success: false, message: res.error || 'Failed to remove contact.' } };
-  }
-  return { status: 200, body: { success: true, message: 'Saved contact removed.' } };
+  return removeSavedConnectionRest(authUser, contactId);
 }
 
 export async function linkContactRest(authUser: AuthenticatedUser, contactId: string, registeredUserId: string) {
@@ -1724,9 +1922,12 @@ export async function linkContactRest(authUser: AuthenticatedUser, contactId: st
     return { status: 400, body: { success: false, message: 'You cannot link a contact to your own account.' } };
   }
 
-  const [contactRes, targetRes] = await Promise.all([
+  const [contactRes, targetRes, pairRes] = await Promise.all([
     sbRest<any[]>(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
     sbRest<any[]>(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`),
+    sbRest<any[]>(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(registeredUserId)}),and(user_a_id.eq.${encodeURIComponent(registeredUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+    ),
   ]);
 
   if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
@@ -1745,6 +1946,26 @@ export async function linkContactRest(authUser: AuthenticatedUser, contactId: st
     return { status: 403, body: { success: false, message: 'Cannot link with a blocked account.' } };
   }
 
+  const isAlreadyConnected = Boolean(
+    pairRes.ok && pairRes.data && pairRes.data.some((c) => c.status === 'connected')
+  );
+
+  if (!isAlreadyConnected) {
+    // Linking a manual contact to a registered account requires consent (Method A request)
+    const reqResult = await connectUserRest(authUser, {
+      targetUserId: target.id,
+      relationshipType: contact.relationship_type || 'Friend',
+      requestedVia: 'search',
+    });
+    return {
+      status: reqResult.status,
+      body: {
+        ...reqResult.body,
+        pendingApproval: reqResult.body.status === 'pending',
+      },
+    };
+  }
+
   await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`, {
     method: 'PATCH',
     body: {
@@ -1756,12 +1977,16 @@ export async function linkContactRest(authUser: AuthenticatedUser, contactId: st
     },
   });
 
-  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || 'Friend');
+  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || 'Friend', {
+    connectionMethod: 'SEARCH',
+    requestedVia: 'search',
+  });
 
   return {
     status: 200,
     body: {
       success: true,
+      status: 'connected',
       message: `Successfully linked ${contact.name} with verified account ${target.full_name}.`,
     },
   };
@@ -2034,14 +2259,135 @@ export async function connectQrRest(authUser: AuthenticatedUser, body: any) {
   if (resolved.status !== 200 || !resolved.body.success) {
     return resolved;
   }
-  const targetId = resolved.body.owner.id;
+
+  const rawMethod = String(body.connectionMethod || body.entryMethod || '').trim().toUpperCase();
+  const connectionMethod: 'QR_CODE' | 'CONFIRMATION_CODE' =
+    rawMethod === 'CONFIRMATION_CODE' ||
+    rawMethod === 'CODE' ||
+    (!body.qrData && !body.pairingToken && Boolean(body.pairingCode))
+      ? 'CONFIRMATION_CODE'
+      : 'QR_CODE';
+
+  const owner = resolved.body.owner;
+  const targetId = owner.id;
+  const targetName = (owner.fullName || owner.displayName || 'User').trim();
   const relationshipType = (body.relationshipType || 'Friend').trim();
-  const connResult = await connectUserRest(authUser, {
-    targetUserId: targetId,
-    relationshipType,
-    requestedVia: 'qr',
+
+  // Fetch full target profile for reciprocal udhar_contacts sync
+  const targetRes = await sbRest<any[]>(
+    `app_users?id=eq.${encodeURIComponent(targetId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,is_verified&limit=1`
+  );
+  const targetUser = (targetRes.ok && targetRes.data && targetRes.data[0]) || {
+    id: targetId,
+    full_name: targetName,
+    email: null,
+    phone: null,
+    avatar_url: owner.avatarUrl || null,
+    is_verified: owner.isVerified,
+  };
+
+  if (resolved.body.isAlreadyConnected) {
+    // Ensure both users have their udhar_contacts entries without sending duplicate notifications
+    await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
+      connectionMethod,
+      requestedVia: connectionMethod === 'CONFIRMATION_CODE' ? 'confirmation_code' : 'qr',
+    }).catch(() => {});
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: 'connected',
+        alreadyConnected: true,
+        connectionMethod,
+        title: 'Already Connected',
+        message: 'Already Connected',
+        connectedUser: {
+          id: targetUser.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: targetUser.avatar_url || null,
+          isVerified: Boolean(targetUser.is_verified ?? true),
+        },
+      },
+    };
+  }
+
+  // Method B: Direct Connection immediately after backend QR/Code verification — NO pending request, NO Accept/Reject
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
+    connectionMethod,
+    requestedVia: connectionMethod === 'CONFIRMATION_CODE' ? 'confirmation_code' : 'qr',
   });
-  return connResult;
+  if (!syncRes.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        code: 'REQUEST_FAILED',
+        message: syncRes.error || 'Unable to save connection right now. Please retry.',
+      },
+    };
+  }
+
+  // If a pending Method A search request previously existed in either direction, mark its notification resolved
+  await Promise.all([
+    updateConnectionRequestNotificationsState({
+      requestId: resolved.body.requestId || null,
+      requesterId: authUser.id,
+      receiverId: targetId,
+      status: 'accepted',
+    }).catch(() => {}),
+    updateConnectionRequestNotificationsState({
+      requestId: resolved.body.requestId || null,
+      requesterId: targetId,
+      receiverId: authUser.id,
+      status: 'accepted',
+    }).catch(() => {}),
+  ]);
+
+  // Mark single-use QR token consumed if applicable
+  if (resolved.body.pairingToken) {
+    await sbRest(
+      `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolved.body.pairingToken)}&is_single_use=eq.true`,
+      {
+        method: 'PATCH',
+        body: { used: true, used_at: new Date().toISOString() },
+      }
+    ).catch(() => {});
+  }
+
+  const actorName = (authUser.full_name || authUser.email?.split('@')[0] || 'User').trim();
+  await notifyQrConnected({
+    userAId: authUser.id,
+    userAName: actorName,
+    userAAvatar: authUser.avatar_url || null,
+    userBId: targetUser.id,
+    userBName: targetName,
+    connectionMethod,
+    connectionId: syncRes.connectionId || null,
+  }).catch(() => {});
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: 'connected',
+      alreadyConnected: false,
+      connectionMethod,
+      title: 'Connection Added Successfully',
+      message: `${targetName} has been added to your Saved People.`,
+      connectionId: syncRes.connectionId || null,
+      connectedUser: {
+        id: targetUser.id,
+        name: targetName,
+        displayName: targetName,
+        fullName: targetName,
+        avatarUrl: targetUser.avatar_url || null,
+        isVerified: Boolean(targetUser.is_verified ?? true),
+      },
+    },
+  };
 }
 
 // ============================================================================

@@ -9,12 +9,14 @@ import { sendEmail } from './email.js';
 import { getRenderedCustomTemplateIfActive } from './emailTemplateService.js';
 import { generateCampaignEmail } from './notificationEmailTemplates.js';
 import { detectPlatformCompatibility, isValidPushEndpoint } from '../src/lib/pwaUtils.js';
+import { getPublishedSiteConfig } from './siteControlCenter.js';
 import {
   listAllAppUsersFallback,
   insertUserNotificationFallback,
   createBroadcastBannerFallback,
   updateCampaignFallback,
   listCampaignsFallback,
+  updateConnectionRequestNotificationsFallback,
   sbRestRequest,
 } from './supabaseRestFallback.js';
 
@@ -67,6 +69,8 @@ export interface CreateNotificationParams {
   message: string;
   category?: NotificationCategory;
   type?: NotificationType;
+  audience?: 'user' | 'admin' | 'staff';
+  iconUrl?: string;
   relatedEntityType?: string;
   relatedEntityId?: string;
   deepLink?: string;
@@ -354,8 +358,14 @@ export function buildSafeDeepLinkUrl(deepLink?: string): string {
     '/receipt-scanner',
     '/net-worth',
     '/safe-to-spend',
+    '/myadmin',
+    '/mystaff',
   ]);
-  if (pathRoutes.has(clean)) return clean;
+  if (pathRoutes.has(clean) || clean.startsWith('/myadmin/') || clean.startsWith('/mystaff/')) {
+    return clean;
+  }
+  if (clean === 'admin') return '/myadmin';
+  if (clean === 'staff') return '/mystaff';
   if (clean.startsWith('/#')) return clean;
   if (clean.startsWith('/')) {
     const slug = clean.replace(/^\/+/, '');
@@ -1192,26 +1202,51 @@ export async function createNotification(params: CreateNotificationParams): Prom
           : `mm-${category}-${notificationId || timestamp}`);
       const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
 
+      const isConnRequest = metadata?.actionType === 'udhar_connection_request';
+      const siteCfg = await getPublishedSiteConfig().catch(() => null);
+      const audience = params.audience || 'user';
+      const resolvedIcon =
+        params.iconUrl ||
+        (audience === 'admin'
+          ? siteCfg?.notifications?.adminIconUrl || '/admin-icon-192.png'
+          : audience === 'staff'
+          ? siteCfg?.notifications?.staffIconUrl || '/staff-icon-192.png'
+          : siteCfg?.notifications?.userIconUrl || '/icon-192.png');
+      const resolvedBadge =
+        audience === 'admin' ? '/admin-badge-96.png' : '/notification-badge-96.png';
+
       const pushPayload = JSON.stringify({
         title: pushTitle,
         body: pushBody,
-        icon: '/icon-192.png',
-        badge: '/notification-badge-96.png',
+        icon: resolvedIcon,
+        badge: resolvedBadge,
         tag: notifTag,
         category,
         type,
+        audience,
         timestamp,
         renotify: true,
         silent: soundMuted,
         vibrate: soundMuted ? undefined : [200, 80, 200],
         soundEnabled: !soundMuted,
-        requireInteraction: category === 'security' || type === 'error',
+        requireInteraction: category === 'security' || type === 'error' || isConnRequest,
+        actions: isConnRequest
+          ? [
+              { action: 'accept', title: 'Accept' },
+              { action: 'reject', title: 'Reject' },
+            ]
+          : undefined,
         data: {
           url: targetUrl,
+          audience,
           notificationId: notificationId || null,
           category,
           type,
           dedupeKey: dedupeKey || null,
+          deepLink: deepLink || null,
+          actionType: metadata?.actionType || null,
+          connectionId: metadata?.connectionId || relatedEntityId || null,
+          connectionMethod: metadata?.connectionMethod || null,
           timestamp,
           soundEnabled: !soundMuted,
         },
@@ -1605,33 +1640,101 @@ export async function notifyUdharCreated(params: {
 }
 
 /**
- * Triggered when two users connect via QR code
+ * Triggered when User A connects with User B directly via QR Code or Confirmation Code (Method B).
+ * Sends an informational-only notification to User B (never Accept/Reject buttons).
  */
 export async function notifyQrConnected(params: {
   userAId: string;
   userAName: string;
+  userAAvatar?: string | null;
   userBId: string;
   userBName: string;
+  connectionMethod?: 'QR_CODE' | 'CONFIRMATION_CODE';
+  connectionId?: string | null;
 }) {
-  await createNotification({
-    userId: params.userAId,
-    title: `Connected with ${params.userBName}`,
-    message: `You are now linked with ${params.userBName}. Mutual 2-way Udhar tracking and settlements are active.`,
-    category: 'udhar',
-    type: 'success',
-    deepLink: 'people',
-    channels: ['in_app', 'push', 'email'],
-  });
+  const connectionMethod: 'QR_CODE' | 'CONFIRMATION_CODE' =
+    params.connectionMethod === 'CONFIRMATION_CODE' ? 'CONFIRMATION_CODE' : 'QR_CODE';
+  const methodLabel = connectionMethod === 'CONFIRMATION_CODE' ? 'Confirmation Code' : 'QR Code';
+  const connectedAt = new Date().toISOString();
+  const actorName = String(params.userAName || 'A My Money Manager user').trim();
 
   await createNotification({
     userId: params.userBId,
-    title: `New Friend Connected: ${params.userAName}`,
-    message: `${params.userAName} scanned your QR code and connected with you! Added to your Saved People.`,
+    title: 'New People Connection',
+    message: `${actorName} added you using your ${methodLabel}.`,
     category: 'udhar',
     type: 'success',
+    relatedEntityType: 'user_connection',
+    relatedEntityId: params.connectionId || params.userAId,
     deepLink: 'people',
-    channels: ['in_app', 'push', 'email'],
+    dedupeKey: `qr-conn:${params.connectionId || `${params.userBId}:${params.userAId}`}:${Date.now()}`,
+    metadata: {
+      actionType: 'udhar_qr_connected',
+      informationalOnly: true,
+      connectionMethod,
+      methodLabel,
+      initiatorUserId: params.userAId,
+      initiatorName: actorName,
+      initiatorAvatar: params.userAAvatar || null,
+      connectedAt,
+      connectionId: params.connectionId || null,
+    },
+    channels: ['in_app', 'push'],
   });
+}
+
+/**
+ * Updates in-app notification metadata when a Method A connection request is accepted, rejected, cancelled, or auto-resolved.
+ */
+export async function updateConnectionRequestNotificationsState(params: {
+  requestId?: string | null;
+  requesterId?: string | null;
+  receiverId?: string | null;
+  status: 'accepted' | 'rejected' | 'cancelled';
+}) {
+  const now = new Date().toISOString();
+  const requestId = params.requestId ? String(params.requestId) : null;
+  const requesterId = params.requesterId ? String(params.requesterId) : null;
+  const receiverId = params.receiverId ? String(params.receiverId) : null;
+
+  if (isDatabaseAvailable()) {
+    try {
+      if (requestId) {
+        await query(
+          `UPDATE public.user_notifications
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('requestStatus', $2::text, 'resolvedAt', $3::text),
+               is_read = TRUE,
+               read_at = COALESCE(read_at, NOW())
+           WHERE is_deleted = FALSE
+             AND (
+               related_entity_id = $1
+               OR metadata->>'connectionId' = $1
+               OR metadata->>'requestId' = $1
+             )
+             AND (metadata->>'actionType' = 'udhar_connection_request' OR related_entity_type = 'user_connection')`,
+          [requestId, params.status, now]
+        ).catch(() => {});
+      }
+      if (requesterId && receiverId) {
+        await query(
+          `UPDATE public.user_notifications
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('requestStatus', $3::text, 'resolvedAt', $4::text),
+               is_read = TRUE,
+               read_at = COALESCE(read_at, NOW())
+           WHERE is_deleted = FALSE
+             AND user_id = $2
+             AND metadata->>'actionType' = 'udhar_connection_request'
+             AND COALESCE(metadata->>'requestStatus', 'pending') = 'pending'
+             AND (metadata->>'requesterId' = $1 OR related_entity_id = $1)`,
+          [requesterId, receiverId, params.status, now]
+        ).catch(() => {});
+      }
+    } catch {
+      // Fall through to REST/local fallback update
+    }
+  }
+
+  await updateConnectionRequestNotificationsFallback(params).catch(() => {});
 }
 
 /**
@@ -2490,20 +2593,35 @@ export async function recordAdminNotification(params: {
     // Already tracked in localAdminNotifications
   }
 
-  // Check admin alert preference & quiet hours before dispatching live push to admins
+  // Check Control Center admin notification category toggles + admin preferences
+  const siteCfg = await getPublishedSiteConfig().catch(() => null);
+  const ccAdminCats = siteCfg?.notifications?.categories?.admin || {};
+  const categoryKeyMap: Record<string, string> = {
+    new_user: 'new_user',
+    pwa_install: 'app_installations',
+    support_ticket: 'support_tickets',
+    critical_alert: 'security_alerts',
+    push_failure: 'system_errors',
+  };
+  const ccEnabled = ccAdminCats[categoryKeyMap[eventType]] !== false;
+
   const prefs = await getAdminNotificationPreferences();
   const isAlertEnabled =
-    (eventType === 'new_user' && prefs.alert_new_user_registration) ||
-    (eventType === 'pwa_install' && prefs.alert_app_installation) ||
-    (eventType === 'support_ticket' && prefs.alert_support_ticket) ||
-    (eventType === 'critical_alert' && prefs.alert_critical_security) ||
-    (eventType === 'push_failure' && prefs.alert_push_failure);
+    ccEnabled &&
+    ((eventType === 'new_user' && prefs.alert_new_user_registration) ||
+      (eventType === 'pwa_install' && prefs.alert_app_installation) ||
+      (eventType === 'support_ticket' && prefs.alert_support_ticket) ||
+      (eventType === 'critical_alert' && prefs.alert_critical_security) ||
+      (eventType === 'push_failure' && prefs.alert_push_failure));
 
   if (!isAlertEnabled) {
     return true;
   }
 
-  // Find all administrators
+  const adminAppLabel = siteCfg?.notifications?.adminAppName || 'Admin Alert';
+  const adminIconUrl = siteCfg?.notifications?.adminIconUrl || '/admin-icon-192.png';
+
+  // Find all administrators (strictly admin/superadmin, NOT staff)
   try {
     let adminRows: Array<{ id: string }> = [];
     if (isDatabaseAvailable()) {
@@ -2521,12 +2639,14 @@ export async function recordAdminNotification(params: {
     for (const a of adminRows) {
       createNotification({
         userId: a.id,
-        title: `[Admin Alert] ${title}`,
+        title: `[${adminAppLabel}] ${title}`,
         message,
         category: 'security',
         type: eventType === 'critical_alert' ? 'error' : 'info',
+        audience: 'admin',
+        iconUrl: adminIconUrl,
         channels: prefs.delivery_channel === 'inapp_only' ? ['in_app'] : ['in_app', 'push'],
-        deepLink: 'admin',
+        deepLink: '/myadmin',
         skipPreferenceCheck: true,
       }).catch(() => {});
     }
@@ -2667,4 +2787,149 @@ export async function dispatchNewUserWelcomeNotification(params: {
       email: String(params.email || '').toLowerCase().trim(),
     },
   });
+}
+
+// ==============================================================================
+// Staff-Isolated Notification System (/mystaff audience ONLY)
+// ==============================================================================
+
+export interface StaffNotificationRecord {
+  id: string;
+  staff_user_id: string | null; // null = broadcast to all active staff
+  event_type: 'assigned_task' | 'task_updates' | 'announcements' | 'support_queue' | 'account_alerts';
+  title: string;
+  message: string;
+  deep_link: string;
+  metadata?: Record<string, any>;
+  is_read: boolean;
+  read_by: string[];
+  created_at: string;
+}
+
+const STAFF_NOTIFS_FILE = path.resolve(PRIMARY_PUSH_FALLBACK_DIR, 'staff-notifications.json');
+const TMP_STAFF_NOTIFS_FILE = path.resolve(TMP_PUSH_FALLBACK_DIR, 'staff-notifications.json');
+let memoryStaffNotifications: StaffNotificationRecord[] | null = null;
+
+function readStaffNotifs(): StaffNotificationRecord[] {
+  if (memoryStaffNotifications) return memoryStaffNotifications;
+  for (const target of [STAFF_NOTIFS_FILE, TMP_STAFF_NOTIFS_FILE]) {
+    try {
+      if (fs.existsSync(target)) {
+        const parsed = JSON.parse(fs.readFileSync(target, 'utf8'));
+        if (Array.isArray(parsed)) {
+          memoryStaffNotifications = parsed;
+          return parsed;
+        }
+      }
+    } catch {}
+  }
+  memoryStaffNotifications = [];
+  return [];
+}
+
+function writeStaffNotifs(items: StaffNotificationRecord[]): void {
+  const sliced = items.slice(0, 200);
+  memoryStaffNotifications = sliced;
+  try {
+    const dir = resolveWritablePushDir();
+    fs.writeFileSync(path.resolve(dir, 'staff-notifications.json'), JSON.stringify(sliced, null, 2), 'utf8');
+  } catch {}
+}
+
+export async function recordStaffNotification(params: {
+  staffUserId?: string | null;
+  eventType: StaffNotificationRecord['event_type'];
+  title: string;
+  message: string;
+  deepLink?: string;
+  metadata?: Record<string, any>;
+}): Promise<StaffNotificationRecord> {
+  const siteCfg = await getPublishedSiteConfig().catch(() => null);
+  const catEnabled = siteCfg?.notifications?.categories?.staff?.[params.eventType] !== false;
+  const staffAppName = siteCfg?.notifications?.staffAppName || 'My Money Manager Staff';
+  const staffIconUrl = siteCfg?.notifications?.staffIconUrl || '/staff-icon-192.png';
+
+  const record: StaffNotificationRecord = {
+    id: `snot_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+    staff_user_id: params.staffUserId || null,
+    event_type: params.eventType,
+    title: params.title,
+    message: params.message,
+    deep_link: params.deepLink || '/mystaff',
+    metadata: {
+      ...(params.metadata || {}),
+      audience: 'staff',
+      appName: staffAppName,
+      iconUrl: staffIconUrl,
+    },
+    is_read: false,
+    read_by: [],
+    created_at: new Date().toISOString(),
+  };
+
+  if (!catEnabled) return record;
+
+  const list = readStaffNotifs();
+  list.unshift(record);
+  writeStaffNotifs(list);
+
+  // Also dispatch Web Push if target staff user has subscribed devices on /mystaff
+  if (params.staffUserId) {
+    createNotification({
+      userId: params.staffUserId,
+      title: `[${staffAppName}] ${params.title}`,
+      message: params.message,
+      category: 'support',
+      type: 'info',
+      audience: 'staff',
+      iconUrl: staffIconUrl,
+      deepLink: params.deepLink || '/mystaff',
+      channels: ['push'],
+      skipPreferenceCheck: true,
+      metadata: {
+        audience: 'staff',
+        staffNotificationId: record.id,
+        ...(params.metadata || {}),
+      },
+    }).catch(() => {});
+  }
+
+  return record;
+}
+
+export async function getStaffNotifications(staffUserId: string, limit = 50): Promise<StaffNotificationRecord[]> {
+  const all = readStaffNotifs();
+  return all
+    .filter((n) => !n.staff_user_id || n.staff_user_id === staffUserId)
+    .slice(0, limit)
+    .map((n) => ({
+      ...n,
+      is_read: n.is_read || n.read_by.includes(staffUserId),
+    }));
+}
+
+export async function markStaffNotificationRead(id: string, staffUserId: string): Promise<boolean> {
+  const all = readStaffNotifs();
+  let changed = false;
+  for (const n of all) {
+    if (n.id === id && (!n.staff_user_id || n.staff_user_id === staffUserId)) {
+      if (!n.read_by.includes(staffUserId)) n.read_by.push(staffUserId);
+      if (n.staff_user_id === staffUserId) n.is_read = true;
+      changed = true;
+    }
+  }
+  if (changed) writeStaffNotifs(all);
+  return changed;
+}
+
+export async function markAllStaffNotificationsRead(staffUserId: string): Promise<boolean> {
+  const all = readStaffNotifs();
+  for (const n of all) {
+    if (!n.staff_user_id || n.staff_user_id === staffUserId) {
+      if (!n.read_by.includes(staffUserId)) n.read_by.push(staffUserId);
+      if (n.staff_user_id === staffUserId) n.is_read = true;
+    }
+  }
+  writeStaffNotifs(all);
+  return true;
 }

@@ -7,7 +7,15 @@ import { parse as parseUrl } from 'url';
 import { query, isDatabaseAvailable } from './db.js';
 import { APP_CONFIG } from './config.js';
 import { authenticateRequest, revokeAllUserSessions } from './auth.js';
-import { logSecurityEvent, generateCryptoToken, checkRateLimitAsync, sendRateLimitExceeded, RATE_LIMITS } from './security.js';
+import {
+  logSecurityEvent,
+  generateCryptoToken,
+  checkRateLimitAsync,
+  sendRateLimitExceeded,
+  RATE_LIMITS,
+  hashPassword,
+  validatePasswordPolicy,
+} from './security.js';
 import {
   ALLOWED_GEMINI_MODELS,
   getAiProviderStatus,
@@ -29,6 +37,18 @@ import {
   saveSmtpSettings,
   validateAppDownloadUrl,
 } from './adminSettingsStore.js';
+import {
+  getControlCenterAdminState,
+  saveControlCenterDraft,
+  publishControlCenterChanges,
+  restoreControlCenterVersion,
+  discardControlCenterDraft,
+  syncMaintenanceIntoControlCenter,
+  saveSanitizedBrandingAsset,
+  listStaffTasks,
+  createStaffTask,
+  updateStaffTask,
+} from './siteControlCenter.js';
 import {
   sendAdminReplyToTicketEmail,
   sendAdminTestEmail,
@@ -53,6 +73,7 @@ import {
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
   createNotification,
+  recordStaffNotification,
 } from './notificationService.js';
 import {
   sbRestRequest,
@@ -62,6 +83,9 @@ import {
   getFeedbackByIdFallback,
   updateFeedbackFallback,
   listAllAppUsersFallback,
+  findAppUserFallbackByEmail,
+  findAppUserFallbackById,
+  upsertAppUserLocalFallback,
   createCampaignFallback,
   updateCampaignFallback,
   listCampaignsFallback,
@@ -80,6 +104,8 @@ import {
   listUserSessionsFallback,
   listAdminRolesFallback,
   updateAdminRoleFallback,
+  createAdminRoleFallback,
+  deleteAdminRoleFallback,
   listSecurityIncidentsFallback,
   createSecurityIncidentFallback,
   getAdminDashboardStatsFallback,
@@ -203,14 +229,22 @@ export async function verifyAdminAuth(
   );
   const role = isMasterAdmin ? 'superadmin' : ((authUser.role_slug || authUser.role || 'user').toLowerCase().trim());
 
-  // Check if role exists in system roles or custom admin_roles in database
+  // Check if role exists in system roles or custom admin_roles in database/fallback
   let roleRecord: any = null;
-  try {
-    const roleRes = await query('SELECT slug, permissions FROM public.admin_roles WHERE slug = $1', [role]);
-    if (roleRes.rows.length > 0) {
-      roleRecord = roleRes.rows[0];
-    }
-  } catch (e) {}
+  if (isDatabaseAvailable()) {
+    try {
+      const roleRes = await query('SELECT slug, permissions FROM public.admin_roles WHERE LOWER(slug) = $1', [role]);
+      if (roleRes.rows.length > 0) {
+        roleRecord = roleRes.rows[0];
+      }
+    } catch (e) {}
+  }
+  if (!roleRecord) {
+    try {
+      const fbRoles = await listAdminRolesFallback();
+      roleRecord = fbRoles.find((r: any) => String(r.slug || '').toLowerCase().trim() === role) || null;
+    } catch {}
+  }
 
   if (!isMasterAdmin && !['superadmin', 'admin', 'support', 'analyst'].includes(role) && !roleRecord) {
     sendJson(res, 403, { success: false, message: 'Access Denied: Administrative authorization required.' });
@@ -2359,6 +2393,121 @@ export async function handleAdminApiRequest(
       return true;
     }
 
+    // Create custom role: POST /api/admin/roles
+    if (pathname === '/api/admin/roles' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'roles.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const name = String(body.name || '').trim().slice(0, 60);
+      const rawSlug = String(body.slug || name)
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40);
+      const description = String(body.description || '').trim().slice(0, 300);
+
+      if (!name || name.length < 2 || !rawSlug || rawSlug.length < 2) {
+        sendJson(res, 400, { success: false, message: 'Valid role name and slug are required.' });
+        return true;
+      }
+      if (['superadmin', 'admin', 'support', 'analyst', 'user', 'anonymous'].includes(rawSlug)) {
+        sendJson(res, 409, { success: false, message: `Role slug "${rawSlug}" is reserved.` });
+        return true;
+      }
+
+      const rawPerms = Array.isArray(body.permissions) ? body.permissions : ['dashboard.view', 'users.view'];
+      const safePermissions: string[] = rawPerms
+        .slice(0, 60)
+        .map((p: unknown) => String(p || '').trim())
+        .filter((p: string) => p.length > 0 && p.length <= 64 && /^[a-z0-9_.*]+$/.test(p));
+
+      if (safePermissions.includes('*') && auth.role !== 'superadmin') {
+        sendJson(res, 403, { success: false, message: 'Only a superadmin can assign wildcard (*) permissions.' });
+        return true;
+      }
+
+      const existingRoles = await listAdminRolesFallback();
+      if (existingRoles.some((r: any) => String(r.slug || '').toLowerCase() === rawSlug)) {
+        sendJson(res, 409, { success: false, message: `A role with slug "${rawSlug}" already exists.` });
+        return true;
+      }
+
+      let createdRole: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const ins = await query(
+            `INSERT INTO public.admin_roles (name, slug, description, permissions, is_system, created_at, updated_at)
+             VALUES ($1, $2, $3, $4::jsonb, FALSE, NOW(), NOW())
+             RETURNING *`,
+            [name, rawSlug, description, JSON.stringify(safePermissions)]
+          );
+          createdRole = ins.rows[0] || null;
+        } catch {}
+      }
+      if (!createdRole) {
+        createdRole = await createAdminRoleFallback({
+          name,
+          slug: rawSlug,
+          description,
+          permissions: safePermissions,
+        });
+      }
+
+      await logSecurityEvent('ADMIN_CUSTOM_ROLE_CREATED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { roleSlug: rawSlug, permissions: safePermissions },
+      }).catch(() => {});
+
+      sendJson(res, 201, {
+        success: true,
+        message: `Custom role "${name}" created successfully.`,
+        role: createdRole,
+      });
+      return true;
+    }
+
+    // Delete custom role: DELETE /api/admin/roles/:id
+    const roleDeleteMatch = pathname.match(/^\/api\/admin\/roles\/([a-zA-Z0-9_-]+)$/);
+    if (roleDeleteMatch && method === 'DELETE') {
+      const auth = await verifyAdminAuth(req, res, 'roles.manage');
+      if (!auth) return true;
+
+      const roleId = roleDeleteMatch[1];
+      const protectedIds = new Set(['role_superadmin', 'role_admin', 'role_support', 'role_analyst', 'superadmin', 'admin', 'support', 'analyst']);
+      if (protectedIds.has(roleId.toLowerCase())) {
+        sendJson(res, 400, { success: false, message: 'Built-in system roles cannot be deleted.' });
+        return true;
+      }
+
+      let deleted = false;
+      if (isDatabaseAvailable()) {
+        try {
+          const check = await query(`SELECT id, slug, is_system FROM public.admin_roles WHERE id::text = $1 OR slug = $1 LIMIT 1`, [roleId]);
+          if (check.rows[0]?.is_system) {
+            sendJson(res, 400, { success: false, message: 'Built-in system roles cannot be deleted.' });
+            return true;
+          }
+          const delRes = await query(`DELETE FROM public.admin_roles WHERE (id::text = $1 OR slug = $1) AND is_system = FALSE RETURNING id`, [roleId]);
+          deleted = delRes.rows.length > 0;
+        } catch {}
+      }
+
+      await deleteAdminRoleFallback(roleId);
+      await logSecurityEvent('ADMIN_CUSTOM_ROLE_DELETED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { roleId, deleted },
+      }).catch(() => {});
+
+      sendJson(res, 200, { success: true, message: 'Custom role deleted successfully.' });
+      return true;
+    }
+
     // =========================================================
     // 13. FEATURE MANAGEMENT
     // =========================================================
@@ -3752,20 +3901,24 @@ export async function handleAdminApiRequest(
 
       if (admins.length === 0) {
         const fbUsers = await listAllAppUsersFallback();
-        admins = fbUsers.filter((u) => ['admin', 'superadmin', 'support', 'analyst'].includes(String(u.role || '').toLowerCase()));
+        admins = fbUsers.filter((u) => {
+          const r = String(u.role || '').toLowerCase();
+          const rs = String(u.role_slug || '').toLowerCase();
+          return ['admin', 'superadmin', 'support', 'analyst'].includes(r) || (rs && rs !== 'user');
+        });
       }
 
       sendJson(res, 200, { success: true, admins });
       return true;
     }
 
-    // Promote / Add Staff Admin: POST /api/admin/admins
-    if (pathname === '/api/admin/admins' && method === 'POST') {
+    // Create Brand-New Staff/Admin Account OR Assign Existing User: POST /api/admin/staff & POST /api/admin/admins
+    if ((pathname === '/api/admin/admins' || pathname === '/api/admin/staff') && method === 'POST') {
       const auth = await verifyAdminAuth(req, res, 'admins.create');
       if (!auth) return true;
 
       const body = await parseJsonBody(req);
-      const { email, role, customPermissions } = body;
+      const { email, role, customPermissions, fullName, full_name, phone, password, mode } = body;
 
       if (!email || !String(email).includes('@')) {
         sendJson(res, 400, { success: false, message: 'Valid email address is required.' });
@@ -3809,21 +3962,130 @@ export async function handleAdminApiRequest(
         return true;
       }
 
-      const trimmedEmail = String(email).trim();
+      const trimmedEmail = String(email).trim().toLowerCase();
       let targetUser: any = null;
 
       if (isDatabaseAvailable()) {
         try {
-          const userRes = await query('SELECT id, full_name, email, role FROM public.app_users WHERE LOWER(email) = LOWER($1)', [trimmedEmail]);
+          const userRes = await query('SELECT id, full_name, email, role, status FROM public.app_users WHERE LOWER(email) = LOWER($1)', [trimmedEmail]);
           targetUser = userRes.rows[0] || null;
         } catch {}
       }
       if (!targetUser) {
-        const fbUsers = await listAllAppUsersFallback();
-        targetUser = fbUsers.find((u) => String(u.email || '').toLowerCase() === trimmedEmail.toLowerCase()) || null;
+        targetUser = await findAppUserFallbackByEmail(trimmedEmail);
       }
+
+      // Direct creation mode when user doesn't exist yet & password + fullName provided
+      if (!targetUser && (mode === 'create' || (typeof password === 'string' && password.length > 0))) {
+        const cleanName = String(fullName || full_name || '').trim();
+        const rawPass = String(password || '');
+        const cleanPhone = String(phone || '').trim() || null;
+
+        if (!cleanName || cleanName.length < 2) {
+          sendJson(res, 400, { success: false, message: 'Full name (min 2 chars) is required to create a new staff account.' });
+          return true;
+        }
+        const passVal = validatePasswordPolicy(rawPass);
+        if (!passVal.isValid) {
+          sendJson(res, 400, { success: false, message: passVal.errors[0] || 'Password does not meet security policy.' });
+          return true;
+        }
+
+        const passwordHash = await hashPassword(rawPass);
+        const nextRoleSlug = assignedRole === 'user' ? null : assignedRole;
+        const baseRole = ['superadmin', 'admin', 'support', 'analyst', 'user'].includes(assignedRole)
+          ? assignedRole
+          : 'support';
+        const nowIso = new Date().toISOString();
+
+        if (isDatabaseAvailable()) {
+          try {
+            const ins = await query(
+              `INSERT INTO public.app_users (
+                full_name, email, phone, password_hash, role, role_slug, custom_permissions, status, email_verified, created_at, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'active', TRUE, NOW(), NOW())
+              RETURNING *`,
+              [cleanName, trimmedEmail, cleanPhone, passwordHash, baseRole, nextRoleSlug, JSON.stringify(safeCustomPerms)]
+            );
+            targetUser = ins.rows[0] || null;
+          } catch {}
+        }
+
+        if (!targetUser) {
+          const newId = generateCryptoToken(16);
+          const sbIns = await sbRestRequest<any[]>('app_users', {
+            method: 'POST',
+            prefer: 'return=representation',
+            body: {
+              full_name: cleanName,
+              email: trimmedEmail,
+              phone: cleanPhone,
+              password_hash: passwordHash,
+              role: baseRole,
+              role_slug: nextRoleSlug,
+              custom_permissions: safeCustomPerms,
+              status: 'active',
+              email_verified: true,
+              created_at: nowIso,
+              updated_at: nowIso,
+            },
+          });
+          targetUser =
+            sbIns.ok && Array.isArray(sbIns.data) && sbIns.data[0]
+              ? sbIns.data[0]
+              : upsertAppUserLocalFallback({
+                  id: newId,
+                  full_name: cleanName,
+                  email: trimmedEmail,
+                  phone: cleanPhone,
+                  password_hash: passwordHash,
+                  role: baseRole,
+                  role_slug: nextRoleSlug,
+                  custom_permissions: safeCustomPerms,
+                  status: 'active',
+                  email_verified: true,
+                  created_at: nowIso,
+                  updated_at: nowIso,
+                });
+        }
+
+        await logSecurityEvent('STAFF_ACCOUNT_CREATED', {
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { targetUserId: targetUser.id, targetEmail: trimmedEmail, assignedRole },
+        }).catch(() => {});
+
+        await recordStaffNotification({
+          staffUserId: targetUser.id,
+          eventType: 'account_alerts',
+          title: 'Welcome to Staff Operations',
+          message: `Your staff account (${assignedRole}) was provisioned by ${auth.authUser.email}.`,
+          deepLink: '/mystaff',
+        }).catch(() => {});
+
+        sendJson(res, 201, {
+          success: true,
+          message: `New staff account created for ${trimmedEmail} with [${assignedRole}] access.`,
+          staff: {
+            id: targetUser.id,
+            full_name: targetUser.full_name,
+            email: targetUser.email,
+            phone: targetUser.phone || null,
+            role: targetUser.role,
+            role_slug: targetUser.role_slug,
+            status: targetUser.status,
+            custom_permissions: targetUser.custom_permissions,
+          },
+        });
+        return true;
+      }
+
       if (!targetUser) {
-        sendJson(res, 404, { success: false, message: 'User with this email is not registered. User must register before receiving admin credentials.' });
+        sendJson(res, 404, {
+          success: false,
+          message: 'User with this email is not registered. Either choose "Create New Staff Account" with a password, or ask them to register first.',
+        });
         return true;
       }
       if (isProtectedMasterAdmin(targetUser.email)) {
@@ -3836,6 +4098,10 @@ export async function handleAdminApiRequest(
       }
 
       const nextRoleSlug = assignedRole === 'user' ? null : assignedRole;
+      const baseRole = ['superadmin', 'admin', 'support', 'analyst', 'user'].includes(assignedRole)
+        ? assignedRole
+        : 'support';
+
       if (isDatabaseAvailable()) {
         try {
           await query(`
@@ -3845,7 +4111,7 @@ export async function handleAdminApiRequest(
                 custom_permissions = $3,
                 updated_at = NOW()
             WHERE id = $4
-          `, [assignedRole, nextRoleSlug, JSON.stringify(safeCustomPerms), targetUser.id]);
+          `, [baseRole, nextRoleSlug, JSON.stringify(safeCustomPerms), targetUser.id]);
           await revokeAllUserSessions(targetUser.id).catch(() => 0);
 
           await logSecurityEvent('ADMIN_ROLE_ASSIGNED', {
@@ -3861,7 +4127,7 @@ export async function handleAdminApiRequest(
         sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetUser.id)}`, {
           method: 'PATCH',
           body: {
-            role: assignedRole,
+            role: baseRole,
             role_slug: nextRoleSlug,
             custom_permissions: safeCustomPerms,
             updated_at: new Date().toISOString(),
@@ -3869,13 +4135,119 @@ export async function handleAdminApiRequest(
         }),
         sbRestRequest(`profiles?id=eq.${encodeURIComponent(targetUser.id)}`, {
           method: 'PATCH',
-          body: { role: assignedRole },
+          body: { role: baseRole },
         }),
       ]);
+      upsertAppUserLocalFallback({
+        ...targetUser,
+        role: baseRole,
+        role_slug: nextRoleSlug,
+        custom_permissions: safeCustomPerms,
+        updated_at: new Date().toISOString(),
+      });
+      await revokeAllUserSessions(targetUser.id).catch(() => 0);
 
       sendJson(res, 200, {
         success: true,
         message: `User ${targetUser.email} has been granted [${assignedRole}] privileges.`,
+      });
+      return true;
+    }
+
+    // Update Staff/Admin Account Status (Activate / Suspend / Deactivate): PUT /api/admin/admins/:id/status
+    const staffStatusMatch = pathname.match(/^\/api\/admin\/admins\/([a-zA-Z0-9_-]+)\/status$/);
+    if (staffStatusMatch && (method === 'PUT' || method === 'PATCH')) {
+      const auth = await verifyAdminAuth(req, res, 'admins.revoke');
+      if (!auth) return true;
+
+      const targetId = staffStatusMatch[1];
+      const body = await parseJsonBody(req);
+      const nextStatus = String(body.status || '').toLowerCase().trim();
+      if (!['active', 'suspended', 'deactivated'].includes(nextStatus)) {
+        sendJson(res, 400, { success: false, message: 'Status must be active, suspended, or deactivated.' });
+        return true;
+      }
+
+      let target: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const r = await query('SELECT id, email, role, status FROM public.app_users WHERE id = $1', [targetId]);
+          target = r.rows[0] || null;
+        } catch {}
+      }
+      if (!target) target = await findAppUserFallbackById(targetId);
+      if (!target) {
+        sendJson(res, 404, { success: false, message: 'Staff/Admin account not found.' });
+        return true;
+      }
+      if (isProtectedMasterAdmin(target.email)) {
+        sendJson(res, 403, { success: false, message: 'Protected master administrator status cannot be altered.' });
+        return true;
+      }
+      if (targetId === auth.authUser.id && nextStatus !== 'active') {
+        sendJson(res, 400, { success: false, message: 'You cannot suspend or deactivate your own account.' });
+        return true;
+      }
+
+      if (isDatabaseAvailable()) {
+        await query(`UPDATE public.app_users SET status = $1, updated_at = NOW() WHERE id = $2`, [nextStatus, targetId]).catch(() => {});
+      }
+      await sbRestRequest(`app_users?id=eq.${encodeURIComponent(targetId)}`, {
+        method: 'PATCH',
+        body: { status: nextStatus, updated_at: new Date().toISOString() },
+      }).catch(() => {});
+      upsertAppUserLocalFallback({ ...target, status: nextStatus, updated_at: new Date().toISOString() });
+
+      if (nextStatus !== 'active') {
+        await revokeAllUserSessions(targetId).catch(() => 0);
+      }
+
+      await logSecurityEvent('STAFF_ACCOUNT_STATUS_UPDATED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { targetUserId: targetId, targetEmail: target.email, nextStatus },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Account ${target.email} is now ${nextStatus}.`,
+      });
+      return true;
+    }
+
+    // Revoke All Active Sessions for Staff/Admin: POST /api/admin/admins/:id/revoke-sessions
+    const staffRevokeSessionsMatch = pathname.match(/^\/api\/admin\/admins\/([a-zA-Z0-9_-]+)\/revoke-sessions$/);
+    if (staffRevokeSessionsMatch && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'admins.revoke');
+      if (!auth) return true;
+
+      const targetId = staffRevokeSessionsMatch[1];
+      let target: any = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const r = await query('SELECT id, email FROM public.app_users WHERE id = $1', [targetId]);
+          target = r.rows[0] || null;
+        } catch {}
+      }
+      if (!target) target = await findAppUserFallbackById(targetId);
+      if (!target) {
+        sendJson(res, 404, { success: false, message: 'Account not found.' });
+        return true;
+      }
+
+      const revokedCount = await revokeAllUserSessions(targetId);
+      await logSecurityEvent('STAFF_SESSIONS_REVOKED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { targetUserId: targetId, targetEmail: target.email, revokedCount },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Active sessions revoked for ${target.email}.`,
+        revokedCount,
       });
       return true;
     }
@@ -3895,8 +4267,7 @@ export async function handleAdminApiRequest(
         } catch {}
       }
       if (!target) {
-        const fbUsers = await listAllAppUsersFallback();
-        target = fbUsers.find((u) => u.id === targetId) || null;
+        target = await findAppUserFallbackById(targetId);
       }
       if (!target) {
         sendJson(res, 404, { success: false, message: 'Admin user not found.' });
@@ -3946,6 +4317,14 @@ export async function handleAdminApiRequest(
           }),
         ]);
       }
+      upsertAppUserLocalFallback({
+        ...target,
+        role: 'user',
+        role_slug: null,
+        custom_permissions: [],
+        updated_at: new Date().toISOString(),
+      });
+      await revokeAllUserSessions(targetId).catch(() => 0);
 
       sendJson(res, 200, { success: true, message: `Administrative privileges revoked for ${target.email}.` });
       return true;
@@ -4148,6 +4527,8 @@ export async function handleAdminApiRequest(
         } catch {}
       }
 
+      await syncMaintenanceIntoControlCenter({ id: auth.authUser.id, email: auth.authUser.email }).catch(() => {});
+
       sendJson(res, 200, { success: true, message: 'Application settings saved successfully.' });
       return true;
     }
@@ -4173,6 +4554,12 @@ export async function handleAdminApiRequest(
       const title = String(body.title || '').trim();
       const message = String(body.message || '').trim();
       const expectedRestoration = String(body.expectedRestoration || '').trim();
+      const allowStaffAccessDuringMaintenance =
+        typeof body.allowStaffAccessDuringMaintenance === 'boolean'
+          ? body.allowStaffAccessDuringMaintenance
+          : undefined;
+      const emergencyBypassEnabled =
+        typeof body.emergencyBypassEnabled === 'boolean' ? body.emergencyBypassEnabled : undefined;
 
       if (!title || title.length < 3) {
         sendJson(res, 400, { success: false, message: 'Maintenance splash title must be at least 3 characters.' });
@@ -4189,16 +4576,24 @@ export async function handleAdminApiRequest(
           title,
           message,
           expectedRestoration: expectedRestoration || 'Within 2 hours',
+          ...(allowStaffAccessDuringMaintenance !== undefined ? { allowStaffAccessDuringMaintenance } : {}),
+          ...(emergencyBypassEnabled !== undefined ? { emergencyBypassEnabled } : {}),
         },
         { id: auth.authUser.id, email: auth.authUser.email }
       );
+
+      await syncMaintenanceIntoControlCenter({ id: auth.authUser.id, email: auth.authUser.email }).catch(() => {});
 
       await logSecurityEvent('MAINTENANCE_MODE_UPDATED', {
         userId: auth.authUser.id,
         userEmail: auth.authUser.email,
         actorRole: auth.role,
         ipAddress: clientIp,
-        details: { isEnabled: maintenance.isEnabled, title: maintenance.title },
+        details: {
+          isEnabled: maintenance.isEnabled,
+          title: maintenance.title,
+          allowStaffAccessDuringMaintenance: maintenance.allowStaffAccessDuringMaintenance,
+        },
       }).catch(() => {});
 
       sendJson(res, 200, {
@@ -4255,6 +4650,8 @@ export async function handleAdminApiRequest(
         { id: auth.authUser.id, email: auth.authUser.email }
       );
 
+      await syncMaintenanceIntoControlCenter({ id: auth.authUser.id, email: auth.authUser.email }).catch(() => {});
+
       await logSecurityEvent('APP_POPUP_SETTINGS_UPDATED', {
         userId: auth.authUser.id,
         userEmail: auth.authUser.email,
@@ -4268,6 +4665,276 @@ export async function handleAdminApiRequest(
         message: 'App Download Popup settings saved successfully.',
         appPopup,
       });
+      return true;
+    }
+
+    // =========================================================
+    // 18b-2. WEBSITE MANAGEMENT CONTROL CENTER (DRAFT / PUBLISH / ASSETS / VERSIONS)
+    // =========================================================
+    if (pathname === '/api/admin/control-center' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const state = await getControlCenterAdminState();
+      sendJson(res, 200, { success: true, ...state });
+      return true;
+    }
+
+    if (pathname === '/api/admin/control-center/draft' && method === 'PUT') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const patch = body?.config && typeof body.config === 'object' ? body.config : body;
+      const result = await saveControlCenterDraft(patch || {}, {
+        id: auth.authUser.id,
+        email: auth.authUser.email,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Control center draft saved.',
+        draft: result.draft,
+        published: result.published,
+        hasUnpublishedDraft: true,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/control-center/draft' && method === 'DELETE') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      await discardControlCenterDraft({ id: auth.authUser.id, email: auth.authUser.email });
+      const state = await getControlCenterAdminState();
+      sendJson(res, 200, {
+        success: true,
+        message: 'Unpublished draft discarded.',
+        ...state,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/control-center/publish' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const configPatch = body?.config && typeof body.config === 'object' ? body.config : undefined;
+      const summary = typeof body?.summary === 'string' ? body.summary : 'Published control center updates';
+
+      const { published, versions } = await publishControlCenterChanges(
+        { configPatch, summary },
+        { id: auth.authUser.id, email: auth.authUser.email }
+      );
+
+      await logSecurityEvent('WEBSITE_CONTROL_CENTER_PUBLISHED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { version: published.version, summary },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Configuration v${published.version} published globally in real time.`,
+        published,
+        draft: null,
+        hasUnpublishedDraft: false,
+        versions,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/control-center/restore' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const versionTarget = body?.versionId ?? body?.version;
+      if (!versionTarget) {
+        sendJson(res, 400, { success: false, message: 'versionId or version is required.' });
+        return true;
+      }
+
+      const result = await restoreControlCenterVersion(versionTarget, {
+        id: auth.authUser.id,
+        email: auth.authUser.email,
+      });
+
+      if (!result) {
+        sendJson(res, 404, { success: false, message: 'Requested configuration version not found.' });
+        return true;
+      }
+
+      await logSecurityEvent('WEBSITE_CONTROL_CENTER_RESTORED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { restoredFrom: versionTarget, newVersion: result.restored.version },
+      }).catch(() => {});
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Configuration restored and published live as v${result.restored.version}.`,
+        published: result.restored,
+        draft: null,
+        hasUnpublishedDraft: false,
+        versions: result.versions,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/admin/control-center/upload-asset' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'settings.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const allowedScopes = new Set(['user_app', 'admin_app', 'staff_app', 'website', 'general']);
+      const allowedSlots = new Set(['logo', 'favicon', 'pwa_icon', 'og_image', 'hero_image', 'banner', 'splash']);
+      const scope = allowedScopes.has(String(body.scope)) ? (body.scope as any) : 'general';
+      const slot = allowedSlots.has(String(body.slot)) ? (body.slot as any) : 'logo';
+      const dataUrl = String(body.dataUrl || body.content || '').trim();
+
+      const saved = await saveSanitizedBrandingAsset({
+        scope,
+        slot,
+        dataUrl,
+        width: typeof body.width === 'number' ? body.width : undefined,
+        height: typeof body.height === 'number' ? body.height : undefined,
+        actorEmail: auth.authUser.email,
+      });
+
+      if (!saved.success || !saved.asset) {
+        await logSecurityEvent('BRANDING_ASSET_REJECTED', {
+          userId: auth.authUser.id,
+          userEmail: auth.authUser.email,
+          actorRole: auth.role,
+          ipAddress: clientIp,
+          details: { scope, slot, reason: saved.error },
+        }).catch(() => {});
+        sendJson(res, 400, { success: false, message: saved.error || 'Branding image rejected.' });
+        return true;
+      }
+
+      await logSecurityEvent('BRANDING_ASSET_UPLOADED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { assetId: saved.asset.id, scope, slot, mimeType: saved.asset.mimeType, byteSize: saved.asset.byteSize },
+      }).catch(() => {});
+
+      sendJson(res, 201, {
+        success: true,
+        message: 'Branding asset validated, sanitized, and stored.',
+        asset: saved.asset,
+      });
+      return true;
+    }
+
+    // =========================================================
+    // 18b-3. ADMIN STAFF TASKS MANAGEMENT: GET/POST /api/admin/staff-tasks
+    // =========================================================
+    if (pathname === '/api/admin/staff-tasks' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'support.read');
+      if (!auth) return true;
+
+      const status = typeof parsedUrl.query.status === 'string' ? parsedUrl.query.status : undefined;
+      const assignedTo = typeof parsedUrl.query.assignedTo === 'string' ? parsedUrl.query.assignedTo : undefined;
+      const tasks = await listStaffTasks({ status, assignedTo });
+      sendJson(res, 200, { success: true, tasks });
+      return true;
+    }
+
+    if (pathname === '/api/admin/staff-tasks' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'support.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const title = String(body.title || '').trim();
+      if (title.length < 3) {
+        sendJson(res, 400, { success: false, message: 'Task title must be at least 3 characters.' });
+        return true;
+      }
+
+      let assignedName = body.assigned_to_name || null;
+      let assignedEmail = body.assigned_to_email || null;
+      if (body.assigned_to && !assignedEmail) {
+        const staffUser = await findAppUserFallbackById(String(body.assigned_to));
+        if (staffUser) {
+          assignedName = staffUser.full_name || assignedName;
+          assignedEmail = staffUser.email || assignedEmail;
+        }
+      }
+
+      const task = await createStaffTask({
+        title,
+        description: String(body.description || ''),
+        category: String(body.category || 'operations'),
+        priority: body.priority,
+        assigned_to: body.assigned_to || null,
+        assigned_to_name: assignedName,
+        assigned_to_email: assignedEmail,
+        assigned_by: auth.authUser.id,
+        assigned_by_name: auth.authUser.full_name || auth.authUser.email,
+        due_at: body.due_at || null,
+      });
+
+      await recordStaffNotification({
+        staffUserId: task.assigned_to,
+        eventType: 'assigned_task',
+        title: `New Task: ${task.title}`,
+        message: `Priority: ${task.priority.toUpperCase()} · Assigned by ${auth.authUser.full_name || auth.authUser.email}`,
+        deepLink: '/mystaff',
+        metadata: { taskId: task.id, priority: task.priority },
+      }).catch(() => {});
+
+      await logSecurityEvent('STAFF_TASK_CREATED', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { taskId: task.id, assignedTo: task.assigned_to },
+      }).catch(() => {});
+
+      sendJson(res, 201, { success: true, message: 'Staff task assigned.', task });
+      return true;
+    }
+
+    const adminTaskPatchMatch = pathname.match(/^\/api\/admin\/staff-tasks\/([a-zA-Z0-9_-]+)$/);
+    if (adminTaskPatchMatch && (method === 'PATCH' || method === 'PUT')) {
+      const auth = await verifyAdminAuth(req, res, 'support.manage');
+      if (!auth) return true;
+
+      const taskId = adminTaskPatchMatch[1];
+      const body = await parseJsonBody(req);
+      const updated = await updateStaffTask(taskId, {
+        status: body.status,
+        priority: body.priority,
+        assigned_to: body.assigned_to,
+        title: body.title,
+        description: body.description,
+      });
+      if (!updated) {
+        sendJson(res, 404, { success: false, message: 'Staff task not found.' });
+        return true;
+      }
+
+      if (updated.assigned_to) {
+        await recordStaffNotification({
+          staffUserId: updated.assigned_to,
+          eventType: 'task_updates',
+          title: `Task Updated: ${updated.title}`,
+          message: `Status is now ${updated.status.replace('_', ' ')}.`,
+          deepLink: '/mystaff',
+          metadata: { taskId: updated.id, status: updated.status },
+        }).catch(() => {});
+      }
+
+      sendJson(res, 200, { success: true, task: updated });
       return true;
     }
 

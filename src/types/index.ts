@@ -178,6 +178,8 @@ export interface MaintenanceSettings {
   title: string;
   message: string;
   expectedRestoration?: string;
+  allowStaffAccessDuringMaintenance?: boolean;
+  emergencyBypassEnabled?: boolean;
   startDate?: string;
   endDate?: string;
   updatedAt?: string;
@@ -209,6 +211,253 @@ export interface AppBrandingSettings {
   supportEmail?: string;
   supportPhone?: string;
   showBrandingBadge?: boolean;
+}
+
+export type BrandingIdentityKey = 'user_app' | 'admin_app' | 'staff_app' | 'website';
+
+export interface AppIdentityBranding {
+  appName: string;
+  shortName: string;
+  tagline: string;
+  description: string;
+  logoUrl: string;
+  faviconUrl: string;
+  pwaIconUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  themeColor: string;
+  loginTitle: string;
+  loginSubtitle: string;
+  dashboardHeading: string;
+  splashHeadline: string;
+  splashTagline: string;
+}
+
+export interface WebsiteBrandingConfig {
+  siteName: string;
+  siteTitle: string;
+  siteDescription: string;
+  logoUrl: string;
+  faviconUrl: string;
+  ogImageUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  headerBadgeText: string;
+  footerBrandText: string;
+  defaultLanguage: string;
+  defaultTheme: 'light' | 'dark' | 'system';
+}
+
+export interface WebsiteNavLinkConfig {
+  id: string;
+  label: string;
+  target: string;
+  visible: boolean;
+}
+
+export interface WebsiteFeatureCardConfig {
+  id: string;
+  title: string;
+  description: string;
+  visible: boolean;
+}
+
+export interface WebsiteHomepageConfig {
+  showHero: boolean;
+  heroBadge: string;
+  heroHeading: string;
+  heroSubheading: string;
+  heroImageUrl: string;
+  primaryCtaText: string;
+  secondaryCtaText: string;
+  showAnnouncementStrip: boolean;
+  showFeatureSection: boolean;
+  featureSectionHeading: string;
+  featureCards: WebsiteFeatureCardConfig[];
+  showSecurityTrustSection: boolean;
+  securityTrustText: string;
+}
+
+export interface WebsiteHeaderConfig {
+  showBrandLogo: boolean;
+  showBrandName: boolean;
+  showInstallButton: boolean;
+  showNotificationBell: boolean;
+  navLinks: WebsiteNavLinkConfig[];
+}
+
+export interface WebsiteSocialLinks {
+  github: string;
+  twitter: string;
+  linkedin: string;
+  instagram: string;
+  youtube: string;
+  website: string;
+}
+
+export interface WebsiteFooterConfig {
+  copyrightText: string;
+  supportEmail: string;
+  supportPhone: string;
+  companyName: string;
+  address: string;
+  showLegalLinks: boolean;
+  showSocialLinks: boolean;
+  socialLinks: WebsiteSocialLinks;
+}
+
+export interface WebsiteLoginSettings {
+  allowLogin: boolean;
+  allowRegistration: boolean;
+  allowGoogleSignIn: boolean;
+  allowPasskeySignIn: boolean;
+  loginHeadline: string;
+  loginSubheadline: string;
+  registerHeadline: string;
+  registerSubheadline: string;
+  loginBannerText: string;
+  showAppDownloadOnLogin: boolean;
+}
+
+export interface WebsiteAnnouncementConfig {
+  enabled: boolean;
+  title: string;
+  message: string;
+  severity: 'info' | 'success' | 'warning' | 'announcement';
+  ctaLabel: string;
+  ctaTarget: string;
+  dismissible: boolean;
+}
+
+export interface WebsiteSeoConfig {
+  title: string;
+  metaDescription: string;
+  ogTitle: string;
+  ogDescription: string;
+  ogImageUrl: string;
+  faviconUrl: string;
+  canonicalUrl: string;
+  robotsAllowIndex: boolean;
+  robotsDisallowPaths: string[];
+  sitemapEnabled: boolean;
+  sitemapExtraPaths: string[];
+}
+
+export interface WebsiteFeatureVisibilityConfig {
+  udharEnabled: boolean;
+  upiQrEnabled: boolean;
+  aiAssistantEnabled: boolean;
+  receiptScannerEnabled: boolean;
+  reportsEnabled: boolean;
+  supportDeskEnabled: boolean;
+  legalCenterEnabled: boolean;
+  publicWelcomeHeroEnabled: boolean;
+}
+
+export interface AppPwaSettings {
+  userAppInstallEnabled: boolean;
+  adminAppInstallEnabled: boolean;
+  staffAppInstallEnabled: boolean;
+  showDownloadPopup: boolean;
+  autoPromptDelaySeconds: number;
+  offlineFallbackEnabled: boolean;
+}
+
+export interface NotificationTemplateRule {
+  key: string;
+  audience: 'user' | 'admin' | 'staff';
+  category: string;
+  enabled: boolean;
+  titleTemplate: string;
+  bodyTemplate: string;
+}
+
+export interface WebsiteNotificationConfig {
+  userAppName: string;
+  userIconUrl: string;
+  adminAppName: string;
+  adminIconUrl: string;
+  staffAppName: string;
+  staffIconUrl: string;
+  categories: {
+    user: Record<string, boolean>;
+    admin: Record<string, boolean>;
+    staff: Record<string, boolean>;
+  };
+  templates: NotificationTemplateRule[];
+}
+
+export interface SiteControlCenterConfig {
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
+  publishedAt: string | null;
+  branding: {
+    user_app: AppIdentityBranding;
+    admin_app: AppIdentityBranding;
+    staff_app: AppIdentityBranding;
+    website: WebsiteBrandingConfig;
+  };
+  homepage: WebsiteHomepageConfig;
+  header: WebsiteHeaderConfig;
+  footer: WebsiteFooterConfig;
+  loginSettings: WebsiteLoginSettings;
+  announcement: WebsiteAnnouncementConfig;
+  seo: WebsiteSeoConfig;
+  featureVisibility: WebsiteFeatureVisibilityConfig;
+  pwa: AppPwaSettings;
+  notifications: WebsiteNotificationConfig;
+  maintenance: MaintenanceSettings;
+  appPopup: AppDownloadPopupSettings;
+  contentBlocks: {
+    aboutSummary: string;
+    supportNotice: string;
+    securityGuarantee: string;
+  };
+}
+
+export interface ConfigVersionEntry {
+  id: string;
+  version: number;
+  status: 'draft' | 'published' | 'archived';
+  summary: string;
+  createdBy: string;
+  createdAt: string;
+  publishedAt: string | null;
+  config: SiteControlCenterConfig;
+}
+
+export interface PublicSiteConfigPayload {
+  success: boolean;
+  version: number;
+  updatedAt: string;
+  maintenance: MaintenanceSettings;
+  appPopup: AppDownloadPopupSettings;
+  siteConfig: SiteControlCenterConfig;
+  syncSource?: 'live' | 'cache' | 'fallback';
+}
+
+export interface StaffTaskItem {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'open' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+  assigned_to: string | null;
+  assigned_to_name?: string | null;
+  assigned_to_email?: string | null;
+  assigned_by: string | null;
+  assigned_by_name?: string | null;
+  related_user_id?: string | null;
+  related_ticket_id?: string | null;
+  due_at?: string | null;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BroadcastNotification {

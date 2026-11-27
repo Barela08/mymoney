@@ -7,6 +7,8 @@ import {
 import { pushNotifications, type PushSubscribeResult } from '../lib/pushNotifications';
 import { initNotificationAudioUnlock, playNotificationSound } from '../lib/notificationSound';
 import { showExternalNotification } from '../lib/externalNotifications';
+import { subscribeToSupabaseUserNotificationsRealtime } from '../lib/supabase';
+import { dispatchUdharUpdated } from '../lib/udharDeletionApi';
 import { useAuth } from './AuthContext';
 
 interface NotificationContextType {
@@ -25,6 +27,7 @@ interface NotificationContextType {
   markAllAsRead: () => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
+  respondToConnectionNotification: (id: string, action: 'accept' | 'reject') => Promise<{ success: boolean; message?: string; status?: string }>;
   updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
   enablePush: () => Promise<PushSubscribeResult>;
   disablePush: () => Promise<boolean>;
@@ -257,12 +260,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     window.addEventListener('mymoney:notifications-refresh', onRefreshEvent);
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
+    const unsubRealtime = user?.id
+      ? subscribeToSupabaseUserNotificationsRealtime(user.id, () => {
+          void refreshNotifications();
+        })
+      : () => {};
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('mymoney:notifications-refresh', onRefreshEvent);
       window.removeEventListener('focus', onFocusOrVisible);
       document.removeEventListener('visibilitychange', onFocusOrVisible);
+      unsubRealtime();
     };
   }, [user, refreshNotifications, loadPreferences]);
 
@@ -308,6 +317,36 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       await notificationsApi.clearAll();
     } catch {
       refreshNotifications();
+    }
+  };
+
+  const respondToConnectionNotification = async (id: string, action: 'accept' | 'reject') => {
+    const resolvedStatus = action === 'accept' ? 'accepted' : 'rejected';
+    try {
+      const res = await notificationsApi.respondToConnectionNotification(id, action);
+      setNotifications((prev) =>
+        prev.map((n) => {
+          if (n.id !== id) return n;
+          if (!n.is_read) {
+            setUnreadCount((c) => Math.max(0, c - 1));
+          }
+          return {
+            ...n,
+            is_read: true,
+            metadata: {
+              ...(n.metadata || {}),
+              requestStatus: resolvedStatus,
+              resolvedAt: new Date().toISOString(),
+            },
+          };
+        })
+      );
+      dispatchUdharUpdated();
+      void refreshNotifications();
+      return { success: true, message: res.message, status: res.status || resolvedStatus };
+    } catch (err: any) {
+      void refreshNotifications();
+      throw err;
     }
   };
 
@@ -441,6 +480,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         markAllAsRead,
         deleteNotification,
         clearAll,
+        respondToConnectionNotification,
         updatePreferences,
         enablePush,
         disablePush,

@@ -68,6 +68,24 @@ export const ConnectionRequestsPanel: React.FC<ConnectionRequestsPanelProps> = (
     }
   };
 
+  const cancelOutgoing = async (request: ConnectionRequestItem) => {
+    if (actingId) return;
+    try {
+      setActingId(request.id);
+      const res = await udharDeletionApi.cancelConnectionRequest(request.id);
+      toast.info(
+        'Request Cancelled',
+        res.message || `Cancelled connection request to ${request.displayName}.`
+      );
+      await load();
+      if (onChanged) onChanged();
+    } catch (err: any) {
+      toast.error('Cancel Failed', err?.message || 'Could not cancel this request.');
+    } finally {
+      setActingId(null);
+    }
+  };
+
   if (isLoading && incoming.length === 0 && outgoing.length === 0) {
     return (
       <div className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 text-xs text-slate-400">
@@ -129,7 +147,7 @@ export const ConnectionRequestsPanel: React.FC<ConnectionRequestsPanelProps> = (
                 {request.displayName} wants to connect with you
               </p>
               <p className="text-[10px] text-slate-400 truncate">
-                On My Money Manager Udhar · {request.relationshipType || 'Friend'}
+                {request.emailMasked || request.phoneMasked || 'On My Money Manager Udhar'} · {request.relationshipType || 'Friend'}
               </p>
             </div>
           </div>
@@ -167,22 +185,48 @@ export const ConnectionRequestsPanel: React.FC<ConnectionRequestsPanelProps> = (
           className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50/60 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700"
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-[11px] flex items-center justify-center shrink-0">
-              {request.displayName.charAt(0).toUpperCase()}
+            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-[11px] flex items-center justify-center shrink-0 overflow-hidden">
+              {request.avatarUrl ? (
+                <img src={request.avatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                request.displayName.charAt(0).toUpperCase()
+              )}
             </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-300 truncate">
-              Request sent to <strong>{request.displayName}</strong>
-            </p>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-700 dark:text-slate-200 truncate">
+                <strong>{request.displayName}</strong>
+              </p>
+              {(request.emailMasked || request.phoneMasked) && (
+                <p className="text-[10px] text-slate-400 font-mono truncate">
+                  {request.emailMasked || request.phoneMasked}
+                </p>
+              )}
+            </div>
           </div>
-          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-1 rounded-lg flex items-center gap-1 shrink-0">
-            <Clock className="w-3 h-3" />
-            Awaiting approval
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-1 rounded-lg flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <span>Request Sent</span>
+            </span>
+            <button
+              type="button"
+              disabled={actingId === request.id}
+              onClick={() => void cancelOutgoing(request)}
+              className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[10px] font-bold disabled:opacity-50 cursor-pointer flex items-center gap-1"
+            >
+              {actingId === request.id ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <X className="w-3 h-3" />
+              )}
+              <span>Cancel Request</span>
+            </button>
+          </div>
         </div>
       ))}
 
       <p className="text-[10.5px] text-slate-400 leading-relaxed">
-        Profile details are shared only after a request is accepted. Both people can disconnect at any time.
+        Saved People connections become active only after a request is accepted. Both people can remove a connection at any time.
       </p>
     </div>
   );

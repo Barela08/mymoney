@@ -190,25 +190,53 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
     }
   };
 
-  const handleAcceptIncoming = async (userItem: SearchUserResult) => {
+  const handleAcceptIncoming = async (userItem: SearchUserResult, action: 'accept' | 'reject' = 'accept') => {
     if (isConnecting) return;
     try {
       setIsConnecting(true);
       const res = await udharDeletionApi.respondToConnectionRequest(
         userItem.requestId || userItem.id,
-        'accept'
+        action
       );
-      toast.success(
-        'Connected!',
-        res.message || `Connected with ${userItem.fullName}. Added to your Saved People.`
-      );
-      onPersonAdded(userItem.fullName, userItem.id);
-      onRequestSent?.();
-      setSearchQuery('');
-      setSearchResults([]);
-      onClose();
+      if (action === 'accept') {
+        toast.success(
+          'Connected!',
+          res.message || `Connected with ${userItem.fullName}. Added to your Saved People.`
+        );
+        onPersonAdded(userItem.fullName, userItem.id);
+        onRequestSent?.();
+        setSearchQuery('');
+        setSearchResults([]);
+        onClose();
+      } else {
+        toast.info('Request Rejected', res.message || `Declined request from ${userItem.fullName}.`);
+        setSearchResults((prev) =>
+          prev.map((u) => (u.id === userItem.id ? { ...u, connectionStatus: 'none', requestId: null } : u))
+        );
+        onRequestSent?.();
+      }
     } catch (err: any) {
-      toast.error('Accept Failed', err?.message || 'Could not accept connection request.');
+      toast.error(
+        action === 'accept' ? 'Accept Failed' : 'Reject Failed',
+        err?.message || 'Could not update connection request.'
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleCancelOutgoing = async (userItem: SearchUserResult) => {
+    if (!userItem.requestId || isConnecting) return;
+    try {
+      setIsConnecting(true);
+      const res = await udharDeletionApi.cancelConnectionRequest(userItem.requestId);
+      toast.info('Request Cancelled', res.message || `Cancelled request to ${userItem.fullName}.`);
+      setSearchResults((prev) =>
+        prev.map((u) => (u.id === userItem.id ? { ...u, connectionStatus: 'none', requestId: null } : u))
+      );
+      onRequestSent?.();
+    } catch (err: any) {
+      toast.error('Cancel Failed', err?.message || 'Could not cancel request.');
     } finally {
       setIsConnecting(false);
     }
@@ -391,8 +419,8 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
               </div>
 
               <p className="text-[11px] text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 p-2.5 rounded-xl font-medium">
-                Connecting enables real-time 2-way Shared Udhar tracking, mutual repayment
-                confirmation, and synchronized balances for both accounts.
+                Send a connection request? They must accept it before both of you are added to
+                Saved People for 2-way Shared Udhar tracking.
               </p>
             </div>
 
@@ -432,12 +460,12 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                 {isConnecting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Connecting...</span>
+                    <span>Sending...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Confirm &amp; Connect</span>
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Send Request</span>
                   </>
                 )}
               </button>
@@ -621,7 +649,7 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                             <div className="flex items-center gap-1.5 shrink-0">
                               <span className="px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 text-[10px] font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" />
-                                <span>Connected</span>
+                                <span>Already Connected</span>
                               </span>
                               {onOpenProfile && (
                                 <button
@@ -637,24 +665,46 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                               )}
                             </div>
                           ) : status === 'incoming_pending' ? (
-                            <button
-                              type="button"
-                              disabled={isConnecting}
-                              onClick={() => void handleAcceptIncoming(userItem)}
-                              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 text-white text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm"
-                            >
-                              {isConnecting ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="w-3 h-3" />
-                              )}
-                              <span>Accept Request</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={isConnecting}
+                                onClick={() => void handleAcceptIncoming(userItem, 'reject')}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isConnecting}
+                                onClick={() => void handleAcceptIncoming(userItem, 'accept')}
+                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 text-white text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm"
+                              >
+                                {isConnecting ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="w-3 h-3" />
+                                )}
+                                <span>Accept</span>
+                              </button>
+                            </div>
                           ) : status === 'pending' ? (
-                            <span className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 shrink-0">
-                              <Clock className="w-3 h-3" />
-                              <span>Pending</span>
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>Request Sent</span>
+                              </span>
+                              {userItem.requestId && (
+                                <button
+                                  type="button"
+                                  disabled={isConnecting}
+                                  onClick={() => void handleCancelOutgoing(userItem)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                                >
+                                  Cancel Request
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <button
                               type="button"
@@ -664,8 +714,8 @@ export const AddPersonModal: React.FC<AddPersonModalProps> = ({
                               }}
                               className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm shadow-emerald-600/30"
                             >
-                              <Sparkles className="w-3 h-3" />
-                              <span>Select</span>
+                              <UserPlus className="w-3 h-3" />
+                              <span>Send Request</span>
                             </button>
                           )}
                         </div>

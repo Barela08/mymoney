@@ -788,3 +788,33 @@ export function subscribeToSupabaseUdharRealtime(
   };
 }
 
+export function subscribeToSupabaseUserNotificationsRealtime(
+  userId: string,
+  onChanged: () => void
+): () => void {
+  const client = getSupabaseClient();
+  if (!client || !userId) return () => {};
+
+  const channel = client
+    .channel(`realtime_user_notifications_${userId}_${Math.random().toString(36).substring(2, 7)}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'user_notifications',
+        filter: `user_id=eq.${userId}`,
+      },
+      () => {
+        onChanged();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    try {
+      client.removeChannel(channel);
+    } catch {}
+  };
+}
+

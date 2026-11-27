@@ -89,20 +89,27 @@ export interface ResolveQrResponse {
   pairingToken?: string;
   pairingCode?: string;
   isAlreadyConnected?: boolean;
+  connectionStatus?: 'connected' | 'pending' | 'incoming_pending' | 'none';
+  requestId?: string | null;
 }
 
 export interface ConnectionRequestItem {
   id: string;
   direction: 'incoming' | 'outgoing';
-  status: 'pending' | string;
+  requesterUserId?: string;
+  targetUserId?: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled' | string;
   relationshipType?: string;
   source?: 'qr' | 'search' | 'manual' | string;
+  requestedVia?: string;
+  connectionMethod?: 'SEARCH' | 'QR_CODE' | 'CONFIRMATION_CODE' | string;
   createdAt?: string;
   expiresAt?: string;
   displayName: string;
   emailMasked?: string;
   phoneMasked?: string | null;
   avatarUrl?: string | null;
+  isVerified?: boolean;
 }
 
 export interface ConnectionRequestListResponse {
@@ -122,12 +129,17 @@ export interface ConnectionRequestListResponse {
 
 export interface ConnectionRequestResult {
   success: boolean;
-  status: 'pending' | 'connected' | 'rejected' | string;
+  status: 'pending' | 'connected' | 'rejected' | 'cancelled' | string;
+  title?: string;
   message: string;
   requestId?: string;
   deduplicated?: boolean;
   alreadyConnected?: boolean;
+  alreadyPending?: boolean;
+  connectionMethod?: 'SEARCH' | 'QR_CODE' | 'CONFIRMATION_CODE' | string;
+  connectionId?: string | null;
   connection?: ConnectedPersonPayload;
+  connectedUser?: ConnectedPersonPayload;
   target?: { id: string; displayName: string; avatarUrl?: string | null };
   code?: string;
 }
@@ -357,7 +369,15 @@ export const udharDeletionApi = {
     relationship_type?: string;
     notes?: string;
     linked_user_id?: string | null;
-  }): Promise<{ success: boolean; contact: UdharContact; reciprocallyLinked?: boolean }> {
+  }): Promise<{
+    success: boolean;
+    contact?: UdharContact;
+    reciprocallyLinked?: boolean;
+    status?: string;
+    requestId?: string;
+    alreadyPending?: boolean;
+    message?: string;
+  }> {
     const res = await apiRequest('/api/udhar/contacts', {
       method: 'POST',
       body: JSON.stringify(contact),
@@ -386,8 +406,26 @@ export const udharDeletionApi = {
     return res;
   },
 
-  async deleteContact(id: string): Promise<{ success: boolean; message: string }> {
-    const res = await apiRequest(`/api/udhar/contacts/${id}`, { method: 'DELETE' });
+  async deleteContact(id: string): Promise<{
+    success: boolean;
+    message: string;
+    twoSided?: boolean;
+    preservedTransactions?: boolean;
+  }> {
+    const res = await apiRequest(`/api/udhar/contacts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    dispatchUdharUpdated();
+    return res;
+  },
+
+  async removeSavedConnection(targetOrContactId: string): Promise<{
+    success: boolean;
+    message: string;
+    twoSided?: boolean;
+    preservedTransactions?: boolean;
+  }> {
+    const res = await apiRequest(`/api/udhar/connections/${encodeURIComponent(targetOrContactId)}`, {
+      method: 'DELETE',
+    });
     dispatchUdharUpdated();
     return res;
   },
@@ -395,7 +433,7 @@ export const udharDeletionApi = {
   async linkContactToRegistered(
     contactId: string,
     registeredUserId: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; status?: string; pendingApproval?: boolean; requestId?: string }> {
     const res = await apiRequest(`/api/udhar/contacts/${contactId}/link-registered`, {
       method: 'POST',
       body: JSON.stringify({ registeredUserId }),
@@ -458,6 +496,14 @@ export const udharDeletionApi = {
     return res;
   },
 
+  async cancelConnectionRequest(requestId: string): Promise<ConnectionRequestResult> {
+    const res = await apiRequest(`/api/udhar/connections/${encodeURIComponent(requestId)}/cancel`, {
+      method: 'POST',
+    });
+    dispatchUdharUpdated();
+    return res;
+  },
+
   async disconnectConnection(targetUserId: string): Promise<{ success: boolean; message: string }> {
     const res = await apiRequest('/api/udhar/connections/disconnect', {
       method: 'POST',
@@ -503,9 +549,11 @@ export const udharDeletionApi = {
   },
 
   async connectViaQr(payload: {
+    qrData?: string;
     pairingToken?: string;
     pairingCode?: string;
     relationshipType?: string;
+    connectionMethod?: 'QR_CODE' | 'CONFIRMATION_CODE';
   }): Promise<ConnectionRequestResult> {
     const res = await apiRequest('/api/udhar/qr/connect', {
       method: 'POST',
@@ -758,7 +806,7 @@ export const udharDeletionApi = {
   },
 };
 
-function dispatchUdharUpdated() {
+export function dispatchUdharUpdated() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('mymoney:udhar-updated'));
   }

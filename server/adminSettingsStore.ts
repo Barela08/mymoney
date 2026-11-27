@@ -10,6 +10,8 @@ export interface MaintenanceConfig {
   title: string;
   message: string;
   expectedRestoration: string;
+  allowStaffAccessDuringMaintenance: boolean;
+  emergencyBypassEnabled: boolean;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -87,6 +89,8 @@ export const DEFAULT_MAINTENANCE_CONFIG: MaintenanceConfig = {
   message:
     'We are upgrading our secure financial infrastructure to deliver better performance and security. Normal services will resume shortly.',
   expectedRestoration: 'Within 2 hours',
+  allowStaffAccessDuringMaintenance: true,
+  emergencyBypassEnabled: true,
 };
 
 export const DEFAULT_APP_POPUP_CONFIG: AppPopupConfig = {
@@ -282,6 +286,14 @@ function normalizeMaintenanceConfig(raw: any): MaintenanceConfig {
       typeof raw?.expectedRestoration === 'string' && raw.expectedRestoration.trim()
         ? raw.expectedRestoration.trim().slice(0, 100)
         : DEFAULT_MAINTENANCE_CONFIG.expectedRestoration,
+    allowStaffAccessDuringMaintenance:
+      typeof raw?.allowStaffAccessDuringMaintenance === 'boolean'
+        ? raw.allowStaffAccessDuringMaintenance
+        : DEFAULT_MAINTENANCE_CONFIG.allowStaffAccessDuringMaintenance,
+    emergencyBypassEnabled:
+      typeof raw?.emergencyBypassEnabled === 'boolean'
+        ? raw.emergencyBypassEnabled
+        : DEFAULT_MAINTENANCE_CONFIG.emergencyBypassEnabled,
     updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : undefined,
     updatedBy: typeof raw?.updatedBy === 'string' ? raw.updatedBy : undefined,
   };

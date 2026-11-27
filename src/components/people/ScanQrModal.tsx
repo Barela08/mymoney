@@ -97,6 +97,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
   // Manual code / link form
   const [manualCode, setManualCode] = useState<string>('');
   const [relationshipType, setRelationshipType] = useState<string>('Friend');
+  const [resolvedEntryMethod, setResolvedEntryMethod] = useState<'QR_CODE' | 'CONFIRMATION_CODE'>('QR_CODE');
+  const [resolvedRawQrData, setResolvedRawQrData] = useState<string | undefined>(undefined);
 
   // Video & Canvas refs for scanner
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -201,7 +203,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
   // Resolve any scanned payload, uploaded QR, deep link, or pair code
   const resolveRawInput = useCallback(
-    async (rawInput: string) => {
+    async (rawInput: string, entryMethodOverride?: 'QR_CODE' | 'CONFIRMATION_CODE') => {
       if (isResolvingRef.current) return;
 
       const trimmed = (rawInput || '').trim();
@@ -247,6 +249,10 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         return;
       }
 
+      const detectedMethod: 'QR_CODE' | 'CONFIRMATION_CODE' =
+        entryMethodOverride ||
+        (parsed.kind === 'pair_code' ? 'CONFIRMATION_CODE' : 'QR_CODE');
+
       try {
         isResolvingRef.current = true;
         setIsResolving(true);
@@ -260,6 +266,8 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
         });
 
         if (res.success && res.owner && res.owner.displayName) {
+          setResolvedEntryMethod(detectedMethod);
+          setResolvedRawQrData(parsed.kind === 'json' ? rawInput.trim() : undefined);
           setResolvedOwner(res);
           toast.info('Profile Verified', `Found ${res.owner.displayName}`);
         } else {
@@ -566,7 +574,7 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
     e.preventDefault();
     const clean = manualCode.trim();
     if (!clean) return;
-    await resolveRawInput(clean);
+    await resolveRawInput(clean, 'CONFIRMATION_CODE');
   };
 
   const handleConfirmConnect = async () => {
@@ -574,35 +582,47 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
 
     try {
       setIsConnecting(true);
-      // Server-side only: creates a pending request that the QR owner must approve.
+      // Method B: Backend validates QR / confirmation code and creates bidirectional Saved People connection immediately.
       const res = await udharDeletionApi.connectViaQr({
+        qrData: resolvedRawQrData,
         pairingToken: resolvedOwner.pairingToken,
         pairingCode: resolvedOwner.pairingCode,
         relationshipType,
+        connectionMethod: resolvedEntryMethod,
       });
 
-      if (res.status === 'connected') {
-        toast.success(
-          'Connected!',
-          res.message || `You are now connected with ${resolvedOwner.owner?.displayName || 'this user'}.`
+      const targetName = resolvedOwner.owner?.displayName || 'this user';
+      const personObj = res.connectedUser || res.connection;
+
+      if (res.alreadyConnected) {
+        toast.info(
+          'Already Connected',
+          res.message || `${targetName} is already in your Saved People.`
         );
-        if (onConnected && res.connection) {
-          onConnected({
-            id: res.connection.id,
-            name: res.connection.displayName,
-            emailMasked: res.connection.emailMasked,
-            avatarUrl: res.connection.avatarUrl || null,
-          });
-        }
-      } else {
+      } else if (res.status === 'connected' || res.success) {
         toast.success(
-          'Request Sent',
-          res.message ||
-            'Your connection request was sent. It becomes active only after they accept it.'
+          res.title || 'Connection Added Successfully',
+          res.message || `${targetName} has been added to your Saved People.`
         );
       }
 
+      if (onConnected && (personObj || resolvedOwner.owner)) {
+        const payload = personObj || {
+          id: resolvedOwner.owner!.id,
+          displayName: resolvedOwner.owner!.displayName,
+          emailMasked: resolvedOwner.owner!.emailMasked,
+          avatarUrl: resolvedOwner.owner!.avatarUrl || null,
+        };
+        onConnected({
+          id: payload.id,
+          name: payload.displayName || targetName,
+          emailMasked: payload.emailMasked,
+          avatarUrl: payload.avatarUrl || null,
+        });
+      }
+
       setResolvedOwner(null);
+      setResolvedRawQrData(undefined);
       onClose();
     } catch (err: any) {
       const mapped = mapResolveError(err);
@@ -856,12 +876,14 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
               {resolvedOwner.isAlreadyConnected ? (
                 <div className="p-2.5 rounded-xl bg-blue-100/60 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                  <span>Already connected for 2-way Shared Udhar!</span>
+                  <span>Already Connected — Both accounts are synced in Saved People.</span>
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-emerald-100/60 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center justify-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>Send a connection request? They must approve it before any profile details are shared.</span>
+                  <span>
+                    {resolvedEntryMethod === 'CONFIRMATION_CODE' ? 'Confirmation Code' : 'QR Code'} verified — tap Add to Saved People to connect both accounts immediately.
+                  </span>
                 </div>
               )}
             </div>
@@ -1011,19 +1033,23 @@ export const ScanQrModal: React.FC<ScanQrModalProps> = ({
                     : handleConfirmConnect
                 }
                 disabled={isConnecting || isCreatingInstant}
-                className="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 active:scale-95 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                className={`flex-1 py-2.5 rounded-xl active:scale-95 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  resolvedOwner.isAlreadyConnected
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
                 {isConnecting ? (
-                  <span>Sending...</span>
+                  <span>Connecting...</span>
                 ) : resolvedOwner.isAlreadyConnected ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Open Profile</span>
+                    <span>Already Connected</span>
                   </>
                 ) : (
                   <>
                     <Users className="w-3.5 h-3.5" />
-                    <span>Send Request</span>
+                    <span>Add to Saved People</span>
                   </>
                 )}
               </button>

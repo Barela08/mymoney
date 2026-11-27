@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { query, pool, isDatabaseAvailable } from './db.js';
 import { generateCryptoToken, hashToken } from './security.js';
+import { findAppUserFallbackById } from './supabaseRestFallback.js';
 import type { IncomingMessage } from 'http';
 
 export interface AuthenticatedUser {
@@ -173,6 +174,8 @@ function getAuthSupabaseRestConfig(): { url: string; key: string } {
  * Issues a cryptographically signed HMAC-SHA256 stateless token ONLY when the database
  * session store is temporarily unreachable during a verified server-side login.
  */
+const revokedFallbackSessionsAt = new Map<string, number>();
+
 export function signFallbackSessionToken(
   user: { id: string; role: string; email: string },
   expiresAtMs: number
@@ -182,6 +185,7 @@ export function signFallbackSessionToken(
       sub: user.id,
       role: user.role,
       email: String(user.email || '').toLowerCase().trim(),
+      iat: Date.now(),
       exp: expiresAtMs,
     }),
     'utf8'
@@ -195,7 +199,7 @@ export function signFallbackSessionToken(
 
 export function verifyFallbackSessionToken(
   token: string
-): { userId: string; role: string; email: string; exp: number } | null {
+): { userId: string; role: string; email: string; exp: number; iat?: number } | null {
   if (!token || !token.startsWith('mmf1.')) return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -218,11 +222,17 @@ export function verifyFallbackSessionToken(
     if (!parsed?.sub || typeof parsed.exp !== 'number' || parsed.exp <= Date.now()) {
       return null;
     }
+    const revokedAt = revokedFallbackSessionsAt.get(String(parsed.sub));
+    const tokenIat = typeof parsed.iat === 'number' ? parsed.iat : 0;
+    if (revokedAt && tokenIat <= revokedAt) {
+      return null;
+    }
     return {
       userId: String(parsed.sub),
       role: String(parsed.role || 'user'),
       email: String(parsed.email || ''),
       exp: parsed.exp,
+      iat: tokenIat,
     };
   } catch {
     return null;
@@ -593,6 +603,7 @@ export async function revokeSession(sessionToken: string): Promise<boolean> {
 }
 
 export async function revokeAllUserSessions(userId: string): Promise<number> {
+  revokedFallbackSessionsAt.set(String(userId), Date.now());
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
@@ -777,6 +788,11 @@ async function resolveActiveUserById(userId: string): Promise<AuthenticatedUser 
     } catch (err) {
       console.warn('resolveActiveUserById DB query failed, attempting Supabase REST fallback:', err);
     }
+  }
+  const localOrSb = await findAppUserFallbackById(userId);
+  if (localOrSb) {
+    if (localOrSb.status && localOrSb.status !== 'active') return null;
+    return mapRowToAuthenticatedUser(localOrSb);
   }
   return await resolveUserViaSupabaseRest(userId);
 }

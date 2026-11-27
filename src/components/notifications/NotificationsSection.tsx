@@ -22,6 +22,8 @@ import {
   Users,
   Megaphone,
   X,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -79,6 +81,7 @@ interface UnifiedFeedItem {
   actionLabel?: string;
   dedupeKey: string;
   filterBuckets: UnifiedNotificationFilter[];
+  metadata?: Record<string, any>;
 }
 
 function classifyNotificationBuckets(category: string, type: string): UnifiedNotificationFilter[] {
@@ -164,6 +167,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
     markAllAsRead,
     deleteNotification,
     clearAll,
+    respondToConnectionNotification,
     setSmartAlertsUnreadCount,
   } = useNotifications();
 
@@ -171,6 +175,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isEnablingExternal, setIsEnablingExternal] = useState(false);
+  const [actingNotifId, setActingNotifId] = useState<string | null>(null);
 
   // Smart Alert Engine state
   const [showAlertRules, setShowAlertRules] = useState(false);
@@ -272,6 +277,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
         deepLink: n.deep_link,
         dedupeKey,
         filterBuckets: classifyNotificationBuckets(n.category, n.type),
+        metadata: n.metadata,
       });
     }
 
@@ -418,6 +424,30 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
       }));
       await aiFinanceApi.updateSmartAlertEvents({ action: 'dismiss', key: item.dedupeKey }).catch(() => {});
       toast.info('Alert Dismissed', 'You can restore dismissed smart alerts anytime.');
+    }
+  };
+
+  const handleConnectionNotifAction = async (
+    e: React.MouseEvent,
+    item: UnifiedFeedItem,
+    action: 'accept' | 'reject'
+  ) => {
+    e.stopPropagation();
+    if (actingNotifId || item.source !== 'notification') return;
+    try {
+      setActingNotifId(item.id);
+      const res = await respondToConnectionNotification(item.id, action);
+      toast.success(
+        action === 'accept' ? 'Connection Accepted' : 'Request Rejected',
+        res.message ||
+          (action === 'accept'
+            ? 'Added to your Saved People.'
+            : 'Connection request declined.')
+      );
+    } catch (err: any) {
+      toast.error('Action Failed', err?.message || 'Could not update connection request.');
+    } finally {
+      setActingNotifId(null);
     }
   };
 
@@ -860,6 +890,17 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
           <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {visibleItems.map((item) => {
               const targetTab = normalizeDeepLinkTarget(item.deepLink);
+              const meta = (item.metadata && typeof item.metadata === 'object' ? item.metadata : {}) as Record<string, any>;
+              const isConnectionRequest =
+                item.source === 'notification' && meta.actionType === 'udhar_connection_request';
+              const requestStatus = String(meta.requestStatus || '').toLowerCase();
+              const isPendingRequestAction =
+                isConnectionRequest && (!requestStatus || requestStatus === 'pending');
+              const isQrDirectConnected =
+                item.source === 'notification' && meta.actionType === 'udhar_qr_connected';
+              const avatarSrc = meta.initiatorAvatar || meta.requesterAvatar || null;
+              const actorName = meta.initiatorName || meta.requesterName || '';
+
               return (
                 <div
                   key={item.id}
@@ -875,9 +916,17 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
                       : 'bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-l-4 border-emerald-500'
                   }`}
                 >
-                  <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 shrink-0 mt-0.5">
-                    {getItemIcon(item)}
-                  </div>
+                  {avatarSrc ? (
+                    <img
+                      src={avatarSrc}
+                      alt={actorName || item.title}
+                      className="w-9 h-9 rounded-xl object-cover border border-emerald-500/30 shrink-0 mt-0.5"
+                    />
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 shrink-0 mt-0.5">
+                      {getItemIcon(item)}
+                    </div>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
@@ -934,6 +983,77 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
                       {item.message}
                     </p>
 
+                    {isQrDirectConnected && (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        {actorName && (
+                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                            {actorName}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+                          Method: {meta.methodLabel || (meta.connectionMethod === 'CONFIRMATION_CODE' ? 'Confirmation Code' : 'QR Code')}
+                        </span>
+                        {onNavigate && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleMarkItemRead(item);
+                              onNavigate('people');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold cursor-pointer"
+                          >
+                            View Connection
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {isConnectionRequest && (
+                      <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                        {isPendingRequestAction ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={actingNotifId === item.id}
+                              onClick={(e) => void handleConnectionNotifAction(e, item, 'accept')}
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold cursor-pointer inline-flex items-center gap-1"
+                            >
+                              {actingNotifId === item.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5" />
+                              )}
+                              <span>Accept</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actingNotifId === item.id}
+                              onClick={(e) => void handleConnectionNotifAction(e, item, 'reject')}
+                              className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Reject</span>
+                            </button>
+                          </>
+                        ) : (
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold capitalize ${
+                              requestStatus === 'accepted'
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {requestStatus === 'accepted'
+                              ? 'Accepted'
+                              : requestStatus === 'cancelled'
+                                ? 'Cancelled'
+                                : 'Rejected'}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-2">
                       <span className="capitalize font-semibold text-emerald-600 dark:text-emerald-400">
                         {item.source === 'smart_alert' ? `Alert · ${item.category}` : item.category}
@@ -944,7 +1064,7 @@ export const NotificationsSection: React.FC<NotificationsSectionProps> = ({
                       </span>
                       {targetTab && (
                         <span className="ml-auto text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 hover:underline">
-                          <span>{item.actionLabel || 'Open'}</span>
+                          <span>{isQrDirectConnected ? 'View Connection' : item.actionLabel || 'Open'}</span>
                           <ExternalLink className="w-3 h-3" />
                         </span>
                       )}

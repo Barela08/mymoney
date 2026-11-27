@@ -159,6 +159,36 @@ export const notificationsApi = {
   },
 
   /**
+   * Accept or reject a pending Udhaar People connection request directly from a notification
+   */
+  async respondToConnectionNotification(
+    notificationId: string,
+    action: 'accept' | 'reject'
+  ): Promise<{
+    success: boolean;
+    action?: 'accept' | 'reject';
+    status?: string;
+    requestStatus?: string;
+    message?: string;
+    code?: string;
+  }> {
+    const res = await fetch(`/api/notifications/${encodeURIComponent(notificationId)}/connection-action`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getNotificationHeaders(true),
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data?.message || `Action failed (HTTP ${res.status})`);
+      (err as any).status = res.status;
+      (err as any).code = data?.code;
+      throw err;
+    }
+    return data;
+  },
+
+  /**
    * Fetch user notification preferences
    */
   async getPreferences(): Promise<NotificationPreferences> {

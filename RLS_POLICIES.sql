@@ -779,15 +779,25 @@ CREATE POLICY "user_consents_insert_own" ON public.user_consents
     WITH CHECK (auth.uid() = user_id);
 
 -- ------------------------------------------------------------------------------
--- 15. USER CONNECTIONS CONSTRAINT UPDATE (SUPPORTS pending / connected / rejected / blocked)
+-- 15. USER CONNECTIONS CONSTRAINT UPDATE (SUPPORTS pending / connected / rejected / cancelled / deleted / blocked)
 -- ------------------------------------------------------------------------------
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_connections') THEN
+    ALTER TABLE public.user_connections
+      ADD COLUMN IF NOT EXISTS relationship_type TEXT DEFAULT 'Friend',
+      ADD COLUMN IF NOT EXISTS requested_via TEXT DEFAULT 'search',
+      ADD COLUMN IF NOT EXISTS connection_method TEXT,
+      ADD COLUMN IF NOT EXISTS consented_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS deleted_by UUID,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE public.user_connections DROP CONSTRAINT IF EXISTS user_connections_status_check;
     ALTER TABLE public.user_connections
       ADD CONSTRAINT user_connections_status_check
-      CHECK (status IN ('pending', 'connected', 'rejected', 'blocked'));
+      CHECK (status IN ('pending', 'connected', 'rejected', 'cancelled', 'deleted', 'blocked'));
   END IF;
 END $$;
 

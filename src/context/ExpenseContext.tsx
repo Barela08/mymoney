@@ -1531,7 +1531,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
-    // 2. Map local/personal ledger transactions onto contacts (deduped case-insensitively)
+    // 2. Map local/personal ledger transactions strictly onto existing Saved People entries (deleted contacts never resurrect)
     for (const tx of userTransactions) {
       if (tx.category === 'people' && tx.person_name) {
         const displayName = tx.person_name.trim();
@@ -1540,22 +1540,10 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const resolvedKey =
           (metaLinked && linkedToKey.get(String(metaLinked))) ||
           nameToKey.get(normName) ||
-          `name:${normName}`;
+          null;
 
-        if (!map.has(resolvedKey)) {
-          nameToKey.set(normName, resolvedKey);
-          map.set(resolvedKey, {
-            displayName,
-            given: 0,
-            received: 0,
-            udharNetBalance: 0,
-            udharHasBalances: false,
-            udharTxCount: 0,
-            txs: [],
-            lastDate: tx.transaction_date,
-            linkedUserId: metaLinked,
-            isRegisteredUser: Boolean(metaLinked),
-          });
+        if (!resolvedKey || !map.has(resolvedKey)) {
+          continue;
         }
 
         const data = map.get(resolvedKey)!;

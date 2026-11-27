@@ -323,6 +323,7 @@ self.addEventListener('notificationclick', (event) => {
 
   const rawTarget =
     (event.action && event.notification.data && event.notification.data.actionUrls?.[event.action]) ||
+    (event.action ? '/#people' : null) ||
     (event.notification.data && event.notification.data.url) ||
     '/';
   const targetUrl = sanitizeDeepLink(rawTarget);
@@ -341,6 +342,7 @@ self.addEventListener('notificationclick', (event) => {
               client.postMessage({
                 type: 'NOTIFICATION_NAVIGATE',
                 url: targetUrl,
+                action: event.action || null,
                 category: event.notification.data?.category || 'general',
                 notificationId: event.notification.data?.notificationId || null,
               });

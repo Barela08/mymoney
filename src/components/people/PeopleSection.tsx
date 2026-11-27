@@ -76,6 +76,7 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   const {
     refreshTransactions,
     peopleSummaries,
+    savedContacts,
     refreshContacts,
     isLoadingContacts,
     contactsError,
@@ -144,6 +145,8 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
   >(null);
   const [rejectReasonInput, setRejectReasonInput] = useState<string>('');
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [pendingRemovePerson, setPendingRemovePerson] = useState<PersonSummary | null>(null);
+  const [isRemovingPerson, setIsRemovingPerson] = useState(false);
 
   // Fetch Udhar Data from Backend
   const fetchUdharData = useCallback(async () => {
@@ -287,6 +290,50 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
       toast.error('Confirmation Failed', err.message || 'Failed to accept Udhar request.');
     } finally {
       setBusyTxId(null);
+    }
+  };
+
+  const confirmRemovePersonConnection = async () => {
+    if (!pendingRemovePerson || isRemovingPerson) return;
+    const person = pendingRemovePerson;
+    try {
+      setIsRemovingPerson(true);
+      const normName = person.name.trim().toLowerCase();
+      const matchingContact = savedContacts.find(
+        (c) =>
+          (person.linkedUserId && c.linked_user_id === person.linkedUserId) ||
+          c.name.trim().toLowerCase() === normName
+      );
+      const targetId =
+        matchingContact?.id ||
+        (person.linkedUserId ? `conn_${person.linkedUserId}` : null);
+
+      if (!targetId) {
+        toast.error('Delete Failed', 'Could not locate saved connection identifier.');
+        return;
+      }
+
+      const res = await udharDeletionApi.removeSavedConnection(targetId);
+      if (res.success) {
+        toast.info(
+          'Connection Removed',
+          res.message || `${person.name} has been removed from Saved People. Existing Udhaar records remain intact.`
+        );
+        if (
+          selectedPersonForDetails &&
+          ((person.linkedUserId && selectedPersonForDetails.linkedUserId === person.linkedUserId) ||
+            selectedPersonForDetails.name.trim().toLowerCase() === normName)
+        ) {
+          setSelectedPersonForDetails(null);
+        }
+        setPendingRemovePerson(null);
+        await Promise.all([fetchUdharData(), refreshContacts(), refreshNotifications()]);
+        setRequestsRefreshKey((k) => k + 1);
+      }
+    } catch (err: any) {
+      toast.error('Remove Failed', err?.message || 'Could not remove this saved connection.');
+    } finally {
+      setIsRemovingPerson(false);
     }
   };
 
@@ -838,6 +885,18 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
                       title="Record Udhar with this person"
                     >
                       + Udhar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingRemovePerson(person);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      title="Remove Connection"
+                      aria-label={`Delete ${person.name}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -1430,11 +1489,12 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
           fetchUdharData();
           refreshContacts();
           refreshTransactions();
+          refreshNotifications();
           setIsScanQrOpen(false);
           setConnectedSuccessPerson({
             name: p.name,
-            emailMasked: undefined,
-            avatarUrl: null,
+            emailMasked: p.emailMasked,
+            avatarUrl: p.avatarUrl || null,
           });
         }}
       />
@@ -1511,6 +1571,19 @@ export const PeopleSection: React.FC<PeopleSectionProps> = ({ onOpenAddModal }) 
         onClose={() => setSelectedTxForDetail(null)}
         transaction={selectedTxForDetail}
         onRefreshUdhar={fetchUdharData}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(pendingRemovePerson)}
+        title="Remove Connection?"
+        subtitle="Existing Udhaar transactions and balances remain completely intact."
+        message="Are you sure you want to remove this person from your saved connections?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        isDestructive={true}
+        isLoading={isRemovingPerson}
+        onConfirm={() => void confirmRemovePersonConnection()}
+        onCancel={() => !isRemovingPerson && setPendingRemovePerson(null)}
       />
 
       {pendingConfirmAction && (

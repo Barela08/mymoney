@@ -34907,7 +34907,9 @@ function isDiscoverableNormalUser(user) {
   if (user.deletion_status && String(user.deletion_status).toLowerCase().trim() !== "none") return false;
   if (isMasterAdminAccountEmail(user.email)) return false;
   const normalizedRole = String(user.role || "user").toLowerCase().trim();
+  const normalizedSlug = String(user.role_slug || "").toLowerCase().trim();
   if (NON_DISCOVERABLE_ROLES.has(normalizedRole) || normalizedRole !== "user") return false;
+  if (normalizedSlug && normalizedSlug !== "user") return false;
   return true;
 }
 var EPHEMERAL_FALLBACK_SECRET = crypto3.randomBytes(32).toString("hex");
@@ -35337,6 +35339,8 @@ function mapRowToAuthenticatedUser(row) {
     username: row.username || null,
     phone: row.phone,
     role: isMasterAdmin ? "superadmin" : row.role || "user",
+    role_slug: isMasterAdmin ? "superadmin" : row.role_slug || null,
+    custom_permissions: row.custom_permissions,
     status: row.status,
     email_verified: row.email_verified,
     avatar_url: row.avatar_url,
@@ -35425,7 +35429,7 @@ async function resolveActiveUserById(userId) {
   if (isDatabaseAvailable()) {
     try {
       const res = await query(
-        `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+        `SELECT id, full_name, email, phone, role, role_slug, custom_permissions, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
          FROM public.app_users WHERE id = $1`,
         [userId]
       );
@@ -35461,7 +35465,7 @@ async function authenticateRequest(req) {
       if (isDatabaseAvailable()) {
         try {
           const byEmailRes = await query(
-            `SELECT id, full_name, email, phone, role, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
+            `SELECT id, full_name, email, phone, role, role_slug, custom_permissions, status, email_verified, avatar_url, force_password_reset, created_at, last_login_at, password_changed_at
              FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1`,
             [verified.email]
           );
@@ -35537,6 +35541,8 @@ async function authenticateRequest(req) {
           u.email,
           u.phone,
           u.role,
+          u.role_slug,
+          u.custom_permissions,
           u.status,
           u.email_verified,
           u.avatar_url,
@@ -35564,31 +35570,17 @@ async function authenticateRequest(req) {
     }
     query(`UPDATE public.user_sessions SET last_active_at = NOW() WHERE id = $1`, [row.session_id]).catch(() => {
     });
-    const isMasterAdmin = Boolean(
-      row.email && (row.email.toLowerCase().trim() === "hackifypro@gmail.com" || row.email.toLowerCase().trim() === "admin@mymoney.com")
-    );
-    return {
-      id: row.id,
-      full_name: row.full_name,
-      email: row.email,
-      phone: row.phone,
-      role: isMasterAdmin ? "superadmin" : row.role || "user",
-      status: row.status,
-      email_verified: row.email_verified,
-      avatar_url: row.avatar_url,
-      force_password_reset: row.force_password_reset,
-      created_at: row.created_at,
-      last_login_at: row.last_login_at,
-      password_changed_at: row.password_changed_at
-    };
+    return mapRowToAuthenticatedUser(row);
   } catch (err) {
     console.warn("authenticateRequest query failed, attempting Supabase REST fallback:", err.message);
     return await resolveSessionViaSupabaseRest();
   }
 }
 function sanitizeUserOutput(user) {
-  const metaCompleted = user?.custom_permissions && typeof user.custom_permissions === "object" ? user.custom_permissions.__profile_completed : void 0;
+  const isMasterAdmin = isMasterAdminAccountEmail(user.email);
+  const metaCompleted = user?.custom_permissions && typeof user.custom_permissions === "object" && !Array.isArray(user.custom_permissions) ? user.custom_permissions.__profile_completed : void 0;
   const profileCompleted = typeof user.profile_completed === "boolean" ? user.profile_completed : typeof metaCompleted === "boolean" ? metaCompleted : true;
+  const staffPermissions = Array.isArray(user.custom_permissions) ? user.custom_permissions.filter((item) => typeof item === "string" && item.trim().length > 0) : [];
   return {
     id: user.id,
     uid: user.id,
@@ -35599,7 +35591,9 @@ function sanitizeUserOutput(user) {
     email: user.email,
     username: user.username || null,
     phone: user.phone || null,
-    role: user.role,
+    role: isMasterAdmin ? "superadmin" : user.role,
+    role_slug: isMasterAdmin ? "superadmin" : user.role_slug || null,
+    staff_permissions: staffPermissions,
     status: user.status,
     email_verified: user.email_verified,
     avatar_url: user.avatar_url || null,
@@ -50692,6 +50686,86 @@ async function deleteUserNotificationFallback(userId, notifId) {
   if (target) {
     target.is_deleted = true;
     target.deleted_at = now;
+    writeNotifStore(store);
+  }
+}
+async function getUserNotificationByIdFallback(userId, notifId) {
+  if (!userId || !notifId) return null;
+  const sbRes = await sbRestRequest(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&limit=1`
+  );
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    return sbRes.data[0];
+  }
+  const store = readNotifStore();
+  return store.userNotifications.find(
+    (n) => n && n.id === notifId && n.user_id === userId && !n.is_deleted
+  ) || null;
+}
+async function updateConnectionRequestNotificationsFallback(params) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const requestId = params.requestId ? String(params.requestId) : null;
+  const requesterId = params.requesterId ? String(params.requesterId) : null;
+  const receiverId = params.receiverId ? String(params.receiverId) : null;
+  const targetUserIds = Array.from(new Set([receiverId, requesterId].filter(Boolean)));
+  for (const uid of targetUserIds) {
+    const sbRes = await sbRestRequest(
+      `user_notifications?user_id=eq.${encodeURIComponent(uid)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=50`
+    );
+    if (sbRes.ok && Array.isArray(sbRes.data)) {
+      for (const row of sbRes.data) {
+        const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+        const isConnReq = meta.actionType === "udhar_connection_request" || row?.related_entity_type === "user_connection";
+        if (!isConnReq) continue;
+        const matchesReqId = Boolean(
+          requestId && (row.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
+        );
+        const matchesPair = Boolean(
+          requesterId && receiverId && meta.actionType === "udhar_connection_request" && (meta.requesterId === requesterId && (meta.receiverId === receiverId || row.user_id === receiverId) || row.related_entity_id === requesterId && row.user_id === receiverId)
+        );
+        if (!matchesReqId && !matchesPair) continue;
+        if (meta.requestStatus && meta.requestStatus !== "pending") continue;
+        const nextMeta = {
+          ...meta,
+          requestStatus: params.status,
+          resolvedAt: now
+        };
+        await sbRestRequest(`user_notifications?id=eq.${encodeURIComponent(String(row.id))}`, {
+          method: "PATCH",
+          body: {
+            metadata: nextMeta,
+            is_read: true,
+            read_at: row.read_at || now
+          }
+        });
+      }
+    }
+  }
+  const store = readNotifStore();
+  let changed = false;
+  for (const n of store.userNotifications) {
+    if (!n || n.is_deleted) continue;
+    const meta = n.metadata && typeof n.metadata === "object" ? n.metadata : {};
+    const isConnReq = meta.actionType === "udhar_connection_request" || n.related_entity_type === "user_connection";
+    if (!isConnReq) continue;
+    const matchesReqId = Boolean(
+      requestId && (n.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
+    );
+    const matchesPair = Boolean(
+      requesterId && receiverId && meta.actionType === "udhar_connection_request" && (meta.requesterId === requesterId && (meta.receiverId === receiverId || n.user_id === receiverId) || n.related_entity_id === requesterId && n.user_id === receiverId)
+    );
+    if (!matchesReqId && !matchesPair) continue;
+    if (meta.requestStatus && meta.requestStatus !== "pending") continue;
+    n.metadata = {
+      ...meta,
+      requestStatus: params.status,
+      resolvedAt: now
+    };
+    n.is_read = true;
+    n.read_at = n.read_at || now;
+    changed = true;
+  }
+  if (changed) {
     writeNotifStore(store);
   }
 }
@@ -84476,6 +84550,7 @@ async function createNotification(params) {
       const timestamp = Date.now();
       const notifTag = tag || (dedupeKey ? `mm-${dedupeKey.slice(0, 80)}` : `mm-${category}-${notificationId || timestamp}`);
       const soundMuted = Boolean(inQuietHours || prefs.sound_enabled === false);
+      const isConnRequest = metadata?.actionType === "udhar_connection_request";
       const pushPayload = JSON.stringify({
         title: pushTitle,
         body: pushBody,
@@ -84489,13 +84564,21 @@ async function createNotification(params) {
         silent: soundMuted,
         vibrate: soundMuted ? void 0 : [200, 80, 200],
         soundEnabled: !soundMuted,
-        requireInteraction: category === "security" || type === "error",
+        requireInteraction: category === "security" || type === "error" || isConnRequest,
+        actions: isConnRequest ? [
+          { action: "accept", title: "Accept" },
+          { action: "reject", title: "Reject" }
+        ] : void 0,
         data: {
           url: targetUrl,
           notificationId: notificationId || null,
           category,
           type,
           dedupeKey: dedupeKey || null,
+          deepLink: deepLink || null,
+          actionType: metadata?.actionType || null,
+          connectionId: metadata?.connectionId || relatedEntityId || null,
+          connectionMethod: metadata?.connectionMethod || null,
           timestamp,
           soundEnabled: !soundMuted
         }
@@ -84783,23 +84866,77 @@ async function notifyUdharCreated(params) {
   }
 }
 async function notifyQrConnected(params) {
-  await createNotification({
-    userId: params.userAId,
-    title: `Connected with ${params.userBName}`,
-    message: `You are now linked with ${params.userBName}. Mutual 2-way Udhar tracking and settlements are active.`,
-    category: "udhar",
-    type: "success",
-    deepLink: "people",
-    channels: ["in_app", "push", "email"]
-  });
+  const connectionMethod = params.connectionMethod === "CONFIRMATION_CODE" ? "CONFIRMATION_CODE" : "QR_CODE";
+  const methodLabel = connectionMethod === "CONFIRMATION_CODE" ? "Confirmation Code" : "QR Code";
+  const connectedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const actorName = String(params.userAName || "A My Money Manager user").trim();
   await createNotification({
     userId: params.userBId,
-    title: `New Friend Connected: ${params.userAName}`,
-    message: `${params.userAName} scanned your QR code and connected with you! Added to your Saved People.`,
+    title: "New People Connection",
+    message: `${actorName} added you using your ${methodLabel}.`,
     category: "udhar",
     type: "success",
+    relatedEntityType: "user_connection",
+    relatedEntityId: params.connectionId || params.userAId,
     deepLink: "people",
-    channels: ["in_app", "push", "email"]
+    dedupeKey: `qr-conn:${params.connectionId || `${params.userBId}:${params.userAId}`}:${Date.now()}`,
+    metadata: {
+      actionType: "udhar_qr_connected",
+      informationalOnly: true,
+      connectionMethod,
+      methodLabel,
+      initiatorUserId: params.userAId,
+      initiatorName: actorName,
+      initiatorAvatar: params.userAAvatar || null,
+      connectedAt,
+      connectionId: params.connectionId || null
+    },
+    channels: ["in_app", "push"]
+  });
+}
+async function updateConnectionRequestNotificationsState(params) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const requestId = params.requestId ? String(params.requestId) : null;
+  const requesterId = params.requesterId ? String(params.requesterId) : null;
+  const receiverId = params.receiverId ? String(params.receiverId) : null;
+  if (isDatabaseAvailable()) {
+    try {
+      if (requestId) {
+        await query(
+          `UPDATE public.user_notifications
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('requestStatus', $2::text, 'resolvedAt', $3::text),
+               is_read = TRUE,
+               read_at = COALESCE(read_at, NOW())
+           WHERE is_deleted = FALSE
+             AND (
+               related_entity_id = $1
+               OR metadata->>'connectionId' = $1
+               OR metadata->>'requestId' = $1
+             )
+             AND (metadata->>'actionType' = 'udhar_connection_request' OR related_entity_type = 'user_connection')`,
+          [requestId, params.status, now]
+        ).catch(() => {
+        });
+      }
+      if (requesterId && receiverId) {
+        await query(
+          `UPDATE public.user_notifications
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('requestStatus', $3::text, 'resolvedAt', $4::text),
+               is_read = TRUE,
+               read_at = COALESCE(read_at, NOW())
+           WHERE is_deleted = FALSE
+             AND user_id = $2
+             AND metadata->>'actionType' = 'udhar_connection_request'
+             AND COALESCE(metadata->>'requestStatus', 'pending') = 'pending'
+             AND (metadata->>'requesterId' = $1 OR related_entity_id = $1)`,
+          [requesterId, receiverId, params.status, now]
+        ).catch(() => {
+        });
+      }
+    } catch {
+    }
+  }
+  await updateConnectionRequestNotificationsFallback(params).catch(() => {
   });
 }
 async function notifyUdharRepayment(params) {
@@ -85779,6 +85916,16 @@ async function handleAdminApiRequest(req, res, pathname, method) {
   const parsedUrl = parseUrl(req.url || "", true);
   const clientIp = getClientIp(req);
   try {
+    if (pathname === "/api/admin/my-permissions" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res);
+      if (!auth) return true;
+      sendJson(res, 200, {
+        success: true,
+        role: auth.role,
+        permissions: auth.permissions
+      });
+      return true;
+    }
     if (pathname === "/api/admin/dashboard-stats" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "analytics.read");
       if (!auth) return true;
@@ -88779,10 +88926,27 @@ ${noteLine}` : noteLine;
         return true;
       }
       const assignedRole = String(role || "support").toLowerCase().trim();
-      const allowedStaffRoles = ["superadmin", "admin", "support", "analyst", "user"];
-      if (!allowedStaffRoles.includes(assignedRole)) {
-        sendJson(res, 400, { success: false, message: "Invalid role specified." });
-        return true;
+      const allowedStaffRoles = /* @__PURE__ */ new Set(["superadmin", "admin", "support", "analyst", "user"]);
+      if (!allowedStaffRoles.has(assignedRole)) {
+        let isCustomRole = false;
+        if (isDatabaseAvailable()) {
+          try {
+            const roleCheck = await query("SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1", [assignedRole]);
+            if (roleCheck.rows.length > 0) isCustomRole = true;
+          } catch {
+          }
+        }
+        if (!isCustomRole) {
+          try {
+            const fbRoles = await listAdminRolesFallback();
+            isCustomRole = fbRoles.some((r2) => String(r2.slug || "").toLowerCase().trim() === assignedRole);
+          } catch {
+          }
+        }
+        if (!isCustomRole) {
+          sendJson(res, 400, { success: false, message: "Invalid role specified." });
+          return true;
+        }
       }
       if (assignedRole === "superadmin" && auth.role !== "superadmin") {
         sendJson(res, 403, { success: false, message: "Only a superadmin can assign superadmin privileges." });
@@ -89708,8 +89872,20 @@ function parseQrPayload(raw) {
   };
 }
 function calculateRepaymentApplication(input) {
+  if (input.udharStatus === "pending_confirmation") {
+    return { valid: false, error: "Waiting for recipient confirmation before repayments can be recorded." };
+  }
+  if (input.udharStatus === "rejected") {
+    return { valid: false, error: "Cannot record repayment on a rejected Udhar request." };
+  }
+  if (input.udharStatus === "deleted") {
+    return { valid: false, error: "Cannot record repayment on a deleted Udhar." };
+  }
   if (input.udharStatus === "cancelled") {
     return { valid: false, error: "Cannot record repayment on a cancelled Udhar." };
+  }
+  if (input.udharStatus === "disputed") {
+    return { valid: false, error: "Cannot record repayment while Udhar is disputed. Resolve the dispute first." };
   }
   if (input.udharStatus === "settled") {
     return { valid: false, error: "This Udhar is already fully settled." };
@@ -89759,8 +89935,8 @@ function calculateRepaymentApplication(input) {
   };
 }
 function validateUdharEdit(current, updates) {
-  if (current.status === "cancelled") {
-    return { valid: false, error: "Cancelled Udhar records cannot be edited." };
+  if (current.status === "cancelled" || current.status === "rejected" || current.status === "deleted") {
+    return { valid: false, error: "Rejected, cancelled, or deleted Udhar records cannot be edited." };
   }
   const reason = (updates.reason_for_edit || "").trim();
   if (reason.length < 3) {
@@ -89843,8 +90019,91 @@ function isActiveRepayment(repayment) {
   if (repayment.deleted_at) return false;
   return repayment.status !== "deleted" && repayment.status !== "cancelled";
 }
+function normalizeUdharLifecycleStatus(row) {
+  const { meta } = unpackStructuredNote(row?.notes);
+  if (row?.deleted_at || row?.status === "deleted" || meta.lifecycle_status === "deleted") {
+    return "deleted";
+  }
+  if (row?.status === "rejected" || meta.lifecycle_status === "rejected" || Boolean(row?.rejected_by || meta.rejected_by)) {
+    return "rejected";
+  }
+  if (row?.status === "cancelled" || meta.lifecycle_status === "cancelled" || Boolean(row?.cancelled_at || meta.cancelled_at)) {
+    return "cancelled";
+  }
+  if (row?.status === "disputed") return "disputed";
+  if (row?.status === "settled") return "settled";
+  if (row?.status === "pending_confirmation") return "pending_confirmation";
+  return "confirmed";
+}
+function canAcceptUdhar(udhar, actorUserId) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted") {
+    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to respond to this Udhar request." };
+  }
+  if (udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: "SELF_APPROVAL_BLOCKED", reason: "Only the recipient can accept this Udhar request." };
+  }
+  if (lifecycle === "rejected") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "Rejected Udhar requests cannot be accepted." };
+  }
+  if (lifecycle === "cancelled") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request was cancelled by the sender." };
+  }
+  if (lifecycle !== "pending_confirmation") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "This Udhar transaction is already confirmed." };
+  }
+  return { allowed: true };
+}
+function canRejectUdhar(udhar, actorUserId) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted") {
+    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to reject this Udhar request." };
+  }
+  if (udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: "SELF_REJECT_BLOCKED", reason: "Use Cancel Request to cancel a request you sent." };
+  }
+  if (lifecycle === "rejected") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "This Udhar request was already rejected." };
+  }
+  if (lifecycle === "cancelled") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request was already cancelled by the sender." };
+  }
+  if (lifecycle !== "pending_confirmation") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "Confirmed transactions cannot be rejected." };
+  }
+  return { allowed: true };
+}
+function canSenderCancelUdhar(udhar, actorUserId) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted") {
+    return { allowed: false, httpStatus: 404, code: "NOT_FOUND", reason: "This Udhar request has been deleted." };
+  }
+  if (actorUserId && udhar.user_id && udhar.user_id !== actorUserId) {
+    return { allowed: false, httpStatus: 403, code: "FORBIDDEN", reason: "Not authorized to cancel this Udhar request." };
+  }
+  if (!udhar.is_initiator) {
+    return { allowed: false, httpStatus: 403, code: "SENDER_ONLY", reason: "Only the sender can cancel a pending request. Recipients can Reject it." };
+  }
+  if (lifecycle === "cancelled") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CANCELLED", reason: "This Udhar request is already cancelled." };
+  }
+  if (lifecycle === "rejected") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_REJECTED", reason: "This request has already been rejected by the recipient." };
+  }
+  if (lifecycle !== "pending_confirmation") {
+    return { allowed: false, httpStatus: 409, code: "ALREADY_CONFIRMED", reason: "Already accepted requests cannot be cancelled as pending requests." };
+  }
+  return { allowed: true };
+}
 function canCancelUdhar(udhar) {
-  if (udhar.status === "cancelled" || Boolean(udhar.deleted_at)) {
+  const lifecycle = normalizeUdharLifecycleStatus(udhar);
+  if (lifecycle === "deleted" || Boolean(udhar.deleted_at) || udhar.status === "cancelled") {
     return {
       allowed: false,
       httpStatus: 404,
@@ -89852,7 +90111,7 @@ function canCancelUdhar(udhar) {
       reason: "This Udhar is already deleted."
     };
   }
-  if (udhar.status === "disputed") {
+  if (lifecycle === "disputed") {
     return {
       allowed: false,
       httpStatus: 409,
@@ -89874,8 +90133,8 @@ function canCancelUdhar(udhar) {
         })),
         currentStatus: udhar.status
       });
-      isFullySettled = recalc.isSettled && udhar.status === "settled";
-    } else if (udhar.status === "settled") {
+      isFullySettled = recalc.isSettled && lifecycle === "settled";
+    } else if (lifecycle === "settled") {
       const orig = roundMoney(parseFloat(String(udhar.original_amount ?? 0)) || 0);
       const cur = roundMoney(parseFloat(String(udhar.current_balance ?? 0)) || 0);
       const paid = roundMoney(parseFloat(String(udhar.paid_amount ?? orig)) || 0);
@@ -89960,11 +90219,31 @@ function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Dat
   let activeCount = 0;
   let settledCount = 0;
   let pendingRepaymentCount = 0;
+  let pendingConfirmationCount = 0;
+  let pendingGivenAmount = 0;
+  let pendingReceivedAmount = 0;
+  let rejectedCount = 0;
+  let cancelledCount = 0;
   for (const tx of items) {
-    if (tx.status === "cancelled") continue;
+    const lifecycle = normalizeUdharLifecycleStatus(tx);
+    if (lifecycle === "deleted") continue;
+    if (lifecycle === "rejected") {
+      rejectedCount += 1;
+      continue;
+    }
+    if (lifecycle === "cancelled") {
+      cancelledCount += 1;
+      continue;
+    }
     const orig = parseFloat(String(tx.original_amount)) || 0;
+    if (lifecycle === "pending_confirmation") {
+      pendingConfirmationCount += 1;
+      if (tx.direction === "gave") pendingGivenAmount += orig;
+      else pendingReceivedAmount += orig;
+      continue;
+    }
     const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = tx.status === "settled" || cur <= 0.01;
+    const isSettled = lifecycle === "settled" || cur <= 0.01;
     if (tx.direction === "gave") {
       totalGiven += orig;
       if (!isSettled) {
@@ -90003,7 +90282,13 @@ function calculatePersonLedgerSummary(items, todayStr = (/* @__PURE__ */ new Dat
     overdueAmount: roundMoney(overdueAmount),
     activeCount,
     settledCount,
-    pendingRepaymentCount
+    pendingRepaymentCount,
+    pendingConfirmationCount,
+    pendingGivenAmount: roundMoney(pendingGivenAmount),
+    pendingReceivedAmount: roundMoney(pendingReceivedAmount),
+    pendingTotalAmount: roundMoney(pendingGivenAmount + pendingReceivedAmount),
+    rejectedCount,
+    cancelledCount
   };
 }
 function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0]) {
@@ -90020,18 +90305,20 @@ function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE
   const activePeopleSet = /* @__PURE__ */ new Set();
   let pendingConfirmationsCount = 0;
   for (const tx of items) {
-    if (tx.status === "cancelled") continue;
-    const cur = parseFloat(String(tx.current_balance)) || 0;
-    const isSettled = tx.status === "settled" || cur <= 0.01;
+    const lifecycle = normalizeUdharLifecycleStatus(tx);
+    if (lifecycle === "deleted" || lifecycle === "rejected" || lifecycle === "cancelled") continue;
     if (tx.counterpart_user_id) {
       connectedKeys.add(tx.counterpart_user_id);
     }
+    if (lifecycle === "pending_confirmation") {
+      pendingConfirmationsCount += 1;
+      continue;
+    }
+    const cur = parseFloat(String(tx.current_balance)) || 0;
+    const isSettled = lifecycle === "settled" || cur <= 0.01;
     if (!isSettled && cur > 0.01) {
       const personKey = tx.counterpart_user_id || (tx.counterpart_name || "").trim().toLowerCase();
       if (personKey) activePeopleSet.add(personKey);
-    }
-    if (tx.status === "pending_confirmation") {
-      pendingConfirmationsCount += 1;
     }
     if (Array.isArray(tx.repayments)) {
       pendingConfirmationsCount += tx.repayments.filter(
@@ -90050,7 +90337,9 @@ function calculatePeopleDashboardSummary(items, contacts, todayStr = (/* @__PURE
     totalConnectedPeople: connectedKeys.size,
     totalManualPeople: manualKeys.size,
     peopleWithActiveUdhar: activePeopleSet.size,
-    pendingConfirmationsCount
+    pendingConfirmationsCount,
+    pendingUdharRequestsCount: base2.pendingConfirmationCount,
+    pendingUdharAmount: base2.pendingTotalAmount
   };
 }
 var META_MARKER = "\n<!--MM_META:";
@@ -90064,6 +90353,14 @@ function packStructuredNote(plainNote, meta) {
   if (meta.transaction_ref && meta.transaction_ref.trim()) filteredMeta.transaction_ref = meta.transaction_ref.trim();
   if (meta.repayment_time && meta.repayment_time.trim()) filteredMeta.repayment_time = meta.repayment_time.trim();
   if (meta.attachment_url && meta.attachment_url.trim()) filteredMeta.attachment_url = meta.attachment_url.trim();
+  if (meta.creation_method) filteredMeta.creation_method = meta.creation_method;
+  if (meta.lifecycle_status) filteredMeta.lifecycle_status = meta.lifecycle_status;
+  if (meta.accepted_by && meta.accepted_by.trim()) filteredMeta.accepted_by = meta.accepted_by.trim();
+  if (meta.rejected_by && meta.rejected_by.trim()) filteredMeta.rejected_by = meta.rejected_by.trim();
+  if (meta.cancelled_by && meta.cancelled_by.trim()) filteredMeta.cancelled_by = meta.cancelled_by.trim();
+  if (meta.responded_at && meta.responded_at.trim()) filteredMeta.responded_at = meta.responded_at.trim();
+  if (meta.cancelled_at && meta.cancelled_at.trim()) filteredMeta.cancelled_at = meta.cancelled_at.trim();
+  if (meta.rejection_reason && meta.rejection_reason.trim()) filteredMeta.rejection_reason = meta.rejection_reason.trim();
   if (Object.keys(filteredMeta).length === 0) {
     return cleanNote || null;
   }
@@ -90166,8 +90463,17 @@ function enrichTransactionRow(row, userMap, repayments, editHistory) {
   const computedPaid = Math.max(0, roundMoney(orig - cur));
   const { note, meta } = unpackStructuredNote(row.notes);
   const counterpart = row.counterpart_user_id ? userMap.get(row.counterpart_user_id) : null;
+  const lifecycleStatus = normalizeUdharLifecycleStatus(row);
   return {
     ...row,
+    status: lifecycleStatus,
+    creation_method: row.creation_method || meta.creation_method || "manual",
+    accepted_by: row.accepted_by || meta.accepted_by || null,
+    rejected_by: row.rejected_by || meta.rejected_by || null,
+    cancelled_by: row.cancelled_by || meta.cancelled_by || null,
+    responded_at: row.responded_at || meta.responded_at || null,
+    cancelled_at: row.cancelled_at || meta.cancelled_at || null,
+    rejection_reason: row.rejection_reason || meta.rejection_reason || null,
     counterpart_registered_name: counterpart?.full_name || row.counterpart_registered_name || null,
     counterpart_email: counterpart?.email || row.counterpart_email || null,
     counterpart_avatar: counterpart?.avatar_url || row.counterpart_avatar || null,
@@ -90226,12 +90532,29 @@ async function isBlockedBetween(userAId, userBId) {
   if (!res.ok || !Array.isArray(res.data)) return false;
   return res.data.some((c) => c.status === "blocked");
 }
-async function upsertUserConnectionRest(userAId, userBId, status) {
-  const res = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
+async function upsertUserConnectionRest(userAId, userBId, status, meta) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const baseBody = { user_a_id: userAId, user_b_id: userBId, status };
+  const cleanMeta = {};
+  if (meta) {
+    for (const [k, v] of Object.entries(meta)) {
+      if (v !== void 0) cleanMeta[k] = v;
+    }
+    cleanMeta.updated_at = nowIso;
+  }
+  const fullBody = { ...baseBody, ...cleanMeta };
+  let res = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
-    body: { user_a_id: userAId, user_b_id: userBId, status }
+    body: fullBody
   });
+  if (!res.ok && res.status === 400 && Object.keys(cleanMeta).length > 0 && !String(res.error || "").includes("23514")) {
+    res = await sbRest("user_connections?on_conflict=user_a_id,user_b_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: baseBody
+    });
+  }
   if (res.ok) return res;
   const errText = String(res.error || "");
   if (errText.includes("user_connections_status_check") || errText.includes("23514")) {
@@ -90241,17 +90564,33 @@ async function upsertUserConnectionRest(userAId, userBId, status) {
     `user_connections?user_a_id=eq.${encodeURIComponent(userAId)}&user_b_id=eq.${encodeURIComponent(userBId)}&select=id,status&limit=1`
   );
   if (existing.ok && existing.data && existing.data.length > 0) {
-    return sbRest(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+    let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
       method: "PATCH",
       prefer: "return=representation",
-      body: { status }
+      body: { status, ...cleanMeta }
     });
+    if (!patchRes.ok && patchRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(patchRes.error || "").includes("23514")) {
+      patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(existing.data[0].id)}`, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: { status }
+      });
+    }
+    return patchRes;
   }
-  return sbRest("user_connections", {
+  let insRes = await sbRest("user_connections", {
     method: "POST",
     prefer: "return=representation",
-    body: { user_a_id: userAId, user_b_id: userBId, status }
+    body: fullBody
   });
+  if (!insRes.ok && insRes.status === 400 && Object.keys(cleanMeta).length > 0 && !String(insRes.error || "").includes("23514")) {
+    insRes = await sbRest("user_connections", {
+      method: "POST",
+      prefer: "return=representation",
+      body: baseBody
+    });
+  }
+  return insRes;
 }
 async function upsertUdharContactRest(payload) {
   const cleanName = payload.name.trim();
@@ -90312,10 +90651,21 @@ async function upsertUdharContactRest(payload) {
     body: cleanPayload
   });
 }
-async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend") {
+async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType = "Friend", opts) {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const connMeta = {
+    relationship_type: relationshipType || "Friend",
+    requested_via: opts?.requestedVia || "search",
+    connection_method: opts?.connectionMethod || "SEARCH",
+    consented_at: nowIso,
+    responded_at: nowIso,
+    deleted_at: null,
+    deleted_by: null,
+    cancelled_at: null
+  };
   const [connAB, connBA] = await Promise.all([
-    upsertUserConnectionRest(authUser.id, targetUser.id, "connected"),
-    upsertUserConnectionRest(targetUser.id, authUser.id, "connected")
+    upsertUserConnectionRest(authUser.id, targetUser.id, "connected", connMeta),
+    upsertUserConnectionRest(targetUser.id, authUser.id, "connected", connMeta)
   ]);
   if (!connAB.ok && !connBA.ok) {
     return {
@@ -90323,7 +90673,7 @@ async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, r
       error: connAB.error || connBA.error || "Failed to establish connection record."
     };
   }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const connectionId = connAB.data?.[0]?.id || connBA.data?.[0]?.id || null;
   const targetName = (targetUser.full_name || targetUser.email?.split("@")[0] || "User").trim();
   const myName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
   const existingMine = await sbRest(
@@ -90388,10 +90738,11 @@ async function ensureConnectionAndReciprocalContactsRest(authUser, targetUser, r
     }).catch(() => {
     });
   }
-  return { ok: true };
+  return { ok: true, connectionId };
 }
 async function createTargetedNotificationRest(params) {
   if (!params.targetUserId || params.targetUserId === "all") return;
+  const notifType = params.type === "udhar_connection_request" || params.type === "udhar_request" || params.type === "repayment_pending" ? "info" : params.type === "udhar_rejected" || params.type === "repayment_rejected" || params.type === "udhar_request_cancelled" || params.type === "udhar_deleted" ? "warning" : "success";
   await Promise.all([
     sbRest("notifications", {
       method: "POST",
@@ -90407,27 +90758,24 @@ async function createTargetedNotificationRest(params) {
       }
     }).catch(() => {
     }),
-    sbRest("user_notifications", {
-      method: "POST",
-      prefer: "return=minimal",
-      body: {
-        user_id: params.targetUserId,
-        title: params.title,
-        message: params.message,
-        category: params.category || "udhar",
-        type: params.type === "udhar_connection_request" ? "info" : "success",
-        related_entity_type: "udhar",
-        related_entity_id: params.relatedEntityId || null,
-        deep_link: params.deepLink || "people",
-        is_read: false,
-        is_deleted: false,
-        metadata: params.metadata || {
-          actionType: params.type,
-          relatedEntityId: params.relatedEntityId || null,
-          linkId: params.relatedEntityId || null,
-          actorUserId: params.actorUserId
-        }
-      }
+    createNotification({
+      userId: params.targetUserId,
+      title: params.title,
+      message: params.message,
+      category: params.category || "udhar",
+      type: notifType,
+      relatedEntityType: "udhar",
+      relatedEntityId: params.relatedEntityId || void 0,
+      deepLink: params.deepLink || "people",
+      dedupeKey: params.dedupeKey,
+      metadata: {
+        actionType: params.type,
+        relatedEntityId: params.relatedEntityId || null,
+        linkId: params.relatedEntityId || null,
+        actorUserId: params.actorUserId,
+        ...params.metadata || {}
+      },
+      channels: ["in_app", "push"]
     }).catch(() => {
     })
   ]);
@@ -90683,6 +91031,7 @@ async function connectUserRest(authUser, body) {
         success: true,
         status: "pending",
         alreadyPending: true,
+        deduplicated: true,
         requestId: outgoingPending.id || `${authUser.id}:${targetUserId}`,
         message: `Connection request already sent to ${targetName}. Waiting for their approval.`,
         connectedUser: {
@@ -90696,52 +91045,18 @@ async function connectUserRest(authUser, body) {
       }
     };
   }
-  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, "pending");
+  const insRes = await upsertUserConnectionRest(authUser.id, targetUserId, "pending", {
+    relationship_type: relationshipType,
+    requested_via: requestedVia,
+    connection_method: "SEARCH",
+    responded_at: null,
+    consented_at: null,
+    cancelled_at: null,
+    deleted_at: null,
+    deleted_by: null
+  });
   if (!insRes.ok) {
     const errText = String(insRes.error || "");
-    const isStatusConstraint = errText.includes("user_connections_status_check") || errText.includes("23514");
-    if (isStatusConstraint) {
-      const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, target, relationshipType);
-      if (!syncRes.ok) {
-        return {
-          status: 503,
-          body: {
-            success: false,
-            code: "REQUEST_FAILED",
-            message: syncRes.error || "Unable to save connection right now. Please try again."
-          }
-        };
-      }
-      await createTargetedNotificationRest({
-        targetUserId: target.id,
-        actorUserId: authUser.id,
-        title: "New Udhar Connection",
-        message: `${requesterName} connected with you on My Money Manager Udhar.`,
-        type: "connection_accepted",
-        category: "udhar",
-        deepLink: "people",
-        relatedEntityId: authUser.id
-      }).catch(() => {
-      });
-      return {
-        status: 200,
-        body: {
-          success: true,
-          status: "connected",
-          alreadyConnected: false,
-          alreadyPending: false,
-          message: `Connected with ${targetName}! Added to your Saved People.`,
-          connectedUser: {
-            id: target.id,
-            name: targetName,
-            displayName: targetName,
-            fullName: targetName,
-            avatarUrl: target.avatar_url || null,
-            isVerified: Boolean(target.is_verified ?? true)
-          }
-        }
-      };
-    }
     console.error("[connectUserRest failed]:", insRes.status, errText);
     return {
       status: 503,
@@ -90765,10 +91080,16 @@ async function connectUserRest(authUser, body) {
     metadata: {
       actionType: "udhar_connection_request",
       requestId: String(requestId),
+      connectionId: String(requestId),
+      requesterId: authUser.id,
       requesterUserId: authUser.id,
+      receiverId: target.id,
       requesterName,
+      requesterAvatar: authUser.avatar_url || null,
       requestedVia,
-      relationshipType
+      connectionMethod: "SEARCH",
+      relationshipType,
+      requestStatus: "pending"
     }
   });
   return {
@@ -90776,6 +91097,7 @@ async function connectUserRest(authUser, body) {
     body: {
       success: true,
       status: "pending",
+      connectionMethod: "SEARCH",
       alreadyConnected: false,
       alreadyPending: false,
       requestId: String(requestId),
@@ -90792,9 +91114,14 @@ async function connectUserRest(authUser, body) {
   };
 }
 async function getConnectionRequestsRest(authUser) {
-  const connRes = await sbRest(
-    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
+  let connRes = await sbRest(
+    `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,relationship_type,requested_via,connection_method,created_at,updated_at,responded_at&order=created_at.desc`
   );
+  if (!connRes.ok && connRes.status === 400) {
+    connRes = await sbRest(
+      `user_connections?or=(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(authUser.id)})&select=id,user_a_id,user_b_id,status,created_at&order=created_at.desc`
+    );
+  }
   if (!connRes.ok) {
     return { status: 503, body: { success: false, message: "Unable to load connection requests right now." } };
   }
@@ -90810,22 +91137,30 @@ async function getConnectionRequestsRest(authUser) {
         const u = userMap.get(r2.user_a_id);
         incoming.push({
           id: r2.id,
+          direction: "incoming",
           requesterUserId: r2.user_a_id,
           displayName: u?.full_name || "My Money User",
           avatarUrl: u?.avatar_url || null,
           isVerified: Boolean(u?.is_verified ?? true),
           status: "pending",
+          relationshipType: r2.relationship_type || "Friend",
+          requestedVia: r2.requested_via || "search",
+          connectionMethod: r2.connection_method || "SEARCH",
           createdAt: r2.created_at
         });
       } else if (r2.user_a_id === authUser.id) {
         const u = userMap.get(r2.user_b_id);
         outgoing.push({
           id: r2.id,
+          direction: "outgoing",
           targetUserId: r2.user_b_id,
           displayName: u?.full_name || "My Money User",
           avatarUrl: u?.avatar_url || null,
           isVerified: Boolean(u?.is_verified ?? true),
           status: "pending",
+          relationshipType: r2.relationship_type || "Friend",
+          requestedVia: r2.requested_via || "search",
+          connectionMethod: r2.connection_method || "SEARCH",
           createdAt: r2.created_at
         });
       }
@@ -90840,6 +91175,8 @@ async function getConnectionRequestsRest(authUser) {
           avatarUrl: u?.avatar_url || null,
           isVerified: Boolean(u?.is_verified ?? true),
           status: "connected",
+          relationshipType: r2.relationship_type || "Friend",
+          connectionMethod: r2.connection_method || "SEARCH",
           createdAt: r2.created_at
         });
       }
@@ -90881,21 +91218,43 @@ async function acceptConnectionRequestRest(authUser, requestIdOrUserId) {
   if (!requester || requester.status !== "active") {
     return { status: 404, body: { success: false, message: "Requester account is no longer active." } };
   }
-  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, requester, "Friend");
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(
+    authUser,
+    requester,
+    pendingRow.relationship_type || "Friend",
+    {
+      connectionMethod: pendingRow.connection_method || "SEARCH",
+      requestedVia: pendingRow.requested_via || "search"
+    }
+  );
   if (!syncRes.ok) {
     return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: syncRes.error || "Failed to finalize connection." } };
   }
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: requester.id,
+    receiverId: authUser.id,
+    status: "accepted"
+  }).catch(() => {
+  });
   const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
   const requesterName = (requester.full_name || requester.email?.split("@")[0] || "Friend").trim();
   await createTargetedNotificationRest({
     targetUserId: requester.id,
     actorUserId: authUser.id,
-    title: "Udhar Connection Accepted",
-    message: `${acceptorName} accepted your Udhar connection request. You can now track shared Udhar together.`,
+    title: "Connection Request Accepted",
+    message: `${acceptorName} accepted your connection request. Added to your Saved People.`,
     type: "connection_accepted",
     category: "udhar",
     deepLink: "people",
-    relatedEntityId: authUser.id
+    relatedEntityId: authUser.id,
+    metadata: {
+      actionType: "udhar_connection_accepted",
+      acceptorId: authUser.id,
+      acceptorName,
+      acceptorAvatar: authUser.avatar_url || null,
+      connectionId: syncRes.connectionId || String(pendingRow.id)
+    }
   });
   return {
     status: 200,
@@ -90934,13 +91293,27 @@ async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
     return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
   }
   const pendingRow = reqRes.data[0];
-  const patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
     method: "PATCH",
-    body: { status: "rejected" }
+    body: { status: "rejected", responded_at: nowIso, updated_at: nowIso }
   });
+  if (!patchRes.ok && patchRes.status === 400) {
+    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: "PATCH",
+      body: { status: "rejected" }
+    });
+  }
   if (!patchRes.ok) {
     return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to decline request right now." } };
   }
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: pendingRow.user_a_id,
+    receiverId: authUser.id,
+    status: "rejected"
+  }).catch(() => {
+  });
   const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
   await createTargetedNotificationRest({
     targetUserId: pendingRow.user_a_id,
@@ -90961,45 +91334,186 @@ async function rejectConnectionRequestRest(authUser, requestIdOrUserId) {
     }
   };
 }
-async function disconnectUserRest(authUser, targetUserId) {
-  const targetId = (targetUserId || "").trim();
-  if (!targetId) {
-    return { status: 400, body: { success: false, message: "Target user ID is required." } };
+async function cancelConnectionRequestRest(authUser, requestIdOrUserId) {
+  const parsedKey = parseConnectionRequestKey(requestIdOrUserId);
+  if (!parsedKey.valid) {
+    return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
   }
-  await sbRest(
-    `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(targetId)}),and(user_a_id.eq.${encodeURIComponent(targetId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`,
-    { method: "DELETE" }
-  );
+  let queryPath = "";
+  if (parsedKey.kind === "uuid" && parsedKey.uuid) {
+    const encoded = encodeURIComponent(parsedKey.uuid);
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&or=(id.eq.${encoded},user_b_id.eq.${encoded})&limit=1`;
+  } else if (parsedKey.kind === "composite" && parsedKey.targetUserId) {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&user_b_id=eq.${encodeURIComponent(parsedKey.targetUserId)}&status=eq.pending&limit=1`;
+  } else {
+    queryPath = `user_connections?user_a_id=eq.${encodeURIComponent(authUser.id)}&status=eq.pending&id=eq.${encodeURIComponent(requestIdOrUserId.trim())}&limit=1`;
+  }
+  const reqRes = await sbRest(queryPath);
+  if (!reqRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to verify pending request right now." } };
+  }
+  if (!reqRes.data || reqRes.data.length === 0) {
+    return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending outgoing connection request not found." } };
+  }
+  const pendingRow = reqRes.data[0];
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  await Promise.all([
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(targetId)}`, {
+  let patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+    method: "PATCH",
+    body: { status: "cancelled", cancelled_at: nowIso, updated_at: nowIso }
+  });
+  if (!patchRes.ok && patchRes.status === 400 && !String(patchRes.error || "").includes("23514")) {
+    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
       method: "PATCH",
-      body: { linked_user_id: null, updated_at: nowIso }
-    }).catch(() => {
-    }),
-    sbRest(`udhar_contacts?user_id=eq.${encodeURIComponent(targetId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`, {
-      method: "PATCH",
-      body: { linked_user_id: null, updated_at: nowIso }
-    }).catch(() => {
-    })
-  ]);
-  const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-  await createTargetedNotificationRest({
-    targetUserId: targetId,
-    actorUserId: authUser.id,
-    title: "Udhar Connection Disconnected",
-    message: `${actorName} disconnected their Udhar pairing with you. Your existing Udhar history remains preserved.`,
-    type: "connection_disconnected",
-    category: "udhar",
-    deepLink: "people",
-    relatedEntityId: authUser.id
+      body: { status: "cancelled" }
+    });
+  }
+  if (!patchRes.ok && String(patchRes.error || "").includes("23514")) {
+    patchRes = await sbRest(`user_connections?id=eq.${encodeURIComponent(pendingRow.id)}`, {
+      method: "DELETE"
+    });
+  }
+  if (!patchRes.ok) {
+    return { status: 503, body: { success: false, code: "REQUEST_FAILED", message: "Unable to cancel connection request right now." } };
+  }
+  await updateConnectionRequestNotificationsState({
+    requestId: String(pendingRow.id),
+    requesterId: authUser.id,
+    receiverId: pendingRow.user_b_id,
+    status: "cancelled"
+  }).catch(() => {
   });
   return {
     status: 200,
     body: {
       success: true,
+      status: "cancelled",
+      requestId: String(pendingRow.id),
+      message: "Connection request cancelled."
+    }
+  };
+}
+async function removeSavedConnectionRest(authUser, targetOrContactId) {
+  const rawId = (targetOrContactId || "").trim();
+  if (!rawId) {
+    return { status: 400, body: { success: false, message: "Contact or peer user ID is required." } };
+  }
+  let contactRow = null;
+  let peerUserId = null;
+  if (rawId.startsWith("conn_")) {
+    peerUserId = rawId.slice(5).trim() || null;
+  } else {
+    const ownedContactRes = await sbRest(
+      `udhar_contacts?id=eq.${encodeURIComponent(rawId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+    );
+    if (ownedContactRes.ok && ownedContactRes.data && ownedContactRes.data.length > 0) {
+      contactRow = ownedContactRes.data[0];
+      peerUserId = contactRow.linked_user_id || null;
+    } else {
+      peerUserId = rawId;
+    }
+  }
+  if (!contactRow && !peerUserId) {
+    return { status: 404, body: { success: false, message: "Saved connection not found." } };
+  }
+  if (!contactRow && peerUserId) {
+    const [peerContactsRes, peerConnsRes] = await Promise.all([
+      sbRest(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}&limit=1`
+      ),
+      sbRest(
+        `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+      )
+    ]);
+    const hasContact = Boolean(peerContactsRes.ok && peerContactsRes.data && peerContactsRes.data.length > 0);
+    const hasConnection = Boolean(
+      peerConnsRes.ok && peerConnsRes.data && peerConnsRes.data.some((c) => c.status !== "deleted")
+    );
+    if (!hasContact && !hasConnection) {
+      return { status: 404, body: { success: false, message: "Saved connection not found." } };
+    }
+  }
+  if (contactRow?.id) {
+    const delOwn = await sbRest(
+      `udhar_contacts?id=eq.${encodeURIComponent(contactRow.id)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
+      { method: "DELETE" }
+    );
+    if (!delOwn.ok) {
+      return { status: 500, body: { success: false, message: delOwn.error || "Failed to remove saved contact." } };
+    }
+  }
+  if (peerUserId && peerUserId !== authUser.id) {
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    await Promise.all([
+      sbRest(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(authUser.id)}&linked_user_id=eq.${encodeURIComponent(peerUserId)}`,
+        { method: "DELETE" }
+      ).catch(() => {
+      }),
+      sbRest(
+        `udhar_contacts?user_id=eq.${encodeURIComponent(peerUserId)}&linked_user_id=eq.${encodeURIComponent(authUser.id)}`,
+        { method: "DELETE" }
+      ).catch(() => {
+      })
+    ]);
+    const connPatchFilter = `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(peerUserId)}),and(user_a_id.eq.${encodeURIComponent(peerUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))`;
+    let connDelRes = await sbRest(connPatchFilter, {
+      method: "PATCH",
+      body: { status: "deleted", deleted_at: nowIso, deleted_by: authUser.id, updated_at: nowIso }
+    });
+    if (!connDelRes.ok && connDelRes.status === 400 && !String(connDelRes.error || "").includes("23514")) {
+      connDelRes = await sbRest(connPatchFilter, {
+        method: "PATCH",
+        body: { status: "deleted" }
+      });
+    }
+    if (!connDelRes.ok && String(connDelRes.error || "").includes("23514")) {
+      await sbRest(connPatchFilter, { method: "DELETE" }).catch(() => {
+      });
+    }
+    await Promise.all([
+      updateConnectionRequestNotificationsState({
+        requesterId: authUser.id,
+        receiverId: peerUserId,
+        status: "cancelled"
+      }).catch(() => {
+      }),
+      updateConnectionRequestNotificationsState({
+        requesterId: peerUserId,
+        receiverId: authUser.id,
+        status: "cancelled"
+      }).catch(() => {
+      })
+    ]);
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      removed: true,
+      twoSided: Boolean(peerUserId && peerUserId !== authUser.id),
+      peerUserId,
+      preservedTransactions: true,
+      message: "Connection removed from Saved People. Existing Udhaar history remains preserved."
+    }
+  };
+}
+async function disconnectUserRest(authUser, targetUserId) {
+  const targetId = (targetUserId || "").trim();
+  if (!targetId) {
+    return { status: 400, body: { success: false, message: "Target user ID is required." } };
+  }
+  const removal = await removeSavedConnectionRest(authUser, targetId);
+  if (removal.status !== 200) {
+    return removal;
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
       status: "disconnected",
-      message: "Disconnected successfully. Existing Udhar transaction history has been preserved."
+      twoSided: true,
+      preservedTransactions: true,
+      message: "Connection removed from both Saved People lists. Existing Udhar transaction history has been preserved."
     }
   };
 }
@@ -91219,12 +91733,10 @@ async function buildMergedDirectoryForUserRest(authUser, activeTxs = []) {
       }
     }
   }
-  const txPeerIds = activeTxs.map((t2) => t2.counterpart_user_id).filter((id) => Boolean(id && id !== authUser.id));
   const allUserIds = Array.from(
     /* @__PURE__ */ new Set([
       ...rawContacts.map((r2) => r2.linked_user_id).filter(Boolean),
-      ...Array.from(connectedPeerIds),
-      ...txPeerIds
+      ...Array.from(connectedPeerIds)
     ])
   );
   const userMap = await fetchUsersByIds(allUserIds);
@@ -91262,45 +91774,6 @@ async function buildMergedDirectoryForUserRest(authUser, activeTxs = []) {
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     });
   }
-  for (const t2 of activeTxs) {
-    if (t2.status === "cancelled" || t2.deleted_at) continue;
-    const linkedId = t2.counterpart_user_id || null;
-    const rawName = (t2.counterpart_name || "").trim();
-    const normName = rawName.toLowerCase();
-    if (linkedId) {
-      if (seenLinkedIds.has(linkedId)) continue;
-      const u = userMap.get(linkedId);
-      seenLinkedIds.add(linkedId);
-      deduped.push({
-        id: `tx_peer_${linkedId}`,
-        user_id: authUser.id,
-        name: (u?.full_name || rawName || "Connected User").trim(),
-        email: u?.email ? maskEmailForPrivacy(u.email) : null,
-        phone: null,
-        photo_url: u?.avatar_url || null,
-        relationship_type: "Friend",
-        notes: null,
-        linked_user_id: linkedId,
-        created_at: t2.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: t2.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-      });
-    } else if (normName && !seenUnlinkedNames.has(normName)) {
-      seenUnlinkedNames.add(normName);
-      deduped.push({
-        id: `tx_local_${normName.replace(/[^a-z0-9]/g, "_")}`,
-        user_id: authUser.id,
-        name: rawName,
-        email: null,
-        phone: null,
-        photo_url: null,
-        relationship_type: "Friend",
-        notes: null,
-        linked_user_id: null,
-        created_at: t2.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: t2.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-      });
-    }
-  }
   deduped.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
   return { ok: true, contacts: deduped, userMap };
 }
@@ -91308,7 +91781,7 @@ async function getContactsRest(authUser) {
   const txRes = await sbRest(
     `udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`
   );
-  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => t2.status !== "cancelled" && !t2.deleted_at) : [];
+  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted") : [];
   const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
   if (!merged.ok) {
     return { status: 503, body: { success: false, message: "Failed to load contacts." } };
@@ -91327,7 +91800,7 @@ async function getContactsRest(authUser) {
 }
 async function getContactsWithBalancesRest(authUser) {
   const txRes = await sbRest(`udhar_transactions?user_id=eq.${encodeURIComponent(authUser.id)}`);
-  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => t2.status !== "cancelled" && !t2.deleted_at) : [];
+  const activeTxs = txRes.ok && Array.isArray(txRes.data) ? txRes.data.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted") : [];
   const merged = await buildMergedDirectoryForUserRest(authUser, activeTxs);
   if (!merged.ok) {
     return { status: 503, body: { success: false, message: "Failed to load people contacts." } };
@@ -91347,11 +91820,32 @@ async function getContactsWithBalancesRest(authUser) {
     let payable = 0;
     let lastDate = null;
     let pendingCount = 0;
+    let pendingRequestsCount = 0;
+    let pendingRequestsAmount = 0;
+    let pendingGivenAmount = 0;
+    let pendingReceivedAmount = 0;
+    let rejectedCount = 0;
     for (const t2 of matchingTxs) {
-      if (t2.status === "cancelled" || t2.deleted_at) continue;
+      const lifecycle = normalizeUdharLifecycleStatus(t2);
+      if (lifecycle === "deleted") continue;
+      if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
+        lastDate = t2.transaction_date;
+      }
+      if (lifecycle === "rejected") {
+        rejectedCount += 1;
+        continue;
+      }
+      if (lifecycle === "cancelled") continue;
       const orig = parseFloat(t2.original_amount) || 0;
+      if (lifecycle === "pending_confirmation") {
+        pendingRequestsCount += 1;
+        pendingRequestsAmount += orig;
+        if (t2.direction === "gave") pendingGivenAmount += orig;
+        else pendingReceivedAmount += orig;
+        continue;
+      }
       const cur = parseFloat(t2.current_balance) || 0;
-      const isSettled = t2.status === "settled" || cur <= 0.01;
+      const isSettled = lifecycle === "settled" || cur <= 0.01;
       if (t2.direction === "gave") {
         totalGiven += orig;
         if (!isSettled) receivable += cur;
@@ -91360,9 +91854,6 @@ async function getContactsWithBalancesRest(authUser) {
         if (!isSettled) payable += cur;
       }
       if (!isSettled && cur > 0.01) pendingCount += 1;
-      if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
-        lastDate = t2.transaction_date;
-      }
     }
     return {
       ...c,
@@ -91377,6 +91868,11 @@ async function getContactsWithBalancesRest(authUser) {
       last_transaction_date: lastDate,
       total_transactions_count: matchingTxs.length,
       pending_transactions_count: pendingCount,
+      pending_requests_count: pendingRequestsCount,
+      pending_requests_amount: roundMoney(pendingRequestsAmount),
+      pending_given_amount: roundMoney(pendingGivenAmount),
+      pending_received_amount: roundMoney(pendingReceivedAmount),
+      rejected_count: rejectedCount,
       is_registered: Boolean(c.linked_user_id)
     };
   });
@@ -91393,10 +91889,22 @@ async function saveContactRest(authUser, body) {
   if (!name2) {
     return { status: 400, body: { success: false, message: "Person's name is required." } };
   }
-  let verifiedTarget = null;
   if (requestedLinkedUserId) {
     if (requestedLinkedUserId === authUser.id) {
       return { status: 400, body: { success: false, message: "You cannot add yourself as a contact." } };
+    }
+    const pairRes = await sbRest(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(requestedLinkedUserId)}),and(user_a_id.eq.${encodeURIComponent(requestedLinkedUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+    );
+    const isAlreadyConnected = Boolean(
+      pairRes.ok && pairRes.data && pairRes.data.some((r2) => r2.status === "connected")
+    );
+    if (!isAlreadyConnected) {
+      return connectUserRest(authUser, {
+        targetUserId: requestedLinkedUserId,
+        relationshipType,
+        requestedVia: "search"
+      });
     }
     const targetRes = await sbRest(
       `app_users?id=eq.${encodeURIComponent(requestedLinkedUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status`
@@ -91405,45 +91913,53 @@ async function saveContactRest(authUser, body) {
       return { status: 404, body: { success: false, message: "Selected user account was not found." } };
     }
     const target = targetRes.data[0];
-    if (!isDiscoverableNormalUser(target)) {
-      return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Selected user account is not eligible for Udhar connections." } };
+    const nowIso2 = (/* @__PURE__ */ new Date()).toISOString();
+    const upsertRes2 = await upsertUdharContactRest({
+      user_id: authUser.id,
+      name: target.full_name || name2,
+      email: target.email || null,
+      phone: target.phone || null,
+      photo_url: target.avatar_url || photoUrl,
+      relationship_type: relationshipType,
+      notes: notes || null,
+      linked_user_id: target.id,
+      updated_at: nowIso2
+    });
+    if (!upsertRes2.ok || !upsertRes2.data || upsertRes2.data.length === 0) {
+      return { status: 500, body: { success: false, message: upsertRes2.error || "Failed to save contact." } };
     }
-    if (await isBlockedBetween(authUser.id, target.id)) {
-      return { status: 403, body: { success: false, message: "Cannot connect with a blocked account." } };
-    }
-    verifiedTarget = target;
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "connected",
+        contact: upsertRes2.data[0],
+        reciprocallyLinked: true
+      }
+    };
   }
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const payload = {
     user_id: authUser.id,
-    name: verifiedTarget ? verifiedTarget.full_name : name2,
-    email: verifiedTarget ? verifiedTarget.email : email || null,
-    phone: verifiedTarget ? verifiedTarget.phone : phone || null,
-    photo_url: verifiedTarget ? verifiedTarget.avatar_url || photoUrl : photoUrl,
+    name: name2,
+    email: email || null,
+    phone: phone || null,
+    photo_url: photoUrl,
     relationship_type: relationshipType,
     notes: notes || null,
-    linked_user_id: verifiedTarget ? verifiedTarget.id : null,
+    linked_user_id: null,
     updated_at: nowIso
   };
   const upsertRes = await upsertUdharContactRest(payload);
   if (!upsertRes.ok || !upsertRes.data || upsertRes.data.length === 0) {
     return { status: 500, body: { success: false, message: upsertRes.error || "Failed to save contact." } };
   }
-  if (verifiedTarget) {
-    const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, verifiedTarget, relationshipType);
-    if (!syncRes.ok) {
-      return {
-        status: 503,
-        body: { success: false, message: syncRes.error || "Saved contact locally, but failed to sync reciprocal connection." }
-      };
-    }
-  }
   return {
     status: 200,
     body: {
       success: true,
       contact: upsertRes.data[0],
-      reciprocallyLinked: Boolean(verifiedTarget)
+      reciprocallyLinked: false
     }
   };
 }
@@ -91494,14 +92010,7 @@ async function updateContactRest(authUser, contactId, body) {
   };
 }
 async function deleteContactRest(authUser, contactId) {
-  const res = await sbRest(
-    `udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok) {
-    return { status: 500, body: { success: false, message: res.error || "Failed to remove contact." } };
-  }
-  return { status: 200, body: { success: true, message: "Saved contact removed." } };
+  return removeSavedConnectionRest(authUser, contactId);
 }
 async function linkContactRest(authUser, contactId, registeredUserId) {
   if (!registeredUserId) {
@@ -91510,9 +92019,12 @@ async function linkContactRest(authUser, contactId, registeredUserId) {
   if (registeredUserId === authUser.id) {
     return { status: 400, body: { success: false, message: "You cannot link a contact to your own account." } };
   }
-  const [contactRes, targetRes] = await Promise.all([
+  const [contactRes, targetRes, pairRes] = await Promise.all([
     sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`),
-    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`)
+    sbRest(`app_users?id=eq.${encodeURIComponent(registeredUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`),
+    sbRest(
+      `user_connections?or=(and(user_a_id.eq.${encodeURIComponent(authUser.id)},user_b_id.eq.${encodeURIComponent(registeredUserId)}),and(user_a_id.eq.${encodeURIComponent(registeredUserId)},user_b_id.eq.${encodeURIComponent(authUser.id)}))&select=id,status`
+    )
   ]);
   if (!contactRes.ok || !contactRes.data || contactRes.data.length === 0) {
     return { status: 404, body: { success: false, message: "Contact not found." } };
@@ -91528,6 +92040,23 @@ async function linkContactRest(authUser, contactId, registeredUserId) {
   if (await isBlockedBetween(authUser.id, target.id)) {
     return { status: 403, body: { success: false, message: "Cannot link with a blocked account." } };
   }
+  const isAlreadyConnected = Boolean(
+    pairRes.ok && pairRes.data && pairRes.data.some((c) => c.status === "connected")
+  );
+  if (!isAlreadyConnected) {
+    const reqResult = await connectUserRest(authUser, {
+      targetUserId: target.id,
+      relationshipType: contact.relationship_type || "Friend",
+      requestedVia: "search"
+    });
+    return {
+      status: reqResult.status,
+      body: {
+        ...reqResult.body,
+        pendingApproval: reqResult.body.status === "pending"
+      }
+    };
+  }
   await sbRest(`udhar_contacts?id=eq.${encodeURIComponent(contactId)}&user_id=eq.${encodeURIComponent(authUser.id)}`, {
     method: "PATCH",
     body: {
@@ -91538,11 +92067,15 @@ async function linkContactRest(authUser, contactId, registeredUserId) {
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     }
   });
-  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || "Friend");
+  await ensureConnectionAndReciprocalContactsRest(authUser, target, contact.relationship_type || "Friend", {
+    connectionMethod: "SEARCH",
+    requestedVia: "search"
+  });
   return {
     status: 200,
     body: {
       success: true,
+      status: "connected",
       message: `Successfully linked ${contact.name} with verified account ${target.full_name}.`
     }
   };
@@ -91778,14 +92311,120 @@ async function connectQrRest(authUser, body) {
   if (resolved.status !== 200 || !resolved.body.success) {
     return resolved;
   }
-  const targetId = resolved.body.owner.id;
+  const rawMethod = String(body.connectionMethod || body.entryMethod || "").trim().toUpperCase();
+  const connectionMethod = rawMethod === "CONFIRMATION_CODE" || rawMethod === "CODE" || !body.qrData && !body.pairingToken && Boolean(body.pairingCode) ? "CONFIRMATION_CODE" : "QR_CODE";
+  const owner = resolved.body.owner;
+  const targetId = owner.id;
+  const targetName = (owner.fullName || owner.displayName || "User").trim();
   const relationshipType = (body.relationshipType || "Friend").trim();
-  const connResult = await connectUserRest(authUser, {
-    targetUserId: targetId,
-    relationshipType,
-    requestedVia: "qr"
+  const targetRes = await sbRest(
+    `app_users?id=eq.${encodeURIComponent(targetId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,is_verified&limit=1`
+  );
+  const targetUser = targetRes.ok && targetRes.data && targetRes.data[0] || {
+    id: targetId,
+    full_name: targetName,
+    email: null,
+    phone: null,
+    avatar_url: owner.avatarUrl || null,
+    is_verified: owner.isVerified
+  };
+  if (resolved.body.isAlreadyConnected) {
+    await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
+      connectionMethod,
+      requestedVia: connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr"
+    }).catch(() => {
+    });
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status: "connected",
+        alreadyConnected: true,
+        connectionMethod,
+        title: "Already Connected",
+        message: "Already Connected",
+        connectedUser: {
+          id: targetUser.id,
+          name: targetName,
+          displayName: targetName,
+          fullName: targetName,
+          avatarUrl: targetUser.avatar_url || null,
+          isVerified: Boolean(targetUser.is_verified ?? true)
+        }
+      }
+    };
+  }
+  const syncRes = await ensureConnectionAndReciprocalContactsRest(authUser, targetUser, relationshipType, {
+    connectionMethod,
+    requestedVia: connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr"
   });
-  return connResult;
+  if (!syncRes.ok) {
+    return {
+      status: 503,
+      body: {
+        success: false,
+        code: "REQUEST_FAILED",
+        message: syncRes.error || "Unable to save connection right now. Please retry."
+      }
+    };
+  }
+  await Promise.all([
+    updateConnectionRequestNotificationsState({
+      requestId: resolved.body.requestId || null,
+      requesterId: authUser.id,
+      receiverId: targetId,
+      status: "accepted"
+    }).catch(() => {
+    }),
+    updateConnectionRequestNotificationsState({
+      requestId: resolved.body.requestId || null,
+      requesterId: targetId,
+      receiverId: authUser.id,
+      status: "accepted"
+    }).catch(() => {
+    })
+  ]);
+  if (resolved.body.pairingToken) {
+    await sbRest(
+      `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolved.body.pairingToken)}&is_single_use=eq.true`,
+      {
+        method: "PATCH",
+        body: { used: true, used_at: (/* @__PURE__ */ new Date()).toISOString() }
+      }
+    ).catch(() => {
+    });
+  }
+  const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+  await notifyQrConnected({
+    userAId: authUser.id,
+    userAName: actorName,
+    userAAvatar: authUser.avatar_url || null,
+    userBId: targetUser.id,
+    userBName: targetName,
+    connectionMethod,
+    connectionId: syncRes.connectionId || null
+  }).catch(() => {
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "connected",
+      alreadyConnected: false,
+      connectionMethod,
+      title: "Connection Added Successfully",
+      message: `${targetName} has been added to your Saved People.`,
+      connectionId: syncRes.connectionId || null,
+      connectedUser: {
+        id: targetUser.id,
+        name: targetName,
+        displayName: targetName,
+        fullName: targetName,
+        avatarUrl: targetUser.avatar_url || null,
+        isVerified: Boolean(targetUser.is_verified ?? true)
+      }
+    }
+  };
 }
 async function getUdharTransactionsRest(authUser) {
   const [txRes, contactsRes] = await Promise.all([
@@ -91799,7 +92438,7 @@ async function getUdharTransactionsRest(authUser) {
   if (!txRes.ok) {
     return { status: 503, body: { success: false, message: "Unable to load Udhar ledger right now." } };
   }
-  const rawTxs = (txRes.data || []).filter((t2) => t2.status !== "cancelled" && !t2.deleted_at);
+  const rawTxs = (txRes.data || []).filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted");
   const linkIds = Array.from(new Set(rawTxs.map((t2) => t2.link_id).filter(Boolean)));
   const txIds = rawTxs.map((t2) => t2.id).filter(Boolean);
   let repaymentsRows = [];
@@ -91858,8 +92497,11 @@ async function getUdharTransactionsRest(authUser) {
   };
 }
 async function createUdharTransactionRest(authUser, body) {
-  const counterpartName = (body.counterpart_name || body.person_name || "").trim();
+  let counterpartName = (body.counterpart_name || body.person_name || "").trim();
   const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || "").trim() || null;
+  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
+  const pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+  const qrDataRaw = (body.qrData || body.qr_data || "").trim();
   const direction = body.direction;
   const amount = roundMoney(parseFloat(body.amount));
   const txDate = body.transaction_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
@@ -91870,9 +92512,6 @@ async function createUdharTransactionRest(authUser, body) {
   const description = (body.description || "").trim();
   const attachmentUrl = body.attachment_url || null;
   const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
-  if (!counterpartName) {
-    return { status: 400, body: { success: false, message: "Person's name is required." } };
-  }
   if (!["gave", "took"].includes(direction)) {
     return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
   }
@@ -91898,7 +92537,43 @@ async function createUdharTransactionRest(authUser, body) {
     }
   }
   let registeredUser = null;
-  if (counterpartUserId && counterpartUserId !== authUser.id) {
+  let verifiedCreationMethod = "manual";
+  let singleUseTokenRecordId = null;
+  if (qrToken || pairingCode || qrDataRaw) {
+    const resolved = await resolveQrRest(authUser, {
+      qrData: qrDataRaw || void 0,
+      pairingToken: qrToken || void 0,
+      pairingCode: pairingCode || void 0
+    });
+    if (resolved.status !== 200 || !resolved.body?.success || !resolved.body?.owner?.id) {
+      return resolved;
+    }
+    const ownerId = resolved.body.owner.id;
+    const uRes = await sbRest(
+      `app_users?id=eq.${encodeURIComponent(ownerId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
+    );
+    if (!uRes.ok || !uRes.data || uRes.data.length === 0) {
+      return { status: 404, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account not found." } };
+    }
+    registeredUser = uRes.data[0];
+    if (!isDiscoverableNormalUser(registeredUser)) {
+      return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is unavailable for shared Udhar." } };
+    }
+    if (await isBlockedBetween(authUser.id, registeredUser.id)) {
+      return { status: 403, body: { success: false, code: "BLOCKED", message: "Cannot create shared Udhar with a blocked user." } };
+    }
+    counterpartName = registeredUser.full_name || resolved.body.owner.fullName || counterpartName || "Friend";
+    verifiedCreationMethod = qrToken || qrDataRaw && qrDataRaw.startsWith("{") ? "qr" : "code";
+    const resolvedToken = resolved.body.pairingToken;
+    if (resolvedToken) {
+      const tokCheck = await sbRest(
+        `qr_pairing_tokens?pairing_token=eq.${encodeURIComponent(resolvedToken)}&select=id,is_single_use&limit=1`
+      );
+      if (tokCheck.ok && tokCheck.data?.[0]?.is_single_use) {
+        singleUseTokenRecordId = tokCheck.data[0].id;
+      }
+    }
+  } else if (counterpartUserId && counterpartUserId !== authUser.id) {
     const uRes = await sbRest(
       `app_users?id=eq.${encodeURIComponent(counterpartUserId)}&status=eq.active&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
     );
@@ -91911,17 +92586,28 @@ async function createUdharTransactionRest(authUser, body) {
         return { status: 403, body: { success: false, message: "Cannot create shared Udhar with a blocked user." } };
       }
       registeredUser = u;
+      counterpartName = counterpartName || registeredUser.full_name;
     }
   }
-  const packedNotes = packStructuredNote(plainNotes, {
-    category,
-    payment_method: paymentMethod,
-    description: description || void 0,
-    attachment_url: attachmentUrl || void 0
-  });
+  if (!counterpartName) {
+    return { status: 400, body: { success: false, message: "Person's name is required." } };
+  }
   const linkId = crypto17.randomUUID();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   if (registeredUser) {
+    const isInstantQr = verifiedCreationMethod === "qr" || verifiedCreationMethod === "code";
+    const initialLifecycle = isInstantQr ? "confirmed" : "pending_confirmation";
+    const initialConfirmStatus = isInstantQr ? "confirmed" : "pending";
+    const packedNotes = packStructuredNote(plainNotes, {
+      category,
+      payment_method: paymentMethod,
+      description: description || void 0,
+      attachment_url: attachmentUrl || void 0,
+      creation_method: verifiedCreationMethod,
+      lifecycle_status: initialLifecycle,
+      accepted_by: isInstantQr ? registeredUser.id : void 0,
+      responded_at: isInstantQr ? nowIso : void 0
+    });
     const counterpartDirection = direction === "gave" ? "took" : "gave";
     const userARow = {
       link_id: linkId,
@@ -91936,8 +92622,8 @@ async function createUdharTransactionRest(authUser, body) {
       due_date: dueDate || null,
       notes: packedNotes,
       attachment_url: attachmentUrl,
-      status: "confirmed",
-      confirmation_status: "confirmed",
+      status: initialLifecycle,
+      confirmation_status: initialConfirmStatus,
       is_initiator: true,
       idempotency_key: idempotencyKey,
       created_at: nowIso,
@@ -91956,8 +92642,8 @@ async function createUdharTransactionRest(authUser, body) {
       due_date: dueDate || null,
       notes: packedNotes,
       attachment_url: attachmentUrl,
-      status: "confirmed",
-      confirmation_status: "confirmed",
+      status: initialLifecycle,
+      confirmation_status: initialConfirmStatus,
       is_initiator: false,
       idempotency_key: idempotencyKey ? `${idempotencyKey}:counterpart` : null,
       created_at: nowIso,
@@ -91971,27 +92657,102 @@ async function createUdharTransactionRest(authUser, body) {
     if (!insertRes.ok || !insertRes.data || insertRes.data.length === 0) {
       return { status: 500, body: { success: false, message: insertRes.error || "Failed to create shared Udhar." } };
     }
+    if (singleUseTokenRecordId) {
+      await sbRest(`qr_pairing_tokens?id=eq.${encodeURIComponent(singleUseTokenRecordId)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { used: true, used_by_user_id: authUser.id, used_at: nowIso }
+      }).catch(() => {
+      });
+    }
     const createdUserA = insertRes.data.find((r2) => r2.user_id === authUser.id) || insertRes.data[0];
     await ensureConnectionAndReciprocalContactsRest(authUser, registeredUser, "Friend");
-    await createTargetedNotificationRest({
-      targetUserId: registeredUser.id,
-      actorUserId: authUser.id,
-      title: `New Shared Udhar from ${authUser.full_name}`,
-      message: `${authUser.full_name} recorded an Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}).`,
-      type: "udhar_created",
-      relatedEntityId: linkId
-    });
+    if (isInstantQr) {
+      const viaLabel = verifiedCreationMethod === "qr" ? "QR code" : "confirmation code";
+      await Promise.all([
+        createTargetedNotificationRest({
+          targetUserId: registeredUser.id,
+          actorUserId: authUser.id,
+          title: `Instant Udhar Confirmed via ${viaLabel}`,
+          message: `${authUser.full_name} added a confirmed Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+          type: "udhar_qr_confirmed",
+          relatedEntityId: linkId,
+          dedupeKey: `udhar_qr_rec_${linkId}`,
+          metadata: {
+            actionType: "udhar_qr_confirmed",
+            linkId,
+            udharId: createdUserA.id,
+            senderName: authUser.full_name,
+            amount,
+            direction: counterpartDirection,
+            creationMethod: verifiedCreationMethod
+          }
+        }),
+        createTargetedNotificationRest({
+          targetUserId: authUser.id,
+          actorUserId: authUser.id,
+          title: `Udhar Added via ${viaLabel}`,
+          message: `Your Udhar of \u20B9${amount.toLocaleString("en-IN")} with ${registeredUser.full_name} was confirmed immediately.`,
+          type: "udhar_qr_confirmed",
+          relatedEntityId: linkId,
+          dedupeKey: `udhar_qr_init_${linkId}`,
+          metadata: {
+            actionType: "udhar_qr_confirmed",
+            linkId,
+            udharId: createdUserA.id,
+            counterpartName: registeredUser.full_name,
+            amount,
+            direction,
+            creationMethod: verifiedCreationMethod
+          }
+        })
+      ]);
+    } else {
+      const dirHuman = direction === "gave" ? "gave you (You Borrowed)" : "borrowed from you (You Gave)";
+      await createTargetedNotificationRest({
+        targetUserId: registeredUser.id,
+        actorUserId: authUser.id,
+        title: "New Udhaar Confirmation Request",
+        message: `${authUser.full_name} added an Udhaar request of \u20B9${amount.toLocaleString("en-IN")} (${dirHuman}). Please review and confirm.`,
+        type: "udhar_request",
+        relatedEntityId: linkId,
+        dedupeKey: `udhar_req_${linkId}`,
+        metadata: {
+          actionType: "udhar_confirmation_request",
+          linkId,
+          udharId: createdUserA.id,
+          requesterUserId: authUser.id,
+          requesterName: authUser.full_name,
+          requesterAvatar: authUser.avatar_url || null,
+          amount,
+          direction: counterpartDirection,
+          description: description || plainNotes || null,
+          transactionDate: txDate,
+          creationMethod: "manual"
+        }
+      });
+    }
     const userMap = /* @__PURE__ */ new Map([[registeredUser.id, registeredUser]]);
     return {
       status: 201,
       body: {
         success: true,
-        message: `Shared Udhar recorded with ${registeredUser.full_name}. Synced to both accounts.`,
+        requiresConfirmation: !isInstantQr,
+        creationMethod: verifiedCreationMethod,
+        message: isInstantQr ? `Udhaar added successfully.` : `Udhaar request sent to ${registeredUser.full_name}. Waiting for recipient confirmation.`,
         transaction: enrichTransactionRow(createdUserA, userMap, [], []),
         isLinked: true
       }
     };
   } else {
+    const packedNotes = packStructuredNote(plainNotes, {
+      category,
+      payment_method: paymentMethod,
+      description: description || void 0,
+      attachment_url: attachmentUrl || void 0,
+      creation_method: "manual",
+      lifecycle_status: "confirmed"
+    });
     const singleRow = {
       link_id: linkId,
       user_id: authUser.id,
@@ -92036,12 +92797,26 @@ async function createUdharTransactionRest(authUser, body) {
       status: 201,
       body: {
         success: true,
+        requiresConfirmation: false,
+        creationMethod: "manual",
         message: `Local Udhar recorded for ${counterpartName}.`,
         transaction: enrichTransactionRow(insertRes.data[0], /* @__PURE__ */ new Map(), [], []),
         isLinked: false
       }
     };
   }
+}
+async function createUdharViaQrRest(authUser, body) {
+  const qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
+  const pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+  const qrDataRaw = (body.qrData || body.qr_data || "").trim();
+  if (!qrToken && !pairingCode && !qrDataRaw) {
+    return {
+      status: 400,
+      body: { success: false, code: "QR_OR_CODE_REQUIRED", message: "A valid QR token or confirmation code is required." }
+    };
+  }
+  return createUdharTransactionRest(authUser, body);
 }
 async function confirmUdharTransactionRest(authUser, txId) {
   const txRes = await sbRest(
@@ -92051,17 +92826,223 @@ async function confirmUdharTransactionRest(authUser, txId) {
     return { status: 404, body: { success: false, message: "Transaction not found." } };
   }
   const tx = txRes.data[0];
-  if (tx.is_initiator) {
+  const guard = canAcceptUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: "confirmed",
+    accepted_by: authUser.id,
+    responded_at: nowIso
+  });
+  const patchRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "confirmed",
+        confirmation_status: "confirmed",
+        notes: updatedPackedNotes,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
     return {
-      status: 403,
-      body: { success: false, message: "Only the recipient counterpart can confirm this transaction." }
+      status: 409,
+      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been accepted, rejected, or cancelled." }
     };
   }
-  await sbRest(`udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}`, {
-    method: "PATCH",
-    body: { status: "confirmed", confirmation_status: "confirmed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
   });
-  return { status: 200, body: { success: true, message: "Transaction confirmed on both accounts." } };
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: "Udhaar Request Accepted",
+      message: `${authUser.full_name} accepted your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both balances are now updated.`,
+      type: "udhar_accepted",
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_acc_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_accepted",
+        linkId: tx.link_id,
+        udharId: tx.id,
+        acceptedBy: authUser.id,
+        amount: parseFloat(tx.original_amount) || 0
+      }
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      message: "Udhaar request accepted successfully.",
+      status: "confirmed"
+    }
+  };
+}
+async function rejectUdharTransactionRest(authUser, txId, reason) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const guard = canRejectUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 400) : "Rejected by recipient";
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: "rejected",
+    rejected_by: authUser.id,
+    responded_at: nowIso,
+    rejection_reason: cleanReason
+  });
+  let patchRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "rejected",
+        confirmation_status: "rejected",
+        current_balance: 0,
+        paid_amount: 0,
+        notes: updatedPackedNotes,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok && (patchRes.status === 400 || String(patchRes.error || "").includes("23514"))) {
+    patchRes = await sbRest(
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: {
+          status: "cancelled",
+          current_balance: 0,
+          paid_amount: 0,
+          notes: updatedPackedNotes,
+          updated_at: nowIso
+        }
+      }
+    );
+  }
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been handled." }
+    };
+  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: "Udhaar Request Rejected",
+      message: `${authUser.full_name} rejected your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      type: "udhar_rejected",
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_rej_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_rejected",
+        linkId: tx.link_id,
+        udharId: tx.id,
+        rejectedBy: authUser.id,
+        reason: cleanReason
+      }
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "rejected",
+      message: "You rejected this Udhaar request."
+    }
+  };
+}
+async function cancelUdharRequestRest(authUser, txId, reason) {
+  const txRes = await sbRest(
+    `udhar_transactions?id=eq.${encodeURIComponent(txId)}&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`
+  );
+  if (!txRes.ok || !txRes.data || txRes.data.length === 0) {
+    return { status: 404, body: { success: false, message: "Transaction not found." } };
+  }
+  const tx = txRes.data[0];
+  const guard = canSenderCancelUdhar(tx, authUser.id);
+  if (!guard.allowed) {
+    return { status: guard.httpStatus || 403, body: { success: false, code: guard.code, message: guard.reason } };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 400) : "Cancelled by sender";
+  const { note, meta } = unpackStructuredNote(tx.notes);
+  const updatedPackedNotes = packStructuredNote(note, {
+    ...meta,
+    lifecycle_status: "cancelled",
+    cancelled_by: authUser.id,
+    cancelled_at: nowIso,
+    rejection_reason: cleanReason
+  });
+  const patchRes = await sbRest(
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=eq.pending_confirmation`,
+    {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: {
+        status: "cancelled",
+        current_balance: 0,
+        paid_amount: 0,
+        notes: updatedPackedNotes,
+        updated_at: nowIso
+      }
+    }
+  );
+  if (!patchRes.ok || !Array.isArray(patchRes.data) || patchRes.data.length === 0) {
+    return {
+      status: 409,
+      body: { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been responded to or cancelled." }
+    };
+  }
+  await deactivateUdharNotificationsRest(tx.link_id, tx.id).catch(() => {
+  });
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: "Udhaar Request Cancelled",
+      message: `${authUser.full_name} cancelled their pending Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+      type: "udhar_request_cancelled",
+      relatedEntityId: tx.link_id,
+      dedupeKey: `udhar_canc_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_request_cancelled",
+        linkId: tx.link_id,
+        udharId: tx.id,
+        cancelledBy: authUser.id
+      }
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      status: "cancelled",
+      message: "Pending Udhaar request cancelled."
+    }
+  };
 }
 async function disputeUdharTransactionRest(authUser, txId, reason) {
   const txRes = await sbRest(
@@ -92140,6 +93121,7 @@ async function repayUdharRest(authUser, txId, body) {
   const pendingRepayments = roundMoney(
     existingReps.filter((r2) => r2.status === "pending_confirmation").reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
   );
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
   const calc = calculateRepaymentApplication({
     originalAmount: parseFloat(tx.original_amount) || 0,
     confirmedPaidAmount: confirmedPaid,
@@ -92147,7 +93129,7 @@ async function repayUdharRest(authUser, txId, body) {
     repayAmount,
     isShared: Boolean(tx.counterpart_user_id),
     actorRole: tx.direction === "gave" ? "lender" : "borrower",
-    udharStatus: tx.status
+    udharStatus: lifecycle
   });
   if (!calc.valid) {
     return { status: 400, body: { success: false, message: calc.error || "Invalid repayment." } };
@@ -92355,12 +93337,13 @@ async function editUdharRest(authUser, txId, body) {
     activeConfirmedReps.reduce((s2, r2) => s2 + (parseFloat(r2.amount) || 0), 0)
   );
   const { note: prevPlainNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
   const editReason = (body.reason_for_edit || body.reason || body.edit_reason || "").trim();
   const validation = validateUdharEdit(
     {
       original_amount: parseFloat(tx.original_amount) || 0,
       paid_amount: confirmedPaid,
-      status: tx.status,
+      status: lifecycle,
       notes: prevPlainNote,
       transaction_date: tx.transaction_date,
       due_date: tx.due_date,
@@ -92384,10 +93367,12 @@ async function editUdharRest(authUser, txId, body) {
   }
   const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
   const nextPackedNotes = packStructuredNote(nextPlainNote, {
+    ...prevMeta,
     category: body.category !== void 0 ? body.category : prevMeta.category,
     payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
     description: body.description !== void 0 ? body.description : prevMeta.description,
-    attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url
+    attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url,
+    lifecycle_status: lifecycle === "pending_confirmation" ? "pending_confirmation" : validation.nextStatus
   });
   const nextDate = body.transaction_date || body.date || tx.transaction_date;
   const nextDueDate = body.due_date !== void 0 ? body.due_date || null : body.dueDate !== void 0 ? body.dueDate || null : tx.due_date;
@@ -92416,7 +93401,7 @@ async function editUdharRest(authUser, txId, body) {
       original_amount: validation.nextOriginalAmount,
       current_balance: validation.nextRemainingAmount,
       paid_amount: confirmedPaid,
-      status: validation.nextStatus,
+      status: lifecycle === "pending_confirmation" ? "pending_confirmation" : validation.nextStatus,
       notes: nextPackedNotes,
       transaction_date: nextDate,
       due_date: nextDueDate,
@@ -92465,14 +93450,18 @@ async function settleUdharRest(authUser, txId, body) {
       }
     };
   }
+  const lifecycle = normalizeUdharLifecycleStatus(tx);
   const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
-  if (tx.status === "settled" || currentBal <= 0.01) {
+  if (lifecycle === "pending_confirmation") {
+    return { status: 409, body: { success: false, message: "Waiting for recipient confirmation before settling." } };
+  }
+  if (lifecycle === "settled" || currentBal <= 0.01) {
     return { status: 400, body: { success: false, message: "This transaction is already settled." } };
   }
-  if (tx.status === "cancelled" || tx.deleted_at) {
-    return { status: 400, body: { success: false, message: "Cannot settle a cancelled transaction." } };
+  if (lifecycle === "rejected" || lifecycle === "cancelled" || lifecycle === "deleted") {
+    return { status: 400, body: { success: false, message: "Cannot settle a rejected, cancelled, or deleted transaction." } };
   }
-  if (tx.status === "disputed") {
+  if (lifecycle === "disputed") {
     return { status: 409, body: { success: false, message: "Cannot settle a disputed transaction. Resolve the dispute first." } };
   }
   const settleDate = body.settlement_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
@@ -92480,7 +93469,7 @@ async function settleUdharRest(authUser, txId, body) {
   const notes = (body.notes || "Settled in full").trim();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   let patchRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,rejected,pending_confirmation)`,
     {
       method: "PATCH",
       prefer: "return=representation",
@@ -92496,7 +93485,7 @@ async function settleUdharRest(authUser, txId, body) {
   );
   if (!patchRes.ok && patchRes.status === 400) {
     patchRes = await sbRest(
-      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed)`,
+      `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(settled,cancelled,disputed,pending_confirmation)`,
       {
         method: "PATCH",
         prefer: "return=representation",
@@ -92568,10 +93557,12 @@ async function cancelUdharRest(authUser, txId, reason) {
     repayments,
     currentStatus: tx.status
   });
-  const effectiveStatus = tx.status === "cancelled" || tx.deleted_at ? "cancelled" : tx.status === "disputed" ? "disputed" : repayments.length > 0 ? recalc.nextStatus : tx.status;
+  const baseLifecycle = normalizeUdharLifecycleStatus(tx);
+  const effectiveStatus = baseLifecycle === "deleted" || baseLifecycle === "cancelled" || baseLifecycle === "rejected" ? baseLifecycle : baseLifecycle === "disputed" ? "disputed" : baseLifecycle === "pending_confirmation" ? "pending_confirmation" : repayments.length > 0 ? recalc.nextStatus : baseLifecycle;
   const guard = canCancelUdhar({
     status: effectiveStatus,
     deleted_at: tx.deleted_at,
+    notes: tx.notes,
     direction: tx.direction,
     is_shared: Boolean(tx.counterpart_user_id),
     counterpart_user_id: tx.counterpart_user_id,
@@ -92589,8 +93580,15 @@ async function cancelUdharRest(authUser, txId, reason) {
   }
   const cleanReason = typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 500) : null;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const { note: prevNote, meta: prevMeta } = unpackStructuredNote(tx.notes);
+  const deletedPackedNotes = packStructuredNote(prevNote, {
+    ...prevMeta,
+    lifecycle_status: "deleted",
+    cancelled_at: nowIso,
+    cancelled_by: authUser.id
+  });
   let softDelRes = await sbRest(
-    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&status=not.in.(cancelled,disputed)`,
+    `udhar_transactions?link_id=eq.${encodeURIComponent(tx.link_id)}&deleted_at=is.null&status=not.in.(disputed)`,
     {
       method: "PATCH",
       prefer: "return=representation",
@@ -92598,6 +93596,7 @@ async function cancelUdharRest(authUser, txId, reason) {
         status: "cancelled",
         current_balance: 0,
         paid_amount: 0,
+        notes: deletedPackedNotes,
         deleted_at: nowIso,
         deleted_by: authUser.id,
         deletion_reason: cleanReason,
@@ -92611,7 +93610,13 @@ async function cancelUdharRest(authUser, txId, reason) {
       {
         method: "PATCH",
         prefer: "return=representation",
-        body: { status: "cancelled", current_balance: 0, paid_amount: 0, updated_at: nowIso }
+        body: {
+          status: "cancelled",
+          current_balance: 0,
+          paid_amount: 0,
+          notes: deletedPackedNotes,
+          updated_at: nowIso
+        }
       }
     );
   }
@@ -92643,6 +93648,23 @@ async function cancelUdharRest(authUser, txId, reason) {
     }
   }
   await deactivateUdharNotificationsRest(tx.link_id, tx.id);
+  if (tx.counterpart_user_id) {
+    await createTargetedNotificationRest({
+      targetUserId: tx.counterpart_user_id,
+      actorUserId: authUser.id,
+      title: `Udhar Deleted by ${authUser.full_name}`,
+      message: `${authUser.full_name} permanently deleted the shared Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both accounts have been updated.`,
+      type: "udhar_deleted",
+      dedupeKey: `udhar_del_${tx.link_id}`,
+      metadata: {
+        actionType: "udhar_deleted",
+        deletedLinkId: tx.link_id,
+        deletedTxId: tx.id,
+        amount: parseFloat(tx.original_amount) || 0
+      }
+    }).catch(() => {
+    });
+  }
   return {
     status: 200,
     body: {
@@ -98562,8 +99584,31 @@ async function handleApiRequest(req, res) {
         sendJson6(res, 400, { success: false, message: "Admin email and password are required." });
         return true;
       }
-      const ADMIN_ROLES = /* @__PURE__ */ new Set(["superadmin", "admin", "support", "analyst"]);
+      const ADMIN_PORTAL_ROLES = /* @__PURE__ */ new Set(["superadmin", "admin"]);
+      const BUILTIN_STAFF_ROLES = /* @__PURE__ */ new Set(["support", "analyst"]);
       const isMasterAdminEmail = (addr) => addr === "hackifypro@gmail.com" || addr === "admin@mymoney.com";
+      const isKnownStaffRoleSlug = async (slugCandidate) => {
+        const clean = String(slugCandidate || "").toLowerCase().trim();
+        if (!clean || clean === "user" || clean === "anonymous" || ADMIN_PORTAL_ROLES.has(clean)) {
+          return false;
+        }
+        if (BUILTIN_STAFF_ROLES.has(clean)) return true;
+        if (isDatabaseAvailable()) {
+          try {
+            const roleRes = await query("SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1", [clean]);
+            if (roleRes.rows.length > 0) return true;
+          } catch {
+          }
+        }
+        try {
+          const fallbackRoles = await listAdminRolesFallback();
+          if (fallbackRoles.some((r2) => String(r2.slug || "").toLowerCase().trim() === clean)) {
+            return true;
+          }
+        } catch {
+        }
+        return false;
+      };
       let userRecord = null;
       if (isDatabaseAvailable()) {
         try {
@@ -98618,19 +99663,33 @@ async function handleApiRequest(req, res) {
         sendJson6(res, 401, { success: false, message: "Invalid administrator credentials." });
         return true;
       }
-      const effectiveRole = isMasterAdminEmail(email) ? "superadmin" : String(userRecord.role || "user").toLowerCase().trim();
-      if (!ADMIN_ROLES.has(effectiveRole)) {
-        await logSecurityEvent("ADMIN_LOGIN_DENIED_NON_ADMIN", {
-          userId: userRecord.id,
-          userEmail: email,
-          actorRole: effectiveRole,
-          ipAddress: clientIp
-        }).catch(() => {
+      const rawRole = String(userRecord.role || "user").toLowerCase().trim();
+      const rawSlug = String(userRecord.role_slug || "").toLowerCase().trim();
+      const effectiveRole = isMasterAdminEmail(email) ? "superadmin" : ADMIN_PORTAL_ROLES.has(rawRole) ? rawRole : ADMIN_PORTAL_ROLES.has(rawSlug) ? rawSlug : rawSlug && rawSlug !== "user" ? rawSlug : rawRole;
+      if (!ADMIN_PORTAL_ROLES.has(effectiveRole)) {
+        const isStaffAccount = await isKnownStaffRoleSlug(effectiveRole);
+        await logSecurityEvent(
+          isStaffAccount ? "ADMIN_LOGIN_DENIED_STAFF_PORTAL" : "ADMIN_LOGIN_DENIED_NON_ADMIN",
+          {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRole,
+            ipAddress: clientIp
+          }
+        ).catch(() => {
         });
+        if (isStaffAccount) {
+          sendJson6(res, 403, {
+            success: false,
+            code: "STAFF_PORTAL_REQUIRED",
+            message: "Staff accounts cannot sign in on the Admin Portal. Please use the dedicated Staff Portal (/mystaff)."
+          });
+          return true;
+        }
         sendJson6(res, 403, {
           success: false,
           code: "ADMIN_ROLE_REQUIRED",
-          message: "Access Denied: This login portal is restricted to authorized administrators only."
+          message: "Access Denied: This login portal (/myadmin) is restricted to authorized administrators only."
         });
         return true;
       }
@@ -98710,17 +99769,223 @@ async function handleApiRequest(req, res) {
       });
       return true;
     }
+    if (pathname === "/api/staff/auth/login" && method === "POST") {
+      const body = await parseJsonBody6(req);
+      const email = normalizeEmail(body.email || "");
+      const password = String(body.password || "");
+      const rememberMe = Boolean(body.rememberMe);
+      const rateIp = await checkRateLimitAsync(`staff_login:ip:${clientIp}`, RATE_LIMITS.ADMIN_LOGIN_IP.max, RATE_LIMITS.ADMIN_LOGIN_IP.windowMs, RATE_LIMITS.ADMIN_LOGIN_IP.op);
+      if (!rateIp.allowed) {
+        sendRateLimitExceeded(res, rateIp);
+        return true;
+      }
+      if (email) {
+        const rateAcct = await checkRateLimitAsync(`staff_login:account:${email}`, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.max, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.windowMs, RATE_LIMITS.ADMIN_LOGIN_ACCOUNT.op);
+        if (!rateAcct.allowed) {
+          sendRateLimitExceeded(res, rateAcct);
+          return true;
+        }
+      }
+      if (!email || !password) {
+        sendJson6(res, 400, { success: false, message: "Staff email and password are required." });
+        return true;
+      }
+      const ADMIN_PORTAL_ROLES = /* @__PURE__ */ new Set(["superadmin", "admin"]);
+      const BUILTIN_STAFF_ROLES = /* @__PURE__ */ new Set(["support", "analyst"]);
+      const isMasterAdminEmail = (addr) => addr === "hackifypro@gmail.com" || addr === "admin@mymoney.com";
+      let userRecord = null;
+      if (isDatabaseAvailable()) {
+        try {
+          const userRes = await query("SELECT * FROM public.app_users WHERE LOWER(email) = $1 LIMIT 1", [email]);
+          if (userRes.rows.length > 0) userRecord = userRes.rows[0];
+        } catch {
+        }
+      }
+      if (!userRecord) {
+        const sbRes = await sbRestRequest(
+          `app_users?email=ilike.${encodeURIComponent(email)}&select=*&limit=1`
+        );
+        if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+          userRecord = sbRes.data[0];
+        }
+      }
+      if (!userRecord) {
+        await logSecurityEvent("STAFF_LOGIN_FAILED_UNKNOWN", { userEmail: email, ipAddress: clientIp }).catch(() => {
+        });
+        sendJson6(res, 401, { success: false, message: "Invalid staff credentials." });
+        return true;
+      }
+      if (userRecord.locked_until && new Date(userRecord.locked_until) > /* @__PURE__ */ new Date()) {
+        const remainingMin = Math.ceil((new Date(userRecord.locked_until).getTime() - Date.now()) / 6e4);
+        sendJson6(res, 429, {
+          success: false,
+          message: `Staff account is temporarily locked. Try again in ${remainingMin} minute(s).`
+        });
+        return true;
+      }
+      if (userRecord.status === "suspended" || userRecord.status === "deactivated") {
+        sendJson6(res, 403, {
+          success: false,
+          message: `This staff account is ${userRecord.status}. Sign-in blocked.`
+        });
+        return true;
+      }
+      const isValid = await verifyPassword(password, userRecord.password_hash);
+      if (!isValid) {
+        if (isDatabaseAvailable()) {
+          const attempts = (userRecord.failed_login_attempts || 0) + 1;
+          const lockSql = attempts >= 5 ? "UPDATE public.app_users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '15 minutes' WHERE id = $2" : "UPDATE public.app_users SET failed_login_attempts = $1 WHERE id = $2";
+          await query(lockSql, [attempts, userRecord.id]).catch(() => {
+          });
+        }
+        await logSecurityEvent("STAFF_LOGIN_FAILED_PASSWORD", {
+          userId: userRecord.id,
+          userEmail: email,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson6(res, 401, { success: false, message: "Invalid staff credentials." });
+        return true;
+      }
+      const rawRole = String(userRecord.role || "user").toLowerCase().trim();
+      const rawSlug = String(userRecord.role_slug || "").toLowerCase().trim();
+      const effectiveRoleSlug = rawSlug && rawSlug !== "user" ? rawSlug : rawRole;
+      if (isMasterAdminEmail(email) || ADMIN_PORTAL_ROLES.has(rawRole) || ADMIN_PORTAL_ROLES.has(rawSlug)) {
+        await logSecurityEvent("STAFF_LOGIN_DENIED_ADMIN_PORTAL", {
+          userId: userRecord.id,
+          userEmail: email,
+          actorRole: effectiveRoleSlug,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson6(res, 403, {
+          success: false,
+          code: "ADMIN_PORTAL_REQUIRED",
+          message: "Administrator accounts must sign in through the dedicated Admin Portal (/myadmin)."
+        });
+        return true;
+      }
+      let isAuthorizedStaff = BUILTIN_STAFF_ROLES.has(rawRole) || BUILTIN_STAFF_ROLES.has(rawSlug);
+      if (!isAuthorizedStaff && effectiveRoleSlug && effectiveRoleSlug !== "user" && effectiveRoleSlug !== "anonymous") {
+        if (isDatabaseAvailable()) {
+          try {
+            const roleRes = await query("SELECT slug FROM public.admin_roles WHERE LOWER(slug) = $1 LIMIT 1", [effectiveRoleSlug]);
+            if (roleRes.rows.length > 0) isAuthorizedStaff = true;
+          } catch {
+          }
+        }
+        if (!isAuthorizedStaff) {
+          try {
+            const fallbackRoles = await listAdminRolesFallback();
+            if (fallbackRoles.some((r2) => String(r2.slug || "").toLowerCase().trim() === effectiveRoleSlug)) {
+              isAuthorizedStaff = true;
+            }
+          } catch {
+          }
+        }
+      }
+      if (!isAuthorizedStaff) {
+        await logSecurityEvent("STAFF_LOGIN_DENIED_NON_STAFF", {
+          userId: userRecord.id,
+          userEmail: email,
+          actorRole: effectiveRoleSlug,
+          ipAddress: clientIp
+        }).catch(() => {
+        });
+        sendJson6(res, 403, {
+          success: false,
+          code: "STAFF_ROLE_REQUIRED",
+          message: "Access Denied: This login portal (/mystaff) is restricted to authorized My Money Manager staff only."
+        });
+        return true;
+      }
+      if (isDatabaseAvailable()) {
+        try {
+          await query(
+            `UPDATE public.app_users
+             SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), last_login_ip = $1
+             WHERE id = $2`,
+            [clientIp, userRecord.id]
+          );
+        } catch {
+        }
+      } else {
+        await sbRestRequest(`app_users?id=eq.${encodeURIComponent(userRecord.id)}`, {
+          method: "PATCH",
+          body: {
+            failed_login_attempts: 0,
+            locked_until: null,
+            last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+            last_login_ip: clientIp
+          }
+        }).catch(() => {
+        });
+      }
+      const replaceSessionId = typeof body.replaceSessionId === "string" && body.replaceSessionId.trim() ? body.replaceSessionId.trim() : void 0;
+      let session;
+      try {
+        session = await createSession(userRecord.id, {
+          rememberMe,
+          userAgent,
+          ipAddress: clientIp,
+          user: { role: effectiveRoleSlug, email },
+          replaceSessionId
+        });
+      } catch (sessionErr) {
+        if (sessionErr instanceof SessionLimitError) {
+          await logSecurityEvent("STAFF_LOGIN_BLOCKED_MAX_SESSIONS", {
+            userId: userRecord.id,
+            userEmail: email,
+            actorRole: effectiveRoleSlug,
+            ipAddress: clientIp
+          }).catch(() => {
+          });
+          sendJson6(res, 409, {
+            success: false,
+            code: sessionErr.code,
+            message: sessionErr.message,
+            maxSessions: sessionErr.maxSessions,
+            activeSessions: sessionErr.activeSessions
+          });
+          return true;
+        }
+        throw sessionErr;
+      }
+      setSessionCookie2(res, session.sessionToken, session.expiresAt);
+      await resetRateLimitAsync(`staff_login:ip:${clientIp}`);
+      await resetRateLimitAsync(`staff_login:account:${email}`);
+      const sanitizedUser = sanitizeUserOutput({
+        ...userRecord,
+        role: rawRole,
+        role_slug: effectiveRoleSlug
+      });
+      await logSecurityEvent("STAFF_LOGIN_SUCCESS", {
+        userId: userRecord.id,
+        userEmail: email,
+        actorRole: effectiveRoleSlug,
+        ipAddress: clientIp
+      }).catch(() => {
+      });
+      sendJson6(res, 200, {
+        success: true,
+        message: "Staff member authenticated successfully.",
+        user: sanitizedUser,
+        sessionToken: session.sessionToken
+      });
+      return true;
+    }
     if (pathname.startsWith("/api/admin/")) {
       const handled = await handleAdminApiRequest(req, res, pathname, method);
       if (handled) return true;
     }
-    const isMaintenanceExemptPath = pathname === "/api/health" || pathname === "/api/public/site-config" || pathname.startsWith("/api/admin/") || pathname === "/api/auth/me" || pathname === "/api/auth/logout" || pathname === "/api/auth/logout-all-devices";
+    const isMaintenanceExemptPath = pathname === "/api/health" || pathname === "/api/public/site-config" || pathname.startsWith("/api/admin/") || pathname === "/api/staff/auth/login" || pathname === "/api/auth/me" || pathname === "/api/auth/logout" || pathname === "/api/auth/logout-all-devices";
     if (!isMaintenanceExemptPath && await isMaintenanceModeEnabled()) {
       const reqUser = await authenticateRequest(req);
       const reqEmail = (reqUser?.email || "").toLowerCase().trim();
       const reqRole = (reqUser?.role || "").toLowerCase().trim();
+      const reqSlug = (reqUser?.role_slug || "").toLowerCase().trim();
       const isReqAdmin = Boolean(
-        reqUser && (reqEmail === "hackifypro@gmail.com" || reqEmail === "admin@mymoney.com" || ["superadmin", "admin", "support", "analyst"].includes(reqRole))
+        reqUser && (reqEmail === "hackifypro@gmail.com" || reqEmail === "admin@mymoney.com" || ["superadmin", "admin", "support", "analyst"].includes(reqRole) || reqSlug && reqSlug !== "user" && reqSlug !== "anonymous")
       );
       if (!isReqAdmin) {
         const maint = await getMaintenanceSettings();
@@ -100632,14 +101897,14 @@ async function handleApiRequest(req, res) {
         await query(
           `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
            VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
           [sourceUser.id, targetUserId]
         ).catch(() => {
         });
         await query(
           `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
            VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO NOTHING`,
+           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
           [targetUserId, sourceUser.id]
         ).catch(() => {
         });
@@ -100654,6 +101919,453 @@ async function handleApiRequest(req, res) {
         console.warn("[ensureReciprocalContact notice]:", err);
       }
     }
+    async function createSearchConnectionRequestPg(authUser, targetUserId, relationshipType = "Friend", requestedVia = "search") {
+      if (!targetUserId) {
+        return { status: 400, body: { success: false, code: "MISSING_TARGET", message: "Target user ID is required." } };
+      }
+      if (targetUserId === authUser.id) {
+        return { status: 400, body: { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." } };
+      }
+      const targetRes = await query(
+        `SELECT id, full_name, email, phone, avatar_url, role, status, COALESCE(deletion_status, 'none') AS deletion_status
+         FROM public.app_users WHERE id = $1`,
+        [targetUserId]
+      );
+      if (targetRes.rows.length === 0) {
+        return { status: 404, body: { success: false, code: "NOT_FOUND", message: "User account not found." } };
+      }
+      const target = targetRes.rows[0];
+      if (!isDiscoverableNormalUser(target)) {
+        return { status: 403, body: { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is not eligible for Udhar connections." } };
+      }
+      const pairRes = await query(
+        `SELECT id, user_a_id, user_b_id, status FROM public.user_connections
+         WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
+        [authUser.id, targetUserId]
+      );
+      if (pairRes.rows.some((r2) => r2.status === "blocked")) {
+        return { status: 403, body: { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." } };
+      }
+      const targetDisplayName = (target.full_name || target.email?.split("@")[0] || "Friend").trim();
+      const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
+      if (pairRes.rows.some((r2) => r2.status === "connected")) {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            status: "connected",
+            alreadyConnected: true,
+            message: `You are already connected with ${targetDisplayName}.`,
+            connectedUser: {
+              id: target.id,
+              name: targetDisplayName,
+              displayName: targetDisplayName,
+              fullName: targetDisplayName,
+              avatarUrl: target.avatar_url || null,
+              isVerified: true
+            }
+          }
+        };
+      }
+      const incomingPending = pairRes.rows.find(
+        (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
+      );
+      if (incomingPending) {
+        return acceptConnectionRequestPg(authUser, String(incomingPending.id || targetUserId));
+      }
+      const outgoingPending = pairRes.rows.find(
+        (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
+      );
+      if (outgoingPending) {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            status: "pending",
+            alreadyPending: true,
+            deduplicated: true,
+            connectionMethod: "SEARCH",
+            requestId: outgoingPending.id,
+            message: `Connection request already sent to ${targetDisplayName}. Waiting for their approval.`,
+            connectedUser: {
+              id: target.id,
+              name: targetDisplayName,
+              displayName: targetDisplayName,
+              fullName: targetDisplayName,
+              avatarUrl: target.avatar_url || null,
+              isVerified: true
+            }
+          }
+        };
+      }
+      let insRes;
+      try {
+        insRes = await query(
+          `INSERT INTO public.user_connections (user_a_id, user_b_id, status, relationship_type, requested_via, connection_method, updated_at)
+           VALUES ($1, $2, 'pending', $3, $4, 'SEARCH', NOW())
+           ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+           SET status = 'pending',
+               relationship_type = EXCLUDED.relationship_type,
+               requested_via = EXCLUDED.requested_via,
+               connection_method = 'SEARCH',
+               responded_at = NULL,
+               consented_at = NULL,
+               cancelled_at = NULL,
+               deleted_at = NULL,
+               deleted_by = NULL,
+               updated_at = NOW()
+           RETURNING id`,
+          [authUser.id, targetUserId, relationshipType, requestedVia]
+        );
+      } catch {
+        insRes = await query(
+          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+           VALUES ($1, $2, 'pending')
+           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'pending'
+           RETURNING id`,
+          [authUser.id, targetUserId]
+        );
+      }
+      const requestId = insRes.rows[0]?.id || `${authUser.id}:${targetUserId}`;
+      await createNotification({
+        userId: targetUserId,
+        title: "Udhar Connection Request",
+        message: `${requesterDisplayName} wants to connect with you on My Money Manager Udhar.`,
+        category: "udhar",
+        type: "info",
+        relatedEntityType: "user_connection",
+        relatedEntityId: String(requestId),
+        deepLink: "people",
+        metadata: {
+          actionType: "udhar_connection_request",
+          requestId: String(requestId),
+          connectionId: String(requestId),
+          requesterId: authUser.id,
+          requesterUserId: authUser.id,
+          receiverId: targetUserId,
+          requesterName: requesterDisplayName,
+          requesterAvatar: authUser.avatar_url || null,
+          requestedVia,
+          connectionMethod: "SEARCH",
+          relationshipType,
+          requestStatus: "pending"
+        },
+        channels: ["in_app", "push"]
+      }).catch(() => {
+      });
+      await query(
+        `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+         VALUES ($1, $2, 'udhar_connection_request', $3, $4, $5, TRUE)`,
+        [
+          "Udhar Connection Request",
+          `${requesterDisplayName} wants to connect with you on My Money Manager Udhar.`,
+          targetUserId,
+          String(requestId),
+          authUser.id
+        ]
+      ).catch(() => {
+      });
+      await logSecurityEvent("UDHAR_CONNECTION_REQUESTED", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { targetUserId, requestId: String(requestId), requestedVia }
+      });
+      return {
+        status: 200,
+        body: {
+          success: true,
+          status: "pending",
+          connectionMethod: "SEARCH",
+          alreadyConnected: false,
+          alreadyPending: false,
+          requestId: String(requestId),
+          message: `Connection request sent to ${targetDisplayName}. You'll be connected once they accept.`,
+          connectedUser: {
+            id: target.id,
+            name: targetDisplayName,
+            displayName: targetDisplayName,
+            fullName: targetDisplayName,
+            avatarUrl: target.avatar_url || null,
+            isVerified: true
+          }
+        }
+      };
+    }
+    async function acceptConnectionRequestPg(authUser, key) {
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
+      }
+      const lookupKey = parsedKey.kind === "composite" ? parsedKey.requesterUserId || key : parsedKey.uuid || key;
+      const reqRes = await query(
+        `SELECT uc.id, uc.user_a_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
+         FROM public.user_connections uc
+         JOIN public.app_users u ON u.id = uc.user_a_id
+         WHERE uc.user_b_id = $1 AND uc.status = 'pending'
+           AND (uc.id::text = $2 OR uc.user_a_id::text = $2)
+         LIMIT 1`,
+        [authUser.id, lookupKey]
+      );
+      if (reqRes.rows.length === 0) {
+        return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
+      }
+      const pending = reqRes.rows[0];
+      const requesterId = pending.user_a_id;
+      const requesterName = (pending.full_name || pending.email?.split("@")[0] || "Friend").trim();
+      const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+      try {
+        await query(
+          `UPDATE public.user_connections SET status = 'connected', consented_at = NOW(), responded_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [pending.id]
+        );
+      } catch {
+        await query(`UPDATE public.user_connections SET status = 'connected' WHERE id = $1`, [pending.id]);
+      }
+      await query(
+        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+         VALUES ($1, $2, 'connected')
+         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+        [authUser.id, requesterId]
+      ).catch(() => {
+      });
+      await query(
+        `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'Friend', $6, NOW())
+         ON CONFLICT (user_id, name) DO UPDATE
+         SET linked_user_id = EXCLUDED.linked_user_id,
+             photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
+             updated_at = NOW()`,
+        [authUser.id, requesterName, pending.email, pending.phone, pending.avatar_url, requesterId]
+      );
+      await ensureReciprocalContact(requesterId, authUser, "Friend");
+      await updateConnectionRequestNotificationsState({
+        requestId: String(pending.id),
+        requesterId,
+        receiverId: authUser.id,
+        status: "accepted"
+      }).catch(() => {
+      });
+      await createNotification({
+        userId: requesterId,
+        title: "Connection Request Accepted",
+        message: `${acceptorName} accepted your connection request. Added to your Saved People.`,
+        category: "udhar",
+        type: "success",
+        relatedEntityType: "user_connection",
+        relatedEntityId: authUser.id,
+        deepLink: "people",
+        metadata: {
+          actionType: "udhar_connection_accepted",
+          acceptorId: authUser.id,
+          acceptorName,
+          acceptorAvatar: authUser.avatar_url || null,
+          connectionId: String(pending.id)
+        },
+        channels: ["in_app", "push"]
+      }).catch(() => {
+      });
+      await logSecurityEvent("USER_ACCEPTED_UDHAR_CONNECTION", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { requesterId, requestId: pending.id }
+      });
+      return {
+        status: 200,
+        body: {
+          success: true,
+          status: "connected",
+          message: `Connected with ${requesterName}! Added to your Saved People.`,
+          connectedUser: {
+            id: requesterId,
+            name: requesterName,
+            displayName: requesterName,
+            fullName: requesterName,
+            avatarUrl: pending.avatar_url || null,
+            isVerified: true
+          }
+        }
+      };
+    }
+    async function rejectConnectionRequestPg(authUser, key) {
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
+      }
+      const lookupKey = parsedKey.kind === "composite" ? parsedKey.requesterUserId || key : parsedKey.uuid || key;
+      const reqRes = await query(
+        `SELECT id, user_a_id FROM public.user_connections
+         WHERE user_b_id = $1 AND status = 'pending'
+           AND (id::text = $2 OR user_a_id::text = $2)
+         LIMIT 1`,
+        [authUser.id, lookupKey]
+      );
+      if (reqRes.rows.length === 0) {
+        return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." } };
+      }
+      const pending = reqRes.rows[0];
+      try {
+        await query(`UPDATE public.user_connections SET status = 'rejected', responded_at = NOW(), updated_at = NOW() WHERE id = $1`, [pending.id]);
+      } catch {
+        await query(`UPDATE public.user_connections SET status = 'rejected' WHERE id = $1`, [pending.id]);
+      }
+      await updateConnectionRequestNotificationsState({
+        requestId: String(pending.id),
+        requesterId: pending.user_a_id,
+        receiverId: authUser.id,
+        status: "rejected"
+      }).catch(() => {
+      });
+      const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
+      await createNotification({
+        userId: pending.user_a_id,
+        title: "Connection Request Declined",
+        message: `${rejectorName} declined your My Money Manager Udhar connection request.`,
+        category: "udhar",
+        type: "info",
+        deepLink: "people",
+        channels: ["in_app"]
+      }).catch(() => {
+      });
+      await logSecurityEvent("USER_REJECTED_UDHAR_CONNECTION", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { requesterId: pending.user_a_id, requestId: pending.id }
+      });
+      return {
+        status: 200,
+        body: {
+          success: true,
+          status: "rejected",
+          message: "Connection request declined. No active connection was created."
+        }
+      };
+    }
+    async function cancelConnectionRequestPg(authUser, key) {
+      const parsedKey = parseConnectionRequestKey(key);
+      if (!parsedKey.valid) {
+        return { status: 400, body: { success: false, message: "Valid connection request ID is required." } };
+      }
+      const lookupKey = parsedKey.kind === "composite" ? parsedKey.targetUserId || key : parsedKey.uuid || key;
+      const reqRes = await query(
+        `SELECT id, user_b_id FROM public.user_connections
+         WHERE user_a_id = $1 AND status = 'pending'
+           AND (id::text = $2 OR user_b_id::text = $2)
+         LIMIT 1`,
+        [authUser.id, lookupKey]
+      );
+      if (reqRes.rows.length === 0) {
+        return { status: 404, body: { success: false, code: "REQUEST_NOT_FOUND", message: "Pending outgoing connection request not found." } };
+      }
+      const pending = reqRes.rows[0];
+      try {
+        await query(`UPDATE public.user_connections SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1`, [pending.id]);
+      } catch {
+        await query(`DELETE FROM public.user_connections WHERE id = $1`, [pending.id]);
+      }
+      await updateConnectionRequestNotificationsState({
+        requestId: String(pending.id),
+        requesterId: authUser.id,
+        receiverId: pending.user_b_id,
+        status: "cancelled"
+      }).catch(() => {
+      });
+      return {
+        status: 200,
+        body: {
+          success: true,
+          status: "cancelled",
+          requestId: String(pending.id),
+          message: "Connection request cancelled."
+        }
+      };
+    }
+    async function removeSavedConnectionPg(authUser, targetOrContactId) {
+      const rawId = (targetOrContactId || "").trim();
+      if (!rawId) {
+        return { status: 400, body: { success: false, message: "Contact or peer user ID is required." } };
+      }
+      let contactRow = null;
+      let peerUserId = null;
+      if (rawId.startsWith("conn_")) {
+        peerUserId = rawId.slice(5).trim() || null;
+      } else {
+        const contactRes = await query(
+          `SELECT * FROM public.udhar_contacts WHERE id::text = $1 AND user_id = $2 LIMIT 1`,
+          [rawId, authUser.id]
+        ).catch(() => ({ rows: [] }));
+        if (contactRes.rows.length > 0) {
+          contactRow = contactRes.rows[0];
+          peerUserId = contactRow.linked_user_id || null;
+        } else {
+          peerUserId = rawId;
+        }
+      }
+      if (!contactRow && !peerUserId) {
+        return { status: 404, body: { success: false, message: "Saved connection not found." } };
+      }
+      if (!contactRow && peerUserId) {
+        const [peerContactRes, peerConnRes] = await Promise.all([
+          query(`SELECT id FROM public.udhar_contacts WHERE user_id = $1 AND linked_user_id = $2 LIMIT 1`, [authUser.id, peerUserId]),
+          query(
+            `SELECT id, status FROM public.user_connections
+             WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+               AND status <> 'deleted'
+             LIMIT 1`,
+            [authUser.id, peerUserId]
+          )
+        ]);
+        if (peerContactRes.rows.length === 0 && peerConnRes.rows.length === 0) {
+          return { status: 404, body: { success: false, message: "Saved connection not found." } };
+        }
+      }
+      if (contactRow?.id) {
+        await query(`DELETE FROM public.udhar_contacts WHERE id = $1 AND user_id = $2`, [contactRow.id, authUser.id]);
+      }
+      if (peerUserId && peerUserId !== authUser.id) {
+        await query(
+          `DELETE FROM public.udhar_contacts
+           WHERE (user_id = $1 AND linked_user_id = $2)
+              OR (user_id = $2 AND linked_user_id = $1)`,
+          [authUser.id, peerUserId]
+        );
+        try {
+          await query(
+            `UPDATE public.user_connections
+             SET status = 'deleted', deleted_at = NOW(), deleted_by = $3, updated_at = NOW()
+             WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
+            [authUser.id, peerUserId, authUser.id]
+          );
+        } catch {
+          await query(
+            `DELETE FROM public.user_connections
+             WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
+            [authUser.id, peerUserId]
+          );
+        }
+        await Promise.all([
+          updateConnectionRequestNotificationsState({ requesterId: authUser.id, receiverId: peerUserId, status: "cancelled" }).catch(() => {
+          }),
+          updateConnectionRequestNotificationsState({ requesterId: peerUserId, receiverId: authUser.id, status: "cancelled" }).catch(() => {
+          })
+        ]);
+      }
+      await logSecurityEvent("USER_REMOVED_SAVED_CONNECTION", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { targetOrContactId: rawId, peerUserId }
+      });
+      return {
+        status: 200,
+        body: {
+          success: true,
+          removed: true,
+          twoSided: Boolean(peerUserId && peerUserId !== authUser.id),
+          peerUserId,
+          preservedTransactions: true,
+          message: "Connection removed from Saved People. Existing Udhaar history remains preserved."
+        }
+      };
+    }
     if (pathname === "/api/udhar/contacts" && method === "GET") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -100665,7 +102377,7 @@ async function handleApiRequest(req, res) {
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
-      const [contactsRes, connsRes, txPeersRes] = await Promise.all([
+      const [contactsRes, connsRes] = await Promise.all([
         query(
           `SELECT c.id, c.name, c.email, c.phone, c.photo_url, c.relationship_type, c.notes, c.linked_user_id, c.created_at, c.updated_at,
                   u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
@@ -100681,15 +102393,6 @@ async function handleApiRequest(req, res) {
            FROM public.user_connections uc
            JOIN public.app_users u ON u.id = (CASE WHEN uc.user_a_id = $1 THEN uc.user_b_id ELSE uc.user_a_id END)
            WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1) AND uc.status = 'connected'`,
-          [authUser.id]
-        ),
-        query(
-          `SELECT DISTINCT ON (COALESCE(t.counterpart_user_id::text, LOWER(TRIM(t.counterpart_name))))
-                  t.counterpart_user_id, t.counterpart_name, t.created_at, t.updated_at,
-                  u.full_name AS linked_user_name, u.email AS linked_user_email, u.avatar_url AS linked_user_avatar
-           FROM public.udhar_transactions t
-           LEFT JOIN public.app_users u ON t.counterpart_user_id = u.id
-           WHERE t.user_id = $1 AND t.status <> 'cancelled' AND t.deleted_at IS NULL`,
           [authUser.id]
         )
       ]);
@@ -100730,46 +102433,6 @@ async function handleApiRequest(req, res) {
           linked_user_avatar: conn.avatar_url || null,
           is_registered: true
         });
-      }
-      for (const tp of txPeersRes.rows) {
-        const linkedId = tp.counterpart_user_id || null;
-        const rawName = (tp.counterpart_name || "").trim();
-        const normName = rawName.toLowerCase();
-        if (linkedId) {
-          if (seenLinked.has(linkedId)) continue;
-          seenLinked.add(linkedId);
-          mergedContacts.push({
-            id: `tx_peer_${linkedId}`,
-            name: (tp.linked_user_name || rawName || "Connected User").trim(),
-            email: tp.linked_user_email ? maskEmailForPrivacy(tp.linked_user_email) : null,
-            phone: null,
-            photo_url: tp.linked_user_avatar || null,
-            relationship_type: "Friend",
-            notes: null,
-            linked_user_id: linkedId,
-            linked_user_name: tp.linked_user_name || null,
-            linked_user_email: tp.linked_user_email ? maskEmailForPrivacy(tp.linked_user_email) : null,
-            linked_user_avatar: tp.linked_user_avatar || null,
-            is_registered: true,
-            created_at: tp.created_at,
-            updated_at: tp.updated_at
-          });
-        } else if (normName && !seenNames.has(normName)) {
-          seenNames.add(normName);
-          mergedContacts.push({
-            id: `tx_local_${normName.replace(/[^a-z0-9]/g, "_")}`,
-            name: rawName,
-            email: null,
-            phone: null,
-            photo_url: null,
-            relationship_type: "Friend",
-            notes: null,
-            linked_user_id: null,
-            is_registered: false,
-            created_at: tp.created_at,
-            updated_at: tp.updated_at
-          });
-        }
       }
       mergedContacts.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
       sendJson6(res, 200, { success: true, contacts: mergedContacts });
@@ -100847,46 +102510,9 @@ async function handleApiRequest(req, res) {
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         });
       }
-      for (const t2 of txsRes.rows) {
-        const linkedId = t2.counterpart_user_id || null;
-        const rawName = (t2.counterpart_name || "").trim();
-        const normName = rawName.toLowerCase();
-        if (linkedId) {
-          if (seenLinked.has(linkedId)) continue;
-          seenLinked.add(linkedId);
-          baseContacts.push({
-            id: `tx_peer_${linkedId}`,
-            name: (t2.counterpart_registered_name || rawName || "Connected User").trim(),
-            email: t2.counterpart_email ? maskEmailForPrivacy(t2.counterpart_email) : null,
-            phone: null,
-            photo_url: t2.counterpart_avatar || null,
-            relationship_type: "Friend",
-            notes: null,
-            linked_user_id: linkedId,
-            linked_user_name: t2.counterpart_registered_name || null,
-            linked_user_email: t2.counterpart_email ? maskEmailForPrivacy(t2.counterpart_email) : null,
-            linked_user_avatar: t2.counterpart_avatar || null,
-            created_at: t2.created_at,
-            updated_at: t2.updated_at
-          });
-        } else if (normName && !seenNames.has(normName)) {
-          seenNames.add(normName);
-          baseContacts.push({
-            id: `tx_local_${normName.replace(/[^a-z0-9]/g, "_")}`,
-            name: rawName,
-            email: null,
-            phone: null,
-            photo_url: null,
-            relationship_type: "Friend",
-            notes: null,
-            linked_user_id: null,
-            created_at: t2.created_at,
-            updated_at: t2.updated_at
-          });
-        }
-      }
+      const activeTxs = txsRes.rows.filter((t2) => normalizeUdharLifecycleStatus(t2) !== "deleted");
       const parsedContacts = baseContacts.map((c) => {
-        const matchingTxs = txsRes.rows.filter((t2) => {
+        const matchingTxs = activeTxs.filter((t2) => {
           if (c.linked_user_id && t2.counterpart_user_id === c.linked_user_id) return true;
           if (!c.linked_user_id && !t2.counterpart_user_id && (t2.counterpart_name || "").trim().toLowerCase() === (c.name || "").trim().toLowerCase()) {
             return true;
@@ -100899,10 +102525,32 @@ async function handleApiRequest(req, res) {
         let payable = 0;
         let lastDate = null;
         let pendingCount = 0;
+        let pendingRequestsCount = 0;
+        let pendingRequestsAmount = 0;
+        let pendingGivenAmount = 0;
+        let pendingReceivedAmount = 0;
+        let rejectedCount = 0;
         for (const t2 of matchingTxs) {
+          const lifecycle = normalizeUdharLifecycleStatus(t2);
+          if (lifecycle === "deleted") continue;
+          if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
+            lastDate = t2.transaction_date;
+          }
+          if (lifecycle === "rejected") {
+            rejectedCount += 1;
+            continue;
+          }
+          if (lifecycle === "cancelled") continue;
           const orig = parseFloat(t2.original_amount) || 0;
+          if (lifecycle === "pending_confirmation") {
+            pendingRequestsCount += 1;
+            pendingRequestsAmount += orig;
+            if (t2.direction === "gave") pendingGivenAmount += orig;
+            else pendingReceivedAmount += orig;
+            continue;
+          }
           const cur = parseFloat(t2.current_balance) || 0;
-          const isSettled = t2.status === "settled" || cur <= 0.01;
+          const isSettled = lifecycle === "settled" || cur <= 0.01;
           if (t2.direction === "gave") {
             totalGiven += orig;
             if (!isSettled) receivable += cur;
@@ -100911,9 +102559,6 @@ async function handleApiRequest(req, res) {
             if (!isSettled) payable += cur;
           }
           if (!isSettled && cur > 0.01) pendingCount += 1;
-          if (t2.transaction_date && (!lastDate || t2.transaction_date > lastDate)) {
-            lastDate = t2.transaction_date;
-          }
         }
         return {
           ...c,
@@ -100926,6 +102571,11 @@ async function handleApiRequest(req, res) {
           last_transaction_date: lastDate,
           total_transactions_count: matchingTxs.length,
           pending_transactions_count: pendingCount,
+          pending_requests_count: pendingRequestsCount,
+          pending_requests_amount: roundMoney(pendingRequestsAmount),
+          pending_given_amount: roundMoney(pendingGivenAmount),
+          pending_received_amount: roundMoney(pendingReceivedAmount),
+          rejected_count: rejectedCount,
           is_registered: Boolean(c.linked_user_id)
         };
       }).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
@@ -100958,6 +102608,18 @@ async function handleApiRequest(req, res) {
       if (linkedUserId) {
         if (linkedUserId === authUser.id) {
           sendJson6(res, 400, { success: false, message: "You cannot add yourself as a contact." });
+          return true;
+        }
+        const pairRes = await query(
+          `SELECT status FROM public.user_connections
+           WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+             AND status = 'connected'
+           LIMIT 1`,
+          [authUser.id, linkedUserId]
+        );
+        if (pairRes.rows.length === 0) {
+          const reqResult = await createSearchConnectionRequestPg(authUser, linkedUserId, relationshipType, "search");
+          sendJson6(res, reqResult.status, reqResult.body);
           return true;
         }
         const targetRes = await query(
@@ -101004,7 +102666,7 @@ async function handleApiRequest(req, res) {
              ON CONFLICT (user_id, name) DO UPDATE 
              SET email = COALESCE(EXCLUDED.email, public.udhar_contacts.email), 
                  phone = COALESCE(EXCLUDED.phone, public.udhar_contacts.phone), 
-                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
+                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url), 
                  relationship_type = EXCLUDED.relationship_type, 
                  notes = COALESCE(EXCLUDED.notes, public.udhar_contacts.notes), 
                  linked_user_id = COALESCE(EXCLUDED.linked_user_id, public.udhar_contacts.linked_user_id), 
@@ -101012,16 +102674,6 @@ async function handleApiRequest(req, res) {
              RETURNING *`,
         [authUser.id, name2, email || null, phone || null, photoUrl, relationshipType, notes || null, linkedUserId]
       );
-      if (linkedUserId && linkedUserId !== authUser.id) {
-        await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-          [authUser.id, linkedUserId]
-        ).catch(() => {
-        });
-        await ensureReciprocalContact(linkedUserId, authUser, relationshipType);
-      }
       sendJson6(res, 200, {
         success: true,
         contact: upsertRes.rows[0],
@@ -101078,7 +102730,7 @@ async function handleApiRequest(req, res) {
       });
       return true;
     }
-    const contactDeleteMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)$/);
+    const contactDeleteMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_:-]+)$/);
     if (contactDeleteMatch && method === "DELETE") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
@@ -101091,9 +102743,16 @@ async function handleApiRequest(req, res) {
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
-      await query("DELETE FROM public.udhar_contacts WHERE id = $1 AND user_id = $2", [contactId, authUser.id]);
-      sendJson6(res, 200, { success: true, message: "Saved contact removed." });
-      return true;
+      try {
+        const pgRes = await removeSavedConnectionPg(authUser, contactId);
+        sendJson6(res, pgRes.status, pgRes.body);
+        return true;
+      } catch (pgErr) {
+        console.warn("[PG Delete Contact Fallback]:", pgErr?.message);
+        const restRes = await deleteContactRest(authUser, contactId);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
     }
     const contactLinkMatch = pathname.match(/^\/api\/udhar\/contacts\/([a-zA-Z0-9_-]+)\/link-registered$/);
     if (contactLinkMatch && method === "POST") {
@@ -101127,6 +102786,26 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const contact = contactRes.rows[0];
+      const pairRes = await query(
+        `SELECT status FROM public.user_connections
+         WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+           AND status = 'connected'
+         LIMIT 1`,
+        [authUser.id, registeredUserId]
+      );
+      if (pairRes.rows.length === 0) {
+        const reqResult = await createSearchConnectionRequestPg(
+          authUser,
+          registeredUserId,
+          contact.relationship_type || "Friend",
+          "search"
+        );
+        sendJson6(res, reqResult.status, {
+          ...reqResult.body,
+          pendingApproval: reqResult.body.status === "pending"
+        });
+        return true;
+      }
       const targetUserRes = await query(
         `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
          FROM public.app_users WHERE id = $1`,
@@ -101147,21 +102826,9 @@ async function handleApiRequest(req, res) {
         [registeredUserId, contactId, authUser.id]
       );
       await ensureReciprocalContact(registeredUserId, authUser, contact.relationship_type || "Friend");
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [authUser.id, registeredUserId]
-      );
-      await query(
-        `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-         VALUES ($1, $2, 'connected')
-         ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-        [registeredUserId, authUser.id]
-      ).catch(() => {
-      });
       sendJson6(res, 200, {
         success: true,
+        status: "connected",
         message: `Successfully linked ${contact.name} with verified account ${targetUserRes.rows[0].full_name}.`
       });
       return true;
@@ -101187,189 +102854,8 @@ async function handleApiRequest(req, res) {
         const targetUserId = (body.targetUserId || body.target_user_id || "").trim();
         const relationshipType = (body.relationshipType || body.relationship_type || "Friend").trim();
         const requestedVia = (body.requestedVia || body.source || "search").trim();
-        if (!targetUserId) {
-          sendJson6(res, 400, { success: false, code: "MISSING_TARGET", message: "Target user ID is required." });
-          return true;
-        }
-        if (targetUserId === authUser.id) {
-          sendJson6(res, 400, { success: false, code: "SELF_CONNECTION", message: "You cannot connect with your own account." });
-          return true;
-        }
-        const targetRes = await query(
-          `SELECT id, full_name, email, phone, avatar_url, role, status, COALESCE(deletion_status, 'none') AS deletion_status
-           FROM public.app_users WHERE id = $1`,
-          [targetUserId]
-        );
-        if (targetRes.rows.length === 0) {
-          sendJson6(res, 404, { success: false, code: "NOT_FOUND", message: "User account not found." });
-          return true;
-        }
-        const target = targetRes.rows[0];
-        if (!isDiscoverableNormalUser(target)) {
-          sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "This user account is not eligible for Udhar connections." });
-          return true;
-        }
-        const pairRes = await query(
-          `SELECT id, user_a_id, user_b_id, status FROM public.user_connections
-           WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
-          [authUser.id, targetUserId]
-        );
-        if (pairRes.rows.some((r2) => r2.status === "blocked")) {
-          sendJson6(res, 403, { success: false, code: "BLOCKED", message: "Connection is blocked between these accounts." });
-          return true;
-        }
-        const targetDisplayName = (target.full_name || target.email?.split("@")[0] || "Friend").trim();
-        const requesterDisplayName = (authUser.full_name || authUser.email?.split("@")[0] || "A user").trim();
-        if (pairRes.rows.some((r2) => r2.status === "connected")) {
-          sendJson6(res, 200, {
-            success: true,
-            status: "connected",
-            alreadyConnected: true,
-            message: `You are already connected with ${targetDisplayName}.`,
-            connectedUser: {
-              id: target.id,
-              name: targetDisplayName,
-              displayName: targetDisplayName,
-              fullName: targetDisplayName,
-              avatarUrl: target.avatar_url || null,
-              isVerified: true
-            }
-          });
-          return true;
-        }
-        const incomingPending = pairRes.rows.find(
-          (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
-        );
-        if (incomingPending) {
-          await query(
-            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-             VALUES ($1, $2, 'connected')
-             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-            [authUser.id, targetUserId]
-          );
-          await query(
-            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-             VALUES ($1, $2, 'connected')
-             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-            [targetUserId, authUser.id]
-          ).catch(() => {
-          });
-          await query(
-            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-             ON CONFLICT (user_id, name) DO UPDATE
-             SET linked_user_id = EXCLUDED.linked_user_id,
-                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-                 updated_at = NOW()`,
-            [authUser.id, targetDisplayName, target.email, target.phone, target.avatar_url, relationshipType, targetUserId]
-          );
-          await ensureReciprocalContact(targetUserId, authUser, relationshipType);
-          await createNotification({
-            userId: targetUserId,
-            title: "Udhar Connection Accepted",
-            message: `${requesterDisplayName} accepted your Udhar connection request. You can now track shared Udhar together.`,
-            category: "udhar",
-            type: "success",
-            deepLink: "people",
-            channels: ["in_app", "push"]
-          }).catch(() => {
-          });
-          sendJson6(res, 200, {
-            success: true,
-            status: "connected",
-            alreadyConnected: false,
-            message: `Connected with ${targetDisplayName}! Shared 2-way Udhar is now enabled.`,
-            connectedUser: {
-              id: target.id,
-              name: targetDisplayName,
-              displayName: targetDisplayName,
-              fullName: targetDisplayName,
-              avatarUrl: target.avatar_url || null,
-              isVerified: true
-            }
-          });
-          return true;
-        }
-        const outgoingPending = pairRes.rows.find(
-          (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
-        );
-        if (outgoingPending) {
-          sendJson6(res, 200, {
-            success: true,
-            status: "pending",
-            alreadyPending: true,
-            requestId: outgoingPending.id,
-            message: `Connection request already sent to ${targetDisplayName}. Waiting for their approval.`,
-            connectedUser: {
-              id: target.id,
-              name: targetDisplayName,
-              displayName: targetDisplayName,
-              fullName: targetDisplayName,
-              avatarUrl: target.avatar_url || null,
-              isVerified: true
-            }
-          });
-          return true;
-        }
-        const insRes = await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'pending')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'pending'
-           RETURNING id`,
-          [authUser.id, targetUserId]
-        );
-        const requestId = insRes.rows[0]?.id || `${authUser.id}:${targetUserId}`;
-        await createNotification({
-          userId: targetUserId,
-          title: "Udhar Connection Request",
-          message: `${requesterDisplayName} wants to connect with you on My Money Manager Udhar.`,
-          category: "udhar",
-          type: "info",
-          deepLink: "people",
-          metadata: {
-            actionType: "udhar_connection_request",
-            requestId: String(requestId),
-            requesterUserId: authUser.id,
-            requesterName: requesterDisplayName,
-            requestedVia,
-            relationshipType
-          },
-          channels: ["in_app", "push"]
-        }).catch(() => {
-        });
-        await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-           VALUES ($1, $2, 'udhar_connection_request', $3, $4, $5, TRUE)`,
-          [
-            "Udhar Connection Request",
-            `${requesterDisplayName} wants to connect with you on My Money Manager Udhar.`,
-            targetUserId,
-            String(requestId),
-            authUser.id
-          ]
-        ).catch(() => {
-        });
-        await logSecurityEvent("UDHAR_CONNECTION_REQUESTED", {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: { targetUserId, requestId: String(requestId), requestedVia }
-        });
-        sendJson6(res, 200, {
-          success: true,
-          status: "pending",
-          alreadyConnected: false,
-          alreadyPending: false,
-          requestId: String(requestId),
-          message: `Connection request sent to ${targetDisplayName}. You'll be connected once they accept.`,
-          connectedUser: {
-            id: target.id,
-            name: targetDisplayName,
-            displayName: targetDisplayName,
-            fullName: targetDisplayName,
-            avatarUrl: target.avatar_url || null,
-            isVerified: true
-          }
-        });
+        const pgRes = await createSearchConnectionRequestPg(authUser, targetUserId, relationshipType, requestedVia);
+        sendJson6(res, pgRes.status, pgRes.body);
         return true;
       } catch (pgErr) {
         console.warn("[PG Connection Request Fallback]:", pgErr?.message);
@@ -101390,18 +102876,34 @@ async function handleApiRequest(req, res) {
         return true;
       }
       try {
-        const rowsRes = await query(
-          `SELECT uc.id, uc.user_a_id, uc.user_b_id, uc.status, uc.created_at,
-                  ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.email_verified, TRUE) AS a_verified,
-                  ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.email_verified, TRUE) AS b_verified
-           FROM public.user_connections uc
-           LEFT JOIN public.app_users ua ON uc.user_a_id = ua.id
-           LEFT JOIN public.app_users ub ON uc.user_b_id = ub.id
-           WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1)
-             AND uc.status IN ('pending', 'connected')
-           ORDER BY uc.created_at DESC`,
-          [authUser.id]
-        );
+        let rowsRes;
+        try {
+          rowsRes = await query(
+            `SELECT uc.id, uc.user_a_id, uc.user_b_id, uc.status, uc.relationship_type, uc.requested_via, uc.connection_method, uc.created_at,
+                    ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.email_verified, TRUE) AS a_verified,
+                    ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.email_verified, TRUE) AS b_verified
+             FROM public.user_connections uc
+             LEFT JOIN public.app_users ua ON uc.user_a_id = ua.id
+             LEFT JOIN public.app_users ub ON uc.user_b_id = ub.id
+             WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1)
+               AND uc.status IN ('pending', 'connected')
+             ORDER BY uc.created_at DESC`,
+            [authUser.id]
+          );
+        } catch {
+          rowsRes = await query(
+            `SELECT uc.id, uc.user_a_id, uc.user_b_id, uc.status, uc.created_at,
+                    ua.full_name AS a_name, ua.avatar_url AS a_avatar, COALESCE(ua.email_verified, TRUE) AS a_verified,
+                    ub.full_name AS b_name, ub.avatar_url AS b_avatar, COALESCE(ub.email_verified, TRUE) AS b_verified
+             FROM public.user_connections uc
+             LEFT JOIN public.app_users ua ON uc.user_a_id = ua.id
+             LEFT JOIN public.app_users ub ON uc.user_b_id = ub.id
+             WHERE (uc.user_a_id = $1 OR uc.user_b_id = $1)
+               AND uc.status IN ('pending', 'connected')
+             ORDER BY uc.created_at DESC`,
+            [authUser.id]
+          );
+        }
         const incoming = [];
         const outgoing = [];
         const connectedMap = /* @__PURE__ */ new Map();
@@ -101410,21 +102912,29 @@ async function handleApiRequest(req, res) {
             if (r2.user_b_id === authUser.id) {
               incoming.push({
                 id: r2.id,
+                direction: "incoming",
                 requesterUserId: r2.user_a_id,
                 displayName: r2.a_name || "My Money User",
                 avatarUrl: r2.a_avatar || null,
                 isVerified: Boolean(r2.a_verified),
                 status: "pending",
+                relationshipType: r2.relationship_type || "Friend",
+                requestedVia: r2.requested_via || "search",
+                connectionMethod: r2.connection_method || "SEARCH",
                 createdAt: r2.created_at
               });
             } else if (r2.user_a_id === authUser.id) {
               outgoing.push({
                 id: r2.id,
+                direction: "outgoing",
                 targetUserId: r2.user_b_id,
                 displayName: r2.b_name || "My Money User",
                 avatarUrl: r2.b_avatar || null,
                 isVerified: Boolean(r2.b_verified),
                 status: "pending",
+                relationshipType: r2.relationship_type || "Friend",
+                requestedVia: r2.requested_via || "search",
+                connectionMethod: r2.connection_method || "SEARCH",
                 createdAt: r2.created_at
               });
             }
@@ -101439,6 +102949,8 @@ async function handleApiRequest(req, res) {
                 avatarUrl: (isA ? r2.b_avatar : r2.a_avatar) || null,
                 isVerified: Boolean(isA ? r2.b_verified : r2.a_verified),
                 status: "connected",
+                relationshipType: r2.relationship_type || "Friend",
+                connectionMethod: r2.connection_method || "SEARCH",
                 createdAt: r2.created_at
               });
             }
@@ -101466,84 +102978,14 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const key = connAcceptMatch[1];
-      const parsedKey = parseConnectionRequestKey(key);
-      if (!parsedKey.valid) {
-        sendJson6(res, 400, { success: false, message: "Valid connection request ID is required." });
-        return true;
-      }
       if (!isDatabaseAvailable()) {
         const restRes = await acceptConnectionRequestRest(authUser, key);
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
-        const lookupKey = parsedKey.kind === "composite" ? parsedKey.requesterUserId || key : parsedKey.uuid || key;
-        const reqRes = await query(
-          `SELECT uc.id, uc.user_a_id, u.full_name, u.email, u.phone, u.avatar_url, u.status
-           FROM public.user_connections uc
-           JOIN public.app_users u ON u.id = uc.user_a_id
-           WHERE uc.user_b_id = $1 AND uc.status = 'pending'
-             AND (uc.id::text = $2 OR uc.user_a_id::text = $2)
-           LIMIT 1`,
-          [authUser.id, lookupKey]
-        );
-        if (reqRes.rows.length === 0) {
-          sendJson6(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
-          return true;
-        }
-        const pending = reqRes.rows[0];
-        const requesterId = pending.user_a_id;
-        const requesterName = (pending.full_name || pending.email?.split("@")[0] || "Friend").trim();
-        const acceptorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-        await query(
-          `UPDATE public.user_connections SET status = 'connected' WHERE id = $1`,
-          [pending.id]
-        );
-        await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'connected')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
-          [authUser.id, requesterId]
-        ).catch(() => {
-        });
-        await query(
-          `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'Friend', $6, NOW())
-           ON CONFLICT (user_id, name) DO UPDATE
-           SET linked_user_id = EXCLUDED.linked_user_id,
-               photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-               updated_at = NOW()`,
-          [authUser.id, requesterName, pending.email, pending.phone, pending.avatar_url, requesterId]
-        );
-        await ensureReciprocalContact(requesterId, authUser, "Friend");
-        await createNotification({
-          userId: requesterId,
-          title: "Udhar Connection Accepted",
-          message: `${acceptorName} accepted your Udhar connection request. You can now track shared Udhar together.`,
-          category: "udhar",
-          type: "success",
-          deepLink: "people",
-          channels: ["in_app", "push"]
-        }).catch(() => {
-        });
-        await logSecurityEvent("USER_ACCEPTED_UDHAR_CONNECTION", {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: { requesterId, requestId: pending.id }
-        });
-        sendJson6(res, 200, {
-          success: true,
-          status: "connected",
-          message: `Connected with ${requesterName}! Added to your Saved People.`,
-          connectedUser: {
-            id: requesterId,
-            name: requesterName,
-            displayName: requesterName,
-            fullName: requesterName,
-            avatarUrl: pending.avatar_url || null,
-            isVerified: true
-          }
-        });
+        const pgRes = await acceptConnectionRequestPg(authUser, key);
+        sendJson6(res, pgRes.status, pgRes.body);
         return true;
       } catch (pgErr) {
         console.warn("[PG Accept Connection Fallback]:", pgErr?.message);
@@ -101560,56 +103002,66 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const key = connRejectMatch[1];
-      const parsedKey = parseConnectionRequestKey(key);
-      if (!parsedKey.valid) {
-        sendJson6(res, 400, { success: false, message: "Valid connection request ID is required." });
-        return true;
-      }
       if (!isDatabaseAvailable()) {
         const restRes = await rejectConnectionRequestRest(authUser, key);
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
       try {
-        const lookupKey = parsedKey.kind === "composite" ? parsedKey.requesterUserId || key : parsedKey.uuid || key;
-        const reqRes = await query(
-          `SELECT id, user_a_id FROM public.user_connections
-           WHERE user_b_id = $1 AND status = 'pending'
-             AND (id::text = $2 OR user_a_id::text = $2)
-           LIMIT 1`,
-          [authUser.id, lookupKey]
-        );
-        if (reqRes.rows.length === 0) {
-          sendJson6(res, 404, { success: false, code: "REQUEST_NOT_FOUND", message: "Pending connection request not found." });
-          return true;
-        }
-        const pending = reqRes.rows[0];
-        await query(`UPDATE public.user_connections SET status = 'rejected' WHERE id = $1`, [pending.id]);
-        const rejectorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-        await createNotification({
-          userId: pending.user_a_id,
-          title: "Connection Request Declined",
-          message: `${rejectorName} declined your My Money Manager Udhar connection request.`,
-          category: "udhar",
-          type: "info",
-          deepLink: "people",
-          channels: ["in_app"]
-        }).catch(() => {
-        });
-        await logSecurityEvent("USER_REJECTED_UDHAR_CONNECTION", {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: { requesterId: pending.user_a_id, requestId: pending.id }
-        });
-        sendJson6(res, 200, {
-          success: true,
-          status: "rejected",
-          message: "Connection request declined. No active connection was created."
-        });
+        const pgRes = await rejectConnectionRequestPg(authUser, key);
+        sendJson6(res, pgRes.status, pgRes.body);
         return true;
       } catch (pgErr) {
         console.warn("[PG Reject Connection Fallback]:", pgErr?.message);
         const restRes = await rejectConnectionRequestRest(authUser, key);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+    }
+    const connCancelMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)\/cancel$/);
+    if (connCancelMatch && method === "POST") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        return true;
+      }
+      const key = connCancelMatch[1];
+      if (!isDatabaseAvailable()) {
+        const restRes = await cancelConnectionRequestRest(authUser, key);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+      try {
+        const pgRes = await cancelConnectionRequestPg(authUser, key);
+        sendJson6(res, pgRes.status, pgRes.body);
+        return true;
+      } catch (pgErr) {
+        console.warn("[PG Cancel Connection Fallback]:", pgErr?.message);
+        const restRes = await cancelConnectionRequestRest(authUser, key);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+    }
+    const connDeleteMatch = pathname.match(/^\/api\/udhar\/connections\/([a-zA-Z0-9_:-]+)$/);
+    if (connDeleteMatch && method === "DELETE") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, code: "UNAUTHORIZED", message: "Authentication required." });
+        return true;
+      }
+      const targetOrContactId = connDeleteMatch[1];
+      if (!isDatabaseAvailable()) {
+        const restRes = await removeSavedConnectionRest(authUser, targetOrContactId);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+      try {
+        const pgRes = await removeSavedConnectionPg(authUser, targetOrContactId);
+        sendJson6(res, pgRes.status, pgRes.body);
+        return true;
+      } catch (pgErr) {
+        console.warn("[PG Remove Connection Fallback]:", pgErr?.message);
+        const restRes = await removeSavedConnectionRest(authUser, targetOrContactId);
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
@@ -101632,38 +103084,10 @@ async function handleApiRequest(req, res) {
         return true;
       }
       try {
-        await query(
-          `DELETE FROM public.user_connections
-           WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
-          [authUser.id, targetUserId]
-        );
-        await query(
-          `UPDATE public.udhar_contacts
-           SET linked_user_id = NULL, updated_at = NOW()
-           WHERE (user_id = $1 AND linked_user_id = $2) OR (user_id = $2 AND linked_user_id = $1)`,
-          [authUser.id, targetUserId]
-        ).catch(() => {
-        });
-        const actorName = (authUser.full_name || authUser.email?.split("@")[0] || "User").trim();
-        await createNotification({
-          userId: targetUserId,
-          title: "Udhar Connection Disconnected",
-          message: `${actorName} disconnected their Udhar pairing with you. Your existing Udhar history remains preserved.`,
-          category: "udhar",
-          type: "info",
-          deepLink: "people",
-          channels: ["in_app"]
-        }).catch(() => {
-        });
-        await logSecurityEvent("USER_DISCONNECTED_UDHAR_CONNECTION", {
-          userId: authUser.id,
-          userEmail: authUser.email,
-          details: { targetUserId }
-        });
-        sendJson6(res, 200, {
-          success: true,
-          status: "disconnected",
-          message: "Disconnected successfully. Existing Udhar transaction history has been preserved."
+        const pgRes = await removeSavedConnectionPg(authUser, targetUserId);
+        sendJson6(res, pgRes.status, {
+          ...pgRes.body,
+          status: "disconnected"
         });
         return true;
       } catch (pgErr) {
@@ -101704,14 +103128,14 @@ async function handleApiRequest(req, res) {
       );
       if (regUserCheck.rows.length > 0) {
         const regUser = regUserCheck.rows[0];
-        await query(
-          "UPDATE public.udhar_contacts SET linked_user_id = $1, updated_at = NOW() WHERE id = $2",
-          [regUser.id, contact.id]
+        const reqResult = await createSearchConnectionRequestPg(
+          authUser,
+          regUser.id,
+          contact.relationship_type || "Friend",
+          "search"
         );
-        await ensureReciprocalContact(regUser.id, authUser, contact.relationship_type || "Friend");
-        sendJson6(res, 200, {
-          success: true,
-          message: `${contact.name} is already registered on My Money Manager! Linked accounts automatically.`,
+        sendJson6(res, reqResult.status, {
+          ...reqResult.body,
           alreadyRegistered: true,
           linkedUserId: regUser.id
         });
@@ -102146,8 +103570,25 @@ async function handleApiRequest(req, res) {
         return true;
       }
       try {
-        const pairingToken = (body.pairingToken || "").trim();
-        const pairingCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+        let pairingToken = (body.pairingToken || "").trim();
+        let pairingCode = (body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+        const rawData = (body.qrData || "").trim();
+        if (rawData) {
+          const parsedQr = parseQrPayload(rawData);
+          if (!parsedQr.valid) {
+            sendJson6(res, 400, {
+              success: false,
+              code: parsedQr.errorCode || "INVALID_QR",
+              message: parsedQr.error || "Invalid QR format."
+            });
+            return true;
+          }
+          if (parsedQr.token) pairingToken = parsedQr.token;
+          if (parsedQr.code) pairingCode = parsedQr.code;
+        }
+        const rawMethod = String(body.connectionMethod || body.entryMethod || "").trim().toUpperCase();
+        const connectionMethod = rawMethod === "CONFIRMATION_CODE" || rawMethod === "CODE" || !rawData && !body.pairingToken && Boolean(pairingCode) ? "CONFIRMATION_CODE" : "QR_CODE";
+        const requestedVia = connectionMethod === "CONFIRMATION_CODE" ? "confirmation_code" : "qr";
         const relationshipType = (body.relationshipType || "Friend").trim();
         const tokenRes = await query(
           `SELECT t.id, t.user_id, t.is_single_use, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
@@ -102161,7 +103602,7 @@ async function handleApiRequest(req, res) {
           sendJson6(res, 410, {
             success: false,
             code: "QR_INVALID_OR_EXPIRED",
-            message: "Pairing QR is expired, revoked, or invalid."
+            message: "Pairing QR or confirmation code is expired, revoked, or invalid."
           });
           return true;
         }
@@ -102191,7 +103632,9 @@ async function handleApiRequest(req, res) {
             success: true,
             status: "connected",
             alreadyConnected: true,
-            message: `Already connected with ${targetDisplayName}.`,
+            connectionMethod,
+            title: "Already Connected",
+            message: "Already Connected",
             connectedUser: {
               id: targetUserId,
               name: targetDisplayName,
@@ -102203,16 +103646,52 @@ async function handleApiRequest(req, res) {
           });
           return true;
         }
-        const incomingPending = existingConn.rows.find(
-          (r2) => r2.user_a_id === targetUserId && r2.user_b_id === authUser.id && r2.status === "pending"
-        );
-        if (incomingPending) {
+        let connId = null;
+        try {
+          const insConn = await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status, relationship_type, requested_via, connection_method, consented_at, responded_at, updated_at)
+             VALUES ($1, $2, 'connected', $3, $4, $5, NOW(), NOW(), NOW())
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+             SET status = 'connected',
+                 relationship_type = EXCLUDED.relationship_type,
+                 requested_via = EXCLUDED.requested_via,
+                 connection_method = EXCLUDED.connection_method,
+                 consented_at = NOW(),
+                 responded_at = NOW(),
+                 cancelled_at = NULL,
+                 deleted_at = NULL,
+                 deleted_by = NULL,
+                 updated_at = NOW()
+             RETURNING id`,
+            [authUser.id, targetUserId, relationshipType, requestedVia, connectionMethod]
+          );
+          connId = insConn.rows[0]?.id ? String(insConn.rows[0].id) : null;
           await query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status, relationship_type, requested_via, connection_method, consented_at, responded_at, updated_at)
+             VALUES ($1, $2, 'connected', $3, $4, $5, NOW(), NOW(), NOW())
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+             SET status = 'connected',
+                 relationship_type = EXCLUDED.relationship_type,
+                 requested_via = EXCLUDED.requested_via,
+                 connection_method = EXCLUDED.connection_method,
+                 consented_at = NOW(),
+                 responded_at = NOW(),
+                 cancelled_at = NULL,
+                 deleted_at = NULL,
+                 deleted_by = NULL,
+                 updated_at = NOW()`,
+            [targetUserId, authUser.id, relationshipType, requestedVia, connectionMethod]
+          ).catch(() => {
+          });
+        } catch {
+          const insConn = await query(
             `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
              VALUES ($1, $2, 'connected')
-             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'
+             RETURNING id`,
             [authUser.id, targetUserId]
           );
+          connId = insConn.rows[0]?.id ? String(insConn.rows[0].id) : null;
           await query(
             `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
              VALUES ($1, $2, 'connected')
@@ -102220,116 +103699,63 @@ async function handleApiRequest(req, res) {
             [targetUserId, authUser.id]
           ).catch(() => {
           });
-          await query(
-            `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-             ON CONFLICT (user_id, name) DO UPDATE
-             SET linked_user_id = EXCLUDED.linked_user_id,
-                 photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
-                 updated_at = NOW()`,
-            [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
-          );
-          await ensureReciprocalContact(targetUserId, authUser, relationshipType);
-          notifyQrConnected({
-            userAId: authUser.id,
-            userAName: requesterDisplayName,
-            userBId: targetUserId,
-            userBName: targetDisplayName
+        }
+        await query(
+          `INSERT INTO public.udhar_contacts (user_id, name, email, phone, photo_url, relationship_type, linked_user_id, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           ON CONFLICT (user_id, name) DO UPDATE
+           SET linked_user_id = EXCLUDED.linked_user_id,
+               photo_url = COALESCE(EXCLUDED.photo_url, public.udhar_contacts.photo_url),
+               updated_at = NOW()`,
+          [authUser.id, targetDisplayName, tokenRecord.email, tokenRecord.phone, tokenRecord.avatar_url, relationshipType, targetUserId]
+        );
+        await ensureReciprocalContact(targetUserId, authUser, relationshipType);
+        const pendingRow = existingConn.rows.find((r2) => r2.status === "pending");
+        await Promise.all([
+          updateConnectionRequestNotificationsState({
+            requestId: pendingRow?.id ? String(pendingRow.id) : null,
+            requesterId: authUser.id,
+            receiverId: targetUserId,
+            status: "accepted"
           }).catch(() => {
-          });
-          sendJson6(res, 200, {
-            success: true,
-            status: "connected",
-            alreadyConnected: false,
-            message: `Connected with ${targetDisplayName}! Added to Saved People.`,
-            connectedUser: {
-              id: targetUserId,
-              name: targetDisplayName,
-              displayName: targetDisplayName,
-              fullName: targetDisplayName,
-              avatarUrl: tokenRecord.avatar_url || null,
-              isVerified: true
-            }
-          });
-          return true;
-        }
-        const outgoingPending = existingConn.rows.find(
-          (r2) => r2.user_a_id === authUser.id && r2.user_b_id === targetUserId && r2.status === "pending"
-        );
-        if (outgoingPending) {
-          sendJson6(res, 200, {
-            success: true,
-            status: "pending",
-            alreadyPending: true,
-            requestId: outgoingPending.id,
-            message: `Connection request already sent to ${targetDisplayName}. Waiting for them to accept.`,
-            connectedUser: {
-              id: targetUserId,
-              name: targetDisplayName,
-              displayName: targetDisplayName,
-              fullName: targetDisplayName,
-              avatarUrl: tokenRecord.avatar_url || null,
-              isVerified: true
-            }
-          });
-          return true;
-        }
-        const insRes = await query(
-          `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
-           VALUES ($1, $2, 'pending')
-           ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'pending'
-           RETURNING id`,
-          [authUser.id, targetUserId]
-        );
-        const requestId = insRes.rows[0]?.id || `${authUser.id}:${targetUserId}`;
+          }),
+          updateConnectionRequestNotificationsState({
+            requestId: pendingRow?.id ? String(pendingRow.id) : null,
+            requesterId: targetUserId,
+            receiverId: authUser.id,
+            status: "accepted"
+          }).catch(() => {
+          })
+        ]);
         if (tokenRecord.is_single_use) {
           await query(
             `UPDATE public.qr_pairing_tokens SET used = TRUE, used_by_user_id = $1, used_at = NOW() WHERE id = $2`,
             [authUser.id, tokenRecord.id]
           );
         }
-        await createNotification({
-          userId: targetUserId,
-          title: "Udhar Connection Request",
-          message: `${requesterDisplayName} wants to connect with you on My Money Manager Udhar.`,
-          category: "udhar",
-          type: "info",
-          deepLink: "people",
-          metadata: {
-            actionType: "udhar_connection_request",
-            requestId: String(requestId),
-            requesterUserId: authUser.id,
-            requesterName: requesterDisplayName,
-            requestedVia: "qr",
-            relationshipType
-          },
-          channels: ["in_app", "push"]
+        await notifyQrConnected({
+          userAId: authUser.id,
+          userAName: requesterDisplayName,
+          userAAvatar: authUser.avatar_url || null,
+          userBId: targetUserId,
+          userBName: targetDisplayName,
+          connectionMethod,
+          connectionId: connId
         }).catch(() => {
         });
-        await query(
-          `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-           VALUES ($1, $2, 'udhar_connection_request', $3, $4, $5, TRUE)`,
-          [
-            "Udhar Connection Request",
-            `${requesterDisplayName} wants to connect with you on My Money Manager Udhar.`,
-            targetUserId,
-            String(requestId),
-            authUser.id
-          ]
-        ).catch(() => {
-        });
-        await logSecurityEvent("UDHAR_QR_CONNECTION_REQUESTED", {
+        await logSecurityEvent("UDHAR_QR_DIRECT_CONNECTED", {
           userId: authUser.id,
           userEmail: authUser.email,
-          details: { targetUserId, targetName: targetDisplayName, requestId: String(requestId) }
+          details: { targetUserId, targetName: targetDisplayName, connectionMethod, connectionId: connId }
         });
         sendJson6(res, 200, {
           success: true,
-          status: "pending",
+          status: "connected",
           alreadyConnected: false,
-          alreadyPending: false,
-          requestId: String(requestId),
-          message: `Connection request sent to ${targetDisplayName}. They can accept or decline from Notifications or People.`,
+          connectionMethod,
+          connectionId: connId,
+          title: "Connection Added Successfully",
+          message: `${targetDisplayName} has been added to your Saved People.`,
           connectedUser: {
             id: targetUserId,
             name: targetDisplayName,
@@ -102417,14 +103843,23 @@ async function handleApiRequest(req, res) {
         if (!editHistoryByLink[hist.link_id]) editHistoryByLink[hist.link_id] = [];
         editHistoryByLink[hist.link_id].push(hist);
       }
-      const activeTxRows = txRes.rows.filter((r2) => r2.status !== "cancelled" && !r2.deleted_at);
+      const activeTxRows = txRes.rows.filter((r2) => normalizeUdharLifecycleStatus(r2) !== "deleted");
       const transactions = activeTxRows.map((r2) => {
         const orig = parseFloat(r2.original_amount) || 0;
         const cur = parseFloat(r2.current_balance) || 0;
         const computedPaid = Math.max(0, roundMoney(orig - cur));
         const { note, meta } = unpackStructuredNote(r2.notes);
+        const normalizedStatus = normalizeUdharLifecycleStatus(r2);
         return {
           ...r2,
+          status: normalizedStatus,
+          creation_method: r2.creation_method || meta.creation_method || "manual",
+          accepted_by: r2.accepted_by || meta.accepted_by || null,
+          rejected_by: r2.rejected_by || meta.rejected_by || null,
+          cancelled_by: r2.cancelled_by || meta.cancelled_by || null,
+          responded_at: r2.responded_at || meta.responded_at || null,
+          cancelled_at: r2.cancelled_at || meta.cancelled_at || null,
+          rejection_reason: r2.rejection_reason || meta.rejection_reason || null,
           paid_amount: r2.paid_amount !== null && r2.paid_amount !== void 0 ? parseFloat(r2.paid_amount) : computedPaid,
           category: r2.category || meta.category || "Personal Loan",
           payment_method: r2.payment_method || meta.payment_method || "UPI",
@@ -102444,7 +103879,7 @@ async function handleApiRequest(req, res) {
       });
       return true;
     }
-    if (pathname === "/api/udhar/transactions" && method === "POST") {
+    if ((pathname === "/api/udhar/transactions" || pathname === "/api/udhar/qr/create-transaction") && method === "POST") {
       const authUser = await authenticateRequest(req);
       if (!authUser) {
         sendJson6(res, 401, { success: false, message: "Authentication required." });
@@ -102456,13 +103891,17 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const body = await parseJsonBody6(req);
+      const isExplicitQrEndpoint = pathname === "/api/udhar/qr/create-transaction";
       if (!isDatabaseAvailable()) {
-        const restRes = await createUdharTransactionRest(authUser, body);
+        const restRes = isExplicitQrEndpoint ? await createUdharViaQrRest(authUser, body) : await createUdharTransactionRest(authUser, body);
         sendJson6(res, restRes.status, restRes.body);
         return true;
       }
-      const counterpartName = (body.counterpart_name || body.person_name || "").trim();
+      let counterpartName = (body.counterpart_name || body.person_name || "").trim();
       const counterpartUserId = (body.counterpart_user_id || body.counterpartUserId || "").trim() || null;
+      let qrToken = (body.qr_token || body.qrToken || body.pairingToken || "").trim();
+      let pairingCode = (body.pairing_code || body.pairingCode || "").replace(/\s+/g, "").trim().toUpperCase();
+      const qrDataRaw = (body.qrData || body.qr_data || "").trim();
       const direction = body.direction;
       const amount = roundMoney(parseFloat(body.amount));
       const txDate = body.transaction_date || body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
@@ -102473,8 +103912,8 @@ async function handleApiRequest(req, res) {
       const description = (body.description || "").trim();
       const attachmentUrl = body.attachment_url || null;
       const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
-      if (!counterpartName) {
-        sendJson6(res, 400, { success: false, message: "Person's name is required." });
+      if (isExplicitQrEndpoint && !qrToken && !pairingCode && !qrDataRaw) {
+        sendJson6(res, 400, { success: false, code: "QR_OR_CODE_REQUIRED", message: "A valid QR token or confirmation code is required." });
         return true;
       }
       if (!["gave", "took"].includes(direction)) {
@@ -102501,16 +103940,79 @@ async function handleApiRequest(req, res) {
           return true;
         }
       }
-      const packedNotes = packStructuredNote(plainNotes, {
-        category,
-        payment_method: paymentMethod,
-        description: description || void 0,
-        attachment_url: attachmentUrl || void 0
-      });
-      const linkId = crypto24.randomUUID();
       let isRegisteredCounterpart = false;
       let registeredUser = null;
-      if (counterpartUserId && counterpartUserId !== authUser.id) {
+      let verifiedCreationMethod = "manual";
+      let singleUseTokenRecordId = null;
+      if (qrToken || pairingCode || qrDataRaw) {
+        if (qrDataRaw) {
+          const parsedQr = parseQrPayload(qrDataRaw);
+          if (!parsedQr.valid) {
+            sendJson6(res, 400, {
+              success: false,
+              code: parsedQr.errorCode || "INVALID_QR",
+              message: parsedQr.error || "Invalid QR format. Please scan a genuine My Money Manager Udhar QR."
+            });
+            return true;
+          }
+          if (parsedQr.token) qrToken = parsedQr.token;
+          if (parsedQr.code) pairingCode = parsedQr.code;
+        }
+        if (!qrToken && !pairingCode) {
+          sendJson6(res, 400, { success: false, code: "INVALID_QR", message: "No valid QR token or confirmation code provided." });
+          return true;
+        }
+        const tokenRes = await query(
+          `SELECT t.id, t.user_id, t.expires_at, t.used, t.is_single_use, t.used_at,
+                  u.id AS account_id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
+                  COALESCE(u.deletion_status, 'none') AS deletion_status
+           FROM public.qr_pairing_tokens t
+           JOIN public.app_users u ON t.user_id = u.id
+           WHERE (t.pairing_token = $1 OR t.pairing_code = $2)
+           ORDER BY t.created_at DESC LIMIT 1`,
+          [qrToken || "__none__", pairingCode || "__none__"]
+        );
+        if (tokenRes.rows.length === 0) {
+          sendJson6(res, 404, { success: false, code: "NOT_FOUND", message: "Confirmation code or QR not recognized." });
+          return true;
+        }
+        const qrRecord = tokenRes.rows[0];
+        if (qrRecord.used || qrRecord.is_single_use && qrRecord.used_at) {
+          sendJson6(res, 410, { success: false, code: "QR_REVOKED", message: "This QR or code has already been revoked or replaced." });
+          return true;
+        }
+        if (new Date(qrRecord.expires_at) <= /* @__PURE__ */ new Date()) {
+          sendJson6(res, 410, { success: false, code: "QR_EXPIRED", message: "This QR or confirmation code has expired." });
+          return true;
+        }
+        if (!isDiscoverableNormalUser(qrRecord)) {
+          sendJson6(res, 403, { success: false, code: "ACCOUNT_UNAVAILABLE", message: "Target user account is unavailable for shared Udhar." });
+          return true;
+        }
+        if (qrRecord.user_id === authUser.id) {
+          sendJson6(res, 400, { success: false, code: "SELF_CONNECTION", message: "You cannot add an Udhar with your own QR or code." });
+          return true;
+        }
+        const blk = await query(
+          `SELECT 1 FROM public.user_connections
+           WHERE ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))
+             AND status = 'blocked' LIMIT 1`,
+          [authUser.id, qrRecord.user_id]
+        );
+        if (blk.rows.length > 0) {
+          sendJson6(res, 403, { success: false, code: "BLOCKED", message: "Cannot create shared Udhar with a blocked user." });
+          return true;
+        }
+        isRegisteredCounterpart = true;
+        registeredUser = {
+          id: qrRecord.user_id,
+          full_name: qrRecord.full_name,
+          email: qrRecord.email
+        };
+        counterpartName = qrRecord.full_name || counterpartName || "Friend";
+        verifiedCreationMethod = qrToken || qrDataRaw && qrDataRaw.startsWith("{") ? "qr" : "code";
+        if (qrRecord.is_single_use) singleUseTokenRecordId = qrRecord.id;
+      } else if (counterpartUserId && counterpartUserId !== authUser.id) {
         const uCheck = await query(
           `SELECT id, full_name, email, role, status, COALESCE(deletion_status, 'none') AS deletion_status
            FROM public.app_users WHERE id = $1`,
@@ -102533,26 +104035,46 @@ async function handleApiRequest(req, res) {
           }
           isRegisteredCounterpart = true;
           registeredUser = uCheck.rows[0];
+          counterpartName = counterpartName || registeredUser.full_name;
         }
       }
+      if (!counterpartName) {
+        sendJson6(res, 400, { success: false, message: "Person's name is required." });
+        return true;
+      }
+      const linkId = crypto24.randomUUID();
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
         if (isRegisteredCounterpart) {
+          const isInstantQr = verifiedCreationMethod === "qr" || verifiedCreationMethod === "code";
+          const initialLifecycle = isInstantQr ? "confirmed" : "pending_confirmation";
+          const initialConfirmStatus = isInstantQr ? "confirmed" : "pending";
+          const packedNotes = packStructuredNote(plainNotes, {
+            category,
+            payment_method: paymentMethod,
+            description: description || void 0,
+            attachment_url: attachmentUrl || void 0,
+            creation_method: verifiedCreationMethod,
+            lifecycle_status: initialLifecycle,
+            accepted_by: isInstantQr ? registeredUser.id : void 0,
+            responded_at: isInstantQr ? nowIso : void 0
+          });
           const userARes = await client.query(
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
               transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'confirmed', 'confirmed', TRUE, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, $12, $13, TRUE, $14)
             RETURNING *`,
-            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, packedNotes, attachmentUrl, idempotencyKey]
+            [linkId, authUser.id, registeredUser.id, registeredUser.full_name, direction, amount, amount, txDate, dueDate, packedNotes, attachmentUrl, initialLifecycle, initialConfirmStatus, idempotencyKey]
           );
           const counterpartDirection = direction === "gave" ? "took" : "gave";
           await client.query(
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
               transaction_date, due_date, notes, attachment_url, status, confirmation_status, is_initiator, idempotency_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, 'confirmed', 'confirmed', FALSE, $12)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, $11, $12, $13, FALSE, $14)`,
             [
               linkId,
               registeredUser.id,
@@ -102565,9 +104087,32 @@ async function handleApiRequest(req, res) {
               dueDate,
               packedNotes,
               attachmentUrl,
+              initialLifecycle,
+              initialConfirmStatus,
               idempotencyKey ? `${idempotencyKey}:counterpart` : null
             ]
           );
+          if (singleUseTokenRecordId) {
+            await client.query(
+              `UPDATE public.qr_pairing_tokens SET used = TRUE, used_by_user_id = $1, used_at = NOW() WHERE id = $2`,
+              [authUser.id, singleUseTokenRecordId]
+            ).catch(() => {
+            });
+          }
+          await client.query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [authUser.id, registeredUser.id]
+          ).catch(() => {
+          });
+          await client.query(
+            `INSERT INTO public.user_connections (user_a_id, user_b_id, status)
+             VALUES ($1, $2, 'connected')
+             ON CONFLICT (user_a_id, user_b_id) DO UPDATE SET status = 'connected'`,
+            [registeredUser.id, authUser.id]
+          ).catch(() => {
+          });
           await client.query(
             `INSERT INTO public.udhar_contacts (user_id, name, email, relationship_type, linked_user_id, updated_at)
              VALUES ($1, $2, $3, 'Friend', $4, NOW())
@@ -102580,31 +104125,91 @@ async function handleApiRequest(req, res) {
              ON CONFLICT (user_id, name) DO UPDATE SET linked_user_id = EXCLUDED.linked_user_id, updated_at = NOW()`,
             [registeredUser.id, authUser.full_name, authUser.email, authUser.id]
           );
-          const notifMsg = `${authUser.full_name} recorded a shared Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}).`;
-          await client.query(
-            `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
-             VALUES ($1, $2, 'udhar_created', $3, $4, $5, TRUE)`,
-            [`New Shared Udhar from ${authUser.full_name}`, notifMsg, registeredUser.id, linkId, authUser.id]
-          ).catch(() => {
-          });
+          if (isInstantQr) {
+            const viaLabel = verifiedCreationMethod === "qr" ? "QR code" : "confirmation code";
+            await client.query(
+              `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+               VALUES ($1, $2, 'udhar_qr_confirmed', $3, $4, $5, TRUE)`,
+              [
+                `Instant Udhar Confirmed via ${viaLabel}`,
+                `${authUser.full_name} added a confirmed Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+                registeredUser.id,
+                linkId,
+                authUser.id
+              ]
+            ).catch(() => {
+            });
+          } else {
+            const dirHuman = direction === "gave" ? "gave you (You Borrowed)" : "borrowed from you (You Gave)";
+            await client.query(
+              `INSERT INTO public.notifications (title, message, type, target_user_id, related_entity_id, actor_user_id, is_active)
+               VALUES ($1, $2, 'udhar_request', $3, $4, $5, TRUE)`,
+              [
+                "New Udhaar Confirmation Request",
+                `${authUser.full_name} added an Udhaar request of \u20B9${amount.toLocaleString("en-IN")} (${dirHuman}). Please review and confirm.`,
+                registeredUser.id,
+                linkId,
+                authUser.id
+              ]
+            ).catch(() => {
+            });
+          }
           await client.query("COMMIT");
           await ensureReciprocalContact(registeredUser.id, authUser, "Friend");
-          await logSecurityEvent("UDHAR_TWO_SIDED_CREATED", {
+          await logSecurityEvent(isInstantQr ? "UDHAR_QR_INSTANT_CREATED" : "UDHAR_REQUEST_CREATED", {
             userId: authUser.id,
             userEmail: authUser.email,
-            details: { linkId, counterpartId: registeredUser.id, amount, direction }
+            details: { linkId, counterpartId: registeredUser.id, amount, direction, creationMethod: verifiedCreationMethod }
           });
-          notifyUdharCreated({
-            initiatorUserId: authUser.id,
-            initiatorName: authUser.full_name || "Friend",
-            recipientUserId: registeredUser.id,
-            transactionId: userARes.rows[0].id,
-            contactName: registeredUser.full_name || "Friend",
-            amount,
-            direction,
-            dueDate,
-            skipEmail: true
-          }).catch((e2) => console.warn("[Notify Udhar Created Error]:", e2));
+          if (isInstantQr) {
+            const viaLabel = verifiedCreationMethod === "qr" ? "QR code" : "confirmation code";
+            Promise.all([
+              createNotification({
+                userId: registeredUser.id,
+                title: `Instant Udhar Confirmed via ${viaLabel}`,
+                message: `${authUser.full_name} added a confirmed Udhar of \u20B9${amount.toLocaleString("en-IN")} (${direction === "gave" ? "You'll Pay" : "You'll Receive"}) via your ${viaLabel}.`,
+                category: "udhar",
+                type: "success",
+                deepLink: "people",
+                dedupeKey: `udhar_qr_rec_${linkId}`,
+                metadata: { actionType: "udhar_qr_confirmed", linkId, udharId: userARes.rows[0].id, amount, creationMethod: verifiedCreationMethod },
+                channels: ["in_app", "push"]
+              }),
+              createNotification({
+                userId: authUser.id,
+                title: `Udhar Added via ${viaLabel}`,
+                message: `Your Udhar of \u20B9${amount.toLocaleString("en-IN")} with ${registeredUser.full_name} was confirmed immediately.`,
+                category: "udhar",
+                type: "success",
+                deepLink: "people",
+                dedupeKey: `udhar_qr_init_${linkId}`,
+                metadata: { actionType: "udhar_qr_confirmed", linkId, udharId: userARes.rows[0].id, amount, creationMethod: verifiedCreationMethod },
+                channels: ["in_app", "push"]
+              })
+            ]).catch(() => {
+            });
+          } else {
+            const dirHuman = direction === "gave" ? "gave you (You Borrowed)" : "borrowed from you (You Gave)";
+            createNotification({
+              userId: registeredUser.id,
+              title: "New Udhaar Confirmation Request",
+              message: `${authUser.full_name} added an Udhaar request of \u20B9${amount.toLocaleString("en-IN")} (${dirHuman}). Please review and confirm.`,
+              category: "udhar",
+              type: "info",
+              deepLink: "people",
+              dedupeKey: `udhar_req_${linkId}`,
+              metadata: {
+                actionType: "udhar_confirmation_request",
+                linkId,
+                udharId: userARes.rows[0].id,
+                requesterUserId: authUser.id,
+                requesterName: authUser.full_name,
+                amount,
+                creationMethod: "manual"
+              },
+              channels: ["in_app", "push"]
+            }).catch((e2) => console.warn("[Notify Udhar Request Error]:", e2));
+          }
           sendUdharCreatedEmails({
             transactionId: userARes.rows[0].id,
             linkId,
@@ -102618,14 +104223,18 @@ async function handleApiRequest(req, res) {
             amount,
             description: description || plainNotes || void 0,
             transactionDate: txDate,
-            status: "confirmed"
+            status: initialLifecycle
           }).catch((e2) => console.warn("[Udhar Created Two-Sided Email Error]:", e2));
           const createdRow = userARes.rows[0];
           sendJson6(res, 201, {
             success: true,
-            message: `Shared Udhar recorded with ${registeredUser.full_name}. Synchronized across both accounts.`,
+            requiresConfirmation: !isInstantQr,
+            creationMethod: verifiedCreationMethod,
+            message: isInstantQr ? "Udhaar added successfully." : `Udhaar request sent to ${registeredUser.full_name}. Waiting for recipient confirmation.`,
             transaction: {
               ...createdRow,
+              status: initialLifecycle,
+              creation_method: verifiedCreationMethod,
               category,
               payment_method: paymentMethod,
               description: description || null,
@@ -102638,6 +104247,14 @@ async function handleApiRequest(req, res) {
           });
           return true;
         } else {
+          const packedNotes = packStructuredNote(plainNotes, {
+            category,
+            payment_method: paymentMethod,
+            description: description || void 0,
+            attachment_url: attachmentUrl || void 0,
+            creation_method: "manual",
+            lifecycle_status: "confirmed"
+          });
           const singleRes = await client.query(
             `INSERT INTO public.udhar_transactions (
               link_id, user_id, counterpart_user_id, counterpart_name, direction, original_amount, current_balance, paid_amount,
@@ -102670,9 +104287,13 @@ async function handleApiRequest(req, res) {
           const createdRow = singleRes.rows[0];
           sendJson6(res, 201, {
             success: true,
+            requiresConfirmation: false,
+            creationMethod: "manual",
             message: `Local Udhar recorded for ${counterpartName}.`,
             transaction: {
               ...createdRow,
+              status: "confirmed",
+              creation_method: "manual",
               category,
               payment_method: paymentMethod,
               description: description || null,
@@ -102711,22 +104332,225 @@ async function handleApiRequest(req, res) {
         return true;
       }
       const tx = txRes.rows[0];
-      if (tx.is_initiator) {
-        sendJson6(res, 403, { success: false, message: "Only the recipient counterpart can confirm this transaction." });
+      const guard = canAcceptUdhar(tx, authUser.id);
+      if (!guard.allowed) {
+        sendJson6(res, guard.httpStatus || 403, { success: false, code: guard.code, message: guard.reason });
         return true;
       }
-      await query(
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const { note, meta } = unpackStructuredNote(tx.notes);
+      const updatedPackedNotes = packStructuredNote(note, {
+        ...meta,
+        lifecycle_status: "confirmed",
+        accepted_by: authUser.id,
+        responded_at: nowIso
+      });
+      const updRes = await query(
         `UPDATE public.udhar_transactions 
-         SET status = 'confirmed', confirmation_status = 'confirmed', updated_at = NOW() 
-         WHERE link_id = $1`,
-        [tx.link_id]
+         SET status = 'confirmed', confirmation_status = 'confirmed', notes = $2, updated_at = NOW() 
+         WHERE link_id = $1 AND status = 'pending_confirmation'
+         RETURNING id`,
+        [tx.link_id, updatedPackedNotes]
       );
+      if (updRes.rows.length === 0) {
+        sendJson6(res, 409, { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been accepted, rejected, or cancelled." });
+        return true;
+      }
+      await query(`UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`, [tx.link_id, tx.id]).catch(() => {
+      });
+      await query(
+        `UPDATE public.user_notifications SET is_deleted = TRUE, deleted_at = NOW()
+         WHERE related_entity_id = $1 OR related_entity_id = $2 OR metadata->>'linkId' = $1`,
+        [tx.link_id, tx.id]
+      ).catch(() => {
+      });
+      if (tx.counterpart_user_id) {
+        createNotification({
+          userId: tx.counterpart_user_id,
+          title: "Udhaar Request Accepted",
+          message: `${authUser.full_name} accepted your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both balances are now updated.`,
+          category: "udhar",
+          type: "success",
+          deepLink: "people",
+          dedupeKey: `udhar_acc_${tx.link_id}`,
+          metadata: { actionType: "udhar_accepted", linkId: tx.link_id, udharId: tx.id, acceptedBy: authUser.id },
+          channels: ["in_app", "push"]
+        }).catch(() => {
+        });
+      }
       await logSecurityEvent("UDHAR_CONFIRMED", {
         userId: authUser.id,
         userEmail: authUser.email,
         details: { txId, linkId: tx.link_id }
       });
-      sendJson6(res, 200, { success: true, message: "Transaction confirmed successfully on both accounts." });
+      sendJson6(res, 200, { success: true, status: "confirmed", message: "Udhaar request accepted successfully." });
+      return true;
+    }
+    const rejectMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/reject$/);
+    if (rejectMatch && method === "POST") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const txId = rejectMatch[1];
+      const body = await parseJsonBody6(req).catch(() => ({}));
+      const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+      if (!isDatabaseAvailable()) {
+        const restRes = await rejectUdharTransactionRest(authUser, txId, reason);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+      const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson6(res, 404, { success: false, message: "Transaction not found." });
+        return true;
+      }
+      const tx = txRes.rows[0];
+      const guard = canRejectUdhar(tx, authUser.id);
+      if (!guard.allowed) {
+        sendJson6(res, guard.httpStatus || 403, { success: false, code: guard.code, message: guard.reason });
+        return true;
+      }
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const cleanReason = reason ? reason.slice(0, 400) : "Rejected by recipient";
+      const { note, meta } = unpackStructuredNote(tx.notes);
+      const updatedPackedNotes = packStructuredNote(note, {
+        ...meta,
+        lifecycle_status: "rejected",
+        rejected_by: authUser.id,
+        responded_at: nowIso,
+        rejection_reason: cleanReason
+      });
+      let updRows = [];
+      try {
+        const r2 = await query(
+          `UPDATE public.udhar_transactions
+           SET status = 'rejected', confirmation_status = 'rejected', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
+           WHERE link_id = $1 AND status = 'pending_confirmation'
+           RETURNING id`,
+          [tx.link_id, updatedPackedNotes]
+        );
+        updRows = r2.rows;
+      } catch {
+        const r2 = await query(
+          `UPDATE public.udhar_transactions
+           SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
+           WHERE link_id = $1 AND status = 'pending_confirmation'
+           RETURNING id`,
+          [tx.link_id, updatedPackedNotes]
+        );
+        updRows = r2.rows;
+      }
+      if (updRows.length === 0) {
+        sendJson6(res, 409, { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been handled." });
+        return true;
+      }
+      await query(`UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`, [tx.link_id, tx.id]).catch(() => {
+      });
+      await query(
+        `UPDATE public.user_notifications SET is_deleted = TRUE, deleted_at = NOW()
+         WHERE related_entity_id = $1 OR related_entity_id = $2 OR metadata->>'linkId' = $1`,
+        [tx.link_id, tx.id]
+      ).catch(() => {
+      });
+      if (tx.counterpart_user_id) {
+        createNotification({
+          userId: tx.counterpart_user_id,
+          title: "Udhaar Request Rejected",
+          message: `${authUser.full_name} rejected your Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+          category: "udhar",
+          type: "warning",
+          deepLink: "people",
+          dedupeKey: `udhar_rej_${tx.link_id}`,
+          metadata: { actionType: "udhar_rejected", linkId: tx.link_id, udharId: tx.id, rejectedBy: authUser.id, reason: cleanReason },
+          channels: ["in_app", "push"]
+        }).catch(() => {
+        });
+      }
+      await logSecurityEvent("UDHAR_REJECTED", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id, reason: cleanReason }
+      });
+      sendJson6(res, 200, { success: true, status: "rejected", message: "You rejected this Udhaar request." });
+      return true;
+    }
+    const cancelReqMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/cancel-request$/);
+    if (cancelReqMatch && method === "POST") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const txId = cancelReqMatch[1];
+      const body = await parseJsonBody6(req).catch(() => ({}));
+      const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+      if (!isDatabaseAvailable()) {
+        const restRes = await cancelUdharRequestRest(authUser, txId, reason);
+        sendJson6(res, restRes.status, restRes.body);
+        return true;
+      }
+      const txRes = await query("SELECT * FROM public.udhar_transactions WHERE id = $1 AND user_id = $2", [txId, authUser.id]);
+      if (txRes.rows.length === 0) {
+        sendJson6(res, 404, { success: false, message: "Transaction not found." });
+        return true;
+      }
+      const tx = txRes.rows[0];
+      const guard = canSenderCancelUdhar(tx, authUser.id);
+      if (!guard.allowed) {
+        sendJson6(res, guard.httpStatus || 403, { success: false, code: guard.code, message: guard.reason });
+        return true;
+      }
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const cleanReason = reason ? reason.slice(0, 400) : "Cancelled by sender";
+      const { note, meta } = unpackStructuredNote(tx.notes);
+      const updatedPackedNotes = packStructuredNote(note, {
+        ...meta,
+        lifecycle_status: "cancelled",
+        cancelled_by: authUser.id,
+        cancelled_at: nowIso,
+        rejection_reason: cleanReason
+      });
+      const updRes = await query(
+        `UPDATE public.udhar_transactions
+         SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
+         WHERE link_id = $1 AND status = 'pending_confirmation'
+         RETURNING id`,
+        [tx.link_id, updatedPackedNotes]
+      );
+      if (updRes.rows.length === 0) {
+        sendJson6(res, 409, { success: false, code: "CONCURRENT_MODIFICATION", message: "This Udhar request has already been responded to or cancelled." });
+        return true;
+      }
+      await query(`UPDATE public.notifications SET is_active = FALSE WHERE related_entity_id = $1 OR related_entity_id = $2`, [tx.link_id, tx.id]).catch(() => {
+      });
+      await query(
+        `UPDATE public.user_notifications SET is_deleted = TRUE, deleted_at = NOW()
+         WHERE related_entity_id = $1 OR related_entity_id = $2 OR metadata->>'linkId' = $1`,
+        [tx.link_id, tx.id]
+      ).catch(() => {
+      });
+      if (tx.counterpart_user_id) {
+        createNotification({
+          userId: tx.counterpart_user_id,
+          title: "Udhaar Request Cancelled",
+          message: `${authUser.full_name} cancelled their pending Udhaar request of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}.`,
+          category: "udhar",
+          type: "info",
+          deepLink: "people",
+          dedupeKey: `udhar_canc_${tx.link_id}`,
+          metadata: { actionType: "udhar_request_cancelled", linkId: tx.link_id, udharId: tx.id, cancelledBy: authUser.id },
+          channels: ["in_app", "push"]
+        }).catch(() => {
+        });
+      }
+      await logSecurityEvent("UDHAR_REQUEST_CANCELLED", {
+        userId: authUser.id,
+        userEmail: authUser.email,
+        details: { txId, linkId: tx.link_id, reason: cleanReason }
+      });
+      sendJson6(res, 200, { success: true, status: "cancelled", message: "Pending Udhaar request cancelled." });
       return true;
     }
     const disputeMatch = pathname.match(/^\/api\/udhar\/transactions\/([a-zA-Z0-9_-]+)\/dispute$/);
@@ -102843,7 +104667,7 @@ async function handleApiRequest(req, res) {
           repayAmount,
           isShared: Boolean(tx.counterpart_user_id),
           actorRole: tx.direction === "gave" ? "lender" : "borrower",
-          udharStatus: tx.status
+          udharStatus: normalizeUdharLifecycleStatus(tx)
         });
         if (!calc.valid) {
           await client.query("ROLLBACK");
@@ -103161,7 +104985,7 @@ async function handleApiRequest(req, res) {
           {
             original_amount: parseFloat(tx.original_amount) || 0,
             paid_amount: totalConfirmedRepaid,
-            status: tx.status,
+            status: normalizeUdharLifecycleStatus(tx),
             notes: prevPlainNote,
             transaction_date: tx.transaction_date,
             due_date: tx.due_date,
@@ -103191,6 +105015,8 @@ async function handleApiRequest(req, res) {
         const newStatus = validation.nextStatus;
         const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
         const nextPackedNotes = packStructuredNote(nextPlainNote, {
+          ...prevMeta,
+          lifecycle_status: newStatus,
           category: body.category !== void 0 ? body.category : prevMeta.category,
           payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
           description: body.description !== void 0 ? body.description : prevMeta.description,
@@ -103327,17 +105153,23 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const currentBal = roundMoney(parseFloat(tx.current_balance) || 0);
-        if (tx.status === "settled" || currentBal <= 0.01) {
+        const txLifecycle = normalizeUdharLifecycleStatus(tx);
+        if (txLifecycle === "settled" || txLifecycle === "confirmed" && currentBal <= 0.01) {
           await client.query("ROLLBACK");
           sendJson6(res, 400, { success: false, message: "This transaction is already settled." });
           return true;
         }
-        if (tx.status === "cancelled" || tx.deleted_at) {
+        if (txLifecycle === "pending_confirmation") {
           await client.query("ROLLBACK");
-          sendJson6(res, 400, { success: false, message: "Cannot settle a cancelled transaction." });
+          sendJson6(res, 409, { success: false, message: "Cannot settle a request that has not been confirmed by the recipient yet." });
           return true;
         }
-        if (tx.status === "disputed") {
+        if (txLifecycle === "rejected" || txLifecycle === "cancelled" || txLifecycle === "deleted") {
+          await client.query("ROLLBACK");
+          sendJson6(res, 400, { success: false, message: `Cannot settle a ${txLifecycle} transaction.` });
+          return true;
+        }
+        if (txLifecycle === "disputed") {
           await client.query("ROLLBACK");
           sendJson6(res, 409, { success: false, message: "Cannot settle a disputed transaction. Resolve the dispute first." });
           return true;
@@ -103470,10 +105302,12 @@ async function handleApiRequest(req, res) {
           repayments: activeReps,
           currentStatus: tx.status
         });
-        const effectiveStatus = tx.status === "cancelled" || tx.deleted_at ? "cancelled" : tx.status === "disputed" ? "disputed" : activeReps.length > 0 ? recalc.nextStatus : tx.status;
+        const baseLifecycle = normalizeUdharLifecycleStatus(tx);
+        const effectiveStatus = baseLifecycle === "deleted" || baseLifecycle === "cancelled" || baseLifecycle === "rejected" ? baseLifecycle : baseLifecycle === "disputed" ? "disputed" : baseLifecycle === "pending_confirmation" ? "pending_confirmation" : activeReps.length > 0 ? recalc.nextStatus : baseLifecycle;
         const guard = canCancelUdhar({
           status: effectiveStatus,
           deleted_at: tx.deleted_at,
+          notes: tx.notes,
           direction: tx.direction,
           is_shared: Boolean(tx.counterpart_user_id),
           counterpart_user_id: tx.counterpart_user_id,
@@ -103493,16 +105327,24 @@ async function handleApiRequest(req, res) {
           return true;
         }
         const cleanReason = deletionReason ? deletionReason.slice(0, 500) : null;
+        const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+        const { note: prevPlain, meta: prevMeta } = unpackStructuredNote(tx.notes);
+        const deletedPackedNotes = packStructuredNote(prevPlain, {
+          ...prevMeta,
+          lifecycle_status: "deleted",
+          cancelled_at: nowIso,
+          cancelled_by: authUser.id
+        });
         let updatedRows = [];
         await client.query("SAVEPOINT delete_audit_cols");
         try {
           const upd = await client.query(
             `UPDATE public.udhar_transactions
-             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW(),
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $4, updated_at = NOW(),
                  deleted_at = NOW(), deleted_by = $2, deletion_reason = $3
-             WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
+             WHERE link_id = $1 AND deleted_at IS NULL AND status <> 'disputed'
              RETURNING id`,
-            [tx.link_id, authUser.id, cleanReason]
+            [tx.link_id, authUser.id, cleanReason, deletedPackedNotes]
           );
           updatedRows = upd.rows;
           await client.query("RELEASE SAVEPOINT delete_audit_cols");
@@ -103510,10 +105352,10 @@ async function handleApiRequest(req, res) {
           await client.query("ROLLBACK TO SAVEPOINT delete_audit_cols");
           const upd = await client.query(
             `UPDATE public.udhar_transactions
-             SET status = 'cancelled', current_balance = 0, paid_amount = 0, updated_at = NOW()
+             SET status = 'cancelled', current_balance = 0, paid_amount = 0, notes = $2, updated_at = NOW()
              WHERE link_id = $1 AND status NOT IN ('cancelled', 'disputed')
              RETURNING id`,
-            [tx.link_id]
+            [tx.link_id, deletedPackedNotes]
           );
           updatedRows = upd.rows;
         }
@@ -103558,6 +105400,20 @@ async function handleApiRequest(req, res) {
         ).catch(() => {
         });
         await client.query("COMMIT");
+        if (tx.counterpart_user_id) {
+          createNotification({
+            userId: tx.counterpart_user_id,
+            title: `Udhar Deleted by ${authUser.full_name}`,
+            message: `${authUser.full_name} permanently deleted the shared Udhar entry of \u20B9${parseFloat(tx.original_amount).toLocaleString("en-IN")}. Both accounts have been updated.`,
+            category: "udhar",
+            type: "info",
+            deepLink: "people",
+            dedupeKey: `udhar_del_${tx.link_id}`,
+            metadata: { actionType: "udhar_deleted", deletedLinkId: tx.link_id, deletedTxId: tx.id },
+            channels: ["in_app", "push"]
+          }).catch(() => {
+          });
+        }
         await logSecurityEvent("UDHAR_DELETED", {
           userId: authUser.id,
           userEmail: authUser.email,
@@ -103772,11 +105628,10 @@ async function handleApiRequest(req, res) {
         `SELECT * FROM public.udhar_transactions
          WHERE id = $1
            AND (user_id = $2 OR counterpart_user_id = $2)
-           AND status <> 'cancelled'
            AND deleted_at IS NULL`,
         [txId, authUser.id]
       );
-      if (txRes.rows.length === 0) {
+      if (txRes.rows.length === 0 || normalizeUdharLifecycleStatus(txRes.rows[0]) === "deleted") {
         sendJson6(res, 404, { success: false, message: "Transaction not found." });
         return true;
       }
@@ -104835,6 +106690,105 @@ async function handleApiRequest(req, res) {
         total,
         page,
         totalPages: Math.ceil(total / limit) || 1
+      });
+      return true;
+    }
+    const notifConnActionMatch = pathname.match(/^\/api\/notifications\/([a-zA-Z0-9_-]+)\/connection-action$/);
+    if (notifConnActionMatch && method === "POST") {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson6(res, 401, { success: false, message: "Authentication required." });
+        return true;
+      }
+      const notifId = notifConnActionMatch[1];
+      const body = await parseJsonBody6(req);
+      const action = String(body.action || "").trim().toLowerCase();
+      if (action !== "accept" && action !== "reject") {
+        sendJson6(res, 400, { success: false, message: "Invalid action. Expected accept or reject." });
+        return true;
+      }
+      let notifRow = null;
+      if (isDatabaseAvailable()) {
+        const resNotif = await query(
+          `SELECT * FROM public.user_notifications WHERE id::text = $1 AND user_id = $2 AND is_deleted = FALSE LIMIT 1`,
+          [notifId, authUser.id]
+        ).catch(() => ({ rows: [] }));
+        notifRow = resNotif.rows[0] || null;
+      }
+      if (!notifRow) {
+        notifRow = await getUserNotificationByIdFallback(authUser.id, notifId);
+      }
+      if (!notifRow) {
+        sendJson6(res, 404, { success: false, message: "Notification not found." });
+        return true;
+      }
+      const meta = notifRow.metadata && typeof notifRow.metadata === "object" ? notifRow.metadata : {};
+      if (meta.actionType !== "udhar_connection_request") {
+        sendJson6(res, 400, {
+          success: false,
+          message: "This notification is informational and does not support connection approval actions."
+        });
+        return true;
+      }
+      const currentReqStatus = String(meta.requestStatus || "pending").toLowerCase();
+      if (currentReqStatus !== "pending") {
+        sendJson6(res, 409, {
+          success: false,
+          code: "ALREADY_RESOLVED",
+          status: currentReqStatus,
+          message: `This connection request has already been ${currentReqStatus}.`
+        });
+        return true;
+      }
+      const requestKey = String(
+        meta.requestId || meta.connectionId || notifRow.related_entity_id || meta.requesterUserId || meta.requesterId || ""
+      ).trim();
+      if (!requestKey) {
+        sendJson6(res, 400, { success: false, message: "Missing connection request reference." });
+        return true;
+      }
+      let actionResult;
+      if (isDatabaseAvailable()) {
+        try {
+          actionResult = action === "accept" ? await acceptConnectionRequestPg(authUser, requestKey) : await rejectConnectionRequestPg(authUser, requestKey);
+        } catch {
+          actionResult = action === "accept" ? await acceptConnectionRequestRest(authUser, requestKey) : await rejectConnectionRequestRest(authUser, requestKey);
+        }
+      } else {
+        actionResult = action === "accept" ? await acceptConnectionRequestRest(authUser, requestKey) : await rejectConnectionRequestRest(authUser, requestKey);
+      }
+      if (actionResult.status === 404) {
+        await updateConnectionRequestNotificationsState({
+          requestId: requestKey,
+          requesterId: meta.requesterUserId || meta.requesterId || null,
+          receiverId: authUser.id,
+          status: "cancelled"
+        }).catch(() => {
+        });
+        sendJson6(res, 409, {
+          success: false,
+          code: "REQUEST_NO_LONGER_PENDING",
+          message: "This connection request is no longer pending."
+        });
+        return true;
+      }
+      if (actionResult.status >= 400) {
+        sendJson6(res, actionResult.status, actionResult.body);
+        return true;
+      }
+      const resolvedStatus = action === "accept" ? "accepted" : "rejected";
+      await updateConnectionRequestNotificationsState({
+        requestId: requestKey,
+        requesterId: meta.requesterUserId || meta.requesterId || null,
+        receiverId: authUser.id,
+        status: resolvedStatus
+      }).catch(() => {
+      });
+      sendJson6(res, 200, {
+        ...actionResult.body,
+        action,
+        requestStatus: resolvedStatus,
+        notificationId: notifId
       });
       return true;
     }

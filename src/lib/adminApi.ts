@@ -450,8 +450,67 @@ export const adminClient = {
     });
   },
 
-  async getAdminNotifications() {
-    return adminRequest('/api/admin/system/notifications', { method: 'GET' });
+  async getAdminNotifications(params?: {
+    category?: string;
+    priority?: string;
+    unreadOnly?: boolean;
+    q?: string;
+    limit?: number;
+  }) {
+    const qs = new URLSearchParams();
+    if (params?.category && params.category !== 'all') qs.append('category', params.category);
+    if (params?.priority && params.priority !== 'all') qs.append('priority', params.priority);
+    if (params?.unreadOnly) qs.append('unreadOnly', 'true');
+    if (params?.q) qs.append('q', params.q);
+    if (params?.limit) qs.append('limit', String(params.limit));
+    const queryStr = qs.toString();
+    const res = await adminRequest(`/api/admin/system/notifications${queryStr ? `?${queryStr}` : ''}`, {
+      method: 'GET',
+    });
+    const all: any[] = Array.isArray(res?.notifications) ? res.notifications : [];
+    let filtered = all;
+    if (params?.category && params.category !== 'all') {
+      filtered = filtered.filter((n) => (n.category || '').toLowerCase() === params.category?.toLowerCase());
+    }
+    if (params?.priority && params.priority !== 'all') {
+      filtered = filtered.filter((n) => (n.priority || 'normal').toLowerCase() === params.priority?.toLowerCase());
+    }
+    if (params?.unreadOnly) {
+      filtered = filtered.filter((n) => !n.is_read);
+    }
+    if (params?.q) {
+      const ql = params.q.toLowerCase();
+      filtered = filtered.filter((n) =>
+        `${n.title || ''} ${n.message || ''} ${n.user_email || ''} ${n.user_name || ''} ${n.event_type || ''}`
+          .toLowerCase()
+          .includes(ql)
+      );
+    }
+    const countsByCategory: Record<string, number> = res?.countsByCategory || {};
+    if (!res?.countsByCategory) {
+      for (const n of all) {
+        if (!n.is_read) {
+          const cat = n.category || 'general';
+          countsByCategory[cat] = (countsByCategory[cat] || 0) + 1;
+        }
+      }
+    }
+    return {
+      ...res,
+      notifications: filtered,
+      unreadCount: res?.unreadCount ?? all.filter((n) => !n.is_read).length,
+      countsByCategory,
+    };
+  },
+
+  async getPushSubscriptions() {
+    return adminRequest('/api/notifications/push/subscriptions', { method: 'GET' });
+  },
+
+  async deletePushSubscription(id: string) {
+    return adminRequest(`/api/notifications/push/subscriptions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
   },
 
   async markAdminNotificationRead(id: string) {

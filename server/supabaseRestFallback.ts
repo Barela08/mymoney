@@ -388,22 +388,68 @@ export async function updateFeedbackFallback(
 // 3. USERS & NOTIFICATIONS / BROADCAST CAMPAIGNS FALLBACK STORE
 // ============================================================================
 
-export async function listAllAppUsersFallback(): Promise<Array<{ id: string; email?: string; full_name?: string; role?: string }>> {
-  const usersMap = new Map<string, { id: string; email?: string; full_name?: string; role?: string }>();
+function readLocalUsersStore(): Record<string, any> {
+  return readJsonStore<Record<string, any>>('app-users-local.json', {});
+}
 
-  const appUsersRes = await sbRestRequest<any[]>('app_users?select=id,email,full_name,role&limit=1000');
+export function upsertAppUserLocalFallback(user: Record<string, any>): Record<string, any> {
+  if (!user?.id) return user;
+  const store = readLocalUsersStore();
+  const prev = store[String(user.id)] || {};
+  const merged = { ...prev, ...user };
+  store[String(user.id)] = merged;
+  writeJsonStore('app-users-local.json', store);
+  return merged;
+}
+
+export async function findAppUserFallbackByEmail(email: string): Promise<any | null> {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean) return null;
+  const local = Object.values(readLocalUsersStore()).find(
+    (u: any) => String(u?.email || '').trim().toLowerCase() === clean
+  );
+  if (local) return local;
+  const sbRes = await sbRestRequest<any[]>(`app_users?email=ilike.${encodeURIComponent(clean)}&select=*&limit=1`);
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) return sbRes.data[0];
+  return null;
+}
+
+export async function findAppUserFallbackById(userId: string): Promise<any | null> {
+  const clean = String(userId || '').trim();
+  if (!clean) return null;
+  const local = readLocalUsersStore()[clean];
+  if (local) return local;
+  const sbRes = await sbRestRequest<any[]>(`app_users?id=eq.${encodeURIComponent(clean)}&select=*&limit=1`);
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) return sbRes.data[0];
+  return null;
+}
+
+export async function listAllAppUsersFallback(): Promise<Array<Record<string, any>>> {
+  const usersMap = new Map<string, Record<string, any>>();
+
+  const appUsersRes = await sbRestRequest<any[]>(
+    'app_users?select=id,email,full_name,phone,role,role_slug,status,custom_permissions,avatar_url,created_at,last_login_at&limit=1000'
+  );
   if (appUsersRes.ok && Array.isArray(appUsersRes.data)) {
     for (const u of appUsersRes.data) {
       if (u?.id) usersMap.set(String(u.id), u);
     }
   }
 
-  const profilesRes = await sbRestRequest<any[]>('profiles?select=id,email,full_name&limit=1000');
+  const profilesRes = await sbRestRequest<any[]>('profiles?select=id,email,full_name,role,avatar_url&limit=1000');
   if (profilesRes.ok && Array.isArray(profilesRes.data)) {
     for (const p of profilesRes.data) {
       if (p?.id && !usersMap.has(String(p.id))) {
         usersMap.set(String(p.id), p);
       }
+    }
+  }
+
+  const localUsers = readLocalUsersStore();
+  for (const [id, u] of Object.entries(localUsers)) {
+    if (u && typeof u === 'object') {
+      const prev = usersMap.get(id) || {};
+      usersMap.set(id, { ...prev, ...u });
     }
   }
 
@@ -869,6 +915,115 @@ export async function deleteUserNotificationFallback(userId: string, notifId: st
   if (target) {
     target.is_deleted = true;
     target.deleted_at = now;
+    writeNotifStore(store);
+  }
+}
+
+export async function getUserNotificationByIdFallback(userId: string, notifId: string): Promise<any | null> {
+  if (!userId || !notifId) return null;
+  const sbRes = await sbRestRequest<any[]>(
+    `user_notifications?id=eq.${encodeURIComponent(notifId)}&user_id=eq.${encodeURIComponent(userId)}&is_deleted=eq.false&select=*&limit=1`
+  );
+  if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
+    return sbRes.data[0];
+  }
+  const store = readNotifStore();
+  return (
+    store.userNotifications.find(
+      (n) => n && n.id === notifId && n.user_id === userId && !n.is_deleted
+    ) || null
+  );
+}
+
+export async function updateConnectionRequestNotificationsFallback(params: {
+  requestId?: string | null;
+  requesterId?: string | null;
+  receiverId?: string | null;
+  status: 'accepted' | 'rejected' | 'cancelled';
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const requestId = params.requestId ? String(params.requestId) : null;
+  const requesterId = params.requesterId ? String(params.requesterId) : null;
+  const receiverId = params.receiverId ? String(params.receiverId) : null;
+
+  const targetUserIds = Array.from(new Set([receiverId, requesterId].filter(Boolean) as string[]));
+
+  for (const uid of targetUserIds) {
+    const sbRes = await sbRestRequest<any[]>(
+      `user_notifications?user_id=eq.${encodeURIComponent(uid)}&is_deleted=eq.false&select=*&order=created_at.desc&limit=50`
+    );
+    if (sbRes.ok && Array.isArray(sbRes.data)) {
+      for (const row of sbRes.data) {
+        const meta = (row?.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, any>;
+        const isConnReq =
+          meta.actionType === 'udhar_connection_request' ||
+          row?.related_entity_type === 'user_connection';
+        if (!isConnReq) continue;
+        const matchesReqId = Boolean(
+          requestId &&
+            (row.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
+        );
+        const matchesPair = Boolean(
+          requesterId &&
+            receiverId &&
+            meta.actionType === 'udhar_connection_request' &&
+            ((meta.requesterId === requesterId && (meta.receiverId === receiverId || row.user_id === receiverId)) ||
+              (row.related_entity_id === requesterId && row.user_id === receiverId))
+        );
+        if (!matchesReqId && !matchesPair) continue;
+        if (meta.requestStatus && meta.requestStatus !== 'pending') continue;
+
+        const nextMeta = {
+          ...meta,
+          requestStatus: params.status,
+          resolvedAt: now,
+        };
+        await sbRestRequest(`user_notifications?id=eq.${encodeURIComponent(String(row.id))}`, {
+          method: 'PATCH',
+          body: {
+            metadata: nextMeta,
+            is_read: true,
+            read_at: row.read_at || now,
+          },
+        });
+      }
+    }
+  }
+
+  const store = readNotifStore();
+  let changed = false;
+  for (const n of store.userNotifications) {
+    if (!n || n.is_deleted) continue;
+    const meta = (n.metadata && typeof n.metadata === 'object' ? n.metadata : {}) as Record<string, any>;
+    const isConnReq =
+      meta.actionType === 'udhar_connection_request' ||
+      n.related_entity_type === 'user_connection';
+    if (!isConnReq) continue;
+    const matchesReqId = Boolean(
+      requestId &&
+        (n.related_entity_id === requestId || meta.connectionId === requestId || meta.requestId === requestId)
+    );
+    const matchesPair = Boolean(
+      requesterId &&
+        receiverId &&
+        meta.actionType === 'udhar_connection_request' &&
+        ((meta.requesterId === requesterId && (meta.receiverId === receiverId || n.user_id === receiverId)) ||
+          (n.related_entity_id === requesterId && n.user_id === receiverId))
+    );
+    if (!matchesReqId && !matchesPair) continue;
+    if (meta.requestStatus && meta.requestStatus !== 'pending') continue;
+
+    n.metadata = {
+      ...meta,
+      requestStatus: params.status,
+      resolvedAt: now,
+    };
+    n.is_read = true;
+    n.read_at = n.read_at || now;
+    changed = true;
+  }
+
+  if (changed) {
     writeNotifStore(store);
   }
 }
@@ -1785,13 +1940,14 @@ export async function listAdminRolesFallback(): Promise<any[]> {
 
 export async function updateAdminRoleFallback(
   id: string,
-  updates: { permissions?: string[]; description?: string }
+  updates: { permissions?: string[]; description?: string; name?: string }
 ): Promise<any | null> {
   const all = await listAdminRolesFallback();
   const existing = all.find((r) => r.id === id || r.slug === id);
   if (!existing) return null;
   const updated = {
     ...existing,
+    name: updates.name ?? existing.name,
     permissions: updates.permissions ?? existing.permissions,
     description: updates.description ?? existing.description,
     updated_at: new Date().toISOString(),
@@ -1800,6 +1956,41 @@ export async function updateAdminRoleFallback(
   stored.roles = [updated, ...stored.roles.filter((r) => r.id !== existing.id)];
   writeJsonStore('admin-roles.json', stored);
   return updated;
+}
+
+export async function createAdminRoleFallback(input: {
+  name: string;
+  slug: string;
+  description?: string;
+  permissions: string[];
+}): Promise<any> {
+  const now = new Date().toISOString();
+  const role = {
+    id: `role_${input.slug}_${Date.now().toString(36)}`,
+    name: input.name,
+    slug: input.slug,
+    description: input.description || '',
+    permissions: input.permissions,
+    is_system: false,
+    created_at: now,
+    updated_at: now,
+  };
+  const stored = readJsonStore<{ roles: any[] }>('admin-roles.json', { roles: [] });
+  stored.roles = [role, ...stored.roles.filter((r) => r.slug !== input.slug)];
+  writeJsonStore('admin-roles.json', stored);
+  await sbRestRequest('admin_roles', { method: 'POST', body: role }).catch(() => {});
+  return role;
+}
+
+export async function deleteAdminRoleFallback(idOrSlug: string): Promise<boolean> {
+  const stored = readJsonStore<{ roles: any[] }>('admin-roles.json', { roles: [] });
+  const before = stored.roles.length;
+  stored.roles = stored.roles.filter((r) => r.id !== idOrSlug && r.slug !== idOrSlug);
+  if (stored.roles.length !== before) {
+    writeJsonStore('admin-roles.json', stored);
+  }
+  await sbRestRequest(`admin_roles?id=eq.${encodeURIComponent(idOrSlug)}`, { method: 'DELETE' }).catch(() => {});
+  return true;
 }
 
 export async function listSecurityIncidentsFallback(status?: string, severity?: string): Promise<any[]> {

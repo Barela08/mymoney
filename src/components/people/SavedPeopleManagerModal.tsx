@@ -274,7 +274,10 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
         source: liveQuery.includes('@') ? 'manual' : 'search',
       });
       if (res.status === 'connected') {
-        toast.success('Connected', res.message || 'You are now connected with this person.');
+        toast.success(
+          res.alreadyConnected ? 'Already Connected' : 'Connected',
+          res.message || 'You are now connected with this person.'
+        );
         setLiveResults((prev) =>
           prev.map((u) =>
             u.id === user.id ? { ...u, connectionStatus: 'connected', isAlreadyConnected: true } : u
@@ -284,15 +287,58 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
         onContactsUpdated?.();
         onRequestsUpdated?.();
       } else {
-        toast.success('Request Sent', res.message || 'They must approve the request before any details are shared.');
+        toast.success('Request Sent', res.message || 'They must accept the request before both accounts are connected.');
         setPendingIds((prev) => ({ ...prev, [user.id]: true }));
         setLiveResults((prev) =>
-          prev.map((u) => (u.id === user.id ? { ...u, connectionStatus: 'pending' } : u))
+          prev.map((u) =>
+            u.id === user.id
+              ? { ...u, connectionStatus: 'pending', requestId: res.requestId || u.requestId || null }
+              : u
+          )
         );
         onRequestsUpdated?.();
       }
     } catch (err: any) {
       toast.error('Request Failed', err?.message || 'Could not send the connection request.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
+
+  const handleRejectIncoming = async (user: SearchUserResult) => {
+    if (!user.requestId || requestingId) return;
+    try {
+      setRequestingId(user.id);
+      const res = await udharDeletionApi.respondToConnectionRequest(user.requestId, 'reject');
+      toast.info('Request Rejected', res.message || `Declined request from ${user.displayName}.`);
+      setLiveResults((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, connectionStatus: 'none', requestId: null } : u))
+      );
+      onRequestsUpdated?.();
+    } catch (err: any) {
+      toast.error('Reject Failed', err?.message || 'Could not reject this request.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
+
+  const handleCancelOutgoing = async (user: SearchUserResult) => {
+    if (!user.requestId || requestingId) return;
+    try {
+      setRequestingId(user.id);
+      const res = await udharDeletionApi.cancelConnectionRequest(user.requestId);
+      toast.info('Request Cancelled', res.message || `Cancelled connection request to ${user.displayName}.`);
+      setPendingIds((prev) => {
+        const next = { ...prev };
+        delete next[user.id];
+        return next;
+      });
+      setLiveResults((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, connectionStatus: 'none', requestId: null } : u))
+      );
+      onRequestsUpdated?.();
+    } catch (err: any) {
+      toast.error('Cancel Failed', err?.message || 'Could not cancel this request.');
     } finally {
       setRequestingId(null);
     }
@@ -412,13 +458,19 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
           linked_user_id: selectedRegisteredUser?.id,
         });
         if (res.success) {
-          if (res.reciprocallyLinked || selectedRegisteredUser) {
+          if (res.status === 'pending') {
+            toast.success(
+              'Request Sent',
+              res.message || `Connection request sent to ${trimmedName}. Added once they accept.`
+            );
+            onRequestsUpdated?.();
+          } else if (res.reciprocallyLinked) {
             toast.success(
               'Contact Added & 2-Way Synced!',
-              `${trimmedName} saved. You are also automatically added to their Saved People!`
+              `${trimmedName} saved. You are also in each other's Saved People!`
             );
           } else {
-            toast.success('Contact Added', `${trimmedName} added to your saved people.`);
+            toast.success('Contact Added', res.message || `${trimmedName} added to your saved people.`);
           }
         }
       }
@@ -444,7 +496,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
       setIsDeletingContact(true);
       const res = await udharDeletionApi.deleteContact(id);
       if (res.success) {
-        toast.info('Removed', `${name} removed from saved contacts.`);
+        toast.info('Connection Removed', `${name} removed from both Saved People lists.`);
         setPendingDeleteContact(null);
         await fetchContacts();
         if (onContactsUpdated) onContactsUpdated();
@@ -463,10 +515,18 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
       setIsLinking(true);
       const res = await udharDeletionApi.linkContactToRegistered(linkingContact.id, targetUserId);
       if (res.success) {
-        toast.success(
-          'Linked Successfully!',
-          `${linkingContact.name} is now connected with registered user ${targetName}.`
-        );
+        if (res.pendingApproval || res.status === 'pending') {
+          toast.success(
+            'Request Sent',
+            res.message || `Connection request sent to ${targetName}.`
+          );
+          onRequestsUpdated?.();
+        } else {
+          toast.success(
+            'Linked Successfully!',
+            res.message || `${linkingContact.name} is now connected with registered user ${targetName}.`
+          );
+        }
         setLinkingContact(null);
         await fetchContacts();
         if (onContactsUpdated) onContactsUpdated();
@@ -608,10 +668,10 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
               <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 space-y-2">
                 <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
                   <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>Search Registered User (Instant 2-Way Sync)</span>
+                  <span>Search Registered User (Connection Request)</span>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  User ko search karke add karein, vo aapke saved people me add ho jayenge aur aap unke saved people me turant jud jayenge!
+                  Searching a registered user sends them a connection request. Both Saved People lists connect after they accept.
                 </p>
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
@@ -652,7 +712,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                           </div>
                         </div>
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
-                          + Select & Sync
+                          Send Request
                         </span>
                       </div>
                     ))}
@@ -663,7 +723,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                   <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-100/70 dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-200 text-xs font-semibold">
                     <div className="flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Selected: <strong>{selectedRegisteredUser.displayName}</strong> (2-Way Synced)</span>
+                      <span>Selected: <strong>{selectedRegisteredUser.displayName}</strong> (Sends connection request)</span>
                     </div>
                     <button
                       type="button"
@@ -871,26 +931,48 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                           <span className="text-[10px] font-bold text-slate-400 px-2 py-1">You</span>
                         ) : isConnected ? (
                           <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-2 py-1 rounded-lg">
-                            Connected
+                            Already Connected
                           </span>
                         ) : isIncomingPending ? (
-                          <button
-                            type="button"
-                            disabled={requestingId === u.id}
-                            onClick={() => void handleSendRequest(u)}
-                            className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer shrink-0 flex items-center gap-1"
-                          >
-                            {requestingId === u.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="w-3 h-3" />
-                            )}
-                            <span>Accept</span>
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              disabled={requestingId === u.id}
+                              onClick={() => void handleRejectIncoming(u)}
+                              className="px-2 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-[10px] font-bold cursor-pointer"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              disabled={requestingId === u.id}
+                              onClick={() => void handleSendRequest(u)}
+                              className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-[10px] font-bold cursor-pointer shrink-0 flex items-center gap-1"
+                            >
+                              {requestingId === u.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-3 h-3" />
+                              )}
+                              <span>Accept</span>
+                            </button>
+                          </div>
                         ) : isPending ? (
-                          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-1 rounded-lg">
-                            Request Sent
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-1 rounded-lg">
+                              Request Sent
+                            </span>
+                            {u.requestId && (
+                              <button
+                                type="button"
+                                disabled={requestingId === u.id}
+                                onClick={() => void handleCancelOutgoing(u)}
+                                className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[10px] font-bold cursor-pointer disabled:opacity-50"
+                              >
+                                Cancel Request
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <button
                             type="button"
@@ -903,7 +985,7 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
                             ) : (
                               <UserPlus className="w-3 h-3" />
                             )}
-                            <span>Connect</span>
+                            <span>Send Request</span>
                           </button>
                         )}
                       </div>
@@ -1067,10 +1149,11 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
       <ConfirmModal
         isOpen={!!pendingDeleteContact}
-        title="Remove Saved Contact?"
-        subtitle="Previous Udhar transactions remain intact."
-        message={`Are you sure you want to remove "${pendingDeleteContact?.name || 'this contact'}" from your saved contacts? Previous transactions with this person will remain intact.`}
-        confirmLabel="Remove Contact"
+        title="Remove Connection?"
+        subtitle="Existing Udhaar transactions and balances remain completely intact."
+        message="Are you sure you want to remove this person from your saved connections?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
         isDestructive={true}
         isLoading={isDeletingContact}
         onConfirm={confirmDeleteContact}

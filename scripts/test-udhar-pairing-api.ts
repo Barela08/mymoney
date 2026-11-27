@@ -49,9 +49,13 @@ async function main() {
     ['GET', '/api/udhar/connections/requests', undefined],
     ['POST', '/api/udhar/connections/request', { targetUserId: 'x', consentConfirmed: true }],
     ['POST', '/api/udhar/connections/00000000-0000-0000-0000-000000000000/accept', undefined],
+    ['POST', '/api/udhar/connections/00000000-0000-0000-0000-000000000000/reject', undefined],
+    ['POST', '/api/udhar/connections/00000000-0000-0000-0000-000000000000/cancel', undefined],
+    ['DELETE', '/api/udhar/connections/00000000-0000-0000-0000-000000000000', undefined],
     ['POST', '/api/udhar/qr/resolve', { pairingCode: 'MM-BOFE65' }],
-    ['POST', '/api/udhar/qr/connect', { pairingCode: 'MM-BOFE65' }],
+    ['POST', '/api/udhar/qr/connect', { pairingCode: 'MM-BOFE65', connectionMethod: 'QR_CODE' }],
     ['POST', '/api/udhar/connections/disconnect', { targetUserId: 'x' }],
+    ['POST', '/api/notifications/00000000-0000-0000-0000-000000000000/connection-action', { action: 'accept' }],
   ];
 
   let failed = 0;
