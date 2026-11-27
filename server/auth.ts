@@ -133,7 +133,8 @@ export function isDiscoverableNormalUser(user: {
 }): boolean {
   if (!user) return false;
   if (user.status && String(user.status).toLowerCase().trim() !== 'active') return false;
-  if (user.deletion_status && String(user.deletion_status).toLowerCase().trim() !== 'none') return false;
+  const delStatus = String(user.deletion_status || 'none').toLowerCase().trim();
+  if (delStatus && delStatus !== 'none' && delStatus !== 'active') return false;
   if (isMasterAdminAccountEmail(user.email)) return false;
   const normalizedRole = String(user.role || 'user').toLowerCase().trim();
   const normalizedSlug = String(user.role_slug || '').toLowerCase().trim();

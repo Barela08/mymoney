@@ -741,28 +741,53 @@ export const SavedPeopleManagerModal: React.FC<SavedPeopleManagerModalProps> = (
 
                 {addModeSearchResults.length > 0 && (
                   <div className="space-y-1.5 max-h-36 overflow-y-auto bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md">
-                    {addModeSearchResults.map((usr) => (
-                      <div
-                        key={usr.id}
-                        onClick={() => handleSelectRegisteredUserInAdd(usr)}
-                        className="p-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between text-xs transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center">
-                            {usr.displayName.charAt(0).toUpperCase()}
+                    {addModeSearchResults.map((usr) => {
+                      const isConnected = usr.connectionStatus === 'connected' || usr.isAlreadyConnected;
+                      const isPending = usr.connectionStatus === 'pending';
+                      const isIncoming = usr.connectionStatus === 'incoming_pending';
+                      return (
+                        <div
+                          key={usr.id}
+                          onClick={() => {
+                            if (isConnected) {
+                              toast.info('Already Connected', `${usr.displayName} is already in your Saved People.`);
+                              return;
+                            }
+                            handleSelectRegisteredUserInAdd(usr);
+                          }}
+                          className="p-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-slate-700/60 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center">
+                              {usr.displayName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800 dark:text-slate-200">{usr.displayName}</p>
+                              <p className="text-[10px] text-slate-400">
+                                {usr.emailMasked || usr.phoneMasked || 'Registered My Money Manager account'}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-bold text-slate-800 dark:text-slate-200">{usr.displayName}</p>
-                            <p className="text-[10px] text-slate-400">
-                              {usr.emailMasked || usr.phoneMasked || 'Registered My Money Manager account'}
-                            </p>
-                          </div>
+                          {isConnected ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                              Already Connected
+                            </span>
+                          ) : isPending ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">
+                              Request Sent
+                            </span>
+                          ) : isIncoming ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-100 text-indigo-800">
+                              Incoming Request
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                              Send Request
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
-                          Send Request
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

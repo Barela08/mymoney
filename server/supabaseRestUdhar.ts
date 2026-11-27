@@ -614,6 +614,52 @@ export async function searchUsersRest(authUser: AuthenticatedUser, rawQuery: str
 
   let activeUsers = (usersRes.data || []).filter((u) => isDiscoverableNormalUser(u));
 
+  // Also check Supabase Auth display names (user_metadata.full_name/name) when searching by name
+  if (classified.mode === 'name_or_username') {
+    const { url, key } = getRestConfig();
+    const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if (serviceKey && key === serviceKey) {
+      try {
+        const authListRes = await fetch(`${url}/auth/v1/admin/users?page=1&per_page=200`, {
+          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+        });
+        if (authListRes.ok) {
+          const authJson: any = await authListRes.json().catch(() => null);
+          const authUsers: any[] = Array.isArray(authJson?.users) ? authJson.users : [];
+          const needle = classified.normalized.toLowerCase();
+          const matchedAuthUsers = authUsers.filter((au) => {
+            const metaName = String(
+              au.user_metadata?.full_name || au.user_metadata?.name || au.user_metadata?.display_name || ''
+            )
+              .trim()
+              .toLowerCase();
+            return metaName.includes(needle);
+          });
+          const existingIds = new Set(activeUsers.map((u) => u.id));
+          const missingIds = matchedAuthUsers.map((au) => au.id).filter((id) => id && !existingIds.has(id));
+          if (missingIds.length > 0) {
+            const fetchedMap = await fetchUsersByIds(missingIds);
+            for (const au of matchedAuthUsers) {
+              const appRow = fetchedMap.get(au.id);
+              if (appRow && isDiscoverableNormalUser(appRow) && !existingIds.has(appRow.id)) {
+                const authDisplay = String(
+                  au.user_metadata?.full_name || au.user_metadata?.name || au.user_metadata?.display_name || ''
+                ).trim();
+                activeUsers.push({
+                  ...appRow,
+                  full_name: authDisplay || appRow.full_name,
+                });
+                existingIds.add(appRow.id);
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-fatal fallback
+      }
+    }
+  }
+
   // Strict post-filter for exact email / exact normalized phone match
   if (classified.mode === 'email_exact') {
     activeUsers = activeUsers.filter(
@@ -2055,6 +2101,42 @@ export async function saveContactRest(authUser: AuthenticatedUser, body: any) {
         reciprocallyLinked: true,
       },
     };
+  }
+
+  // If user entered an exact email or 10-digit phone manually without picking from search,
+  // check if a registered user matches and route through two-sided connection flow.
+  if (!requestedLinkedUserId && (email || phone.replace(/\D/g, '').length >= 10)) {
+    let matchedUser: any = null;
+    if (email) {
+      const emailRes = await sbRest<any[]>(
+        `app_users?status=eq.active&email=ilike.${encodeURIComponent(email)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
+      );
+      if (emailRes.ok && emailRes.data?.[0] && isDiscoverableNormalUser(emailRes.data[0])) {
+        matchedUser = emailRes.data[0];
+      }
+    }
+    if (!matchedUser) {
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length >= 10) {
+        const tail = digits.slice(-10);
+        const phoneRes = await sbRest<any[]>(
+          `app_users?status=eq.active&phone=ilike.*${encodeURIComponent(tail)}*&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=5`
+        );
+        if (phoneRes.ok && Array.isArray(phoneRes.data)) {
+          matchedUser = phoneRes.data.find((u) => {
+            const uDigits = String(u.phone || '').replace(/\D/g, '');
+            return uDigits.length >= 10 && uDigits.slice(-10) === tail && isDiscoverableNormalUser(u);
+          });
+        }
+      }
+    }
+    if (matchedUser && matchedUser.id !== authUser.id) {
+      return connectUserRest(authUser, {
+        targetUserId: matchedUser.id,
+        relationshipType,
+        requestedVia: 'manual',
+      });
+    }
   }
 
   const nowIso = new Date().toISOString();

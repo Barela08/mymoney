@@ -36724,7 +36724,8 @@ function isMasterAdminAccountEmail(email) {
 function isDiscoverableNormalUser(user) {
   if (!user) return false;
   if (user.status && String(user.status).toLowerCase().trim() !== "active") return false;
-  if (user.deletion_status && String(user.deletion_status).toLowerCase().trim() !== "none") return false;
+  const delStatus = String(user.deletion_status || "none").toLowerCase().trim();
+  if (delStatus && delStatus !== "none" && delStatus !== "active") return false;
   if (isMasterAdminAccountEmail(user.email)) return false;
   const normalizedRole = String(user.role || "user").toLowerCase().trim();
   const normalizedSlug = String(user.role_slug || "").toLowerCase().trim();
@@ -95381,6 +95382,47 @@ async function searchUsersRest(authUser, rawQuery) {
     };
   }
   let activeUsers = (usersRes.data || []).filter((u) => isDiscoverableNormalUser(u));
+  if (classified.mode === "name_or_username") {
+    const { url, key } = getRestConfig();
+    const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (serviceKey && key === serviceKey) {
+      try {
+        const authListRes = await fetch(`${url}/auth/v1/admin/users?page=1&per_page=200`, {
+          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+        });
+        if (authListRes.ok) {
+          const authJson = await authListRes.json().catch(() => null);
+          const authUsers = Array.isArray(authJson?.users) ? authJson.users : [];
+          const needle = classified.normalized.toLowerCase();
+          const matchedAuthUsers = authUsers.filter((au) => {
+            const metaName = String(
+              au.user_metadata?.full_name || au.user_metadata?.name || au.user_metadata?.display_name || ""
+            ).trim().toLowerCase();
+            return metaName.includes(needle);
+          });
+          const existingIds = new Set(activeUsers.map((u) => u.id));
+          const missingIds = matchedAuthUsers.map((au) => au.id).filter((id) => id && !existingIds.has(id));
+          if (missingIds.length > 0) {
+            const fetchedMap = await fetchUsersByIds(missingIds);
+            for (const au of matchedAuthUsers) {
+              const appRow = fetchedMap.get(au.id);
+              if (appRow && isDiscoverableNormalUser(appRow) && !existingIds.has(appRow.id)) {
+                const authDisplay = String(
+                  au.user_metadata?.full_name || au.user_metadata?.name || au.user_metadata?.display_name || ""
+                ).trim();
+                activeUsers.push({
+                  ...appRow,
+                  full_name: authDisplay || appRow.full_name
+                });
+                existingIds.add(appRow.id);
+              }
+            }
+          }
+        }
+      } catch {
+      }
+    }
+  }
   if (classified.mode === "email_exact") {
     activeUsers = activeUsers.filter(
       (u) => (u.email || "").trim().toLowerCase() === classified.normalized
@@ -96622,6 +96664,39 @@ async function saveContactRest(authUser, body) {
         reciprocallyLinked: true
       }
     };
+  }
+  if (!requestedLinkedUserId && (email || phone.replace(/\D/g, "").length >= 10)) {
+    let matchedUser = null;
+    if (email) {
+      const emailRes = await sbRest2(
+        `app_users?status=eq.active&email=ilike.${encodeURIComponent(email)}&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=1`
+      );
+      if (emailRes.ok && emailRes.data?.[0] && isDiscoverableNormalUser(emailRes.data[0])) {
+        matchedUser = emailRes.data[0];
+      }
+    }
+    if (!matchedUser) {
+      const digits = phone.replace(/\D/g, "");
+      if (digits.length >= 10) {
+        const tail = digits.slice(-10);
+        const phoneRes = await sbRest2(
+          `app_users?status=eq.active&phone=ilike.*${encodeURIComponent(tail)}*&select=id,full_name,email,phone,avatar_url,role,status,deletion_status&limit=5`
+        );
+        if (phoneRes.ok && Array.isArray(phoneRes.data)) {
+          matchedUser = phoneRes.data.find((u) => {
+            const uDigits = String(u.phone || "").replace(/\D/g, "");
+            return uDigits.length >= 10 && uDigits.slice(-10) === tail && isDiscoverableNormalUser(u);
+          });
+        }
+      }
+    }
+    if (matchedUser && matchedUser.id !== authUser.id) {
+      return connectUserRest(authUser, {
+        targetUserId: matchedUser.id,
+        relationshipType,
+        requestedVia: "manual"
+      });
+    }
   }
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const payload = {
