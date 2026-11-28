@@ -1381,7 +1381,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto28 = require_utils2();
+    var crypto31 = require_utils2();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -1399,7 +1399,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto28.randomBytes(18).toString("base64");
+      const clientNonce = crypto31.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -1441,20 +1441,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto28.hashByName(hashName, peerCert);
+        const certHash = await crypto31.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto28.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto28.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto28.sha256(clientKey);
-      const clientSignature = await crypto28.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto31.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto31.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto31.sha256(clientKey);
+      const clientSignature = await crypto31.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto28.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto28.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto31.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto31.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -1657,15 +1657,15 @@ var require_pg_connection_string = __commonJS({
       if (config.sslnegotiation === "direct" && config.ssl === void 0) {
         config.ssl = true;
       }
-      const fs15 = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
+      const fs18 = config.sslcert || config.sslkey || config.sslrootcert ? __require("fs") : null;
       if (config.sslcert) {
-        config.ssl.cert = fs15.readFileSync(config.sslcert).toString();
+        config.ssl.cert = fs18.readFileSync(config.sslcert).toString();
       }
       if (config.sslkey) {
-        config.ssl.key = fs15.readFileSync(config.sslkey).toString();
+        config.ssl.key = fs18.readFileSync(config.sslkey).toString();
       }
       if (config.sslrootcert) {
-        config.ssl.ca = fs15.readFileSync(config.sslrootcert).toString();
+        config.ssl.ca = fs18.readFileSync(config.sslrootcert).toString();
       }
       if (options.useLibpqCompat && config.uselibpqcompat) {
         throw new Error("Both useLibpqCompat and uselibpqcompat are set. Please use only one of them.");
@@ -3493,7 +3493,7 @@ var require_split2 = __commonJS({
 var require_helper = __commonJS({
   "node_modules/pgpass/lib/helper.js"(exports, module) {
     "use strict";
-    var path13 = __require("path");
+    var path16 = __require("path");
     var Stream5 = __require("stream").Stream;
     var split = require_split2();
     var util3 = __require("util");
@@ -3532,7 +3532,7 @@ var require_helper = __commonJS({
     };
     module.exports.getFileName = function(rawEnv) {
       var env2 = rawEnv || process.env;
-      var file = env2.PGPASSFILE || (isWin ? path13.join(env2.APPDATA || "./", "postgresql", "pgpass.conf") : path13.join(env2.HOME || "./", ".pgpass"));
+      var file = env2.PGPASSFILE || (isWin ? path16.join(env2.APPDATA || "./", "postgresql", "pgpass.conf") : path16.join(env2.HOME || "./", ".pgpass"));
       return file;
     };
     module.exports.usePgPass = function(stats, fname) {
@@ -3664,16 +3664,16 @@ var require_helper = __commonJS({
 var require_lib = __commonJS({
   "node_modules/pgpass/lib/index.js"(exports, module) {
     "use strict";
-    var path13 = __require("path");
-    var fs15 = __require("fs");
+    var path16 = __require("path");
+    var fs18 = __require("fs");
     var helper = require_helper();
     module.exports = function(connInfo, cb) {
       var file = helper.getFileName();
-      fs15.stat(file, function(err, stat3) {
+      fs18.stat(file, function(err, stat3) {
         if (err || !helper.usePgPass(stat3, file)) {
           return cb(void 0);
         }
-        var st = fs15.createReadStream(file);
+        var st = fs18.createReadStream(file);
         helper.getPassword(connInfo, st, cb);
       });
     };
@@ -3693,7 +3693,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto28 = require_utils2();
+    var crypto31 = require_utils2();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -3948,7 +3948,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto28.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto31.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e2) {
             this.emit("error", e2);
@@ -4404,7 +4404,7 @@ var require_pg_pool = __commonJS({
     function throwOnDoubleRelease() {
       throw new Error("Release called on client which has already been released to the pool.");
     }
-    function promisify2(Promise2, callback) {
+    function promisify3(Promise2, callback) {
       if (callback) {
         return { callback, result: void 0 };
       }
@@ -4542,7 +4542,7 @@ var require_pg_pool = __commonJS({
           const err = new Error("Cannot use a pool after calling end on the pool");
           return cb ? cb(err) : this.Promise.reject(err);
         }
-        const response = promisify2(this.Promise, cb);
+        const response = promisify3(this.Promise, cb);
         const result = response.result;
         if (this._isFull() || this._idle.length) {
           if (this._idle.length) {
@@ -4727,7 +4727,7 @@ var require_pg_pool = __commonJS({
       }
       query(text, values, cb) {
         if (typeof text === "function") {
-          const response2 = promisify2(this.Promise, text);
+          const response2 = promisify3(this.Promise, text);
           setImmediate(function() {
             return response2.callback(new Error("Passing a function as the first parameter to pool.query is not supported"));
           });
@@ -4737,7 +4737,7 @@ var require_pg_pool = __commonJS({
           cb = values;
           values = void 0;
         }
-        const response = promisify2(this.Promise, cb);
+        const response = promisify3(this.Promise, cb);
         cb = response.callback;
         this.connect((err, client) => {
           if (err) {
@@ -4782,7 +4782,7 @@ var require_pg_pool = __commonJS({
           return cb ? cb(err) : this.Promise.reject(err);
         }
         this.ending = true;
-        const promised = promisify2(this.Promise, cb);
+        const promised = promisify3(this.Promise, cb);
         this._endCallback = promised.callback;
         this._pulseQueue();
         return promised.result;
@@ -5379,6 +5379,120 @@ var init_esm = __esm({
   }
 });
 
+// server/telemetry.ts
+function recordHttpRequestMetric(durationMs, statusCode) {
+  const now = Date.now();
+  state.totalRequests += 1;
+  state.requestTimestamps.push(now);
+  if (state.requestTimestamps.length > 1e4) {
+    state.requestTimestamps.splice(0, state.requestTimestamps.length - 5e3);
+  }
+  state.latenciesMs.push(Math.max(0, Math.round(durationMs)));
+  if (state.latenciesMs.length > 2e3) {
+    state.latenciesMs.shift();
+  }
+  if (statusCode >= 500) state.status5xx += 1;
+  else if (statusCode >= 400) state.status4xx += 1;
+  else if (statusCode >= 200) state.status2xx += 1;
+}
+function recordSlowQueryMetric(label, durationMs) {
+  if (durationMs < 150) return;
+  state.slowQueries.unshift({
+    label: String(label).slice(0, 120),
+    durationMs: Math.round(durationMs),
+    at: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  if (state.slowQueries.length > 30) {
+    state.slowQueries.length = 30;
+  }
+}
+function recordRateLimitEvent() {
+  state.rateLimitedCount += 1;
+}
+function recordUploadMetric(outcome) {
+  if (outcome === "success") state.uploadSuccessCount += 1;
+  else if (outcome === "rejected") state.uploadRejectedCount += 1;
+  else {
+    state.uploadRejectedCount += 1;
+    state.quarantineBlockedCount += 1;
+  }
+}
+function updateActiveUploadsDelta(delta) {
+  state.activeUploadCount = Math.max(0, state.activeUploadCount + delta);
+  if (state.activeUploadCount > state.peakUploadConcurrency) {
+    state.peakUploadConcurrency = state.activeUploadCount;
+  }
+}
+function percentile(sorted, p) {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p / 100 * sorted.length) - 1));
+  return sorted[idx];
+}
+function getTelemetrySnapshot() {
+  const now = Date.now();
+  const cutoff60s = now - 6e4;
+  while (state.requestTimestamps.length > 0 && state.requestTimestamps[0] < cutoff60s) {
+    state.requestTimestamps.shift();
+  }
+  const requestsLast60s = state.requestTimestamps.length;
+  const currentRps = Number((requestsLast60s / 60).toFixed(2));
+  const sortedLat = [...state.latenciesMs].sort((a, b) => a - b);
+  const errorCount = state.status4xx + state.status5xx;
+  const errorRatePct = state.totalRequests > 0 ? Number((errorCount / state.totalRequests * 100).toFixed(2)) : 0;
+  const serverErrorRatePct = state.totalRequests > 0 ? Number((state.status5xx / state.totalRequests * 100).toFixed(2)) : 0;
+  return {
+    totalRequests: state.totalRequests,
+    requestsLast60s,
+    currentRps,
+    statusCounts: {
+      ok2xx: state.status2xx,
+      client4xx: state.status4xx,
+      server5xx: state.status5xx
+    },
+    errorRatePct,
+    serverErrorRatePct,
+    latencyMs: {
+      p50: percentile(sortedLat, 50),
+      p95: percentile(sortedLat, 95),
+      p99: percentile(sortedLat, 99),
+      sampleCount: sortedLat.length
+    },
+    slowQueries: state.slowQueries.slice(0, 10),
+    rateLimitedCount: state.rateLimitedCount,
+    uploads: {
+      success: state.uploadSuccessCount,
+      rejected: state.uploadRejectedCount,
+      quarantineBlocked: state.quarantineBlockedCount,
+      active: state.activeUploadCount,
+      peakConcurrency: state.peakUploadConcurrency
+    }
+  };
+}
+var g, state;
+var init_telemetry = __esm({
+  "server/telemetry.ts"() {
+    g = globalThis;
+    if (!g.__mmTelemetryState) {
+      g.__mmTelemetryState = {
+        latenciesMs: [],
+        requestTimestamps: [],
+        slowQueries: [],
+        totalRequests: 0,
+        status2xx: 0,
+        status4xx: 0,
+        status5xx: 0,
+        rateLimitedCount: 0,
+        uploadSuccessCount: 0,
+        uploadRejectedCount: 0,
+        quarantineBlockedCount: 0,
+        activeUploadCount: 0,
+        peakUploadConcurrency: 0
+      };
+    }
+    state = g.__mmTelemetryState;
+  }
+});
+
 // server/db.ts
 import fs from "fs";
 import path from "path";
@@ -5417,8 +5531,81 @@ function normalizeDatabaseUrl(raw) {
     return trimmed.replace(/\/postgre(\?|$)/, "/postgres$1");
   }
 }
+function inspectConnectionUrlMetadata(urlStr) {
+  if (!urlStr) return { mode: "unconfigured", port: null, hostKind: "none" };
+  try {
+    const parsed = new URL(urlStr);
+    const port = parsed.port ? parseInt(parsed.port, 10) : 5432;
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes("pooler.supabase.com")) {
+      return {
+        mode: port === 6543 ? "transaction_pooler" : "session_pooler",
+        port,
+        hostKind: "supabase_pooler"
+      };
+    }
+    if (host.endsWith(".supabase.co")) {
+      return { mode: "direct_postgres", port, hostKind: "supabase_direct" };
+    }
+    return { mode: "custom", port, hostKind: "postgres" };
+  } catch {
+    return { mode: "custom", port: null, hostKind: "unknown" };
+  }
+}
 function isDatabaseAvailable() {
-  return isDatabaseConfigured && databaseFatalError === null;
+  if (!isDatabaseConfigured) return false;
+  if (databaseFatalPermanent) return false;
+  if (databaseFatalError !== null) {
+    if (Date.now() >= databaseRetryAfterMs) {
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+function getDbPoolDiagnostics() {
+  const anyPool = pool;
+  return {
+    configured: isDatabaseConfigured,
+    available: isDatabaseAvailable(),
+    connectionMode: connectionMeta.mode,
+    port: connectionMeta.port,
+    hostKind: connectionMeta.hostKind,
+    poolMax: process.env.VERCEL ? 2 : 4,
+    totalCount: typeof anyPool?.totalCount === "number" ? anyPool.totalCount : 0,
+    idleCount: typeof anyPool?.idleCount === "number" ? anyPool.idleCount : 0,
+    waitingCount: typeof anyPool?.waitingCount === "number" ? anyPool.waitingCount : 0,
+    consecutiveErrors: consecutiveDbErrors,
+    lastError: databaseFatalError,
+    lastErrorAt: lastDatabaseErrorAt,
+    lastSuccessAt: lastSuccessfulQueryAt,
+    retryAfterMs: databaseRetryAfterMs > Date.now() ? databaseRetryAfterMs - Date.now() : 0,
+    recommendation: connectionMeta.mode === "direct_postgres" ? "Direct port 5432 detected. Switch DATABASE_URL to Supabase Supavisor Transaction Pooler (port 6543) to avoid Nano 60-connection exhaustion." : !isDatabaseConfigured ? "DATABASE_URL not set in server environment. Using Supabase HTTPS REST / Firebase secondary fallback." : "Transaction pooling active with bounded pool size (max 2\u20134 connections per worker)."
+  };
+}
+async function probeDatabaseRecovery() {
+  if (!isDatabaseConfigured) {
+    return { ok: false, latencyMs: 0, error: "DATABASE_URL not configured" };
+  }
+  if (databaseFatalPermanent) {
+    return { ok: false, latencyMs: 0, error: databaseFatalError || "Fatal DB configuration error" };
+  }
+  const t0 = Date.now();
+  try {
+    await pool.query("SELECT 1");
+    databaseFatalError = null;
+    databaseRetryAfterMs = 0;
+    consecutiveDbErrors = 0;
+    lastSuccessfulQueryAt = (/* @__PURE__ */ new Date()).toISOString();
+    return { ok: true, latencyMs: Date.now() - t0 };
+  } catch (err) {
+    const msg = err?.message || "PostgreSQL probe failed";
+    consecutiveDbErrors += 1;
+    lastDatabaseErrorAt = (/* @__PURE__ */ new Date()).toISOString();
+    databaseFatalError = msg;
+    databaseRetryAfterMs = Date.now() + Math.min(6e4, 5e3 * Math.pow(2, Math.min(consecutiveDbErrors, 4)));
+    return { ok: false, latencyMs: Date.now() - t0, error: msg };
+  }
 }
 async function query(text, params, retries = 2) {
   if (!isDatabaseAvailable()) {
@@ -5428,6 +5615,13 @@ async function query(text, params, retries = 2) {
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
+    databaseFatalError = null;
+    databaseRetryAfterMs = 0;
+    consecutiveDbErrors = 0;
+    lastSuccessfulQueryAt = (/* @__PURE__ */ new Date()).toISOString();
+    if (duration > 500) {
+      recordSlowQueryMetric(duration, text);
+    }
     if (process.env.NODE_ENV === "development" && duration > 2e3) {
       console.warn(`[DB Slow Query] ${duration}ms: ${text.slice(0, 80)}...`);
     }
@@ -5436,32 +5630,34 @@ async function query(text, params, retries = 2) {
     const msg = err.message || "";
     const code = err.code || "";
     if (code === "3D000" || code === "28P01" || code === "28000" || msg.includes("does not exist") && msg.includes("database")) {
-      if (!databaseFatalError) {
-        databaseFatalError = msg;
-        console.warn(`[AI Studio] PostgreSQL unavailable (${msg}) \u2014 switching to mock fallback.`);
-      }
+      databaseFatalError = msg;
+      databaseFatalPermanent = true;
+      lastDatabaseErrorAt = (/* @__PURE__ */ new Date()).toISOString();
+      console.warn(`[DB] PostgreSQL configuration error (${msg}) \u2014 direct PG disabled.`);
       return emptyResult();
     }
-    const isConnErr = msg.includes("Connection terminated") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND") || msg.includes("ENETUNREACH") || msg.includes("EHOSTUNREACH") || msg.includes("EAI_AGAIN") || msg.includes("ECONNREFUSED") || msg.includes("connection timeout") || msg.includes("timeout expired") || msg.includes("timeout") || msg.includes("closed");
+    const isConnErr = msg.includes("Connection terminated") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT") || msg.includes("ENOTFOUND") || msg.includes("ENETUNREACH") || msg.includes("EHOSTUNREACH") || msg.includes("EAI_AGAIN") || msg.includes("ECONNREFUSED") || msg.includes("connection timeout") || msg.includes("timeout expired") || msg.includes("timeout") || msg.includes("too many clients") || msg.includes("remaining connection slots") || msg.includes("closed");
     if (isConnErr && retries > 0) {
       console.warn(`[DB Reconnect] Query failed (${msg}), retrying (${retries} attempts left)...`);
-      await new Promise((r2) => setTimeout(r2, 400));
+      await new Promise((r2) => setTimeout(r2, 300 + Math.floor(Math.random() * 250)));
       return query(text, params, retries - 1);
     }
     if (isConnErr) {
-      if (!databaseFatalError) {
-        databaseFatalError = msg;
-        console.warn(`[AI Studio] PostgreSQL connection unreachable (${msg}) \u2014 falling back to Supabase REST.`);
-      }
+      consecutiveDbErrors += 1;
+      lastDatabaseErrorAt = (/* @__PURE__ */ new Date()).toISOString();
+      databaseFatalError = msg;
+      databaseRetryAfterMs = Date.now() + Math.min(6e4, 1e4 * Math.pow(2, Math.min(consecutiveDbErrors - 1, 3)));
+      console.warn(`[DB Circuit] PostgreSQL unreachable (${msg}) \u2014 half-open retry in ${Math.round((databaseRetryAfterMs - Date.now()) / 1e3)}s.`);
       return emptyResult();
     }
     throw err;
   }
 }
-var normalizedConnectionString, isDatabaseConfigured, databaseFatalError, emptyResult, createMockPool, dnsResolver, customLookup, poolInstance, pool;
+var normalizedConnectionString, isDatabaseConfigured, databaseFatalError, databaseFatalPermanent, databaseRetryAfterMs, lastSuccessfulQueryAt, lastDatabaseErrorAt, consecutiveDbErrors, connectionMeta, emptyResult, createMockPool, dnsResolver, customLookup, poolInstance, pool;
 var init_db = __esm({
   "server/db.ts"() {
     init_esm();
+    init_telemetry();
     try {
       dns.setDefaultResultOrder("verbatim");
     } catch {
@@ -5492,6 +5688,12 @@ var init_db = __esm({
     normalizedConnectionString = normalizeDatabaseUrl(process.env.DATABASE_URL);
     isDatabaseConfigured = Boolean(normalizedConnectionString);
     databaseFatalError = null;
+    databaseFatalPermanent = false;
+    databaseRetryAfterMs = 0;
+    lastSuccessfulQueryAt = null;
+    lastDatabaseErrorAt = null;
+    consecutiveDbErrors = 0;
+    connectionMeta = inspectConnectionUrlMetadata(normalizedConnectionString);
     emptyResult = () => ({
       rows: [],
       rowCount: 0,
@@ -5538,7 +5740,7 @@ var init_db = __esm({
       });
     };
     if (!isDatabaseConfigured) {
-      console.warn("[AI Studio] DATABASE_URL not set \u2014 PostgreSQL mock active (using Supabase HTTPS fallback where supported)");
+      console.warn("[DB] DATABASE_URL not set \u2014 PostgreSQL pool inactive (using Supabase HTTPS REST / Firebase secondary where configured)");
       poolInstance = createMockPool();
     } else {
       try {
@@ -5558,8 +5760,9 @@ var init_db = __esm({
           console.warn("PostgreSQL idle client notice (will reconnect on next query):", err.message);
         });
       } catch (err) {
-        console.warn("[AI Studio] PostgreSQL init failed \u2014 mock active:", err?.message);
+        console.warn("[DB] PostgreSQL init failed \u2014 fallback active:", err?.message);
         databaseFatalError = err?.message || "Pool initialization failed";
+        databaseFatalPermanent = true;
         poolInstance = createMockPool();
       }
     }
@@ -7979,6 +8182,182 @@ var init_security = __esm({
   }
 });
 
+// server/cache.ts
+async function dedupeInFlight(key, fn) {
+  const existing = inFlightMap.get(key);
+  if (existing) {
+    return existing;
+  }
+  const promise = (async () => {
+    try {
+      return await fn();
+    } finally {
+      inFlightMap.delete(key);
+    }
+  })();
+  inFlightMap.set(key, promise);
+  return promise;
+}
+async function cachedRead(key, ttlMs, loader, staleWhileRevalidateMs = 0) {
+  const cached = appCache.get(key);
+  if (cached && !cached.isStale) {
+    return { value: cached.value, cacheStatus: "HIT" };
+  }
+  if (cached && cached.isStale) {
+    void dedupeInFlight(`revalidate:${key}`, async () => {
+      const fresh2 = await loader();
+      appCache.set(key, fresh2, ttlMs, staleWhileRevalidateMs);
+      return fresh2;
+    }).catch(() => {
+    });
+    return { value: cached.value, cacheStatus: "STALE" };
+  }
+  const fresh = await dedupeInFlight(key, async () => {
+    const val = await loader();
+    appCache.set(key, val, ttlMs, staleWhileRevalidateMs);
+    return val;
+  });
+  return { value: fresh, cacheStatus: "MISS" };
+}
+async function mapWithConcurrency(items, concurrency, worker) {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const runWorker = async () => {
+    while (true) {
+      const idx = nextIndex++;
+      if (idx >= items.length) break;
+      results[idx] = await worker(items[idx], idx);
+    }
+  };
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
+}
+function tryAcquireConcurrencySlot(isPriority) {
+  if (!isPriority && activeConcurrentRequests >= SOFT_DEGRADE_THRESHOLD) {
+    sheddedRequests += 1;
+    return { allowed: false, active: activeConcurrentRequests, retryAfterSec: 3 };
+  }
+  if (activeConcurrentRequests >= MAX_CONCURRENT_REQUESTS) {
+    sheddedRequests += 1;
+    return { allowed: false, active: activeConcurrentRequests, retryAfterSec: 5 };
+  }
+  activeConcurrentRequests += 1;
+  if (activeConcurrentRequests > peakConcurrentRequests) {
+    peakConcurrentRequests = activeConcurrentRequests;
+  }
+  return { allowed: true, active: activeConcurrentRequests };
+}
+function releaseConcurrencySlot() {
+  if (activeConcurrentRequests > 0) {
+    activeConcurrentRequests -= 1;
+  }
+}
+function getConcurrencyMetrics() {
+  return {
+    activeRequests: activeConcurrentRequests,
+    peakRequests: peakConcurrentRequests,
+    softThreshold: SOFT_DEGRADE_THRESHOLD,
+    maxConcurrent: MAX_CONCURRENT_REQUESTS,
+    sheddedRequests,
+    inFlightDeduplications: inFlightMap.size
+  };
+}
+var BoundedLruCache, appCache, inFlightMap, MAX_CONCURRENT_REQUESTS, SOFT_DEGRADE_THRESHOLD, activeConcurrentRequests, peakConcurrentRequests, sheddedRequests;
+var init_cache = __esm({
+  "server/cache.ts"() {
+    BoundedLruCache = class {
+      store = /* @__PURE__ */ new Map();
+      maxEntries;
+      versionCounter = 1;
+      hits = 0;
+      misses = 0;
+      evictions = 0;
+      constructor(maxEntries = 500) {
+        this.maxEntries = maxEntries;
+      }
+      get(key) {
+        const entry = this.store.get(key);
+        if (!entry) {
+          this.misses += 1;
+          return null;
+        }
+        const now = Date.now();
+        if (now > entry.staleUntil) {
+          this.store.delete(key);
+          this.misses += 1;
+          return null;
+        }
+        this.store.delete(key);
+        this.store.set(key, entry);
+        this.hits += 1;
+        return {
+          value: entry.value,
+          isStale: now > entry.expiresAt
+        };
+      }
+      set(key, value, ttlMs, staleWhileRevalidateMs = 0) {
+        if (this.store.has(key)) {
+          this.store.delete(key);
+        } else if (this.store.size >= this.maxEntries) {
+          const oldestKey = this.store.keys().next().value;
+          if (oldestKey !== void 0) {
+            this.store.delete(oldestKey);
+            this.evictions += 1;
+          }
+        }
+        const now = Date.now();
+        this.store.set(key, {
+          value,
+          expiresAt: now + Math.max(100, ttlMs),
+          staleUntil: now + Math.max(100, ttlMs) + Math.max(0, staleWhileRevalidateMs),
+          version: ++this.versionCounter
+        });
+      }
+      invalidate(key) {
+        return this.store.delete(key);
+      }
+      invalidatePrefix(prefix) {
+        let removed = 0;
+        for (const k of this.store.keys()) {
+          if (k.startsWith(prefix)) {
+            this.store.delete(k);
+            removed += 1;
+          }
+        }
+        return removed;
+      }
+      invalidateUser(userId) {
+        if (!userId) return 0;
+        return this.invalidatePrefix(`user:${userId}:`);
+      }
+      clear() {
+        this.store.clear();
+      }
+      getStats() {
+        const total = this.hits + this.misses;
+        return {
+          entries: this.store.size,
+          maxEntries: this.maxEntries,
+          hits: this.hits,
+          misses: this.misses,
+          evictions: this.evictions,
+          hitRatio: total > 0 ? Number((this.hits / total).toFixed(4)) : 0,
+          version: this.versionCounter
+        };
+      }
+    };
+    appCache = new BoundedLruCache(600);
+    inFlightMap = /* @__PURE__ */ new Map();
+    MAX_CONCURRENT_REQUESTS = 160;
+    SOFT_DEGRADE_THRESHOLD = 120;
+    activeConcurrentRequests = 0;
+    peakConcurrentRequests = 0;
+    sheddedRequests = 0;
+  }
+});
+
 // server/supabaseRestFallback.ts
 import fs2 from "fs";
 import os from "os";
@@ -8046,7 +8425,12 @@ function getSupabaseRestConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
   return { url, key };
 }
+function getPostgrestClientMetrics() {
+  return { ...postgrestMetrics };
+}
 async function sbRestRequest(restPath, options = {}) {
+  const startedAt = Date.now();
+  postgrestMetrics.totalRequests += 1;
   try {
     const { url, key } = getSupabaseRestConfig();
     const headers = {
@@ -8060,11 +8444,14 @@ async function sbRestRequest(restPath, options = {}) {
     if (options.prefer) {
       headers["Prefer"] = options.prefer;
     }
+    const timeoutMs = Math.max(1500, Math.min(options.timeoutMs ?? 6500, 15e3));
     const response = await fetch(`${url}/rest/v1/${restPath}`, {
       method: options.method || "GET",
       headers,
-      body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
+      body: options.body !== void 0 ? JSON.stringify(options.body) : void 0,
+      signal: AbortSignal.timeout(timeoutMs)
     });
+    postgrestMetrics.lastLatencyMs = Date.now() - startedAt;
     const text = await response.text();
     let parsed = null;
     if (text) {
@@ -8076,10 +8463,26 @@ async function sbRestRequest(restPath, options = {}) {
     }
     if (!response.ok) {
       const errMsg = parsed && typeof parsed === "object" && (parsed.message || parsed.error || parsed.details) || typeof parsed === "string" && parsed || `Supabase REST HTTP ${response.status}`;
+      if (response.status >= 500) {
+        postgrestMetrics.error5xxCount += 1;
+        postgrestMetrics.consecutiveFailures += 1;
+      } else {
+        postgrestMetrics.error4xxCount += 1;
+      }
+      postgrestMetrics.lastError = `HTTP ${response.status}: ${String(errMsg).slice(0, 180)}`;
+      postgrestMetrics.lastErrorAt = (/* @__PURE__ */ new Date()).toISOString();
       return { ok: false, status: response.status, data: null, error: errMsg };
     }
+    postgrestMetrics.successCount += 1;
+    postgrestMetrics.consecutiveFailures = 0;
+    postgrestMetrics.lastSuccessAt = (/* @__PURE__ */ new Date()).toISOString();
     return { ok: true, status: response.status, data: parsed };
   } catch (err) {
+    postgrestMetrics.lastLatencyMs = Date.now() - startedAt;
+    postgrestMetrics.timeoutOrNetworkCount += 1;
+    postgrestMetrics.consecutiveFailures += 1;
+    postgrestMetrics.lastError = err?.message || "Network or timeout error";
+    postgrestMetrics.lastErrorAt = (/* @__PURE__ */ new Date()).toISOString();
     return { ok: false, status: 0, data: null, error: err?.message || "Network error" };
   }
 }
@@ -8619,9 +9022,9 @@ async function markUserNotificationReadFallback(userId, notifId) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const store = readNotifStore();
   if (notifId.startsWith("broadcast_")) {
-    const state2 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-    if (!state2.readIds.includes(notifId)) state2.readIds.push(notifId);
-    store.broadcastUserState[userId] = state2;
+    const state3 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+    if (!state3.readIds.includes(notifId)) state3.readIds.push(notifId);
+    store.broadcastUserState[userId] = state3;
     writeNotifStore(store);
     return { id: notifId, user_id: userId, is_read: true, read_at: now };
   }
@@ -8652,21 +9055,21 @@ async function markAllUserNotificationsReadFallback(userId) {
     }
   }
   const activeBanners = await listBroadcastBannersFallback();
-  const state2 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  const state3 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
   for (const b of activeBanners) {
     const vid = `broadcast_${b.id}`;
-    if (!state2.readIds.includes(vid)) state2.readIds.push(vid);
+    if (!state3.readIds.includes(vid)) state3.readIds.push(vid);
   }
-  store.broadcastUserState[userId] = state2;
+  store.broadcastUserState[userId] = state3;
   writeNotifStore(store);
 }
 async function deleteUserNotificationFallback(userId, notifId) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const store = readNotifStore();
   if (notifId.startsWith("broadcast_")) {
-    const state2 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
-    if (!state2.deletedIds.includes(notifId)) state2.deletedIds.push(notifId);
-    store.broadcastUserState[userId] = state2;
+    const state3 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+    if (!state3.deletedIds.includes(notifId)) state3.deletedIds.push(notifId);
+    store.broadcastUserState[userId] = state3;
     writeNotifStore(store);
     return;
   }
@@ -8775,12 +9178,12 @@ async function clearAllUserNotificationsFallback(userId) {
     }
   }
   const activeBanners = await listBroadcastBannersFallback();
-  const state2 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
+  const state3 = store.broadcastUserState[userId] || { readIds: [], deletedIds: [] };
   for (const b of activeBanners) {
     const vid = `broadcast_${b.id}`;
-    if (!state2.deletedIds.includes(vid)) state2.deletedIds.push(vid);
+    if (!state3.deletedIds.includes(vid)) state3.deletedIds.push(vid);
   }
-  store.broadcastUserState[userId] = state2;
+  store.broadcastUserState[userId] = state3;
   writeNotifStore(store);
 }
 function mergeTemplateRow(def, row, defaultSlugs) {
@@ -9403,7 +9806,7 @@ async function updateSupportTicketStatusFallback(ticketId, status) {
     writeJsonStore("support-tickets.json", store);
   }
 }
-var DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY, PRIMARY_DATA_DIR, TMP_DATA_DIR, memoryFallbackStore, DEFAULT_EMAIL_TEMPLATES, DEFAULT_FEATURE_FLAGS, DEFAULT_LEGAL_POLICIES, DEFAULT_ADMIN_ROLES;
+var DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY, PRIMARY_DATA_DIR, TMP_DATA_DIR, memoryFallbackStore, postgrestMetrics, DEFAULT_EMAIL_TEMPLATES, DEFAULT_FEATURE_FLAGS, DEFAULT_LEGAL_POLICIES, DEFAULT_ADMIN_ROLES;
 var init_supabaseRestFallback = __esm({
   "server/supabaseRestFallback.ts"() {
     DEFAULT_SUPABASE_URL = "https://frgrfajnrzqwnevhlrio.supabase.co";
@@ -9411,6 +9814,18 @@ var init_supabaseRestFallback = __esm({
     PRIMARY_DATA_DIR = path2.resolve(process.cwd(), ".data", "runtime-store");
     TMP_DATA_DIR = path2.resolve(os.tmpdir(), "mymoney-runtime-store");
     memoryFallbackStore = /* @__PURE__ */ new Map();
+    postgrestMetrics = {
+      totalRequests: 0,
+      successCount: 0,
+      error4xxCount: 0,
+      error5xxCount: 0,
+      timeoutOrNetworkCount: 0,
+      consecutiveFailures: 0,
+      lastLatencyMs: 0,
+      lastError: null,
+      lastErrorAt: null,
+      lastSuccessAt: null
+    };
     DEFAULT_EMAIL_TEMPLATES = [
       {
         id: "tmpl_welcome_email",
@@ -10372,11 +10787,11 @@ var init_cookies = __esm({
       getPath(pathname) {
         const pathParts = (pathname || "/").split("/");
         pathParts.pop();
-        const path13 = pathParts.join("/").trim();
-        if (path13.charAt(0) !== "/") {
+        const path16 = pathParts.join("/").trim();
+        if (path16.charAt(0) !== "/") {
           return "/";
         }
-        return path13;
+        return path16;
       }
     };
     cookies_default = Cookies;
@@ -14601,7 +15016,7 @@ function _stripAddressComments(address) {
   return { address: result.trim(), comments: comments.filter((text) => text) };
 }
 function _collectAddressParts(tokens, from, to) {
-  let state2 = "text";
+  let state3 = "text";
   const data = {
     address: [],
     comment: [],
@@ -14623,22 +15038,22 @@ function _collectAddressParts(tokens, from, to) {
     if (tokens.isOperator(i2)) {
       switch (value) {
         case "<":
-          state2 = "address";
+          state3 = "address";
           insideQuotes = false;
           lastTextOpen = false;
           break;
         case "(":
-          state2 = "comment";
+          state3 = "comment";
           insideQuotes = false;
           gapsFolding = gapsFolding && _isFoldingGap(tokens.str, gapFrom, tokens.contentStart(i2));
           break;
         case '"':
           insideQuotes = !insideQuotes;
-          state2 = "text";
+          state3 = "text";
           lastTextOpen = false;
           break;
         default:
-          state2 = "text";
+          state3 = "text";
           insideQuotes = false;
           if (value !== ")") {
             lastTextOpen = false;
@@ -14649,33 +15064,33 @@ function _collectAddressParts(tokens, from, to) {
       }
     } else {
       const opensAfterEmptyQuotedString = prevOperator === '"' && prevNoBreak && i2 > from + 1 && tokens.operatorAt(i2 - 2) === '"';
-      const parts = data[state2];
+      const parts = data[state3];
       const secondAt = lastTextHasAt && prevOperator === ")" && value.indexOf("@") >= 0;
       const joinsDomain = !secondAt && lastTextOpen && lastTextHasAt && prevOperator === ")" && (lastChars.text === "." || value.charAt(0) === ".") && gapsFolding && _isFoldingGap(tokens.str, gapFrom, tokens.contentStart(i2));
-      const joins = joinsDomain || !secondAt && prevNoBreak && parts.length > 0 && (prevOperator !== ")" || lastChars[state2] === "@" || value.charAt(0) === "@");
+      const joins = joinsDomain || !secondAt && prevNoBreak && parts.length > 0 && (prevOperator !== ")" || lastChars[state3] === "@" || value.charAt(0) === "@");
       if (joins) {
-        const last = data[state2].length - 1;
-        if (state2 === "text" && !insideQuotes) {
+        const last = data[state3].length - 1;
+        if (state3 === "text" && !insideQuotes) {
           if (lastTextPureQuoted && value.charAt(0) === "@") {
             data.quotedLocalAt[last] = data.text[last].length;
           }
           lastTextPureQuoted = false;
         }
-        data[state2][last] += value;
-        lastChars[state2] = value.charAt(value.length - 1);
-        if (state2 === "text" && insideQuotes) {
+        data[state3][last] += value;
+        lastChars[state3] = value.charAt(value.length - 1);
+        if (state3 === "text" && insideQuotes) {
           data.textWasQuoted[last] = true;
         }
       } else {
-        data[state2].push(value);
-        lastChars[state2] = value.charAt(value.length - 1);
-        if (state2 === "text") {
+        data[state3].push(value);
+        lastChars[state3] = value.charAt(value.length - 1);
+        if (state3 === "text") {
           data.textWasQuoted.push(insideQuotes || opensAfterEmptyQuotedString);
           data.quotedLocalAt.push(opensAfterEmptyQuotedString && value.charAt(0) === "@" ? 0 : -1);
           lastTextPureQuoted = insideQuotes;
         }
       }
-      if (state2 === "text") {
+      if (state3 === "text") {
         lastTextHasAt = joins && lastTextHasAt || !insideQuotes && value.indexOf("@") >= 0;
         lastTextOpen = true;
         gapFrom = tokens.contentEnd(i2);
@@ -26566,11 +26981,11 @@ var require_bn = __commonJS({
         var B = new BN(0);
         var C = new BN(0);
         var D = new BN(1);
-        var g3 = 0;
+        var g5 = 0;
         while (x2.isEven() && y.isEven()) {
           x2.iushrn(1);
           y.iushrn(1);
-          ++g3;
+          ++g5;
         }
         var yp = y.clone();
         var xp = x2.clone();
@@ -26612,7 +27027,7 @@ var require_bn = __commonJS({
         return {
           a: C,
           b: D,
-          gcd: y.iushln(g3)
+          gcd: y.iushln(g5)
         };
       };
       BN.prototype._invmp = function _invmp(p) {
@@ -27423,70 +27838,70 @@ var require_reporter = __commonJS({
       return obj instanceof ReporterError;
     };
     Reporter.prototype.save = function save() {
-      const state2 = this._reporterState;
-      return { obj: state2.obj, pathLen: state2.path.length };
+      const state3 = this._reporterState;
+      return { obj: state3.obj, pathLen: state3.path.length };
     };
     Reporter.prototype.restore = function restore(data) {
-      const state2 = this._reporterState;
-      state2.obj = data.obj;
-      state2.path = state2.path.slice(0, data.pathLen);
+      const state3 = this._reporterState;
+      state3.obj = data.obj;
+      state3.path = state3.path.slice(0, data.pathLen);
     };
     Reporter.prototype.enterKey = function enterKey(key) {
       return this._reporterState.path.push(key);
     };
     Reporter.prototype.exitKey = function exitKey(index) {
-      const state2 = this._reporterState;
-      state2.path = state2.path.slice(0, index - 1);
+      const state3 = this._reporterState;
+      state3.path = state3.path.slice(0, index - 1);
     };
     Reporter.prototype.leaveKey = function leaveKey(index, key, value) {
-      const state2 = this._reporterState;
+      const state3 = this._reporterState;
       this.exitKey(index);
-      if (state2.obj !== null)
-        state2.obj[key] = value;
+      if (state3.obj !== null)
+        state3.obj[key] = value;
     };
-    Reporter.prototype.path = function path13() {
+    Reporter.prototype.path = function path16() {
       return this._reporterState.path.join("/");
     };
     Reporter.prototype.enterObject = function enterObject() {
-      const state2 = this._reporterState;
-      const prev = state2.obj;
-      state2.obj = {};
+      const state3 = this._reporterState;
+      const prev = state3.obj;
+      state3.obj = {};
       return prev;
     };
     Reporter.prototype.leaveObject = function leaveObject(prev) {
-      const state2 = this._reporterState;
-      const now = state2.obj;
-      state2.obj = prev;
+      const state3 = this._reporterState;
+      const now = state3.obj;
+      state3.obj = prev;
       return now;
     };
     Reporter.prototype.error = function error2(msg) {
       let err;
-      const state2 = this._reporterState;
+      const state3 = this._reporterState;
       const inherited = msg instanceof ReporterError;
       if (inherited) {
         err = msg;
       } else {
-        err = new ReporterError(state2.path.map(function(elem) {
+        err = new ReporterError(state3.path.map(function(elem) {
           return "[" + JSON.stringify(elem) + "]";
         }).join(""), msg.message || msg, msg.stack);
       }
-      if (!state2.options.partial)
+      if (!state3.options.partial)
         throw err;
       if (!inherited)
-        state2.errors.push(err);
+        state3.errors.push(err);
       return err;
     };
     Reporter.prototype.wrapResult = function wrapResult(result) {
-      const state2 = this._reporterState;
-      if (!state2.options.partial)
+      const state3 = this._reporterState;
+      if (!state3.options.partial)
         return result;
       return {
         result: this.isError(result) ? null : result,
-        errors: state2.errors
+        errors: state3.errors
       };
     };
-    function ReporterError(path13, msg) {
-      this.path = path13;
+    function ReporterError(path16, msg) {
+      this.path = path16;
       this.rethrow(msg);
     }
     inherits(ReporterError, Error);
@@ -27706,28 +28121,28 @@ var require_node2 = __commonJS({
       "_encodeBool"
     ];
     function Node(enc, parent, name2) {
-      const state2 = {};
-      this._baseState = state2;
-      state2.name = name2;
-      state2.enc = enc;
-      state2.parent = parent || null;
-      state2.children = null;
-      state2.tag = null;
-      state2.args = null;
-      state2.reverseArgs = null;
-      state2.choice = null;
-      state2.optional = false;
-      state2.any = false;
-      state2.obj = false;
-      state2.use = null;
-      state2.useDecoder = null;
-      state2.key = null;
-      state2["default"] = null;
-      state2.explicit = null;
-      state2.implicit = null;
-      state2.contains = null;
-      if (!state2.parent) {
-        state2.children = [];
+      const state3 = {};
+      this._baseState = state3;
+      state3.name = name2;
+      state3.enc = enc;
+      state3.parent = parent || null;
+      state3.children = null;
+      state3.tag = null;
+      state3.args = null;
+      state3.reverseArgs = null;
+      state3.choice = null;
+      state3.optional = false;
+      state3.any = false;
+      state3.obj = false;
+      state3.use = null;
+      state3.useDecoder = null;
+      state3.key = null;
+      state3["default"] = null;
+      state3.explicit = null;
+      state3.implicit = null;
+      state3.contains = null;
+      if (!state3.parent) {
+        state3.children = [];
         this._wrap();
       }
     }
@@ -27752,36 +28167,36 @@ var require_node2 = __commonJS({
       "contains"
     ];
     Node.prototype.clone = function clone2() {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       const cstate = {};
       stateProps.forEach(function(prop) {
-        cstate[prop] = state2[prop];
+        cstate[prop] = state3[prop];
       });
       const res = new this.constructor(cstate.parent);
       res._baseState = cstate;
       return res;
     };
     Node.prototype._wrap = function wrap2() {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       methods.forEach(function(method) {
         this[method] = function _wrappedMethod() {
           const clone2 = new this.constructor(this);
-          state2.children.push(clone2);
+          state3.children.push(clone2);
           return clone2[method].apply(clone2, arguments);
         };
       }, this);
     };
     Node.prototype._init = function init(body) {
-      const state2 = this._baseState;
-      assert2(state2.parent === null);
+      const state3 = this._baseState;
+      assert2(state3.parent === null);
       body.call(this);
-      state2.children = state2.children.filter(function(child) {
+      state3.children = state3.children.filter(function(child) {
         return child._baseState.parent === this;
       }, this);
-      assert2.equal(state2.children.length, 1, "Root node can have only one child");
+      assert2.equal(state3.children.length, 1, "Root node can have only one child");
     };
     Node.prototype._useArgs = function useArgs(args) {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       const children = args.filter(function(arg) {
         return arg instanceof this.constructor;
       }, this);
@@ -27789,16 +28204,16 @@ var require_node2 = __commonJS({
         return !(arg instanceof this.constructor);
       }, this);
       if (children.length !== 0) {
-        assert2(state2.children === null);
-        state2.children = children;
+        assert2(state3.children === null);
+        state3.children = children;
         children.forEach(function(child) {
           child._baseState.parent = this;
         }, this);
       }
       if (args.length !== 0) {
-        assert2(state2.args === null);
-        state2.args = args;
-        state2.reverseArgs = args.map(function(arg) {
+        assert2(state3.args === null);
+        state3.args = args;
+        state3.reverseArgs = args.map(function(arg) {
           if (typeof arg !== "object" || arg.constructor !== Object)
             return arg;
           const res = {};
@@ -27814,107 +28229,107 @@ var require_node2 = __commonJS({
     };
     overrided.forEach(function(method) {
       Node.prototype[method] = function _overrided() {
-        const state2 = this._baseState;
-        throw new Error(method + " not implemented for encoding: " + state2.enc);
+        const state3 = this._baseState;
+        throw new Error(method + " not implemented for encoding: " + state3.enc);
       };
     });
     tags.forEach(function(tag) {
       Node.prototype[tag] = function _tagMethod() {
-        const state2 = this._baseState;
+        const state3 = this._baseState;
         const args = Array.prototype.slice.call(arguments);
-        assert2(state2.tag === null);
-        state2.tag = tag;
+        assert2(state3.tag === null);
+        state3.tag = tag;
         this._useArgs(args);
         return this;
       };
     });
     Node.prototype.use = function use(item) {
       assert2(item);
-      const state2 = this._baseState;
-      assert2(state2.use === null);
-      state2.use = item;
+      const state3 = this._baseState;
+      assert2(state3.use === null);
+      state3.use = item;
       return this;
     };
     Node.prototype.optional = function optional() {
-      const state2 = this._baseState;
-      state2.optional = true;
+      const state3 = this._baseState;
+      state3.optional = true;
       return this;
     };
     Node.prototype.def = function def(val) {
-      const state2 = this._baseState;
-      assert2(state2["default"] === null);
-      state2["default"] = val;
-      state2.optional = true;
+      const state3 = this._baseState;
+      assert2(state3["default"] === null);
+      state3["default"] = val;
+      state3.optional = true;
       return this;
     };
     Node.prototype.explicit = function explicit(num) {
-      const state2 = this._baseState;
-      assert2(state2.explicit === null && state2.implicit === null);
-      state2.explicit = num;
+      const state3 = this._baseState;
+      assert2(state3.explicit === null && state3.implicit === null);
+      state3.explicit = num;
       return this;
     };
     Node.prototype.implicit = function implicit(num) {
-      const state2 = this._baseState;
-      assert2(state2.explicit === null && state2.implicit === null);
-      state2.implicit = num;
+      const state3 = this._baseState;
+      assert2(state3.explicit === null && state3.implicit === null);
+      state3.implicit = num;
       return this;
     };
     Node.prototype.obj = function obj() {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       const args = Array.prototype.slice.call(arguments);
-      state2.obj = true;
+      state3.obj = true;
       if (args.length !== 0)
         this._useArgs(args);
       return this;
     };
     Node.prototype.key = function key(newKey) {
-      const state2 = this._baseState;
-      assert2(state2.key === null);
-      state2.key = newKey;
+      const state3 = this._baseState;
+      assert2(state3.key === null);
+      state3.key = newKey;
       return this;
     };
     Node.prototype.any = function any() {
-      const state2 = this._baseState;
-      state2.any = true;
+      const state3 = this._baseState;
+      state3.any = true;
       return this;
     };
     Node.prototype.choice = function choice(obj) {
-      const state2 = this._baseState;
-      assert2(state2.choice === null);
-      state2.choice = obj;
+      const state3 = this._baseState;
+      assert2(state3.choice === null);
+      state3.choice = obj;
       this._useArgs(Object.keys(obj).map(function(key) {
         return obj[key];
       }));
       return this;
     };
     Node.prototype.contains = function contains(item) {
-      const state2 = this._baseState;
-      assert2(state2.use === null);
-      state2.contains = item;
+      const state3 = this._baseState;
+      assert2(state3.use === null);
+      state3.contains = item;
       return this;
     };
     Node.prototype._decode = function decode2(input, options) {
-      const state2 = this._baseState;
-      if (state2.parent === null)
-        return input.wrapResult(state2.children[0]._decode(input, options));
-      let result = state2["default"];
+      const state3 = this._baseState;
+      if (state3.parent === null)
+        return input.wrapResult(state3.children[0]._decode(input, options));
+      let result = state3["default"];
       let present = true;
       let prevKey = null;
-      if (state2.key !== null)
-        prevKey = input.enterKey(state2.key);
-      if (state2.optional) {
+      if (state3.key !== null)
+        prevKey = input.enterKey(state3.key);
+      if (state3.optional) {
         let tag = null;
-        if (state2.explicit !== null)
-          tag = state2.explicit;
-        else if (state2.implicit !== null)
-          tag = state2.implicit;
-        else if (state2.tag !== null)
-          tag = state2.tag;
-        if (tag === null && !state2.any) {
+        if (state3.explicit !== null)
+          tag = state3.explicit;
+        else if (state3.implicit !== null)
+          tag = state3.implicit;
+        else if (state3.tag !== null)
+          tag = state3.tag;
+        if (tag === null && !state3.any) {
           const save = input.save();
           try {
-            if (state2.choice === null)
-              this._decodeGeneric(state2.tag, input, options);
+            if (state3.choice === null)
+              this._decodeGeneric(state3.tag, input, options);
             else
               this._decodeChoice(input, options);
             present = true;
@@ -27923,78 +28338,78 @@ var require_node2 = __commonJS({
           }
           input.restore(save);
         } else {
-          present = this._peekTag(input, tag, state2.any);
+          present = this._peekTag(input, tag, state3.any);
           if (input.isError(present))
             return present;
         }
       }
       let prevObj;
-      if (state2.obj && present)
+      if (state3.obj && present)
         prevObj = input.enterObject();
       if (present) {
-        if (state2.explicit !== null) {
-          const explicit = this._decodeTag(input, state2.explicit);
+        if (state3.explicit !== null) {
+          const explicit = this._decodeTag(input, state3.explicit);
           if (input.isError(explicit))
             return explicit;
           input = explicit;
         }
         const start = input.offset;
-        if (state2.use === null && state2.choice === null) {
+        if (state3.use === null && state3.choice === null) {
           let save;
-          if (state2.any)
+          if (state3.any)
             save = input.save();
           const body = this._decodeTag(
             input,
-            state2.implicit !== null ? state2.implicit : state2.tag,
-            state2.any
+            state3.implicit !== null ? state3.implicit : state3.tag,
+            state3.any
           );
           if (input.isError(body))
             return body;
-          if (state2.any)
+          if (state3.any)
             result = input.raw(save);
           else
             input = body;
         }
-        if (options && options.track && state2.tag !== null)
+        if (options && options.track && state3.tag !== null)
           options.track(input.path(), start, input.length, "tagged");
-        if (options && options.track && state2.tag !== null)
+        if (options && options.track && state3.tag !== null)
           options.track(input.path(), input.offset, input.length, "content");
-        if (state2.any) {
-        } else if (state2.choice === null) {
-          result = this._decodeGeneric(state2.tag, input, options);
+        if (state3.any) {
+        } else if (state3.choice === null) {
+          result = this._decodeGeneric(state3.tag, input, options);
         } else {
           result = this._decodeChoice(input, options);
         }
         if (input.isError(result))
           return result;
-        if (!state2.any && state2.choice === null && state2.children !== null) {
-          state2.children.forEach(function decodeChildren(child) {
+        if (!state3.any && state3.choice === null && state3.children !== null) {
+          state3.children.forEach(function decodeChildren(child) {
             child._decode(input, options);
           });
         }
-        if (state2.contains && (state2.tag === "octstr" || state2.tag === "bitstr")) {
+        if (state3.contains && (state3.tag === "octstr" || state3.tag === "bitstr")) {
           const data = new DecoderBuffer(result);
-          result = this._getUse(state2.contains, input._reporterState.obj)._decode(data, options);
+          result = this._getUse(state3.contains, input._reporterState.obj)._decode(data, options);
         }
       }
-      if (state2.obj && present)
+      if (state3.obj && present)
         result = input.leaveObject(prevObj);
-      if (state2.key !== null && (result !== null || present === true))
-        input.leaveKey(prevKey, state2.key, result);
+      if (state3.key !== null && (result !== null || present === true))
+        input.leaveKey(prevKey, state3.key, result);
       else if (prevKey !== null)
         input.exitKey(prevKey);
       return result;
     };
     Node.prototype._decodeGeneric = function decodeGeneric(tag, input, options) {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       if (tag === "seq" || tag === "set")
         return null;
       if (tag === "seqof" || tag === "setof")
-        return this._decodeList(input, tag, state2.args[0], options);
+        return this._decodeList(input, tag, state3.args[0], options);
       else if (/str$/.test(tag))
         return this._decodeStr(input, tag, options);
-      else if (tag === "objid" && state2.args)
-        return this._decodeObjid(input, state2.args[0], state2.args[1], options);
+      else if (tag === "objid" && state3.args)
+        return this._decodeObjid(input, state3.args[0], state3.args[1], options);
       else if (tag === "objid")
         return this._decodeObjid(input, null, null, options);
       else if (tag === "gentime" || tag === "utctime")
@@ -28006,31 +28421,31 @@ var require_node2 = __commonJS({
       else if (tag === "objDesc")
         return this._decodeStr(input, tag, options);
       else if (tag === "int" || tag === "enum")
-        return this._decodeInt(input, state2.args && state2.args[0], options);
-      if (state2.use !== null) {
-        return this._getUse(state2.use, input._reporterState.obj)._decode(input, options);
+        return this._decodeInt(input, state3.args && state3.args[0], options);
+      if (state3.use !== null) {
+        return this._getUse(state3.use, input._reporterState.obj)._decode(input, options);
       } else {
         return input.error("unknown tag: " + tag);
       }
     };
     Node.prototype._getUse = function _getUse(entity, obj) {
-      const state2 = this._baseState;
-      state2.useDecoder = this._use(entity, obj);
-      assert2(state2.useDecoder._baseState.parent === null);
-      state2.useDecoder = state2.useDecoder._baseState.children[0];
-      if (state2.implicit !== state2.useDecoder._baseState.implicit) {
-        state2.useDecoder = state2.useDecoder.clone();
-        state2.useDecoder._baseState.implicit = state2.implicit;
+      const state3 = this._baseState;
+      state3.useDecoder = this._use(entity, obj);
+      assert2(state3.useDecoder._baseState.parent === null);
+      state3.useDecoder = state3.useDecoder._baseState.children[0];
+      if (state3.implicit !== state3.useDecoder._baseState.implicit) {
+        state3.useDecoder = state3.useDecoder.clone();
+        state3.useDecoder._baseState.implicit = state3.implicit;
       }
-      return state2.useDecoder;
+      return state3.useDecoder;
     };
     Node.prototype._decodeChoice = function decodeChoice(input, options) {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       let result = null;
       let match2 = false;
-      Object.keys(state2.choice).some(function(key) {
+      Object.keys(state3.choice).some(function(key) {
         const save = input.save();
-        const node = state2.choice[key];
+        const node = state3.choice[key];
         try {
           const value = node._decode(input, options);
           if (input.isError(value))
@@ -28051,8 +28466,8 @@ var require_node2 = __commonJS({
       return new EncoderBuffer(data, this.reporter);
     };
     Node.prototype._encode = function encode4(data, reporter, parent) {
-      const state2 = this._baseState;
-      if (state2["default"] !== null && state2["default"] === data)
+      const state3 = this._baseState;
+      if (state3["default"] !== null && state3["default"] === data)
         return;
       const result = this._encodeValue(data, reporter, parent);
       if (result === void 0)
@@ -28062,28 +28477,28 @@ var require_node2 = __commonJS({
       return result;
     };
     Node.prototype._encodeValue = function encode4(data, reporter, parent) {
-      const state2 = this._baseState;
-      if (state2.parent === null)
-        return state2.children[0]._encode(data, reporter || new Reporter());
+      const state3 = this._baseState;
+      if (state3.parent === null)
+        return state3.children[0]._encode(data, reporter || new Reporter());
       let result = null;
       this.reporter = reporter;
-      if (state2.optional && data === void 0) {
-        if (state2["default"] !== null)
-          data = state2["default"];
+      if (state3.optional && data === void 0) {
+        if (state3["default"] !== null)
+          data = state3["default"];
         else
           return;
       }
       let content = null;
       let primitive = false;
-      if (state2.any) {
+      if (state3.any) {
         result = this._createEncoderBuffer(data);
-      } else if (state2.choice) {
+      } else if (state3.choice) {
         result = this._encodeChoice(data, reporter);
-      } else if (state2.contains) {
-        content = this._getUse(state2.contains, parent)._encode(data, reporter);
+      } else if (state3.contains) {
+        content = this._getUse(state3.contains, parent)._encode(data, reporter);
         primitive = true;
-      } else if (state2.children) {
-        content = state2.children.map(function(child) {
+      } else if (state3.children) {
+        content = state3.children.map(function(child) {
           if (child._baseState.tag === "null_")
             return child._encode(null, reporter, data);
           if (child._baseState.key === null)
@@ -28099,56 +28514,56 @@ var require_node2 = __commonJS({
         });
         content = this._createEncoderBuffer(content);
       } else {
-        if (state2.tag === "seqof" || state2.tag === "setof") {
-          if (!(state2.args && state2.args.length === 1))
-            return reporter.error("Too many args for : " + state2.tag);
+        if (state3.tag === "seqof" || state3.tag === "setof") {
+          if (!(state3.args && state3.args.length === 1))
+            return reporter.error("Too many args for : " + state3.tag);
           if (!Array.isArray(data))
             return reporter.error("seqof/setof, but data is not Array");
           const child = this.clone();
           child._baseState.implicit = null;
           content = this._createEncoderBuffer(data.map(function(item) {
-            const state3 = this._baseState;
-            return this._getUse(state3.args[0], data)._encode(item, reporter);
+            const state4 = this._baseState;
+            return this._getUse(state4.args[0], data)._encode(item, reporter);
           }, child));
-        } else if (state2.use !== null) {
-          result = this._getUse(state2.use, parent)._encode(data, reporter);
+        } else if (state3.use !== null) {
+          result = this._getUse(state3.use, parent)._encode(data, reporter);
         } else {
-          content = this._encodePrimitive(state2.tag, data);
+          content = this._encodePrimitive(state3.tag, data);
           primitive = true;
         }
       }
-      if (!state2.any && state2.choice === null) {
-        const tag = state2.implicit !== null ? state2.implicit : state2.tag;
-        const cls = state2.implicit === null ? "universal" : "context";
+      if (!state3.any && state3.choice === null) {
+        const tag = state3.implicit !== null ? state3.implicit : state3.tag;
+        const cls = state3.implicit === null ? "universal" : "context";
         if (tag === null) {
-          if (state2.use === null)
+          if (state3.use === null)
             reporter.error("Tag could be omitted only for .use()");
         } else {
-          if (state2.use === null)
+          if (state3.use === null)
             result = this._encodeComposite(tag, primitive, cls, content);
         }
       }
-      if (state2.explicit !== null)
-        result = this._encodeComposite(state2.explicit, false, "context", result);
+      if (state3.explicit !== null)
+        result = this._encodeComposite(state3.explicit, false, "context", result);
       return result;
     };
     Node.prototype._encodeChoice = function encodeChoice(data, reporter) {
-      const state2 = this._baseState;
-      const node = state2.choice[data.type];
+      const state3 = this._baseState;
+      const node = state3.choice[data.type];
       if (!node) {
         assert2(
           false,
-          data.type + " not found in " + JSON.stringify(Object.keys(state2.choice))
+          data.type + " not found in " + JSON.stringify(Object.keys(state3.choice))
         );
       }
       return node._encode(data.value, reporter);
     };
     Node.prototype._encodePrimitive = function encodePrimitive(tag, data) {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       if (/str$/.test(tag))
         return this._encodeStr(data, tag);
-      else if (tag === "objid" && state2.args)
-        return this._encodeObjid(data, state2.reverseArgs[0], state2.args[1]);
+      else if (tag === "objid" && state3.args)
+        return this._encodeObjid(data, state3.reverseArgs[0], state3.args[1]);
       else if (tag === "objid")
         return this._encodeObjid(data, null, null);
       else if (tag === "gentime" || tag === "utctime")
@@ -28156,7 +28571,7 @@ var require_node2 = __commonJS({
       else if (tag === "null_")
         return this._encodeNull();
       else if (tag === "int" || tag === "enum")
-        return this._encodeInt(data, state2.args && state2.reverseArgs[0]);
+        return this._encodeInt(data, state3.args && state3.reverseArgs[0]);
       else if (tag === "bool")
         return this._encodeBool(data);
       else if (tag === "objDesc")
@@ -28424,17 +28839,17 @@ var require_der2 = __commonJS({
       return entity._getEncoder("der").tree;
     };
     DERNode.prototype._skipDefault = function skipDefault(dataBuffer, reporter, parent) {
-      const state2 = this._baseState;
+      const state3 = this._baseState;
       let i2;
-      if (state2["default"] === null)
+      if (state3["default"] === null)
         return false;
       const data = dataBuffer.join();
-      if (state2.defaultBuffer === void 0)
-        state2.defaultBuffer = this._encodeValue(state2["default"], reporter, parent).join();
-      if (data.length !== state2.defaultBuffer.length)
+      if (state3.defaultBuffer === void 0)
+        state3.defaultBuffer = this._encodeValue(state3["default"], reporter, parent).join();
+      if (data.length !== state3.defaultBuffer.length)
         return false;
       for (i2 = 0; i2 < data.length; i2++)
-        if (data[i2] !== state2.defaultBuffer[i2])
+        if (data[i2] !== state3.defaultBuffer[i2])
           return false;
       return true;
     };
@@ -28524,11 +28939,11 @@ var require_der3 = __commonJS({
     DERNode.prototype._peekTag = function peekTag(buffer, tag, any) {
       if (buffer.isEmpty())
         return false;
-      const state2 = buffer.save();
+      const state3 = buffer.save();
       const decodedTag = derDecodeTag(buffer, 'Failed to peek tag: "' + tag + '"');
       if (buffer.isError(decodedTag))
         return decodedTag;
-      buffer.restore(state2);
+      buffer.restore(state3);
       return decodedTag.tag === tag || decodedTag.tagStr === tag || decodedTag.tagStr + "of" === tag || any;
     };
     DERNode.prototype._decodeTag = function decodeTag(buffer, tag, any) {
@@ -28550,15 +28965,15 @@ var require_der3 = __commonJS({
       }
       if (decodedTag.primitive || len !== null)
         return buffer.skip(len, 'Failed to match body of: "' + tag + '"');
-      const state2 = buffer.save();
+      const state3 = buffer.save();
       const res = this._skipUntilEnd(
         buffer,
         'Failed to skip indefinite length body: "' + this.tag + '"'
       );
       if (buffer.isError(res))
         return res;
-      len = buffer.offset - state2.offset;
-      buffer.restore(state2);
+      len = buffer.offset - state3.offset;
+      buffer.restore(state3);
       return buffer.skip(len, 'Failed to match body of: "' + tag + '"');
     };
     DERNode.prototype._skipUntilEnd = function skipUntilEnd(buffer, fail2) {
@@ -29224,14 +29639,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports, module) {
     var Buffer4 = require_safe_buffer().Buffer;
-    var crypto28 = __require("crypto");
+    var crypto31 = __require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = __require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto28.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto31.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -29321,17 +29736,17 @@ var require_jwa = __commonJS({
       return function sign2(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto28.createHmac("sha" + bits, secret);
+        var hmac = crypto31.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual = "timingSafeEqual" in crypto28 ? function timingSafeEqual2(a, b) {
+    var timingSafeEqual = "timingSafeEqual" in crypto31 ? function timingSafeEqual2(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto28.timingSafeEqual(a, b);
+      return crypto31.timingSafeEqual(a, b);
     } : function timingSafeEqual2(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -29348,7 +29763,7 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto28.createSign("RSA-SHA" + bits);
+        var signer = crypto31.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -29358,7 +29773,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto28.createVerify("RSA-SHA" + bits);
+        var verifier = crypto31.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -29367,11 +29782,11 @@ var require_jwa = __commonJS({
       return function sign2(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto28.createSign("RSA-SHA" + bits);
+        var signer = crypto31.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto28.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto28.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto31.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto31.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -29381,12 +29796,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto28.createVerify("RSA-SHA" + bits);
+        var verifier = crypto31.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto28.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto28.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto31.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto31.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -29889,7 +30304,7 @@ var init_vapid_helper = __esm({
 var require_ece = __commonJS({
   "node_modules/http_ece/ece.js"(exports, module) {
     "use strict";
-    var crypto28 = __require("crypto");
+    var crypto31 = __require("crypto");
     var AES_GCM = "aes-128-gcm";
     var PAD_SIZE = { "aes128gcm": 1, "aesgcm": 2 };
     var TAG_LENGTH = 16;
@@ -29916,7 +30331,7 @@ var require_ece = __commonJS({
       return b;
     }
     function HMAC_hash(key, input) {
-      var hmac = crypto28.createHmac("sha256", key);
+      var hmac = crypto31.createHmac("sha256", key);
       hmac.update(input);
       return hmac.digest();
     }
@@ -30184,7 +30599,7 @@ var require_ece = __commonJS({
     function decryptRecord(key, counter, buffer, header, last) {
       keylog("decrypt", buffer);
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto28.createDecipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto31.createDecipheriv(AES_GCM, key.key, nonce);
       gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
       var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
       data = Buffer.concat([data, gcm.final()]);
@@ -30232,7 +30647,7 @@ var require_ece = __commonJS({
       keylog("encrypt", buffer);
       pad = pad || 0;
       var nonce = generateNonce(key.nonce, counter);
-      var gcm = crypto28.createCipheriv(AES_GCM, key.key, nonce);
+      var gcm = crypto31.createCipheriv(AES_GCM, key.key, nonce);
       var ciphertext = [];
       var padSize = PAD_SIZE[header.version];
       var padding = Buffer.alloc(pad + padSize);
@@ -30275,7 +30690,7 @@ var require_ece = __commonJS({
       }
       var header = parseParams(params);
       if (!header.salt) {
-        header.salt = crypto28.randomBytes(KEY_LENGTH);
+        header.salt = crypto31.randomBytes(KEY_LENGTH);
       }
       var result;
       if (header.version === "aes128gcm") {
@@ -30752,9 +31167,9 @@ function resolveVapidKeys() {
   if (isValidVapidKeyPair(envPublic, envPrivate)) {
     return { publicKey: envPublic, privateKey: envPrivate, isPersistent: true };
   }
-  const g3 = globalThis;
-  if (g3.__myMoneyVapidKeys && isValidVapidKeyPair(g3.__myMoneyVapidKeys.publicKey, g3.__myMoneyVapidKeys.privateKey)) {
-    return g3.__myMoneyVapidKeys;
+  const g5 = globalThis;
+  if (g5.__myMoneyVapidKeys && isValidVapidKeyPair(g5.__myMoneyVapidKeys.publicKey, g5.__myMoneyVapidKeys.privateKey)) {
+    return g5.__myMoneyVapidKeys;
   }
   const candidatePaths = [
     path5.resolve(process.cwd(), ".data", "runtime-store", "vapid-keys.json"),
@@ -30765,12 +31180,12 @@ function resolveVapidKeys() {
       if (fs6.existsSync(filePath)) {
         const parsed = JSON.parse(fs6.readFileSync(filePath, "utf8"));
         if (isValidVapidKeyPair(parsed?.publicKey, parsed?.privateKey)) {
-          g3.__myMoneyVapidKeys = {
+          g5.__myMoneyVapidKeys = {
             publicKey: String(parsed.publicKey).trim(),
             privateKey: String(parsed.privateKey).trim(),
             isPersistent: true
           };
-          return g3.__myMoneyVapidKeys;
+          return g5.__myMoneyVapidKeys;
         }
       }
     } catch {
@@ -30799,12 +31214,12 @@ function resolveVapidKeys() {
     } catch {
     }
   }
-  g3.__myMoneyVapidKeys = {
+  g5.__myMoneyVapidKeys = {
     publicKey: generated.publicKey,
     privateKey: generated.privateKey,
     isPersistent: persisted
   };
-  return g3.__myMoneyVapidKeys;
+  return g5.__myMoneyVapidKeys;
 }
 function sanitizePublicEmailUrl(rawUrl, fallbackUrl) {
   const trimmed = (rawUrl || "").trim().replace(/\/+$/, "");
@@ -30926,20 +31341,20 @@ function readJsonFallback(fileName) {
         const raw = fs7.readFileSync(file, "utf8");
         if (raw.trim()) {
           const parsed = JSON.parse(raw);
-          g.__myMoneyRuntimeCache?.set(fileName, parsed);
+          g2.__myMoneyRuntimeCache?.set(fileName, parsed);
           return parsed;
         }
       }
     } catch {
     }
   }
-  if (g.__myMoneyRuntimeCache?.has(fileName)) {
-    return g.__myMoneyRuntimeCache.get(fileName);
+  if (g2.__myMoneyRuntimeCache?.has(fileName)) {
+    return g2.__myMoneyRuntimeCache.get(fileName);
   }
   return null;
 }
 function writeJsonFallback(fileName, data) {
-  g.__myMoneyRuntimeCache?.set(fileName, data);
+  g2.__myMoneyRuntimeCache?.set(fileName, data);
   try {
     const dir = resolveWritableStoreDir2();
     const file = safeStoreFile2(dir, fileName);
@@ -31197,10 +31612,10 @@ function getEncryptionKey() {
   if (seed.trim()) {
     return crypto14.createHash("sha256").update(`mymoney:admin_secrets:${seed.trim()}`).digest();
   }
-  if (!g.__myMoneyEncryptionSaltKey) {
-    g.__myMoneyEncryptionSaltKey = crypto14.randomBytes(32);
+  if (!g2.__myMoneyEncryptionSaltKey) {
+    g2.__myMoneyEncryptionSaltKey = crypto14.randomBytes(32);
   }
-  return g.__myMoneyEncryptionSaltKey;
+  return g2.__myMoneyEncryptionSaltKey;
 }
 function encryptSecret(plainText) {
   const key = getEncryptionKey();
@@ -31261,7 +31676,7 @@ async function saveGeminiApiKey(rawApiKey, updatedBy, validation) {
   const encryptedValue = encryptSecret(trimmed);
   const maskedPreview = maskSecretKey(trimmed);
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  g.__myMoneyEncryptedSecret = {
+  g2.__myMoneyEncryptedSecret = {
     encryptedValue,
     maskedPreview,
     updatedAt: now,
@@ -31299,8 +31714,8 @@ async function saveGeminiApiKey(rawApiKey, updatedBy, validation) {
   return getMaskedGeminiApiKeyInfo();
 }
 async function updateGeminiKeyValidationStatus(validation) {
-  if (g.__myMoneyEncryptedSecret) {
-    g.__myMoneyEncryptedSecret.lastValidation = validation;
+  if (g2.__myMoneyEncryptedSecret) {
+    g2.__myMoneyEncryptedSecret.lastValidation = validation;
   }
   if (isDatabaseAvailable()) {
     try {
@@ -31317,7 +31732,7 @@ async function updateGeminiKeyValidationStatus(validation) {
   }
 }
 async function removeGeminiApiKey() {
-  g.__myMoneyEncryptedSecret = null;
+  g2.__myMoneyEncryptedSecret = null;
   if (isDatabaseAvailable()) {
     try {
       await query(`DELETE FROM public.admin_secrets WHERE key = $1`, [GEMINI_SECRET_KEY_NAME]);
@@ -31338,7 +31753,7 @@ async function getEffectiveGeminiApiKey() {
       if (res.rows[0]?.encrypted_value) {
         const plain = decryptSecret(res.rows[0].encrypted_value);
         if (plain && plain.length > 10) {
-          g.__myMoneyEncryptedSecret = {
+          g2.__myMoneyEncryptedSecret = {
             encryptedValue: res.rows[0].encrypted_value,
             maskedPreview: res.rows[0].masked_preview || maskSecretKey(plain),
             updatedAt: res.rows[0].updated_at || (/* @__PURE__ */ new Date()).toISOString(),
@@ -31355,8 +31770,8 @@ async function getEffectiveGeminiApiKey() {
     } catch {
     }
   }
-  if (g.__myMoneyEncryptedSecret?.encryptedValue) {
-    const plain = decryptSecret(g.__myMoneyEncryptedSecret.encryptedValue);
+  if (g2.__myMoneyEncryptedSecret?.encryptedValue) {
+    const plain = decryptSecret(g2.__myMoneyEncryptedSecret.encryptedValue);
     if (plain && plain.length > 10) {
       return { apiKey: plain, source: "admin_settings" };
     }
@@ -31395,15 +31810,15 @@ async function getMaskedGeminiApiKeyInfo() {
     } catch {
     }
   }
-  if (g.__myMoneyEncryptedSecret) {
+  if (g2.__myMoneyEncryptedSecret) {
     return {
       configured: true,
       hasSavedKey: true,
-      maskedApiKey: g.__myMoneyEncryptedSecret.maskedPreview,
+      maskedApiKey: g2.__myMoneyEncryptedSecret.maskedPreview,
       source: "admin_settings",
-      updatedAt: g.__myMoneyEncryptedSecret.updatedAt,
-      updatedBy: g.__myMoneyEncryptedSecret.updatedBy,
-      lastValidation: g.__myMoneyEncryptedSecret.lastValidation
+      updatedAt: g2.__myMoneyEncryptedSecret.updatedAt,
+      updatedBy: g2.__myMoneyEncryptedSecret.updatedBy,
+      lastValidation: g2.__myMoneyEncryptedSecret.lastValidation
     };
   }
   const envKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim();
@@ -31495,7 +31910,7 @@ async function readSavedSmtpSecret() {
       if (res.rows[0]?.encrypted_value) {
         const plain = decryptSecret(res.rows[0].encrypted_value);
         if (plain) {
-          g.__myMoneySmtpEncryptedSecret = {
+          g2.__myMoneySmtpEncryptedSecret = {
             encryptedValue: res.rows[0].encrypted_value,
             maskedPreview: res.rows[0].masked_preview || maskSecretKey(plain),
             updatedAt: res.rows[0].updated_at || (/* @__PURE__ */ new Date()).toISOString(),
@@ -31503,23 +31918,23 @@ async function readSavedSmtpSecret() {
           };
           return {
             plain,
-            maskedPreview: g.__myMoneySmtpEncryptedSecret.maskedPreview,
-            updatedAt: g.__myMoneySmtpEncryptedSecret.updatedAt,
-            updatedBy: g.__myMoneySmtpEncryptedSecret.updatedBy
+            maskedPreview: g2.__myMoneySmtpEncryptedSecret.maskedPreview,
+            updatedAt: g2.__myMoneySmtpEncryptedSecret.updatedAt,
+            updatedBy: g2.__myMoneySmtpEncryptedSecret.updatedBy
           };
         }
       }
     } catch {
     }
   }
-  if (g.__myMoneySmtpEncryptedSecret?.encryptedValue) {
-    const plain = decryptSecret(g.__myMoneySmtpEncryptedSecret.encryptedValue);
+  if (g2.__myMoneySmtpEncryptedSecret?.encryptedValue) {
+    const plain = decryptSecret(g2.__myMoneySmtpEncryptedSecret.encryptedValue);
     if (plain) {
       return {
         plain,
-        maskedPreview: g.__myMoneySmtpEncryptedSecret.maskedPreview,
-        updatedAt: g.__myMoneySmtpEncryptedSecret.updatedAt,
-        updatedBy: g.__myMoneySmtpEncryptedSecret.updatedBy
+        maskedPreview: g2.__myMoneySmtpEncryptedSecret.maskedPreview,
+        updatedAt: g2.__myMoneySmtpEncryptedSecret.updatedAt,
+        updatedBy: g2.__myMoneySmtpEncryptedSecret.updatedBy
       };
     }
   }
@@ -31527,7 +31942,7 @@ async function readSavedSmtpSecret() {
   if (fileSecret?.encryptedValue) {
     const plain = decryptSecret(fileSecret.encryptedValue);
     if (plain) {
-      g.__myMoneySmtpEncryptedSecret = fileSecret;
+      g2.__myMoneySmtpEncryptedSecret = fileSecret;
       return {
         plain,
         maskedPreview: fileSecret.maskedPreview || maskSecretKey(plain),
@@ -31611,7 +32026,7 @@ async function saveSmtpSettings(input, updatedBy = {}) {
       updatedAt: now,
       updatedBy: actor
     };
-    g.__myMoneySmtpEncryptedSecret = secretPayload;
+    g2.__myMoneySmtpEncryptedSecret = secretPayload;
     writeJsonFallback(SMTP_SECRET_FILE, secretPayload);
     if (isDatabaseAvailable()) {
       await ensureAdminSecretsTable();
@@ -31632,7 +32047,7 @@ async function saveSmtpSettings(input, updatedBy = {}) {
   return getMaskedSmtpSettings();
 }
 async function removeSavedSmtpPassword() {
-  g.__myMoneySmtpEncryptedSecret = null;
+  g2.__myMoneySmtpEncryptedSecret = null;
   writeJsonFallback(SMTP_SECRET_FILE, null);
   if (isDatabaseAvailable()) {
     try {
@@ -31710,7 +32125,7 @@ async function getEffectiveSupportAlertEmail() {
   }
   return fallbackAdmin;
 }
-var DEFAULT_MAINTENANCE_CONFIG, DEFAULT_APP_POPUP_CONFIG, PRIMARY_DATA_DIR2, TMP_DATA_DIR2, g, REMOTE_SYNC_TTL_MS, remoteSyncCache, GEMINI_SECRET_KEY_NAME, SMTP_SECRET_KEY_NAME, SMTP_CONFIG_FILE, SMTP_SECRET_FILE;
+var DEFAULT_MAINTENANCE_CONFIG, DEFAULT_APP_POPUP_CONFIG, PRIMARY_DATA_DIR2, TMP_DATA_DIR2, g2, REMOTE_SYNC_TTL_MS, remoteSyncCache, GEMINI_SECRET_KEY_NAME, SMTP_SECRET_KEY_NAME, SMTP_CONFIG_FILE, SMTP_SECRET_FILE;
 var init_adminSettingsStore = __esm({
   "server/adminSettingsStore.ts"() {
     init_db();
@@ -31732,9 +32147,9 @@ var init_adminSettingsStore = __esm({
     };
     PRIMARY_DATA_DIR2 = path6.resolve(process.cwd(), ".data", "runtime-store");
     TMP_DATA_DIR2 = path6.resolve(os5.tmpdir(), "mymoney-runtime-store");
-    g = globalThis;
-    if (!g.__myMoneyRuntimeCache) {
-      g.__myMoneyRuntimeCache = /* @__PURE__ */ new Map();
+    g2 = globalThis;
+    if (!g2.__myMoneyRuntimeCache) {
+      g2.__myMoneyRuntimeCache = /* @__PURE__ */ new Map();
     }
     REMOTE_SYNC_TTL_MS = 4e3;
     remoteSyncCache = /* @__PURE__ */ new Map();
@@ -35361,6 +35776,1185 @@ var init_email = __esm({
   }
 });
 
+// server/firebaseDb.ts
+import crypto16 from "crypto";
+import fs9 from "fs";
+import path8 from "path";
+function loadLocalMirrorOnce() {
+  if (mirrorLoaded) return;
+  mirrorLoaded = true;
+  try {
+    if (fs9.existsSync(MIRROR_FILE)) {
+      const raw = JSON.parse(fs9.readFileSync(MIRROR_FILE, "utf8"));
+      if (raw && typeof raw === "object") {
+        for (const [col, docs] of Object.entries(raw)) {
+          const map2 = /* @__PURE__ */ new Map();
+          for (const [id, env2] of Object.entries(docs)) {
+            map2.set(id, env2);
+          }
+          localMirrorStore.set(col, map2);
+        }
+      }
+    }
+  } catch {
+  }
+}
+function persistLocalMirrorBestEffort() {
+  if (process.env.VERCEL) return;
+  try {
+    const out = {};
+    for (const [col, map2] of localMirrorStore.entries()) {
+      out[col] = Object.fromEntries(map2.entries());
+    }
+    fs9.writeFileSync(MIRROR_FILE, JSON.stringify(out), "utf8");
+  } catch {
+  }
+}
+function getFirebaseServiceAccount() {
+  const rawJson = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (parsed.project_id && parsed.client_email && parsed.private_key) {
+        return {
+          projectId: String(parsed.project_id).trim(),
+          clientEmail: String(parsed.client_email).trim(),
+          privateKey: String(parsed.private_key).replace(/\\n/g, "\n")
+        };
+      }
+    } catch {
+    }
+  }
+  const projectId = (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "").trim();
+  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
+  if (projectId && clientEmail && privateKey) {
+    return { projectId, clientEmail, privateKey };
+  }
+  return null;
+}
+function isFirebaseDbConfigured() {
+  return Boolean(getFirebaseServiceAccount());
+}
+async function getGoogleOAuthToken(sa, scope = "https://www.googleapis.com/auth/datastore") {
+  if (scope === "https://www.googleapis.com/auth/datastore" && cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 6e4) {
+    return cachedAccessToken.token;
+  }
+  const now = Math.floor(Date.now() / 1e3);
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const claim = Buffer.from(
+    JSON.stringify({
+      iss: sa.clientEmail,
+      scope,
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now
+    })
+  ).toString("base64url");
+  const signer = crypto16.createSign("RSA-SHA256");
+  signer.update(`${header}.${claim}`);
+  const signature = signer.sign(sa.privateKey, "base64url");
+  const assertion = `${header}.${claim}.${signature}`;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${encodeURIComponent(assertion)}`,
+    signal: AbortSignal.timeout(6e3)
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Firebase OAuth2 token failed (${res.status}): ${text.slice(0, 120)}`);
+  }
+  const json2 = await res.json();
+  if (scope === "https://www.googleapis.com/auth/datastore") {
+    cachedAccessToken = {
+      token: json2.access_token,
+      expiresAt: Date.now() + (Number(json2.expires_in) || 3600) * 1e3
+    };
+  }
+  return json2.access_token;
+}
+function toFirestoreValue(val) {
+  if (val === null || val === void 0) return { nullValue: null };
+  if (typeof val === "boolean") return { booleanValue: val };
+  if (typeof val === "number") {
+    if (!Number.isFinite(val)) return { nullValue: null };
+    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  }
+  if (typeof val === "string") return { stringValue: val };
+  if (Array.isArray(val)) {
+    return { arrayValue: { values: val.map(toFirestoreValue) } };
+  }
+  if (typeof val === "object") {
+    const fields = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== void 0) fields[k] = toFirestoreValue(v);
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+function fromFirestoreValue(v) {
+  if (!v || typeof v !== "object") return null;
+  if ("nullValue" in v) return null;
+  if ("booleanValue" in v) return Boolean(v.booleanValue);
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("doubleValue" in v) return Number(v.doubleValue);
+  if ("stringValue" in v) return String(v.stringValue);
+  if ("timestampValue" in v) return String(v.timestampValue);
+  if ("arrayValue" in v) {
+    return Array.isArray(v.arrayValue?.values) ? v.arrayValue.values.map(fromFirestoreValue) : [];
+  }
+  if ("mapValue" in v) {
+    const out = {};
+    for (const [k, fv] of Object.entries(v.mapValue?.fields || {})) {
+      out[k] = fromFirestoreValue(fv);
+    }
+    return out;
+  }
+  return null;
+}
+function parseFirestoreDocument(collection, doc) {
+  const id = String(doc.name || "").split("/").pop() || "";
+  const dataObj = {};
+  for (const [k, v] of Object.entries(doc.fields || {})) {
+    dataObj[k] = fromFirestoreValue(v);
+  }
+  return {
+    id,
+    collection,
+    data: dataObj,
+    sync_version: Number(dataObj._sync_version || 1),
+    source_db: dataObj._source_db === "firebase" ? "firebase" : "supabase",
+    idempotency_key: String(dataObj._idempotency_key || id),
+    updated_at: String(dataObj._updated_at || doc.updateTime || (/* @__PURE__ */ new Date()).toISOString()),
+    created_at: String(dataObj._created_at || doc.createTime || dataObj.created_at || (/* @__PURE__ */ new Date()).toISOString()),
+    deleted_at: dataObj._deleted_at || null
+  };
+}
+async function checkFirebaseHealth() {
+  const t0 = Date.now();
+  const sa = getFirebaseServiceAccount();
+  if (!sa) {
+    return {
+      status: "unknown",
+      configured: false,
+      responseTimeMs: Date.now() - t0,
+      message: "Firebase Service Account credentials not configured (FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY required; local mirror staging active)."
+    };
+  }
+  try {
+    const token = await getGoogleOAuthToken(sa);
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/failover_state/primary_lease`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5e3)
+      }
+    );
+    const ms = Date.now() - t0;
+    if (res.ok || res.status === 404) {
+      return { status: "healthy", configured: true, responseTimeMs: ms, message: `Cloud Firestore reachable (project: ${sa.projectId})` };
+    }
+    const errText = await res.text().catch(() => "");
+    return {
+      status: res.status >= 500 ? "unhealthy" : "degraded",
+      configured: true,
+      responseTimeMs: ms,
+      message: `Firestore HTTP ${res.status}${errText ? `: ${errText.slice(0, 100)}` : ""}`
+    };
+  } catch (err) {
+    return {
+      status: "unhealthy",
+      configured: true,
+      responseTimeMs: Date.now() - t0,
+      message: err?.message || "Firestore connection failed"
+    };
+  }
+}
+async function checkFirebaseAuthHealth() {
+  const t0 = Date.now();
+  const projectId = (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "").trim();
+  const webApiKey = (process.env.VITE_FIREBASE_API_KEY || "").trim();
+  if (!projectId) {
+    return {
+      status: "unknown",
+      configured: false,
+      responseTimeMs: Date.now() - t0,
+      message: "Firebase Auth project ID not configured (FIREBASE_PROJECT_ID / VITE_FIREBASE_PROJECT_ID)."
+    };
+  }
+  try {
+    const res = await fetch(
+      "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com",
+      { signal: AbortSignal.timeout(4500) }
+    );
+    const ms = Date.now() - t0;
+    if (!res.ok) {
+      return {
+        status: res.status >= 500 ? "unhealthy" : "degraded",
+        configured: true,
+        responseTimeMs: ms,
+        message: `Firebase SecureToken certs HTTP ${res.status}`
+      };
+    }
+    return {
+      status: webApiKey ? "healthy" : "degraded",
+      configured: true,
+      responseTimeMs: ms,
+      message: webApiKey ? `Firebase Auth token verification ready (project: ${projectId})` : `Server token verification ready (project: ${projectId}); VITE_FIREBASE_API_KEY unset for browser popup`
+    };
+  } catch (err) {
+    return {
+      status: "unhealthy",
+      configured: true,
+      responseTimeMs: Date.now() - t0,
+      message: err?.message || "Firebase Auth verification endpoint unreachable"
+    };
+  }
+}
+async function checkFirebaseStorageHealth() {
+  const t0 = Date.now();
+  const sa = getFirebaseServiceAccount();
+  const bucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || (sa?.projectId ? `${sa.projectId}.firebasestorage.app` : "")).trim();
+  if (!sa || !bucket) {
+    return {
+      status: "unknown",
+      configured: false,
+      responseTimeMs: Date.now() - t0,
+      message: "Firebase Storage bucket / service account not configured."
+    };
+  }
+  try {
+    const token = await getGoogleOAuthToken(sa, "https://www.googleapis.com/auth/devstorage.read_only");
+    const res = await fetch(
+      `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}?fields=name,location`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(4500)
+      }
+    );
+    const ms = Date.now() - t0;
+    if (res.ok) {
+      return { status: "healthy", configured: true, responseTimeMs: ms, message: `Firebase Storage bucket reachable (${bucket})` };
+    }
+    if (res.status === 404) {
+      return { status: "unknown", configured: false, responseTimeMs: ms, message: `Firebase Storage bucket not provisioned (${bucket})` };
+    }
+    return {
+      status: res.status >= 500 ? "unhealthy" : "degraded",
+      configured: true,
+      responseTimeMs: ms,
+      message: `Firebase Storage HTTP ${res.status}`
+    };
+  } catch (err) {
+    return {
+      status: "unhealthy",
+      configured: true,
+      responseTimeMs: Date.now() - t0,
+      message: err?.message || "Firebase Storage probe failed"
+    };
+  }
+}
+async function getSecondaryRecord(collection, id) {
+  const sa = getFirebaseServiceAccount();
+  if (sa) {
+    try {
+      const token = await getGoogleOAuthToken(sa);
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(5e3)
+        }
+      );
+      if (res.ok) {
+        const doc = await res.json();
+        return parseFirestoreDocument(collection, doc);
+      }
+      if (res.status === 404) return null;
+    } catch {
+    }
+  }
+  loadLocalMirrorOnce();
+  return localMirrorStore.get(collection)?.get(id) || null;
+}
+async function upsertSecondaryRecord(envelope) {
+  loadLocalMirrorOnce();
+  let colMap = localMirrorStore.get(envelope.collection);
+  if (!colMap) {
+    colMap = /* @__PURE__ */ new Map();
+    localMirrorStore.set(envelope.collection, colMap);
+  }
+  const existing = colMap.get(envelope.id);
+  if (existing && existing.sync_version > envelope.sync_version) {
+    return { ok: true, mode: getFirebaseServiceAccount() ? "firestore" : "local_mirror", skippedStale: true };
+  }
+  if (!existing || existing.sync_version <= envelope.sync_version) {
+    colMap.set(envelope.id, {
+      ...envelope,
+      created_at: existing?.created_at || envelope.created_at || envelope.updated_at
+    });
+    persistLocalMirrorBestEffort();
+  }
+  const sa = getFirebaseServiceAccount();
+  if (!sa) {
+    return { ok: true, mode: "local_mirror" };
+  }
+  try {
+    const token = await getGoogleOAuthToken(sa);
+    const docUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(envelope.collection)}/${encodeURIComponent(envelope.id)}`;
+    const remoteExisting = await getSecondaryRecord(envelope.collection, envelope.id).catch(() => null);
+    if (remoteExisting && remoteExisting.sync_version > envelope.sync_version) {
+      return { ok: true, mode: "firestore", skippedStale: true };
+    }
+    const fields = {};
+    const merged = {
+      ...envelope.data,
+      _sync_version: envelope.sync_version,
+      _source_db: envelope.source_db,
+      _idempotency_key: envelope.idempotency_key,
+      _created_at: remoteExisting?.created_at || envelope.created_at || envelope.updated_at,
+      _updated_at: envelope.updated_at,
+      _deleted_at: envelope.deleted_at || null
+    };
+    for (const [k, v] of Object.entries(merged)) {
+      if (v !== void 0) fields[k] = toFirestoreValue(v);
+    }
+    const res = await fetch(docUrl, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fields }),
+      signal: AbortSignal.timeout(6e3)
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return { ok: false, mode: "firestore", error: `Firestore write ${res.status}: ${txt.slice(0, 140)}` };
+    }
+    return { ok: true, mode: "firestore" };
+  } catch (err) {
+    return { ok: false, mode: "firestore", error: err?.message || "Firestore write failed" };
+  }
+}
+async function listSecondaryCollection(collection, userIdFilter, includeDeleted = false) {
+  const sa = getFirebaseServiceAccount();
+  if (sa) {
+    try {
+      const token = await getGoogleOAuthToken(sa);
+      const allDocs = [];
+      let pageToken = "";
+      for (let page = 0; page < 5; page++) {
+        const qs = new URLSearchParams({ pageSize: "200" });
+        if (pageToken) qs.set("pageToken", pageToken);
+        const res = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}?${qs.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(6e3)
+          }
+        );
+        if (!res.ok) break;
+        const json2 = await res.json();
+        const docs = Array.isArray(json2?.documents) ? json2.documents : [];
+        for (const d of docs) {
+          allDocs.push(parseFirestoreDocument(collection, d));
+        }
+        if (!json2?.nextPageToken) break;
+        pageToken = String(json2.nextPageToken);
+      }
+      return allDocs.filter((env2) => includeDeleted || !env2.deleted_at).filter(
+        (env2) => !userIdFilter || env2.data.user_id === userIdFilter || env2.data.user_a_id === userIdFilter || env2.data.user_b_id === userIdFilter || env2.id === userIdFilter
+      );
+    } catch {
+    }
+  }
+  loadLocalMirrorOnce();
+  const map2 = localMirrorStore.get(collection);
+  if (!map2) return [];
+  return Array.from(map2.values()).filter((env2) => includeDeleted || !env2.deleted_at).filter(
+    (env2) => !userIdFilter || env2.data.user_id === userIdFilter || env2.data.user_a_id === userIdFilter || env2.data.user_b_id === userIdFilter || env2.id === userIdFilter
+  );
+}
+async function writeFailoverLeaseToSecondary(lease) {
+  await upsertSecondaryRecord({
+    id: "primary_lease",
+    collection: "failover_state",
+    data: lease,
+    sync_version: lease.providerEpoch,
+    source_db: lease.activeProvider === "firebase" ? "firebase" : "supabase",
+    idempotency_key: `lease_epoch_${lease.providerEpoch}`,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  }).catch(() => {
+  });
+}
+function getLocalMirrorStats() {
+  loadLocalMirrorOnce();
+  const counts = {};
+  let total = 0;
+  for (const [col, map2] of localMirrorStore.entries()) {
+    counts[col] = map2.size;
+    total += map2.size;
+  }
+  return {
+    configured: isFirebaseDbConfigured(),
+    mode: isFirebaseDbConfigured() ? "cloud_firestore" : "local_mirror_staging",
+    totalRecords: total,
+    collections: counts
+  };
+}
+var SYNCED_BUSINESS_COLLECTIONS, cachedAccessToken, localMirrorStore, MIRROR_FILE, mirrorLoaded;
+var init_firebaseDb = __esm({
+  "server/firebaseDb.ts"() {
+    SYNCED_BUSINESS_COLLECTIONS = [
+      "app_users",
+      "transactions",
+      "sections",
+      "udhar_transactions",
+      "udhar_repayments",
+      "udhar_contacts",
+      "user_connections",
+      "user_notifications",
+      "app_settings"
+    ];
+    cachedAccessToken = null;
+    localMirrorStore = /* @__PURE__ */ new Map();
+    MIRROR_FILE = path8.resolve(process.cwd(), ".runtime-firebase-mirror.json");
+    mirrorLoaded = false;
+  }
+});
+
+// server/dbFailover.ts
+import crypto17 from "crypto";
+import fs10 from "fs";
+import os6 from "os";
+import path9 from "path";
+function registerFailoverAlertHook(hook) {
+  registeredAlertHook = hook;
+}
+function getFailoverState() {
+  return { ...state2 };
+}
+function getFailoverHistory() {
+  return failoverHistory.slice(0, 50);
+}
+function getReconciliationHistory() {
+  return reconciliationHistory.slice(0, 30);
+}
+function pruneOutboxIfBounded() {
+  if (outboxQueue.size <= MAX_OUTBOX_ENTRIES) return;
+  for (const [k, ev] of outboxQueue.entries()) {
+    if (ev.status === "synced") {
+      outboxQueue.delete(k);
+      if (outboxQueue.size <= MAX_OUTBOX_ENTRIES) break;
+    }
+  }
+}
+async function persistFailoverLease() {
+  const leaseSnapshot = {
+    activeProvider: state2.activeProvider,
+    providerEpoch: state2.providerEpoch,
+    leaseUntil: state2.leaseUntil,
+    lastFailoverAt: state2.lastFailoverAt,
+    lastRecoveryAt: state2.lastRecoveryAt,
+    reason: state2.reason
+  };
+  if (isDatabaseAvailable()) {
+    await query(
+      `INSERT INTO public.failover_state (id, active_provider, provider_epoch, lease_until, last_failover_at, last_recovery_at, reason, updated_at)
+       VALUES ('primary_lease', $1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         active_provider = EXCLUDED.active_provider,
+         provider_epoch = EXCLUDED.provider_epoch,
+         lease_until = EXCLUDED.lease_until,
+         last_failover_at = EXCLUDED.last_failover_at,
+         last_recovery_at = EXCLUDED.last_recovery_at,
+         reason = EXCLUDED.reason,
+         updated_at = NOW()`,
+      [
+        state2.activeProvider,
+        state2.providerEpoch,
+        state2.leaseUntil ? new Date(state2.leaseUntil).toISOString() : null,
+        state2.lastFailoverAt,
+        state2.lastRecoveryAt,
+        state2.reason
+      ]
+    ).catch(() => {
+    });
+  }
+  await writeFailoverLeaseToSecondary(leaseSnapshot).catch(() => {
+  });
+}
+function assertAuthoritativeWriteEpoch(expectedEpoch, targetProvider) {
+  if (state2.activeProvider === "degraded_readonly") {
+    return {
+      allowed: false,
+      reason: "Both primary and secondary databases are currently unavailable. Financial write rejected to protect data integrity."
+    };
+  }
+  if (expectedEpoch !== state2.providerEpoch) {
+    return {
+      allowed: false,
+      reason: `Stale writer fencing rejection: writer epoch ${expectedEpoch} !== active epoch ${state2.providerEpoch}.`
+    };
+  }
+  if (targetProvider !== state2.activeProvider) {
+    return {
+      allowed: false,
+      reason: `Split-brain protection: ${targetProvider} is not the active primary (${state2.activeProvider}).`
+    };
+  }
+  return { allowed: true };
+}
+async function applyEventBackToSupabase(ev) {
+  if (simulatedPrimaryWriteError) {
+    return { ok: false, error: simulatedPrimaryWriteError };
+  }
+  if (!ALLOWED_RECONCILE_TABLES.has(ev.collection)) {
+    return { ok: true };
+  }
+  const cleanPayload = {};
+  for (const [k, v] of Object.entries(ev.payload || {})) {
+    if (!k.startsWith("_")) {
+      cleanPayload[k] = v;
+    }
+  }
+  if (!cleanPayload.id && ev.collection !== "app_settings") {
+    cleanPayload.id = ev.recordId;
+  }
+  if (isDatabaseAvailable() && ev.collection === "transactions") {
+    try {
+      if (ev.operation === "delete") {
+        await query(
+          `UPDATE public.transactions
+           SET is_deleted = TRUE, deleted_at = COALESCE($2::timestamptz, NOW()), updated_at = NOW()
+           WHERE id = $1`,
+          [ev.recordId, cleanPayload.deleted_at || null]
+        );
+        return { ok: true };
+      }
+      await query(
+        `INSERT INTO public.transactions (
+           id, user_id, user_email, category, subcategory, transaction_type, amount, title,
+           description, person_name, transaction_date, transaction_time, notes, metadata,
+           is_deleted, deleted_at, deleted_by, created_at, updated_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8,
+           $9, $10, $11, $12, $13, $14::jsonb,
+           $15, $16, $17, COALESCE($18::timestamptz, NOW()), COALESCE($19::timestamptz, NOW())
+         )
+         ON CONFLICT (id) DO UPDATE SET
+           category = EXCLUDED.category,
+           subcategory = EXCLUDED.subcategory,
+           transaction_type = EXCLUDED.transaction_type,
+           amount = EXCLUDED.amount,
+           title = EXCLUDED.title,
+           description = EXCLUDED.description,
+           person_name = EXCLUDED.person_name,
+           transaction_date = EXCLUDED.transaction_date,
+           transaction_time = EXCLUDED.transaction_time,
+           notes = EXCLUDED.notes,
+           metadata = EXCLUDED.metadata,
+           is_deleted = EXCLUDED.is_deleted,
+           deleted_at = EXCLUDED.deleted_at,
+           deleted_by = EXCLUDED.deleted_by,
+           updated_at = GREATEST(public.transactions.updated_at, EXCLUDED.updated_at)`,
+        [
+          cleanPayload.id,
+          cleanPayload.user_id,
+          cleanPayload.user_email || null,
+          cleanPayload.category || "other",
+          cleanPayload.subcategory || "General",
+          cleanPayload.transaction_type || "expense",
+          Number(cleanPayload.amount || 0),
+          cleanPayload.title || "Synced Transaction",
+          cleanPayload.description || null,
+          cleanPayload.person_name || null,
+          cleanPayload.transaction_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+          cleanPayload.transaction_time || "00:00",
+          cleanPayload.notes || null,
+          JSON.stringify(cleanPayload.metadata || {}),
+          Boolean(cleanPayload.is_deleted),
+          cleanPayload.deleted_at || null,
+          cleanPayload.deleted_by || null,
+          cleanPayload.created_at || null,
+          cleanPayload.updated_at || null
+        ]
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err?.message || "PG reconciliation failed" };
+    }
+  }
+  if (ev.operation === "delete") {
+    const patchRes = await sbRestRequest(
+      `${encodeURIComponent(ev.collection)}?id=eq.${encodeURIComponent(ev.recordId)}`,
+      {
+        method: "PATCH",
+        body: { is_deleted: true, deleted_at: cleanPayload.deleted_at || (/* @__PURE__ */ new Date()).toISOString(), updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+      }
+    );
+    if (patchRes.ok || patchRes.status === 404) return { ok: true };
+    return { ok: false, error: patchRes.error || `REST delete HTTP ${patchRes.status}` };
+  }
+  const upsertRes = await sbRestRequest(encodeURIComponent(ev.collection), {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=minimal",
+    body: cleanPayload
+  });
+  if (upsertRes.ok) return { ok: true };
+  return { ok: false, error: upsertRes.error || `Supabase REST reconcile HTTP ${upsertRes.status}` };
+}
+async function evaluateFailoverTransition(params) {
+  const primaryHealthy = params.supabaseDbHealthy && params.supabasePostgrestHealthy;
+  if (primaryHealthy) {
+    state2.consecutivePrimaryFailures = 0;
+    if (state2.activeProvider !== "supabase") {
+      state2.consecutivePrimaryRecoveries += 1;
+      if (state2.consecutivePrimaryRecoveries >= RECOVERY_THRESHOLD) {
+        const prev = state2.activeProvider;
+        const downtimeMs = state2.lastFailoverAt ? Math.max(0, Date.now() - Date.parse(state2.lastFailoverAt)) : null;
+        await processOutboxQueue(50, { allowPrimaryReconcile: true }).catch(() => {
+        });
+        state2.activeProvider = "supabase";
+        state2.providerEpoch += 1;
+        state2.leaseUntil = null;
+        state2.lastRecoveryAt = (/* @__PURE__ */ new Date()).toISOString();
+        state2.reason = "Supabase DB & PostgREST verified healthy; primary restored after outbox reconciliation.";
+        state2.consecutivePrimaryRecoveries = 0;
+        failoverHistory.unshift({
+          timestamp: state2.lastRecoveryAt,
+          fromProvider: prev,
+          toProvider: "supabase",
+          epoch: state2.providerEpoch,
+          reason: state2.reason,
+          downtimeMs
+        });
+        if (failoverHistory.length > 50) failoverHistory.length = 50;
+        await persistFailoverLease().catch(() => {
+        });
+        if (registeredAlertHook) {
+          await registeredAlertHook({
+            serviceKey: "database_failover",
+            serviceLabel: "Database Recovery Completed (Supabase Primary Restored)",
+            transition: "recovery",
+            errorDetails: null,
+            severity: "high",
+            downtimeMs,
+            recommendedAction: "Review reconciliation logs in Admin \u2192 Database & Service Health to confirm zero pending sync items."
+          }).catch(() => {
+          });
+        }
+        return { transitioned: true, from: prev, to: "supabase", state: getFailoverState() };
+      }
+    }
+    return { transitioned: false, state: getFailoverState() };
+  }
+  state2.consecutivePrimaryRecoveries = 0;
+  state2.consecutivePrimaryFailures += 1;
+  if (state2.consecutivePrimaryFailures >= FAILURE_THRESHOLD) {
+    const nextProvider = params.firebaseHealthy ? "firebase" : "degraded_readonly";
+    if (state2.activeProvider !== nextProvider) {
+      const prev = state2.activeProvider;
+      state2.activeProvider = nextProvider;
+      state2.providerEpoch += 1;
+      state2.leaseUntil = Date.now() + LEASE_DURATION_MS;
+      state2.lastFailoverAt = (/* @__PURE__ */ new Date()).toISOString();
+      state2.reason = !params.supabaseDbHealthy ? "Supabase Database unreachable (sustained >= 3 probes)" : "Supabase PostgREST unhealthy / timing out (sustained >= 3 probes)";
+      if (nextProvider === "degraded_readonly") {
+        state2.reason += "; Firebase secondary also unavailable \u2014 financial writes locked.";
+      }
+      failoverHistory.unshift({
+        timestamp: state2.lastFailoverAt,
+        fromProvider: prev,
+        toProvider: nextProvider,
+        epoch: state2.providerEpoch,
+        reason: state2.reason
+      });
+      if (failoverHistory.length > 50) failoverHistory.length = 50;
+      await persistFailoverLease().catch(() => {
+      });
+      if (registeredAlertHook) {
+        await registeredAlertHook({
+          serviceKey: "database_failover",
+          serviceLabel: nextProvider === "firebase" ? "Database Failover Activated (Switched to Firebase Secondary)" : "Critical Dual-Database Outage (Degraded Read-Only Mode)",
+          transition: "failure",
+          errorDetails: state2.reason,
+          severity: "critical",
+          recommendedAction: nextProvider === "firebase" ? "Inspect Supabase PostgREST/DB health in Supabase Dashboard (check RAM/connections on Nano compute) while Firebase serves controlled failover." : "Both Supabase and Firebase are unreachable. Writes are blocked to protect financial integrity. Restore primary or secondary database immediately."
+        }).catch(() => {
+        });
+      }
+      return { transitioned: true, from: prev, to: nextProvider, state: getFailoverState() };
+    }
+  }
+  return { transitioned: false, state: getFailoverState() };
+}
+async function enqueueOutboxEvent(params) {
+  const existing = outboxQueue.get(params.idempotencyKey);
+  if (existing) {
+    return existing;
+  }
+  const resolvedSource = params.sourceDb || (state2.activeProvider === "firebase" ? "firebase" : "supabase");
+  const resolvedTarget = params.targetDb || (resolvedSource === "firebase" ? "supabase" : "firebase");
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const ev = {
+    id: crypto17.randomUUID(),
+    idempotencyKey: params.idempotencyKey,
+    collection: params.collection,
+    recordId: params.recordId,
+    operation: params.operation,
+    payload: params.payload,
+    syncVersion: params.syncVersion || Date.now(),
+    sourceDb: resolvedSource,
+    targetDb: resolvedTarget,
+    providerEpoch: state2.providerEpoch,
+    status: "pending",
+    attempts: 0,
+    maxAttempts: MAX_RETRY_ATTEMPTS,
+    lastError: null,
+    nextRetryAt: Date.now(),
+    syncedAt: null,
+    createdAt: nowIso
+  };
+  outboxQueue.set(ev.idempotencyKey, ev);
+  pruneOutboxIfBounded();
+  if (isDatabaseAvailable() && resolvedSource === "supabase") {
+    await query(
+      `INSERT INTO public.sync_outbox (id, idempotency_key, collection_name, record_id, operation, payload, sync_version, source_db, status)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, 'pending')
+       ON CONFLICT (idempotency_key) DO NOTHING`,
+      [
+        ev.id,
+        ev.idempotencyKey,
+        ev.collection,
+        ev.recordId,
+        ev.operation,
+        JSON.stringify(ev.payload),
+        ev.syncVersion,
+        ev.sourceDb
+      ]
+    ).catch(() => {
+    });
+  }
+  return ev;
+}
+async function processOutboxQueue(batchLimit = 20, options) {
+  const now = Date.now();
+  const allowPrimary = options?.allowPrimaryReconcile ?? state2.activeProvider === "supabase";
+  const due = Array.from(outboxQueue.values()).filter((ev) => {
+    if (ev.status === "synced") return false;
+    if (ev.attempts >= ev.maxAttempts && !options?.forceImmediate) return false;
+    if (!options?.forceImmediate && ev.nextRetryAt > now) return false;
+    if (ev.targetDb === "supabase" && !allowPrimary) return false;
+    return true;
+  }).sort((a, b) => {
+    if (a.status === b.status) return a.createdAt.localeCompare(b.createdAt);
+    return a.status === "pending" ? -1 : 1;
+  }).slice(0, batchLimit);
+  let synced = 0;
+  let failed = 0;
+  let reconciledToPrimary = 0;
+  let reconciledToSecondary = 0;
+  await mapWithConcurrency(due, 4, async (ev) => {
+    ev.attempts += 1;
+    let ok = false;
+    let errMsg;
+    if (ev.targetDb === "supabase") {
+      const res = await applyEventBackToSupabase(ev);
+      ok = res.ok;
+      errMsg = res.error;
+      if (ok) reconciledToPrimary += 1;
+    } else {
+      const envelope = {
+        id: ev.recordId,
+        collection: ev.collection,
+        data: ev.payload,
+        sync_version: ev.syncVersion,
+        source_db: ev.sourceDb,
+        idempotency_key: ev.idempotencyKey,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+        deleted_at: ev.operation === "delete" ? (/* @__PURE__ */ new Date()).toISOString() : null
+      };
+      const res = await upsertSecondaryRecord(envelope);
+      ok = res.ok;
+      errMsg = res.error;
+      if (ok) reconciledToSecondary += 1;
+    }
+    if (ok) {
+      ev.status = "synced";
+      ev.lastError = null;
+      ev.syncedAt = (/* @__PURE__ */ new Date()).toISOString();
+      synced += 1;
+    } else {
+      ev.status = "failed";
+      ev.lastError = errMsg || "Sync error";
+      const backoffMs = Math.min(3e5, 1e3 * Math.pow(2, Math.min(ev.attempts, 8)));
+      const jitterMs = Math.floor(Math.random() * 500);
+      ev.nextRetryAt = Date.now() + backoffMs + jitterMs;
+      failed += 1;
+    }
+    if (isDatabaseAvailable()) {
+      await query(
+        `UPDATE public.sync_outbox
+         SET status = $2, attempts = $3, last_error = $4, synced_at = $5, updated_at = NOW()
+         WHERE idempotency_key = $1`,
+        [ev.idempotencyKey, ev.status, ev.attempts, ev.lastError, ev.syncedAt]
+      ).catch(() => {
+      });
+    }
+  });
+  const totalFailed = Array.from(outboxQueue.values()).filter((e2) => e2.status === "failed").length;
+  if (totalFailed >= 3 && registeredAlertHook) {
+    await registeredAlertHook({
+      serviceKey: "sync_engine",
+      serviceLabel: "Data Synchronization Threshold Exceeded",
+      transition: "failure",
+      errorDetails: `${totalFailed} outbox synchronization event(s) failed replication.`,
+      severity: "high",
+      recommendedAction: "Open Admin \u2192 Database & Service Health to inspect failed outbox items and trigger Retry Failed Syncs or Manual Reconciliation."
+    }).catch(() => {
+    });
+  }
+  return { processed: due.length, synced, failed, reconciledToPrimary, reconciledToSecondary };
+}
+function getOutboxSummary() {
+  const all = Array.from(outboxQueue.values());
+  return {
+    total: all.length,
+    pending: all.filter((e2) => e2.status === "pending").length,
+    synced: all.filter((e2) => e2.status === "synced").length,
+    failed: all.filter((e2) => e2.status === "failed").length,
+    conflicts: all.filter((e2) => e2.status === "conflict").length,
+    recentEvents: all.slice(-30).reverse().map((e2) => ({
+      id: e2.id,
+      idempotencyKey: e2.idempotencyKey,
+      collection: e2.collection,
+      recordId: e2.recordId,
+      operation: e2.operation,
+      sourceDb: e2.sourceDb,
+      targetDb: e2.targetDb,
+      syncVersion: e2.syncVersion,
+      status: e2.status,
+      attempts: e2.attempts,
+      lastError: e2.lastError,
+      syncedAt: e2.syncedAt,
+      createdAt: e2.createdAt
+    })),
+    recentFailed: all.filter((e2) => e2.status === "failed").slice(0, 20).map((e2) => ({
+      id: e2.id,
+      idempotencyKey: e2.idempotencyKey,
+      collection: e2.collection,
+      recordId: e2.recordId,
+      sourceDb: e2.sourceDb,
+      targetDb: e2.targetDb,
+      attempts: e2.attempts,
+      lastError: e2.lastError,
+      createdAt: e2.createdAt
+    })),
+    mirrorStats: getLocalMirrorStats()
+  };
+}
+async function retryFailedOutboxEvents() {
+  for (const ev of outboxQueue.values()) {
+    if (ev.status === "failed") {
+      ev.nextRetryAt = Date.now();
+      if (ev.attempts >= ev.maxAttempts) {
+        ev.attempts = ev.maxAttempts - 1;
+      }
+    }
+  }
+  const res = await processOutboxQueue(50, { forceImmediate: true });
+  return { retried: res.processed, synced: res.synced, failed: res.failed };
+}
+async function fetchPrimaryCollectionSnapshot(collection) {
+  if (isDatabaseAvailable()) {
+    const safeTables = new Set(SYNCED_BUSINESS_COLLECTIONS);
+    if (safeTables.has(collection)) {
+      try {
+        const res = await query(`SELECT * FROM public.${collection} LIMIT 500`);
+        if (Array.isArray(res.rows)) return res.rows;
+      } catch {
+      }
+    }
+  }
+  const restRes = await sbRestRequest(`${encodeURIComponent(collection)}?select=*&limit=500`, {
+    timeoutMs: 5e3
+  });
+  if (restRes.ok && Array.isArray(restRes.data)) {
+    return restRes.data;
+  }
+  return [];
+}
+function resolveBackupDir() {
+  if (process.env.VERCEL) return null;
+  const candidates = [
+    path9.resolve(process.cwd(), ".data", "backups"),
+    path9.resolve(os6.tmpdir(), "mymoney-backups")
+  ];
+  for (const dir of candidates) {
+    try {
+      if (!fs10.existsSync(dir)) fs10.mkdirSync(dir, { recursive: true });
+      fs10.accessSync(dir, fs10.constants.W_OK);
+      return dir;
+    } catch {
+    }
+  }
+  return null;
+}
+async function createLogicalBackupAndVerifyRestore(actor = "system", backupType = "logical_snapshot") {
+  const collections = [...SYNCED_BUSINESS_COLLECTIONS];
+  const snapshotData = {};
+  const recordCounts = {};
+  let totalRecords = 0;
+  for (const col of collections) {
+    const [primaryRows, secondaryDocs] = await Promise.all([
+      fetchPrimaryCollectionSnapshot(col).catch(() => []),
+      listSecondaryCollection(col, void 0, true).catch(() => [])
+    ]);
+    const mergedById = /* @__PURE__ */ new Map();
+    for (const row of primaryRows) {
+      const id2 = String(row?.id || row?.key || "");
+      if (id2) mergedById.set(id2, { id: id2, source: "supabase", data: row });
+    }
+    for (const doc of secondaryDocs) {
+      if (doc?.id && !mergedById.has(doc.id)) {
+        mergedById.set(doc.id, { id: doc.id, source: doc.source_db, sync_version: doc.sync_version, data: doc.data });
+      }
+    }
+    const list = Array.from(mergedById.values());
+    snapshotData[col] = list;
+    recordCounts[col] = list.length;
+    totalRecords += list.length;
+  }
+  const expectedTxNet = (snapshotData.transactions || []).reduce((acc, item) => {
+    const d = item?.data || {};
+    if (d.is_deleted) return acc;
+    const amt = Number(d.amount || 0);
+    return acc + (d.transaction_type === "income" ? amt : -amt);
+  }, 0);
+  const id = `bk_${Date.now()}`;
+  const serialized = JSON.stringify({
+    backupId: id,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    createdBy: actor,
+    collections: snapshotData
+  });
+  const byteSize = Buffer.byteLength(serialized, "utf8");
+  const checksumSha256 = crypto17.createHash("sha256").update(serialized).digest("hex");
+  let storageLocation = "memory://logical-verified-snapshot";
+  const backupDir = resolveBackupDir();
+  if (backupDir) {
+    try {
+      const filePath = path9.resolve(backupDir, `${id}.json`);
+      if (filePath.startsWith(backupDir + path9.sep)) {
+        fs10.writeFileSync(filePath, serialized, { encoding: "utf8", mode: 384 });
+        storageLocation = `.data/backups/${id}.json`;
+        const files = fs10.readdirSync(backupDir).filter((f3) => f3.startsWith("bk_") && f3.endsWith(".json")).sort().reverse();
+        for (const stale of files.slice(10)) {
+          fs10.unlinkSync(path9.resolve(backupDir, stale));
+        }
+      }
+    } catch {
+    }
+  }
+  let rawForRestore = serialized;
+  if (backupDir && storageLocation.endsWith(`${id}.json`)) {
+    try {
+      rawForRestore = fs10.readFileSync(path9.resolve(backupDir, `${id}.json`), "utf8");
+    } catch {
+    }
+  }
+  const reChecksum = crypto17.createHash("sha256").update(rawForRestore).digest("hex");
+  const reparsed = JSON.parse(rawForRestore);
+  const restoredCols = reparsed?.collections || {};
+  const countsMatch = collections.every(
+    (c) => Array.isArray(restoredCols[c]) && restoredCols[c].length === recordCounts[c]
+  );
+  const restoredTxNet = (restoredCols.transactions || []).reduce((acc, item) => {
+    const d = item?.data || {};
+    if (d.is_deleted) return acc;
+    const amt = Number(d.amount || 0);
+    return acc + (d.transaction_type === "income" ? amt : -amt);
+  }, 0);
+  const balanceVerified = Math.abs(restoredTxNet - expectedTxNet) < 1e-3;
+  const restoreVerified = reChecksum === checksumSha256 && countsMatch && balanceVerified;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const record = {
+    id,
+    backupType,
+    checksumSha256,
+    recordCounts,
+    totalRecords,
+    byteSize,
+    storageLocation,
+    restoreVerified,
+    balanceVerified,
+    restoreVerifiedAt: restoreVerified ? nowIso : null,
+    status: restoreVerified ? "verified" : "failed_verification",
+    createdBy: actor,
+    createdAt: nowIso
+  };
+  backupSnapshots.unshift(record);
+  if (backupSnapshots.length > 30) backupSnapshots.length = 30;
+  if (isDatabaseAvailable()) {
+    await query(
+      `INSERT INTO public.backup_snapshots (id, backup_type, checksum_sha256, record_counts, restore_verified, restore_verified_at, status, created_by)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        record.id,
+        record.backupType,
+        record.checksumSha256,
+        JSON.stringify(record.recordCounts),
+        record.restoreVerified,
+        record.restoreVerifiedAt,
+        record.status,
+        record.createdBy
+      ]
+    ).catch(() => {
+    });
+  }
+  return record;
+}
+function getBackupSnapshots() {
+  return backupSnapshots.slice(0, 20);
+}
+async function runDualDbReconciliation() {
+  const fb = await checkFirebaseHealth();
+  const outboxRes = await processOutboxQueue(100, {
+    allowPrimaryReconcile: state2.activeProvider === "supabase",
+    forceImmediate: true
+  });
+  const auditCollections = ["app_users", "transactions", "udhar_transactions", "udhar_contacts", "user_connections", "user_notifications"];
+  let missingInSecondary = 0;
+  let missingInPrimary = 0;
+  let conflictsDetected = 0;
+  const notes = [];
+  for (const col of auditCollections) {
+    const [primaryRows, secondaryDocs] = await Promise.all([
+      fetchPrimaryCollectionSnapshot(col).catch(() => []),
+      listSecondaryCollection(col, void 0, true).catch(() => [])
+    ]);
+    const primaryMap = /* @__PURE__ */ new Map();
+    for (const r2 of primaryRows) {
+      const id = String(r2?.id || "");
+      if (id) primaryMap.set(id, r2);
+    }
+    const secondaryMap = /* @__PURE__ */ new Map();
+    for (const d of secondaryDocs) {
+      if (d?.id) secondaryMap.set(d.id, d);
+    }
+    for (const [id, row] of primaryMap.entries()) {
+      const sec = secondaryMap.get(id);
+      if (!sec) {
+        missingInSecondary += 1;
+        await enqueueOutboxEvent({
+          idempotencyKey: `reconcile_p2s_${col}_${id}_${row.updated_at || "v1"}`,
+          collection: col,
+          recordId: id,
+          operation: row.is_deleted ? "delete" : "upsert",
+          payload: row,
+          syncVersion: row.updated_at ? Date.parse(row.updated_at) || Date.now() : Date.now(),
+          sourceDb: "supabase",
+          targetDb: "firebase"
+        });
+      } else if (col === "transactions" && Math.abs(Number(row.amount || 0) - Number(sec.data?.amount || 0)) > 1e-3) {
+        conflictsDetected += 1;
+        notes.push(`Amount drift detected on ${col}/${id}: primary=${row.amount}, secondary=${sec.data?.amount}`);
+      }
+    }
+    for (const [id, sec] of secondaryMap.entries()) {
+      if (!primaryMap.has(id) && sec.source_db === "firebase" && !sec.deleted_at) {
+        missingInPrimary += 1;
+        await enqueueOutboxEvent({
+          idempotencyKey: `reconcile_s2p_${col}_${id}_v${sec.sync_version}`,
+          collection: col,
+          recordId: id,
+          operation: "upsert",
+          payload: sec.data,
+          syncVersion: sec.sync_version,
+          sourceDb: "firebase",
+          targetDb: "supabase"
+        });
+      }
+    }
+  }
+  const backfillRes = await processOutboxQueue(100, {
+    allowPrimaryReconcile: state2.activeProvider === "supabase",
+    forceImmediate: true
+  });
+  const report = {
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    checkedCollections: auditCollections.length,
+    outboxProcessed: outboxRes.processed + backfillRes.processed,
+    outboxSynced: outboxRes.synced + backfillRes.synced,
+    reconciledToPrimary: outboxRes.reconciledToPrimary + backfillRes.reconciledToPrimary,
+    reconciledToSecondary: outboxRes.reconciledToSecondary + backfillRes.reconciledToSecondary,
+    missingInSecondary,
+    missingInPrimary,
+    conflictsDetected,
+    firebaseStatus: fb.status,
+    notes
+  };
+  reconciliationHistory.unshift(report);
+  if (reconciliationHistory.length > 30) reconciliationHistory.length = 30;
+  if (conflictsDetected > 0 && registeredAlertHook) {
+    await registeredAlertHook({
+      serviceKey: "reconciliation_conflicts",
+      serviceLabel: "Data Reconciliation Required",
+      transition: "failure",
+      errorDetails: `${conflictsDetected} record conflict(s) detected between Supabase and Firebase.`,
+      severity: "high",
+      recommendedAction: "Review conflict notes in Admin \u2192 Database & Service Health and reconcile affected records."
+    }).catch(() => {
+    });
+  }
+  return report;
+}
+var FAILURE_THRESHOLD, RECOVERY_THRESHOLD, LEASE_DURATION_MS, MAX_OUTBOX_ENTRIES, MAX_RETRY_ATTEMPTS, state2, outboxQueue, failoverHistory, reconciliationHistory, backupSnapshots, simulatedPrimaryWriteError, registeredAlertHook, ALLOWED_RECONCILE_TABLES;
+var init_dbFailover = __esm({
+  "server/dbFailover.ts"() {
+    init_db();
+    init_supabaseRestFallback();
+    init_firebaseDb();
+    init_cache();
+    FAILURE_THRESHOLD = 3;
+    RECOVERY_THRESHOLD = 2;
+    LEASE_DURATION_MS = 6e4;
+    MAX_OUTBOX_ENTRIES = 2e3;
+    MAX_RETRY_ATTEMPTS = 10;
+    state2 = {
+      activeProvider: "supabase",
+      providerEpoch: 1,
+      leaseUntil: null,
+      lastFailoverAt: null,
+      lastRecoveryAt: null,
+      reason: "Normal primary operation",
+      consecutivePrimaryFailures: 0,
+      consecutivePrimaryRecoveries: 0
+    };
+    outboxQueue = /* @__PURE__ */ new Map();
+    failoverHistory = [];
+    reconciliationHistory = [];
+    backupSnapshots = [];
+    simulatedPrimaryWriteError = null;
+    registeredAlertHook = null;
+    ALLOWED_RECONCILE_TABLES = /* @__PURE__ */ new Set([
+      "transactions",
+      "udhar_transactions",
+      "udhar_repayments",
+      "udhar_contacts",
+      "user_connections",
+      "user_notifications",
+      "sections",
+      "app_settings"
+    ]);
+  }
+});
+
 // server/notificationEmailTemplates.ts
 function generateCampaignEmail(data) {
   const loginUrl = APP_CONFIG.appLoginUrl;
@@ -35624,6 +37218,553 @@ var init_pwaUtils = __esm({
   }
 });
 
+// src/lib/uploadSecurityCore.ts
+function sanitizeUploadFilename(rawName) {
+  const input = String(rawName || "upload.png").trim();
+  if (!input || input.includes("\0")) {
+    return {
+      valid: false,
+      sanitizedName: "rejected",
+      extension: "",
+      error: "Invalid filename containing empty or null-byte characters."
+    };
+  }
+  const baseName = input.split(/[\\/]/).pop() || "upload.png";
+  const cleaned = baseName.replace(/[\x00-\x1f\x7f]/g, "").replace(/[^\w.\-() ]+/g, "_").replace(/^\.+/, "").slice(0, 120);
+  if (!cleaned) {
+    return {
+      valid: false,
+      sanitizedName: "rejected",
+      extension: "",
+      error: "Filename is invalid after sanitization."
+    };
+  }
+  const segments = cleaned.toLowerCase().split(".").filter(Boolean);
+  if (segments.length < 2) {
+    return {
+      valid: false,
+      sanitizedName: cleaned,
+      extension: "",
+      error: "File must include a valid image extension (.png, .jpg, .jpeg, .webp)."
+    };
+  }
+  const finalExt = segments[segments.length - 1];
+  for (let i2 = 1; i2 < segments.length; i2++) {
+    const seg = segments[i2];
+    if (DANGEROUS_EXTENSIONS.has(seg)) {
+      return {
+        valid: false,
+        sanitizedName: cleaned,
+        extension: finalExt,
+        error: `Dangerous or disallowed file extension ".${seg}" is blocked by security policy.`
+      };
+    }
+  }
+  if (finalExt === "svg" || finalExt === "svgz") {
+    return {
+      valid: true,
+      sanitizedName: cleaned,
+      extension: finalExt
+    };
+  }
+  if (!["png", "jpg", "jpeg", "webp", "gif"].includes(finalExt)) {
+    return {
+      valid: false,
+      sanitizedName: cleaned,
+      extension: finalExt,
+      error: `Unsupported file extension ".${finalExt}". Allowed: PNG, JPG, JPEG, WebP.`
+    };
+  }
+  return {
+    valid: true,
+    sanitizedName: cleaned,
+    extension: finalExt === "jpg" ? "jpeg" : finalExt
+  };
+}
+function decodeBase64ToBytes(base64Body) {
+  const clean = base64Body.replace(/\s+/g, "");
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(clean, "base64"));
+  }
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i2 = 0; i2 < binary.length; i2++) {
+    bytes[i2] = binary.charCodeAt(i2);
+  }
+  return bytes;
+}
+function encodeBytesToBase64(bytes) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+  }
+  const CHUNK = 32768;
+  let binary = "";
+  for (let i2 = 0; i2 < bytes.length; i2 += CHUNK) {
+    const slice = bytes.subarray(i2, Math.min(i2 + CHUNK, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+function readAscii(bytes, start, len) {
+  const end = Math.min(bytes.length, start + len);
+  let out = "";
+  for (let i2 = start; i2 < end; i2++) {
+    const code = bytes[i2];
+    out += code >= 9 && code <= 126 ? String.fromCharCode(code) : " ";
+  }
+  return out;
+}
+function uint32BE(b, off) {
+  return (b[off] << 24 | b[off + 1] << 16 | b[off + 2] << 8 | b[off + 3]) >>> 0;
+}
+function uint32LE(b, off) {
+  return (b[off] | b[off + 1] << 8 | b[off + 2] << 16 | b[off + 3] << 24) >>> 0;
+}
+function uint16BE(b, off) {
+  return b[off] << 8 | b[off + 1];
+}
+function uint16LE(b, off) {
+  return b[off] | b[off + 1] << 8;
+}
+function detectSuspiciousPayloads(bytes) {
+  if (bytes.length < 4) return "EMPTY_OR_TRUNCATED_FILE";
+  if (bytes[0] === 77 && bytes[1] === 90) return "PE_EXECUTABLE_HEADER_MZ";
+  if (bytes[0] === 127 && bytes[1] === 69 && bytes[2] === 76 && bytes[3] === 70) return "ELF_EXECUTABLE_HEADER";
+  if (bytes[0] === 254 && bytes[1] === 237 && bytes[2] === 250 && (bytes[3] === 206 || bytes[3] === 207) || bytes[0] === 207 && bytes[1] === 250 && bytes[2] === 237 && bytes[3] === 254) {
+    return "MACHO_EXECUTABLE_HEADER";
+  }
+  if (bytes[0] === 80 && bytes[1] === 75 && (bytes[2] === 3 || bytes[2] === 5)) {
+    return "ARCHIVE_ZIP_JAR_APK_HEADER";
+  }
+  if (bytes[0] === 82 && bytes[1] === 97 && bytes[2] === 114 && bytes[3] === 33) {
+    return "RAR_ARCHIVE_HEADER";
+  }
+  if (bytes[0] === 31 && bytes[1] === 139) {
+    return "GZIP_ARCHIVE_HEADER";
+  }
+  if (bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70) {
+    return "PDF_DOCUMENT_HEADER";
+  }
+  const headText = readAscii(bytes, 0, Math.min(bytes.length, 4096));
+  const tailStart = Math.max(0, bytes.length - 4096);
+  const tailText = readAscii(bytes, tailStart, bytes.length - tailStart);
+  const combined = `${headText}
+${tailText}`;
+  if (combined.includes(EICAR_SIGNATURE)) {
+    return "EICAR_TEST_MALWARE_SIGNATURE";
+  }
+  const trimmedHead = headText.trimStart().toLowerCase();
+  if (trimmedHead.startsWith("<!doctype") || trimmedHead.startsWith("<html") || trimmedHead.startsWith("<script") || trimmedHead.startsWith("<?php") || trimmedHead.startsWith("#!/")) {
+    return "SCRIPT_OR_HTML_DOCUMENT";
+  }
+  if (/<\s*script\b|<\s*\?\s*php\b|<\s*iframe\b|javascript\s*:/i.test(combined)) {
+    return "EMBEDDED_SCRIPT_POLYGLOT";
+  }
+  return null;
+}
+function parsePngDimensions(bytes) {
+  if (bytes.length < 24) return null;
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i2 = 0; i2 < sig.length; i2++) {
+    if (bytes[i2] !== sig[i2]) return null;
+  }
+  if (bytes[12] !== 73 || bytes[13] !== 72 || bytes[14] !== 68 || bytes[15] !== 82) {
+    return null;
+  }
+  const width = uint32BE(bytes, 16);
+  const height = uint32BE(bytes, 20);
+  let hasIend = false;
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const chunkLen = uint32BE(bytes, offset);
+    if (chunkLen > bytes.length - offset - 12) break;
+    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    if (type === "IEND") {
+      hasIend = true;
+      break;
+    }
+    offset += 12 + chunkLen;
+  }
+  if (!hasIend) return null;
+  return { width, height };
+}
+function parseJpegDimensions(bytes) {
+  if (bytes.length < 12) return null;
+  if (bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255) return null;
+  let offset = 2;
+  let dims = null;
+  while (offset + 3 < bytes.length) {
+    if (bytes[offset] !== 255) {
+      offset += 1;
+      continue;
+    }
+    while (offset < bytes.length && bytes[offset] === 255) offset++;
+    if (offset >= bytes.length) break;
+    const marker = bytes[offset++];
+    if (marker === 217) break;
+    if (marker === 216 || marker === 1 || marker >= 208 && marker <= 215) continue;
+    if (offset + 2 > bytes.length) break;
+    const segLen = uint16BE(bytes, offset);
+    if (segLen < 2 || offset + segLen > bytes.length) break;
+    const isSof = marker >= 192 && marker <= 195 || marker >= 197 && marker <= 199 || marker >= 201 && marker <= 203 || marker >= 205 && marker <= 207;
+    if (isSof && segLen >= 7 && !dims) {
+      const height = uint16BE(bytes, offset + 3);
+      const width = uint16BE(bytes, offset + 5);
+      dims = { width, height };
+    }
+    if (marker === 218) {
+      break;
+    }
+    offset += segLen;
+  }
+  return dims;
+}
+function parseWebpDimensions(bytes) {
+  if (bytes.length < 30) return null;
+  if (readAscii(bytes, 0, 4) !== "RIFF" || readAscii(bytes, 8, 4) !== "WEBP") {
+    return null;
+  }
+  const chunkType = readAscii(bytes, 12, 4);
+  if (chunkType === "VP8 " && bytes.length >= 30) {
+    if (bytes[23] !== 157 || bytes[24] !== 1 || bytes[25] !== 42) return null;
+    const width = uint16LE(bytes, 26) & 16383;
+    const height = uint16LE(bytes, 28) & 16383;
+    return { width, height };
+  }
+  if (chunkType === "VP8L" && bytes.length >= 25) {
+    if (bytes[20] !== 47) return null;
+    const bits = uint32LE(bytes, 21);
+    const width = (bits & 16383) + 1;
+    const height = (bits >> 14 & 16383) + 1;
+    return { width, height };
+  }
+  if (chunkType === "VP8X" && bytes.length >= 30) {
+    const width = 1 + (bytes[24] | bytes[25] << 8 | bytes[26] << 16);
+    const height = 1 + (bytes[27] | bytes[28] << 8 | bytes[29] << 16);
+    return { width, height };
+  }
+  return null;
+}
+function parseGifDimensions(bytes) {
+  if (bytes.length < 14) return null;
+  const hdr = readAscii(bytes, 0, 6);
+  if (hdr !== "GIF87a" && hdr !== "GIF89a") return null;
+  return {
+    width: uint16LE(bytes, 6),
+    height: uint16LE(bytes, 8)
+  };
+}
+function inspectImageBinary(bytes, declaredMime, options) {
+  const maxBytes = options?.maxBytes ?? MAX_ADMIN_LOGO_BYTES;
+  const minW = options?.minWidth ?? 1;
+  const minH = options?.minHeight ?? 1;
+  const maxW = options?.maxWidth ?? MAX_PIXEL_WIDTH;
+  const maxH = options?.maxHeight ?? MAX_PIXEL_HEIGHT;
+  if (!bytes || bytes.length === 0) {
+    return { valid: false, byteSize: 0, error: "Uploaded file is empty." };
+  }
+  if (bytes.length > maxBytes) {
+    return {
+      valid: false,
+      byteSize: bytes.length,
+      error: `File size (${(bytes.length / (1024 * 1024)).toFixed(2)} MB) exceeds maximum allowed limit (${(maxBytes / (1024 * 1024)).toFixed(1)} MB).`
+    };
+  }
+  const threat = detectSuspiciousPayloads(bytes);
+  if (threat) {
+    return {
+      valid: false,
+      byteSize: bytes.length,
+      threatDetected: threat,
+      error: `Upload blocked by security inspection (${threat}). Only clean PNG, JPG, JPEG, or WebP images are permitted.`
+    };
+  }
+  let detectedMime;
+  let dims = null;
+  if (bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71) {
+    detectedMime = "image/png";
+    dims = parsePngDimensions(bytes);
+  } else if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) {
+    detectedMime = "image/jpeg";
+    dims = parseJpegDimensions(bytes);
+  } else if (bytes.length >= 12 && bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70 && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80) {
+    detectedMime = "image/webp";
+    dims = parseWebpDimensions(bytes);
+  } else if (options?.allowGif && bytes.length >= 6 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70) {
+    detectedMime = "image/gif";
+    dims = parseGifDimensions(bytes);
+  }
+  if (!detectedMime) {
+    return {
+      valid: false,
+      byteSize: bytes.length,
+      threatDetected: "MAGIC_BYTE_MISMATCH",
+      error: "Invalid or unsupported file signature. File content does not match PNG, JPG, JPEG, or WebP."
+    };
+  }
+  if (declaredMime) {
+    const normDeclared = declaredMime.toLowerCase() === "image/jpg" ? "image/jpeg" : declaredMime.toLowerCase();
+    if (normDeclared !== detectedMime) {
+      return {
+        valid: false,
+        byteSize: bytes.length,
+        threatDetected: "DECLARED_MIME_SPOOF",
+        error: `File MIME mismatch: declared "${normDeclared}" but binary header is "${detectedMime}".`
+      };
+    }
+  }
+  if (!dims || dims.width <= 0 || dims.height <= 0) {
+    return {
+      valid: false,
+      byteSize: bytes.length,
+      threatDetected: "CORRUPT_IMAGE_STRUCTURE",
+      error: "Corrupt or malformed image file: unable to verify valid image dimensions."
+    };
+  }
+  if (dims.width < minW || dims.height < minH) {
+    return {
+      valid: false,
+      byteSize: bytes.length,
+      width: dims.width,
+      height: dims.height,
+      error: `Image dimensions (${dims.width}\xD7${dims.height}px) are too small (minimum ${minW}\xD7${minH}px).`
+    };
+  }
+  if (dims.width > maxW || dims.height > maxH || dims.width * dims.height > MAX_TOTAL_PIXELS) {
+    return {
+      valid: false,
+      byteSize: bytes.length,
+      width: dims.width,
+      height: dims.height,
+      threatDetected: "DECOMPRESSION_BOMB_DIMENSIONS",
+      error: `Image dimensions (${dims.width}\xD7${dims.height}px) exceed safe limits (${maxW}\xD7${maxH}px / 40MP).`
+    };
+  }
+  return {
+    valid: true,
+    detectedMime,
+    width: dims.width,
+    height: dims.height,
+    byteSize: bytes.length
+  };
+}
+function stripBinaryImageMetadata(bytes, mime) {
+  if (mime === "image/png") {
+    const KEEP_CHUNKS = /* @__PURE__ */ new Set(["IHDR", "PLTE", "IDAT", "IEND", "tRNS", "gAMA", "sRGB", "cHRM", "bKGD", "pHYs"]);
+    const chunks = [bytes.subarray(0, 8)];
+    let offset = 8;
+    while (offset + 12 <= bytes.length) {
+      const len = uint32BE(bytes, offset);
+      if (len > bytes.length - offset - 12) break;
+      const type = String.fromCharCode(
+        bytes[offset + 4],
+        bytes[offset + 5],
+        bytes[offset + 6],
+        bytes[offset + 7]
+      );
+      const totalChunkLen = 12 + len;
+      if (KEEP_CHUNKS.has(type)) {
+        chunks.push(bytes.subarray(offset, offset + totalChunkLen));
+      }
+      offset += totalChunkLen;
+      if (type === "IEND") break;
+    }
+    const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+    const out = new Uint8Array(totalLen);
+    let pos = 0;
+    for (const c of chunks) {
+      out.set(c, pos);
+      pos += c.length;
+    }
+    return out;
+  }
+  if (mime === "image/jpeg") {
+    if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) return bytes;
+    const segments = [bytes.subarray(0, 2)];
+    let offset = 2;
+    while (offset + 2 <= bytes.length) {
+      if (bytes[offset] !== 255) {
+        offset += 1;
+        continue;
+      }
+      const markerStart = offset;
+      while (offset < bytes.length && bytes[offset] === 255) offset++;
+      if (offset >= bytes.length) break;
+      const marker = bytes[offset++];
+      if (marker === 217) {
+        segments.push(new Uint8Array([255, 217]));
+        break;
+      }
+      if (marker === 0 || marker === 1 || marker >= 208 && marker <= 215) {
+        segments.push(bytes.subarray(markerStart, offset));
+        continue;
+      }
+      if (offset + 2 > bytes.length) break;
+      const segLen = uint16BE(bytes, offset);
+      if (segLen < 2 || offset + segLen > bytes.length) break;
+      const endOfSeg = offset + segLen;
+      if (marker === 218) {
+        let eoiIdx = -1;
+        for (let i2 = bytes.length - 2; i2 >= endOfSeg; i2--) {
+          if (bytes[i2] === 255 && bytes[i2 + 1] === 217) {
+            eoiIdx = i2 + 2;
+            break;
+          }
+        }
+        segments.push(bytes.subarray(markerStart, eoiIdx > 0 ? eoiIdx : bytes.length));
+        break;
+      }
+      const isStrippableMetadata = marker >= 225 && marker <= 239 || marker === 254;
+      if (!isStrippableMetadata) {
+        segments.push(bytes.subarray(markerStart, endOfSeg));
+      }
+      offset = endOfSeg;
+    }
+    const totalLen = segments.reduce((sum, s2) => sum + s2.length, 0);
+    const out = new Uint8Array(totalLen);
+    let pos = 0;
+    for (const s2 of segments) {
+      out.set(s2, pos);
+      pos += s2.length;
+    }
+    return out;
+  }
+  if (mime === "image/webp") {
+    if (bytes.length < 12) return bytes;
+    const chunks = [];
+    let offset = 12;
+    let payloadSize = 4;
+    while (offset + 8 <= bytes.length) {
+      const fourcc = readAscii(bytes, offset, 4);
+      const chunkLen = uint32LE(bytes, offset + 4);
+      const paddedLen = chunkLen + chunkLen % 2;
+      if (offset + 8 + chunkLen > bytes.length) break;
+      const actualEnd = Math.min(bytes.length, offset + 8 + paddedLen);
+      if (fourcc !== "EXIF" && fourcc !== "XMP ") {
+        const chunkSlice = bytes.subarray(offset, actualEnd);
+        chunks.push(chunkSlice);
+        payloadSize += chunkSlice.length;
+      }
+      offset = actualEnd;
+    }
+    if (chunks.length === 0) return bytes;
+    const out = new Uint8Array(8 + payloadSize);
+    out.set(bytes.subarray(0, 12), 0);
+    out[4] = payloadSize & 255;
+    out[5] = payloadSize >> 8 & 255;
+    out[6] = payloadSize >> 16 & 255;
+    out[7] = payloadSize >> 24 & 255;
+    let pos = 12;
+    for (const c of chunks) {
+      out.set(c, pos);
+      pos += c.length;
+    }
+    return out;
+  }
+  return bytes;
+}
+var MAX_ADMIN_LOGO_BYTES, MAX_AVATAR_BYTES, MAX_ATTACHMENT_BYTES, MAX_SVG_BYTES, MAX_PIXEL_WIDTH, MAX_PIXEL_HEIGHT, MAX_TOTAL_PIXELS, EICAR_SIGNATURE, DANGEROUS_EXTENSIONS;
+var init_uploadSecurityCore = __esm({
+  "src/lib/uploadSecurityCore.ts"() {
+    MAX_ADMIN_LOGO_BYTES = 10 * 1024 * 1024;
+    MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+    MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+    MAX_SVG_BYTES = 512 * 1024;
+    MAX_PIXEL_WIDTH = 8192;
+    MAX_PIXEL_HEIGHT = 8192;
+    MAX_TOTAL_PIXELS = 4e7;
+    EICAR_SIGNATURE = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+    DANGEROUS_EXTENSIONS = /* @__PURE__ */ new Set([
+      "exe",
+      "dll",
+      "bat",
+      "cmd",
+      "ps1",
+      "psm1",
+      "psd1",
+      "js",
+      "mjs",
+      "cjs",
+      "jsx",
+      "ts",
+      "tsx",
+      "html",
+      "htm",
+      "xhtml",
+      "shtml",
+      "mht",
+      "mhtml",
+      "php",
+      "php3",
+      "php4",
+      "php5",
+      "phtml",
+      "phar",
+      "sh",
+      "bash",
+      "zsh",
+      "ksh",
+      "csh",
+      "jar",
+      "war",
+      "ear",
+      "class",
+      "apk",
+      "aab",
+      "ipa",
+      "xap",
+      "scr",
+      "msi",
+      "msp",
+      "mst",
+      "vbs",
+      "vbe",
+      "ws",
+      "wsf",
+      "wsh",
+      "hta",
+      "chm",
+      "reg",
+      "cpl",
+      "com",
+      "pif",
+      "lnk",
+      "inf",
+      "elf",
+      "bin",
+      "so",
+      "dylib",
+      "app",
+      "dmg",
+      "iso",
+      "img",
+      "deb",
+      "rpm",
+      "asp",
+      "aspx",
+      "jsp",
+      "jspx",
+      "cgi",
+      "pl",
+      "py",
+      "rb",
+      "zip",
+      "rar",
+      "7z",
+      "tar",
+      "gz",
+      "tgz",
+      "bz2",
+      "xz",
+      "cab",
+      "xml",
+      "xsl",
+      "xslt",
+      "swf"
+    ]);
+  }
+});
+
 // src/lib/svgSanitizer.ts
 function decodeSvgBase64OrUtf8(raw) {
   const trimmed = String(raw || "").trim();
@@ -35666,7 +37807,7 @@ function validateAndSanitizeSvg(rawInput) {
     return { valid: false, error: "SVG content is empty." };
   }
   const byteSize = typeof Buffer !== "undefined" ? Buffer.byteLength(cleanedRaw, "utf8") : new TextEncoder().encode(cleanedRaw).byteLength;
-  if (byteSize > MAX_SVG_BYTES) {
+  if (byteSize > MAX_SVG_BYTES2) {
     return { valid: false, error: "SVG file exceeds maximum allowed size (512 KB)." };
   }
   const stripped = cleanedRaw.replace(/<\?xml[\s\S]*?\?>/gi, "").replace(/<!DOCTYPE[\s\S]*?>/gi, "").replace(/<!ENTITY[\s\S]*?>/gi, "").replace(/<!--[\s\S]*?-->/g, "").trim();
@@ -35747,6 +37888,18 @@ function validateBrandingImageInput(rawDataOrUrl, options) {
   if (!input) {
     return { valid: false, error: "Image payload is required." };
   }
+  if (options?.filename) {
+    const fnCheck = sanitizeUploadFilename(options.filename);
+    if (!fnCheck.valid) {
+      return { valid: false, error: fnCheck.error || "Unsafe filename rejected." };
+    }
+    if ((fnCheck.extension === "svg" || fnCheck.extension === "svgz") && options?.allowSvg !== true) {
+      return {
+        valid: false,
+        error: "SVG upload is disabled by default for security. Upload PNG, JPG, JPEG, or WebP, or explicitly enable sanitized SVG mode."
+      };
+    }
+  }
   if (input.startsWith("/") && !input.startsWith("//")) {
     if (/^\/[a-zA-Z0-9._\-\/?=&]+$/.test(input)) {
       return {
@@ -35760,34 +37913,49 @@ function validateBrandingImageInput(rawDataOrUrl, options) {
     return { valid: false, error: "Invalid relative asset URL." };
   }
   if (/^data:image\/svg\+xml/i.test(input) || /^<\?xml/i.test(input) || /^<svg[\s>]/i.test(input)) {
+    if (options?.allowSvg !== true) {
+      return {
+        valid: false,
+        error: "SVG upload is disabled by default for security. Upload PNG, JPG, JPEG, or WebP, or explicitly enable sanitized SVG mode."
+      };
+    }
     return validateAndSanitizeSvg(input);
   }
-  const rasterMatch = input.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i);
+  const rasterMatch = input.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/i);
   if (!rasterMatch) {
     return {
       valid: false,
-      error: "Unsupported format. Please upload PNG, JPG/JPEG, WebP, GIF, or sanitized SVG."
+      error: "Unsupported format. Please upload PNG, JPG, JPEG, or WebP."
     };
   }
-  const mime = rasterMatch[1].toLowerCase() === "image/jpg" ? "image/jpeg" : rasterMatch[1].toLowerCase();
-  const b64 = rasterMatch[2];
-  const approxBytes = Math.floor(b64.length * 3 / 4);
-  if (approxBytes > MAX_RASTER_BYTES) {
-    return { valid: false, error: "Image file size must be 2 MB or smaller." };
+  const declaredMime = rasterMatch[1].toLowerCase() === "image/jpg" ? "image/jpeg" : rasterMatch[1].toLowerCase();
+  const rawB64 = rasterMatch[2].replace(/\s+/g, "");
+  const maxBytes = options?.maxBytes ?? MAX_RASTER_BYTES;
+  let bytes;
+  try {
+    bytes = decodeBase64ToBytes(rawB64);
+  } catch {
+    return { valid: false, error: "Corrupt base64 image payload." };
   }
-  if (options?.width && (options.width < 16 || options.width > 4096)) {
-    return { valid: false, error: "Image width must be between 16px and 4096px." };
+  const binaryCheck = inspectImageBinary(bytes, declaredMime, {
+    maxBytes,
+    allowGif: options?.allowGif !== false
+  });
+  if (!binaryCheck.valid || !binaryCheck.detectedMime) {
+    return {
+      valid: false,
+      error: binaryCheck.error || "Image failed binary security verification."
+    };
   }
-  if (options?.height && (options.height < 16 || options.height > 4096)) {
-    return { valid: false, error: "Image height must be between 16px and 4096px." };
-  }
+  const scrubbedBytes = stripBinaryImageMetadata(bytes, binaryCheck.detectedMime);
+  const cleanB64 = encodeBytesToBase64(scrubbedBytes);
   return {
     valid: true,
-    mimeType: mime,
-    sanitizedDataUrl: `data:${mime};base64,${b64}`,
-    byteSize: approxBytes,
-    width: options?.width,
-    height: options?.height
+    mimeType: binaryCheck.detectedMime,
+    sanitizedDataUrl: `data:${binaryCheck.detectedMime};base64,${cleanB64}`,
+    byteSize: scrubbedBytes.length,
+    width: binaryCheck.width ?? options?.width,
+    height: binaryCheck.height ?? options?.height
   };
 }
 function sanitizeHexColor(input, fallback) {
@@ -35795,17 +37963,18 @@ function sanitizeHexColor(input, fallback) {
   if (/^#[0-9a-fA-F]{6}$/.test(val)) return val.toLowerCase();
   if (/^#[0-9a-fA-F]{3}$/.test(val)) {
     const r2 = val[1];
-    const g3 = val[2];
+    const g5 = val[2];
     const b = val[3];
-    return `#${r2}${r2}${g3}${g3}${b}${b}`.toLowerCase();
+    return `#${r2}${r2}${g5}${g5}${b}${b}`.toLowerCase();
   }
   return fallback;
 }
-var MAX_SVG_BYTES, MAX_RASTER_BYTES, DISALLOWED_SVG_TAGS;
+var MAX_SVG_BYTES2, MAX_RASTER_BYTES, DISALLOWED_SVG_TAGS;
 var init_svgSanitizer = __esm({
   "src/lib/svgSanitizer.ts"() {
-    MAX_SVG_BYTES = 512 * 1024;
-    MAX_RASTER_BYTES = 2 * 1024 * 1024;
+    init_uploadSecurityCore();
+    MAX_SVG_BYTES2 = MAX_SVG_BYTES;
+    MAX_RASTER_BYTES = MAX_ADMIN_LOGO_BYTES;
     DISALLOWED_SVG_TAGS = [
       "script",
       "foreignobject",
@@ -35826,22 +37995,1051 @@ var init_svgSanitizer = __esm({
   }
 });
 
-// server/siteControlCenter.ts
+// server/storageService.ts
+import fs11 from "fs";
+import path10 from "path";
 import crypto18 from "crypto";
-import fs10 from "fs";
-import os6 from "os";
-import path9 from "path";
+function getSigningSecret() {
+  const configured = process.env.DEVICE_COOKIE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+  if (configured) return configured;
+  const g5 = globalThis;
+  if (!g5.__mmLocalStorageSignSecret) {
+    g5.__mmLocalStorageSignSecret = crypto18.randomBytes(32).toString("hex");
+  }
+  return g5.__mmLocalStorageSignSecret;
+}
+function getSupabaseStorageConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+  return { url, serviceKey, enabled: Boolean(url && serviceKey) };
+}
+function hashOwnerId(userId) {
+  return crypto18.createHash("sha256").update(String(userId || "anon")).digest("hex").slice(0, 24);
+}
+function resolveLocalBucketPath(bucket, objectKey) {
+  const safeKey = String(objectKey || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!safeKey || safeKey.includes("..") || !/^[a-zA-Z0-9/_.\-]+$/.test(safeKey)) {
+    throw new Error("INVALID_STORAGE_KEY");
+  }
+  const bucketDir = path10.resolve(LOCAL_STORAGE_ROOT, bucket);
+  const fullPath = path10.resolve(bucketDir, safeKey);
+  if (!fullPath.startsWith(bucketDir + path10.sep)) {
+    throw new Error("PATH_CONFINEMENT_VIOLATION");
+  }
+  return fullPath;
+}
+async function putObjectInStorage(params) {
+  const { url, serviceKey, enabled } = getSupabaseStorageConfig();
+  try {
+    const localPath = resolveLocalBucketPath(params.bucket, params.objectKey);
+    fs11.mkdirSync(path10.dirname(localPath), { recursive: true });
+    fs11.writeFileSync(localPath, params.data);
+  } catch (err) {
+    return {
+      stored: false,
+      provider: "local_private_vault",
+      bucket: params.bucket,
+      objectKey: params.objectKey,
+      error: err?.message || "Failed to persist object locally."
+    };
+  }
+  if (enabled) {
+    try {
+      const uploadRes = await fetch(
+        `${url}/storage/v1/object/${encodeURIComponent(params.bucket)}/${params.objectKey}`,
+        {
+          method: "POST",
+          headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
+            "Content-Type": params.contentType,
+            "x-upsert": "true"
+          },
+          body: new Uint8Array(params.data),
+          signal: AbortSignal.timeout(15e3)
+        }
+      );
+      if (uploadRes.ok) {
+        return {
+          stored: true,
+          provider: "supabase_storage",
+          bucket: params.bucket,
+          objectKey: params.objectKey
+        };
+      }
+    } catch {
+    }
+  }
+  return {
+    stored: true,
+    provider: "local_private_vault",
+    bucket: params.bucket,
+    objectKey: params.objectKey
+  };
+}
+async function getObjectFromStorage(bucket, objectKey) {
+  try {
+    const localPath = resolveLocalBucketPath(bucket, objectKey);
+    if (fs11.existsSync(localPath)) {
+      return { data: fs11.readFileSync(localPath), source: "local_private_vault" };
+    }
+  } catch {
+    return null;
+  }
+  const { url, serviceKey, enabled } = getSupabaseStorageConfig();
+  if (enabled) {
+    try {
+      const res = await fetch(
+        `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${objectKey}`,
+        {
+          headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`
+          },
+          signal: AbortSignal.timeout(1e4)
+        }
+      );
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        return { data: Buffer.from(ab), source: "supabase_storage" };
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+async function deleteObjectFromStorage(bucket, objectKey) {
+  let deleted = false;
+  try {
+    const localPath = resolveLocalBucketPath(bucket, objectKey);
+    if (fs11.existsSync(localPath)) {
+      fs11.unlinkSync(localPath);
+      deleted = true;
+    }
+  } catch {
+  }
+  const { url, serviceKey, enabled } = getSupabaseStorageConfig();
+  if (enabled) {
+    try {
+      const res = await fetch(
+        `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${objectKey}`,
+        {
+          method: "DELETE",
+          headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`
+          },
+          signal: AbortSignal.timeout(8e3)
+        }
+      );
+      if (res.ok) deleted = true;
+    } catch {
+    }
+  }
+  return deleted;
+}
+async function createSignedPrivateUrl(params) {
+  const ttl = Math.max(30, Math.min(900, params.ttlSeconds ?? 180));
+  const expiresAtEpoch = Math.floor(Date.now() / 1e3) + ttl;
+  const { url, serviceKey, enabled } = getSupabaseStorageConfig();
+  if (enabled && params.bucket !== "quarantine-vault") {
+    try {
+      const signRes = await fetch(
+        `${url}/storage/v1/object/sign/${encodeURIComponent(params.bucket)}/${params.objectKey}`,
+        {
+          method: "POST",
+          headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ expiresIn: ttl }),
+          signal: AbortSignal.timeout(8e3)
+        }
+      );
+      if (signRes.ok) {
+        const body = await signRes.json().catch(() => null);
+        if (body?.signedURL) {
+          const signedFull = body.signedURL.startsWith("http") ? body.signedURL : `${url}/storage/v1${body.signedURL}`;
+          return {
+            url: signedFull,
+            expiresAt: new Date(expiresAtEpoch * 1e3).toISOString(),
+            mode: "supabase_signed"
+          };
+        }
+      }
+    } catch {
+    }
+  }
+  const payload = `${params.bucket}|${params.objectKey}|${params.ownerUserId}|${params.mimeType}|${expiresAtEpoch}`;
+  const sig = crypto18.createHmac("sha256", getSigningSecret()).update(payload).digest("hex");
+  const qs = new URLSearchParams({
+    bucket: params.bucket,
+    key: params.objectKey,
+    exp: String(expiresAtEpoch),
+    mime: params.mimeType,
+    sig
+  });
+  return {
+    url: `/api/uploads/private?${qs.toString()}`,
+    expiresAt: new Date(expiresAtEpoch * 1e3).toISOString(),
+    mode: "app_hmac_signed"
+  };
+}
+function verifySignedPrivateParams(params) {
+  const expNum = Number(params.exp);
+  if (!Number.isFinite(expNum) || expNum < Math.floor(Date.now() / 1e3)) {
+    return false;
+  }
+  const payload = `${params.bucket}|${params.objectKey}|${params.ownerUserId}|${params.mimeType}|${expNum}`;
+  const expected = crypto18.createHmac("sha256", getSigningSecret()).update(payload).digest("hex");
+  try {
+    const a = Buffer.from(params.sig, "hex");
+    const b = Buffer.from(expected, "hex");
+    if (a.length !== b.length) return false;
+    return crypto18.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+function getStorageUtilizationStats() {
+  const stats = {
+    "quarantine-vault": { files: 0, bytes: 0 },
+    "branding-originals": { files: 0, bytes: 0 },
+    "branding-optimized": { files: 0, bytes: 0 },
+    "private-attachments": { files: 0, bytes: 0 }
+  };
+  const walk = (dir, bucket) => {
+    if (!fs11.existsSync(dir)) return;
+    for (const entry of fs11.readdirSync(dir, { withFileTypes: true })) {
+      const full = path10.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full, bucket);
+      else if (entry.isFile()) {
+        try {
+          const st = fs11.statSync(full);
+          stats[bucket].files += 1;
+          stats[bucket].bytes += st.size;
+        } catch {
+        }
+      }
+    }
+  };
+  for (const bucket of Object.keys(stats)) {
+    walk(path10.join(LOCAL_STORAGE_ROOT, bucket), bucket);
+  }
+  const totalBytes = Object.values(stats).reduce((sum, s2) => sum + s2.bytes, 0);
+  const { enabled, url } = getSupabaseStorageConfig();
+  return {
+    supabaseStorageConfigured: enabled,
+    supabaseUrl: enabled ? url : null,
+    buckets: stats,
+    totalBytes
+  };
+}
+var LOCAL_STORAGE_ROOT;
+var init_storageService = __esm({
+  "server/storageService.ts"() {
+    LOCAL_STORAGE_ROOT = path10.resolve(process.cwd(), ".data", "storage");
+  }
+});
+
+// server/uploadSecurity.ts
+import fs12 from "fs";
+import path11 from "path";
+import crypto19 from "crypto";
+import { execFile } from "child_process";
+import { promisify } from "util";
+async function detectClamAvBinary() {
+  if (cachedClamAvBinary !== void 0) return cachedClamAvBinary;
+  for (const candidate of ["clamdscan", "clamscan"]) {
+    try {
+      const { stdout } = await execFileAsync("which", [candidate], { timeout: 1500 });
+      const resolved = String(stdout || "").trim();
+      if (resolved) {
+        cachedClamAvBinary = resolved;
+        return resolved;
+      }
+    } catch {
+    }
+  }
+  cachedClamAvBinary = null;
+  return null;
+}
+async function getMalwareScannerStatus() {
+  const bin = await detectClamAvBinary();
+  return {
+    clamAvAvailable: Boolean(bin),
+    clamAvBinary: bin,
+    requireClamAvStrict: process.env.REQUIRE_CLAMAV_SCAN === "true",
+    mode: bin ? "clamav_active" : "degraded_no_clamav",
+    description: bin ? `Active malware scanner (${path11.basename(bin)}) scanning quarantined uploads` : "ClamAV daemon not installed in container; binary magic-byte, dimension-bomb, polyglot, EICAR & quarantine gate active"
+  };
+}
+function loadQuarantineIndex() {
+  if (g3.__mmQuarantineCache) return g3.__mmQuarantineCache;
+  try {
+    if (fs12.existsSync(QUARANTINE_META_FILE)) {
+      const parsed = JSON.parse(fs12.readFileSync(QUARANTINE_META_FILE, "utf8"));
+      if (parsed && typeof parsed === "object") {
+        g3.__mmQuarantineCache = parsed;
+        return parsed;
+      }
+    }
+  } catch {
+  }
+  g3.__mmQuarantineCache = {};
+  return g3.__mmQuarantineCache;
+}
+function saveQuarantineIndex(index) {
+  const sorted = Object.values(index).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 500);
+  const compact = {};
+  for (const r2 of sorted) compact[r2.id] = r2;
+  g3.__mmQuarantineCache = compact;
+  try {
+    fs12.mkdirSync(path11.dirname(QUARANTINE_META_FILE), { recursive: true });
+    fs12.writeFileSync(QUARANTINE_META_FILE, JSON.stringify(compact, null, 2), "utf8");
+  } catch {
+  }
+}
+function appendUploadScanLog(entry) {
+  if (!g3.__mmUploadLogsCache) {
+    try {
+      if (fs12.existsSync(UPLOAD_LOGS_FILE)) {
+        const parsed = JSON.parse(fs12.readFileSync(UPLOAD_LOGS_FILE, "utf8"));
+        g3.__mmUploadLogsCache = Array.isArray(parsed) ? parsed : [];
+      } else {
+        g3.__mmUploadLogsCache = [];
+      }
+    } catch {
+      g3.__mmUploadLogsCache = [];
+    }
+  }
+  const logs = g3.__mmUploadLogsCache;
+  logs.unshift(entry);
+  if (logs.length > 500) logs.length = 500;
+  try {
+    fs12.mkdirSync(path11.dirname(UPLOAD_LOGS_FILE), { recursive: true });
+    fs12.writeFileSync(UPLOAD_LOGS_FILE, JSON.stringify(logs, null, 2), "utf8");
+  } catch {
+  }
+  if (isDatabaseAvailable()) {
+    query(
+      `INSERT INTO public.upload_security_logs
+        (id, quarantine_id, user_id, purpose, outcome, scanner_engine, reason, byte_size, sha256, ip_address, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        entry.id,
+        entry.quarantineId,
+        entry.userId,
+        entry.purpose,
+        entry.outcome,
+        entry.scannerEngine,
+        entry.reason,
+        entry.byteSize,
+        entry.sha256,
+        entry.ipAddress
+      ]
+    ).catch(() => {
+    });
+  }
+}
+function persistQuarantineRecordDb(rec) {
+  if (!isDatabaseAvailable()) return;
+  query(
+    `INSERT INTO public.upload_quarantine_items
+      (id, user_id, user_email, purpose, original_filename, sanitized_filename, declared_mime, detected_mime, byte_size, width, height, sha256, status, scanner_engine, scan_verdict, threat_name, bucket, object_key, ip_address, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW(),NOW())
+     ON CONFLICT (id) DO UPDATE SET
+      status = EXCLUDED.status,
+      scan_verdict = EXCLUDED.scan_verdict,
+      threat_name = EXCLUDED.threat_name,
+      bucket = EXCLUDED.bucket,
+      object_key = EXCLUDED.object_key,
+      updated_at = NOW()`,
+    [
+      rec.id,
+      rec.userId,
+      rec.userEmail,
+      rec.purpose,
+      rec.originalFilename,
+      rec.sanitizedFilename,
+      rec.declaredMime,
+      rec.detectedMime,
+      rec.byteSize,
+      rec.width || null,
+      rec.height || null,
+      rec.sha256,
+      rec.status,
+      rec.scannerEngine,
+      rec.scanVerdict,
+      rec.threatName || null,
+      rec.bucket,
+      rec.objectKey,
+      rec.ipAddress
+    ]
+  ).catch(() => {
+  });
+}
+function checkUploadRateLimit(key, maxRequests, windowMs) {
+  const rateMap = g3.__mmUploadRateMap;
+  const now = Date.now();
+  const existing = rateMap.get(key);
+  if (!existing || now > existing.resetAt) {
+    rateMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (existing.count >= maxRequests) return false;
+  existing.count += 1;
+  return true;
+}
+function getLimitForPurpose(purpose) {
+  switch (purpose) {
+    case "admin_logo":
+    case "admin_branding_variant":
+      return MAX_ADMIN_LOGO_BYTES;
+    // 10 MB
+    case "profile_avatar":
+      return MAX_AVATAR_BYTES;
+    // 2 MB
+    case "receipt_ocr":
+    case "transaction_attachment":
+    case "udhar_attachment":
+    default:
+      return MAX_ATTACHMENT_BYTES;
+  }
+}
+async function runClamAvScanBuffer(bytes) {
+  const bin = await detectClamAvBinary();
+  if (!bin) {
+    return { available: false, clean: false };
+  }
+  const tmpDir = path11.resolve(process.cwd(), ".data", "storage", "tmp-scan");
+  fs12.mkdirSync(tmpDir, { recursive: true });
+  const tmpFile = path11.join(tmpDir, `scan_${crypto19.randomUUID()}.bin`);
+  try {
+    fs12.writeFileSync(tmpFile, bytes);
+    const args = bin.endsWith("clamdscan") ? ["--no-summary", tmpFile] : ["--no-summary", "--infected", tmpFile];
+    await execFileAsync(bin, args, { timeout: 15e3 });
+    return { available: true, clean: true };
+  } catch (err) {
+    const stdout = String(err?.stdout || err?.message || "");
+    if (err?.code === 1 || /FOUND/i.test(stdout)) {
+      return { available: true, clean: false, threat: stdout.slice(0, 180) || "CLAMAV_INFECTED" };
+    }
+    return { available: true, clean: false, error: `ClamAV scan failed: ${stdout.slice(0, 140)}` };
+  } finally {
+    try {
+      if (fs12.existsSync(tmpFile)) fs12.unlinkSync(tmpFile);
+    } catch {
+    }
+  }
+}
+async function notifyAdminSecurityUploadThreat(params) {
+  recordUploadMetric("quarantined");
+  await logSecurityEvent("MALICIOUS_OR_UNSAFE_UPLOAD_BLOCKED", {
+    userId: params.userId,
+    userEmail: params.userEmail,
+    ipAddress: params.ipAddress,
+    details: {
+      quarantineId: params.quarantineId,
+      purpose: params.purpose,
+      filename: params.filename,
+      reason: params.reason
+    }
+  }).catch(() => {
+  });
+  if (isDatabaseAvailable()) {
+    await query(
+      `INSERT INTO public.security_incidents (user_id, user_email, incident_type, severity, title, description, ip_address, metadata)
+       VALUES ($1, $2, 'UPLOAD_THREAT_QUARANTINED', 'high', $3, $4, $5, $6)`,
+      [
+        params.userId,
+        params.userEmail,
+        `Blocked suspicious upload (${params.purpose})`,
+        `${params.reason} \xB7 File "${params.filename}" quarantined (${params.quarantineId}).`,
+        params.ipAddress,
+        JSON.stringify({ quarantineId: params.quarantineId, purpose: params.purpose })
+      ]
+    ).catch(() => {
+    });
+  }
+  await dispatchServiceAlert({
+    serviceKey: "upload_security_gate",
+    serviceLabel: "Upload Security & Quarantine Gate",
+    transition: "failure",
+    errorDetails: `${params.purpose} rejected (${params.reason}) from ${params.userEmail || params.ipAddress}`
+  }).catch(() => {
+  });
+}
+async function processSecureUpload(input) {
+  const activeByUser = g3.__mmUploadActiveByUser;
+  const currentUserActive = activeByUser.get(input.userId) || 0;
+  const globalActive = Array.from(activeByUser.values()).reduce((s2, n) => s2 + n, 0);
+  if (globalActive >= MAX_ACTIVE_UPLOADS_GLOBAL || currentUserActive >= MAX_ACTIVE_UPLOADS_PER_USER) {
+    recordUploadMetric("rejected");
+    return {
+      success: false,
+      quarantineId: `q_limit_${Date.now()}`,
+      status: "rejected_scan_error",
+      scannerEngine: "signature_heuristic_only",
+      error: "Too many concurrent uploads in progress. Please wait for the current upload to complete."
+    };
+  }
+  if (!input.skipRateLimit) {
+    const userOk = checkUploadRateLimit(`up:user:${input.userId}`, 30, 10 * 60 * 1e3);
+    const ipOk = checkUploadRateLimit(`up:ip:${input.ipAddress}`, 60, 10 * 60 * 1e3);
+    if (!userOk || !ipOk) {
+      recordUploadMetric("rejected");
+      return {
+        success: false,
+        quarantineId: `q_rate_${Date.now()}`,
+        status: "rejected_scan_error",
+        scannerEngine: "signature_heuristic_only",
+        error: "Upload rate limit exceeded. Please wait a few minutes before uploading again."
+      };
+    }
+  }
+  activeByUser.set(input.userId, currentUserActive + 1);
+  updateActiveUploadsDelta(1);
+  const quarantineId = `q_${Date.now()}_${crypto19.randomBytes(5).toString("hex")}`;
+  const rawName = String(input.filename || "upload.png").slice(0, 160);
+  try {
+    const fnCheck = sanitizeUploadFilename(rawName);
+    if (!fnCheck.valid) {
+      await notifyAdminSecurityUploadThreat({
+        userId: input.userId,
+        userEmail: input.userEmail,
+        purpose: input.purpose,
+        reason: fnCheck.error || "DANGEROUS_FILENAME",
+        filename: rawName,
+        ipAddress: input.ipAddress,
+        quarantineId
+      });
+      appendUploadScanLog({
+        id: `log_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+        quarantineId,
+        userId: input.userId,
+        purpose: input.purpose,
+        outcome: "rejected",
+        scannerEngine: "signature_heuristic_only",
+        reason: fnCheck.error || "DANGEROUS_FILENAME",
+        byteSize: 0,
+        sha256: "",
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return {
+        success: false,
+        quarantineId,
+        status: "rejected_malicious",
+        scannerEngine: "signature_heuristic_only",
+        error: fnCheck.error || "File rejected by extension security policy."
+      };
+    }
+    const rawInput = String(input.dataUrlOrRawBase64 || "").trim();
+    const isSvgInput = /^data:image\/svg\+xml/i.test(rawInput) || /^<\?xml/i.test(rawInput) || /^<svg[\s>]/i.test(rawInput) || fnCheck.extension === "svg" || fnCheck.extension === "svgz";
+    if (isSvgInput) {
+      if (!input.allowSvg) {
+        recordUploadMetric("rejected");
+        return {
+          success: false,
+          quarantineId,
+          status: "rejected_malicious",
+          scannerEngine: "signature_heuristic_only",
+          error: "SVG uploads are disabled by default for security. Upload PNG, JPG, JPEG, or WebP (or explicitly enable sanitized SVG mode for branding)."
+        };
+      }
+      const svgCheck = validateAndSanitizeSvg(rawInput);
+      if (!svgCheck.valid || !svgCheck.sanitizedSvg || !svgCheck.sanitizedDataUrl) {
+        await notifyAdminSecurityUploadThreat({
+          userId: input.userId,
+          userEmail: input.userEmail,
+          purpose: input.purpose,
+          reason: svgCheck.error || "UNSAFE_SVG_PAYLOAD",
+          filename: fnCheck.sanitizedName,
+          ipAddress: input.ipAddress,
+          quarantineId
+        });
+        return {
+          success: false,
+          quarantineId,
+          status: "rejected_malicious",
+          scannerEngine: "signature_heuristic_only",
+          error: svgCheck.error || "SVG rejected by strict security sanitizer."
+        };
+      }
+      const svgBuf = Buffer.from(svgCheck.sanitizedSvg, "utf8");
+      const sha2562 = crypto19.createHash("sha256").update(svgBuf).digest("hex");
+      const clamRes2 = await runClamAvScanBuffer(svgBuf);
+      if (clamRes2.available && !clamRes2.clean) {
+        await notifyAdminSecurityUploadThreat({
+          userId: input.userId,
+          userEmail: input.userEmail,
+          purpose: input.purpose,
+          reason: clamRes2.threat || clamRes2.error || "CLAMAV_REJECTED",
+          filename: fnCheck.sanitizedName,
+          ipAddress: input.ipAddress,
+          quarantineId
+        });
+        return {
+          success: false,
+          quarantineId,
+          status: "rejected_malicious",
+          scannerEngine: "clamav",
+          error: "Upload flagged by antivirus scanner and quarantined."
+        };
+      }
+      const scannerEngine2 = clamRes2.available ? "clamav" : "signature_heuristic_only";
+      const status = clamRes2.available ? "approved_clean" : "approved_raster_no_clamav";
+      const objKey = `${hashOwnerId(input.userId)}/${quarantineId}.svg`;
+      await putObjectInStorage({
+        bucket: "branding-originals",
+        objectKey: objKey,
+        data: svgBuf,
+        contentType: "image/svg+xml"
+      });
+      recordUploadMetric("success");
+      appendUploadScanLog({
+        id: `log_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+        quarantineId,
+        userId: input.userId,
+        purpose: input.purpose,
+        outcome: "approved",
+        scannerEngine: scannerEngine2,
+        reason: "Sanitized SVG verified cleanly",
+        byteSize: svgBuf.length,
+        sha256: sha2562,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return {
+        success: true,
+        quarantineId,
+        status,
+        mimeType: "image/svg+xml",
+        sanitizedDataUrl: svgCheck.sanitizedDataUrl,
+        sanitizedSvg: svgCheck.sanitizedSvg,
+        cleanBytes: svgBuf,
+        width: svgCheck.width,
+        height: svgCheck.height,
+        byteSize: svgBuf.length,
+        sha256: sha2562,
+        scannerEngine: scannerEngine2,
+        bucket: "branding-originals",
+        objectKey: objKey
+      };
+    }
+    const dataUrlMatch = rawInput.match(/^data:([^;]+);base64,([A-Za-z0-9+/=\s]+)$/i);
+    const declaredMime = dataUrlMatch ? dataUrlMatch[1].toLowerCase() : (input.declaredMime || "").toLowerCase() || void 0;
+    const base64Body = (dataUrlMatch ? dataUrlMatch[2] : rawInput).replace(/\s+/g, "");
+    let rawBytes;
+    try {
+      rawBytes = decodeBase64ToBytes(base64Body);
+    } catch {
+      recordUploadMetric("rejected");
+      return {
+        success: false,
+        quarantineId,
+        status: "rejected_scan_error",
+        scannerEngine: "signature_heuristic_only",
+        error: "Malformed base64 upload payload."
+      };
+    }
+    const maxBytes = getLimitForPurpose(input.purpose);
+    const sha256 = crypto19.createHash("sha256").update(rawBytes).digest("hex");
+    const qIndex = loadQuarantineIndex();
+    const userUsedBytes = Object.values(qIndex).filter((r2) => r2.userId === input.userId && r2.status !== "deleted" && r2.status !== "rejected_malicious").reduce((sum, r2) => sum + (r2.byteSize || 0), 0);
+    const quotaLimit = input.purpose === "admin_logo" || input.purpose === "admin_branding_variant" ? MAX_GLOBAL_BRANDING_BYTES : MAX_STORAGE_QUOTA_PER_USER_BYTES;
+    if (userUsedBytes + rawBytes.length > quotaLimit) {
+      recordUploadMetric("rejected");
+      return {
+        success: false,
+        quarantineId,
+        status: "rejected_scan_error",
+        scannerEngine: "signature_heuristic_only",
+        error: "Storage quota limit reached. Please remove older unused files before uploading more."
+      };
+    }
+    const dupMatch = Object.values(qIndex).find(
+      (r2) => r2.userId === input.userId && r2.sha256 === sha256 && r2.status !== "deleted"
+    );
+    const quarantineKey = `${hashOwnerId(input.userId)}/${quarantineId}.qbin`;
+    await putObjectInStorage({
+      bucket: "quarantine-vault",
+      objectKey: quarantineKey,
+      data: Buffer.from(rawBytes),
+      contentType: "application/octet-stream"
+    });
+    const binaryCheck = inspectImageBinary(rawBytes, declaredMime, {
+      maxBytes,
+      allowGif: false
+    });
+    if (!binaryCheck.valid || !binaryCheck.detectedMime) {
+      const threatReason = binaryCheck.threatDetected || binaryCheck.error || "BINARY_VALIDATION_FAILED";
+      const rejectedRec = {
+        id: quarantineId,
+        userId: input.userId,
+        userEmail: input.userEmail,
+        purpose: input.purpose,
+        originalFilename: rawName,
+        sanitizedFilename: fnCheck.sanitizedName,
+        declaredMime: declaredMime || "unknown",
+        detectedMime: null,
+        byteSize: rawBytes.length,
+        sha256,
+        duplicateOfId: dupMatch?.id || null,
+        status: "rejected_malicious",
+        scannerEngine: "signature_heuristic_only",
+        scanVerdict: threatReason,
+        threatName: binaryCheck.threatDetected || "INVALID_OR_DISALLOWED_FILE",
+        bucket: "quarantine-vault",
+        objectKey: quarantineKey,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      qIndex[quarantineId] = rejectedRec;
+      saveQuarantineIndex(qIndex);
+      persistQuarantineRecordDb(rejectedRec);
+      appendUploadScanLog({
+        id: `log_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+        quarantineId,
+        userId: input.userId,
+        purpose: input.purpose,
+        outcome: "rejected",
+        scannerEngine: "signature_heuristic_only",
+        reason: binaryCheck.error || threatReason,
+        byteSize: rawBytes.length,
+        sha256,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await notifyAdminSecurityUploadThreat({
+        userId: input.userId,
+        userEmail: input.userEmail,
+        purpose: input.purpose,
+        reason: binaryCheck.error || threatReason,
+        filename: rawName,
+        ipAddress: input.ipAddress,
+        quarantineId
+      });
+      return {
+        success: false,
+        quarantineId,
+        status: "rejected_malicious",
+        byteSize: rawBytes.length,
+        sha256,
+        scannerEngine: "signature_heuristic_only",
+        error: binaryCheck.error || "Uploaded file failed security inspection."
+      };
+    }
+    const rawBuf = Buffer.from(rawBytes);
+    const clamRes = await runClamAvScanBuffer(rawBuf);
+    const scannerEngine = clamRes.available ? "clamav" : "signature_heuristic_only";
+    if (clamRes.available && !clamRes.clean) {
+      const verdict = clamRes.threat || clamRes.error || "MALWARE_SCAN_FAILED";
+      const status = clamRes.threat ? "rejected_malicious" : "rejected_scan_error";
+      const rec = {
+        id: quarantineId,
+        userId: input.userId,
+        userEmail: input.userEmail,
+        purpose: input.purpose,
+        originalFilename: rawName,
+        sanitizedFilename: fnCheck.sanitizedName,
+        declaredMime: declaredMime || binaryCheck.detectedMime,
+        detectedMime: binaryCheck.detectedMime,
+        byteSize: rawBytes.length,
+        width: binaryCheck.width,
+        height: binaryCheck.height,
+        sha256,
+        status,
+        scannerEngine: "clamav",
+        scanVerdict: verdict,
+        threatName: clamRes.threat || "SCAN_FAILURE",
+        bucket: "quarantine-vault",
+        objectKey: quarantineKey,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      qIndex[quarantineId] = rec;
+      saveQuarantineIndex(qIndex);
+      persistQuarantineRecordDb(rec);
+      appendUploadScanLog({
+        id: `log_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+        quarantineId,
+        userId: input.userId,
+        purpose: input.purpose,
+        outcome: "rejected",
+        scannerEngine: "clamav",
+        reason: verdict,
+        byteSize: rawBytes.length,
+        sha256,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await notifyAdminSecurityUploadThreat({
+        userId: input.userId,
+        userEmail: input.userEmail,
+        purpose: input.purpose,
+        reason: verdict,
+        filename: rawName,
+        ipAddress: input.ipAddress,
+        quarantineId
+      });
+      return {
+        success: false,
+        quarantineId,
+        status,
+        sha256,
+        scannerEngine: "clamav",
+        error: clamRes.threat ? "Malware detected in uploaded file. Upload blocked and quarantined." : "Antivirus scanner error prevented verification. File remains quarantined."
+      };
+    }
+    const strictHold = !clamRes.available && (Boolean(input.strictClamAvHold) || process.env.REQUIRE_CLAMAV_SCAN === "true");
+    if (strictHold) {
+      const pendingRec = {
+        id: quarantineId,
+        userId: input.userId,
+        userEmail: input.userEmail,
+        purpose: input.purpose,
+        originalFilename: rawName,
+        sanitizedFilename: fnCheck.sanitizedName,
+        declaredMime: declaredMime || binaryCheck.detectedMime,
+        detectedMime: binaryCheck.detectedMime,
+        byteSize: rawBytes.length,
+        width: binaryCheck.width,
+        height: binaryCheck.height,
+        sha256,
+        duplicateOfId: dupMatch?.id || null,
+        status: "quarantined_pending",
+        scannerEngine: "signature_heuristic_only",
+        scanVerdict: "ClamAV unavailable; held in quarantine pending admin/AV verification",
+        bucket: "quarantine-vault",
+        objectKey: quarantineKey,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      qIndex[quarantineId] = pendingRec;
+      saveQuarantineIndex(qIndex);
+      persistQuarantineRecordDb(pendingRec);
+      appendUploadScanLog({
+        id: `log_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+        quarantineId,
+        userId: input.userId,
+        purpose: input.purpose,
+        outcome: "pending_review",
+        scannerEngine: "signature_heuristic_only",
+        reason: "ClamAV unavailable; upload held in pending quarantine",
+        byteSize: rawBytes.length,
+        sha256,
+        ipAddress: input.ipAddress,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return {
+        success: false,
+        quarantineId,
+        status: "quarantined_pending",
+        mimeType: binaryCheck.detectedMime,
+        width: binaryCheck.width,
+        height: binaryCheck.height,
+        byteSize: rawBytes.length,
+        sha256,
+        scannerEngine: "signature_heuristic_only",
+        error: "Upload placed in quarantine pending antivirus review (scanner unavailable)."
+      };
+    }
+    const scrubbedBytes = stripBinaryImageMetadata(rawBytes, binaryCheck.detectedMime);
+    const cleanBuf = Buffer.from(scrubbedBytes);
+    const cleanB64 = encodeBytesToBase64(scrubbedBytes);
+    const cleanDataUrl = `data:${binaryCheck.detectedMime};base64,${cleanB64}`;
+    const ext = binaryCheck.detectedMime === "image/png" ? "png" : binaryCheck.detectedMime === "image/webp" ? "webp" : "jpg";
+    const targetBucket = input.purpose === "admin_logo" ? "branding-originals" : input.purpose === "admin_branding_variant" ? "branding-optimized" : "private-attachments";
+    const targetKey = `${hashOwnerId(input.userId)}/${quarantineId}.${ext}`;
+    await putObjectInStorage({
+      bucket: targetBucket,
+      objectKey: targetKey,
+      data: cleanBuf,
+      contentType: binaryCheck.detectedMime
+    });
+    await deleteObjectFromStorage("quarantine-vault", quarantineKey);
+    const finalStatus = clamRes.available ? "approved_clean" : "approved_raster_no_clamav";
+    const approvedRec = {
+      id: quarantineId,
+      userId: input.userId,
+      userEmail: input.userEmail,
+      purpose: input.purpose,
+      originalFilename: rawName,
+      sanitizedFilename: fnCheck.sanitizedName,
+      declaredMime: declaredMime || binaryCheck.detectedMime,
+      detectedMime: binaryCheck.detectedMime,
+      byteSize: cleanBuf.length,
+      width: binaryCheck.width,
+      height: binaryCheck.height,
+      sha256,
+      duplicateOfId: dupMatch?.id || null,
+      status: finalStatus,
+      scannerEngine,
+      scanVerdict: clamRes.available ? "ClamAV clean + binary header & EXIF scrub passed" : "Binary header, dimension-bomb, EICAR/polyglot & EXIF scrub passed (ClamAV not installed)",
+      bucket: targetBucket,
+      objectKey: targetKey,
+      ipAddress: input.ipAddress,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    qIndex[quarantineId] = approvedRec;
+    saveQuarantineIndex(qIndex);
+    persistQuarantineRecordDb(approvedRec);
+    appendUploadScanLog({
+      id: `log_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+      quarantineId,
+      userId: input.userId,
+      purpose: input.purpose,
+      outcome: "approved",
+      scannerEngine,
+      reason: approvedRec.scanVerdict,
+      byteSize: cleanBuf.length,
+      sha256,
+      ipAddress: input.ipAddress,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    recordUploadMetric("success");
+    let signedUrlInfo;
+    if (targetBucket === "private-attachments") {
+      const signed = await createSignedPrivateUrl({
+        bucket: targetBucket,
+        objectKey: targetKey,
+        ownerUserId: input.userId,
+        mimeType: binaryCheck.detectedMime,
+        ttlSeconds: 300
+      });
+      signedUrlInfo = { url: signed.url, expiresAt: signed.expiresAt };
+    }
+    return {
+      success: true,
+      quarantineId,
+      status: finalStatus,
+      mimeType: binaryCheck.detectedMime,
+      sanitizedDataUrl: cleanDataUrl,
+      cleanBytes: cleanBuf,
+      width: binaryCheck.width,
+      height: binaryCheck.height,
+      byteSize: cleanBuf.length,
+      sha256,
+      scannerEngine,
+      bucket: targetBucket,
+      objectKey: targetKey,
+      signedAccessUrl: signedUrlInfo?.url,
+      signedUrlExpiresAt: signedUrlInfo?.expiresAt,
+      duplicateOfId: dupMatch?.id || null
+    };
+  } finally {
+    const cur = activeByUser.get(input.userId) || 1;
+    if (cur <= 1) activeByUser.delete(input.userId);
+    else activeByUser.set(input.userId, cur - 1);
+    updateActiveUploadsDelta(-1);
+  }
+}
+async function getUploadSecurityDashboardState() {
+  const index = loadQuarantineIndex();
+  const records = Object.values(index).sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  );
+  const logs = g3.__mmUploadLogsCache || (() => {
+    try {
+      if (fs12.existsSync(UPLOAD_LOGS_FILE)) {
+        return JSON.parse(fs12.readFileSync(UPLOAD_LOGS_FILE, "utf8"));
+      }
+    } catch {
+    }
+    return [];
+  })();
+  const scannerStatus = await getMalwareScannerStatus();
+  return {
+    scannerStatus,
+    counts: {
+      total: records.length,
+      approved: records.filter((r2) => r2.status === "approved_clean" || r2.status === "approved_raster_no_clamav").length,
+      quarantinedPending: records.filter((r2) => r2.status === "quarantined_pending").length,
+      rejectedMalicious: records.filter((r2) => r2.status === "rejected_malicious" || r2.status === "rejected_scan_error").length
+    },
+    quarantineItems: records.slice(0, 60),
+    scanLogs: Array.isArray(logs) ? logs.slice(0, 80) : []
+  };
+}
+async function adminReviewQuarantineItem(params) {
+  const index = loadQuarantineIndex();
+  const item = index[params.quarantineId];
+  if (!item) {
+    return { success: false, message: "Quarantine record not found." };
+  }
+  if (params.action === "delete") {
+    await deleteObjectFromStorage(item.bucket, item.objectKey);
+    item.status = "deleted";
+    item.reviewedBy = params.adminEmail;
+    item.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    saveQuarantineIndex(index);
+    persistQuarantineRecordDb(item);
+    return { success: true, message: "Quarantined file securely deleted.", item };
+  }
+  if (item.status === "rejected_malicious") {
+    return {
+      success: false,
+      message: "Files flagged with malicious payloads cannot be approved. Delete the quarantined file instead."
+    };
+  }
+  item.status = "approved_clean";
+  item.scanVerdict = `Manually approved by ${params.adminEmail}`;
+  item.reviewedBy = params.adminEmail;
+  item.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  saveQuarantineIndex(index);
+  persistQuarantineRecordDb(item);
+  return { success: true, message: "Quarantined file approved.", item };
+}
+var execFileAsync, g3, QUARANTINE_META_FILE, UPLOAD_LOGS_FILE, MAX_ACTIVE_UPLOADS_GLOBAL, MAX_ACTIVE_UPLOADS_PER_USER, MAX_STORAGE_QUOTA_PER_USER_BYTES, MAX_GLOBAL_BRANDING_BYTES, cachedClamAvBinary;
+var init_uploadSecurity = __esm({
+  "server/uploadSecurity.ts"() {
+    init_db();
+    init_security();
+    init_healthMonitor();
+    init_telemetry();
+    init_storageService();
+    init_uploadSecurityCore();
+    init_svgSanitizer();
+    execFileAsync = promisify(execFile);
+    g3 = globalThis;
+    QUARANTINE_META_FILE = path11.resolve(process.cwd(), ".data", "storage", "quarantine-index.json");
+    UPLOAD_LOGS_FILE = path11.resolve(process.cwd(), ".data", "storage", "upload-scan-logs.json");
+    MAX_ACTIVE_UPLOADS_GLOBAL = 24;
+    MAX_ACTIVE_UPLOADS_PER_USER = 4;
+    MAX_STORAGE_QUOTA_PER_USER_BYTES = 100 * 1024 * 1024;
+    MAX_GLOBAL_BRANDING_BYTES = 250 * 1024 * 1024;
+    if (!g3.__mmUploadRateMap) g3.__mmUploadRateMap = /* @__PURE__ */ new Map();
+    if (!g3.__mmUploadActiveByUser) g3.__mmUploadActiveByUser = /* @__PURE__ */ new Map();
+    if (!g3.__mmQuarantineCache) g3.__mmQuarantineCache = null;
+    if (!g3.__mmUploadLogsCache) g3.__mmUploadLogsCache = null;
+    cachedClamAvBinary = void 0;
+  }
+});
+
+// server/siteControlCenter.ts
+import crypto20 from "crypto";
+import fs13 from "fs";
+import os7 from "os";
+import path12 from "path";
 function resolveWritableDir() {
   try {
-    if (!fs10.existsSync(PRIMARY_DATA_DIR3)) {
-      fs10.mkdirSync(PRIMARY_DATA_DIR3, { recursive: true });
+    if (!fs13.existsSync(PRIMARY_DATA_DIR3)) {
+      fs13.mkdirSync(PRIMARY_DATA_DIR3, { recursive: true });
     }
-    fs10.accessSync(PRIMARY_DATA_DIR3, fs10.constants.W_OK);
+    fs13.accessSync(PRIMARY_DATA_DIR3, fs13.constants.W_OK);
     return PRIMARY_DATA_DIR3;
   } catch {
     try {
-      if (!fs10.existsSync(TMP_DATA_DIR3)) {
-        fs10.mkdirSync(TMP_DATA_DIR3, { recursive: true });
+      if (!fs13.existsSync(TMP_DATA_DIR3)) {
+        fs13.mkdirSync(TMP_DATA_DIR3, { recursive: true });
       }
       return TMP_DATA_DIR3;
     } catch {
@@ -35851,8 +39049,8 @@ function resolveWritableDir() {
 }
 function safeFilePath(baseDir, fileName) {
   const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const resolved = path9.resolve(baseDir, cleanName);
-  if (!resolved.startsWith(baseDir + path9.sep)) {
+  const resolved = path12.resolve(baseDir, cleanName);
+  if (!resolved.startsWith(baseDir + path12.sep)) {
     throw new Error("PATH_CONFINEMENT_VIOLATION");
   }
   return resolved;
@@ -35861,8 +39059,8 @@ function readJsonStore2(fileName) {
   for (const dir of [PRIMARY_DATA_DIR3, TMP_DATA_DIR3]) {
     try {
       const target = safeFilePath(dir, fileName);
-      if (fs10.existsSync(target)) {
-        const raw = fs10.readFileSync(target, "utf8");
+      if (fs13.existsSync(target)) {
+        const raw = fs13.readFileSync(target, "utf8");
         if (raw.trim()) return JSON.parse(raw);
       }
     } catch {
@@ -35874,7 +39072,7 @@ function writeJsonStore2(fileName, data) {
   try {
     const dir = resolveWritableDir();
     const target = safeFilePath(dir, fileName);
-    fs10.writeFileSync(target, JSON.stringify(data, null, 2), "utf8");
+    fs13.writeFileSync(target, JSON.stringify(data, null, 2), "utf8");
   } catch (err) {
     console.warn(`[SiteControlCenter] Write notice (${fileName}):`, err?.message);
   }
@@ -35933,8 +39131,10 @@ function createDefaultSiteControlCenterConfig() {
         tagline: "A product of HackifyPro",
         description: "Personal & shared finance ledger, Udhaar tracker, UPI QR & smart financial insights.",
         logoUrl: "/logo.jpg",
+        sidebarLogoUrl: "/logo.jpg",
         faviconUrl: "/icon-192.png",
         pwaIconUrl: "/icon-192.png",
+        notificationIconUrl: "/icon-192.png",
         primaryColor: "#10b981",
         secondaryColor: "#059669",
         accentColor: "#3b82f6",
@@ -35952,8 +39152,10 @@ function createDefaultSiteControlCenterConfig() {
         tagline: "A product of HackifyPro \xB7 Admin Security Gateway",
         description: "Dedicated administration console, Website Control Center, Staff RBAC & real-time alerts.",
         logoUrl: "/admin-logo.png",
+        sidebarLogoUrl: "/admin-logo.png",
         faviconUrl: "/admin-favicon.png",
         pwaIconUrl: "/admin-icon-192.png",
+        notificationIconUrl: "/admin-notification-icon.png",
         primaryColor: "#10b981",
         secondaryColor: "#0f172a",
         accentColor: "#14b8a6",
@@ -35971,8 +39173,10 @@ function createDefaultSiteControlCenterConfig() {
         tagline: "A product of HackifyPro \xB7 Staff Operations Desk",
         description: "Dedicated staff workspace for assigned tasks, support desk, and authorized operations.",
         logoUrl: "/staff-logo.png",
+        sidebarLogoUrl: "/staff-logo.png",
         faviconUrl: "/staff-favicon.png",
         pwaIconUrl: "/staff-icon-192.png",
+        notificationIconUrl: "/staff-icon-192.png",
         primaryColor: "#6366f1",
         secondaryColor: "#312e81",
         accentColor: "#06b6d4",
@@ -36197,10 +39401,22 @@ function normalizeIdentity(raw, def) {
     tagline: String(raw?.tagline || def.tagline).trim().slice(0, 140) || def.tagline,
     description: String(raw?.description || def.description).trim().slice(0, 320) || def.description,
     logoUrl: sanitizeAssetRef(raw?.logoUrl, def.logoUrl),
+    sidebarLogoUrl: sanitizeAssetRef(raw?.sidebarLogoUrl, raw?.logoUrl || def.sidebarLogoUrl || def.logoUrl),
     lightLogoUrl: sanitizeAssetRef(raw?.lightLogoUrl, raw?.logoUrl || def.lightLogoUrl || def.logoUrl),
     darkLogoUrl: sanitizeAssetRef(raw?.darkLogoUrl, raw?.logoUrl || def.darkLogoUrl || def.logoUrl),
     faviconUrl: sanitizeAssetRef(raw?.faviconUrl, def.faviconUrl),
     pwaIconUrl: sanitizeAssetRef(raw?.pwaIconUrl, def.pwaIconUrl),
+    notificationIconUrl: sanitizeAssetRef(
+      raw?.notificationIconUrl,
+      def.notificationIconUrl || raw?.pwaIconUrl || def.pwaIconUrl
+    ),
+    originalLogoAssetId: typeof raw?.originalLogoAssetId === "string" && /^[a-zA-Z0-9_-]{4,120}$/.test(raw.originalLogoAssetId) ? raw.originalLogoAssetId : void 0,
+    originalLogoMeta: raw?.originalLogoMeta && typeof raw.originalLogoMeta === "object" ? {
+      byteSize: Number(raw.originalLogoMeta.byteSize) || void 0,
+      width: Number(raw.originalLogoMeta.width) || void 0,
+      height: Number(raw.originalLogoMeta.height) || void 0,
+      mimeType: typeof raw.originalLogoMeta.mimeType === "string" ? raw.originalLogoMeta.mimeType : void 0
+    } : void 0,
     primaryColor: sanitizeHexColor(raw?.primaryColor, def.primaryColor),
     secondaryColor: sanitizeHexColor(raw?.secondaryColor, def.secondaryColor),
     accentColor: sanitizeHexColor(raw?.accentColor, def.accentColor),
@@ -36387,11 +39603,11 @@ function normalizeSiteControlCenterConfig(raw) {
     },
     notifications: {
       userAppName: String(r2.notifications?.userAppName || userBrand.appName).trim().slice(0, 80),
-      userIconUrl: sanitizeAssetRef(r2.notifications?.userIconUrl, userBrand.pwaIconUrl),
+      userIconUrl: sanitizeAssetRef(r2.notifications?.userIconUrl, userBrand.notificationIconUrl || userBrand.pwaIconUrl),
       adminAppName: String(r2.notifications?.adminAppName || adminBrand.appName).trim().slice(0, 80),
-      adminIconUrl: sanitizeAssetRef(r2.notifications?.adminIconUrl, adminBrand.pwaIconUrl),
+      adminIconUrl: sanitizeAssetRef(r2.notifications?.adminIconUrl, adminBrand.notificationIconUrl || adminBrand.pwaIconUrl),
       staffAppName: String(r2.notifications?.staffAppName || staffBrand.appName).trim().slice(0, 80),
-      staffIconUrl: sanitizeAssetRef(r2.notifications?.staffIconUrl, staffBrand.pwaIconUrl),
+      staffIconUrl: sanitizeAssetRef(r2.notifications?.staffIconUrl, staffBrand.notificationIconUrl || staffBrand.pwaIconUrl),
       categories: {
         user: normalizeBoolMap(r2.notifications?.categories?.user, def.notifications.categories.user),
         admin: normalizeBoolMap(r2.notifications?.categories?.admin, def.notifications.categories.admin),
@@ -36437,8 +39653,8 @@ function normalizeSiteControlCenterConfig(raw) {
   };
 }
 async function loadEnvelope() {
-  if (g2.__mmControlCenterCache) {
-    return g2.__mmControlCenterCache;
+  if (g4.__mmControlCenterCache) {
+    return g4.__mmControlCenterCache;
   }
   let local = readJsonStore2(CONTROL_CENTER_FILE);
   let remotePublished = null;
@@ -36520,12 +39736,12 @@ async function loadEnvelope() {
     }
   ];
   const envelope = { published, draft, versions };
-  g2.__mmControlCenterCache = envelope;
+  g4.__mmControlCenterCache = envelope;
   writeJsonStore2(CONTROL_CENTER_FILE, envelope);
   return envelope;
 }
 async function persistEnvelope(envelope, actor) {
-  g2.__mmControlCenterCache = envelope;
+  g4.__mmControlCenterCache = envelope;
   writeJsonStore2(CONTROL_CENTER_FILE, envelope);
   if (isDatabaseAvailable()) {
     try {
@@ -36689,7 +39905,7 @@ async function publishControlCenterChanges(options, actor) {
   nextPublished.appPopup = { ...nextPublished.appPopup, ...savedPopup };
   const summary = String(options.summary || "Published control center updates").trim().slice(0, 180);
   const versionEntry = {
-    id: crypto18.randomUUID(),
+    id: crypto20.randomUUID(),
     version: nextVersion,
     status: "published",
     summary,
@@ -36753,43 +39969,36 @@ async function syncMaintenanceIntoControlCenter(actor) {
   await broadcastSiteConfigEvent("config_updated");
 }
 function loadAssetsStore() {
-  const existing = g2.__mmBrandingAssetsCache || {};
+  const existing = g4.__mmBrandingAssetsCache || {};
   const fromDisk = readJsonStore2(BRANDING_ASSETS_FILE);
   if (fromDisk) {
-    g2.__mmBrandingAssetsCache = { ...fromDisk, ...existing };
+    g4.__mmBrandingAssetsCache = { ...fromDisk, ...existing };
   }
-  return g2.__mmBrandingAssetsCache;
+  return g4.__mmBrandingAssetsCache;
 }
-async function saveSanitizedBrandingAsset(params) {
-  const check = validateBrandingImageInput(params.dataUrl, {
-    width: params.width,
-    height: params.height
-  });
-  if (!check.valid || !check.sanitizedDataUrl || !check.mimeType) {
-    return { success: false, error: check.error || "Invalid branding image." };
-  }
-  const assetId = `${params.scope}_${params.slot}_${Date.now()}_${crypto18.randomBytes(4).toString("hex")}`;
-  const dataContent = check.mimeType === "image/svg+xml" && check.sanitizedSvg ? check.sanitizedSvg : check.sanitizedDataUrl;
-  const sha256 = crypto18.createHash("sha256").update(dataContent).digest("hex");
+async function persistOptimizedBrandingAssetRecord(params) {
+  const assetId = `${params.scope}_${params.slot}_${Date.now()}_${crypto20.randomBytes(4).toString("hex")}`;
   const asset = {
     id: assetId,
     scope: params.scope,
     slot: params.slot,
-    mimeType: check.mimeType,
-    dataContent,
-    width: check.width,
-    height: check.height,
-    byteSize: check.byteSize || Buffer.byteLength(dataContent, "utf8"),
-    sha256,
+    mimeType: params.mimeType,
+    dataContent: params.dataContent,
+    storageBucket: params.storageBucket,
+    storageObjectKey: params.storageObjectKey,
+    width: params.width,
+    height: params.height,
+    byteSize: params.byteSize,
+    sha256: params.sha256,
     createdBy: params.actorEmail,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   const store = loadAssetsStore();
   store[assetId] = asset;
-  const entries = Object.values(store).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 80);
+  const entries = Object.values(store).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 120);
   const compact = {};
   for (const e2 of entries) compact[e2.id] = e2;
-  g2.__mmBrandingAssetsCache = compact;
+  g4.__mmBrandingAssetsCache = compact;
   writeJsonStore2(BRANDING_ASSETS_FILE, compact);
   if (isDatabaseAvailable()) {
     await query(
@@ -36811,16 +40020,138 @@ async function saveSanitizedBrandingAsset(params) {
     ).catch(() => {
     });
   }
+  return asset;
+}
+async function saveSanitizedBrandingAsset(params) {
+  const originalScan = await processSecureUpload({
+    userId: params.actorId || params.actorEmail || "admin",
+    userEmail: params.actorEmail,
+    purpose: "admin_logo",
+    filename: params.filename || `${params.scope}_${params.slot}.png`,
+    dataUrlOrRawBase64: params.dataUrl,
+    ipAddress: params.ipAddress || "127.0.0.1",
+    allowSvg: Boolean(params.allowSvg)
+  });
+  if (!originalScan.success || !originalScan.mimeType || !originalScan.sanitizedDataUrl) {
+    return {
+      success: false,
+      scannerEngine: originalScan.scannerEngine,
+      scanStatus: originalScan.status,
+      error: originalScan.error || "Branding image rejected by upload security gate."
+    };
+  }
+  let displayMime = originalScan.mimeType;
+  let displayContent = originalScan.mimeType === "image/svg+xml" && originalScan.sanitizedSvg ? originalScan.sanitizedSvg : originalScan.sanitizedDataUrl;
+  let displayWidth = originalScan.width ?? params.width;
+  let displayHeight = originalScan.height ?? params.height;
+  let displayByteSize = originalScan.byteSize || Buffer.byteLength(displayContent, "utf8");
+  let displaySha = originalScan.sha256 || crypto20.createHash("sha256").update(displayContent).digest("hex");
+  let displayBucket = "branding-originals";
+  let displayObjectKey = originalScan.objectKey;
+  if (params.optimizedDataUrl && params.optimizedDataUrl.trim() && originalScan.mimeType !== "image/svg+xml") {
+    const optScan = await processSecureUpload({
+      userId: params.actorId || params.actorEmail || "admin",
+      userEmail: params.actorEmail,
+      purpose: "admin_branding_variant",
+      filename: `opt_${params.scope}_${params.slot}.webp`,
+      dataUrlOrRawBase64: params.optimizedDataUrl,
+      ipAddress: params.ipAddress || "127.0.0.1",
+      allowSvg: false,
+      skipRateLimit: true
+    });
+    if (optScan.success && optScan.sanitizedDataUrl && optScan.mimeType) {
+      displayMime = optScan.mimeType;
+      displayContent = optScan.sanitizedDataUrl;
+      displayWidth = optScan.width ?? displayWidth;
+      displayHeight = optScan.height ?? displayHeight;
+      displayByteSize = optScan.byteSize || displayByteSize;
+      displaySha = optScan.sha256 || displaySha;
+      displayBucket = "branding-optimized";
+      displayObjectKey = optScan.objectKey;
+    }
+  }
+  const primaryAsset = await persistOptimizedBrandingAssetRecord({
+    scope: params.scope,
+    slot: params.slot,
+    mimeType: displayMime,
+    dataContent: displayContent,
+    storageBucket: displayBucket,
+    storageObjectKey: displayObjectKey,
+    width: displayWidth,
+    height: displayHeight,
+    byteSize: displayByteSize,
+    sha256: displaySha,
+    actorEmail: params.actorEmail
+  });
+  const savedVariants = {};
+  if (params.variants && typeof params.variants === "object") {
+    const slotMap = {
+      mainLogo: "logo",
+      sidebarLogo: "sidebar_logo",
+      pwaIcon: "pwa_icon",
+      favicon: "favicon",
+      notificationIcon: "notification_icon"
+    };
+    for (const [key, variantDataUrl] of Object.entries(params.variants)) {
+      if (!variantDataUrl || !slotMap[key]) continue;
+      const vScan = await processSecureUpload({
+        userId: params.actorId || params.actorEmail || "admin",
+        userEmail: params.actorEmail,
+        purpose: "admin_branding_variant",
+        filename: `${params.scope}_${key}.png`,
+        dataUrlOrRawBase64: variantDataUrl,
+        ipAddress: params.ipAddress || "127.0.0.1",
+        allowSvg: Boolean(params.allowSvg),
+        skipRateLimit: true
+      });
+      if (vScan.success && vScan.mimeType && vScan.sanitizedDataUrl) {
+        const vContent = vScan.mimeType === "image/svg+xml" && vScan.sanitizedSvg ? vScan.sanitizedSvg : vScan.sanitizedDataUrl;
+        const vAsset = await persistOptimizedBrandingAssetRecord({
+          scope: params.scope,
+          slot: slotMap[key],
+          mimeType: vScan.mimeType,
+          dataContent: vContent,
+          storageBucket: "branding-optimized",
+          storageObjectKey: vScan.objectKey,
+          width: vScan.width,
+          height: vScan.height,
+          byteSize: vScan.byteSize || 0,
+          sha256: vScan.sha256 || "",
+          actorEmail: params.actorEmail
+        });
+        savedVariants[key] = {
+          id: vAsset.id,
+          url: `/api/branding/assets/${encodeURIComponent(vAsset.id)}`,
+          byteSize: vAsset.byteSize,
+          width: vAsset.width,
+          height: vAsset.height,
+          mimeType: vAsset.mimeType
+        };
+      }
+    }
+  }
   return {
     success: true,
+    scannerEngine: originalScan.scannerEngine,
+    scanStatus: originalScan.status,
+    originalAsset: {
+      quarantineId: originalScan.quarantineId,
+      byteSize: originalScan.byteSize || 0,
+      width: originalScan.width,
+      height: originalScan.height,
+      mimeType: originalScan.mimeType,
+      sha256: originalScan.sha256 || ""
+    },
     asset: {
-      id: asset.id,
-      url: `/api/branding/assets/${encodeURIComponent(asset.id)}`,
-      mimeType: asset.mimeType,
-      width: asset.width,
-      height: asset.height,
-      byteSize: asset.byteSize
-    }
+      id: primaryAsset.id,
+      url: `/api/branding/assets/${encodeURIComponent(primaryAsset.id)}`,
+      mimeType: primaryAsset.mimeType,
+      width: primaryAsset.width,
+      height: primaryAsset.height,
+      byteSize: primaryAsset.byteSize,
+      originalAssetId: originalScan.quarantineId
+    },
+    variants: Object.keys(savedVariants).length > 0 ? savedVariants : void 0
   };
 }
 async function getBrandingAssetById(assetId) {
@@ -36854,11 +40185,11 @@ async function getBrandingAssetById(assetId) {
   }
   return null;
 }
-function serveBrandingAssetResponse(res, asset) {
+async function serveBrandingAssetResponse(res, asset) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   if (asset.mimeType === "image/svg+xml") {
-    const recheck = validateBrandingImageInput(asset.dataContent);
+    const recheck = validateBrandingImageInput(asset.dataContent, { allowSvg: true });
     const svgBody = recheck.valid && recheck.sanitizedSvg ? recheck.sanitizedSvg : '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
     res.writeHead(200, {
       "Content-Type": "image/svg+xml; charset=utf-8",
@@ -36881,6 +40212,19 @@ function serveBrandingAssetResponse(res, asset) {
     res.end(buf);
     return;
   }
+  if (asset.storageBucket && asset.storageObjectKey) {
+    const stored = await getObjectFromStorage(asset.storageBucket, asset.storageObjectKey);
+    if (stored) {
+      res.writeHead(200, {
+        "Content-Type": asset.mimeType,
+        "Content-Length": String(stored.data.length),
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "public, max-age=31536000, immutable"
+      });
+      res.end(stored.data);
+      return;
+    }
+  }
   res.writeHead(404);
   res.end();
 }
@@ -36897,7 +40241,7 @@ async function subscribeSiteConfigSse(req, res, sinceVersion) {
 data: ${JSON.stringify(payload)}
 
 `);
-  const clientId = crypto18.randomUUID();
+  const clientId = crypto20.randomUUID();
   const heartbeat = setInterval(() => {
     try {
       res.write(`: heartbeat ${Date.now()}
@@ -36908,32 +40252,32 @@ data: ${JSON.stringify(payload)}
     }
   }, 25e3);
   const clientRecord = { id: clientId, res, heartbeat };
-  g2.__mmSseClients?.add(clientRecord);
+  g4.__mmSseClients?.add(clientRecord);
   const cleanup = () => {
     clearInterval(heartbeat);
-    g2.__mmSseClients?.delete(clientRecord);
+    g4.__mmSseClients?.delete(clientRecord);
   };
   req.on("close", cleanup);
   req.on("error", cleanup);
 }
 async function broadcastSiteConfigEvent(eventName = "config_updated") {
-  if (!g2.__mmSseClients || g2.__mmSseClients.size === 0) return;
+  if (!g4.__mmSseClients || g4.__mmSseClients.size === 0) return;
   const payload = await getPublicSiteConfigPayload();
   const frame = `event: ${eventName}
 data: ${JSON.stringify(payload)}
 
 `;
-  for (const client of Array.from(g2.__mmSseClients)) {
+  for (const client of Array.from(g4.__mmSseClients)) {
     try {
       if (!client.res.writableEnded) {
         client.res.write(frame);
       } else {
         clearInterval(client.heartbeat);
-        g2.__mmSseClients.delete(client);
+        g4.__mmSseClients.delete(client);
       }
     } catch {
       clearInterval(client.heartbeat);
-      g2.__mmSseClients.delete(client);
+      g4.__mmSseClients.delete(client);
     }
   }
 }
@@ -37060,14 +40404,14 @@ async function resolveDynamicPwaIcon(scope, res) {
     const assetId = rawIcon.replace("/api/branding/assets/", "").split("?")[0];
     const asset = await getBrandingAssetById(assetId);
     if (asset) {
-      serveBrandingAssetResponse(res, asset);
+      await serveBrandingAssetResponse(res, asset);
       return;
     }
   }
   if (rawIcon.startsWith("data:")) {
     const check = validateBrandingImageInput(rawIcon);
     if (check.valid && check.mimeType) {
-      serveBrandingAssetResponse(res, {
+      await serveBrandingAssetResponse(res, {
         id: `inline-${scope}`,
         scope: scope === "myadmin" ? "admin_app" : scope === "mystaff" ? "staff_app" : "user_app",
         slot: "pwa_icon",
@@ -37125,13 +40469,13 @@ ${urls}
 `;
 }
 function loadStaffTasksLocal() {
-  if (g2.__mmStaffTasksCache) return g2.__mmStaffTasksCache;
+  if (g4.__mmStaffTasksCache) return g4.__mmStaffTasksCache;
   const fromDisk = readJsonStore2(STAFF_TASKS_FILE);
-  g2.__mmStaffTasksCache = Array.isArray(fromDisk) ? fromDisk : [];
-  return g2.__mmStaffTasksCache;
+  g4.__mmStaffTasksCache = Array.isArray(fromDisk) ? fromDisk : [];
+  return g4.__mmStaffTasksCache;
 }
 function saveStaffTasksLocal(tasks) {
-  g2.__mmStaffTasksCache = tasks;
+  g4.__mmStaffTasksCache = tasks;
   writeJsonStore2(STAFF_TASKS_FILE, tasks);
 }
 async function listStaffTasks(filter) {
@@ -37196,7 +40540,7 @@ async function createStaffTask(input) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const priority = ["low", "medium", "high", "urgent"].includes(String(input.priority)) ? input.priority : "medium";
   const task = {
-    id: crypto18.randomUUID(),
+    id: crypto20.randomUUID(),
     title: String(input.title || "").trim().slice(0, 140),
     description: String(input.description || "").trim().slice(0, 1e3),
     category: String(input.category || "operations").trim().slice(0, 50),
@@ -37305,23 +40649,25 @@ async function updateStaffTask(taskId, updates) {
   saveStaffTasksLocal(list);
   return updated;
 }
-var PRIMARY_DATA_DIR3, TMP_DATA_DIR3, CONTROL_CENTER_SETTING_KEY, CONTROL_CENTER_DRAFT_KEY, CONTROL_CENTER_FILE, BRANDING_ASSETS_FILE, STAFF_TASKS_FILE, g2;
+var PRIMARY_DATA_DIR3, TMP_DATA_DIR3, CONTROL_CENTER_SETTING_KEY, CONTROL_CENTER_DRAFT_KEY, CONTROL_CENTER_FILE, BRANDING_ASSETS_FILE, STAFF_TASKS_FILE, g4;
 var init_siteControlCenter = __esm({
   "server/siteControlCenter.ts"() {
     init_db();
     init_supabaseRestFallback();
     init_adminSettingsStore();
     init_svgSanitizer();
-    PRIMARY_DATA_DIR3 = path9.resolve(process.cwd(), ".data", "runtime-store");
-    TMP_DATA_DIR3 = path9.resolve(os6.tmpdir(), "mymoney-runtime-store");
+    init_uploadSecurity();
+    init_storageService();
+    PRIMARY_DATA_DIR3 = path12.resolve(process.cwd(), ".data", "runtime-store");
+    TMP_DATA_DIR3 = path12.resolve(os7.tmpdir(), "mymoney-runtime-store");
     CONTROL_CENTER_SETTING_KEY = "site_control_center_published";
     CONTROL_CENTER_DRAFT_KEY = "site_control_center_draft";
     CONTROL_CENTER_FILE = "site-control-center.json";
     BRANDING_ASSETS_FILE = "branding-assets.json";
     STAFF_TASKS_FILE = "staff-tasks.json";
-    g2 = globalThis;
-    if (!g2.__mmBrandingAssetsCache) g2.__mmBrandingAssetsCache = {};
-    if (!g2.__mmSseClients) g2.__mmSseClients = /* @__PURE__ */ new Set();
+    g4 = globalThis;
+    if (!g4.__mmBrandingAssetsCache) g4.__mmBrandingAssetsCache = {};
+    if (!g4.__mmSseClients) g4.__mmSseClients = /* @__PURE__ */ new Set();
   }
 });
 
@@ -37371,21 +40717,21 @@ __export(notificationService_exports, {
   updateConnectionRequestNotificationsState: () => updateConnectionRequestNotificationsState,
   updateUserNotificationPreferences: () => updateUserNotificationPreferences
 });
-import fs11 from "fs";
-import os7 from "os";
-import path10 from "path";
-import crypto19 from "crypto";
+import fs14 from "fs";
+import os8 from "os";
+import path13 from "path";
+import crypto21 from "crypto";
 function resolveWritablePushDir() {
   try {
-    if (!fs11.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
-      fs11.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
+    if (!fs14.existsSync(PRIMARY_PUSH_FALLBACK_DIR)) {
+      fs14.mkdirSync(PRIMARY_PUSH_FALLBACK_DIR, { recursive: true });
     }
-    fs11.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs11.constants.W_OK);
+    fs14.accessSync(PRIMARY_PUSH_FALLBACK_DIR, fs14.constants.W_OK);
     return PRIMARY_PUSH_FALLBACK_DIR;
   } catch {
     try {
-      if (!fs11.existsSync(TMP_PUSH_FALLBACK_DIR)) {
-        fs11.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
+      if (!fs14.existsSync(TMP_PUSH_FALLBACK_DIR)) {
+        fs14.mkdirSync(TMP_PUSH_FALLBACK_DIR, { recursive: true });
       }
       return TMP_PUSH_FALLBACK_DIR;
     } catch {
@@ -37394,9 +40740,9 @@ function resolveWritablePushDir() {
   }
 }
 function safeUserPushFile(baseDir, userId) {
-  const safeId = crypto19.createHash("sha256").update(String(userId || "unknown")).digest("hex");
-  const resolved = path10.resolve(baseDir, `${safeId}.json`);
-  if (!resolved.startsWith(baseDir + path10.sep)) {
+  const safeId = crypto21.createHash("sha256").update(String(userId || "unknown")).digest("hex");
+  const resolved = path13.resolve(baseDir, `${safeId}.json`);
+  if (!resolved.startsWith(baseDir + path13.sep)) {
     throw new Error("Invalid storage path");
   }
   return resolved;
@@ -37405,8 +40751,8 @@ function readLocalStore(userId) {
   for (const dir of [PRIMARY_PUSH_FALLBACK_DIR, TMP_PUSH_FALLBACK_DIR]) {
     try {
       const file = safeUserPushFile(dir, userId);
-      if (fs11.existsSync(file)) {
-        const parsed = JSON.parse(fs11.readFileSync(file, "utf8"));
+      if (fs14.existsSync(file)) {
+        const parsed = JSON.parse(fs14.readFileSync(file, "utf8"));
         const store = {
           preferences: { ...DEFAULT_PREFERENCES, ...parsed.preferences || {} },
           subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
@@ -37449,13 +40795,13 @@ function writeLocalStore(userId, store) {
   try {
     const baseDir = resolveWritablePushDir();
     const file = safeUserPushFile(baseDir, userId);
-    fs11.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
+    fs14.writeFileSync(file, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
     console.warn("[Push] Local fallback write notice:", err?.message || err);
   }
 }
 function hashEndpoint(endpoint) {
-  return crypto19.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
+  return crypto21.createHash("sha256").update(endpoint).digest("hex").slice(0, 24);
 }
 function formatEndpointPreview(endpoint) {
   try {
@@ -37817,7 +41163,7 @@ async function registerPushSubscription(params) {
   const local = readLocalStore(params.userId);
   const existingIdx = local.subscriptions.findIndex((s2) => s2.endpoint === endpoint);
   const record = {
-    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto19.randomUUID()),
+    id: sbRow?.id || (existingIdx >= 0 ? local.subscriptions[existingIdx].id : crypto21.randomUUID()),
     user_id: params.userId,
     endpoint,
     p256dh,
@@ -38057,7 +41403,7 @@ function recordLocalDedupeKey(userId, dedupeKey) {
 function appendLocalDeliveryLog(userId, log) {
   const local = readLocalStore(userId);
   local.deliveryLogs.unshift({
-    id: crypto19.randomUUID(),
+    id: crypto21.randomUUID(),
     ...log,
     created_at: (/* @__PURE__ */ new Date()).toISOString()
   });
@@ -39083,7 +42429,7 @@ async function recordDeviceInstallation(params) {
     userId,
     deviceType = "desktop",
     browser = "Chrome",
-    os: os8 = "Unknown OS",
+    os: os9 = "Unknown OS",
     userAgent = "",
     isInstalled = false,
     installationStatus = isInstalled ? "installed_pwa" : "browser",
@@ -39105,7 +42451,7 @@ async function recordDeviceInstallation(params) {
       const existing = await query(
         `SELECT id, is_installed, installed_at FROM public.installed_devices
          WHERE user_id = $1 AND browser = $2 AND os = $3 AND device_type = $4`,
-        [userId, browser, os8, deviceType]
+        [userId, browser, os9, deviceType]
       );
       if (existing.rows.length > 0) {
         const prev2 = existing.rows[0];
@@ -39143,9 +42489,9 @@ async function recordDeviceInstallation(params) {
             recordAdminNotification({
               eventType: "pwa_install",
               title: `${scopeLabel} Installed`,
-              message: `User installed ${scopeLabel} on ${browser} (${os8}, ${deviceType}).`,
+              message: `User installed ${scopeLabel} on ${browser} (${os9}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os8, portalScope: normalizedScope, installedAt }
+              metadata: { deviceType, browser, os: os9, portalScope: normalizedScope, installedAt }
             }).catch(() => {
             });
           }
@@ -39164,7 +42510,7 @@ async function recordDeviceInstallation(params) {
             userId,
             deviceType,
             browser,
-            os8,
+            os9,
             userAgent,
             installationStatus,
             isInstalled,
@@ -39180,9 +42526,9 @@ async function recordDeviceInstallation(params) {
             recordAdminNotification({
               eventType: "pwa_install",
               title: `${scopeLabel} Installed`,
-              message: `User installed ${scopeLabel} on ${browser} (${os8}, ${deviceType}).`,
+              message: `User installed ${scopeLabel} on ${browser} (${os9}, ${deviceType}).`,
               userId,
-              metadata: { deviceType, browser, os: os8, portalScope: normalizedScope, installedAt }
+              metadata: { deviceType, browser, os: os9, portalScope: normalizedScope, installedAt }
             }).catch(() => {
             });
           }
@@ -39192,7 +42538,7 @@ async function recordDeviceInstallation(params) {
     } catch {
     }
   }
-  const key = `${userId}:${normalizedScope}:${browser}:${os8}:${deviceType}`;
+  const key = `${userId}:${normalizedScope}:${browser}:${os9}:${deviceType}`;
   const prev = localInstalledDevices.get(key);
   if (!prev?.is_installed && isInstalled) {
     isNewInstall = true;
@@ -39203,7 +42549,7 @@ async function recordDeviceInstallation(params) {
     portal_scope: normalizedScope,
     device_type: deviceType,
     browser,
-    os: os8,
+    os: os9,
     user_agent: userAgent,
     installation_status: installationStatus,
     is_installed: isInstalled,
@@ -39218,9 +42564,9 @@ async function recordDeviceInstallation(params) {
     recordAdminNotification({
       eventType: "pwa_install",
       title: `${scopeLabel} Installed`,
-      message: `User installed ${scopeLabel} on ${browser} (${os8}, ${deviceType}).`,
+      message: `User installed ${scopeLabel} on ${browser} (${os9}, ${deviceType}).`,
       userId,
-      metadata: { deviceType, browser, os: os8, portalScope: normalizedScope, installedAt }
+      metadata: { deviceType, browser, os: os9, portalScope: normalizedScope, installedAt }
     }).catch(() => {
     });
   }
@@ -39473,8 +42819,8 @@ function readStaffNotifs() {
   if (memoryStaffNotifications) return memoryStaffNotifications;
   for (const target of [STAFF_NOTIFS_FILE, TMP_STAFF_NOTIFS_FILE]) {
     try {
-      if (fs11.existsSync(target)) {
-        const parsed = JSON.parse(fs11.readFileSync(target, "utf8"));
+      if (fs14.existsSync(target)) {
+        const parsed = JSON.parse(fs14.readFileSync(target, "utf8"));
         if (Array.isArray(parsed)) {
           memoryStaffNotifications = parsed;
           return parsed;
@@ -39491,7 +42837,7 @@ function writeStaffNotifs(items) {
   memoryStaffNotifications = sliced;
   try {
     const dir = resolveWritablePushDir();
-    fs11.writeFileSync(path10.resolve(dir, "staff-notifications.json"), JSON.stringify(sliced, null, 2), "utf8");
+    fs14.writeFileSync(path13.resolve(dir, "staff-notifications.json"), JSON.stringify(sliced, null, 2), "utf8");
   } catch {
   }
 }
@@ -39501,7 +42847,7 @@ async function recordStaffNotification(params) {
   const staffAppName = siteCfg?.notifications?.staffAppName || "My Money Manager Staff";
   const staffIconUrl = siteCfg?.notifications?.staffIconUrl || "/staff-icon-192.png";
   const record = {
-    id: `snot_${Date.now()}_${crypto19.randomBytes(3).toString("hex")}`,
+    id: `snot_${Date.now()}_${crypto21.randomBytes(3).toString("hex")}`,
     staff_user_id: params.staffUserId || null,
     event_type: params.eventType,
     title: params.title,
@@ -39618,8 +42964,8 @@ var init_notificationService = __esm({
       quiet_hours_end: "07:00",
       privacy_hide_amounts: true
     };
-    PRIMARY_PUSH_FALLBACK_DIR = path10.resolve(process.cwd(), ".data", "push-notifications");
-    TMP_PUSH_FALLBACK_DIR = path10.resolve(os7.tmpdir(), "mymoney-push-notifications");
+    PRIMARY_PUSH_FALLBACK_DIR = path13.resolve(process.cwd(), ".data", "push-notifications");
+    TMP_PUSH_FALLBACK_DIR = path13.resolve(os8.tmpdir(), "mymoney-push-notifications");
     memoryPushStore = /* @__PURE__ */ new Map();
     localCampaigns = /* @__PURE__ */ new Map();
     localInstalledDevices = /* @__PURE__ */ new Map();
@@ -39635,9 +42981,580 @@ var init_notificationService = __esm({
       quiet_hours_end: "07:00",
       delivery_channel: "push_and_inapp"
     };
-    STAFF_NOTIFS_FILE = path10.resolve(PRIMARY_PUSH_FALLBACK_DIR, "staff-notifications.json");
-    TMP_STAFF_NOTIFS_FILE = path10.resolve(TMP_PUSH_FALLBACK_DIR, "staff-notifications.json");
+    STAFF_NOTIFS_FILE = path13.resolve(PRIMARY_PUSH_FALLBACK_DIR, "staff-notifications.json");
+    TMP_STAFF_NOTIFS_FILE = path13.resolve(TMP_PUSH_FALLBACK_DIR, "staff-notifications.json");
     memoryStaffNotifications = null;
+  }
+});
+
+// server/healthMonitor.ts
+function getSupabaseRestConfig2() {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL2).replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY2;
+  return { url, key };
+}
+function formatDurationHuman(ms) {
+  if (!ms || ms <= 0) return "< 1s";
+  const totalSec = Math.round(ms / 1e3);
+  const h2 = Math.floor(totalSec / 3600);
+  const m2 = Math.floor(totalSec % 3600 / 60);
+  const s2 = totalSec % 60;
+  if (h2 > 0) return `${h2}h ${m2}m ${s2}s`;
+  if (m2 > 0) return `${m2}m ${s2}s`;
+  return `${s2}s`;
+}
+function escapeHtml4(val) {
+  return String(val ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function classifyErrorCategory(serviceKey, errorDetails) {
+  const msg = String(errorDetails || "").toLowerCase();
+  if (msg.includes("timeout") || msg.includes("abort")) return "Timeout / Latency Saturation";
+  if (msg.includes("502") || msg.includes("503") || msg.includes("504") || msg.includes("520")) return "Upstream Gateway / Infrastructure Error";
+  if (msg.includes("too many clients") || msg.includes("connection")) return "Connection Pool Saturation";
+  if (msg.includes("pgrst") || msg.includes("schema cache")) return "PostgREST Schema Cache / API Error";
+  if (msg.includes("smtp") || serviceKey === "email_service") return "SMTP / Email Delivery Failure";
+  if (serviceKey.startsWith("firebase_")) return "Secondary Firebase Service Error";
+  return "Service Health Degradation";
+}
+function getRecommendedAction(serviceKey, transition) {
+  if (transition === "recovery") {
+    return "Verify pending outbox count reaches 0 in Admin \u2192 System Management \u2192 Database & Service Health. No manual rollback required unless conflicts are listed.";
+  }
+  switch (serviceKey) {
+    case "supabase_postgrest":
+      return "Check Supabase Dashboard \u2192 Project Health \u2192 PostgREST logs, Nano RAM/connection pressure, and reload schema cache (NOTIFY pgrst, 'reload schema') if needed. Automatic failover is monitoring.";
+    case "supabase_db":
+      return "Inspect Supabase PostgreSQL connections (ensure Supavisor port 6543 pooler is used) and Nano compute RAM. Writes will route safely or pause to protect financial integrity.";
+    case "firebase_db":
+      return "Verify Firebase Service Account credentials and Firestore quota/rules. Primary Supabase continues serving traffic while outbox queues pending syncs.";
+    case "email_service":
+      return "Verify SMTP credentials in Admin \u2192 Settings \u2192 SMTP Configuration. Alerts remain persisted in the Admin Notification Center and durable retry queue.";
+    default:
+      return "Open Admin \u2192 System Management \u2192 Database & Service Health to inspect live probe errors and history.";
+  }
+}
+async function probeHttp(url, headers, timeoutMs = 4500) {
+  const t0 = Date.now();
+  try {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    const text = await res.text().catch(() => "");
+    return {
+      ok: res.ok,
+      status: res.status,
+      ms: Date.now() - t0,
+      bodySnippet: text.slice(0, 160)
+    };
+  } catch (err) {
+    return { ok: false, status: 0, ms: Date.now() - t0, error: err?.message || "Timeout / Network error" };
+  }
+}
+async function updateServiceStatus(key, nextStatus, responseTimeMs, errorDetails) {
+  const rec = serviceMap.get(key);
+  if (!rec) return;
+  const prevStatus = rec.status;
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  rec.lastCheckedAt = nowIso;
+  rec.responseTimeMs = responseTimeMs;
+  rec.errorDetails = errorDetails;
+  if (nextStatus === "unhealthy") {
+    rec.consecutiveFailures += 1;
+    rec.lastFailureAt = nowIso;
+    if (!failureStartedAtMap.has(key)) {
+      failureStartedAtMap.set(key, now);
+    }
+    if (prevStatus !== "unhealthy") {
+      await dispatchServiceAlert({
+        serviceKey: key,
+        serviceLabel: rec.label,
+        transition: "failure",
+        errorDetails: errorDetails || "Service probe failed",
+        severity: key === "supabase_db" || key === "supabase_postgrest" || key === "firebase_db" ? "critical" : "high"
+      }).catch(() => {
+      });
+    } else {
+      const startedAt = failureStartedAtMap.get(key) || now;
+      const lastEsc = lastEscalatedAtMap.get(key) || startedAt;
+      if (now - lastEsc >= ESCALATION_INTERVAL_MS) {
+        lastEscalatedAtMap.set(key, now);
+        await dispatchServiceAlert({
+          serviceKey: key,
+          serviceLabel: `${rec.label} (Prolonged Outage Escalation)`,
+          transition: "escalation",
+          errorDetails: errorDetails || "Continuous service failure",
+          severity: "critical",
+          downtimeMs: now - startedAt,
+          bypassCooldown: true
+        }).catch(() => {
+        });
+      }
+    }
+  } else if (nextStatus === "healthy") {
+    if (prevStatus === "unhealthy") {
+      rec.lastRecoveryAt = nowIso;
+      const startedAt = failureStartedAtMap.get(key);
+      const downtimeMs = startedAt ? Math.max(0, now - startedAt) : null;
+      failureStartedAtMap.delete(key);
+      lastEscalatedAtMap.delete(key);
+      await dispatchServiceAlert({
+        serviceKey: key,
+        serviceLabel: rec.label,
+        transition: "recovery",
+        errorDetails: null,
+        severity: "high",
+        downtimeMs
+      }).catch(() => {
+      });
+    }
+    rec.consecutiveFailures = 0;
+  }
+  rec.status = nextStatus;
+  if (isDatabaseAvailable()) {
+    await query(
+      `INSERT INTO public.service_health_logs (service_name, status, response_time_ms, error_message)
+       VALUES ($1, $2, $3, $4)`,
+      [key, nextStatus, responseTimeMs, errorDetails]
+    ).catch(() => {
+    });
+  }
+}
+function buildAlertEmailHtml(params) {
+  const istTime = new Date(params.timestampIso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
+  const headerBg = params.transition === "recovery" ? "#065f46" : params.severity === "critical" ? "#991b1b" : "#b45309";
+  const badgeText = params.transition === "recovery" ? "RECOVERED" : params.transition === "escalation" ? "ESCALATED OUTAGE" : params.severity.toUpperCase() + " FAILURE";
+  return `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+  <div style="background:${headerBg};padding:20px 24px;color:#ffffff;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1px;opacity:0.9;">${escapeHtml4(APP_CONFIG.appName)} \xB7 ${badgeText}</div>
+    <h2 style="margin:6px 0 0;font-size:18px;">${escapeHtml4(params.subject)}</h2>
+  </div>
+  <div style="padding:22px 24px;color:#0f172a;font-size:13px;line-height:1.6;">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+      <tr><td style="padding:6px 0;color:#64748b;width:180px;"><strong>Project</strong></td><td>${escapeHtml4(APP_CONFIG.appName)} (${escapeHtml4(APP_CONFIG.companyName)})</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Service / Component</strong></td><td>${escapeHtml4(params.serviceLabel)} (<code>${escapeHtml4(params.serviceKey)}</code>)</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Event Time</strong></td><td>${escapeHtml4(istTime)} (${escapeHtml4(params.timestampIso)})</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Error Category</strong></td><td>${escapeHtml4(params.errorCategory)}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Severity</strong></td><td style="text-transform:uppercase;font-weight:700;">${escapeHtml4(params.severity)}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Automatic Failover</strong></td><td>${params.failoverOccurred ? "Active (" + escapeHtml4(params.activeProvider) + ")" : "Not Activated (Primary Active)"}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Active Database</strong></td><td><strong>${escapeHtml4(params.activeProvider)}</strong> (Fencing Epoch #${params.providerEpoch})</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;"><strong>Sync Outbox Status</strong></td><td>Pending: ${params.pendingSync} \xB7 Failed: ${params.failedSync}</td></tr>
+      ${params.downtimeMs !== null ? `<tr><td style="padding:6px 0;color:#64748b;"><strong>Downtime Duration</strong></td><td><strong>${escapeHtml4(formatDurationHuman(params.downtimeMs))}</strong></td></tr>` : ""}
+    </table>
+    ${params.errorDetails ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin-bottom:14px;color:#991b1b;"><strong>Diagnostic Details:</strong> ${escapeHtml4(params.errorDetails)}</div>` : ""}
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">
+      <strong>Recommended Action:</strong><br/>${escapeHtml4(params.recommendedAction)}
+    </div>
+  </div>
+</div>`;
+}
+async function dispatchServiceAlert(params) {
+  const dedupKey = `${params.serviceKey}:${params.transition}`;
+  const lastSent = alertCooldownMap.get(dedupKey) || 0;
+  if (!params.bypassCooldown && Date.now() - lastSent < ALERT_COOLDOWN_MS) {
+    return { skipped: true, reason: "deduplicated_cooldown" };
+  }
+  alertCooldownMap.set(dedupKey, Date.now());
+  const failover = getFailoverState();
+  const outbox = getOutboxSummary();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const severity = params.severity || (params.transition === "recovery" ? "high" : "critical");
+  const errorCategory = params.transition === "recovery" ? "Service Recovery" : classifyErrorCategory(params.serviceKey, params.errorDetails);
+  const recommendedAction = params.recommendedAction || getRecommendedAction(params.serviceKey, params.transition);
+  const subject = params.transition === "recovery" ? `${APP_CONFIG.appName} \u2014 ${params.serviceLabel} Recovered` : params.transition === "escalation" ? `${APP_CONFIG.appName} \u2014 [ESCALATED] ${params.serviceLabel}` : `${APP_CONFIG.appName} \u2014 ${params.serviceLabel} Failure`;
+  const message = params.transition === "recovery" ? `${params.serviceLabel} has recovered after ${formatDurationHuman(params.downtimeMs)}. Active database: ${failover.activeProvider} (Epoch ${failover.providerEpoch}). Pending sync: ${outbox.pending}, Failed sync: ${outbox.failed}.` : `${params.serviceLabel} is unhealthy (${params.errorDetails || "probe timeout"}). Category: ${errorCategory}. Active database: ${failover.activeProvider} (Epoch ${failover.providerEpoch}). Pending sync: ${outbox.pending}. ${recommendedAction}`;
+  const alertId = `alt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const record = {
+    id: alertId,
+    serviceKey: params.serviceKey,
+    serviceLabel: params.serviceLabel,
+    transition: params.transition,
+    severity,
+    subject,
+    message,
+    emailStatus: "skipped",
+    emailError: null,
+    inAppStatus: "failed",
+    pushTriggered: false,
+    downtimeMs: params.downtimeMs ?? null,
+    attempts: 1,
+    createdAt: nowIso
+  };
+  try {
+    const { recordAdminNotification: recordAdminNotification2 } = await Promise.resolve().then(() => (init_notificationService(), notificationService_exports));
+    const ok = await recordAdminNotification2({
+      eventType: "critical_alert",
+      title: subject,
+      message,
+      metadata: {
+        alertId,
+        serviceKey: params.serviceKey,
+        transition: params.transition,
+        severity,
+        errorCategory,
+        activeProvider: failover.activeProvider,
+        epoch: failover.providerEpoch,
+        pendingSync: outbox.pending,
+        failedSync: outbox.failed,
+        downtimeMs: params.downtimeMs ?? null,
+        deepLink: "database"
+      }
+    });
+    record.inAppStatus = ok ? "sent" : "failed";
+    record.pushTriggered = Boolean(ok);
+  } catch {
+    record.inAppStatus = "failed";
+  }
+  const recipient = await getEffectiveSupportAlertEmail().catch(() => APP_CONFIG.supportEmail);
+  const html = buildAlertEmailHtml({
+    subject,
+    serviceLabel: params.serviceLabel,
+    serviceKey: params.serviceKey,
+    transition: params.transition,
+    severity,
+    errorCategory,
+    errorDetails: params.errorDetails,
+    activeProvider: failover.activeProvider,
+    providerEpoch: failover.providerEpoch,
+    failoverOccurred: failover.activeProvider !== "supabase",
+    pendingSync: outbox.pending,
+    failedSync: outbox.failed,
+    downtimeMs: params.downtimeMs ?? null,
+    recommendedAction,
+    timestampIso: nowIso
+  });
+  try {
+    const { sendEmailDetailed: sendEmailDetailed2 } = await Promise.resolve().then(() => (init_email(), email_exports));
+    const emailRes = await sendEmailDetailed2({
+      to: recipient,
+      subject,
+      html,
+      text: message,
+      emailType: `service_${params.transition}_alert`
+    });
+    if (emailRes.success) {
+      record.emailStatus = "sent";
+    } else {
+      record.emailStatus = "queued";
+      record.emailError = emailRes.error || "SMTP unavailable";
+      if (pendingEmailAlertQueue.length < 50) {
+        pendingEmailAlertQueue.push({
+          recordId: alertId,
+          to: recipient,
+          subject,
+          html,
+          text: message,
+          attempts: 1,
+          nextRetryAt: Date.now() + 6e4
+        });
+      }
+    }
+  } catch (err) {
+    record.emailStatus = "queued";
+    record.emailError = err?.message || "Email dispatch error";
+  }
+  alertDeliveryLog.unshift(record);
+  if (alertDeliveryLog.length > 60) alertDeliveryLog.length = 60;
+  return { skipped: false, record };
+}
+async function drainPendingEmailAlertQueue() {
+  const now = Date.now();
+  let attempted = 0;
+  let delivered = 0;
+  for (let i2 = pendingEmailAlertQueue.length - 1; i2 >= 0; i2--) {
+    const item = pendingEmailAlertQueue[i2];
+    if (item.nextRetryAt > now) continue;
+    attempted += 1;
+    item.attempts += 1;
+    try {
+      const { sendEmailDetailed: sendEmailDetailed2 } = await Promise.resolve().then(() => (init_email(), email_exports));
+      const res = await sendEmailDetailed2({
+        to: item.to,
+        subject: item.subject,
+        html: item.html,
+        text: item.text,
+        emailType: "service_alert_retry"
+      });
+      const logEntry = alertDeliveryLog.find((a) => a.id === item.recordId);
+      if (res.success) {
+        delivered += 1;
+        if (logEntry) {
+          logEntry.emailStatus = "sent";
+          logEntry.emailError = null;
+          logEntry.attempts = item.attempts;
+        }
+        pendingEmailAlertQueue.splice(i2, 1);
+      } else {
+        if (logEntry) {
+          logEntry.emailError = res.error || "Retry failed";
+          logEntry.attempts = item.attempts;
+        }
+        if (item.attempts >= 5) {
+          if (logEntry) logEntry.emailStatus = "failed";
+          pendingEmailAlertQueue.splice(i2, 1);
+        } else {
+          item.nextRetryAt = Date.now() + Math.min(9e5, 6e4 * Math.pow(2, item.attempts));
+        }
+      }
+    } catch {
+      item.nextRetryAt = Date.now() + 12e4;
+    }
+  }
+  return { attempted, delivered, remaining: pendingEmailAlertQueue.length };
+}
+async function probeSmtpHealth() {
+  const t0 = Date.now();
+  try {
+    const cfg = await getEffectiveSmtpConfig();
+    if (!cfg.enabled) {
+      return { status: "degraded", ms: Date.now() - t0, error: "SMTP disabled in Admin Settings" };
+    }
+    if (!cfg.configured) {
+      return { status: "unknown", ms: Date.now() - t0, error: "SMTP credentials not configured (SMTP_PASS or Admin SMTP settings)" };
+    }
+    const transporter = nodemailer_default.createTransport({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      auth: { user: cfg.user, pass: cfg.pass },
+      connectionTimeout: 4e3,
+      greetingTimeout: 4e3
+    });
+    await Promise.race([
+      transporter.verify(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("SMTP verify timeout")), 4500))
+    ]);
+    return { status: "healthy", ms: Date.now() - t0, error: null };
+  } catch (err) {
+    return { status: "unhealthy", ms: Date.now() - t0, error: err?.message || "SMTP verification failed" };
+  }
+}
+async function runIndependentHealthCheck(overrides) {
+  const { url, key } = getSupabaseRestConfig2();
+  if (overrides?.simulateSupabaseDbDown) {
+    await updateServiceStatus("supabase_db", "unhealthy", 0, "Simulated database outage");
+  } else if (isDatabaseConfigured) {
+    const dbProbe = await probeDatabaseRecovery();
+    await updateServiceStatus(
+      "supabase_db",
+      dbProbe.ok ? "healthy" : "unhealthy",
+      dbProbe.latencyMs,
+      dbProbe.ok ? null : dbProbe.error || "PostgreSQL probe failed"
+    );
+  } else {
+    await updateServiceStatus(
+      "supabase_db",
+      "unknown",
+      null,
+      "DATABASE_URL not configured in server env (PostgreSQL pool inactive; REST mode active)"
+    );
+  }
+  if (overrides?.simulateSupabasePostgrestDown) {
+    await updateServiceStatus("supabase_postgrest", "unhealthy", 5e3, "Simulated PostgREST outage / timeout");
+  } else if (url && key) {
+    const [restP, authP, storP, rtP, fnP] = await Promise.all([
+      probeHttp(`${url}/rest/v1/app_settings?select=key&limit=1`, { apikey: key, Authorization: `Bearer ${key}` }),
+      probeHttp(`${url}/auth/v1/health`, { apikey: key }),
+      probeHttp(`${url}/storage/v1/bucket`, { apikey: key, Authorization: `Bearer ${key}` }),
+      probeHttp(`${url}/realtime/v1/`, { apikey: key }),
+      probeHttp(`${url}/functions/v1/`, { apikey: key })
+    ]);
+    const restStatus = restP.ok ? restP.ms > 2500 ? "degraded" : "healthy" : "unhealthy";
+    const restErr = restP.ok ? restP.ms > 2500 ? `High latency (${restP.ms}ms) \u2014 inspect Nano RAM & connection count` : null : restP.error || `PostgREST HTTP ${restP.status}${restP.bodySnippet ? `: ${restP.bodySnippet.slice(0, 80)}` : ""}`;
+    const rtHealthy = rtP.status > 0 && rtP.status < 500;
+    const fnHealthy = fnP.status > 0 && fnP.status < 500;
+    await Promise.all([
+      updateServiceStatus("supabase_postgrest", restStatus, restP.ms, restErr),
+      updateServiceStatus(
+        "supabase_auth",
+        authP.ok ? "healthy" : "unhealthy",
+        authP.ms,
+        authP.ok ? null : authP.error || `HTTP ${authP.status}`
+      ),
+      updateServiceStatus(
+        "supabase_storage",
+        storP.ok ? "healthy" : storP.status >= 500 || storP.status === 0 ? "unhealthy" : "degraded",
+        storP.ms,
+        storP.ok ? null : storP.error || `HTTP ${storP.status}`
+      ),
+      updateServiceStatus(
+        "supabase_realtime",
+        rtHealthy ? "healthy" : "unhealthy",
+        rtP.ms,
+        rtHealthy ? null : rtP.error || `HTTP ${rtP.status}`
+      ),
+      updateServiceStatus(
+        "supabase_edge_functions",
+        fnHealthy ? "healthy" : "unhealthy",
+        fnP.ms,
+        fnHealthy ? null : fnP.error || `HTTP ${fnP.status}`
+      )
+    ]);
+  } else {
+    for (const k of ["supabase_postgrest", "supabase_auth", "supabase_storage", "supabase_realtime", "supabase_edge_functions"]) {
+      await updateServiceStatus(k, "unknown", null, "SUPABASE_URL or API key not configured");
+    }
+  }
+  if (overrides?.simulateFirebaseDown) {
+    await updateServiceStatus("firebase_db", "unhealthy", 0, "Simulated Firebase Firestore outage");
+  } else {
+    const [fbDb, fbAuth, fbStorage] = await Promise.all([
+      checkFirebaseHealth(),
+      checkFirebaseAuthHealth(),
+      checkFirebaseStorageHealth()
+    ]);
+    await Promise.all([
+      updateServiceStatus("firebase_db", fbDb.status, fbDb.responseTimeMs, fbDb.status === "healthy" ? null : fbDb.message),
+      updateServiceStatus("firebase_auth", fbAuth.status, fbAuth.responseTimeMs, fbAuth.status === "healthy" ? null : fbAuth.message),
+      updateServiceStatus("firebase_storage", fbStorage.status, fbStorage.responseTimeMs, fbStorage.status === "healthy" ? null : fbStorage.message),
+      updateServiceStatus(
+        "firebase_push",
+        APP_CONFIG.vapid.publicKey && APP_CONFIG.vapid.isPersistent ? "healthy" : APP_CONFIG.vapid.publicKey ? "degraded" : "unhealthy",
+        0,
+        APP_CONFIG.vapid.isPersistent ? null : "VAPID keys are ephemeral; set VAPID_PUBLIC_KEY & VAPID_PRIVATE_KEY in env for persistent push across restarts."
+      )
+    ]);
+  }
+  const outbox = getOutboxSummary();
+  const smtpProbe = await probeSmtpHealth();
+  await Promise.all([
+    updateServiceStatus("app_api", "healthy", 1, null),
+    updateServiceStatus(
+      "sync_engine",
+      outbox.failed >= 5 ? "unhealthy" : outbox.failed > 0 ? "degraded" : "healthy",
+      1,
+      outbox.failed > 0 ? `${outbox.failed} failed sync event(s), ${outbox.pending} pending` : null
+    ),
+    updateServiceStatus("email_service", smtpProbe.status, smtpProbe.ms, smtpProbe.error),
+    updateServiceStatus("cache_layer", "healthy", 0, null)
+  ]);
+  const dbRec = serviceMap.get("supabase_db");
+  const restRec = serviceMap.get("supabase_postgrest");
+  const fbRec = serviceMap.get("firebase_db");
+  const supabaseDbHealthy = dbRec.status === "healthy" || !isDatabaseConfigured && !overrides?.simulateSupabaseDbDown && restRec.status !== "unhealthy";
+  const supabasePostgrestHealthy = restRec.status === "healthy" || restRec.status === "degraded";
+  const firebaseHealthy = fbRec.status === "healthy" || !isFirebaseDbConfigured() && fbRec.status !== "unhealthy";
+  const transition = await evaluateFailoverTransition({
+    supabaseDbHealthy,
+    supabasePostgrestHealthy,
+    firebaseHealthy
+  });
+  if (transition.state.activeProvider === "supabase") {
+    void processOutboxQueue(25, { allowPrimaryReconcile: true }).catch(() => {
+    });
+  }
+  if (smtpProbe.status === "healthy" && pendingEmailAlertQueue.length > 0) {
+    void drainPendingEmailAlertQueue().catch(() => {
+    });
+  }
+  const unhealthy = Array.from(serviceMap.values()).filter((s2) => s2.status === "unhealthy").map((s2) => s2.key);
+  const degraded = Array.from(serviceMap.values()).filter((s2) => s2.status === "degraded").map((s2) => s2.key);
+  recentHealthHistory.unshift({
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    activeProvider: transition.state.activeProvider,
+    unhealthyServices: unhealthy,
+    degradedServices: degraded
+  });
+  if (recentHealthHistory.length > 50) recentHealthHistory.length = 50;
+  return {
+    services: Array.from(serviceMap.values()),
+    failoverState: transition.state,
+    transitioned: transition.transitioned
+  };
+}
+function ensurePeriodicHealthMonitorStarted() {
+  if (process.env.VERCEL || process.env.NODE_ENV === "test") return;
+  const g5 = globalThis;
+  if (g5.__myMoneyHealthMonitorTimer) return;
+  const INTERVAL_MS = 5 * 60 * 1e3;
+  g5.__myMoneyHealthMonitorTimer = setInterval(() => {
+    periodicRunCount += 1;
+    lastPeriodicRunAt = (/* @__PURE__ */ new Date()).toISOString();
+    void runIndependentHealthCheck().catch(() => {
+    });
+  }, INTERVAL_MS);
+  if (typeof g5.__myMoneyHealthMonitorTimer.unref === "function") {
+    g5.__myMoneyHealthMonitorTimer.unref();
+  }
+}
+function getFullHealthMatrix() {
+  return {
+    services: Array.from(serviceMap.values()),
+    failoverState: getFailoverState(),
+    failoverHistory: getFailoverHistory(),
+    reconciliationHistory: getReconciliationHistory(),
+    outbox: getOutboxSummary(),
+    backups: getBackupSnapshots(),
+    alerts: {
+      recent: alertDeliveryLog.slice(0, 25),
+      queuedEmailCount: pendingEmailAlertQueue.length
+    },
+    diagnostics: {
+      pgPool: getDbPoolDiagnostics(),
+      postgrest: getPostgrestClientMetrics(),
+      monitor: {
+        periodicRunCount,
+        lastPeriodicRunAt,
+        intervalSeconds: 300
+      }
+    },
+    healthHistory: recentHealthHistory.slice(0, 25),
+    concurrency: getConcurrencyMetrics(),
+    cache: appCache.getStats()
+  };
+}
+var DEFAULT_SUPABASE_URL2, DEFAULT_SUPABASE_KEY2, serviceMap, alertCooldownMap, failureStartedAtMap, lastEscalatedAtMap, ALERT_COOLDOWN_MS, ESCALATION_INTERVAL_MS, alertDeliveryLog, pendingEmailAlertQueue, recentHealthHistory, lastPeriodicRunAt, periodicRunCount, SERVICE_DEFS;
+var init_healthMonitor = __esm({
+  "server/healthMonitor.ts"() {
+    init_nodemailer();
+    init_db();
+    init_config();
+    init_adminSettingsStore();
+    init_supabaseRestFallback();
+    init_firebaseDb();
+    init_dbFailover();
+    init_cache();
+    DEFAULT_SUPABASE_URL2 = "https://frgrfajnrzqwnevhlrio.supabase.co";
+    DEFAULT_SUPABASE_KEY2 = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+    serviceMap = /* @__PURE__ */ new Map();
+    alertCooldownMap = /* @__PURE__ */ new Map();
+    failureStartedAtMap = /* @__PURE__ */ new Map();
+    lastEscalatedAtMap = /* @__PURE__ */ new Map();
+    ALERT_COOLDOWN_MS = 15 * 60 * 1e3;
+    ESCALATION_INTERVAL_MS = 60 * 60 * 1e3;
+    alertDeliveryLog = [];
+    pendingEmailAlertQueue = [];
+    recentHealthHistory = [];
+    lastPeriodicRunAt = null;
+    periodicRunCount = 0;
+    SERVICE_DEFS = [
+      { key: "supabase_db", label: "Supabase Database", group: "supabase" },
+      { key: "supabase_postgrest", label: "Supabase PostgREST", group: "supabase" },
+      { key: "supabase_auth", label: "Supabase Auth", group: "supabase" },
+      { key: "supabase_realtime", label: "Supabase Realtime", group: "supabase" },
+      { key: "supabase_storage", label: "Supabase Storage", group: "supabase" },
+      { key: "supabase_edge_functions", label: "Supabase Edge Functions", group: "supabase" },
+      { key: "firebase_db", label: "Firebase Database (Firestore)", group: "firebase" },
+      { key: "firebase_auth", label: "Firebase Auth", group: "firebase" },
+      { key: "firebase_storage", label: "Firebase Storage", group: "firebase" },
+      { key: "firebase_push", label: "Push Notifications", group: "firebase" },
+      { key: "app_api", label: "Application API", group: "application" },
+      { key: "sync_engine", label: "Synchronization Outbox", group: "application" },
+      { key: "email_service", label: "Email Service (SMTP)", group: "application" },
+      { key: "cache_layer", label: "Cache", group: "application" }
+    ];
+    for (const def of SERVICE_DEFS) {
+      serviceMap.set(def.key, {
+        ...def,
+        status: "unknown",
+        responseTimeMs: null,
+        lastCheckedAt: null,
+        lastFailureAt: null,
+        lastRecoveryAt: null,
+        consecutiveFailures: 0,
+        errorDetails: null
+      });
+    }
+    registerFailoverAlertHook(dispatchServiceAlert);
   }
 });
 
@@ -40518,9 +44435,9 @@ var require_interceptor = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/agent-base/dist/helpers.js
+// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/gaxios/node_modules/agent-base/dist/helpers.js"(exports) {
+  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/helpers.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -40588,9 +44505,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/gaxios/node_modules/agent-base/dist/index.js
+// node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js
 var require_dist2 = __commonJS({
-  "node_modules/gaxios/node_modules/agent-base/dist/index.js"(exports) {
+  "node_modules/gaxios/node_modules/https-proxy-agent/node_modules/agent-base/dist/index.js"(exports) {
     "use strict";
     var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m2, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -41829,9 +45746,9 @@ var require_ponyfill_es2018 = __commonJS({
           if (this._closeRequested) {
             throw new TypeError("The stream has already been closed; do not close it again!");
           }
-          const state2 = this._controlledReadableByteStream._state;
-          if (state2 !== "readable") {
-            throw new TypeError(`The stream (in ${state2} state) is not in the readable state and cannot be closed`);
+          const state3 = this._controlledReadableByteStream._state;
+          if (state3 !== "readable") {
+            throw new TypeError(`The stream (in ${state3} state) is not in the readable state and cannot be closed`);
           }
           ReadableByteStreamControllerClose(this);
         }
@@ -41852,9 +45769,9 @@ var require_ponyfill_es2018 = __commonJS({
           if (this._closeRequested) {
             throw new TypeError("stream is closed or draining");
           }
-          const state2 = this._controlledReadableByteStream._state;
-          if (state2 !== "readable") {
-            throw new TypeError(`The stream (in ${state2} state) is not in the readable state and cannot be enqueued to`);
+          const state3 = this._controlledReadableByteStream._state;
+          if (state3 !== "readable") {
+            throw new TypeError(`The stream (in ${state3} state) is not in the readable state and cannot be enqueued to`);
           }
           ReadableByteStreamControllerEnqueue(this, chunk);
         }
@@ -42172,8 +46089,8 @@ var require_ponyfill_es2018 = __commonJS({
       function ReadableByteStreamControllerRespondInternal(controller, bytesWritten) {
         const firstDescriptor = controller._pendingPullIntos.peek();
         ReadableByteStreamControllerInvalidateBYOBRequest(controller);
-        const state2 = controller._controlledReadableByteStream._state;
-        if (state2 === "closed") {
+        const state3 = controller._controlledReadableByteStream._state;
+        if (state3 === "closed") {
           ReadableByteStreamControllerRespondInClosedState(controller, firstDescriptor);
         } else {
           ReadableByteStreamControllerRespondInReadableState(controller, bytesWritten, firstDescriptor);
@@ -42299,19 +46216,19 @@ var require_ponyfill_es2018 = __commonJS({
         return controller._byobRequest;
       }
       function ReadableByteStreamControllerGetDesiredSize(controller) {
-        const state2 = controller._controlledReadableByteStream._state;
-        if (state2 === "errored") {
+        const state3 = controller._controlledReadableByteStream._state;
+        if (state3 === "errored") {
           return null;
         }
-        if (state2 === "closed") {
+        if (state3 === "closed") {
           return 0;
         }
         return controller._strategyHWM - controller._queueTotalSize;
       }
       function ReadableByteStreamControllerRespond(controller, bytesWritten) {
         const firstDescriptor = controller._pendingPullIntos.peek();
-        const state2 = controller._controlledReadableByteStream._state;
-        if (state2 === "closed") {
+        const state3 = controller._controlledReadableByteStream._state;
+        if (state3 === "closed") {
           if (bytesWritten !== 0) {
             throw new TypeError("bytesWritten must be 0 when calling respond() on a closed stream");
           }
@@ -42328,8 +46245,8 @@ var require_ponyfill_es2018 = __commonJS({
       }
       function ReadableByteStreamControllerRespondWithNewView(controller, view) {
         const firstDescriptor = controller._pendingPullIntos.peek();
-        const state2 = controller._controlledReadableByteStream._state;
-        if (state2 === "closed") {
+        const state3 = controller._controlledReadableByteStream._state;
+        if (state3 === "closed") {
           if (view.byteLength !== 0) {
             throw new TypeError("The view's length must be 0 when calling respondWithNewView() on a closed stream");
           }
@@ -42836,15 +46753,15 @@ var require_ponyfill_es2018 = __commonJS({
         }
         stream._writableStreamController._abortReason = reason;
         (_a3 = stream._writableStreamController._abortController) === null || _a3 === void 0 ? void 0 : _a3.abort(reason);
-        const state2 = stream._state;
-        if (state2 === "closed" || state2 === "errored") {
+        const state3 = stream._state;
+        if (state3 === "closed" || state3 === "errored") {
           return promiseResolvedWith(void 0);
         }
         if (stream._pendingAbortRequest !== void 0) {
           return stream._pendingAbortRequest._promise;
         }
         let wasAlreadyErroring = false;
-        if (state2 === "erroring") {
+        if (state3 === "erroring") {
           wasAlreadyErroring = true;
           reason = void 0;
         }
@@ -42864,9 +46781,9 @@ var require_ponyfill_es2018 = __commonJS({
         return promise;
       }
       function WritableStreamClose(stream) {
-        const state2 = stream._state;
-        if (state2 === "closed" || state2 === "errored") {
-          return promiseRejectedWith(new TypeError(`The stream (in ${state2} state) is not in the writable state and cannot be closed`));
+        const state3 = stream._state;
+        if (state3 === "closed" || state3 === "errored") {
+          return promiseRejectedWith(new TypeError(`The stream (in ${state3} state) is not in the writable state and cannot be closed`));
         }
         const promise = newPromise((resolve3, reject) => {
           const closeRequest = {
@@ -42876,7 +46793,7 @@ var require_ponyfill_es2018 = __commonJS({
           stream._closeRequest = closeRequest;
         });
         const writer = stream._writer;
-        if (writer !== void 0 && stream._backpressure && state2 === "writable") {
+        if (writer !== void 0 && stream._backpressure && state3 === "writable") {
           defaultWriterReadyPromiseResolve(writer);
         }
         WritableStreamDefaultControllerClose(stream._writableStreamController);
@@ -42893,8 +46810,8 @@ var require_ponyfill_es2018 = __commonJS({
         return promise;
       }
       function WritableStreamDealWithRejection(stream, error2) {
-        const state2 = stream._state;
-        if (state2 === "writable") {
+        const state3 = stream._state;
+        if (state3 === "writable") {
           WritableStreamStartErroring(stream, error2);
           return;
         }
@@ -42954,8 +46871,8 @@ var require_ponyfill_es2018 = __commonJS({
       function WritableStreamFinishInFlightClose(stream) {
         stream._inFlightCloseRequest._resolve(void 0);
         stream._inFlightCloseRequest = void 0;
-        const state2 = stream._state;
-        if (state2 === "erroring") {
+        const state3 = stream._state;
+        if (state3 === "erroring") {
           stream._storedError = void 0;
           if (stream._pendingAbortRequest !== void 0) {
             stream._pendingAbortRequest._resolve();
@@ -43026,18 +46943,18 @@ var require_ponyfill_es2018 = __commonJS({
           }
           this._ownerWritableStream = stream;
           stream._writer = this;
-          const state2 = stream._state;
-          if (state2 === "writable") {
+          const state3 = stream._state;
+          if (state3 === "writable") {
             if (!WritableStreamCloseQueuedOrInFlight(stream) && stream._backpressure) {
               defaultWriterReadyPromiseInitialize(this);
             } else {
               defaultWriterReadyPromiseInitializeAsResolved(this);
             }
             defaultWriterClosedPromiseInitialize(this);
-          } else if (state2 === "erroring") {
+          } else if (state3 === "erroring") {
             defaultWriterReadyPromiseInitializeAsRejected(this, stream._storedError);
             defaultWriterClosedPromiseInitialize(this);
-          } else if (state2 === "closed") {
+          } else if (state3 === "closed") {
             defaultWriterReadyPromiseInitializeAsResolved(this);
             defaultWriterClosedPromiseInitializeAsResolved(this);
           } else {
@@ -43183,11 +47100,11 @@ var require_ponyfill_es2018 = __commonJS({
       }
       function WritableStreamDefaultWriterCloseWithErrorPropagation(writer) {
         const stream = writer._ownerWritableStream;
-        const state2 = stream._state;
-        if (WritableStreamCloseQueuedOrInFlight(stream) || state2 === "closed") {
+        const state3 = stream._state;
+        if (WritableStreamCloseQueuedOrInFlight(stream) || state3 === "closed") {
           return promiseResolvedWith(void 0);
         }
-        if (state2 === "errored") {
+        if (state3 === "errored") {
           return promiseRejectedWith(stream._storedError);
         }
         return WritableStreamDefaultWriterClose(writer);
@@ -43208,11 +47125,11 @@ var require_ponyfill_es2018 = __commonJS({
       }
       function WritableStreamDefaultWriterGetDesiredSize(writer) {
         const stream = writer._ownerWritableStream;
-        const state2 = stream._state;
-        if (state2 === "errored" || state2 === "erroring") {
+        const state3 = stream._state;
+        if (state3 === "errored" || state3 === "erroring") {
           return null;
         }
-        if (state2 === "closed") {
+        if (state3 === "closed") {
           return 0;
         }
         return WritableStreamDefaultControllerGetDesiredSize(stream._writableStreamController);
@@ -43232,14 +47149,14 @@ var require_ponyfill_es2018 = __commonJS({
         if (stream !== writer._ownerWritableStream) {
           return promiseRejectedWith(defaultWriterLockException("write to"));
         }
-        const state2 = stream._state;
-        if (state2 === "errored") {
+        const state3 = stream._state;
+        if (state3 === "errored") {
           return promiseRejectedWith(stream._storedError);
         }
-        if (WritableStreamCloseQueuedOrInFlight(stream) || state2 === "closed") {
+        if (WritableStreamCloseQueuedOrInFlight(stream) || state3 === "closed") {
           return promiseRejectedWith(new TypeError("The stream is closing or closed and cannot be written to"));
         }
-        if (state2 === "erroring") {
+        if (state3 === "erroring") {
           return promiseRejectedWith(stream._storedError);
         }
         const promise = WritableStreamAddWriteRequest(stream);
@@ -43287,8 +47204,8 @@ var require_ponyfill_es2018 = __commonJS({
           if (!IsWritableStreamDefaultController(this)) {
             throw defaultControllerBrandCheckException$2("error");
           }
-          const state2 = this._controlledWritableStream._state;
-          if (state2 !== "writable") {
+          const state3 = this._controlledWritableStream._state;
+          if (state3 !== "writable") {
             return;
           }
           WritableStreamDefaultControllerError(this, e2);
@@ -43423,8 +47340,8 @@ var require_ponyfill_es2018 = __commonJS({
         if (stream._inFlightWriteRequest !== void 0) {
           return;
         }
-        const state2 = stream._state;
-        if (state2 === "erroring") {
+        const state3 = stream._state;
+        if (state3 === "erroring") {
           WritableStreamFinishErroring(stream);
           return;
         }
@@ -43463,9 +47380,9 @@ var require_ponyfill_es2018 = __commonJS({
         const sinkWritePromise = controller._writeAlgorithm(chunk);
         uponPromise(sinkWritePromise, () => {
           WritableStreamFinishInFlightWrite(stream);
-          const state2 = stream._state;
+          const state3 = stream._state;
           DequeueValue(controller);
-          if (!WritableStreamCloseQueuedOrInFlight(stream) && state2 === "writable") {
+          if (!WritableStreamCloseQueuedOrInFlight(stream) && state3 === "writable") {
             const backpressure = WritableStreamDefaultControllerGetBackpressure(controller);
             WritableStreamUpdateBackpressure(stream, backpressure);
           }
@@ -43964,11 +47881,11 @@ var require_ponyfill_es2018 = __commonJS({
         ReadableStreamError(stream, e2);
       }
       function ReadableStreamDefaultControllerGetDesiredSize(controller) {
-        const state2 = controller._controlledReadableStream._state;
-        if (state2 === "errored") {
+        const state3 = controller._controlledReadableStream._state;
+        if (state3 === "errored") {
           return null;
         }
-        if (state2 === "closed") {
+        if (state3 === "closed") {
           return 0;
         }
         return controller._strategyHWM - controller._queueTotalSize;
@@ -43980,8 +47897,8 @@ var require_ponyfill_es2018 = __commonJS({
         return true;
       }
       function ReadableStreamDefaultControllerCanCloseOrEnqueue(controller) {
-        const state2 = controller._controlledReadableStream._state;
-        if (!controller._closeRequested && state2 === "readable") {
+        const state3 = controller._controlledReadableStream._state;
+        if (!controller._closeRequested && state3 === "readable") {
           return true;
         }
         return false;
@@ -45173,8 +49090,8 @@ var require_ponyfill_es2018 = __commonJS({
           const backpressureChangePromise = stream._backpressureChangePromise;
           return transformPromiseWith(backpressureChangePromise, () => {
             const writable = stream._writable;
-            const state2 = writable._state;
-            if (state2 === "erroring") {
+            const state3 = writable._state;
+            if (state3 === "erroring") {
               throw writable._storedError;
             }
             return TransformStreamDefaultControllerPerformTransform(controller, chunk);
@@ -45785,7 +49702,7 @@ var require_node_domexception = __commonJS({
 });
 
 // node_modules/fetch-blob/from.js
-import { statSync, createReadStream, promises as fs12 } from "node:fs";
+import { statSync, createReadStream, promises as fs15 } from "node:fs";
 import { basename } from "node:path";
 var import_node_domexception, stat, blobFromSync, blobFrom, fileFrom, fileFromSync, fromBlob, fromFile, BlobDataItem;
 var init_from = __esm({
@@ -45793,23 +49710,23 @@ var init_from = __esm({
     import_node_domexception = __toESM(require_node_domexception(), 1);
     init_file();
     init_fetch_blob();
-    ({ stat } = fs12);
-    blobFromSync = (path13, type) => fromBlob(statSync(path13), path13, type);
-    blobFrom = (path13, type) => stat(path13).then((stat3) => fromBlob(stat3, path13, type));
-    fileFrom = (path13, type) => stat(path13).then((stat3) => fromFile(stat3, path13, type));
-    fileFromSync = (path13, type) => fromFile(statSync(path13), path13, type);
-    fromBlob = (stat3, path13, type = "") => new fetch_blob_default([new BlobDataItem({
-      path: path13,
+    ({ stat } = fs15);
+    blobFromSync = (path16, type) => fromBlob(statSync(path16), path16, type);
+    blobFrom = (path16, type) => stat(path16).then((stat3) => fromBlob(stat3, path16, type));
+    fileFrom = (path16, type) => stat(path16).then((stat3) => fromFile(stat3, path16, type));
+    fileFromSync = (path16, type) => fromFile(statSync(path16), path16, type);
+    fromBlob = (stat3, path16, type = "") => new fetch_blob_default([new BlobDataItem({
+      path: path16,
       size: stat3.size,
       lastModified: stat3.mtimeMs,
       start: 0
     })], { type });
-    fromFile = (stat3, path13, type = "") => new file_default([new BlobDataItem({
-      path: path13,
+    fromFile = (stat3, path16, type = "") => new file_default([new BlobDataItem({
+      path: path16,
       size: stat3.size,
       lastModified: stat3.mtimeMs,
       start: 0
-    })], basename(path13), { type, lastModified: stat3.mtimeMs });
+    })], basename(path16), { type, lastModified: stat3.mtimeMs });
     BlobDataItem = class _BlobDataItem {
       #path;
       #start;
@@ -46005,7 +49922,7 @@ var init_multipart_parser = __esm({
         let i2 = 0;
         const length_ = data.length;
         let previousIndex = this.index;
-        let { lookbehind, boundary, boundaryChars, index, state: state2, flags } = this;
+        let { lookbehind, boundary, boundaryChars, index, state: state3, flags } = this;
         const boundaryLength = this.boundary.length;
         const boundaryEnd = boundaryLength - 1;
         const bufferLength = data.length;
@@ -46037,7 +49954,7 @@ var init_multipart_parser = __esm({
         };
         for (i2 = 0; i2 < length_; i2++) {
           c = data[i2];
-          switch (state2) {
+          switch (state3) {
             case S.START_BOUNDARY:
               if (index === boundary.length - 2) {
                 if (c === HYPHEN) {
@@ -46049,12 +49966,12 @@ var init_multipart_parser = __esm({
                 break;
               } else if (index - 1 === boundary.length - 2) {
                 if (flags & F.LAST_BOUNDARY && c === HYPHEN) {
-                  state2 = S.END;
+                  state3 = S.END;
                   flags = 0;
                 } else if (!(flags & F.LAST_BOUNDARY) && c === LF) {
                   index = 0;
                   callback("onPartBegin");
-                  state2 = S.HEADER_FIELD_START;
+                  state3 = S.HEADER_FIELD_START;
                 } else {
                   return;
                 }
@@ -46068,14 +49985,14 @@ var init_multipart_parser = __esm({
               }
               break;
             case S.HEADER_FIELD_START:
-              state2 = S.HEADER_FIELD;
+              state3 = S.HEADER_FIELD;
               mark("onHeaderField");
               index = 0;
             // falls through
             case S.HEADER_FIELD:
               if (c === CR) {
                 clear("onHeaderField");
-                state2 = S.HEADERS_ALMOST_DONE;
+                state3 = S.HEADERS_ALMOST_DONE;
                 break;
               }
               index++;
@@ -46087,7 +50004,7 @@ var init_multipart_parser = __esm({
                   return;
                 }
                 dataCallback("onHeaderField", true);
-                state2 = S.HEADER_VALUE_START;
+                state3 = S.HEADER_VALUE_START;
                 break;
               }
               cl = lower(c);
@@ -46100,30 +50017,30 @@ var init_multipart_parser = __esm({
                 break;
               }
               mark("onHeaderValue");
-              state2 = S.HEADER_VALUE;
+              state3 = S.HEADER_VALUE;
             // falls through
             case S.HEADER_VALUE:
               if (c === CR) {
                 dataCallback("onHeaderValue", true);
                 callback("onHeaderEnd");
-                state2 = S.HEADER_VALUE_ALMOST_DONE;
+                state3 = S.HEADER_VALUE_ALMOST_DONE;
               }
               break;
             case S.HEADER_VALUE_ALMOST_DONE:
               if (c !== LF) {
                 return;
               }
-              state2 = S.HEADER_FIELD_START;
+              state3 = S.HEADER_FIELD_START;
               break;
             case S.HEADERS_ALMOST_DONE:
               if (c !== LF) {
                 return;
               }
               callback("onHeadersEnd");
-              state2 = S.PART_DATA_START;
+              state3 = S.PART_DATA_START;
               break;
             case S.PART_DATA_START:
-              state2 = S.PART_DATA;
+              state3 = S.PART_DATA;
               mark("onPartData");
             // falls through
             case S.PART_DATA:
@@ -46161,13 +50078,13 @@ var init_multipart_parser = __esm({
                     flags &= ~F.PART_BOUNDARY;
                     callback("onPartEnd");
                     callback("onPartBegin");
-                    state2 = S.HEADER_FIELD_START;
+                    state3 = S.HEADER_FIELD_START;
                     break;
                   }
                 } else if (flags & F.LAST_BOUNDARY) {
                   if (c === HYPHEN) {
                     callback("onPartEnd");
-                    state2 = S.END;
+                    state3 = S.END;
                     flags = 0;
                   } else {
                     index = 0;
@@ -46189,14 +50106,14 @@ var init_multipart_parser = __esm({
             case S.END:
               break;
             default:
-              throw new Error(`Unexpected state entered: ${state2}`);
+              throw new Error(`Unexpected state entered: ${state3}`);
           }
         }
         dataCallback("onHeaderField");
         dataCallback("onHeaderValue");
         dataCallback("onPartData");
         this.index = index;
-        this.state = state2;
+        this.state = state3;
         this.flags = flags;
       }
       end() {
@@ -46212,7 +50129,7 @@ var init_multipart_parser = __esm({
 
 // node_modules/node-fetch/src/body.js
 import Stream2, { PassThrough as PassThrough5 } from "node:stream";
-import { types as types2, deprecate, promisify } from "node:util";
+import { types as types2, deprecate, promisify as promisify2 } from "node:util";
 import { Buffer as Buffer2 } from "node:buffer";
 async function consumeBody(data) {
   if (data[INTERNALS].disturbed) {
@@ -46266,7 +50183,7 @@ var init_body = __esm({
     init_fetch_error();
     init_base();
     init_is();
-    pipeline3 = promisify(Stream2.pipeline);
+    pipeline3 = promisify2(Stream2.pipeline);
     INTERNALS = /* @__PURE__ */ Symbol("Body internals");
     Body = class {
       constructor(body, {
@@ -50654,22 +54571,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NodeCrypto = void 0;
-    var crypto28 = __require("crypto");
+    var crypto31 = __require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto28.createHash("sha256").update(str).digest("base64");
+        return crypto31.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto28.randomBytes(count).toString("base64");
+        return crypto31.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto28.createVerify("RSA-SHA256");
+        const verifier = crypto31.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto28.createSign("RSA-SHA256");
+        const signer = crypto31.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -50687,7 +54604,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto28.createHash("sha256").update(str).digest("hex");
+        return crypto31.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -50699,7 +54616,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto28.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto31.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports.NodeCrypto = NodeCrypto;
@@ -50766,9 +54683,9 @@ var require_util2 = __commonJS({
     exports.removeUndefinedValuesInObject = removeUndefinedValuesInObject;
     exports.isValidFile = isValidFile;
     exports.getWellKnownCertificateConfigFileLocation = getWellKnownCertificateConfigFileLocation;
-    var fs15 = __require("fs");
-    var os8 = __require("os");
-    var path13 = __require("path");
+    var fs18 = __require("fs");
+    var os9 = __require("os");
+    var path16 = __require("path");
     var WELL_KNOWN_CERTIFICATE_CONFIG_FILE = "certificate_config.json";
     var CLOUDSDK_CONFIG_DIRECTORY = "gcloud";
     function snakeToCamel(str) {
@@ -50854,18 +54771,18 @@ var require_util2 = __commonJS({
     }
     async function isValidFile(filePath) {
       try {
-        const stats = await fs15.promises.lstat(filePath);
+        const stats = await fs18.promises.lstat(filePath);
         return stats.isFile();
       } catch (e2) {
         return false;
       }
     }
     function getWellKnownCertificateConfigFileLocation() {
-      const configDir = process.env.CLOUDSDK_CONFIG || (_isWindows() ? path13.join(process.env.APPDATA || "", CLOUDSDK_CONFIG_DIRECTORY) : path13.join(process.env.HOME || "", ".config", CLOUDSDK_CONFIG_DIRECTORY));
-      return path13.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
+      const configDir = process.env.CLOUDSDK_CONFIG || (_isWindows() ? path16.join(process.env.APPDATA || "", CLOUDSDK_CONFIG_DIRECTORY) : path16.join(process.env.HOME || "", ".config", CLOUDSDK_CONFIG_DIRECTORY));
+      return path16.join(configDir, WELL_KNOWN_CERTIFICATE_CONFIG_FILE);
     }
     function _isWindows() {
-      return os8.platform().startsWith("win");
+      return os9.platform().startsWith("win");
     }
   }
 });
@@ -51390,10 +55307,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto28 = (0, crypto_1.createCrypto)();
-        const randomString = crypto28.randomBytesBase64(96);
+        const crypto31 = (0, crypto_1.createCrypto)();
+        const randomString = crypto31.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto28.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto31.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -51834,7 +55751,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto28 = (0, crypto_1.createCrypto)();
+        const crypto31 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -51847,7 +55764,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto28.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto31.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -51858,7 +55775,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto28.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto31.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -51875,7 +55792,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto28.verify(cert, signed, signature);
+        const verified = await crypto31.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -52265,11 +56182,11 @@ var require_getCredentials = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getCredentials = getCredentials;
-    var path13 = __require("path");
-    var fs15 = __require("fs");
+    var path16 = __require("path");
+    var fs18 = __require("fs");
     var util_1 = __require("util");
     var errorWithCode_1 = require_errorWithCode();
-    var readFile = fs15.readFile ? (0, util_1.promisify)(fs15.readFile) : async () => {
+    var readFile = fs18.readFile ? (0, util_1.promisify)(fs18.readFile) : async () => {
       throw new errorWithCode_1.ErrorWithCode("use key rather than keyFile.", "MISSING_CREDENTIALS");
     };
     var ExtensionFiles;
@@ -52337,7 +56254,7 @@ var require_getCredentials = __commonJS({
        * @returns An instance of a class that implements ICredentialsProvider.
        */
       static create(keyFilePath) {
-        const keyFileExtension = path13.extname(keyFilePath);
+        const keyFileExtension = path16.extname(keyFilePath);
         switch (keyFileExtension) {
           case ExtensionFiles.JSON:
             return new JsonCredentialsProvider(keyFilePath);
@@ -53946,12 +57863,12 @@ var require_filesubjecttokensupplier = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FileSubjectTokenSupplier = void 0;
     var util_1 = __require("util");
-    var fs15 = __require("fs");
-    var readFile = (0, util_1.promisify)(fs15.readFile ?? (() => {
+    var fs18 = __require("fs");
+    var readFile = (0, util_1.promisify)(fs18.readFile ?? (() => {
     }));
-    var realpath = (0, util_1.promisify)(fs15.realpath ?? (() => {
+    var realpath = (0, util_1.promisify)(fs18.realpath ?? (() => {
     }));
-    var lstat = (0, util_1.promisify)(fs15.lstat ?? (() => {
+    var lstat = (0, util_1.promisify)(fs18.lstat ?? (() => {
     }));
     var FileSubjectTokenSupplier = class {
       filePath;
@@ -54069,7 +57986,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CertificateSubjectTokenSupplier = exports.InvalidConfigurationError = exports.CertificateSourceUnavailableError = exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = void 0;
     var util_1 = require_util2();
-    var fs15 = __require("fs");
+    var fs18 = __require("fs");
     var crypto_1 = __require("crypto");
     var https4 = __require("https");
     exports.CERTIFICATE_CONFIGURATION_ENV_VARIABLE = "GOOGLE_API_CERTIFICATE_CONFIG";
@@ -54163,7 +58080,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
         const configPath = this.certificateConfigPath;
         let fileContents;
         try {
-          fileContents = await fs15.promises.readFile(configPath, "utf8");
+          fileContents = await fs18.promises.readFile(configPath, "utf8");
         } catch (err) {
           throw new CertificateSourceUnavailableError(`Failed to read certificate config file at: ${configPath}`);
         }
@@ -54188,14 +58105,14 @@ var require_certificatesubjecttokensupplier = __commonJS({
       async #getKeyAndCert(certPath, keyPath) {
         let cert, key;
         try {
-          cert = await fs15.promises.readFile(certPath);
+          cert = await fs18.promises.readFile(certPath);
           new crypto_1.X509Certificate(cert);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           throw new CertificateSourceUnavailableError(`Failed to read certificate file at ${certPath}: ${message}`);
         }
         try {
-          key = await fs15.promises.readFile(keyPath);
+          key = await fs18.promises.readFile(keyPath);
           (0, crypto_1.createPrivateKey)(key);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -54214,7 +58131,7 @@ var require_certificatesubjecttokensupplier = __commonJS({
           return JSON.stringify([leafCert.raw.toString("base64")]);
         }
         try {
-          const chainPems = await fs15.promises.readFile(this.trustChainPath, "utf8");
+          const chainPems = await fs18.promises.readFile(this.trustChainPath, "utf8");
           const pemBlocks = chainPems.match(/-----BEGIN CERTIFICATE-----[^-]+-----END CERTIFICATE-----/g) ?? [];
           const chainCerts = pemBlocks.map((pem, index) => {
             try {
@@ -54445,14 +58362,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports.AwsRequestSigner = AwsRequestSigner;
-    async function sign2(crypto28, key, msg) {
-      return await crypto28.signWithHmacSha256(key, msg);
+    async function sign2(crypto31, key, msg) {
+      return await crypto31.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto28, key, dateStamp, region, serviceName) {
-      const kDate = await sign2(crypto28, `AWS4${key}`, dateStamp);
-      const kRegion = await sign2(crypto28, kDate, region);
-      const kService = await sign2(crypto28, kRegion, serviceName);
-      const kSigning = await sign2(crypto28, kService, "aws4_request");
+    async function getSigningKey(crypto31, key, dateStamp, region, serviceName) {
+      const kDate = await sign2(crypto31, `AWS4${key}`, dateStamp);
+      const kRegion = await sign2(crypto31, kDate, region);
+      const kService = await sign2(crypto31, kRegion, serviceName);
+      const kSigning = await sign2(crypto31, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -54916,7 +58833,7 @@ var require_pluggable_auth_handler = __commonJS({
     exports.PluggableAuthHandler = exports.ExecutableError = void 0;
     var executable_response_1 = require_executable_response();
     var childProcess = __require("child_process");
-    var fs15 = __require("fs");
+    var fs18 = __require("fs");
     var ExecutableError = class extends Error {
       /**
        * The exit code returned by the executable.
@@ -55001,14 +58918,14 @@ var require_pluggable_auth_handler = __commonJS({
         }
         let filePath;
         try {
-          filePath = await fs15.promises.realpath(this.outputFile);
+          filePath = await fs18.promises.realpath(this.outputFile);
         } catch {
           return void 0;
         }
-        if (!(await fs15.promises.lstat(filePath)).isFile()) {
+        if (!(await fs18.promises.lstat(filePath)).isFile()) {
           return void 0;
         }
-        const responseString = await fs15.promises.readFile(filePath, {
+        const responseString = await fs18.promises.readFile(filePath, {
           encoding: "utf8"
         });
         if (responseString === "") {
@@ -55418,8 +59335,8 @@ var require_gdchclient = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GdchClient = exports.GDCH_SERVICE_ACCOUNT_TYPE = void 0;
-    var crypto28 = __require("crypto");
-    var fs15 = __require("fs");
+    var crypto31 = __require("crypto");
+    var fs18 = __require("fs");
     var https4 = __require("https");
     var oauth2client_1 = require_oauth2client();
     var DEFAULT_LIFETIME_IN_SECONDS = 3600;
@@ -55609,7 +59526,7 @@ var require_gdchclient = __commonJS({
         const encodedHeader = this.base64UrlEncode(JSON.stringify(header));
         const encodedPayload = this.base64UrlEncode(JSON.stringify(payload));
         const signingInput = `${encodedHeader}.${encodedPayload}`;
-        const signature = crypto28.sign("sha256", Buffer.from(signingInput), {
+        const signature = crypto31.sign("sha256", Buffer.from(signingInput), {
           key: this.privateKey,
           dsaEncoding: "ieee-p1363"
         });
@@ -55642,7 +59559,7 @@ var require_gdchclient = __commonJS({
         const currentPath = this.caCertPath;
         this.caAgentPromise = (async () => {
           try {
-            const ca = await fs15.promises.readFile(currentPath);
+            const ca = await fs18.promises.readFile(currentPath);
             return new https4.Agent({ ca });
           } catch (err) {
             if (this.cachedCaCertPath === currentPath) {
@@ -55702,11 +59619,11 @@ var require_googleauth = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GoogleAuth = exports.GoogleAuthExceptionMessages = void 0;
     var child_process_1 = __require("child_process");
-    var fs15 = __require("fs");
+    var fs18 = __require("fs");
     var gaxios_1 = require_src2();
     var gcpMetadata = require_src4();
-    var os8 = __require("os");
-    var path13 = __require("path");
+    var os9 = __require("os");
+    var path16 = __require("path");
     var crypto_1 = require_crypto3();
     var computeclient_1 = require_computeclient();
     var idtokenclient_1 = require_idtokenclient();
@@ -55991,20 +59908,20 @@ var require_googleauth = __commonJS({
         if (!configDir) {
           if (this._isWindows()) {
             if (process.env["APPDATA"]) {
-              configDir = path13.join(process.env["APPDATA"], "gcloud");
+              configDir = path16.join(process.env["APPDATA"], "gcloud");
             }
           } else {
             const home = process.env["HOME"];
             if (home) {
-              configDir = path13.join(home, ".config", "gcloud");
+              configDir = path16.join(home, ".config", "gcloud");
             }
           }
         }
         if (!configDir) {
           return null;
         }
-        const location = path13.join(configDir, "application_default_credentials.json");
-        if (!fs15.existsSync(location)) {
+        const location = path16.join(configDir, "application_default_credentials.json");
+        if (!fs18.existsSync(location)) {
           return null;
         }
         const client = await this._getApplicationCredentialsFromFilePath(location, options);
@@ -56021,8 +59938,8 @@ var require_googleauth = __commonJS({
           throw new Error("The file path is invalid.");
         }
         try {
-          filePath = fs15.realpathSync(filePath);
-          if (!fs15.lstatSync(filePath).isFile()) {
+          filePath = fs18.realpathSync(filePath);
+          if (!fs18.lstatSync(filePath).isFile()) {
             throw new Error();
           }
         } catch (err) {
@@ -56031,7 +59948,7 @@ var require_googleauth = __commonJS({
           }
           throw err;
         }
-        const readStream = fs15.createReadStream(filePath);
+        const readStream = fs18.createReadStream(filePath);
         return this.fromStream(readStream, options);
       }
       /**
@@ -56214,7 +60131,7 @@ var require_googleauth = __commonJS({
        * @api private
        */
       _isWindows() {
-        const sys = os8.platform();
+        const sys = os9.platform();
         if (sys && sys.length >= 3) {
           if (sys.substring(0, 3).toLowerCase() === "win") {
             return true;
@@ -56358,8 +60275,8 @@ var require_googleauth = __commonJS({
         if (this.jsonContent) {
           return this._cacheClientFromJSON(this.jsonContent, this.clientOptions);
         } else if (this.keyFilename) {
-          const filePath = path13.resolve(this.keyFilename);
-          const stream = fs15.createReadStream(filePath);
+          const filePath = path16.resolve(this.keyFilename);
+          const stream = fs18.createReadStream(filePath);
           return await this.fromStreamAsync(stream, this.clientOptions);
         } else if (this.apiKey) {
           const client = await this.fromAPIKey(this.apiKey, this.clientOptions);
@@ -56472,24 +60389,24 @@ var require_googleauth = __commonJS({
           const signed = await client.sign(data);
           return signed.signedBlob;
         }
-        const crypto28 = (0, crypto_1.createCrypto)();
+        const crypto31 = (0, crypto_1.createCrypto)();
         if (client instanceof jwtclient_1.JWT && client.key) {
-          const sign2 = await crypto28.sign(client.key, data);
+          const sign2 = await crypto31.sign(client.key, data);
           return sign2;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto28, creds.client_email, data, endpoint);
+        return this.signBlob(crypto31, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto28, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto31, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto28.encodeBase64StringUtf8(data)
+            payload: crypto31.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -56933,6 +60850,9 @@ var require_buffer_util = __commonJS({
   "node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { websocketMask, websocketUnmask } = __require("http");
+    var {
+      types: { isAnyArrayBuffer }
+    } = __require("util");
     var { EMPTY_BUFFER } = require_constants2();
     var FastBuffer = Buffer[Symbol.species];
     function concat(list, totalLength) {
@@ -56970,7 +60890,7 @@ var require_buffer_util = __commonJS({
       toBuffer.readOnly = true;
       if (Buffer.isBuffer(data)) return data;
       let buf;
-      if (data instanceof ArrayBuffer) {
+      if (isAnyArrayBuffer(data)) {
         buf = new FastBuffer(data);
       } else if (ArrayBuffer.isView(data)) {
         buf = new FastBuffer(data.buffer, data.byteOffset, data.byteLength);
@@ -57078,6 +60998,7 @@ var require_permessage_deflate = __commonJS({
     var kCallback = /* @__PURE__ */ Symbol("callback");
     var kBuffers = /* @__PURE__ */ Symbol("buffers");
     var kError = /* @__PURE__ */ Symbol("error");
+    var windowBitsRegex = /^(?:[89]|1[0-5])$/;
     var zlibLimiter;
     var PerMessageDeflate2 = class {
       /**
@@ -57150,7 +61071,7 @@ var require_permessage_deflate = __commonJS({
       /**
        * Accept an extension negotiation offer/response.
        *
-       * @param {Array} configurations The extension negotiation offers/reponse
+       * @param {Array} configurations The extension negotiation offers/response
        * @return {Object} Accepted configuration
        * @public
        */
@@ -57242,7 +61163,7 @@ var require_permessage_deflate = __commonJS({
       /**
        * Normalize parameters.
        *
-       * @param {Array} configurations The extension negotiation offers/reponse
+       * @param {Array} configurations The extension negotiation offers/response
        * @return {Array} The offers/response with normalized parameters
        * @private
        */
@@ -57256,26 +61177,24 @@ var require_permessage_deflate = __commonJS({
             value = value[0];
             if (key === "client_max_window_bits") {
               if (value !== true) {
-                const num = +value;
-                if (!Number.isInteger(num) || num < 8 || num > 15) {
+                if (!windowBitsRegex.test(value)) {
                   throw new TypeError(
                     `Invalid value for parameter "${key}": ${value}`
                   );
                 }
-                value = num;
+                value = +value;
               } else if (!this._isServer) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
             } else if (key === "server_max_window_bits") {
-              const num = +value;
-              if (!Number.isInteger(num) || num < 8 || num > 15) {
+              if (!windowBitsRegex.test(value)) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
-              value = num;
+              value = +value;
             } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
               if (value !== true) {
                 throw new TypeError(
@@ -57825,7 +61744,17 @@ var require_receiver = __commonJS({
           this._loop = false;
           return;
         }
-        const buf = this.consume(2);
+        let buf = this._buffers[0];
+        if (buf.length > 2) {
+          this._bufferedBytes -= 2;
+          this._buffers[0] = new FastBuffer(
+            buf.buffer,
+            buf.byteOffset + 2,
+            buf.length - 2
+          );
+        } else {
+          buf = this.consume(2);
+        }
         if ((buf[0] & 48) !== 0) {
           const error2 = this.createError(
             RangeError,
@@ -59798,7 +63727,13 @@ var require_websocket = __commonJS({
         if (opts.auth && !options.headers.authorization) {
           options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
         }
-        req = websocket._req = request(opts);
+        try {
+          req = websocket._req = request(opts);
+        } catch (err) {
+          if (websocket._redirects === 0) throw err;
+          emitErrorAndClose(websocket, err);
+          return;
+        }
         if (websocket._redirects) {
           websocket.emit("redirect", websocket.url, req);
         }
@@ -60439,7 +64374,7 @@ var require_websocket_server = __commonJS({
         socket.on("error", socketOnError);
         const key = req.headers["sec-websocket-key"];
         const upgrade = req.headers.upgrade;
-        const version2 = +req.headers["sec-websocket-version"];
+        const version2 = req.headers["sec-websocket-version"];
         if (req.method !== "GET") {
           const message = "Invalid HTTP method";
           abortHandshakeOrEmitwsClientError(this, req, socket, 405, message);
@@ -60455,7 +64390,7 @@ var require_websocket_server = __commonJS({
           abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
           return;
         }
-        if (version2 !== 13 && version2 !== 8) {
+        if (version2 !== "13" && version2 !== "8") {
           const message = "Missing or invalid Sec-WebSocket-Version header";
           abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
             "Sec-WebSocket-Version": "13, 8"
@@ -60499,7 +64434,7 @@ var require_websocket_server = __commonJS({
         }
         if (this.options.verifyClient) {
           const info = {
-            origin: req.headers[`${version2 === 8 ? "sec-websocket-origin" : "origin"}`],
+            origin: req.headers[`${version2 === "8" ? "sec-websocket-origin" : "origin"}`],
             secure: !!(req.socket.authorized || req.socket.encrypted),
             req
           };
@@ -60635,179 +64570,9 @@ var require_websocket_server = __commonJS({
 // server/api.ts
 init_db();
 init_security();
+init_cache();
 import { parse as parseUrl2 } from "url";
-import crypto27 from "crypto";
-
-// server/cache.ts
-var BoundedLruCache = class {
-  store = /* @__PURE__ */ new Map();
-  maxEntries;
-  versionCounter = 1;
-  hits = 0;
-  misses = 0;
-  evictions = 0;
-  constructor(maxEntries = 500) {
-    this.maxEntries = maxEntries;
-  }
-  get(key) {
-    const entry = this.store.get(key);
-    if (!entry) {
-      this.misses += 1;
-      return null;
-    }
-    const now = Date.now();
-    if (now > entry.staleUntil) {
-      this.store.delete(key);
-      this.misses += 1;
-      return null;
-    }
-    this.store.delete(key);
-    this.store.set(key, entry);
-    this.hits += 1;
-    return {
-      value: entry.value,
-      isStale: now > entry.expiresAt
-    };
-  }
-  set(key, value, ttlMs, staleWhileRevalidateMs = 0) {
-    if (this.store.has(key)) {
-      this.store.delete(key);
-    } else if (this.store.size >= this.maxEntries) {
-      const oldestKey = this.store.keys().next().value;
-      if (oldestKey !== void 0) {
-        this.store.delete(oldestKey);
-        this.evictions += 1;
-      }
-    }
-    const now = Date.now();
-    this.store.set(key, {
-      value,
-      expiresAt: now + Math.max(100, ttlMs),
-      staleUntil: now + Math.max(100, ttlMs) + Math.max(0, staleWhileRevalidateMs),
-      version: ++this.versionCounter
-    });
-  }
-  invalidate(key) {
-    return this.store.delete(key);
-  }
-  invalidatePrefix(prefix) {
-    let removed = 0;
-    for (const k of this.store.keys()) {
-      if (k.startsWith(prefix)) {
-        this.store.delete(k);
-        removed += 1;
-      }
-    }
-    return removed;
-  }
-  invalidateUser(userId) {
-    if (!userId) return 0;
-    return this.invalidatePrefix(`user:${userId}:`);
-  }
-  clear() {
-    this.store.clear();
-  }
-  getStats() {
-    const total = this.hits + this.misses;
-    return {
-      entries: this.store.size,
-      maxEntries: this.maxEntries,
-      hits: this.hits,
-      misses: this.misses,
-      evictions: this.evictions,
-      hitRatio: total > 0 ? Number((this.hits / total).toFixed(4)) : 0,
-      version: this.versionCounter
-    };
-  }
-};
-var appCache = new BoundedLruCache(600);
-var inFlightMap = /* @__PURE__ */ new Map();
-async function dedupeInFlight(key, fn) {
-  const existing = inFlightMap.get(key);
-  if (existing) {
-    return existing;
-  }
-  const promise = (async () => {
-    try {
-      return await fn();
-    } finally {
-      inFlightMap.delete(key);
-    }
-  })();
-  inFlightMap.set(key, promise);
-  return promise;
-}
-async function cachedRead(key, ttlMs, loader, staleWhileRevalidateMs = 0) {
-  const cached = appCache.get(key);
-  if (cached && !cached.isStale) {
-    return { value: cached.value, cacheStatus: "HIT" };
-  }
-  if (cached && cached.isStale) {
-    void dedupeInFlight(`revalidate:${key}`, async () => {
-      const fresh2 = await loader();
-      appCache.set(key, fresh2, ttlMs, staleWhileRevalidateMs);
-      return fresh2;
-    }).catch(() => {
-    });
-    return { value: cached.value, cacheStatus: "STALE" };
-  }
-  const fresh = await dedupeInFlight(key, async () => {
-    const val = await loader();
-    appCache.set(key, val, ttlMs, staleWhileRevalidateMs);
-    return val;
-  });
-  return { value: fresh, cacheStatus: "MISS" };
-}
-async function mapWithConcurrency(items, concurrency, worker) {
-  if (items.length === 0) return [];
-  const limit = Math.max(1, Math.min(concurrency, items.length));
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  const runWorker = async () => {
-    while (true) {
-      const idx = nextIndex++;
-      if (idx >= items.length) break;
-      results[idx] = await worker(items[idx], idx);
-    }
-  };
-  await Promise.all(Array.from({ length: limit }, () => runWorker()));
-  return results;
-}
-var MAX_CONCURRENT_REQUESTS = 160;
-var SOFT_DEGRADE_THRESHOLD = 120;
-var activeConcurrentRequests = 0;
-var peakConcurrentRequests = 0;
-var sheddedRequests = 0;
-function tryAcquireConcurrencySlot(isPriority) {
-  if (!isPriority && activeConcurrentRequests >= SOFT_DEGRADE_THRESHOLD) {
-    sheddedRequests += 1;
-    return { allowed: false, active: activeConcurrentRequests, retryAfterSec: 3 };
-  }
-  if (activeConcurrentRequests >= MAX_CONCURRENT_REQUESTS) {
-    sheddedRequests += 1;
-    return { allowed: false, active: activeConcurrentRequests, retryAfterSec: 5 };
-  }
-  activeConcurrentRequests += 1;
-  if (activeConcurrentRequests > peakConcurrentRequests) {
-    peakConcurrentRequests = activeConcurrentRequests;
-  }
-  return { allowed: true, active: activeConcurrentRequests };
-}
-function releaseConcurrencySlot() {
-  if (activeConcurrentRequests > 0) {
-    activeConcurrentRequests -= 1;
-  }
-}
-function getConcurrencyMetrics() {
-  return {
-    activeRequests: activeConcurrentRequests,
-    peakRequests: peakConcurrentRequests,
-    softThreshold: SOFT_DEGRADE_THRESHOLD,
-    maxConcurrent: MAX_CONCURRENT_REQUESTS,
-    sheddedRequests,
-    inFlightDeduplications: inFlightMap.size
-  };
-}
+import crypto30 from "crypto";
 
 // server/auth.ts
 init_db();
@@ -60847,28 +64612,28 @@ function parseUserAgentSummary(userAgent) {
   else if (/CriOS\/|Chrome\//i.test(ua) && !/Edg\//i.test(ua)) browser = "Chrome";
   else if (/Safari\//i.test(ua) && !/Chrome\/|CriOS\//i.test(ua)) browser = "Safari";
   else if (/node|undici|curl|playwright|vitest/i.test(ua)) browser = "API / App Client";
-  let os8 = "Unknown OS";
+  let os9 = "Unknown OS";
   let deviceType = "desktop";
   if (/iPad/i.test(ua)) {
-    os8 = "iPadOS";
+    os9 = "iPadOS";
     deviceType = "tablet";
   } else if (/iPhone|iPod/i.test(ua)) {
-    os8 = "iOS (iPhone)";
+    os9 = "iOS (iPhone)";
     deviceType = "mobile";
   } else if (/Android/i.test(ua)) {
-    os8 = "Android";
+    os9 = "Android";
     deviceType = /Mobile/i.test(ua) ? "mobile" : "tablet";
   } else if (/Windows NT/i.test(ua)) {
-    os8 = "Windows";
+    os9 = "Windows";
   } else if (/Macintosh|Mac OS X/i.test(ua)) {
-    os8 = "macOS";
+    os9 = "macOS";
   } else if (/CrOS/i.test(ua)) {
-    os8 = "ChromeOS";
+    os9 = "ChromeOS";
   } else if (/Linux/i.test(ua)) {
-    os8 = "Linux";
+    os9 = "Linux";
   }
-  const deviceName = os8 === "Unknown OS" ? browser : `${browser} on ${os8}`;
-  return { deviceName, browser, os: os8, deviceType };
+  const deviceName = os9 === "Unknown OS" ? browser : `${browser} on ${os9}`;
+  return { deviceName, browser, os: os9, deviceType };
 }
 var MASTER_ADMIN_EMAILS = /* @__PURE__ */ new Set(["hackifypro@gmail.com", "admin@mymoney.com"]);
 var NON_DISCOVERABLE_ROLES = /* @__PURE__ */ new Set(["admin", "superadmin", "support", "analyst"]);
@@ -61609,730 +65374,16 @@ init_db();
 init_config();
 import { parse as parseUrl } from "url";
 init_security();
-
-// server/healthMonitor.ts
-init_db();
-init_config();
-
-// server/firebaseDb.ts
-import crypto16 from "crypto";
-import fs9 from "fs";
-import path8 from "path";
-var cachedAccessToken = null;
-var localMirrorStore = /* @__PURE__ */ new Map();
-var MIRROR_FILE = path8.resolve(process.cwd(), ".runtime-firebase-mirror.json");
-function loadLocalMirrorOnce() {
-  if (localMirrorStore.size > 0) return;
-  try {
-    if (fs9.existsSync(MIRROR_FILE)) {
-      const raw = JSON.parse(fs9.readFileSync(MIRROR_FILE, "utf8"));
-      if (raw && typeof raw === "object") {
-        for (const [col, docs] of Object.entries(raw)) {
-          const map2 = /* @__PURE__ */ new Map();
-          for (const [id, env2] of Object.entries(docs)) {
-            map2.set(id, env2);
-          }
-          localMirrorStore.set(col, map2);
-        }
-      }
-    }
-  } catch {
-  }
-}
-function persistLocalMirrorBestEffort() {
-  if (process.env.VERCEL) return;
-  try {
-    const out = {};
-    for (const [col, map2] of localMirrorStore.entries()) {
-      out[col] = Object.fromEntries(map2.entries());
-    }
-    fs9.writeFileSync(MIRROR_FILE, JSON.stringify(out), "utf8");
-  } catch {
-  }
-}
-function getFirebaseServiceAccount() {
-  const rawJson = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
-  if (rawJson) {
-    try {
-      const parsed = JSON.parse(rawJson);
-      if (parsed.project_id && parsed.client_email && parsed.private_key) {
-        return {
-          projectId: String(parsed.project_id).trim(),
-          clientEmail: String(parsed.client_email).trim(),
-          privateKey: String(parsed.private_key).replace(/\\n/g, "\n")
-        };
-      }
-    } catch {
-    }
-  }
-  const projectId = (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "").trim();
-  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
-  if (projectId && clientEmail && privateKey) {
-    return { projectId, clientEmail, privateKey };
-  }
-  return null;
-}
-function isFirebaseDbConfigured() {
-  return Boolean(getFirebaseServiceAccount());
-}
-async function getGoogleOAuthToken(sa) {
-  if (cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 6e4) {
-    return cachedAccessToken.token;
-  }
-  const now = Math.floor(Date.now() / 1e3);
-  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-  const claim = Buffer.from(
-    JSON.stringify({
-      iss: sa.clientEmail,
-      scope: "https://www.googleapis.com/auth/datastore",
-      aud: "https://oauth2.googleapis.com/token",
-      exp: now + 3600,
-      iat: now
-    })
-  ).toString("base64url");
-  const signer = crypto16.createSign("RSA-SHA256");
-  signer.update(`${header}.${claim}`);
-  const signature = signer.sign(sa.privateKey, "base64url");
-  const assertion = `${header}.${claim}.${signature}`;
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${encodeURIComponent(assertion)}`,
-    signal: AbortSignal.timeout(6e3)
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Firebase OAuth2 token failed (${res.status}): ${text.slice(0, 120)}`);
-  }
-  const json2 = await res.json();
-  cachedAccessToken = {
-    token: json2.access_token,
-    expiresAt: Date.now() + (Number(json2.expires_in) || 3600) * 1e3
-  };
-  return cachedAccessToken.token;
-}
-function toFirestoreValue(val) {
-  if (val === null || val === void 0) return { nullValue: null };
-  if (typeof val === "boolean") return { booleanValue: val };
-  if (typeof val === "number") {
-    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
-  }
-  if (typeof val === "string") return { stringValue: val };
-  if (Array.isArray(val)) {
-    return { arrayValue: { values: val.map(toFirestoreValue) } };
-  }
-  if (typeof val === "object") {
-    const fields = {};
-    for (const [k, v] of Object.entries(val)) {
-      if (v !== void 0) fields[k] = toFirestoreValue(v);
-    }
-    return { mapValue: { fields } };
-  }
-  return { stringValue: String(val) };
-}
-function fromFirestoreValue(v) {
-  if (!v || typeof v !== "object") return null;
-  if ("nullValue" in v) return null;
-  if ("booleanValue" in v) return Boolean(v.booleanValue);
-  if ("integerValue" in v) return Number(v.integerValue);
-  if ("doubleValue" in v) return Number(v.doubleValue);
-  if ("stringValue" in v) return String(v.stringValue);
-  if ("timestampValue" in v) return String(v.timestampValue);
-  if ("arrayValue" in v) {
-    return Array.isArray(v.arrayValue?.values) ? v.arrayValue.values.map(fromFirestoreValue) : [];
-  }
-  if ("mapValue" in v) {
-    const out = {};
-    for (const [k, fv] of Object.entries(v.mapValue?.fields || {})) {
-      out[k] = fromFirestoreValue(fv);
-    }
-    return out;
-  }
-  return null;
-}
-async function checkFirebaseHealth() {
-  const t0 = Date.now();
-  const sa = getFirebaseServiceAccount();
-  if (!sa) {
-    return {
-      status: "unknown",
-      configured: false,
-      responseTimeMs: Date.now() - t0,
-      message: "Firebase Service Account credentials not configured (local mirror fallback active)."
-    };
-  }
-  try {
-    const token = await getGoogleOAuthToken(sa);
-    const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/app_settings?pageSize=1`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(5e3)
-      }
-    );
-    const ms = Date.now() - t0;
-    if (res.ok || res.status === 404) {
-      return { status: "healthy", configured: true, responseTimeMs: ms, message: "Cloud Firestore reachable" };
-    }
-    return {
-      status: res.status >= 500 ? "unhealthy" : "degraded",
-      configured: true,
-      responseTimeMs: ms,
-      message: `Firestore HTTP ${res.status}`
-    };
-  } catch (err) {
-    return {
-      status: "unhealthy",
-      configured: true,
-      responseTimeMs: Date.now() - t0,
-      message: err?.message || "Firestore connection failed"
-    };
-  }
-}
-async function upsertSecondaryRecord(envelope) {
-  loadLocalMirrorOnce();
-  let colMap = localMirrorStore.get(envelope.collection);
-  if (!colMap) {
-    colMap = /* @__PURE__ */ new Map();
-    localMirrorStore.set(envelope.collection, colMap);
-  }
-  const existing = colMap.get(envelope.id);
-  if (!existing || existing.sync_version <= envelope.sync_version) {
-    colMap.set(envelope.id, envelope);
-    persistLocalMirrorBestEffort();
-  }
-  const sa = getFirebaseServiceAccount();
-  if (!sa) {
-    return { ok: true, mode: "local_mirror" };
-  }
-  try {
-    const token = await getGoogleOAuthToken(sa);
-    const docUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(envelope.collection)}/${encodeURIComponent(envelope.id)}`;
-    const fields = {};
-    const merged = {
-      ...envelope.data,
-      _sync_version: envelope.sync_version,
-      _source_db: envelope.source_db,
-      _idempotency_key: envelope.idempotency_key,
-      _updated_at: envelope.updated_at,
-      _deleted_at: envelope.deleted_at || null
-    };
-    for (const [k, v] of Object.entries(merged)) {
-      if (v !== void 0) fields[k] = toFirestoreValue(v);
-    }
-    const res = await fetch(docUrl, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields }),
-      signal: AbortSignal.timeout(6e3)
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      return { ok: false, mode: "firestore", error: `Firestore write ${res.status}: ${txt.slice(0, 140)}` };
-    }
-    return { ok: true, mode: "firestore" };
-  } catch (err) {
-    return { ok: false, mode: "firestore", error: err?.message || "Firestore write failed" };
-  }
-}
-async function listSecondaryCollection(collection, userIdFilter) {
-  const sa = getFirebaseServiceAccount();
-  if (sa) {
-    try {
-      const token = await getGoogleOAuthToken(sa);
-      const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}?pageSize=200`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(6e3)
-        }
-      );
-      if (res.ok) {
-        const json2 = await res.json();
-        const docs = Array.isArray(json2?.documents) ? json2.documents : [];
-        const parsed = docs.map((d) => {
-          const id = String(d.name || "").split("/").pop() || "";
-          const dataObj = {};
-          for (const [k, v] of Object.entries(d.fields || {})) {
-            dataObj[k] = fromFirestoreValue(v);
-          }
-          return {
-            id,
-            collection,
-            data: dataObj,
-            sync_version: Number(dataObj._sync_version || 1),
-            source_db: dataObj._source_db || "supabase",
-            idempotency_key: String(dataObj._idempotency_key || id),
-            updated_at: String(dataObj._updated_at || d.updateTime || (/* @__PURE__ */ new Date()).toISOString()),
-            deleted_at: dataObj._deleted_at || null
-          };
-        }).filter((env2) => !env2.deleted_at).filter((env2) => !userIdFilter || env2.data.user_id === userIdFilter || env2.data.user_a_id === userIdFilter || env2.data.user_b_id === userIdFilter);
-        return parsed;
-      }
-    } catch {
-    }
-  }
-  loadLocalMirrorOnce();
-  const map2 = localMirrorStore.get(collection);
-  if (!map2) return [];
-  return Array.from(map2.values()).filter((env2) => !env2.deleted_at).filter((env2) => !userIdFilter || env2.data.user_id === userIdFilter || env2.data.user_a_id === userIdFilter || env2.data.user_b_id === userIdFilter);
-}
-function getLocalMirrorStats() {
-  loadLocalMirrorOnce();
-  const counts = {};
-  let total = 0;
-  for (const [col, map2] of localMirrorStore.entries()) {
-    counts[col] = map2.size;
-    total += map2.size;
-  }
-  return { totalRecords: total, collections: counts };
-}
-
-// server/dbFailover.ts
-init_db();
-import crypto17 from "crypto";
-var FAILURE_THRESHOLD = 3;
-var RECOVERY_THRESHOLD = 2;
-var LEASE_DURATION_MS = 6e4;
-var state = {
-  activeProvider: "supabase",
-  providerEpoch: 1,
-  leaseUntil: null,
-  lastFailoverAt: null,
-  lastRecoveryAt: null,
-  reason: "Normal primary operation",
-  consecutivePrimaryFailures: 0,
-  consecutivePrimaryRecoveries: 0
-};
-var outboxQueue = /* @__PURE__ */ new Map();
-var failoverHistory = [];
-var backupSnapshots = [];
-function getFailoverState() {
-  return { ...state };
-}
-function getFailoverHistory() {
-  return failoverHistory.slice(0, 50);
-}
-async function evaluateFailoverTransition(params) {
-  const primaryHealthy = params.supabaseDbHealthy && params.supabasePostgrestHealthy;
-  if (primaryHealthy) {
-    state.consecutivePrimaryFailures = 0;
-    if (state.activeProvider !== "supabase") {
-      state.consecutivePrimaryRecoveries += 1;
-      if (state.consecutivePrimaryRecoveries >= RECOVERY_THRESHOLD) {
-        const prev = state.activeProvider;
-        await processOutboxQueue(25).catch(() => {
-        });
-        state.activeProvider = "supabase";
-        state.providerEpoch += 1;
-        state.leaseUntil = null;
-        state.lastRecoveryAt = (/* @__PURE__ */ new Date()).toISOString();
-        state.reason = "Supabase DB & PostgREST verified healthy; primary restored after reconciliation.";
-        state.consecutivePrimaryRecoveries = 0;
-        failoverHistory.unshift({
-          timestamp: state.lastRecoveryAt,
-          fromProvider: prev,
-          toProvider: "supabase",
-          epoch: state.providerEpoch,
-          reason: state.reason
-        });
-        return { transitioned: true, from: prev, to: "supabase", state: getFailoverState() };
-      }
-    }
-    return { transitioned: false, state: getFailoverState() };
-  }
-  state.consecutivePrimaryRecoveries = 0;
-  state.consecutivePrimaryFailures += 1;
-  if (state.consecutivePrimaryFailures >= FAILURE_THRESHOLD) {
-    const nextProvider = params.firebaseHealthy ? "firebase" : "degraded_readonly";
-    if (state.activeProvider !== nextProvider) {
-      const prev = state.activeProvider;
-      state.activeProvider = nextProvider;
-      state.providerEpoch += 1;
-      state.leaseUntil = Date.now() + LEASE_DURATION_MS;
-      state.lastFailoverAt = (/* @__PURE__ */ new Date()).toISOString();
-      state.reason = !params.supabaseDbHealthy ? "Supabase Database unreachable" : "Supabase PostgREST unhealthy / timing out";
-      failoverHistory.unshift({
-        timestamp: state.lastFailoverAt,
-        fromProvider: prev,
-        toProvider: nextProvider,
-        epoch: state.providerEpoch,
-        reason: state.reason
-      });
-      return { transitioned: true, from: prev, to: nextProvider, state: getFailoverState() };
-    }
-  }
-  return { transitioned: false, state: getFailoverState() };
-}
-async function processOutboxQueue(batchLimit = 20) {
-  const now = Date.now();
-  const due = Array.from(outboxQueue.values()).filter((ev) => ev.status !== "synced" && ev.nextRetryAt <= now).slice(0, batchLimit);
-  let synced = 0;
-  let failed = 0;
-  await mapWithConcurrency(due, 4, async (ev) => {
-    const envelope = {
-      id: ev.recordId,
-      collection: ev.collection,
-      data: ev.payload,
-      sync_version: ev.syncVersion,
-      source_db: ev.sourceDb,
-      idempotency_key: ev.idempotencyKey,
-      updated_at: (/* @__PURE__ */ new Date()).toISOString(),
-      deleted_at: ev.operation === "delete" ? (/* @__PURE__ */ new Date()).toISOString() : null
-    };
-    const res = await upsertSecondaryRecord(envelope);
-    ev.attempts += 1;
-    if (res.ok) {
-      ev.status = "synced";
-      ev.lastError = null;
-      ev.syncedAt = (/* @__PURE__ */ new Date()).toISOString();
-      synced += 1;
-    } else {
-      ev.status = "failed";
-      ev.lastError = res.error || "Secondary sync error";
-      const backoffMs = Math.min(3e5, 1e3 * Math.pow(2, Math.min(ev.attempts, 8)));
-      const jitterMs = Math.floor(Math.random() * 500);
-      ev.nextRetryAt = Date.now() + backoffMs + jitterMs;
-      failed += 1;
-    }
-    if (isDatabaseAvailable()) {
-      await query(
-        `UPDATE public.sync_outbox
-         SET status = $2, attempts = $3, last_error = $4, synced_at = $5, updated_at = NOW()
-         WHERE idempotency_key = $1`,
-        [ev.idempotencyKey, ev.status, ev.attempts, ev.lastError, ev.syncedAt]
-      ).catch(() => {
-      });
-    }
-  });
-  return { processed: due.length, synced, failed };
-}
-function getOutboxSummary() {
-  const all = Array.from(outboxQueue.values());
-  return {
-    total: all.length,
-    pending: all.filter((e2) => e2.status === "pending").length,
-    synced: all.filter((e2) => e2.status === "synced").length,
-    failed: all.filter((e2) => e2.status === "failed").length,
-    recentFailed: all.filter((e2) => e2.status === "failed").slice(0, 20),
-    mirrorStats: getLocalMirrorStats()
-  };
-}
-async function retryFailedOutboxEvents() {
-  for (const ev of outboxQueue.values()) {
-    if (ev.status === "failed") {
-      ev.nextRetryAt = Date.now();
-    }
-  }
-  const res = await processOutboxQueue(50);
-  return { retried: res.processed, synced: res.synced, failed: res.failed };
-}
-async function createLogicalBackupAndVerifyRestore(actor = "system") {
-  const collections = ["app_users", "transactions", "udhar_transactions", "udhar_contacts", "user_connections"];
-  const snapshotData = {};
-  const recordCounts = {};
-  for (const col of collections) {
-    const docs = await listSecondaryCollection(col);
-    snapshotData[col] = docs.map((d) => ({ id: d.id, sync_version: d.sync_version, data: d.data }));
-    recordCounts[col] = docs.length;
-  }
-  const serialized = JSON.stringify(snapshotData);
-  const checksumSha256 = crypto17.createHash("sha256").update(serialized).digest("hex");
-  const reparsed = JSON.parse(serialized);
-  const reChecksum = crypto17.createHash("sha256").update(JSON.stringify(reparsed)).digest("hex");
-  const countsMatch = collections.every((c) => Array.isArray(reparsed[c]) && reparsed[c].length === recordCounts[c]);
-  const restoreVerified = reChecksum === checksumSha256 && countsMatch;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const record = {
-    id: `bk_${Date.now()}`,
-    backupType: "logical_snapshot",
-    checksumSha256,
-    recordCounts,
-    restoreVerified,
-    restoreVerifiedAt: restoreVerified ? nowIso : null,
-    status: restoreVerified ? "verified" : "failed_verification",
-    createdBy: actor,
-    createdAt: nowIso
-  };
-  backupSnapshots.unshift(record);
-  if (backupSnapshots.length > 30) backupSnapshots.length = 30;
-  if (isDatabaseAvailable()) {
-    await query(
-      `INSERT INTO public.backup_snapshots (id, backup_type, checksum_sha256, record_counts, restore_verified, restore_verified_at, status, created_by)
-       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
-       ON CONFLICT (id) DO NOTHING`,
-      [record.id, record.backupType, record.checksumSha256, JSON.stringify(record.recordCounts), record.restoreVerified, record.restoreVerifiedAt, record.status, record.createdBy]
-    ).catch(() => {
-    });
-  }
-  return record;
-}
-function getBackupSnapshots() {
-  return backupSnapshots.slice(0, 20);
-}
-async function runDualDbReconciliation() {
-  const fb = await checkFirebaseHealth();
-  const outboxRes = await processOutboxQueue(50);
-  return {
-    checkedCollections: 5,
-    outboxProcessed: outboxRes.processed,
-    outboxSynced: outboxRes.synced,
-    firebaseStatus: fb.status
-  };
-}
-
-// server/healthMonitor.ts
-var serviceMap = /* @__PURE__ */ new Map();
-var alertCooldownMap = /* @__PURE__ */ new Map();
-var ALERT_COOLDOWN_MS = 15 * 60 * 1e3;
-var recentHealthHistory = [];
-var SERVICE_DEFS = [
-  { key: "supabase_db", label: "Supabase Database", group: "supabase" },
-  { key: "supabase_postgrest", label: "Supabase PostgREST", group: "supabase" },
-  { key: "supabase_auth", label: "Supabase Auth", group: "supabase" },
-  { key: "supabase_realtime", label: "Supabase Realtime", group: "supabase" },
-  { key: "supabase_storage", label: "Supabase Storage", group: "supabase" },
-  { key: "supabase_edge_functions", label: "Supabase Edge Functions", group: "supabase" },
-  { key: "firebase_db", label: "Firebase Database (Firestore)", group: "firebase" },
-  { key: "firebase_auth", label: "Firebase Auth", group: "firebase" },
-  { key: "firebase_storage", label: "Firebase Storage", group: "firebase" },
-  { key: "firebase_push", label: "Push Notification Service", group: "firebase" },
-  { key: "app_api", label: "Application API", group: "application" },
-  { key: "sync_engine", label: "Dual-DB Sync Outbox", group: "application" },
-  { key: "email_service", label: "Email Service (SMTP)", group: "application" },
-  { key: "cache_layer", label: "Smart Cache Layer", group: "application" }
-];
-for (const def of SERVICE_DEFS) {
-  serviceMap.set(def.key, {
-    ...def,
-    status: "unknown",
-    responseTimeMs: null,
-    lastCheckedAt: null,
-    lastFailureAt: null,
-    lastRecoveryAt: null,
-    consecutiveFailures: 0,
-    errorDetails: null
-  });
-}
-function getSupabaseRestConfig2() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
-  return { url, key };
-}
-async function probeHttp(url, headers, timeoutMs = 4500) {
-  const t0 = Date.now();
-  try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
-    return { ok: res.ok, status: res.status, ms: Date.now() - t0 };
-  } catch (err) {
-    return { ok: false, status: 0, ms: Date.now() - t0, error: err?.message || "Timeout / Network error" };
-  }
-}
-async function updateServiceStatus(key, nextStatus, responseTimeMs, errorDetails) {
-  const rec = serviceMap.get(key);
-  if (!rec) return;
-  const prevStatus = rec.status;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  rec.lastCheckedAt = nowIso;
-  rec.responseTimeMs = responseTimeMs;
-  rec.errorDetails = errorDetails;
-  if (nextStatus === "unhealthy") {
-    rec.consecutiveFailures += 1;
-    rec.lastFailureAt = nowIso;
-    if (prevStatus !== "unhealthy") {
-      await dispatchServiceAlert({
-        serviceKey: key,
-        serviceLabel: rec.label,
-        transition: "failure",
-        errorDetails: errorDetails || "Service probe failed"
-      }).catch(() => {
-      });
-    }
-  } else if (nextStatus === "healthy") {
-    if (prevStatus === "unhealthy") {
-      rec.lastRecoveryAt = nowIso;
-      await dispatchServiceAlert({
-        serviceKey: key,
-        serviceLabel: rec.label,
-        transition: "recovery",
-        errorDetails: null
-      }).catch(() => {
-      });
-    }
-    rec.consecutiveFailures = 0;
-  }
-  rec.status = nextStatus;
-  if (isDatabaseAvailable()) {
-    await query(
-      `INSERT INTO public.service_health_logs (service_name, status, response_time_ms, error_message)
-       VALUES ($1, $2, $3, $4)`,
-      [key, nextStatus, responseTimeMs, errorDetails]
-    ).catch(() => {
-    });
-  }
-}
-async function dispatchServiceAlert(params) {
-  const dedupKey = `${params.serviceKey}:${params.transition}`;
-  const lastSent = alertCooldownMap.get(dedupKey) || 0;
-  if (Date.now() - lastSent < ALERT_COOLDOWN_MS) {
-    return { skipped: true, reason: "deduplicated_cooldown" };
-  }
-  alertCooldownMap.set(dedupKey, Date.now());
-  const failover = getFailoverState();
-  const outbox = getOutboxSummary();
-  const subject = params.transition === "failure" ? `${APP_CONFIG.appName} \u2014 ${params.serviceLabel} Failure` : `${APP_CONFIG.appName} \u2014 ${params.serviceLabel} Recovered`;
-  const message = params.transition === "failure" ? `${params.serviceLabel} has become unhealthy (${params.errorDetails || "timeout"}). Active provider: ${failover.activeProvider}. Pending sync: ${outbox.pending}.` : `${params.serviceLabel} has recovered and passed health verification. Active provider: ${failover.activeProvider}. Pending sync: ${outbox.pending}.`;
-  try {
-    const { createNotification: createNotification2 } = await Promise.resolve().then(() => (init_notificationService(), notificationService_exports));
-    const adminEmail = APP_CONFIG.supportEmail || "hackifypro@gmail.com";
-    const { url, key } = getSupabaseRestConfig2();
-    let adminUserId = "";
-    if (isDatabaseAvailable()) {
-      const adm = await query(`SELECT id FROM public.app_users WHERE role IN ('superadmin', 'admin') AND status = 'active' LIMIT 1`).catch(() => ({ rows: [] }));
-      adminUserId = adm.rows[0]?.id || "";
-    } else if (url && key) {
-      const r2 = await fetch(`${url}/rest/v1/app_users?role=in.(superadmin,admin)&status=eq.active&select=id&limit=1`, {
-        headers: { apikey: key, Authorization: `Bearer ${key}` }
-      }).catch(() => null);
-      if (r2 && r2.ok) {
-        const d = await r2.json().catch(() => []);
-        adminUserId = d?.[0]?.id || "";
-      }
-    }
-    if (adminUserId) {
-      await createNotification2({
-        userId: adminUserId,
-        type: params.transition === "failure" ? "service_failure_alert" : "service_recovery_alert",
-        title: subject,
-        message,
-        category: "security",
-        deepLink: "admin_database",
-        relatedEntityId: params.serviceKey,
-        metadata: {
-          serviceKey: params.serviceKey,
-          transition: params.transition,
-          activeProvider: failover.activeProvider,
-          epoch: failover.providerEpoch,
-          pendingSync: outbox.pending
-        },
-        channels: ["in_app", "push"]
-      }).catch(() => {
-      });
-    } else if (adminEmail) {
-    }
-  } catch {
-  }
-  try {
-    if (APP_CONFIG.smtp.pass) {
-      const { sendEmail: sendEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports)).catch(() => ({ sendEmail: null }));
-      if (typeof sendEmail2 === "function") {
-        await sendEmail2({
-          to: APP_CONFIG.supportEmail,
-          subject,
-          html: `<div style="font-family:sans-serif;padding:16px"><h2>${subject}</h2><p>${message}</p><p><small>Timestamp: ${(/* @__PURE__ */ new Date()).toISOString()}</small></p></div>`,
-          text: message
-        }).catch(() => {
-        });
-      }
-    }
-  } catch {
-  }
-  return { skipped: false };
-}
-async function runIndependentHealthCheck(overrides) {
-  const { url, key } = getSupabaseRestConfig2();
-  if (overrides?.simulateSupabaseDbDown) {
-    await updateServiceStatus("supabase_db", "unhealthy", 0, "Simulated database outage");
-  } else if (isDatabaseAvailable()) {
-    const t0 = Date.now();
-    try {
-      await query("SELECT 1");
-      await updateServiceStatus("supabase_db", "healthy", Date.now() - t0, null);
-    } catch (e2) {
-      await updateServiceStatus("supabase_db", "unhealthy", Date.now() - t0, e2?.message || "PG query failed");
-    }
-  } else {
-    await updateServiceStatus("supabase_db", "unknown", null, "DATABASE_URL not configured in local env (REST mode active)");
-  }
-  if (overrides?.simulateSupabasePostgrestDown) {
-    await updateServiceStatus("supabase_postgrest", "unhealthy", 5e3, "Simulated PostgREST timeout");
-  } else if (url && key) {
-    const [restP, authP, storP, rtP] = await Promise.all([
-      probeHttp(`${url}/rest/v1/app_users?select=id&limit=1`, { apikey: key, Authorization: `Bearer ${key}` }),
-      probeHttp(`${url}/auth/v1/health`, { apikey: key }),
-      probeHttp(`${url}/storage/v1/bucket`, { apikey: key, Authorization: `Bearer ${key}` }),
-      probeHttp(`${url}/realtime/v1/api/tenants/realtime/health`, { apikey: key })
-    ]);
-    await Promise.all([
-      updateServiceStatus("supabase_postgrest", restP.ok ? "healthy" : "unhealthy", restP.ms, restP.ok ? null : restP.error || `HTTP ${restP.status}`),
-      updateServiceStatus("supabase_auth", authP.ok ? "healthy" : "unhealthy", authP.ms, authP.ok ? null : authP.error || `HTTP ${authP.status}`),
-      updateServiceStatus("supabase_storage", storP.ok ? "healthy" : "degraded", storP.ms, storP.ok ? null : storP.error || `HTTP ${storP.status}`),
-      updateServiceStatus("supabase_realtime", rtP.status > 0 && rtP.status < 500 ? "healthy" : "unhealthy", rtP.ms, rtP.error || null),
-      updateServiceStatus("supabase_edge_functions", url ? "healthy" : "unknown", 0, null)
-    ]);
-  }
-  if (overrides?.simulateFirebaseDown) {
-    await updateServiceStatus("firebase_db", "unhealthy", 0, "Simulated Firebase outage");
-  } else {
-    const fb = await checkFirebaseHealth();
-    await updateServiceStatus("firebase_db", fb.status, fb.responseTimeMs, fb.status === "healthy" ? null : fb.message);
-    await updateServiceStatus("firebase_auth", process.env.VITE_FIREBASE_PROJECT_ID ? "healthy" : "unknown", 0, process.env.VITE_FIREBASE_PROJECT_ID ? null : "VITE_FIREBASE_PROJECT_ID not set");
-    await updateServiceStatus("firebase_storage", isFirebaseDbConfigured() ? "healthy" : "unknown", 0, null);
-    await updateServiceStatus("firebase_push", APP_CONFIG.vapid.publicKey ? "healthy" : "degraded", 0, null);
-  }
-  const outbox = getOutboxSummary();
-  await Promise.all([
-    updateServiceStatus("app_api", "healthy", 1, null),
-    updateServiceStatus("sync_engine", outbox.failed > 5 ? "degraded" : "healthy", 1, outbox.failed > 0 ? `${outbox.failed} failed sync events` : null),
-    updateServiceStatus("email_service", APP_CONFIG.smtp.pass ? "healthy" : "degraded", 0, APP_CONFIG.smtp.pass ? null : "SMTP_PASS not configured"),
-    updateServiceStatus("cache_layer", "healthy", 0, null)
-  ]);
-  const dbRec = serviceMap.get("supabase_db");
-  const restRec = serviceMap.get("supabase_postgrest");
-  const fbRec = serviceMap.get("firebase_db");
-  const supabaseDbHealthy = dbRec.status === "healthy" || !isDatabaseAvailable() && restRec.status === "healthy";
-  const supabasePostgrestHealthy = restRec.status === "healthy";
-  const firebaseHealthy = fbRec.status === "healthy" || fbRec.status !== "unhealthy" && !isFirebaseDbConfigured();
-  const transition = await evaluateFailoverTransition({
-    supabaseDbHealthy,
-    supabasePostgrestHealthy,
-    firebaseHealthy
-  });
-  const unhealthy = Array.from(serviceMap.values()).filter((s2) => s2.status === "unhealthy").map((s2) => s2.key);
-  recentHealthHistory.unshift({
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    activeProvider: transition.state.activeProvider,
-    unhealthyServices: unhealthy
-  });
-  if (recentHealthHistory.length > 50) recentHealthHistory.length = 50;
-  return {
-    services: Array.from(serviceMap.values()),
-    failoverState: transition.state,
-    transitioned: transition.transitioned
-  };
-}
-function getFullHealthMatrix() {
-  return {
-    services: Array.from(serviceMap.values()),
-    failoverState: getFailoverState(),
-    failoverHistory: getFailoverHistory(),
-    outbox: getOutboxSummary(),
-    backups: getBackupSnapshots(),
-    healthHistory: recentHealthHistory.slice(0, 20),
-    concurrency: getConcurrencyMetrics(),
-    cache: appCache.getStats()
-  };
-}
+init_cache();
+init_healthMonitor();
+init_dbFailover();
+init_supabaseRestFallback();
 
 // node_modules/@google/genai/dist/node/index.mjs
 var import_p_retry = __toESM(require_p_retry(), 1);
 var import_google_auth_library = __toESM(require_src5(), 1);
 import { createWriteStream } from "fs";
-import * as fs13 from "fs/promises";
+import * as fs16 from "fs/promises";
 import { writeFile } from "fs/promises";
 import { Readable } from "node:stream";
 import { finished as finished3 } from "node:stream/promises";
@@ -62348,7 +65399,7 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 
 // node_modules/@google/genai/dist/node/index.mjs
-import * as path11 from "path";
+import * as path14 from "path";
 var _defaultBaseGeminiUrl = void 0;
 var _defaultBaseVertexUrl = void 0;
 function getDefaultBaseUrls() {
@@ -62471,7 +65522,7 @@ function __await(v) {
 }
 function __asyncGenerator(thisArg, _arguments, generator) {
   if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-  var g3 = generator.apply(thisArg, _arguments || []), i2, q = [];
+  var g5 = generator.apply(thisArg, _arguments || []), i2, q = [];
   return i2 = Object.create((typeof AsyncIterator === "function" ? AsyncIterator : Object).prototype), verb("next"), verb("throw"), verb("return", awaitReturn), i2[Symbol.asyncIterator] = function() {
     return this;
   }, i2;
@@ -62481,7 +65532,7 @@ function __asyncGenerator(thisArg, _arguments, generator) {
     };
   }
   function verb(n, f3) {
-    if (g3[n]) {
+    if (g5[n]) {
       i2[n] = function(v) {
         return new Promise(function(a, b) {
           q.push([n, v, a, b]) > 1 || resume2(n, v);
@@ -62492,7 +65543,7 @@ function __asyncGenerator(thisArg, _arguments, generator) {
   }
   function resume2(n, v) {
     try {
-      step(g3[n](v));
+      step(g5[n](v));
     } catch (e2) {
       settle(q[0][3], e2);
     }
@@ -63141,9 +66192,9 @@ async function buildWebRTCSignalingHeaders(parentClient, url, extraHeaders) {
   return headers;
 }
 function resolveDefaultPeerConnectionFactory() {
-  const g3 = globalThis;
-  if (typeof g3.RTCPeerConnection === "function") {
-    const Ctor = g3.RTCPeerConnection;
+  const g5 = globalThis;
+  if (typeof g5.RTCPeerConnection === "function") {
+    const Ctor = g5.RTCPeerConnection;
     return (configuration) => new Ctor(configuration);
   }
   return void 0;
@@ -63232,9 +66283,9 @@ var InteractionWebRTCTransport = class {
     return this._audioElement;
   }
   createStreamFromTracks(tracks) {
-    const g3 = globalThis;
-    if (typeof g3.MediaStream === "function") {
-      return new g3.MediaStream(tracks);
+    const g5 = globalThis;
+    if (typeof g5.MediaStream === "function") {
+      return new g5.MediaStream(tracks);
     }
     const copy = [...tracks];
     return {
@@ -65943,8 +68994,8 @@ function tBatchJobName(apiClient, name2) {
     throw new Error(`Invalid batch job name: ${nameString}.`);
   }
 }
-function tJobState(state2) {
-  const stateString = state2;
+function tJobState(state3) {
+  const stateString = state3;
   if (stateString === "BATCH_STATE_UNSPECIFIED") {
     return "JOB_STATE_UNSPECIFIED";
   } else if (stateString === "BATCH_STATE_PENDING") {
@@ -67565,7 +70616,7 @@ var Batches = class extends BaseModule {
       params
     );
     const urlParams = body["_url"];
-    const path13 = formatMap("{model}:batchGenerateContent", urlParams);
+    const path16 = formatMap("{model}:batchGenerateContent", urlParams);
     const batch = body["batch"];
     const inputConfig = batch["inputConfig"];
     const requestsWrapper = inputConfig["requests"];
@@ -67586,7 +70637,7 @@ var Batches = class extends BaseModule {
     delete body["config"];
     delete body["_url"];
     delete body["_query"];
-    return { path: path13, body };
+    return { path: path16, body };
   }
   // Helper function to get the first GCS URI
   getGcsUri(src) {
@@ -67642,17 +70693,17 @@ var Batches = class extends BaseModule {
   async createInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = createBatchJobParametersToVertex(this.apiClient, params);
-      path13 = formatMap("batchPredictionJobs", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batchPredictionJobs", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -67666,13 +70717,13 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = createBatchJobParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{model}:batchGenerateContent", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:batchGenerateContent", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -67696,19 +70747,19 @@ var Batches = class extends BaseModule {
   async createEmbeddingsInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createEmbeddingsBatchJobParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{model}:asyncBatchEmbedContent", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:asyncBatchEmbedContent", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -67736,17 +70787,17 @@ var Batches = class extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = getBatchJobParametersToVertex(this.apiClient, params);
-      path13 = formatMap("batchPredictionJobs/{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batchPredictionJobs/{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -67760,13 +70811,13 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = getBatchJobParametersToMldev(this.apiClient, params);
-      path13 = formatMap("batches/{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batches/{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -67793,17 +70844,17 @@ var Batches = class extends BaseModule {
    */
   async cancel(params) {
     var _a2, _b, _c, _d;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = cancelBatchJobParametersToVertex(this.apiClient, params);
-      path13 = formatMap("batchPredictionJobs/{name}:cancel", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batchPredictionJobs/{name}:cancel", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -67811,13 +70862,13 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = cancelBatchJobParametersToMldev(this.apiClient, params);
-      path13 = formatMap("batches/{name}:cancel", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batches/{name}:cancel", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -67828,17 +70879,17 @@ var Batches = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = listBatchJobsParametersToVertex(params);
-      path13 = formatMap("batchPredictionJobs", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batchPredictionJobs", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -67860,13 +70911,13 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = listBatchJobsParametersToMldev(params);
-      path13 = formatMap("batches", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batches", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -67902,17 +70953,17 @@ var Batches = class extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteBatchJobParametersToVertex(this.apiClient, params);
-      path13 = formatMap("batchPredictionJobs/{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batchPredictionJobs/{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -67932,13 +70983,13 @@ var Batches = class extends BaseModule {
       });
     } else {
       const body = deleteBatchJobParametersToMldev(this.apiClient, params);
-      path13 = formatMap("batches/{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("batches/{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -68938,17 +71989,17 @@ var Caches = class extends BaseModule {
   async create(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = createCachedContentParametersToVertex(this.apiClient, params);
-      path13 = formatMap("cachedContents", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("cachedContents", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -68961,13 +72012,13 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = createCachedContentParametersToMldev(this.apiClient, params);
-      path13 = formatMap("cachedContents", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("cachedContents", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -68994,17 +72045,17 @@ var Caches = class extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = getCachedContentParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69017,13 +72068,13 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = getCachedContentParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -69050,17 +72101,17 @@ var Caches = class extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteCachedContentParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69082,13 +72133,13 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = deleteCachedContentParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -69127,17 +72178,17 @@ var Caches = class extends BaseModule {
   async update(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = updateCachedContentParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69150,13 +72201,13 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = updateCachedContentParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -69172,17 +72223,17 @@ var Caches = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = listCachedContentsParametersToVertex(params);
-      path13 = formatMap("cachedContents", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("cachedContents", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69204,13 +72255,13 @@ var Caches = class extends BaseModule {
       });
     } else {
       const body = listCachedContentsParametersToMldev(params);
-      path13 = formatMap("cachedContents", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("cachedContents", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -69749,19 +72800,19 @@ var Files$1 = class Files extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listFilesParametersToMldev(params);
-      path13 = formatMap("files", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("files", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69786,19 +72837,19 @@ var Files$1 = class Files extends BaseModule {
   async createInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createFileParametersToMldev(params);
-      path13 = formatMap("upload/{api_version}/files", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("upload/{api_version}/files", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69832,19 +72883,19 @@ var Files$1 = class Files extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getFileParametersToMldev(params);
-      path13 = formatMap("files/{file}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("files/{file}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69873,19 +72924,19 @@ var Files$1 = class Files extends BaseModule {
   async delete(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteFileParametersToMldev(params);
-      path13 = formatMap("files/{file}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("files/{file}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -69910,19 +72961,19 @@ var Files$1 = class Files extends BaseModule {
   async registerFilesInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = internalRegisterFilesParametersToMldev(params);
-      path13 = formatMap("files:register", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("files:register", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -70305,7 +73356,7 @@ function continueStream(firstHop, openNextHop, options) {
     var _a2, _b;
     const deadline = (_a2 = options.deadline) !== null && _a2 !== void 0 ? _a2 : new CallDeadline(void 0);
     const wrapIterationError = (_b = options.wrapIterationError) !== null && _b !== void 0 ? _b : ((e2) => e2);
-    const state2 = new StreamContinuation$1({
+    const state3 = new StreamContinuation$1({
       initialContinuationToken: options.initialContinuationToken,
       isConnectionError: options.isConnectionError,
       isFatalError: options.isFatalError,
@@ -70315,7 +73366,7 @@ function continueStream(firstHop, openNextHop, options) {
     let isFirstHop = true;
     try {
       while (true) {
-        const [token, tokenOwnerId] = state2.startHop(isFirstHop);
+        const [token, tokenOwnerId] = state3.startHop(isFirstHop);
         let failure = void 0;
         if (isFirstHop) {
           isFirstHop = false;
@@ -70326,7 +73377,7 @@ function continueStream(firstHop, openNextHop, options) {
           try {
             deadline.check();
             const next = yield __await(openNextHop(token, tokenOwnerId));
-            state2.markStreamOpened();
+            state3.markStreamOpened();
             current = next[Symbol.asyncIterator]();
           } catch (e2) {
             failure = { error: e2 };
@@ -70347,10 +73398,10 @@ function continueStream(firstHop, openNextHop, options) {
             if (result.done) {
               break;
             }
-            yield yield __await(state2.observe(result.value));
+            yield yield __await(state3.observe(result.value));
           }
         }
-        if (!state2.endHop(failure)) {
+        if (!state3.endHop(failure)) {
           break;
         }
       }
@@ -70997,7 +74048,7 @@ var Stream4 = class extends ReadableStreamBase {
     let buffer = new Uint8Array(4096);
     let bufferLen = 0;
     let searchStart = 0;
-    const state2 = { eventId: void 0 };
+    const state3 = { eventId: void 0 };
     const dataRequired = (_a2 = opts === null || opts === void 0 ? void 0 : opts.dataRequired) !== null && _a2 !== void 0 ? _a2 : true;
     super({
       async pull(downstream) {
@@ -71027,7 +74078,7 @@ var Stream4 = class extends ReadableStreamBase {
               buffer = shrunk;
             }
             searchStart = 0;
-            const item = parseMessage(message, parse2, state2, dataRequired);
+            const item = parseMessage(message, parse2, state3, dataRequired);
             if (item && !item.done)
               return downstream.enqueue(item.value);
             if (item === null || item === void 0 ? void 0 : item.done) {
@@ -71125,7 +74176,7 @@ function findBoundary(buf, len, from) {
   }
   return null;
 }
-function parseMessage(chunk, parse2, state2, dataRequired) {
+function parseMessage(chunk, parse2, state3, dataRequired) {
   const text = new TextDecoder().decode(chunk);
   const lines = text.split(/\r\n|\r|\n/);
   const dataLines = [];
@@ -71147,14 +74198,14 @@ function parseMessage(chunk, parse2, state2, dataRequired) {
     else if (field === "event")
       ret.event = value;
     else if (field === "id" && !value.includes("\0"))
-      state2.eventId = value;
+      state3.eventId = value;
     else if (field === "retry" && /^\d+$/.test(value)) {
       ret.retry = Number(value);
     }
   }
   if (ignore)
     return;
-  ret.id = state2.eventId;
+  ret.id = state3.eventId;
   if (dataLines.length)
     ret.data = dataLines.join("\n");
   else if (dataRequired)
@@ -71863,16 +74914,16 @@ var ClientSDK = class {
   }
   _createRequest(context, conf, options) {
     var _a2, _b, _c, _d, _e;
-    const { method, path: path13, query: query2, headers: opHeaders, security } = conf;
+    const { method, path: path16, query: query2, headers: opHeaders, security } = conf;
     const base2 = (_a2 = conf.baseURL) !== null && _a2 !== void 0 ? _a2 : this._baseURL;
     if (!base2) {
       return ERR(new InvalidRequestError("No base URL provided for operation"));
     }
     const baseURL = new URL(base2);
     let reqURL;
-    if (path13) {
+    if (path16) {
       baseURL.pathname = baseURL.pathname.replace(/\/+$/, "") + "/";
-      reqURL = new URL(path13, baseURL);
+      reqURL = new URL(path16, baseURL);
       if (!reqURL.search && baseURL.search) {
         reqURL.search = baseURL.search;
       }
@@ -72288,7 +75339,7 @@ var SecurityError = class _SecurityError extends Error {
   }
 };
 function resolveSecurity(...options) {
-  const state2 = {
+  const state3 = {
     basic: {},
     headers: {},
     queryParams: {},
@@ -72327,46 +75378,46 @@ function resolveSecurity(...options) {
     const { type } = spec;
     switch (type) {
       case "apiKey:header":
-        state2.headers[spec.fieldName] = spec.value;
+        state3.headers[spec.fieldName] = spec.value;
         break;
       case "apiKey:query":
-        state2.queryParams[spec.fieldName] = spec.value;
+        state3.queryParams[spec.fieldName] = spec.value;
         break;
       case "apiKey:cookie":
-        state2.cookies[spec.fieldName] = spec.value;
+        state3.cookies[spec.fieldName] = spec.value;
         break;
       case "http:basic":
-        applyBasic(state2, spec);
+        applyBasic(state3, spec);
         break;
       case "http:custom":
         break;
       case "http:bearer":
-        applyBearer(state2, spec);
+        applyBearer(state3, spec);
         break;
       case "oauth2":
-        applyBearer(state2, spec);
+        applyBearer(state3, spec);
         break;
       case "oauth2:password":
-        applyBearer(state2, spec);
+        applyBearer(state3, spec);
         break;
       case "oauth2:client_credentials":
         break;
       case "openIdConnect":
-        applyBearer(state2, spec);
+        applyBearer(state3, spec);
         break;
       default:
         throw SecurityError.unrecognizedType(type);
     }
   });
-  return state2;
+  return state3;
 }
-function applyBasic(state2, spec) {
+function applyBasic(state3, spec) {
   if (spec.value == null) {
     return;
   }
-  state2.basic = spec.value;
+  state3.basic = spec.value;
 }
-function applyBearer(state2, spec) {
+function applyBearer(state3, spec) {
   if (typeof spec.value !== "string" || !spec.value) {
     return;
   }
@@ -72375,7 +75426,7 @@ function applyBearer(state2, spec) {
     value = `Bearer ${value}`;
   }
   if (spec.fieldName !== void 0) {
-    state2.headers[spec.fieldName] = value;
+    state3.headers[spec.fieldName] = value;
   }
 }
 function resolveGlobalSecurity(security, allowedFields) {
@@ -72492,7 +75543,7 @@ async function $do$D(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/agents")(pathParams);
+  const path16 = pathToFunc("/{api_version}/agents")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -72523,7 +75574,7 @@ async function $do$D(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -72567,7 +75618,7 @@ async function $do$C(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -72597,7 +75648,7 @@ async function $do$C(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -72641,7 +75692,7 @@ async function $do$B(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/agents/{agentsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -72671,7 +75722,7 @@ async function $do$B(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -72713,7 +75764,7 @@ async function $do$A(client, api_version, page_size, page_token, parent, options
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/agents")(pathParams);
+  const path16 = pathToFunc("/{api_version}/agents")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token,
@@ -72748,7 +75799,7 @@ async function $do$A(client, api_version, page_size, page_token, parent, options
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -72816,7 +75867,7 @@ async function $do$z(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/credentials")(pathParams);
+  const path16 = pathToFunc("/{api_version}/credentials")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -72847,7 +75898,7 @@ async function $do$z(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -72891,7 +75942,7 @@ async function $do$y(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -72921,7 +75972,7 @@ async function $do$y(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -72965,7 +76016,7 @@ async function $do$x(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -72995,7 +76046,7 @@ async function $do$x(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -73036,7 +76087,7 @@ async function $do$w(client, api_version, page_size, page_token, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/credentials")(pathParams);
+  const path16 = pathToFunc("/{api_version}/credentials")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token
@@ -73070,7 +76121,7 @@ async function $do$w(client, api_version, page_size, page_token, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -73117,7 +76168,7 @@ async function $do$v(client, id, body, api_version, update_mask, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/credentials/{id}")(pathParams);
   const query2 = encodeFormQuery({
     "update_mask": payload.update_mask
   });
@@ -73151,7 +76202,7 @@ async function $do$v(client, id, body, api_version, update_mask, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body: body$,
@@ -73226,7 +76277,7 @@ async function $do$u(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/decisions")(pathParams);
+  const path16 = pathToFunc("/{api_version}/decisions")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -73257,7 +76308,7 @@ async function $do$u(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -73306,7 +76357,7 @@ async function $do$t(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/environments")(pathParams);
+  const path16 = pathToFunc("/{api_version}/environments")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -73337,7 +76388,7 @@ async function $do$t(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -73381,7 +76432,7 @@ async function $do$s(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -73411,7 +76462,7 @@ async function $do$s(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -73455,7 +76506,7 @@ async function $do$r(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/environments/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -73485,7 +76536,7 @@ async function $do$r(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -73527,7 +76578,7 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/environments")(pathParams);
+  const path16 = pathToFunc("/{api_version}/environments")(pathParams);
   const query2 = encodeFormQuery({
     "mode": payload === null || payload === void 0 ? void 0 : payload.mode,
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
@@ -73562,7 +76613,7 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -73589,14 +76640,14 @@ async function $do$q(client, api_version, mode, page_size, page_token, options) 
   }
   return [result, { status: "complete", request: req, response }];
 }
-function environmentsFilesList(client, environment, path13, api_version, page_size, page_token, recursive, options) {
-  return new APIPromise($do$p(client, environment, path13, api_version, page_size, page_token, recursive, options));
+function environmentsFilesList(client, environment, path16, api_version, page_size, page_token, recursive, options) {
+  return new APIPromise($do$p(client, environment, path16, api_version, page_size, page_token, recursive, options));
 }
-async function $do$p(client, environment, path13, api_version, page_size, page_token, recursive, options) {
+async function $do$p(client, environment, path16, api_version, page_size, page_token, recursive, options) {
   var _a2, _b, _c;
   const input = {
     environment,
-    path: path13,
+    path: path16,
     api_version,
     page_size,
     page_token,
@@ -73681,18 +76732,18 @@ var Files2 = class extends ClientSDK {
   /**
    * Retrieves file metadata or directory contents from an environment's snapshot. To download file content, use the download URL returned in the response.
    */
-  list(environment, path13, params, options) {
-    return unwrapAsAPIPromise(environmentsFilesList(this, environment, path13, params === null || params === void 0 ? void 0 : params.api_version, params === null || params === void 0 ? void 0 : params.page_size, params === null || params === void 0 ? void 0 : params.page_token, params === null || params === void 0 ? void 0 : params.recursive, options));
+  list(environment, path16, params, options) {
+    return unwrapAsAPIPromise(environmentsFilesList(this, environment, path16, params === null || params === void 0 ? void 0 : params.api_version, params === null || params === void 0 ? void 0 : params.page_size, params === null || params === void 0 ? void 0 : params.page_token, params === null || params === void 0 ? void 0 : params.recursive, options));
   }
 };
-function environmentsInternalStartUpload(client, environment, path13, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
-  return new APIPromise($do$o(client, environment, path13, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options));
+function environmentsInternalStartUpload(client, environment, path16, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
+  return new APIPromise($do$o(client, environment, path16, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options));
 }
-async function $do$o(client, environment, path13, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
+async function $do$o(client, environment, path16, x_goog_upload_command, x_goog_upload_header_content_length, x_goog_upload_header_content_type, x_goog_upload_protocol, api_version, extract, overwrite, options) {
   var _a2, _b, _c;
   const input = {
     environment,
-    path: path13,
+    path: path16,
     "X-Goog-Upload-Command": x_goog_upload_command,
     "X-Goog-Upload-Header-Content-Length": x_goog_upload_header_content_length,
     "X-Goog-Upload-Header-Content-Type": x_goog_upload_header_content_type,
@@ -73793,8 +76844,8 @@ var Internal = class extends ClientSDK {
    * Upload the file bytes to the URL returned in the `X-Goog-Upload-URL`
    * response header, using the resumable upload protocol.
    */
-  startUpload(environment, path13, params, options) {
-    return unwrapAsAPIPromise(environmentsInternalStartUpload(this, environment, path13, params["X-Goog-Upload-Command"], params["X-Goog-Upload-Header-Content-Length"], params["X-Goog-Upload-Header-Content-Type"], params["X-Goog-Upload-Protocol"], params.api_version, params.extract, params.overwrite, options));
+  startUpload(environment, path16, params, options) {
+    return unwrapAsAPIPromise(environmentsInternalStartUpload(this, environment, path16, params["X-Goog-Upload-Command"], params["X-Goog-Upload-Header-Content-Length"], params["X-Goog-Upload-Header-Content-Type"], params["X-Goog-Upload-Protocol"], params.api_version, params.extract, params.overwrite, options));
   }
 };
 var Environments = class extends ClientSDK {
@@ -73929,7 +76980,7 @@ async function $do$n(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/interactions/{interactionsId}/cancel")(pathParams);
+  const path16 = pathToFunc("/{api_version}/interactions/{interactionsId}/cancel")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -73959,7 +77010,7 @@ async function $do$n(client, id, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -74002,7 +77053,7 @@ async function $do$m(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/interactions")(pathParams);
+  const path16 = pathToFunc("/{api_version}/interactions")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: ((_b = input === null || input === void 0 ? void 0 : input.body) === null || _b === void 0 ? void 0 : _b.stream) ? "text/event-stream" : "application/json"
@@ -74033,7 +77084,7 @@ async function $do$m(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -74083,7 +77134,7 @@ async function $do$l(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -74113,7 +77164,7 @@ async function $do$l(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -74163,7 +77214,7 @@ async function $do$k(client, id, api_version, include_input, last_event_id, stre
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/interactions/{interactionsId}")(pathParams);
   const query2 = encodeFormQuery({
     "include_input": payload.include_input,
     "last_event_id": payload.last_event_id,
@@ -74198,7 +77249,7 @@ async function $do$k(client, id, api_version, include_input, last_event_id, stre
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -74250,7 +77301,7 @@ async function $do$j(client, interaction_id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens")(pathParams);
+  const path16 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -74281,7 +77332,7 @@ async function $do$j(client, interaction_id, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -74330,7 +77381,7 @@ async function $do$i(client, interaction_id, auth_token, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens/{auth_tokensId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/interactions/{interactionsId}/auth_tokens/{auth_tokensId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -74360,7 +77411,7 @@ async function $do$i(client, interaction_id, auth_token, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -74441,7 +77492,7 @@ async function $do$h(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/triggers")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -74472,7 +77523,7 @@ async function $do$h(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -74516,7 +77567,7 @@ async function $do$g(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -74546,7 +77597,7 @@ async function $do$g(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -74590,7 +77641,7 @@ async function $do$f(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -74620,7 +77671,7 @@ async function $do$f(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -74666,7 +77717,7 @@ async function $do$e(client, trigger_id, api_version, page_size, page_token, opt
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload.page_size,
     "page_token": payload.page_token
@@ -74700,7 +77751,7 @@ async function $do$e(client, trigger_id, api_version, page_size, page_token, opt
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -74743,7 +77794,7 @@ async function $do$d(client, api_version, filter, page_size, page_token, options
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/triggers")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers")(pathParams);
   const query2 = encodeFormQuery({
     "filter": payload === null || payload === void 0 ? void 0 : payload.filter,
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
@@ -74778,7 +77829,7 @@ async function $do$d(client, api_version, filter, page_size, page_token, options
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -74823,7 +77874,7 @@ async function $do$c(client, trigger_id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers/{triggerId}/executions")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -74853,7 +77904,7 @@ async function $do$c(client, trigger_id, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -74898,7 +77949,7 @@ async function $do$b(client, id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/triggers/{id}")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -74929,7 +77980,7 @@ async function $do$b(client, id, body, api_version, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -75016,7 +78067,7 @@ async function $do$a(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/voices")(pathParams);
+  const path16 = pathToFunc("/{api_version}/voices")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -75047,7 +78098,7 @@ async function $do$a(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -75091,7 +78142,7 @@ async function $do$9(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -75121,7 +78172,7 @@ async function $do$9(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -75165,7 +78216,7 @@ async function $do$8(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/voices/{voicesId}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -75195,7 +78246,7 @@ async function $do$8(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -75245,7 +78296,7 @@ async function $do$7(client, api_version, accent, contexts, gender, language_cod
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/voices")(pathParams);
+  const path16 = pathToFunc("/{api_version}/voices")(pathParams);
   const query2 = encodeFormQuery({
     "accent": payload === null || payload === void 0 ? void 0 : payload.accent,
     "context": payload === null || payload === void 0 ? void 0 : payload.contexts,
@@ -75288,7 +78339,7 @@ async function $do$7(client, api_version, accent, contexts, gender, language_cod
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -75361,7 +78412,7 @@ async function $do$6(client, body, api_version, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -75392,7 +78443,7 @@ async function $do$6(client, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -75436,7 +78487,7 @@ async function $do$5(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -75466,7 +78517,7 @@ async function $do$5(client, id, api_version, options) {
     security: requestSecurity,
     method: "DELETE",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -75510,7 +78561,7 @@ async function $do$4(client, id, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const headers = new Headers(compactMap({
     Accept: "application/json"
   }));
@@ -75540,7 +78591,7 @@ async function $do$4(client, id, api_version, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body,
     userAgent: client._options.user_agent,
@@ -75581,7 +78632,7 @@ async function $do$3(client, api_version, page_size, page_token, options) {
   const pathParams = {
     api_version: encodeSimple("api_version", (_a2 = payload === null || payload === void 0 ? void 0 : payload.api_version) !== null && _a2 !== void 0 ? _a2 : client._options.api_version, { explode: false, charEncoding: "percent" })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks")(pathParams);
   const query2 = encodeFormQuery({
     "page_size": payload === null || payload === void 0 ? void 0 : payload.page_size,
     "page_token": payload === null || payload === void 0 ? void 0 : payload.page_token
@@ -75615,7 +78666,7 @@ async function $do$3(client, api_version, page_size, page_token, options) {
     security: requestSecurity,
     method: "GET",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body,
@@ -75661,7 +78712,7 @@ async function $do$2(client, id, api_version, body, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks/{id}:ping")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks/{id}:ping")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -75692,7 +78743,7 @@ async function $do$2(client, id, api_version, body, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -75737,7 +78788,7 @@ async function $do$1(client, id, body, api_version, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks/{id}:rotateSigningSecret")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks/{id}:rotateSigningSecret")(pathParams);
   const headers = new Headers(compactMap({
     "Content-Type": "application/json",
     Accept: "application/json"
@@ -75768,7 +78819,7 @@ async function $do$1(client, id, body, api_version, options) {
     security: requestSecurity,
     method: "POST",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     body: body$,
     userAgent: client._options.user_agent,
@@ -75814,7 +78865,7 @@ async function $do(client, id, body, api_version, update_mask, options) {
       charEncoding: "percent"
     })
   };
-  const path13 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
+  const path16 = pathToFunc("/{api_version}/webhooks/{id}")(pathParams);
   const query2 = encodeFormQuery({
     "update_mask": payload.update_mask
   });
@@ -75848,7 +78899,7 @@ async function $do(client, id, body, api_version, update_mask, options) {
     security: requestSecurity,
     method: "PATCH",
     baseURL: options === null || options === void 0 ? void 0 : options.server_url,
-    path: path13,
+    path: path16,
     headers,
     query: query2,
     body: body$,
@@ -76562,8 +79613,8 @@ var GeminiNextGenEnvironmentFiles = class {
       try {
         const req = globalThis.require;
         if (req) {
-          const fs15 = req("fs");
-          buffer = fs15.readFileSync(params.file);
+          const fs18 = req("fs");
+          buffer = fs18.readFileSync(params.file);
         }
       } catch (_j) {
       }
@@ -76571,8 +79622,8 @@ var GeminiNextGenEnvironmentFiles = class {
         try {
           const mod = (_b = (_a2 = globalThis.process.mainModule) === null || _a2 === void 0 ? void 0 : _a2.require) !== null && _b !== void 0 ? _b : globalThis.require;
           if (mod) {
-            const fs15 = mod("fs");
-            buffer = fs15.readFileSync(params.file);
+            const fs18 = mod("fs");
+            buffer = fs18.readFileSync(params.file);
           }
         } catch (_k) {
         }
@@ -82275,15 +85326,15 @@ var ApiClient = class {
       throw new Error("HTTP options are not correctly set.");
     }
   }
-  resolveApiVersionInPath(path13, apiVersion) {
+  resolveApiVersionInPath(path16, apiVersion) {
     const placeholder = "{api_version}";
     if (apiVersion !== "") {
-      return path13.replaceAll(placeholder, apiVersion);
+      return path16.replaceAll(placeholder, apiVersion);
     }
-    return path13.replaceAll(`${placeholder}/`, "").replaceAll(`/${placeholder}`, "").replaceAll(placeholder, "");
+    return path16.replaceAll(`${placeholder}/`, "").replaceAll(`/${placeholder}`, "").replaceAll(placeholder, "");
   }
-  constructUrl(path13, httpOptions, prependProjectLocation) {
-    if (path13.includes("{api_version}")) {
+  constructUrl(path16, httpOptions, prependProjectLocation) {
+    if (path16.includes("{api_version}")) {
       if (!httpOptions || httpOptions.baseUrl === void 0 || httpOptions.apiVersion === void 0) {
         throw new Error("HTTP options are not correctly set.");
       }
@@ -82292,7 +85343,7 @@ var ApiClient = class {
       if (prependProjectLocation) {
         urlElement2.push(this.getBaseResourcePath());
       }
-      const resolvedPath = this.resolveApiVersionInPath(path13, httpOptions.apiVersion);
+      const resolvedPath = this.resolveApiVersionInPath(path16, httpOptions.apiVersion);
       if (resolvedPath !== "") {
         urlElement2.push(resolvedPath);
       }
@@ -82302,8 +85353,8 @@ var ApiClient = class {
     if (prependProjectLocation) {
       urlElement.push(this.getBaseResourcePath());
     }
-    if (path13 !== "") {
-      urlElement.push(path13);
+    if (path16 !== "") {
+      urlElement.push(path16);
     }
     const url = new URL(`${urlElement.join("/")}`);
     return url;
@@ -82605,13 +85656,13 @@ var ApiClient = class {
     if (mimeType === void 0 || mimeType === "") {
       throw new Error("Can not determine mimeType. Please provide mimeType in the config.");
     }
-    const path13 = `upload/{api_version}/${fileSearchStoreName}:uploadToFileSearchStore`;
+    const path16 = `upload/{api_version}/${fileSearchStoreName}:uploadToFileSearchStore`;
     const fileName = this.getFileName(file);
     const body = {};
     if (config != null) {
       uploadToFileSearchStoreConfigToMldev(config, body);
     }
-    const uploadUrl = await this.fetchUploadUrl(path13, sizeBytes, mimeType, fileName, body, config === null || config === void 0 ? void 0 : config.httpOptions);
+    const uploadUrl = await this.fetchUploadUrl(path16, sizeBytes, mimeType, fileName, body, config === null || config === void 0 ? void 0 : config.httpOptions);
     return uploader.uploadToFileSearchStore(file, uploadUrl, this);
   }
   /**
@@ -82624,11 +85675,11 @@ var ApiClient = class {
     const downloader = this.clientOptions.downloader;
     await downloader.download(params, this);
   }
-  async fetchUploadUrl(path13, sizeBytes, mimeType, fileName, body, configHttpOptions) {
+  async fetchUploadUrl(path16, sizeBytes, mimeType, fileName, body, configHttpOptions) {
     var _a2;
     const httpOptions = Object.assign(Object.assign({}, configHttpOptions), { headers: Object.assign(Object.assign(Object.assign({}, configHttpOptions === null || configHttpOptions === void 0 ? void 0 : configHttpOptions.headers), { "Content-Type": "application/json", "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start", "X-Goog-Upload-Header-Content-Length": `${sizeBytes}`, "X-Goog-Upload-Header-Content-Type": `${mimeType}` }), fileName ? { "X-Goog-Upload-File-Name": fileName } : {}) });
     const httpResponse = await this.request({
-      path: path13,
+      path: path16,
       body: JSON.stringify(body),
       httpMethod: "POST",
       httpOptions
@@ -84228,8 +87279,8 @@ var Models = class _Models extends BaseModule {
     return mergeContinuationResponses(responses);
   }
   async generateContentStreamWithContinuation(params) {
-    const state2 = new StreamContinuation2(params.config);
-    state2.startHop();
+    const state3 = new StreamContinuation2(params.config);
+    state3.startHop();
     const firstStream = await this.generateContentStreamInternal(params);
     return (function(models, initialParams, initialStream) {
       return __asyncGenerator(this, arguments, function* () {
@@ -84243,7 +87294,7 @@ var Models = class _Models extends BaseModule {
                 _c = _f.value;
                 _d = false;
                 const chunk = _c;
-                yield yield __await(state2.observe(chunk));
+                yield yield __await(state3.observe(chunk));
               }
             } catch (e_1_1) {
               e_1 = { error: e_1_1 };
@@ -84257,10 +87308,10 @@ var Models = class _Models extends BaseModule {
           } catch (error2) {
             hopError = { error: error2 };
           }
-          if (!state2.endHop(hopError)) {
+          if (!state3.endHop(hopError)) {
             return yield __await(void 0);
           }
-          const callParams = Object.assign(Object.assign({}, initialParams), { config: state2.startHop() });
+          const callParams = Object.assign(Object.assign({}, initialParams), { config: state3.startHop() });
           openHop = () => models.generateContentStreamInternal(callParams);
         }
       });
@@ -84421,17 +87472,17 @@ var Models = class _Models extends BaseModule {
   async generateContentInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateContentParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:generateContent", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:generateContent", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84453,13 +87504,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = generateContentParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{model}:generateContent", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:generateContent", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -84484,18 +87535,18 @@ var Models = class _Models extends BaseModule {
   async generateContentStreamInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateContentParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       const apiClient = this.apiClient;
       response = apiClient.requestStream({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84530,14 +87581,14 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = generateContentParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:streamGenerateContent?alt=sse", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       const apiClient = this.apiClient;
       response = apiClient.requestStream({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -84596,8 +87647,8 @@ var Models = class _Models extends BaseModule {
   async embedContentInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = embedContentParametersPrivateToVertex(this.apiClient, params, params);
       let endpointUrl = "{model}:predict";
@@ -84606,13 +87657,13 @@ var Models = class _Models extends BaseModule {
       } else if (params.embeddingApiType === EmbeddingApiType.EMBED_CONTENT) {
         endpointUrl = "{model}:embedContent";
       }
-      path13 = formatMap(endpointUrl, body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap(endpointUrl, body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84634,13 +87685,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = embedContentParametersPrivateToMldev(this.apiClient, params);
-      path13 = formatMap("{model}:batchEmbedContents", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:batchEmbedContents", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -84668,17 +87719,17 @@ var Models = class _Models extends BaseModule {
   async generateImagesInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateImagesParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:predict", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:predict", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84708,17 +87759,17 @@ var Models = class _Models extends BaseModule {
   async editImageInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = editImageParametersInternalToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:predict", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:predict", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84748,17 +87799,17 @@ var Models = class _Models extends BaseModule {
   async upscaleImageInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = upscaleImageAPIParametersInternalToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:predict", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:predict", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84809,17 +87860,17 @@ var Models = class _Models extends BaseModule {
   async recontextImage(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = recontextImageParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:predict", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:predict", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84860,17 +87911,17 @@ var Models = class _Models extends BaseModule {
   async segmentImage(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = segmentImageParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:predict", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:predict", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84899,17 +87950,17 @@ var Models = class _Models extends BaseModule {
   async get(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = getModelParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84923,13 +87974,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = getModelParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -84946,17 +87997,17 @@ var Models = class _Models extends BaseModule {
   async listInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = listModelsParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{models_url}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{models_url}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -84978,13 +88029,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = listModelsParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{models_url}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{models_url}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -85026,17 +88077,17 @@ var Models = class _Models extends BaseModule {
   async update(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = updateModelParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -85050,13 +88101,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = updateModelParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "PATCH",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -85084,17 +88135,17 @@ var Models = class _Models extends BaseModule {
   async delete(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = deleteModelParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -85116,13 +88167,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = deleteModelParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -85163,17 +88214,17 @@ var Models = class _Models extends BaseModule {
   async countTokens(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = countTokensParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:countTokens", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:countTokens", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -85195,13 +88246,13 @@ var Models = class _Models extends BaseModule {
       });
     } else {
       const body = countTokensParametersToMldev(this.apiClient, params);
-      path13 = formatMap("{model}:countTokens", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:countTokens", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -85244,17 +88295,17 @@ var Models = class _Models extends BaseModule {
   async computeTokens(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = computeTokensParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:computeTokens", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:computeTokens", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -85284,17 +88335,17 @@ var Models = class _Models extends BaseModule {
   async generateVideosInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = generateVideosParametersToVertex(this.apiClient, params);
-      path13 = formatMap("{model}:predictLongRunning", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{model}:predictLongRunning", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -85400,17 +88451,17 @@ var Operations = class extends BaseModule {
   async getVideosOperationInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = getOperationParametersToVertex(params);
-      path13 = formatMap("{operationName}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{operationName}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -85421,13 +88472,13 @@ var Operations = class extends BaseModule {
       return response;
     } else {
       const body = getOperationParametersToMldev(params);
-      path13 = formatMap("{operationName}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{operationName}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -85441,17 +88492,17 @@ var Operations = class extends BaseModule {
   async fetchPredictVideosOperationInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = fetchPredictOperationParametersToVertex(params);
-      path13 = formatMap("{resourceName}:fetchPredictOperation", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{resourceName}:fetchPredictOperation", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86131,21 +89182,21 @@ var Tokens = class extends BaseModule {
   async create(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("The client.tokens.create method is only supported by the Gemini Developer API.");
     } else {
       const body = createAuthTokenParametersToMldev(this.apiClient, params);
-      path13 = formatMap("auth_tokens", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("auth_tokens", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["config"];
       delete body["_url"];
       delete body["_query"];
       const transformedBody = convertBidiSetupToTokenSetup(body, params.config);
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(transformedBody),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86254,19 +89305,19 @@ var Documents = class extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getDocumentParametersToMldev(params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86286,19 +89337,19 @@ var Documents = class extends BaseModule {
    */
   async delete(params) {
     var _a2, _b;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteDocumentParametersToMldev(params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86309,19 +89360,19 @@ var Documents = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listDocumentsParametersToMldev(params);
-      path13 = formatMap("{parent}/documents", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{parent}/documents", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86409,16 +89460,16 @@ var FileSearchStores = class extends BaseModule {
     if (!pathname.includes("/media/")) {
       throw new Error(`Invalid uri format: ${uri}. Expected to contain /media/`);
     }
-    const queryParams = {};
+    const queryParams2 = {};
     parsedUri.searchParams.forEach((value, key) => {
-      queryParams[key] = value;
+      queryParams2[key] = value;
     });
-    queryParams["alt"] = "media";
+    queryParams2["alt"] = "media";
     const httpOptions = Object.assign({}, config === null || config === void 0 ? void 0 : config.httpOptions);
     const response = await this.apiClient.request({
       path: pathname,
       httpMethod: "GET",
-      queryParams,
+      queryParams: queryParams2,
       httpOptions
     });
     if (response instanceof HttpResponse) {
@@ -86437,19 +89488,19 @@ var FileSearchStores = class extends BaseModule {
   async create(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createFileSearchStoreParametersToMldev(this.apiClient, params);
-      path13 = formatMap("fileSearchStores", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("fileSearchStores", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86471,19 +89522,19 @@ var FileSearchStores = class extends BaseModule {
   async get(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = getFileSearchStoreParametersToMldev(params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86503,19 +89554,19 @@ var FileSearchStores = class extends BaseModule {
    */
   async delete(params) {
     var _a2, _b;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = deleteFileSearchStoreParametersToMldev(params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       await this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "DELETE",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86526,19 +89577,19 @@ var FileSearchStores = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = listFileSearchStoresParametersToMldev(params);
-      path13 = formatMap("fileSearchStores", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("fileSearchStores", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86557,19 +89608,19 @@ var FileSearchStores = class extends BaseModule {
   async uploadToFileSearchStoreInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = uploadToFileSearchStoreParametersToMldev(params);
-      path13 = formatMap("upload/{api_version}/{file_search_store_name}:uploadToFileSearchStore", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("upload/{api_version}/{file_search_store_name}:uploadToFileSearchStore", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -86596,19 +89647,19 @@ var FileSearchStores = class extends BaseModule {
   async importFile(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = importFileParametersToMldev(params);
-      path13 = formatMap("{file_search_store_name}:importFile", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{file_search_store_name}:importFile", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88414,17 +91465,17 @@ var Tunings = class extends BaseModule {
   async getInternal(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = getTuningJobParametersToVertex(params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88444,13 +91495,13 @@ var Tunings = class extends BaseModule {
       });
     } else {
       const body = getTuningJobParametersToMldev(params);
-      path13 = formatMap("{name}", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -88473,17 +91524,17 @@ var Tunings = class extends BaseModule {
   async listInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = listTuningJobsParametersToVertex(params);
-      path13 = formatMap("tuningJobs", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("tuningJobs", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "GET",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88521,17 +91572,17 @@ var Tunings = class extends BaseModule {
   async cancel(params) {
     var _a2, _b, _c, _d;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = cancelTuningJobParametersToVertex(params);
-      path13 = formatMap("{name}:cancel", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}:cancel", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88553,13 +91604,13 @@ var Tunings = class extends BaseModule {
       });
     } else {
       const body = cancelTuningJobParametersToMldev(params);
-      path13 = formatMap("{name}:cancel", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{name}:cancel", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_c = params.config) === null || _c === void 0 ? void 0 : _c.httpOptions,
@@ -88584,17 +91635,17 @@ var Tunings = class extends BaseModule {
   async tuneInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = createTuningJobParametersPrivateToVertex(params, params);
-      path13 = formatMap("tuningJobs", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("tuningJobs", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88619,19 +91670,19 @@ var Tunings = class extends BaseModule {
   async tuneMldevInternal(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       throw new Error("This method is only supported by the Gemini Developer API.");
     } else {
       const body = createTuningJobParametersPrivateToMldev(params);
-      path13 = formatMap("tunedModels", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("tunedModels", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88654,17 +91705,17 @@ var Tunings = class extends BaseModule {
   async validateReward(params) {
     var _a2, _b;
     let response;
-    let path13 = "";
-    let queryParams = {};
+    let path16 = "";
+    let queryParams2 = {};
     if (this.apiClient.isVertexAI()) {
       const body = validateRewardParametersToVertex(params);
-      path13 = formatMap("{parent}/tuningJobs:validateReinforcementTuningReward", body["_url"]);
-      queryParams = body["_query"];
+      path16 = formatMap("{parent}/tuningJobs:validateReinforcementTuningReward", body["_url"]);
+      queryParams2 = body["_query"];
       delete body["_url"];
       delete body["_query"];
       response = this.apiClient.request({
-        path: path13,
-        queryParams,
+        path: path16,
+        queryParams: queryParams2,
         body: JSON.stringify(body),
         httpMethod: "POST",
         httpOptions: (_a2 = params.config) === null || _a2 === void 0 ? void 0 : _a2.httpOptions,
@@ -88776,7 +91827,7 @@ var NodeUploader = class {
   async stat(file) {
     const fileStat = { size: 0, type: void 0 };
     if (typeof file === "string") {
-      const originalStat = await fs13.stat(file);
+      const originalStat = await fs16.stat(file);
       fileStat.size = originalStat.size;
       fileStat.type = this.inferMimeType(file);
       return fileStat;
@@ -88922,9 +91973,9 @@ var NodeUploader = class {
     let response = new HttpResponse(new Response());
     let uploadCommand = "upload";
     let fileHandle;
-    const fileName = path11.basename(file);
+    const fileName = path14.basename(file);
     try {
-      fileHandle = await fs13.open(file, "r");
+      fileHandle = await fs16.open(file, "r");
       if (!fileHandle) {
         throw new Error(`Failed to open file`);
       }
@@ -89612,6 +92663,9 @@ RULES:
 // server/adminApi.ts
 init_adminSettingsStore();
 init_siteControlCenter();
+init_telemetry();
+init_storageService();
+init_uploadSecurity();
 init_email();
 init_emailTemplateService();
 init_notificationService();
@@ -89638,11 +92692,19 @@ var PROTECTED_MASTER_ADMINS = /* @__PURE__ */ new Set(["hackifypro@gmail.com", "
 function isProtectedMasterAdmin(email) {
   return Boolean(email && PROTECTED_MASTER_ADMINS.has(String(email).trim().toLowerCase()));
 }
-async function parseJsonBody(req) {
+async function parseJsonBody(req, maxBytes = 2 * 1024 * 1024) {
   const preParsed = req.body;
   if (preParsed !== void 0 && preParsed !== null) {
-    if (typeof preParsed === "object") return preParsed;
+    if (typeof preParsed === "object") {
+      if (Buffer.byteLength(JSON.stringify(preParsed), "utf8") > maxBytes) {
+        throw new Error("PAYLOAD_TOO_LARGE");
+      }
+      return preParsed;
+    }
     if (typeof preParsed === "string") {
+      if (Buffer.byteLength(preParsed, "utf8") > maxBytes) {
+        throw new Error("PAYLOAD_TOO_LARGE");
+      }
       try {
         return JSON.parse(preParsed);
       } catch {
@@ -89650,22 +92712,34 @@ async function parseJsonBody(req) {
       }
     }
   }
-  return new Promise((resolve3) => {
-    let body = "";
+  return new Promise((resolve3, reject) => {
+    const chunks = [];
+    let totalBytes = 0;
+    let aborted = false;
     req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 2 * 1024 * 1024) {
-        resolve3({});
+      if (aborted) return;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        aborted = true;
+        reject(new Error("PAYLOAD_TOO_LARGE"));
+        return;
       }
+      chunks.push(buf);
     });
     req.on("end", () => {
+      if (aborted) return;
+      if (totalBytes === 0) return resolve3({});
       try {
-        resolve3(body ? JSON.parse(body) : {});
+        const raw = Buffer.concat(chunks).toString("utf8");
+        resolve3(raw ? JSON.parse(raw) : {});
       } catch {
         resolve3({});
       }
     });
-    req.on("error", () => resolve3({}));
+    req.on("error", () => {
+      if (!aborted) resolve3({});
+    });
   });
 }
 function getClientIp(req) {
@@ -91497,6 +94571,14 @@ ${noteLine}` : noteLine;
       }
       const smtpCfg = await getEffectiveSmtpConfig();
       const memoryUsage = process.memoryUsage();
+      const [scanner, healthMatrix] = await Promise.all([
+        getMalwareScannerStatus(),
+        getFullHealthMatrix().catch(() => null)
+      ]);
+      const storage = getStorageUtilizationStats();
+      const telemetry = getTelemetrySnapshot();
+      const concurrency = getConcurrencyMetrics();
+      const cache = appCache.getStats();
       sendJson(res, 200, {
         success: true,
         health: {
@@ -91518,6 +94600,12 @@ ${noteLine}` : noteLine;
             heapUsedMb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
             rssMb: Math.round(memoryUsage.rss / 1024 / 1024)
           },
+          telemetry,
+          concurrency,
+          cache,
+          storage,
+          scanner,
+          healthMatrix,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
         }
       });
@@ -91534,6 +94622,24 @@ ${noteLine}` : noteLine;
         } catch {
         }
       }
+      const verifiedSnapshots = getBackupSnapshots().map((snap) => ({
+        id: snap.id,
+        backup_name: `Verified Snapshot (${snap.totalRecords} records)`,
+        backup_type: snap.backupType,
+        status: snap.status,
+        file_size_bytes: snap.byteSize,
+        storage_location: snap.storageLocation,
+        checksum: `sha256:${snap.checksumSha256}`,
+        restore_verified: snap.restoreVerified,
+        balance_verified: snap.balanceVerified,
+        record_counts: snap.recordCounts,
+        triggered_by: snap.createdBy,
+        created_at: snap.createdAt
+      }));
+      const seen = new Set(backups.map((b) => b.id));
+      for (const snap of verifiedSnapshots) {
+        if (!seen.has(snap.id)) backups.unshift(snap);
+      }
       sendJson(res, 200, { success: true, backups });
       return true;
     }
@@ -91541,40 +94647,73 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "backups.manage");
       if (!auth) return true;
       const body = await parseJsonBody(req);
-      const backupType = body.backup_type || "manual";
-      const backupName = `Manual Snapshot \u2014 ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}`;
-      const fakeChecksum = `sha256:${generateCryptoToken(16)}`;
+      const backupType = String(body.backup_type || "manual").slice(0, 40);
+      const snapshot = await createLogicalBackupAndVerifyRestore(auth.authUser.email, backupType);
+      const backupName = `Verified ${backupType} Snapshot \u2014 ${snapshot.createdAt.split("T")[0]}`;
       let backupRecord = {
-        id: `bkp_${Date.now()}`,
+        id: snapshot.id,
         backup_name: backupName,
-        backup_type: backupType,
-        status: "completed",
-        file_size_bytes: 3145728,
-        storage_location: "supabase://backups/manual_snapshot.dump",
-        checksum: fakeChecksum,
+        backup_type: snapshot.backupType,
+        status: snapshot.status,
+        file_size_bytes: snapshot.byteSize,
+        storage_location: snapshot.storageLocation,
+        checksum: `sha256:${snapshot.checksumSha256}`,
+        restore_verified: snapshot.restoreVerified,
+        balance_verified: snapshot.balanceVerified,
+        record_counts: snapshot.recordCounts,
         triggered_by: auth.authUser.email,
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
+        created_at: snapshot.createdAt
       };
       if (isDatabaseAvailable()) {
         try {
           const insRes = await query(
             `INSERT INTO public.system_backups (backup_name, backup_type, status, file_size_bytes, storage_location, checksum, triggered_by, details)
-             VALUES ($1, $2, 'completed', 3145728, 'supabase://backups/manual_snapshot.dump', $3, $4, '{"tables_included": 19, "verified": true}')
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
              RETURNING *`,
-            [backupName, backupType, fakeChecksum, auth.authUser.email]
+            [
+              backupName,
+              snapshot.backupType,
+              snapshot.status,
+              snapshot.byteSize,
+              snapshot.storageLocation,
+              `sha256:${snapshot.checksumSha256}`,
+              auth.authUser.email,
+              JSON.stringify({
+                totalRecords: snapshot.totalRecords,
+                recordCounts: snapshot.recordCounts,
+                restoreVerified: snapshot.restoreVerified,
+                balanceVerified: snapshot.balanceVerified
+              })
+            ]
           );
-          if (insRes.rows[0]) backupRecord = insRes.rows[0];
+          if (insRes.rows[0]) {
+            backupRecord = {
+              ...insRes.rows[0],
+              restore_verified: snapshot.restoreVerified,
+              balance_verified: snapshot.balanceVerified,
+              record_counts: snapshot.recordCounts
+            };
+          }
           await logSecurityEvent("SYSTEM_BACKUP_TRIGGERED", {
             userEmail: auth.authUser.email,
             actorRole: auth.role,
             ipAddress: clientIp,
-            details: { backupName }
+            details: {
+              backupId: snapshot.id,
+              restoreVerified: snapshot.restoreVerified,
+              totalRecords: snapshot.totalRecords
+            }
           }).catch(() => {
           });
         } catch {
         }
       }
-      sendJson(res, 201, { success: true, message: "Database backup successfully generated.", backup: backupRecord });
+      sendJson(res, 201, {
+        success: true,
+        message: snapshot.restoreVerified ? `Logical backup created (${snapshot.totalRecords} records) and restore integrity verified.` : "Backup snapshot created, but restore verification reported a discrepancy.",
+        backup: backupRecord,
+        snapshot
+      });
       return true;
     }
     if (pathname === "/api/admin/database/health-matrix" && method === "GET") {
@@ -91630,6 +94769,13 @@ ${noteLine}` : noteLine;
       }).catch(() => {
       });
       sendJson(res, 200, { success: true, snapshot, matrix: getFullHealthMatrix() });
+      return true;
+    }
+    if (pathname === "/api/admin/database/alerts/retry" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "system.read");
+      if (!auth) return true;
+      const result = await drainPendingEmailAlertQueue();
+      sendJson(res, 200, { success: true, result, matrix: getFullHealthMatrix() });
       return true;
     }
     if (pathname === "/api/admin/roles" && method === "GET") {
@@ -93645,8 +96791,8 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/control-center" && method === "GET") {
       const auth = await verifyAdminAuth(req, res, "settings.manage");
       if (!auth) return true;
-      const state2 = await getControlCenterAdminState();
-      sendJson(res, 200, { success: true, ...state2 });
+      const state3 = await getControlCenterAdminState();
+      sendJson(res, 200, { success: true, ...state3 });
       return true;
     }
     if (pathname === "/api/admin/control-center/draft" && method === "PUT") {
@@ -93671,11 +96817,11 @@ ${noteLine}` : noteLine;
       const auth = await verifyAdminAuth(req, res, "settings.manage");
       if (!auth) return true;
       await discardControlCenterDraft({ id: auth.authUser.id, email: auth.authUser.email });
-      const state2 = await getControlCenterAdminState();
+      const state3 = await getControlCenterAdminState();
       sendJson(res, 200, {
         success: true,
         message: "Unpublished draft discarded.",
-        ...state2
+        ...state3
       });
       return true;
     }
@@ -93745,9 +96891,19 @@ ${noteLine}` : noteLine;
     if (pathname === "/api/admin/control-center/upload-asset" && method === "POST") {
       const auth = await verifyAdminAuth(req, res, "settings.manage");
       if (!auth) return true;
-      const body = await parseJsonBody(req);
+      const body = await parseJsonBody(req, 18 * 1024 * 1024);
       const allowedScopes = /* @__PURE__ */ new Set(["user_app", "admin_app", "staff_app", "website", "general"]);
-      const allowedSlots = /* @__PURE__ */ new Set(["logo", "favicon", "pwa_icon", "og_image", "hero_image", "banner", "splash"]);
+      const allowedSlots = /* @__PURE__ */ new Set([
+        "logo",
+        "sidebar_logo",
+        "favicon",
+        "pwa_icon",
+        "notification_icon",
+        "og_image",
+        "hero_image",
+        "banner",
+        "splash"
+      ]);
       const scope = allowedScopes.has(String(body.scope)) ? body.scope : "general";
       const slot = allowedSlots.has(String(body.slot)) ? body.slot : "logo";
       const dataUrl = String(body.dataUrl || body.content || "").trim();
@@ -93755,9 +96911,15 @@ ${noteLine}` : noteLine;
         scope,
         slot,
         dataUrl,
+        filename: typeof body.filename === "string" ? body.filename : void 0,
+        allowSvg: Boolean(body.allowSvg) === true,
+        optimizedDataUrl: typeof body.optimizedDataUrl === "string" ? body.optimizedDataUrl : void 0,
+        variants: body.variants && typeof body.variants === "object" ? body.variants : void 0,
         width: typeof body.width === "number" ? body.width : void 0,
         height: typeof body.height === "number" ? body.height : void 0,
-        actorEmail: auth.authUser.email
+        actorId: auth.authUser.id,
+        actorEmail: auth.authUser.email,
+        ipAddress: clientIp
       });
       if (!saved.success || !saved.asset) {
         await logSecurityEvent("BRANDING_ASSET_REJECTED", {
@@ -93765,10 +96927,16 @@ ${noteLine}` : noteLine;
           userEmail: auth.authUser.email,
           actorRole: auth.role,
           ipAddress: clientIp,
-          details: { scope, slot, reason: saved.error }
+          details: { scope, slot, reason: saved.error, scanStatus: saved.scanStatus }
         }).catch(() => {
         });
-        sendJson(res, 400, { success: false, message: saved.error || "Branding image rejected." });
+        const code = saved.scanStatus === "quarantined_pending" ? 202 : 400;
+        sendJson(res, code, {
+          success: false,
+          scanStatus: saved.scanStatus,
+          scannerEngine: saved.scannerEngine,
+          message: saved.error || "Branding image rejected."
+        });
         return true;
       }
       await logSecurityEvent("BRANDING_ASSET_UPLOADED", {
@@ -93776,13 +96944,26 @@ ${noteLine}` : noteLine;
         userEmail: auth.authUser.email,
         actorRole: auth.role,
         ipAddress: clientIp,
-        details: { assetId: saved.asset.id, scope, slot, mimeType: saved.asset.mimeType, byteSize: saved.asset.byteSize }
+        details: {
+          assetId: saved.asset.id,
+          originalAssetId: saved.originalAsset?.quarantineId,
+          scope,
+          slot,
+          mimeType: saved.asset.mimeType,
+          byteSize: saved.asset.byteSize,
+          originalBytes: saved.originalAsset?.byteSize,
+          scannerEngine: saved.scannerEngine
+        }
       }).catch(() => {
       });
       sendJson(res, 201, {
         success: true,
-        message: "Branding asset validated, sanitized, and stored.",
-        asset: saved.asset
+        message: "Branding asset validated, scanned, optimized, and stored.",
+        asset: saved.asset,
+        originalAsset: saved.originalAsset,
+        variants: saved.variants,
+        scannerEngine: saved.scannerEngine,
+        scanStatus: saved.scanStatus
       });
       return true;
     }
@@ -94243,19 +97424,69 @@ ${noteLine}` : noteLine;
           poolStatus = "fallback";
         }
       }
+      const pgPool = getDbPoolDiagnostics();
+      const postgrest = getPostgrestClientMetrics();
+      const failoverState = getFailoverState();
       sendJson(res, 200, {
         success: true,
         database: {
           tables,
           poolStatus,
+          pgPool,
+          postgrest,
+          failoverState,
           ssl: true,
-          connectionPool: poolStatus === "healthy" ? "Supabase PostgreSQL Pooler (Port 6543 IPv4)" : "Supabase HTTPS REST Fallback Active"
+          connectionPool: poolStatus === "healthy" ? pgPool.connectionMode === "transaction_pooler" ? `Supabase Supavisor Transaction Pooler (Port ${pgPool.port || 6543})` : pgPool.connectionMode === "direct_postgres" ? `Direct PostgreSQL (Port ${pgPool.port || 5432} \u2014 switch to 6543 recommended)` : `PostgreSQL Pool (${pgPool.connectionMode})` : failoverState.activeProvider === "firebase" ? "Firebase Secondary Failover Active" : "Supabase HTTPS REST Fallback (DATABASE_URL not active)"
         }
       });
       return true;
     }
+    if (pathname === "/api/admin/security/uploads" && method === "GET") {
+      const auth = await verifyAdminAuth(req, res, "security.read");
+      if (!auth) return true;
+      const [dashboard, storage] = await Promise.all([
+        getUploadSecurityDashboardState(),
+        Promise.resolve(getStorageUtilizationStats())
+      ]);
+      sendJson(res, 200, { success: true, ...dashboard, storage });
+      return true;
+    }
+    if (pathname === "/api/admin/security/quarantine/action" && method === "POST") {
+      const auth = await verifyAdminAuth(req, res, "security.manage");
+      if (!auth) return true;
+      const body = await parseJsonBody(req);
+      const quarantineId = String(body.quarantineId || "").trim();
+      const action = body.action === "approve" ? "approve" : body.action === "delete" ? "delete" : null;
+      if (!quarantineId || !action) {
+        sendJson(res, 400, { success: false, message: "quarantineId and valid action (approve | delete) are required." });
+        return true;
+      }
+      const result = await adminReviewQuarantineItem({
+        quarantineId,
+        action,
+        adminEmail: auth.authUser.email
+      });
+      await logSecurityEvent("ADMIN_QUARANTINE_ACTION", {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { quarantineId, action, success: result.success }
+      }).catch(() => {
+      });
+      sendJson(res, result.success ? 200 : 400, result);
+      return true;
+    }
     return false;
   } catch (err) {
+    if (err?.message === "PAYLOAD_TOO_LARGE") {
+      sendJson(res, 413, {
+        success: false,
+        code: "PAYLOAD_TOO_LARGE",
+        message: "Uploaded request payload exceeds the maximum allowed server limit."
+      });
+      return true;
+    }
     console.error(`[Admin API Error] ${method} ${pathname}:`, err);
     sendJson(res, 500, {
       success: false,
@@ -94266,24 +97497,24 @@ ${noteLine}` : noteLine;
 }
 
 // server/aiFinanceApi.ts
-import crypto25 from "crypto";
-import fs14 from "fs";
-import path12 from "path";
+import crypto27 from "crypto";
+import fs17 from "fs";
+import path15 from "path";
 init_db();
 init_security();
 
 // server/privacyConsentApi.ts
-import crypto24 from "crypto";
+import crypto26 from "crypto";
 init_db();
 init_security();
 
 // server/supabaseRestUdhar.ts
-import crypto23 from "crypto";
+import crypto25 from "crypto";
 init_supabaseRestFallback();
 
 // server/userAccountExtensions.ts
 init_db();
-import crypto22 from "crypto";
+import crypto24 from "crypto";
 init_email();
 init_notificationService();
 init_siteControlCenter();
@@ -94331,7 +97562,7 @@ function sanitizeUpiText(raw, maxLen) {
 }
 
 // server/webauthn.ts
-import crypto20 from "crypto";
+import crypto22 from "crypto";
 var CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 var challengeStore = /* @__PURE__ */ new Map();
 function pruneChallenges() {
@@ -94350,8 +97581,8 @@ function bufferToBase64Url(buf) {
 }
 function issueWebAuthnChallenge(params) {
   pruneChallenges();
-  const challengeId = crypto20.randomBytes(16).toString("hex");
-  const challenge = bufferToBase64Url(crypto20.randomBytes(32));
+  const challengeId = crypto22.randomBytes(16).toString("hex");
+  const challenge = bufferToBase64Url(crypto22.randomBytes(32));
   const expiresAt = Date.now() + CHALLENGE_TTL_MS;
   challengeStore.set(challengeId, {
     challenge,
@@ -94472,7 +97703,7 @@ function coseKeyMapToSpkiPem(coseMap) {
     if (!Buffer.isBuffer(x2) || !Buffer.isBuffer(y)) {
       throw new Error("Invalid COSE EC2 public key coordinates");
     }
-    const keyObj = crypto20.createPublicKey({
+    const keyObj = crypto22.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -94492,7 +97723,7 @@ function coseKeyMapToSpkiPem(coseMap) {
     if (!Buffer.isBuffer(n) || !Buffer.isBuffer(e2)) {
       throw new Error("Invalid COSE RSA public key components");
     }
-    const keyObj = crypto20.createPublicKey({
+    const keyObj = crypto22.createPublicKey({
       key: {
         kty: "RSA",
         n: bufferToBase64Url(n),
@@ -94529,8 +97760,8 @@ function extractCredentialFromAttestation(params) {
     throw new Error("Invalid authenticatorData in attestationObject.");
   }
   const rpIdHash = authData.subarray(0, 32);
-  const expectedRpIdHash = crypto20.createHash("sha256").update(params.expectedRpId).digest();
-  if (!crypto20.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+  const expectedRpIdHash = crypto22.createHash("sha256").update(params.expectedRpId).digest();
+  if (!crypto22.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
     throw new Error("WebAuthn RP ID hash verification failed.");
   }
   const flags = authData[32];
@@ -94556,7 +97787,7 @@ function extractCredentialFromAttestation(params) {
   } catch (err) {
     if (params.publicKeySpkiBase64) {
       const der = base64UrlToBuffer(params.publicKeySpkiBase64);
-      const pubKey = crypto20.createPublicKey({ key: der, format: "der", type: "spki" });
+      const pubKey = crypto22.createPublicKey({ key: der, format: "der", type: "spki" });
       publicKeySpki = pubKey.export({ type: "spki", format: "pem" }).toString();
       algorithm = pubKey.asymmetricKeyType === "rsa" ? -257 : -7;
     } else {
@@ -94586,8 +97817,8 @@ function verifyPasskeyAssertion(params) {
       return { valid: false, newCounter: params.previousCounter, error: "Malformed authenticatorData." };
     }
     const rpIdHash = authDataBuf.subarray(0, 32);
-    const expectedRpIdHash = crypto20.createHash("sha256").update(params.expectedRpId).digest();
-    if (!crypto20.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
+    const expectedRpIdHash = crypto22.createHash("sha256").update(params.expectedRpId).digest();
+    if (!crypto22.timingSafeEqual(rpIdHash, expectedRpIdHash)) {
       return { valid: false, newCounter: params.previousCounter, error: "Passkey RP ID mismatch." };
     }
     const flags = authDataBuf[32];
@@ -94602,11 +97833,11 @@ function verifyPasskeyAssertion(params) {
         error: "Passkey signCount replay check failed. Please re-register this passkey."
       };
     }
-    const clientDataHash = crypto20.createHash("sha256").update(clientDataBuf).digest();
+    const clientDataHash = crypto22.createHash("sha256").update(clientDataBuf).digest();
     const signedData = Buffer.concat([authDataBuf, clientDataHash]);
     const sigBuf = base64UrlToBuffer(params.signature);
-    const publicKey = crypto20.createPublicKey(params.publicKeySpki);
-    const ok = crypto20.verify("sha256", signedData, publicKey, sigBuf);
+    const publicKey = crypto22.createPublicKey(params.publicKeySpki);
+    const ok = crypto22.verify("sha256", signedData, publicKey, sigBuf);
     if (!ok) {
       return { valid: false, newCounter: params.previousCounter, error: "Passkey cryptographic signature invalid." };
     }
@@ -94647,7 +97878,7 @@ function resolveRpContext(reqHeaders) {
 }
 
 // server/firebaseVerify.ts
-import crypto21 from "crypto";
+import crypto23 from "crypto";
 var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 var cachedCerts = null;
 var cachedCertsExpiresAt = 0;
@@ -94690,7 +97921,7 @@ function verifyFirebaseJwtWithKey(idToken, publicKeyOrCert, expectedProjectId, n
   }
   const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, "utf8");
   const signature = base64UrlToBuffer2(sigB64);
-  const verified = crypto21.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
+  const verified = crypto23.verify("RSA-SHA256", signingInput, publicKeyOrCert, signature);
   if (!verified) {
     throw new Error("Firebase ID token signature verification failed.");
   }
@@ -94760,7 +97991,7 @@ function getSbConfig() {
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
   return { url, key };
 }
-async function sbRest(path13, opts = {}) {
+async function sbRest(path16, opts = {}) {
   const { url, key } = getSbConfig();
   const headers = {
     apikey: key,
@@ -94770,7 +98001,7 @@ async function sbRest(path13, opts = {}) {
   if (opts.body !== void 0) headers["Content-Type"] = "application/json";
   if (opts.prefer) headers["Prefer"] = opts.prefer;
   try {
-    const res = await fetch(`${url}/rest/v1/${path13}`, {
+    const res = await fetch(`${url}/rest/v1/${path16}`, {
       method: opts.method || "GET",
       headers,
       body: opts.body !== void 0 ? JSON.stringify(opts.body) : void 0
@@ -94983,7 +98214,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
     };
   }
   let savedRecord = {
-    id: crypto22.randomUUID(),
+    id: crypto24.randomUUID(),
     userId,
     upiId: payload.upiId,
     payeeName: payload.payeeName,
@@ -94994,7 +98225,7 @@ async function upsertSavedUpiProfileForUser(userId, payload) {
   await setUserPrivateMeta(userId, (prev) => {
     const existing = prev.__upi_profile;
     savedRecord = {
-      id: existing?.id || crypto22.randomUUID(),
+      id: existing?.id || crypto24.randomUUID(),
       userId,
       upiId: payload.upiId,
       payeeName: payload.payeeName,
@@ -95247,7 +98478,7 @@ async function saveIdentityForUser(userId, provider, providerUid, providerEmail,
     };
   }
   const record = {
-    id: crypto22.randomUUID(),
+    id: crypto24.randomUUID(),
     userId,
     provider,
     providerUid,
@@ -95443,7 +98674,7 @@ async function savePasskeyForUser(pk) {
   }
   const created = {
     ...pk,
-    id: crypto22.randomUUID(),
+    id: crypto24.randomUUID(),
     createdAt: nowIso,
     lastUsedAt: null
   };
@@ -95872,7 +99103,7 @@ async function handleUserAccountExtensions(req, res, pathname, method, clientIp,
       });
       return true;
     }
-    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto22.randomBytes(24).toString("hex")}`;
+    const placeholderPasswordHash = `OAUTH_NO_PASSWORD_${crypto24.randomBytes(24).toString("hex")}`;
     const initialName = verified.name || verified.email.split("@")[0] || "User";
     const initialMeta = { __profile_completed: false };
     let createdUser = null;
@@ -96949,15 +100180,465 @@ function parseConnectionRequestKey(rawKey) {
   return { valid: false, kind: "invalid", raw, uuid: null, requesterUserId: null, targetUserId: null };
 }
 
+// src/lib/financialIntelligenceEngine.ts
+function isTransferTransaction(tx) {
+  if (!tx) return false;
+  if (tx.metadata?.is_transfer === true || tx.metadata?.transfer_type) return true;
+  if (tx.transaction_type === "transfer") return true;
+  return false;
+}
+function normalizeMerchantKey(raw) {
+  return String(raw || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+function getDisplayCategoryLabel(category, subcategory) {
+  if (category === "food") {
+    if (subcategory === "delivery") return "Food Delivery";
+    if (subcategory === "beverages") return "Beverages";
+    if (subcategory === "snacks") return "Snacks";
+    if (subcategory === "restaurant") return "Restaurant";
+    if (subcategory === "mess_tiffin") return "Mess / Tiffin";
+    if (subcategory === "other_food") return "Other Food";
+    return "Food & Dining";
+  }
+  if (category === "room") {
+    if (subcategory === "grocery") return "Grocery Expenses";
+    if (subcategory === "rent") return "Room Rent";
+    if (subcategory === "electricity") return "Electricity Bill";
+    if (subcategory === "gas") return "Gas Expenses";
+    return "Room";
+  }
+  if (category === "other") {
+    if (subcategory === "travel") return "Travel";
+    if (subcategory === "shopping") return "Shopping";
+    if (subcategory === "health") return "Medical / Health";
+    if (subcategory === "bills") return "Bills";
+    if (subcategory === "emi_loan") return "EMI / Loan";
+    if (subcategory === "entertainment") return "Entertainment";
+    if (subcategory === "education") return "Education";
+    if (subcategory === "personal_care") return "Personal Care";
+    if (subcategory === "other_expense" || subcategory === "other_general") return "Other Expenses";
+    return "Other Expenses";
+  }
+  if (category === "home" || category === "received") {
+    if (subcategory === "home_expense") return "Home Expense";
+    if (subcategory === "salary") return "Salary";
+    if (subcategory === "freelancing" || subcategory === "freelance") return "Freelance";
+    if (subcategory === "business") return "Business";
+    if (subcategory === "family" || subcategory === "received_home") return "Received from Person";
+    if (subcategory === "gift") return "Gift";
+    if (subcategory === "refund") return "Refund";
+    if (subcategory === "loan_received" || subcategory === "udhar_received") return "Borrowed / Loan";
+    if (subcategory === "other_income") return "Other Income";
+    return "Received Money";
+  }
+  if (category === "people") return "People (Udhar)";
+  return "Other Expenses";
+}
+var DETERMINISTIC_RULES = [
+  // Food Delivery & Dining
+  {
+    patterns: [/\bswiggy\b/i, /\bzomato\b/i, /\bubereats\b/i, /\beatclub\b/i, /\bmagicpin\b/i],
+    category: "food",
+    subcategory: "delivery",
+    transaction_type: "expense",
+    confidence: 0.96
+  },
+  {
+    patterns: [/\bstarbucks\b/i, /\bcafe coffee day\b/i, /\bccd\b/i, /\bchai\b/i, /\bcoffee\b/i, /\btea\b/i, /\bchaayos\b/i],
+    category: "food",
+    subcategory: "beverages",
+    transaction_type: "expense",
+    confidence: 0.9
+  },
+  {
+    patterns: [/\bdominos\b/i, /\bpizza hut\b/i, /\bkfc\b/i, /\bmcdonald/i, /\bburger king\b/i, /\bsubway\b/i, /\bhaldiram/i, /\bbiryani\b/i, /\bsamosa\b/i, /\bpizza\b/i, /\bburger\b/i, /\bsnacks?\b/i],
+    category: "food",
+    subcategory: "snacks",
+    transaction_type: "expense",
+    confidence: 0.9
+  },
+  {
+    patterns: [/\brestaurant\b/i, /\bdhaba\b/i, /\bdinner\b/i, /\blunch\b/i, /\bbreakfast\b/i, /\bthali\b/i, /\bcafe\b/i, /\bbakery\b/i],
+    category: "food",
+    subcategory: "restaurant",
+    transaction_type: "expense",
+    confidence: 0.86
+  },
+  {
+    patterns: [/\bmess\b/i, /\btiffin\b/i, /\bcanteen\b/i],
+    category: "food",
+    subcategory: "mess_tiffin",
+    transaction_type: "expense",
+    confidence: 0.92
+  },
+  // Groceries & Room Utilities
+  {
+    patterns: [/\bblinkit\b/i, /\bzepto\b/i, /\binstamart\b/i, /\bbigbasket\b/i, /\bdmart\b/i, /\breliance fresh\b/i, /\bsmart bazaar\b/i, /\bgrocer/i, /\bvegetable/i, /\bsabzi\b/i, /\bmilk\b/i, /\brice\b/i, /\batta\b/i, /\bkirana\b/i, /\bsupermarket\b/i],
+    category: "room",
+    subcategory: "grocery",
+    transaction_type: "expense",
+    confidence: 0.92
+  },
+  {
+    patterns: [/\brent\b/i, /\blandlord\b/i, /\bpg rent\b/i, /\bflat rent\b/i, /\broom rent\b/i, /\bhostel fee\b/i],
+    category: "room",
+    subcategory: "rent",
+    transaction_type: "expense",
+    confidence: 0.94
+  },
+  {
+    patterns: [/\belectricity\b/i, /\bbescom\b/i, /\btata power\b/i, /\badani electricity\b/i, /\bpower bill\b/i, /\bbijli\b/i, /\bmahavitaran\b/i, /\bbses\b/i],
+    category: "room",
+    subcategory: "electricity",
+    transaction_type: "expense",
+    confidence: 0.94
+  },
+  {
+    patterns: [/\bindane\b/i, /\bbharat gas\b/i, /\bhp gas\b/i, /\blpg\b/i, /\bcylinder\b/i, /\bgas refill\b/i],
+    category: "room",
+    subcategory: "gas",
+    transaction_type: "expense",
+    confidence: 0.94
+  },
+  // Fuel & Travel
+  {
+    patterns: [/\bhp petrol\b/i, /\bindian ?oil\b/i, /\bbharat petroleum\b/i, /\bbpcl\b/i, /\biocl\b/i, /\bpetrol\b/i, /\bdiesel\b/i, /\bfuel\b/i, /\bcng\b/i],
+    category: "other",
+    subcategory: "travel",
+    transaction_type: "expense",
+    confidence: 0.93
+  },
+  {
+    patterns: [/\buber\b/i, /\bola\b/i, /\brapido\b/i, /\bmetro\b/i, /\birctc\b/i, /\bredbus\b/i, /\bmakemytrip\b/i, /\bindigo\b/i, /\bair india\b/i, /\bauto fare\b/i, /\bcab\b/i, /\btrain\b/i, /\bflight\b/i, /\bbus ticket\b/i],
+    category: "other",
+    subcategory: "travel",
+    transaction_type: "expense",
+    confidence: 0.92
+  },
+  // Shopping
+  {
+    patterns: [/\bamazon\b/i, /\bflipkart\b/i, /\bmyntra\b/i, /\bajio\b/i, /\bmeesho\b/i, /\bnykaa\b/i, /\bcroma\b/i, /\bdecathlon\b/i, /\bshopping\b/i, /\bclothes\b/i, /\bshoes\b/i],
+    category: "other",
+    subcategory: "shopping",
+    transaction_type: "expense",
+    confidence: 0.9
+  },
+  // Bills, Telecom & Subscriptions
+  {
+    patterns: [/\bnetflix\b/i, /\bspotify\b/i, /\bamazon prime\b/i, /\bhotstar\b/i, /\byoutube premium\b/i, /\bjio\b/i, /\bairtel\b/i, /\bvi recharge\b/i, /\bbroadband\b/i, /\bwifi\b/i, /\bact fibernet\b/i, /\bmobile recharge\b/i, /\bsubscription\b/i, /\bicloud\b/i, /\bgoogle one\b/i],
+    category: "other",
+    subcategory: "bills",
+    transaction_type: "expense",
+    confidence: 0.92
+  },
+  // Health & Pharmacy
+  {
+    patterns: [/\bapollo pharmacy\b/i, /\b1mg\b/i, /\bpharmeasy\b/i, /\bnetmeds\b/i, /\bmedplus\b/i, /\bpharmacy\b/i, /\bmedicine\b/i, /\bhospital\b/i, /\bclinic\b/i, /\bdoctor\b/i, /\bdental\b/i, /\blab test\b/i],
+    category: "other",
+    subcategory: "health",
+    transaction_type: "expense",
+    confidence: 0.93
+  },
+  // Entertainment
+  {
+    patterns: [/\bbookmyshow\b/i, /\bpvr\b/i, /\binox\b/i, /\bmovie\b/i, /\bcinema\b/i, /\bconcert\b/i, /\bgaming\b/i, /\bsteam\b/i, /\bplaystation\b/i],
+    category: "other",
+    subcategory: "entertainment",
+    transaction_type: "expense",
+    confidence: 0.91
+  },
+  // Personal Care
+  {
+    patterns: [/\bsalon\b/i, /\bhaircut\b/i, /\bbarber\b/i, /\bgym\b/i, /\bcult\.?fit\b/i, /\blaundry\b/i, /\bdry clean\b/i],
+    category: "other",
+    subcategory: "personal_care",
+    transaction_type: "expense",
+    confidence: 0.89
+  },
+  // Education
+  {
+    patterns: [/\budemy\b/i, /\bcoursera\b/i, /\bcollege fee\b/i, /\btuition\b/i, /\bbooks?\b/i, /\bstationery\b/i, /\bexam fee\b/i, /\bcourse\b/i],
+    category: "other",
+    subcategory: "education",
+    transaction_type: "expense",
+    confidence: 0.9
+  },
+  // Income / Salary
+  {
+    patterns: [/\bsalary\b/i, /\bpayroll\b/i, /\bstipend\b/i, /\bmonthly pay\b/i, /\bwages\b/i],
+    category: "home",
+    subcategory: "salary",
+    transaction_type: "income",
+    confidence: 0.95
+  },
+  {
+    patterns: [/\bfreelance\b/i, /\bclient payment\b/i, /\binvoice paid\b/i, /\bconsulting\b/i],
+    category: "home",
+    subcategory: "freelance",
+    transaction_type: "income",
+    confidence: 0.9
+  },
+  {
+    patterns: [/\bfrom home\b/i, /\bfamily support\b/i, /\bpocket money\b/i, /\bpapa\b/i, /\bmom\b/i],
+    category: "home",
+    subcategory: "received_home",
+    transaction_type: "income",
+    confidence: 0.88
+  },
+  {
+    patterns: [/\brefund\b/i, /\bcashback\b/i, /\breward\b/i],
+    category: "home",
+    subcategory: "cashback",
+    transaction_type: "income",
+    confidence: 0.87
+  }
+];
+function categorizeTransactionDeterministic(input, userRules = [], userTransactions = []) {
+  const combined = [input.merchant, input.title, input.description, input.notes].filter(Boolean).join(" ").trim();
+  if (combined.length < 2) return null;
+  const normalized2 = normalizeMerchantKey(combined);
+  const merchantRaw = (input.merchant || input.title || input.description || "").trim();
+  const sortedRules = [...userRules].sort((a, b) => b.merchant_pattern.length - a.merchant_pattern.length);
+  for (const rule of sortedRules) {
+    const patternNorm = normalizeMerchantKey(rule.merchant_pattern);
+    if (patternNorm.length >= 2 && normalized2.includes(patternNorm)) {
+      return {
+        category: rule.category,
+        subcategory: rule.subcategory,
+        transaction_type: rule.transaction_type,
+        displayCategory: getDisplayCategoryLabel(rule.category, rule.subcategory),
+        merchant: merchantRaw || rule.merchant_pattern,
+        suggestedDescription: input.description?.trim() || `${merchantRaw || rule.merchant_pattern} (${getDisplayCategoryLabel(rule.category, rule.subcategory)})`,
+        confidence: 0.98,
+        source: "user_rule",
+        matchedPattern: rule.merchant_pattern,
+        needsAiFallback: false
+      };
+    }
+  }
+  if (userTransactions.length > 0 && normalized2.length >= 3) {
+    const tokens = normalized2.split(" ").filter((t2) => t2.length >= 3);
+    const voteMap = /* @__PURE__ */ new Map();
+    for (const tx of userTransactions) {
+      if (tx.is_deleted || tx.category === "people" || isTransferTransaction(tx)) continue;
+      const txText = normalizeMerchantKey(
+        [tx.title, tx.metadata?.spent_at, tx.metadata?.restaurant_name, tx.metadata?.platform, tx.metadata?.grocery_item].filter(Boolean).join(" ")
+      );
+      if (!txText) continue;
+      const exactMatch = txText === normalized2 || txText.includes(normalized2) || normalized2.includes(txText);
+      const tokenOverlap = tokens.length > 0 && tokens.some((tok) => txText.split(" ").includes(tok));
+      if (exactMatch || tokens.length >= 2 && tokenOverlap) {
+        const key = `${tx.category}:${tx.subcategory}:${tx.transaction_type}`;
+        const existing = voteMap.get(key);
+        const weight = exactMatch ? 3 : 1;
+        if (existing) existing.count += weight;
+        else {
+          voteMap.set(key, {
+            count: weight,
+            category: tx.category,
+            subcategory: tx.subcategory,
+            type: tx.transaction_type
+          });
+        }
+      }
+    }
+    let best = null;
+    for (const entry of voteMap.values()) {
+      if (!best || entry.count > best.count) best = entry;
+    }
+    if (best && best.count >= 3) {
+      return {
+        category: best.category,
+        subcategory: best.subcategory,
+        transaction_type: best.type,
+        displayCategory: getDisplayCategoryLabel(best.category, best.subcategory),
+        merchant: merchantRaw,
+        suggestedDescription: input.description?.trim() || merchantRaw,
+        confidence: Math.min(0.94, 0.78 + best.count * 0.03),
+        source: "history",
+        needsAiFallback: false
+      };
+    }
+  }
+  for (const rule of DETERMINISTIC_RULES) {
+    for (const regex of rule.patterns) {
+      const m2 = combined.match(regex);
+      if (m2) {
+        return {
+          category: rule.category,
+          subcategory: rule.subcategory,
+          transaction_type: rule.transaction_type,
+          displayCategory: getDisplayCategoryLabel(rule.category, rule.subcategory),
+          merchant: merchantRaw || m2[0],
+          suggestedDescription: input.description?.trim() || `${merchantRaw || m2[0]}`,
+          confidence: rule.confidence,
+          source: "rule",
+          matchedPattern: m2[0],
+          needsAiFallback: false
+        };
+      }
+    }
+  }
+  return {
+    category: "other",
+    subcategory: "other_general",
+    transaction_type: "expense",
+    displayCategory: "Other Expense",
+    merchant: merchantRaw,
+    suggestedDescription: input.description?.trim() || merchantRaw,
+    confidence: 0.35,
+    source: "rule",
+    needsAiFallback: true
+  };
+}
+function upsertUserCategorizationRule(existingRules, merchantPattern, category, subcategory, transaction_type) {
+  const cleanPattern = normalizeMerchantKey(merchantPattern);
+  if (cleanPattern.length < 2) return existingRules;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const idx = existingRules.findIndex((r2) => normalizeMerchantKey(r2.merchant_pattern) === cleanPattern);
+  if (idx >= 0) {
+    const updated = [...existingRules];
+    updated[idx] = {
+      ...updated[idx],
+      category,
+      subcategory,
+      transaction_type,
+      usage_count: (updated[idx].usage_count || 1) + 1,
+      updated_at: now
+    };
+    return updated;
+  }
+  return [
+    {
+      id: `rule_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      merchant_pattern: merchantPattern.trim().slice(0, 80),
+      category,
+      subcategory,
+      transaction_type,
+      usage_count: 1,
+      updated_at: now
+    },
+    ...existingRules
+  ];
+}
+var DEFAULT_SAFE_TO_SPEND_PREFS = {
+  minimumBalanceReserve: 0,
+  emergencyReserve: 0,
+  savingsCommitment: 0,
+  essentialExpenseReserve: 0,
+  expectedRemainingIncome: 0,
+  includeExpectedIncome: false,
+  period: "month"
+};
+var DEFAULT_SMART_ALERT_PREFS = {
+  enabled: true,
+  budgetEnabled: true,
+  budgetThresholds: [50, 75, 90, 100],
+  spendingAnomalyEnabled: true,
+  billsEnabled: true,
+  billNoticeDays: [7, 3, 1, 0],
+  lowBalanceEnabled: true,
+  lowBalanceThreshold: 2e3,
+  savingsMilestonesEnabled: true,
+  udharRemindersEnabled: true,
+  quietHoursEnabled: false,
+  quietHoursStart: "22:00",
+  quietHoursEnd: "07:00"
+};
+var ALLOWED_RECEIPT_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+var MAX_RECEIPT_FILE_BYTES = 5 * 1024 * 1024;
+function validateReceiptUpload(mimeType, sizeBytes) {
+  const normalizedMime = String(mimeType || "").toLowerCase().trim();
+  if (!ALLOWED_RECEIPT_MIME_TYPES.includes(normalizedMime)) {
+    return {
+      valid: false,
+      error: "Unsupported file format. Please upload a JPG, PNG, or WEBP receipt image."
+    };
+  }
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return { valid: false, error: "Selected file is empty." };
+  }
+  if (sizeBytes > MAX_RECEIPT_FILE_BYTES) {
+    return {
+      valid: false,
+      error: "Receipt image exceeds the 5 MB limit. Please upload a smaller or compressed image."
+    };
+  }
+  return { valid: true };
+}
+function validateReceiptFileSignature(base64Data, declaredMimeType) {
+  const cleanB64 = String(base64Data || "").replace(/\s+/g, "");
+  if (cleanB64.length < 16) {
+    return { valid: false, error: "Uploaded receipt file is corrupted or incomplete." };
+  }
+  let bytes;
+  try {
+    const headerSlice = cleanB64.slice(0, 32);
+    if (typeof Buffer !== "undefined") {
+      bytes = new Uint8Array(Buffer.from(headerSlice, "base64"));
+    } else {
+      const bin = atob(headerSlice);
+      bytes = new Uint8Array(bin.length);
+      for (let i2 = 0; i2 < bin.length; i2++) bytes[i2] = bin.charCodeAt(i2);
+    }
+  } catch {
+    return { valid: false, error: "Invalid base64 image payload." };
+  }
+  if (bytes.length < 12) {
+    return { valid: false, error: "Uploaded file is too small to be a valid image." };
+  }
+  const isJpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+  const isPng = bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71 && bytes[4] === 13 && bytes[5] === 10 && bytes[6] === 26 && bytes[7] === 10;
+  const isWebp = bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70 && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80;
+  const mime = String(declaredMimeType || "").toLowerCase().trim();
+  if ((mime === "image/jpeg" || mime === "image/jpg") && isJpeg) return { valid: true };
+  if (mime === "image/png" && isPng) return { valid: true };
+  if (mime === "image/webp" && isWebp) return { valid: true };
+  return {
+    valid: false,
+    error: "File content signature does not match a valid JPG, PNG, or WEBP image. Upload rejected for security."
+  };
+}
+
 // server/supabaseRestUdhar.ts
-var DEFAULT_SUPABASE_URL2 = "https://frgrfajnrzqwnevhlrio.supabase.co";
-var DEFAULT_SUPABASE_KEY2 = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+var DEFAULT_SUPABASE_URL3 = "https://frgrfajnrzqwnevhlrio.supabase.co";
+var DEFAULT_SUPABASE_KEY3 = "sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg";
+function sanitizeRestAttachmentUrl(raw) {
+  if (raw === null || raw === void 0) return { valid: true, value: null };
+  const trimmed = String(raw).trim();
+  if (!trimmed) return { valid: true, value: null };
+  if (/[\r\n\0]/.test(trimmed)) return { valid: false, value: null, error: "Invalid attachment reference." };
+  if (trimmed.startsWith("/api/uploads/private?")) {
+    return trimmed.length <= 1200 ? { valid: true, value: trimmed } : { valid: false, value: null, error: "Attachment URL too long." };
+  }
+  if (trimmed.startsWith("data:")) {
+    const m2 = trimmed.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+    if (!m2) return { valid: false, value: null, error: "Only PNG, JPG, JPEG, or WebP attachment images are allowed." };
+    const est = Math.floor(m2[2].length * 3 / 4);
+    if (est <= 0 || est > 5 * 1024 * 1024) return { valid: false, value: null, error: "Attachment exceeds maximum 5 MB limit." };
+    const sig = validateReceiptFileSignature(m2[2], m2[1].toLowerCase());
+    if (!sig.valid) return { valid: false, value: null, error: sig.error || "Attachment signature mismatch." };
+    return { valid: true, value: trimmed };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+      return { valid: false, value: null, error: "Attachment URL must use HTTPS." };
+    }
+    if (/\.(svgz?|html?|xhtml|js|mjs|php|exe|dll|bat|cmd|ps1|sh|jar|apk|msi|scr)(\?|#|$)/i.test(parsed.pathname)) {
+      return { valid: false, value: null, error: "Dangerous attachment file type blocked." };
+    }
+    return { valid: true, value: parsed.toString() };
+  } catch {
+    return { valid: false, value: null, error: "Invalid attachment URL." };
+  }
+}
 function getRestConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL2).replace(/\/+$/, "");
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY2;
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL3).replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY3;
   return { url, key };
 }
-async function sbRest2(path13, options = {}) {
+async function sbRest2(path16, options = {}) {
   const { url, key } = getRestConfig();
   const headers = {
     apikey: key,
@@ -96970,7 +100651,7 @@ async function sbRest2(path13, options = {}) {
   if (options.prefer) {
     headers["Prefer"] = options.prefer;
   }
-  const response = await fetch(`${url}/rest/v1/${path13}`, {
+  const response = await fetch(`${url}/rest/v1/${path16}`, {
     method: options.method || "GET",
     headers,
     body: options.body !== void 0 ? JSON.stringify(options.body) : void 0
@@ -98944,8 +102625,8 @@ async function getMyQrRest(authUser) {
     pairingCode = existing.data[0].pairing_code;
     expiresAt = existing.data[0].expires_at || expiresAt;
   } else {
-    pairingToken = crypto23.randomBytes(32).toString("hex");
-    pairingCode = `MM-${crypto23.randomBytes(3).toString("hex").toUpperCase()}`;
+    pairingToken = crypto25.randomBytes(32).toString("hex");
+    pairingCode = `MM-${crypto25.randomBytes(3).toString("hex").toUpperCase()}`;
     const ins = await sbRest2("qr_pairing_tokens", {
       method: "POST",
       prefer: "return=representation",
@@ -98991,8 +102672,8 @@ async function regenerateQrRest(authUser) {
     method: "PATCH",
     body: { used: true }
   });
-  const pairingToken = crypto23.randomBytes(32).toString("hex");
-  const pairingCode = `MM-${crypto23.randomBytes(3).toString("hex").toUpperCase()}`;
+  const pairingToken = crypto25.randomBytes(32).toString("hex");
+  const pairingCode = `MM-${crypto25.randomBytes(3).toString("hex").toUpperCase()}`;
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toISOString();
   const ins = await sbRest2("qr_pairing_tokens", {
     method: "POST",
@@ -99361,7 +103042,11 @@ async function createUdharTransactionRest(authUser, body) {
   const category = (body.category || "Personal Loan").trim();
   const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
   const description = (body.description || "").trim();
-  const attachmentUrl = body.attachment_url || null;
+  const attCheck = sanitizeRestAttachmentUrl(body.attachment_url);
+  if (!attCheck.valid) {
+    return { status: 400, body: { success: false, code: "INVALID_ATTACHMENT", message: attCheck.error || "Invalid attachment." } };
+  }
+  const attachmentUrl = attCheck.value;
   const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
   if (!["gave", "took"].includes(direction)) {
     return { status: 400, body: { success: false, message: "Direction must be 'gave' or 'took'." } };
@@ -99443,7 +103128,7 @@ async function createUdharTransactionRest(authUser, body) {
   if (!counterpartName) {
     return { status: 400, body: { success: false, message: "Person's name is required." } };
   }
-  const linkId = crypto23.randomUUID();
+  const linkId = crypto25.randomUUID();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   if (registeredUser) {
     const isInstantQr = verifiedCreationMethod === "qr" || verifiedCreationMethod === "code";
@@ -99933,7 +103618,11 @@ async function repayUdharRest(authUser, txId, body) {
   const repayTime = (body.repayment_time || body.repaymentTime || "").trim();
   const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
   const transactionRef = (body.transaction_ref || body.transactionRef || "").trim();
-  const attachmentUrl = (body.attachment_url || body.attachmentUrl || "").trim();
+  const repAttCheck = sanitizeRestAttachmentUrl(body.attachment_url || body.attachmentUrl);
+  if (!repAttCheck.valid) {
+    return { status: 400, body: { success: false, code: "INVALID_ATTACHMENT", message: repAttCheck.error || "Invalid attachment." } };
+  }
+  const attachmentUrl = repAttCheck.value || "";
   const plainNotes = (body.notes || "").trim();
   const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
   const txRes = await sbRest2(
@@ -101359,7 +105048,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source);
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto24.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `batch_${Date.now()}_${crypto26.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, batch_id: batchId },
       language
@@ -101488,7 +105177,7 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
     const policyVersion = String(body.policyVersion || PRIVACY_POLICY_VERSION).trim().slice(0, 80);
     const source = sanitizeSource(body.source || "settings_manage_consent");
     const language = typeof body.language === "string" ? body.language.trim() : "en";
-    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto24.randomBytes(4).toString("hex")}`;
+    const batchId = sanitizeIdempotencyKey(body.idempotencyKey) || `withdraw_all_${Date.now()}_${crypto26.randomBytes(4).toString("hex")}`;
     const auditMetadata = sanitizeAuditMetadata(
       { ...body.auditMetadata || {}, via_withdraw_all: true, batch_id: batchId },
       language
@@ -101579,427 +105268,8 @@ async function handlePrivacyConsentApi(req, res, pathname, method, meta) {
   return false;
 }
 
-// src/lib/financialIntelligenceEngine.ts
-function isTransferTransaction(tx) {
-  if (!tx) return false;
-  if (tx.metadata?.is_transfer === true || tx.metadata?.transfer_type) return true;
-  if (tx.transaction_type === "transfer") return true;
-  return false;
-}
-function normalizeMerchantKey(raw) {
-  return String(raw || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-}
-function getDisplayCategoryLabel(category, subcategory) {
-  if (category === "food") {
-    if (subcategory === "delivery") return "Food Delivery";
-    if (subcategory === "beverages") return "Beverages";
-    if (subcategory === "snacks") return "Snacks";
-    if (subcategory === "restaurant") return "Restaurant";
-    if (subcategory === "mess_tiffin") return "Mess / Tiffin";
-    if (subcategory === "other_food") return "Other Food";
-    return "Food & Dining";
-  }
-  if (category === "room") {
-    if (subcategory === "grocery") return "Grocery Expenses";
-    if (subcategory === "rent") return "Room Rent";
-    if (subcategory === "electricity") return "Electricity Bill";
-    if (subcategory === "gas") return "Gas Expenses";
-    return "Room";
-  }
-  if (category === "other") {
-    if (subcategory === "travel") return "Travel";
-    if (subcategory === "shopping") return "Shopping";
-    if (subcategory === "health") return "Medical / Health";
-    if (subcategory === "bills") return "Bills";
-    if (subcategory === "emi_loan") return "EMI / Loan";
-    if (subcategory === "entertainment") return "Entertainment";
-    if (subcategory === "education") return "Education";
-    if (subcategory === "personal_care") return "Personal Care";
-    if (subcategory === "other_expense" || subcategory === "other_general") return "Other Expenses";
-    return "Other Expenses";
-  }
-  if (category === "home" || category === "received") {
-    if (subcategory === "home_expense") return "Home Expense";
-    if (subcategory === "salary") return "Salary";
-    if (subcategory === "freelancing" || subcategory === "freelance") return "Freelance";
-    if (subcategory === "business") return "Business";
-    if (subcategory === "family" || subcategory === "received_home") return "Received from Person";
-    if (subcategory === "gift") return "Gift";
-    if (subcategory === "refund") return "Refund";
-    if (subcategory === "loan_received" || subcategory === "udhar_received") return "Borrowed / Loan";
-    if (subcategory === "other_income") return "Other Income";
-    return "Received Money";
-  }
-  if (category === "people") return "People (Udhar)";
-  return "Other Expenses";
-}
-var DETERMINISTIC_RULES = [
-  // Food Delivery & Dining
-  {
-    patterns: [/\bswiggy\b/i, /\bzomato\b/i, /\bubereats\b/i, /\beatclub\b/i, /\bmagicpin\b/i],
-    category: "food",
-    subcategory: "delivery",
-    transaction_type: "expense",
-    confidence: 0.96
-  },
-  {
-    patterns: [/\bstarbucks\b/i, /\bcafe coffee day\b/i, /\bccd\b/i, /\bchai\b/i, /\bcoffee\b/i, /\btea\b/i, /\bchaayos\b/i],
-    category: "food",
-    subcategory: "beverages",
-    transaction_type: "expense",
-    confidence: 0.9
-  },
-  {
-    patterns: [/\bdominos\b/i, /\bpizza hut\b/i, /\bkfc\b/i, /\bmcdonald/i, /\bburger king\b/i, /\bsubway\b/i, /\bhaldiram/i, /\bbiryani\b/i, /\bsamosa\b/i, /\bpizza\b/i, /\bburger\b/i, /\bsnacks?\b/i],
-    category: "food",
-    subcategory: "snacks",
-    transaction_type: "expense",
-    confidence: 0.9
-  },
-  {
-    patterns: [/\brestaurant\b/i, /\bdhaba\b/i, /\bdinner\b/i, /\blunch\b/i, /\bbreakfast\b/i, /\bthali\b/i, /\bcafe\b/i, /\bbakery\b/i],
-    category: "food",
-    subcategory: "restaurant",
-    transaction_type: "expense",
-    confidence: 0.86
-  },
-  {
-    patterns: [/\bmess\b/i, /\btiffin\b/i, /\bcanteen\b/i],
-    category: "food",
-    subcategory: "mess_tiffin",
-    transaction_type: "expense",
-    confidence: 0.92
-  },
-  // Groceries & Room Utilities
-  {
-    patterns: [/\bblinkit\b/i, /\bzepto\b/i, /\binstamart\b/i, /\bbigbasket\b/i, /\bdmart\b/i, /\breliance fresh\b/i, /\bsmart bazaar\b/i, /\bgrocer/i, /\bvegetable/i, /\bsabzi\b/i, /\bmilk\b/i, /\brice\b/i, /\batta\b/i, /\bkirana\b/i, /\bsupermarket\b/i],
-    category: "room",
-    subcategory: "grocery",
-    transaction_type: "expense",
-    confidence: 0.92
-  },
-  {
-    patterns: [/\brent\b/i, /\blandlord\b/i, /\bpg rent\b/i, /\bflat rent\b/i, /\broom rent\b/i, /\bhostel fee\b/i],
-    category: "room",
-    subcategory: "rent",
-    transaction_type: "expense",
-    confidence: 0.94
-  },
-  {
-    patterns: [/\belectricity\b/i, /\bbescom\b/i, /\btata power\b/i, /\badani electricity\b/i, /\bpower bill\b/i, /\bbijli\b/i, /\bmahavitaran\b/i, /\bbses\b/i],
-    category: "room",
-    subcategory: "electricity",
-    transaction_type: "expense",
-    confidence: 0.94
-  },
-  {
-    patterns: [/\bindane\b/i, /\bbharat gas\b/i, /\bhp gas\b/i, /\blpg\b/i, /\bcylinder\b/i, /\bgas refill\b/i],
-    category: "room",
-    subcategory: "gas",
-    transaction_type: "expense",
-    confidence: 0.94
-  },
-  // Fuel & Travel
-  {
-    patterns: [/\bhp petrol\b/i, /\bindian ?oil\b/i, /\bbharat petroleum\b/i, /\bbpcl\b/i, /\biocl\b/i, /\bpetrol\b/i, /\bdiesel\b/i, /\bfuel\b/i, /\bcng\b/i],
-    category: "other",
-    subcategory: "travel",
-    transaction_type: "expense",
-    confidence: 0.93
-  },
-  {
-    patterns: [/\buber\b/i, /\bola\b/i, /\brapido\b/i, /\bmetro\b/i, /\birctc\b/i, /\bredbus\b/i, /\bmakemytrip\b/i, /\bindigo\b/i, /\bair india\b/i, /\bauto fare\b/i, /\bcab\b/i, /\btrain\b/i, /\bflight\b/i, /\bbus ticket\b/i],
-    category: "other",
-    subcategory: "travel",
-    transaction_type: "expense",
-    confidence: 0.92
-  },
-  // Shopping
-  {
-    patterns: [/\bamazon\b/i, /\bflipkart\b/i, /\bmyntra\b/i, /\bajio\b/i, /\bmeesho\b/i, /\bnykaa\b/i, /\bcroma\b/i, /\bdecathlon\b/i, /\bshopping\b/i, /\bclothes\b/i, /\bshoes\b/i],
-    category: "other",
-    subcategory: "shopping",
-    transaction_type: "expense",
-    confidence: 0.9
-  },
-  // Bills, Telecom & Subscriptions
-  {
-    patterns: [/\bnetflix\b/i, /\bspotify\b/i, /\bamazon prime\b/i, /\bhotstar\b/i, /\byoutube premium\b/i, /\bjio\b/i, /\bairtel\b/i, /\bvi recharge\b/i, /\bbroadband\b/i, /\bwifi\b/i, /\bact fibernet\b/i, /\bmobile recharge\b/i, /\bsubscription\b/i, /\bicloud\b/i, /\bgoogle one\b/i],
-    category: "other",
-    subcategory: "bills",
-    transaction_type: "expense",
-    confidence: 0.92
-  },
-  // Health & Pharmacy
-  {
-    patterns: [/\bapollo pharmacy\b/i, /\b1mg\b/i, /\bpharmeasy\b/i, /\bnetmeds\b/i, /\bmedplus\b/i, /\bpharmacy\b/i, /\bmedicine\b/i, /\bhospital\b/i, /\bclinic\b/i, /\bdoctor\b/i, /\bdental\b/i, /\blab test\b/i],
-    category: "other",
-    subcategory: "health",
-    transaction_type: "expense",
-    confidence: 0.93
-  },
-  // Entertainment
-  {
-    patterns: [/\bbookmyshow\b/i, /\bpvr\b/i, /\binox\b/i, /\bmovie\b/i, /\bcinema\b/i, /\bconcert\b/i, /\bgaming\b/i, /\bsteam\b/i, /\bplaystation\b/i],
-    category: "other",
-    subcategory: "entertainment",
-    transaction_type: "expense",
-    confidence: 0.91
-  },
-  // Personal Care
-  {
-    patterns: [/\bsalon\b/i, /\bhaircut\b/i, /\bbarber\b/i, /\bgym\b/i, /\bcult\.?fit\b/i, /\blaundry\b/i, /\bdry clean\b/i],
-    category: "other",
-    subcategory: "personal_care",
-    transaction_type: "expense",
-    confidence: 0.89
-  },
-  // Education
-  {
-    patterns: [/\budemy\b/i, /\bcoursera\b/i, /\bcollege fee\b/i, /\btuition\b/i, /\bbooks?\b/i, /\bstationery\b/i, /\bexam fee\b/i, /\bcourse\b/i],
-    category: "other",
-    subcategory: "education",
-    transaction_type: "expense",
-    confidence: 0.9
-  },
-  // Income / Salary
-  {
-    patterns: [/\bsalary\b/i, /\bpayroll\b/i, /\bstipend\b/i, /\bmonthly pay\b/i, /\bwages\b/i],
-    category: "home",
-    subcategory: "salary",
-    transaction_type: "income",
-    confidence: 0.95
-  },
-  {
-    patterns: [/\bfreelance\b/i, /\bclient payment\b/i, /\binvoice paid\b/i, /\bconsulting\b/i],
-    category: "home",
-    subcategory: "freelance",
-    transaction_type: "income",
-    confidence: 0.9
-  },
-  {
-    patterns: [/\bfrom home\b/i, /\bfamily support\b/i, /\bpocket money\b/i, /\bpapa\b/i, /\bmom\b/i],
-    category: "home",
-    subcategory: "received_home",
-    transaction_type: "income",
-    confidence: 0.88
-  },
-  {
-    patterns: [/\brefund\b/i, /\bcashback\b/i, /\breward\b/i],
-    category: "home",
-    subcategory: "cashback",
-    transaction_type: "income",
-    confidence: 0.87
-  }
-];
-function categorizeTransactionDeterministic(input, userRules = [], userTransactions = []) {
-  const combined = [input.merchant, input.title, input.description, input.notes].filter(Boolean).join(" ").trim();
-  if (combined.length < 2) return null;
-  const normalized2 = normalizeMerchantKey(combined);
-  const merchantRaw = (input.merchant || input.title || input.description || "").trim();
-  const sortedRules = [...userRules].sort((a, b) => b.merchant_pattern.length - a.merchant_pattern.length);
-  for (const rule of sortedRules) {
-    const patternNorm = normalizeMerchantKey(rule.merchant_pattern);
-    if (patternNorm.length >= 2 && normalized2.includes(patternNorm)) {
-      return {
-        category: rule.category,
-        subcategory: rule.subcategory,
-        transaction_type: rule.transaction_type,
-        displayCategory: getDisplayCategoryLabel(rule.category, rule.subcategory),
-        merchant: merchantRaw || rule.merchant_pattern,
-        suggestedDescription: input.description?.trim() || `${merchantRaw || rule.merchant_pattern} (${getDisplayCategoryLabel(rule.category, rule.subcategory)})`,
-        confidence: 0.98,
-        source: "user_rule",
-        matchedPattern: rule.merchant_pattern,
-        needsAiFallback: false
-      };
-    }
-  }
-  if (userTransactions.length > 0 && normalized2.length >= 3) {
-    const tokens = normalized2.split(" ").filter((t2) => t2.length >= 3);
-    const voteMap = /* @__PURE__ */ new Map();
-    for (const tx of userTransactions) {
-      if (tx.is_deleted || tx.category === "people" || isTransferTransaction(tx)) continue;
-      const txText = normalizeMerchantKey(
-        [tx.title, tx.metadata?.spent_at, tx.metadata?.restaurant_name, tx.metadata?.platform, tx.metadata?.grocery_item].filter(Boolean).join(" ")
-      );
-      if (!txText) continue;
-      const exactMatch = txText === normalized2 || txText.includes(normalized2) || normalized2.includes(txText);
-      const tokenOverlap = tokens.length > 0 && tokens.some((tok) => txText.split(" ").includes(tok));
-      if (exactMatch || tokens.length >= 2 && tokenOverlap) {
-        const key = `${tx.category}:${tx.subcategory}:${tx.transaction_type}`;
-        const existing = voteMap.get(key);
-        const weight = exactMatch ? 3 : 1;
-        if (existing) existing.count += weight;
-        else {
-          voteMap.set(key, {
-            count: weight,
-            category: tx.category,
-            subcategory: tx.subcategory,
-            type: tx.transaction_type
-          });
-        }
-      }
-    }
-    let best = null;
-    for (const entry of voteMap.values()) {
-      if (!best || entry.count > best.count) best = entry;
-    }
-    if (best && best.count >= 3) {
-      return {
-        category: best.category,
-        subcategory: best.subcategory,
-        transaction_type: best.type,
-        displayCategory: getDisplayCategoryLabel(best.category, best.subcategory),
-        merchant: merchantRaw,
-        suggestedDescription: input.description?.trim() || merchantRaw,
-        confidence: Math.min(0.94, 0.78 + best.count * 0.03),
-        source: "history",
-        needsAiFallback: false
-      };
-    }
-  }
-  for (const rule of DETERMINISTIC_RULES) {
-    for (const regex of rule.patterns) {
-      const m2 = combined.match(regex);
-      if (m2) {
-        return {
-          category: rule.category,
-          subcategory: rule.subcategory,
-          transaction_type: rule.transaction_type,
-          displayCategory: getDisplayCategoryLabel(rule.category, rule.subcategory),
-          merchant: merchantRaw || m2[0],
-          suggestedDescription: input.description?.trim() || `${merchantRaw || m2[0]}`,
-          confidence: rule.confidence,
-          source: "rule",
-          matchedPattern: m2[0],
-          needsAiFallback: false
-        };
-      }
-    }
-  }
-  return {
-    category: "other",
-    subcategory: "other_general",
-    transaction_type: "expense",
-    displayCategory: "Other Expense",
-    merchant: merchantRaw,
-    suggestedDescription: input.description?.trim() || merchantRaw,
-    confidence: 0.35,
-    source: "rule",
-    needsAiFallback: true
-  };
-}
-function upsertUserCategorizationRule(existingRules, merchantPattern, category, subcategory, transaction_type) {
-  const cleanPattern = normalizeMerchantKey(merchantPattern);
-  if (cleanPattern.length < 2) return existingRules;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const idx = existingRules.findIndex((r2) => normalizeMerchantKey(r2.merchant_pattern) === cleanPattern);
-  if (idx >= 0) {
-    const updated = [...existingRules];
-    updated[idx] = {
-      ...updated[idx],
-      category,
-      subcategory,
-      transaction_type,
-      usage_count: (updated[idx].usage_count || 1) + 1,
-      updated_at: now
-    };
-    return updated;
-  }
-  return [
-    {
-      id: `rule_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      merchant_pattern: merchantPattern.trim().slice(0, 80),
-      category,
-      subcategory,
-      transaction_type,
-      usage_count: 1,
-      updated_at: now
-    },
-    ...existingRules
-  ];
-}
-var DEFAULT_SAFE_TO_SPEND_PREFS = {
-  minimumBalanceReserve: 0,
-  emergencyReserve: 0,
-  savingsCommitment: 0,
-  essentialExpenseReserve: 0,
-  expectedRemainingIncome: 0,
-  includeExpectedIncome: false,
-  period: "month"
-};
-var DEFAULT_SMART_ALERT_PREFS = {
-  enabled: true,
-  budgetEnabled: true,
-  budgetThresholds: [50, 75, 90, 100],
-  spendingAnomalyEnabled: true,
-  billsEnabled: true,
-  billNoticeDays: [7, 3, 1, 0],
-  lowBalanceEnabled: true,
-  lowBalanceThreshold: 2e3,
-  savingsMilestonesEnabled: true,
-  udharRemindersEnabled: true,
-  quietHoursEnabled: false,
-  quietHoursStart: "22:00",
-  quietHoursEnd: "07:00"
-};
-var ALLOWED_RECEIPT_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-var MAX_RECEIPT_FILE_BYTES = 5 * 1024 * 1024;
-function validateReceiptUpload(mimeType, sizeBytes) {
-  const normalizedMime = String(mimeType || "").toLowerCase().trim();
-  if (!ALLOWED_RECEIPT_MIME_TYPES.includes(normalizedMime)) {
-    return {
-      valid: false,
-      error: "Unsupported file format. Please upload a JPG, PNG, or WEBP receipt image."
-    };
-  }
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-    return { valid: false, error: "Selected file is empty." };
-  }
-  if (sizeBytes > MAX_RECEIPT_FILE_BYTES) {
-    return {
-      valid: false,
-      error: "Receipt image exceeds the 5 MB limit. Please upload a smaller or compressed image."
-    };
-  }
-  return { valid: true };
-}
-function validateReceiptFileSignature(base64Data, declaredMimeType) {
-  const cleanB64 = String(base64Data || "").replace(/\s+/g, "");
-  if (cleanB64.length < 16) {
-    return { valid: false, error: "Uploaded receipt file is corrupted or incomplete." };
-  }
-  let bytes;
-  try {
-    const headerSlice = cleanB64.slice(0, 32);
-    if (typeof Buffer !== "undefined") {
-      bytes = new Uint8Array(Buffer.from(headerSlice, "base64"));
-    } else {
-      const bin = atob(headerSlice);
-      bytes = new Uint8Array(bin.length);
-      for (let i2 = 0; i2 < bin.length; i2++) bytes[i2] = bin.charCodeAt(i2);
-    }
-  } catch {
-    return { valid: false, error: "Invalid base64 image payload." };
-  }
-  if (bytes.length < 12) {
-    return { valid: false, error: "Uploaded file is too small to be a valid image." };
-  }
-  const isJpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-  const isPng = bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71 && bytes[4] === 13 && bytes[5] === 10 && bytes[6] === 26 && bytes[7] === 10;
-  const isWebp = bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70 && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80;
-  const mime = String(declaredMimeType || "").toLowerCase().trim();
-  if ((mime === "image/jpeg" || mime === "image/jpg") && isJpeg) return { valid: true };
-  if (mime === "image/png" && isPng) return { valid: true };
-  if (mime === "image/webp" && isWebp) return { valid: true };
-  return {
-    valid: false,
-    error: "File content signature does not match a valid JPG, PNG, or WEBP image. Upload rejected for security."
-  };
-}
-
 // server/aiFinanceApi.ts
+init_uploadSecurity();
 var aiRateWindow = /* @__PURE__ */ new Map();
 function checkAiRateLimit(key, maxRequests, windowMs) {
   const now = Date.now();
@@ -102030,11 +105300,11 @@ function defaultUserStore() {
     receiptRecords: []
   };
 }
-var DATA_DIR = path12.resolve(process.cwd(), ".data", "ai-finance");
+var DATA_DIR = path15.resolve(process.cwd(), ".data", "ai-finance");
 function safeUserFilePath(userId) {
-  const hash2 = crypto25.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
-  const resolved = path12.resolve(DATA_DIR, `u_${hash2}.json`);
-  if (!resolved.startsWith(DATA_DIR + path12.sep)) {
+  const hash2 = crypto27.createHash("sha256").update(String(userId)).digest("hex").slice(0, 32);
+  const resolved = path15.resolve(DATA_DIR, `u_${hash2}.json`);
+  if (!resolved.startsWith(DATA_DIR + path15.sep)) {
     throw new Error("PATH_CONFINEMENT_VIOLATION");
   }
   return resolved;
@@ -102042,8 +105312,8 @@ function safeUserFilePath(userId) {
 function readUserStore(userId) {
   try {
     const filePath = safeUserFilePath(userId);
-    if (!fs14.existsSync(filePath)) return defaultUserStore();
-    const raw = fs14.readFileSync(filePath, "utf8");
+    if (!fs17.existsSync(filePath)) return defaultUserStore();
+    const raw = fs17.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return {
       ...defaultUserStore(),
@@ -102071,11 +105341,11 @@ function readUserStore(userId) {
 }
 function writeUserStore(userId, store) {
   try {
-    if (!fs14.existsSync(DATA_DIR)) {
-      fs14.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs17.existsSync(DATA_DIR)) {
+      fs17.mkdirSync(DATA_DIR, { recursive: true });
     }
     const filePath = safeUserFilePath(userId);
-    fs14.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf8");
+    fs17.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf8");
   } catch (err) {
     console.warn("[AI Finance Store] Persistence warning:", err?.message);
   }
@@ -102175,7 +105445,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const title = String(body.title || "New Financial Chat").trim().slice(0, 120) || "New Financial Chat";
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const conv = {
-        id: `conv_${Date.now()}_${crypto25.randomBytes(4).toString("hex")}`,
+        id: `conv_${Date.now()}_${crypto27.randomBytes(4).toString("hex")}`,
         user_id: userId,
         title,
         created_at: now,
@@ -102358,10 +105628,10 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
           amount: safeNum(b?.amount),
           dueDay: Math.max(1, Math.min(31, Math.round(safeNum(b?.dueDay)) || 1))
         })) : [],
-        savingsGoals: Array.isArray(rawCtx.savingsGoals) ? rawCtx.savingsGoals.slice(0, 30).map((g3) => ({
-          title: safeStr(g3?.title, 80),
-          current: safeNum(g3?.current),
-          target: safeNum(g3?.target)
+        savingsGoals: Array.isArray(rawCtx.savingsGoals) ? rawCtx.savingsGoals.slice(0, 30).map((g5) => ({
+          title: safeStr(g5?.title, 80),
+          current: safeNum(g5?.current),
+          target: safeNum(g5?.target)
         })) : [],
         udharSummary: {
           totalReceivable: safeNum(rawUdhar.totalReceivable),
@@ -102383,7 +105653,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       if (!conv) {
         conv = {
-          id: convId || `conv_${Date.now()}_${crypto25.randomBytes(4).toString("hex")}`,
+          id: convId || `conv_${Date.now()}_${crypto27.randomBytes(4).toString("hex")}`,
           user_id: userId,
           title: question.slice(0, 64),
           created_at: now,
@@ -102590,20 +105860,21 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       }
       const body = await parseJsonBody4(req, 8 * 1024 * 1024);
       const dataUrl = String(body.imageDataUrl || "");
-      const match2 = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/);
+      const filename = String(body.filename || "receipt.jpg").slice(0, 140);
+      const match2 = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
       if (!match2) {
         sendJson4(res, 400, { success: false, message: "Invalid receipt image data. Please upload a JPG, PNG, or WEBP image." });
         return true;
       }
       const mimeType = match2[1].toLowerCase();
-      const base64Data = match2[2];
-      const estimatedBytes = Math.floor(base64Data.length * 3 / 4);
+      const rawBase64 = match2[2].replace(/\s+/g, "");
+      const estimatedBytes = Math.floor(rawBase64.length * 3 / 4);
       const validation = validateReceiptUpload(mimeType, estimatedBytes);
       if (!validation.valid) {
         sendJson4(res, 400, { success: false, message: validation.error });
         return true;
       }
-      const sigValidation = validateReceiptFileSignature(base64Data, mimeType);
+      const sigValidation = validateReceiptFileSignature(rawBase64, mimeType);
       if (!sigValidation.valid) {
         if (useDb) {
           logSecurityEvent("RECEIPT_INVALID_SIGNATURE", {
@@ -102617,9 +105888,32 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         sendJson4(res, 400, { success: false, code: "INVALID_FILE_SIGNATURE", message: sigValidation.error });
         return true;
       }
-      const fileHash = crypto25.createHash("sha256").update(base64Data).digest("hex");
+      const scanRes = await processSecureUpload({
+        userId,
+        userEmail: authUser.email,
+        purpose: "receipt_ocr",
+        filename,
+        dataUrlOrRawBase64: dataUrl,
+        declaredMime: mimeType,
+        ipAddress: extractClientIp(req),
+        allowSvg: false
+      });
+      if (!scanRes.success || !scanRes.cleanBytes || !scanRes.mimeType) {
+        const statusCode = scanRes.status === "quarantined_pending" ? 202 : 400;
+        sendJson4(res, statusCode, {
+          success: false,
+          code: scanRes.status === "quarantined_pending" ? "QUARANTINED_PENDING_REVIEW" : "UPLOAD_SECURITY_REJECTED",
+          quarantineId: scanRes.quarantineId,
+          scanStatus: scanRes.status,
+          scannerEngine: scanRes.scannerEngine,
+          message: scanRes.error || "Receipt image failed security validation."
+        });
+        return true;
+      }
+      const cleanBase64 = scanRes.cleanBytes.toString("base64");
+      const fileHash = scanRes.sha256 || crypto27.createHash("sha256").update(cleanBase64).digest("hex");
       try {
-        const extraction = await extractReceiptWithOcr({ base64Image: base64Data, mimeType });
+        const extraction = await extractReceiptWithOcr({ base64Image: cleanBase64, mimeType: scanRes.mimeType });
         const store = readUserStore(userId);
         const categorization = categorizeTransactionDeterministic(
           {
@@ -102633,6 +105927,10 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
         sendJson4(res, 200, {
           success: true,
           fileHash,
+          quarantineId: scanRes.quarantineId,
+          scanStatus: scanRes.status,
+          scannerEngine: scanRes.scannerEngine,
+          signedAccessUrl: scanRes.signedAccessUrl,
           extraction,
           categorization
         });
@@ -102659,7 +105957,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const body = await parseJsonBody4(req);
       const store = readUserStore(userId);
       const record = {
-        id: `rcpt_${Date.now()}_${crypto25.randomBytes(3).toString("hex")}`,
+        id: `rcpt_${Date.now()}_${crypto27.randomBytes(3).toString("hex")}`,
         user_id: userId,
         transaction_id: body.transaction_id || null,
         file_hash: String(body.file_hash || ""),
@@ -102707,7 +106005,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const asset = {
-        id: body.id || `asset_${Date.now()}_${crypto25.randomBytes(3).toString("hex")}`,
+        id: body.id || `asset_${Date.now()}_${crypto27.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_value: Math.round(currentValue * 100) / 100,
@@ -102763,7 +106061,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
       const store = readUserStore(userId);
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const liability = {
-        id: body.id || `liab_${Date.now()}_${crypto25.randomBytes(3).toString("hex")}`,
+        id: body.id || `liab_${Date.now()}_${crypto27.randomBytes(3).toString("hex")}`,
         name: name2,
         category: body.category || "other",
         current_balance: Math.round(currentBalance * 100) / 100,
@@ -102984,7 +106282,7 @@ async function handleAiFinanceRequest(req, res, pathname, method) {
 
 // server/upiDetectionApi.ts
 init_db();
-import crypto26 from "crypto";
+import crypto28 from "crypto";
 init_security();
 
 // src/lib/upiDetectionEngine.ts
@@ -103561,16 +106859,16 @@ function mergeDetectedMetadata(existing, incoming2) {
 // server/upiDetectionApi.ts
 var memoryStore = /* @__PURE__ */ new Map();
 function getMemoryUserState(userId) {
-  let state2 = memoryStore.get(userId);
-  if (!state2) {
-    state2 = {
+  let state3 = memoryStore.get(userId);
+  if (!state3) {
+    state3 = {
       settings: getDefaultDetectionSettings(),
       detected: [],
       events: []
     };
-    memoryStore.set(userId, state2);
+    memoryStore.set(userId, state3);
   }
-  return state2;
+  return state3;
 }
 function sendJson5(res, status, payload) {
   res.statusCode = status;
@@ -103743,13 +107041,13 @@ async function listUserDetected(userId) {
 async function appendDetectionEvent(userId, event) {
   const fullEvent = {
     ...event,
-    id: `upi_evt_${crypto26.randomBytes(6).toString("hex")}`,
+    id: `upi_evt_${crypto28.randomBytes(6).toString("hex")}`,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   if (!isDatabaseAvailable()) {
-    const state2 = getMemoryUserState(userId);
-    state2.events.unshift(fullEvent);
-    if (state2.events.length > 300) state2.events.length = 300;
+    const state3 = getMemoryUserState(userId);
+    state3.events.unshift(fullEvent);
+    if (state3.events.length > 300) state3.events.length = 300;
     return fullEvent;
   }
   try {
@@ -103770,20 +107068,20 @@ async function appendDetectionEvent(userId, event) {
       ]
     );
   } catch {
-    const state2 = getMemoryUserState(userId);
-    state2.events.unshift(fullEvent);
+    const state3 = getMemoryUserState(userId);
+    state3.events.unshift(fullEvent);
   }
   return fullEvent;
 }
 async function upsertDetectedTransaction(userId, record) {
   const scoped = { ...record, userId };
   if (!isDatabaseAvailable()) {
-    const state2 = getMemoryUserState(userId);
-    const idx = state2.detected.findIndex((d) => d.id === scoped.id);
+    const state3 = getMemoryUserState(userId);
+    const idx = state3.detected.findIndex((d) => d.id === scoped.id);
     if (idx >= 0) {
-      state2.detected[idx] = scoped;
+      state3.detected[idx] = scoped;
     } else {
-      state2.detected.unshift(scoped);
+      state3.detected.unshift(scoped);
     }
     return scoped;
   }
@@ -103848,10 +107146,10 @@ async function upsertDetectedTransaction(userId, record) {
     );
     return scoped;
   } catch {
-    const state2 = getMemoryUserState(userId);
-    const idx = state2.detected.findIndex((d) => d.id === scoped.id);
-    if (idx >= 0) state2.detected[idx] = scoped;
-    else state2.detected.unshift(scoped);
+    const state3 = getMemoryUserState(userId);
+    const idx = state3.detected.findIndex((d) => d.id === scoped.id);
+    if (idx >= 0) state3.detected[idx] = scoped;
+    else state3.detected.unshift(scoped);
     return scoped;
   }
 }
@@ -104158,11 +107456,11 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
     const clearHistory = body.clearHistory !== false;
     const defaults2 = getDefaultDetectionSettings();
     if (!isDatabaseAvailable()) {
-      const state2 = getMemoryUserState(authUser.id);
-      state2.settings = defaults2;
+      const state3 = getMemoryUserState(authUser.id);
+      state3.settings = defaults2;
       if (clearHistory) {
-        state2.detected = [];
-        state2.events = [];
+        state3.detected = [];
+        state3.events = [];
       }
     } else {
       try {
@@ -104186,11 +107484,11 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
           await query(`DELETE FROM public.detected_transactions WHERE user_id = $1`, [authUser.id]);
         }
       } catch {
-        const state2 = getMemoryUserState(authUser.id);
-        state2.settings = defaults2;
+        const state3 = getMemoryUserState(authUser.id);
+        state3.settings = defaults2;
         if (clearHistory) {
-          state2.detected = [];
-          state2.events = [];
+          state3.detected = [];
+          state3.events = [];
         }
       }
     }
@@ -104215,7 +107513,430 @@ async function handleUpiDetectionRequest(req, res, pathname, method, authResolve
 // server/api.ts
 init_notificationService();
 init_siteControlCenter();
+init_telemetry();
+init_uploadSecurity();
+init_storageService();
 init_supabaseRestFallback();
+
+// server/dbProvider.ts
+init_db();
+init_supabaseRestFallback();
+init_firebaseDb();
+init_dbFailover();
+import crypto29 from "crypto";
+function normalizeTxRow(row) {
+  return {
+    id: String(row.id),
+    user_id: String(row.user_id),
+    user_email: row.user_email || null,
+    category: String(row.category || "other"),
+    subcategory: String(row.subcategory || "General"),
+    transaction_type: row.transaction_type || "expense",
+    amount: Number(row.amount || 0),
+    title: String(row.title || ""),
+    description: row.description || null,
+    person_name: row.person_name || null,
+    transaction_date: String(row.transaction_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)),
+    transaction_time: String(row.transaction_time || "00:00"),
+    notes: row.notes || null,
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+    is_deleted: Boolean(row.is_deleted),
+    deleted_at: row.deleted_at || null,
+    deleted_by: row.deleted_by || null,
+    created_at: row.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: row.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function syncBusinessRecordToSecondary(params) {
+  if (!params.recordId) return;
+  const version2 = params.syncVersion || Date.now();
+  const key = params.idempotencyKey || `sync_${params.collection}_${params.recordId}_${params.operation || "upsert"}_${version2}`;
+  await enqueueOutboxEvent({
+    idempotencyKey: key,
+    collection: params.collection,
+    recordId: params.recordId,
+    operation: params.operation || "upsert",
+    payload: params.payload,
+    syncVersion: version2,
+    sourceDb: "supabase",
+    targetDb: "firebase"
+  }).catch(() => {
+  });
+  void processOutboxQueue(10).catch(() => {
+  });
+}
+async function listUserTransactionsViaProvider(params) {
+  const failover = getFailoverState();
+  const limit = Math.max(1, Math.min(params.limit || 1500, 2e3));
+  if (failover.activeProvider === "firebase" || failover.activeProvider === "degraded_readonly") {
+    try {
+      const docs = await listSecondaryCollection("transactions", params.userId, Boolean(params.includeDeleted));
+      const rows = docs.map((d) => normalizeTxRow({ id: d.id, ...d.data })).filter((r2) => params.includeDeleted || !r2.is_deleted).sort((a, b) => {
+        const da = `${a.transaction_date}T${a.transaction_time}`;
+        const db = `${b.transaction_date}T${b.transaction_time}`;
+        return db.localeCompare(da);
+      }).slice(0, limit);
+      return { ok: true, provider: failover.activeProvider, epoch: failover.providerEpoch, status: 200, data: rows };
+    } catch (err) {
+      return {
+        ok: false,
+        provider: failover.activeProvider,
+        epoch: failover.providerEpoch,
+        status: 503,
+        code: "SECONDARY_READ_UNAVAILABLE",
+        error: err?.message || "Secondary database unavailable."
+      };
+    }
+  }
+  if (isDatabaseAvailable()) {
+    try {
+      const whereParts = [];
+      const values = [];
+      if (params.userId) {
+        values.push(params.userId);
+        whereParts.push(`user_id = $${values.length}`);
+      }
+      if (!params.includeDeleted) {
+        whereParts.push(`COALESCE(is_deleted, FALSE) = FALSE`);
+      }
+      values.push(limit);
+      const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+      const res = await query(
+        `SELECT * FROM public.transactions
+         ${whereClause}
+         ORDER BY transaction_date DESC, transaction_time DESC
+         LIMIT $${values.length}`,
+        values
+      );
+      return {
+        ok: true,
+        provider: "supabase",
+        epoch: failover.providerEpoch,
+        status: 200,
+        data: (res.rows || []).map(normalizeTxRow)
+      };
+    } catch {
+    }
+  }
+  const qsParts = ["select=*", "order=transaction_date.desc,transaction_time.desc", `limit=${limit}`];
+  if (params.userId) qsParts.push(`user_id=eq.${encodeURIComponent(params.userId)}`);
+  if (!params.includeDeleted) qsParts.push("or=(is_deleted.is.null,is_deleted.eq.false)");
+  const restRes = await sbRestRequest(`transactions?${qsParts.join("&")}`, { timeoutMs: 6500 });
+  if (restRes.ok && Array.isArray(restRes.data)) {
+    return {
+      ok: true,
+      provider: "supabase",
+      epoch: failover.providerEpoch,
+      status: 200,
+      data: restRes.data.map(normalizeTxRow)
+    };
+  }
+  try {
+    const docs = await listSecondaryCollection("transactions", params.userId, Boolean(params.includeDeleted));
+    const rows = docs.map((d) => normalizeTxRow({ id: d.id, ...d.data })).filter((r2) => params.includeDeleted || !r2.is_deleted);
+    return {
+      ok: true,
+      provider: "firebase",
+      epoch: failover.providerEpoch,
+      status: 200,
+      data: rows
+    };
+  } catch {
+    return {
+      ok: false,
+      provider: "supabase",
+      epoch: failover.providerEpoch,
+      status: 503,
+      code: "DATABASE_UNAVAILABLE",
+      error: restRes.error || "Unable to load transactions from primary or secondary database."
+    };
+  }
+}
+async function upsertUserTransactionViaProvider(params) {
+  const failover = getFailoverState();
+  const guard = assertAuthoritativeWriteEpoch(failover.providerEpoch, failover.activeProvider);
+  if (!guard.allowed) {
+    return {
+      ok: false,
+      provider: failover.activeProvider,
+      epoch: failover.providerEpoch,
+      status: 503,
+      code: "WRITE_BLOCKED_DEGRADED_MODE",
+      error: guard.reason || "Financial writes are temporarily paused while databases recover."
+    };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const txId = params.tx.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.tx.id) ? params.tx.id : crypto29.randomUUID();
+  const syncVersion = Date.now();
+  const idempotencyKey = params.idempotencyKey || `tx_upsert_${txId}_${syncVersion}`;
+  const record = normalizeTxRow({
+    ...params.tx,
+    id: txId,
+    created_at: params.tx.created_at || nowIso,
+    updated_at: nowIso
+  });
+  if (failover.activeProvider === "firebase") {
+    const fbRes = await upsertSecondaryRecord({
+      id: record.id,
+      collection: "transactions",
+      data: record,
+      sync_version: syncVersion,
+      source_db: "firebase",
+      idempotency_key: idempotencyKey,
+      updated_at: nowIso,
+      created_at: record.created_at,
+      deleted_at: record.is_deleted ? record.deleted_at || nowIso : null
+    });
+    if (!fbRes.ok) {
+      return {
+        ok: false,
+        provider: "firebase",
+        epoch: failover.providerEpoch,
+        status: 503,
+        code: "FAILOVER_WRITE_FAILED",
+        error: fbRes.error || "Could not durably record transaction in secondary database."
+      };
+    }
+    await enqueueOutboxEvent({
+      idempotencyKey,
+      collection: "transactions",
+      recordId: record.id,
+      operation: record.is_deleted ? "delete" : "upsert",
+      payload: record,
+      syncVersion,
+      sourceDb: "firebase",
+      targetDb: "supabase"
+    });
+    return { ok: true, provider: "firebase", epoch: failover.providerEpoch, status: 200, data: record };
+  }
+  let savedRow = null;
+  let primaryError;
+  if (isDatabaseAvailable()) {
+    try {
+      const res = await query(
+        `INSERT INTO public.transactions (
+           id, user_id, user_email, category, subcategory, transaction_type, amount, title,
+           description, person_name, transaction_date, transaction_time, notes, metadata,
+           is_deleted, deleted_at, deleted_by, created_at, updated_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8,
+           $9, $10, $11, $12, $13, $14::jsonb,
+           $15, $16, $17, $18::timestamptz, $19::timestamptz
+         )
+         ON CONFLICT (id) DO UPDATE SET
+           category = EXCLUDED.category,
+           subcategory = EXCLUDED.subcategory,
+           transaction_type = EXCLUDED.transaction_type,
+           amount = EXCLUDED.amount,
+           title = EXCLUDED.title,
+           description = EXCLUDED.description,
+           person_name = EXCLUDED.person_name,
+           transaction_date = EXCLUDED.transaction_date,
+           transaction_time = EXCLUDED.transaction_time,
+           notes = EXCLUDED.notes,
+           metadata = EXCLUDED.metadata,
+           is_deleted = EXCLUDED.is_deleted,
+           deleted_at = EXCLUDED.deleted_at,
+           deleted_by = EXCLUDED.deleted_by,
+           updated_at = EXCLUDED.updated_at
+         RETURNING *`,
+        [
+          record.id,
+          record.user_id,
+          record.user_email,
+          record.category,
+          record.subcategory,
+          record.transaction_type,
+          record.amount,
+          record.title,
+          record.description,
+          record.person_name,
+          record.transaction_date,
+          record.transaction_time,
+          record.notes,
+          JSON.stringify(record.metadata || {}),
+          record.is_deleted,
+          record.deleted_at,
+          record.deleted_by,
+          record.created_at,
+          record.updated_at
+        ]
+      );
+      if (res.rows[0]) {
+        savedRow = normalizeTxRow(res.rows[0]);
+      }
+    } catch (err) {
+      primaryError = err?.message || "Primary PostgreSQL write failed";
+    }
+  }
+  if (!savedRow) {
+    const restRes = await sbRestRequest("transactions", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: record,
+      timeoutMs: 6500
+    });
+    if (restRes.ok) {
+      savedRow = Array.isArray(restRes.data) && restRes.data[0] ? normalizeTxRow(restRes.data[0]) : record;
+    } else {
+      primaryError = restRes.error || primaryError || `Supabase REST HTTP ${restRes.status}`;
+    }
+  }
+  if (!savedRow) {
+    return {
+      ok: false,
+      provider: "supabase",
+      epoch: failover.providerEpoch,
+      status: 503,
+      code: "PRIMARY_WRITE_FAILED",
+      error: primaryError || "Primary database could not durably commit transaction."
+    };
+  }
+  await enqueueOutboxEvent({
+    idempotencyKey,
+    collection: "transactions",
+    recordId: savedRow.id,
+    operation: savedRow.is_deleted ? "delete" : "upsert",
+    payload: savedRow,
+    syncVersion,
+    sourceDb: "supabase",
+    targetDb: "firebase"
+  });
+  void processOutboxQueue(10).catch(() => {
+  });
+  return { ok: true, provider: "supabase", epoch: failover.providerEpoch, status: 200, data: savedRow };
+}
+async function mutateUserTransactionDeleteStateViaProvider(params) {
+  const failover = getFailoverState();
+  const guard = assertAuthoritativeWriteEpoch(failover.providerEpoch, failover.activeProvider);
+  if (!guard.allowed) {
+    return {
+      ok: false,
+      provider: failover.activeProvider,
+      epoch: failover.providerEpoch,
+      status: 503,
+      code: "WRITE_BLOCKED_DEGRADED_MODE",
+      error: guard.reason
+    };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const syncVersion = Date.now();
+  const idempotencyKey = `tx_${params.action}_${params.id}_${syncVersion}`;
+  if (failover.activeProvider === "firebase") {
+    const existing = await getSecondaryRecord("transactions", params.id);
+    if (!existing || !params.isAdmin && existing.data?.user_id !== params.userId) {
+      return {
+        ok: false,
+        provider: "firebase",
+        epoch: failover.providerEpoch,
+        status: 404,
+        code: "NOT_FOUND",
+        error: "Transaction not found or unauthorized."
+      };
+    }
+    const updatedData = {
+      ...existing.data,
+      is_deleted: params.action !== "restore",
+      deleted_at: params.action === "restore" ? null : nowIso,
+      deleted_by: params.action === "restore" ? null : params.deletedBy || params.userId,
+      updated_at: nowIso
+    };
+    const fbRes = await upsertSecondaryRecord({
+      id: params.id,
+      collection: "transactions",
+      data: updatedData,
+      sync_version: syncVersion,
+      source_db: "firebase",
+      idempotency_key: idempotencyKey,
+      updated_at: nowIso,
+      deleted_at: params.action === "permanent_delete" ? nowIso : null
+    });
+    if (!fbRes.ok) {
+      return {
+        ok: false,
+        provider: "firebase",
+        epoch: failover.providerEpoch,
+        status: 503,
+        error: fbRes.error || "Failover delete failed."
+      };
+    }
+    await enqueueOutboxEvent({
+      idempotencyKey,
+      collection: "transactions",
+      recordId: params.id,
+      operation: params.action === "restore" ? "upsert" : "delete",
+      payload: updatedData,
+      syncVersion,
+      sourceDb: "firebase",
+      targetDb: "supabase"
+    });
+    return { ok: true, provider: "firebase", epoch: failover.providerEpoch, status: 200, data: { id: params.id, action: params.action } };
+  }
+  let committed = false;
+  if (isDatabaseAvailable()) {
+    try {
+      const ownerFilter = params.isAdmin ? "" : " AND user_id = $2";
+      const ownerParams = params.isAdmin ? [params.id] : [params.id, params.userId];
+      if (params.action === "permanent_delete") {
+        await query(`DELETE FROM public.transactions WHERE id = $1${ownerFilter}`, ownerParams);
+      } else if (params.action === "soft_delete") {
+        await query(
+          `UPDATE public.transactions SET is_deleted = TRUE, deleted_at = NOW(), deleted_by = $${ownerParams.length + 1}, updated_at = NOW() WHERE id = $1${ownerFilter}`,
+          [...ownerParams, params.deletedBy || params.userId]
+        );
+      } else {
+        await query(
+          `UPDATE public.transactions SET is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = NOW() WHERE id = $1${ownerFilter}`,
+          ownerParams
+        );
+      }
+      committed = true;
+    } catch {
+    }
+  }
+  if (!committed) {
+    const ownerQuery = params.isAdmin ? "" : `&user_id=eq.${encodeURIComponent(params.userId)}`;
+    const pathUrl = `transactions?id=eq.${encodeURIComponent(params.id)}${ownerQuery}`;
+    const restRes = params.action === "permanent_delete" ? await sbRestRequest(pathUrl, { method: "DELETE", timeoutMs: 6500 }) : await sbRestRequest(pathUrl, {
+      method: "PATCH",
+      body: params.action === "soft_delete" ? { is_deleted: true, deleted_at: nowIso, deleted_by: params.deletedBy || params.userId, updated_at: nowIso } : { is_deleted: false, deleted_at: null, deleted_by: null, updated_at: nowIso },
+      timeoutMs: 6500
+    });
+    if (!restRes.ok) {
+      return {
+        ok: false,
+        provider: "supabase",
+        epoch: failover.providerEpoch,
+        status: 503,
+        error: restRes.error || "Primary transaction mutation failed."
+      };
+    }
+  }
+  await enqueueOutboxEvent({
+    idempotencyKey,
+    collection: "transactions",
+    recordId: params.id,
+    operation: params.action === "restore" ? "upsert" : "delete",
+    payload: {
+      id: params.id,
+      user_id: params.userId,
+      is_deleted: params.action !== "restore",
+      deleted_at: params.action === "restore" ? null : nowIso,
+      updated_at: nowIso
+    },
+    syncVersion,
+    sourceDb: "supabase",
+    targetDb: "firebase"
+  });
+  void processOutboxQueue(10).catch(() => {
+  });
+  return { ok: true, provider: "supabase", epoch: failover.providerEpoch, status: 200, data: { id: params.id, action: params.action } };
+}
+
+// server/api.ts
+init_dbFailover();
+init_healthMonitor();
+ensurePeriodicHealthMonitorStarted();
 async function syncSupabaseAuthPassword(email, newPassword) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
@@ -104249,12 +107970,18 @@ async function syncSupabaseAuthPassword(email, newPassword) {
     console.warn("[Supabase Auth Password Sync Notice]:", err);
   }
 }
-async function parseJsonBody6(req) {
+async function parseJsonBody6(req, maxBytes = 1024 * 1024) {
   if (req.body !== void 0 && req.body !== null) {
     if (typeof req.body === "object") {
+      if (Buffer.byteLength(JSON.stringify(req.body), "utf8") > maxBytes) {
+        throw new Error("Request payload too large");
+      }
       return req.body;
     }
     if (typeof req.body === "string") {
+      if (Buffer.byteLength(req.body, "utf8") > maxBytes) {
+        throw new Error("Request payload too large");
+      }
       try {
         return JSON.parse(req.body);
       } catch {
@@ -104263,22 +107990,33 @@ async function parseJsonBody6(req) {
     }
   }
   return new Promise((resolve3, reject) => {
-    let body = "";
+    const chunks = [];
+    let totalBytes = 0;
+    let aborted = false;
     req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 1024 * 1024) {
+      if (aborted) return;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        aborted = true;
         reject(new Error("Request payload too large"));
+        return;
       }
+      chunks.push(buf);
     });
     req.on("end", () => {
-      if (!body) return resolve3({});
+      if (aborted) return;
+      if (totalBytes === 0) return resolve3({});
       try {
-        resolve3(JSON.parse(body));
-      } catch (e2) {
+        const raw = Buffer.concat(chunks).toString("utf8");
+        resolve3(raw ? JSON.parse(raw) : {});
+      } catch {
         reject(new Error("Invalid JSON payload"));
       }
     });
-    req.on("error", (err) => reject(err));
+    req.on("error", (err) => {
+      if (!aborted) reject(err);
+    });
   });
 }
 function sendJson6(res, statusCode, data, headers = {}) {
@@ -104374,6 +108112,51 @@ function validateAvatarUrlInput(raw) {
     return { valid: false, value: null, error: "Invalid avatar URL format." };
   }
 }
+function sanitizeAttachmentUrlInput(raw) {
+  if (raw === null || raw === void 0) return { valid: true, value: null };
+  const trimmed = String(raw).trim();
+  if (!trimmed) return { valid: true, value: null };
+  if (/[\r\n\0]/.test(trimmed)) {
+    return { valid: false, value: null, error: "Attachment URL contains invalid control characters." };
+  }
+  if (trimmed.startsWith("/api/uploads/private?")) {
+    return trimmed.length <= 1200 ? { valid: true, value: trimmed } : { valid: false, value: null, error: "Attachment reference URL is too long." };
+  }
+  if (trimmed.startsWith("data:")) {
+    const match2 = trimmed.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+    if (!match2) {
+      return {
+        valid: false,
+        value: null,
+        error: "Only PNG, JPG, JPEG, or WebP attachment images are allowed."
+      };
+    }
+    const est = Math.floor(match2[2].length * 3 / 4);
+    if (est <= 0 || est > 5 * 1024 * 1024) {
+      return { valid: false, value: null, error: "Attachment exceeds maximum 5 MB limit." };
+    }
+    const sig = validateReceiptFileSignature(match2[2], match2[1].toLowerCase());
+    if (!sig.valid) {
+      return { valid: false, value: null, error: sig.error || "Attachment signature mismatch." };
+    }
+    return { valid: true, value: trimmed };
+  }
+  if (trimmed.length > 800) {
+    return { valid: false, value: null, error: "Attachment URL exceeds maximum length." };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+      return { valid: false, value: null, error: "Attachment URL must use HTTPS." };
+    }
+    if (/\.(svgz?|html?|xhtml|js|mjs|php|exe|dll|bat|cmd|ps1|sh|jar|apk|msi|scr)(\?|#|$)/i.test(parsed.pathname)) {
+      return { valid: false, value: null, error: "Dangerous attachment file type blocked." };
+    }
+    return { valid: true, value: parsed.toString() };
+  } catch {
+    return { valid: false, value: null, error: "Invalid attachment URL." };
+  }
+}
 async function processExpiredAccountDeletions() {
   if (!isDatabaseAvailable()) return 0;
   let count = 0;
@@ -104459,6 +108242,13 @@ async function handleApiRequest(req, res) {
   if (!pathname.startsWith("/api/") && pathname !== "/robots.txt" && pathname !== "/sitemap.xml") {
     return false;
   }
+  if (pathname !== "/api/public/site-config/stream" && !res.__mmTelemetryHooked) {
+    res.__mmTelemetryHooked = true;
+    const reqStart = Date.now();
+    res.on("finish", () => {
+      recordHttpRequestMetric(Date.now() - reqStart, res.statusCode || 200);
+    });
+  }
   const clientIp = getClientIp2(req);
   const { deviceId } = getOrIssueDeviceId(req, res);
   const userAgent = req.headers["user-agent"] || "";
@@ -104523,12 +108313,51 @@ async function handleApiRequest(req, res) {
     }
   }
   if (pathname === "/api/health" && method === "GET") {
+    const failover = getFailoverState();
     sendJson6(res, 200, {
       success: true,
-      status: "ok",
+      status: failover.activeProvider === "degraded_readonly" ? "degraded" : "ok",
       databaseAvailable: isDatabaseAvailable(),
+      activeProvider: failover.activeProvider,
+      providerEpoch: failover.providerEpoch,
       concurrency: getConcurrencyMetrics(),
       cache: appCache.getStats(),
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    return true;
+  }
+  if (pathname === "/api/cron/health-check" && (method === "GET" || method === "POST")) {
+    const cronSecret = (process.env.CRON_SECRET || "").trim();
+    const authHeader = String(req.headers.authorization || "");
+    const bearer2 = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    let authorized = false;
+    if (cronSecret && bearer2 && bearer2.length === cronSecret.length) {
+      try {
+        authorized = crypto30.timingSafeEqual(Buffer.from(bearer2, "utf8"), Buffer.from(cronSecret, "utf8"));
+      } catch {
+        authorized = false;
+      }
+    }
+    if (!authorized) {
+      const adminUser = await authenticateRequest(req);
+      const role = String(adminUser?.role || "").toLowerCase();
+      if (adminUser && (role === "admin" || role === "superadmin")) {
+        authorized = true;
+      }
+    }
+    if (!authorized) {
+      sendJson6(res, 401, { success: false, message: "Unauthorized cron monitor invocation." });
+      return true;
+    }
+    const sweep = await runIndependentHealthCheck();
+    const alertDrain = await drainPendingEmailAlertQueue().catch(() => ({ attempted: 0, delivered: 0, remaining: 0 }));
+    sendJson6(res, 200, {
+      success: true,
+      activeProvider: sweep.failoverState.activeProvider,
+      providerEpoch: sweep.failoverState.providerEpoch,
+      transitioned: sweep.transitioned,
+      unhealthyServices: sweep.services.filter((s2) => s2.status === "unhealthy").map((s2) => s2.key),
+      alertDrain,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
     return true;
@@ -104572,6 +108401,7 @@ async function handleApiRequest(req, res) {
         checkRateLimitAsync(`read:device:${deviceId}`, RATE_LIMITS.GENERAL_READ_DEVICE.max, RATE_LIMITS.GENERAL_READ_DEVICE.windowMs, RATE_LIMITS.GENERAL_READ_DEVICE.op)
       ]);
       if (!ipRead.allowed || !devRead.allowed) {
+        recordRateLimitEvent();
         const violated = !ipRead.allowed ? ipRead : devRead;
         await recordViolationAndMaybeRestrictAsync({
           dimension: "ip_device",
@@ -104627,7 +108457,7 @@ async function handleApiRequest(req, res) {
         sendJson6(res, 404, { success: false, message: "Branding asset not found." });
         return true;
       }
-      serveBrandingAssetResponse(res, asset);
+      await serveBrandingAssetResponse(res, asset);
       return true;
     }
     const pwaManifestMatch = pathname.match(/^\/api\/pwa\/manifest\/(user|myadmin|mystaff)$/);
@@ -104681,6 +108511,141 @@ async function handleApiRequest(req, res) {
         if (clean.length < 6) return "****";
         return `${clean.slice(0, 3)}****${clean.slice(-3)}`;
       };
+      if (pathname === "/api/uploads/attachment" && method === "POST") {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
+          return true;
+        }
+        const body = await parseJsonBody6(req, 8 * 1024 * 1024);
+        const allowedPurposes = /* @__PURE__ */ new Set([
+          "transaction_attachment",
+          "udhar_attachment",
+          "receipt_ocr",
+          "profile_avatar"
+        ]);
+        const purpose = allowedPurposes.has(String(body.purpose)) ? body.purpose : "transaction_attachment";
+        const dataUrl = String(body.dataUrl || body.imageDataUrl || "").trim();
+        const filename = String(body.filename || "attachment.jpg").slice(0, 140);
+        if (!dataUrl) {
+          sendJson6(res, 400, { success: false, message: "Upload payload is required." });
+          return true;
+        }
+        const result = await processSecureUpload({
+          userId: authUser.id,
+          userEmail: authUser.email,
+          purpose,
+          filename,
+          dataUrlOrRawBase64: dataUrl,
+          declaredMime: typeof body.mimeType === "string" ? body.mimeType : void 0,
+          ipAddress: clientIp,
+          allowSvg: false
+        });
+        if (!result.success) {
+          const statusCode = result.status === "quarantined_pending" ? 202 : 400;
+          sendJson6(res, statusCode, {
+            success: false,
+            code: result.status === "quarantined_pending" ? "QUARANTINED_PENDING_REVIEW" : "UPLOAD_SECURITY_REJECTED",
+            quarantineId: result.quarantineId,
+            scanStatus: result.status,
+            scannerEngine: result.scannerEngine,
+            message: result.error || "File failed security validation."
+          });
+          return true;
+        }
+        sendJson6(res, 201, {
+          success: true,
+          quarantineId: result.quarantineId,
+          scanStatus: result.status,
+          scannerEngine: result.scannerEngine,
+          mimeType: result.mimeType,
+          byteSize: result.byteSize,
+          width: result.width,
+          height: result.height,
+          sha256: result.sha256,
+          bucket: result.bucket,
+          objectKey: result.objectKey,
+          signedAccessUrl: result.signedAccessUrl,
+          signedUrlExpiresAt: result.signedUrlExpiresAt
+        });
+        return true;
+      }
+      if (pathname === "/api/uploads/signed-url" && method === "POST") {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
+          return true;
+        }
+        const body = await parseJsonBody6(req);
+        const objectKey = String(body.objectKey || "").trim();
+        const mimeType = String(body.mimeType || "image/jpeg").trim();
+        const ownerPrefix = `${hashOwnerId(authUser.id)}/`;
+        const isAdmin = authUser.role === "admin" || authUser.role === "superadmin";
+        if (!objectKey || !objectKey.startsWith(ownerPrefix) && !isAdmin) {
+          sendJson6(res, 403, { success: false, message: "Unauthorized storage object reference." });
+          return true;
+        }
+        const signed = await createSignedPrivateUrl({
+          bucket: "private-attachments",
+          objectKey,
+          ownerUserId: authUser.id,
+          mimeType,
+          ttlSeconds: 300
+        });
+        sendJson6(res, 200, { success: true, ...signed });
+        return true;
+      }
+      if (pathname === "/api/uploads/private" && method === "GET") {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
+          return true;
+        }
+        const bucket = String(parsed.query.bucket || "");
+        const objectKey = String(parsed.query.key || "");
+        const exp = String(parsed.query.exp || "");
+        const mime = String(parsed.query.mime || "application/octet-stream");
+        const sig = String(parsed.query.sig || "");
+        if (bucket !== "private-attachments" || !objectKey) {
+          sendJson6(res, 403, { success: false, message: "Forbidden storage bucket." });
+          return true;
+        }
+        const ownerPrefix = `${hashOwnerId(authUser.id)}/`;
+        const isAdmin = authUser.role === "admin" || authUser.role === "superadmin";
+        if (!objectKey.startsWith(ownerPrefix) && !isAdmin) {
+          sendJson6(res, 403, { success: false, message: "Access denied to another user attachment." });
+          return true;
+        }
+        if (!isAdmin) {
+          const sigValid = verifySignedPrivateParams({
+            bucket,
+            objectKey,
+            ownerUserId: authUser.id,
+            mimeType: mime,
+            exp,
+            sig
+          });
+          if (!sigValid) {
+            sendJson6(res, 403, { success: false, message: "Signed attachment link expired or invalid." });
+            return true;
+          }
+        }
+        const obj = await getObjectFromStorage("private-attachments", objectKey);
+        if (!obj) {
+          sendJson6(res, 404, { success: false, message: "Attachment not found." });
+          return true;
+        }
+        const safeContentType = ["image/png", "image/jpeg", "image/webp"].includes(mime) ? mime : "application/octet-stream";
+        res.writeHead(200, {
+          "Content-Type": safeContentType,
+          "Content-Length": String(obj.data.length),
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "private, no-store, max-age=0",
+          "Content-Disposition": "inline"
+        });
+        res.end(obj.data);
+        return true;
+      }
       if (pathname === "/api/admin/auth/login" && method === "POST") {
         const body = await parseJsonBody6(req);
         const email = normalizeEmail(body.email || "");
@@ -105253,6 +109218,122 @@ async function handleApiRequest(req, res) {
         const handled = await handleUserAccountExtensions(req, res, pathname, method, clientIp, userAgent);
         if (handled) return true;
       }
+      if (pathname === "/api/transactions" && method === "GET") {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
+          return true;
+        }
+        const isAdminUser = ["admin", "superadmin"].includes(String(authUser.role || "").toLowerCase());
+        const includeDeleted = queryParams.includeDeleted === "true";
+        const scopeAll = isAdminUser && queryParams.scope === "all";
+        const result = await listUserTransactionsViaProvider({
+          userId: scopeAll ? void 0 : authUser.id,
+          includeDeleted
+        });
+        res.setHeader("X-DB-Provider", result.provider);
+        res.setHeader("X-DB-Epoch", String(result.epoch));
+        sendJson6(res, result.status, {
+          success: result.ok,
+          provider: result.provider,
+          epoch: result.epoch,
+          transactions: result.data || [],
+          code: result.code,
+          message: result.error
+        });
+        return true;
+      }
+      if (pathname === "/api/transactions" && method === "POST") {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
+          return true;
+        }
+        const body = await parseJsonBody6(req);
+        const amount = Number(body.amount);
+        if (!Number.isFinite(amount) || amount <= 0 || amount > 1e8) {
+          sendJson6(res, 400, { success: false, message: "Valid positive amount is required." });
+          return true;
+        }
+        const title = String(body.title || "").trim().slice(0, 250);
+        if (!title) {
+          sendJson6(res, 400, { success: false, message: "Transaction title is required." });
+          return true;
+        }
+        const allowedTypes = /* @__PURE__ */ new Set(["income", "expense", "transfer"]);
+        const txType = allowedTypes.has(body.transaction_type) ? body.transaction_type : "expense";
+        const idempotencyHeader = String(req.headers["idempotency-key"] || body.idempotencyKey || "").trim().slice(0, 128) || void 0;
+        const result = await upsertUserTransactionViaProvider({
+          idempotencyKey: idempotencyHeader,
+          tx: {
+            id: typeof body.id === "string" ? body.id : void 0,
+            user_id: authUser.id,
+            user_email: authUser.email,
+            category: String(body.category || "other").trim().slice(0, 60),
+            subcategory: String(body.subcategory || "General").trim().slice(0, 100),
+            transaction_type: txType,
+            amount,
+            title,
+            description: body.description ? String(body.description).slice(0, 1e3) : null,
+            person_name: body.person_name ? String(body.person_name).slice(0, 150) : null,
+            transaction_date: String(body.transaction_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 32),
+            transaction_time: String(body.transaction_time || "00:00").slice(0, 32),
+            notes: body.notes ? String(body.notes).slice(0, 1e3) : null,
+            metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+            is_deleted: Boolean(body.is_deleted),
+            deleted_at: body.deleted_at || null,
+            deleted_by: body.deleted_by || null,
+            created_at: body.created_at
+          }
+        });
+        res.setHeader("X-DB-Provider", result.provider);
+        res.setHeader("X-DB-Epoch", String(result.epoch));
+        if (result.ok) {
+          appCache.invalidateUser(authUser.id);
+        }
+        sendJson6(res, result.status, {
+          success: result.ok,
+          provider: result.provider,
+          epoch: result.epoch,
+          transaction: result.data,
+          code: result.code,
+          message: result.error
+        });
+        return true;
+      }
+      const txItemMatch = pathname.match(/^\/api\/transactions\/([0-9a-fA-F-]{8,64})(?:\/(restore))?$/);
+      if (txItemMatch && (method === "DELETE" || method === "POST" && txItemMatch[2] === "restore")) {
+        const authUser = await authenticateRequest(req);
+        if (!authUser) {
+          sendJson6(res, 401, { success: false, message: "Authentication required." });
+          return true;
+        }
+        const txId = txItemMatch[1];
+        const isRestore = txItemMatch[2] === "restore";
+        const isPermanent = queryParams.permanent === "true";
+        const isAdminUser = ["admin", "superadmin"].includes(String(authUser.role || "").toLowerCase());
+        const action = isRestore ? "restore" : isPermanent ? "permanent_delete" : "soft_delete";
+        const result = await mutateUserTransactionDeleteStateViaProvider({
+          id: txId,
+          userId: authUser.id,
+          isAdmin: isAdminUser,
+          action,
+          deletedBy: authUser.id
+        });
+        res.setHeader("X-DB-Provider", result.provider);
+        res.setHeader("X-DB-Epoch", String(result.epoch));
+        if (result.ok) {
+          appCache.invalidateUser(authUser.id);
+        }
+        sendJson6(res, result.status, {
+          success: result.ok,
+          provider: result.provider,
+          epoch: result.epoch,
+          code: result.code,
+          message: result.error
+        });
+        return true;
+      }
       if (pathname === "/api/auth/register" && method === "POST") {
         const siteCfg = await getPublishedSiteConfig().catch(() => null);
         if (siteCfg && siteCfg.loginSettings.allowRegistration === false) {
@@ -105728,7 +109809,7 @@ async function handleApiRequest(req, res) {
           sendJson6(res, 401, { success: false, message: "Authentication required." });
           return true;
         }
-        const body = await parseJsonBody6(req);
+        const body = await parseJsonBody6(req, 4 * 1024 * 1024);
         const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
         const phone = (body.phone !== void 0 ? body.phone : authUser.phone || "").trim();
         const rawAvatarInput = body.avatarUrl !== void 0 ? body.avatarUrl : authUser.avatar_url;
@@ -105741,7 +109822,28 @@ async function handleApiRequest(req, res) {
           });
           return true;
         }
-        const avatarUrl = avatarCheck.value;
+        let avatarUrl = avatarCheck.value;
+        if (avatarUrl && avatarUrl.startsWith("data:")) {
+          const avatarScan = await processSecureUpload({
+            userId: authUser.id,
+            userEmail: authUser.email,
+            purpose: "profile_avatar",
+            filename: String(body.avatarFilename || "avatar.jpg"),
+            dataUrlOrRawBase64: avatarUrl,
+            ipAddress: clientIp,
+            allowSvg: false
+          });
+          if (!avatarScan.success || !avatarScan.sanitizedDataUrl) {
+            sendJson6(res, avatarScan.status === "quarantined_pending" ? 202 : 400, {
+              success: false,
+              code: "INVALID_AVATAR_IMAGE",
+              quarantineId: avatarScan.quarantineId,
+              message: avatarScan.error || "Uploaded profile photo failed security verification."
+            });
+            return true;
+          }
+          avatarUrl = avatarScan.sanitizedDataUrl;
+        }
         const rawUsername = body.username !== void 0 ? String(body.username || "").trim().toLowerCase() : authUser.username || "";
         if (!fullName || fullName.length < 2 || fullName.length > 80) {
           sendJson6(res, 400, { success: false, message: "Full name must be between 2 and 80 characters." });
@@ -105806,10 +109908,18 @@ async function handleApiRequest(req, res) {
           ipAddress: clientIp
         }).catch(() => {
         });
+        const safeUpdatedUser = sanitizeUserOutput(updatedUser);
+        syncBusinessRecordToSecondary({
+          collection: "profiles",
+          recordId: String(updatedUser.id),
+          operation: "upsert",
+          payload: safeUpdatedUser
+        }).catch(() => {
+        });
         sendJson6(res, 200, {
           success: true,
           message: "Profile updated successfully.",
-          user: sanitizeUserOutput(updatedUser)
+          user: safeUpdatedUser
         });
         return true;
       }
@@ -107116,7 +111226,7 @@ async function handleApiRequest(req, res) {
       if (pathname === "/api/account/deletion/process-expired" && method === "POST") {
         const cronSecret = process.env.CRON_SECRET || "";
         const providedCron = String(req.headers["x-cron-secret"] || "").trim();
-        const validCron = cronSecret.length >= 16 && providedCron.length === cronSecret.length && crypto27.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
+        const validCron = cronSecret.length >= 16 && providedCron.length === cronSecret.length && crypto30.timingSafeEqual(Buffer.from(providedCron), Buffer.from(cronSecret));
         if (!validCron) {
           const authUser = await authenticateRequest(req);
           if (!authUser || authUser.role !== "admin" && authUser.role !== "superadmin") {
@@ -108537,7 +112647,7 @@ async function handleApiRequest(req, res) {
           });
           return true;
         }
-        const tokenHash = crypto27.randomBytes(32).toString("hex");
+        const tokenHash = crypto30.randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1e3);
         const appBaseUrl = APP_CONFIG.appBaseUrl || "https://mymoney.nileshbarela.site";
         const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
@@ -108605,19 +112715,19 @@ async function handleApiRequest(req, res) {
         }
         try {
           let whereMatchSql = "";
-          let queryParams = [];
+          let queryParams2 = [];
           if (classified.mode === "email_exact") {
             whereMatchSql = `LOWER(TRIM(u.email)) = $2`;
-            queryParams = [authUser.id, classified.normalized];
+            queryParams2 = [authUser.id, classified.normalized];
           } else if (classified.mode === "phone_exact") {
             whereMatchSql = `(
             REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2
             OR RIGHT(REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g'), 10) = $3
           ) AND LENGTH(REGEXP_REPLACE(COALESCE(u.phone, ''), '[^0-9]', '', 'g')) >= 10`;
-            queryParams = [authUser.id, classified.digitsOnly, classified.last10Digits];
+            queryParams2 = [authUser.id, classified.digitsOnly, classified.last10Digits];
           } else {
             whereMatchSql = `(LOWER(u.full_name) LIKE $2 OR LOWER(COALESCE(u.email, '')) LIKE $2)`;
-            queryParams = [authUser.id, `%${classified.normalized}%`];
+            queryParams2 = [authUser.id, `%${classified.normalized}%`];
           }
           const usersRes = await query(
             `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.status,
@@ -108659,7 +112769,7 @@ async function handleApiRequest(req, res) {
              AND ${whereMatchSql}
            ORDER BY (u.id = $1) ASC, u.full_name ASC
            LIMIT 15`,
-            queryParams
+            queryParams2
           );
           const sanitizedUsers = usersRes.rows.filter((u) => isDiscoverableNormalUser(u)).map((u) => {
             const isSelf = u.id === authUser.id;
@@ -108727,8 +112837,8 @@ async function handleApiRequest(req, res) {
             if (tokenRes.rows[0].expires_at) expiresAt = tokenRes.rows[0].expires_at;
           }
           if (!pairingToken) {
-            pairingToken = crypto27.randomBytes(32).toString("hex");
-            pairingCode = `MM-${crypto27.randomBytes(3).toString("hex").toUpperCase()}`;
+            pairingToken = crypto30.randomBytes(32).toString("hex");
+            pairingCode = `MM-${crypto30.randomBytes(3).toString("hex").toUpperCase()}`;
             await query(
               `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
              VALUES ($1, $2, $3, FALSE, $4)`,
@@ -108914,8 +113024,8 @@ async function handleApiRequest(req, res) {
         }
         try {
           await query("UPDATE public.qr_pairing_tokens SET used = TRUE WHERE user_id = $1", [authUser.id]);
-          const pairingToken = crypto27.randomBytes(32).toString("hex");
-          const pairingCode = `MM-${crypto27.randomBytes(3).toString("hex").toUpperCase()}`;
+          const pairingToken = crypto30.randomBytes(32).toString("hex");
+          const pairingCode = `MM-${crypto30.randomBytes(3).toString("hex").toUpperCase()}`;
           const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
           await query(
             `INSERT INTO public.qr_pairing_tokens (user_id, pairing_token, pairing_code, is_single_use, expires_at)
@@ -109320,7 +113430,12 @@ async function handleApiRequest(req, res) {
         const category = (body.category || "Personal Loan").trim();
         const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
         const description = (body.description || "").trim();
-        const attachmentUrl = body.attachment_url || null;
+        const attCheck = sanitizeAttachmentUrlInput(body.attachment_url);
+        if (!attCheck.valid) {
+          sendJson6(res, 400, { success: false, code: "INVALID_ATTACHMENT", message: attCheck.error || "Invalid attachment." });
+          return true;
+        }
+        const attachmentUrl = attCheck.value;
         const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
         if (isExplicitQrEndpoint && !qrToken && !pairingCode && !qrDataRaw) {
           sendJson6(res, 400, { success: false, code: "QR_OR_CODE_REQUIRED", message: "A valid QR token or confirmation code is required." });
@@ -109452,7 +113567,7 @@ async function handleApiRequest(req, res) {
           sendJson6(res, 400, { success: false, message: "Person's name is required." });
           return true;
         }
-        const linkId = crypto27.randomUUID();
+        const linkId = crypto30.randomUUID();
         const nowIso = (/* @__PURE__ */ new Date()).toISOString();
         const client = await pool.connect();
         try {
@@ -109636,6 +113751,13 @@ async function handleApiRequest(req, res) {
               status: initialLifecycle
             }).catch((e2) => console.warn("[Udhar Created Two-Sided Email Error]:", e2));
             const createdRow = userARes.rows[0];
+            syncBusinessRecordToSecondary({
+              collection: "udhar_transactions",
+              recordId: String(createdRow.id),
+              operation: "upsert",
+              payload: createdRow
+            }).catch(() => {
+            });
             sendJson6(res, 201, {
               success: true,
               requiresConfirmation: !isInstantQr,
@@ -109695,6 +113817,13 @@ async function handleApiRequest(req, res) {
               dueDate
             }).catch((e2) => console.warn("[Notify Udhar Created Error]:", e2));
             const createdRow = singleRes.rows[0];
+            syncBusinessRecordToSecondary({
+              collection: "udhar_transactions",
+              recordId: String(createdRow.id),
+              operation: "upsert",
+              payload: createdRow
+            }).catch(() => {
+            });
             sendJson6(res, 201, {
               success: true,
               requiresConfirmation: false,
@@ -110023,7 +114152,12 @@ async function handleApiRequest(req, res) {
         const plainNotes = (body.notes || "").trim();
         const paymentMethod = (body.payment_method || body.paymentMethod || "UPI").trim();
         const transactionRef = (body.transaction_ref || body.transactionRef || "").trim();
-        const attachmentUrl = (body.attachment_url || body.attachmentUrl || "").trim();
+        const repAttCheck = sanitizeAttachmentUrlInput(body.attachment_url || body.attachmentUrl);
+        if (!repAttCheck.valid) {
+          sendJson6(res, 400, { success: false, code: "INVALID_ATTACHMENT", message: repAttCheck.error || "Invalid attachment." });
+          return true;
+        }
+        const attachmentUrl = repAttCheck.value || "";
         const idempotencyKey = (body.idempotency_key || body.idempotencyKey || "").trim() || null;
         const packedRepayNotes = packStructuredNote(plainNotes, {
           transaction_ref: transactionRef || void 0,
@@ -110164,9 +114298,31 @@ async function handleApiRequest(req, res) {
               }).catch((e2) => console.warn("[Udhar Settled Email Error]:", e2));
             }
           }
+          const createdRepayment = repInsertRes.rows[0];
+          if (createdRepayment?.id) {
+            syncBusinessRecordToSecondary({
+              collection: "udhar_repayments",
+              recordId: String(createdRepayment.id),
+              operation: "upsert",
+              payload: createdRepayment
+            }).catch(() => {
+            });
+          }
+          syncBusinessRecordToSecondary({
+            collection: "udhar_transactions",
+            recordId: String(tx.id),
+            operation: "upsert",
+            payload: {
+              ...tx,
+              current_balance: newBalance,
+              status: isSettled ? "settled" : tx.status,
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }).catch(() => {
+          });
           sendJson6(res, 200, {
             success: true,
-            repayment: repInsertRes.rows[0],
+            repayment: createdRepayment,
             isPendingConfirmation: repaymentStatus === "pending_confirmation",
             message: repaymentStatus === "pending_confirmation" ? `Payment of \u20B9${repayAmount.toLocaleString("en-IN")} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.` : isSettled ? "Full repayment recorded! Transaction is now completely settled." : `Partial repayment of \u20B9${repayAmount.toLocaleString("en-IN")} recorded. Remaining balance: \u20B9${newBalance.toLocaleString("en-IN")}.`,
             remainingBalance: newBalance,
@@ -110424,13 +114580,23 @@ async function handleApiRequest(req, res) {
           const isSettled = Boolean(validation.isSettled);
           const newStatus = validation.nextStatus;
           const nextPlainNote = body.notes !== void 0 ? (body.notes || "").trim() : prevPlainNote;
+          let nextAttachmentUrl = prevMeta.attachment_url;
+          if (body.attachment_url !== void 0) {
+            const updAttCheck = sanitizeAttachmentUrlInput(body.attachment_url);
+            if (!updAttCheck.valid) {
+              await client.query("ROLLBACK");
+              sendJson6(res, 400, { success: false, code: "INVALID_ATTACHMENT", message: updAttCheck.error || "Invalid attachment." });
+              return true;
+            }
+            nextAttachmentUrl = updAttCheck.value || void 0;
+          }
           const nextPackedNotes = packStructuredNote(nextPlainNote, {
             ...prevMeta,
             lifecycle_status: newStatus,
             category: body.category !== void 0 ? body.category : prevMeta.category,
             payment_method: body.payment_method !== void 0 ? body.payment_method : prevMeta.payment_method,
             description: body.description !== void 0 ? body.description : prevMeta.description,
-            attachment_url: body.attachment_url !== void 0 ? body.attachment_url : prevMeta.attachment_url
+            attachment_url: nextAttachmentUrl
           });
           const updatedDate = body.transaction_date || body.date || tx.transaction_date;
           const updatedDueDate = body.due_date !== void 0 ? body.due_date || null : body.dueDate !== void 0 ? body.dueDate || null : tx.due_date;
@@ -111402,7 +115568,12 @@ async function handleApiRequest(req, res) {
         const description = (body.description || body.message || "").trim();
         const phone = (body.phone || body.user_phone || "").trim() || null;
         const category = (body.category || "General Complaint").trim();
-        const attachmentUrl = (body.attachment_url || body.attachment || "").trim() || null;
+        const cmpAttCheck = sanitizeAttachmentUrlInput(body.attachment_url || body.attachment);
+        if (!cmpAttCheck.valid) {
+          sendJson6(res, 400, { success: false, code: "INVALID_ATTACHMENT", message: cmpAttCheck.error || "Invalid attachment." });
+          return true;
+        }
+        const attachmentUrl = cmpAttCheck.value;
         if (!subject || subject.length < 3) {
           sendJson6(res, 400, { success: false, message: "Complaint subject is required (min 3 characters)." });
           return true;
@@ -111543,7 +115714,12 @@ async function handleApiRequest(req, res) {
         const category = (body.category || "How to use the app").trim();
         const subject = (body.subject || "").trim();
         const message = (body.message || body.description || "").trim();
-        const attachmentUrl = (body.attachment_url || body.attachment || "").trim() || null;
+        const supAttCheck = sanitizeAttachmentUrlInput(body.attachment_url || body.attachment);
+        if (!supAttCheck.valid) {
+          sendJson6(res, 400, { success: false, code: "INVALID_ATTACHMENT", message: supAttCheck.error || "Invalid attachment." });
+          return true;
+        }
+        const attachmentUrl = supAttCheck.value;
         if (!subject || subject.length < 3) {
           sendJson6(res, 400, { success: false, message: "Support subject is required." });
           return true;
@@ -113005,6 +117181,14 @@ async function handleApiRequest(req, res) {
       sendJson6(res, 404, { success: false, message: "API endpoint not found." });
       return true;
     } catch (err) {
+      if (err?.message === "Request payload too large" || err?.message === "PAYLOAD_TOO_LARGE") {
+        sendJson6(res, 413, {
+          success: false,
+          code: "PAYLOAD_TOO_LARGE",
+          message: "Uploaded request payload exceeds the maximum allowed server limit."
+        });
+        return true;
+      }
       console.error(`[API Error] ${method} ${pathname}:`, err);
       sendJson6(res, 500, {
         success: false,

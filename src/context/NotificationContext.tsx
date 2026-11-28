@@ -245,7 +245,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     refreshNotifications();
     loadPreferences();
 
-    const interval = setInterval(refreshNotifications, 15000);
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        void refreshNotifications();
+      }
+    }, 30000);
     const onRefreshEvent = () => {
       setTimeout(() => {
         void refreshNotifications();

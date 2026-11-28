@@ -4,7 +4,7 @@
  */
 import http from 'http';
 import { parse as parseUrl } from 'url';
-import { query, isDatabaseAvailable } from './db.js';
+import { query, isDatabaseAvailable, getDbPoolDiagnostics } from './db.js';
 import { APP_CONFIG } from './config.js';
 import { authenticateRequest, revokeAllUserSessions } from './auth.js';
 import {
@@ -20,12 +20,19 @@ import {
   PROGRESSIVE_COOLDOWN_MS,
 } from './security.js';
 import { appCache, getConcurrencyMetrics } from './cache.js';
-import { getFullHealthMatrix, runIndependentHealthCheck } from './healthMonitor.js';
+import {
+  getFullHealthMatrix,
+  runIndependentHealthCheck,
+  drainPendingEmailAlertQueue,
+} from './healthMonitor.js';
 import {
   retryFailedOutboxEvents,
   runDualDbReconciliation,
   createLogicalBackupAndVerifyRestore,
+  getFailoverState,
+  getBackupSnapshots,
 } from './dbFailover.js';
+import { getPostgrestClientMetrics } from './supabaseRestFallback.js';
 import {
   ALLOWED_GEMINI_MODELS,
   getAiProviderStatus,
@@ -2382,50 +2389,104 @@ export async function handleAdminApiRequest(
           backups = backupsRes.rows || [];
         } catch {}
       }
+      const verifiedSnapshots = getBackupSnapshots().map((snap) => ({
+        id: snap.id,
+        backup_name: `Verified Snapshot (${snap.totalRecords} records)`,
+        backup_type: snap.backupType,
+        status: snap.status,
+        file_size_bytes: snap.byteSize,
+        storage_location: snap.storageLocation,
+        checksum: `sha256:${snap.checksumSha256}`,
+        restore_verified: snap.restoreVerified,
+        balance_verified: snap.balanceVerified,
+        record_counts: snap.recordCounts,
+        triggered_by: snap.createdBy,
+        created_at: snap.createdAt,
+      }));
+      const seen = new Set(backups.map((b) => b.id));
+      for (const snap of verifiedSnapshots) {
+        if (!seen.has(snap.id)) backups.unshift(snap);
+      }
       sendJson(res, 200, { success: true, backups });
       return true;
     }
 
-    // Trigger backup: POST /api/admin/system/backups/trigger
+    // Trigger real verified logical backup: POST /api/admin/system/backups/trigger
     if (pathname === '/api/admin/system/backups/trigger' && method === 'POST') {
       const auth = await verifyAdminAuth(req, res, 'backups.manage');
       if (!auth) return true;
 
       const body = await parseJsonBody(req);
-      const backupType = body.backup_type || 'manual';
-      const backupName = `Manual Snapshot — ${new Date().toISOString().split('T')[0]}`;
-      const fakeChecksum = `sha256:${generateCryptoToken(16)}`;
+      const backupType = String(body.backup_type || 'manual').slice(0, 40);
+      const snapshot = await createLogicalBackupAndVerifyRestore(auth.authUser.email, backupType);
+      const backupName = `Verified ${backupType} Snapshot — ${snapshot.createdAt.split('T')[0]}`;
+
       let backupRecord: any = {
-        id: `bkp_${Date.now()}`,
+        id: snapshot.id,
         backup_name: backupName,
-        backup_type: backupType,
-        status: 'completed',
-        file_size_bytes: 3145728,
-        storage_location: 'supabase://backups/manual_snapshot.dump',
-        checksum: fakeChecksum,
+        backup_type: snapshot.backupType,
+        status: snapshot.status,
+        file_size_bytes: snapshot.byteSize,
+        storage_location: snapshot.storageLocation,
+        checksum: `sha256:${snapshot.checksumSha256}`,
+        restore_verified: snapshot.restoreVerified,
+        balance_verified: snapshot.balanceVerified,
+        record_counts: snapshot.recordCounts,
         triggered_by: auth.authUser.email,
-        created_at: new Date().toISOString(),
+        created_at: snapshot.createdAt,
       };
 
       if (isDatabaseAvailable()) {
         try {
           const insRes = await query(
             `INSERT INTO public.system_backups (backup_name, backup_type, status, file_size_bytes, storage_location, checksum, triggered_by, details)
-             VALUES ($1, $2, 'completed', 3145728, 'supabase://backups/manual_snapshot.dump', $3, $4, '{"tables_included": 19, "verified": true}')
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
              RETURNING *`,
-            [backupName, backupType, fakeChecksum, auth.authUser.email]
+            [
+              backupName,
+              snapshot.backupType,
+              snapshot.status,
+              snapshot.byteSize,
+              snapshot.storageLocation,
+              `sha256:${snapshot.checksumSha256}`,
+              auth.authUser.email,
+              JSON.stringify({
+                totalRecords: snapshot.totalRecords,
+                recordCounts: snapshot.recordCounts,
+                restoreVerified: snapshot.restoreVerified,
+                balanceVerified: snapshot.balanceVerified,
+              }),
+            ]
           );
-          if (insRes.rows[0]) backupRecord = insRes.rows[0];
+          if (insRes.rows[0]) {
+            backupRecord = {
+              ...insRes.rows[0],
+              restore_verified: snapshot.restoreVerified,
+              balance_verified: snapshot.balanceVerified,
+              record_counts: snapshot.recordCounts,
+            };
+          }
           await logSecurityEvent('SYSTEM_BACKUP_TRIGGERED', {
             userEmail: auth.authUser.email,
             actorRole: auth.role,
             ipAddress: clientIp,
-            details: { backupName },
+            details: {
+              backupId: snapshot.id,
+              restoreVerified: snapshot.restoreVerified,
+              totalRecords: snapshot.totalRecords,
+            },
           }).catch(() => {});
         } catch {}
       }
 
-      sendJson(res, 201, { success: true, message: 'Database backup successfully generated.', backup: backupRecord });
+      sendJson(res, 201, {
+        success: true,
+        message: snapshot.restoreVerified
+          ? `Logical backup created (${snapshot.totalRecords} records) and restore integrity verified.`
+          : 'Backup snapshot created, but restore verification reported a discrepancy.',
+        backup: backupRecord,
+        snapshot,
+      });
       return true;
     }
 
@@ -2486,6 +2547,14 @@ export async function handleAdminApiRequest(
         details: { id: snapshot.id, restoreVerified: snapshot.restoreVerified, recordCounts: snapshot.recordCounts },
       }).catch(() => {});
       sendJson(res, 200, { success: true, snapshot, matrix: getFullHealthMatrix() });
+      return true;
+    }
+
+    if (pathname === '/api/admin/database/alerts/retry' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'system.read');
+      if (!auth) return true;
+      const result = await drainPendingEmailAlertQueue();
+      sendJson(res, 200, { success: true, result, matrix: getFullHealthMatrix() });
       return true;
     }
 
@@ -5602,16 +5671,29 @@ export async function handleAdminApiRequest(
         }
       }
 
+      const pgPool = getDbPoolDiagnostics();
+      const postgrest = getPostgrestClientMetrics();
+      const failoverState = getFailoverState();
+
       sendJson(res, 200, {
         success: true,
         database: {
           tables,
           poolStatus,
+          pgPool,
+          postgrest,
+          failoverState,
           ssl: true,
           connectionPool:
             poolStatus === 'healthy'
-              ? 'Supabase PostgreSQL Pooler (Port 6543 IPv4)'
-              : 'Supabase HTTPS REST Fallback Active',
+              ? pgPool.connectionMode === 'transaction_pooler'
+                ? `Supabase Supavisor Transaction Pooler (Port ${pgPool.port || 6543})`
+                : pgPool.connectionMode === 'direct_postgres'
+                ? `Direct PostgreSQL (Port ${pgPool.port || 5432} — switch to 6543 recommended)`
+                : `PostgreSQL Pool (${pgPool.connectionMode})`
+              : failoverState.activeProvider === 'firebase'
+              ? 'Firebase Secondary Failover Active'
+              : 'Supabase HTTPS REST Fallback (DATABASE_URL not active)',
         },
       });
       return true;

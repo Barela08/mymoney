@@ -315,7 +315,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    const interval = setInterval(verifySessionAlive, 30000);
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        verifySessionAlive();
+      }
+    }, 60000);
     window.addEventListener('focus', verifySessionAlive);
     document.addEventListener('visibilitychange', onVisible);
 

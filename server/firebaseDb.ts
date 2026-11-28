@@ -5,8 +5,12 @@
  * FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY
  * (or FIREBASE_SERVICE_ACCOUNT_JSON) are configured.
  *
- * When credentials are not configured, provides a bounded local mirror store
- * for staging/testing while accurately reporting `configured: false`.
+ * Features:
+ * - Idempotent version-checked upserts and tombstone deletions across all business collections.
+ * - Distributed failover lease storage (`failover_state/primary_lease`).
+ * - Independent live health checks for Firestore, Firebase Auth, and Firebase Storage.
+ * - Bounded local staging mirror when service-account credentials are absent, while
+ *   honestly reporting `configured: false` (never faking a healthy cloud connection).
  */
 
 import crypto from 'crypto';
@@ -27,15 +31,30 @@ export interface SecondaryRecordEnvelope {
   source_db: 'supabase' | 'firebase';
   idempotency_key: string;
   updated_at: string;
+  created_at?: string;
   deleted_at?: string | null;
 }
+
+export const SYNCED_BUSINESS_COLLECTIONS = [
+  'app_users',
+  'transactions',
+  'sections',
+  'udhar_transactions',
+  'udhar_repayments',
+  'udhar_contacts',
+  'user_connections',
+  'user_notifications',
+  'app_settings',
+] as const;
 
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 const localMirrorStore = new Map<string, Map<string, SecondaryRecordEnvelope>>();
 const MIRROR_FILE = path.resolve(process.cwd(), '.runtime-firebase-mirror.json');
+let mirrorLoaded = false;
 
 function loadLocalMirrorOnce() {
-  if (localMirrorStore.size > 0) return;
+  if (mirrorLoaded) return;
+  mirrorLoaded = true;
   try {
     if (fs.existsSync(MIRROR_FILE)) {
       const raw = JSON.parse(fs.readFileSync(MIRROR_FILE, 'utf8'));
@@ -100,8 +119,8 @@ export function isFirebaseDbConfigured(): boolean {
   return Boolean(getFirebaseServiceAccount());
 }
 
-async function getGoogleOAuthToken(sa: FirebaseServiceAccount): Promise<string> {
-  if (cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 60_000) {
+async function getGoogleOAuthToken(sa: FirebaseServiceAccount, scope = 'https://www.googleapis.com/auth/datastore'): Promise<string> {
+  if (scope === 'https://www.googleapis.com/auth/datastore' && cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 60_000) {
     return cachedAccessToken.token;
   }
 
@@ -110,7 +129,7 @@ async function getGoogleOAuthToken(sa: FirebaseServiceAccount): Promise<string> 
   const claim = Buffer.from(
     JSON.stringify({
       iss: sa.clientEmail,
-      scope: 'https://www.googleapis.com/auth/datastore',
+      scope,
       aud: 'https://oauth2.googleapis.com/token',
       exp: now + 3600,
       iat: now,
@@ -133,17 +152,20 @@ async function getGoogleOAuthToken(sa: FirebaseServiceAccount): Promise<string> 
     throw new Error(`Firebase OAuth2 token failed (${res.status}): ${text.slice(0, 120)}`);
   }
   const json: any = await res.json();
-  cachedAccessToken = {
-    token: json.access_token,
-    expiresAt: Date.now() + (Number(json.expires_in) || 3600) * 1000,
-  };
-  return cachedAccessToken.token;
+  if (scope === 'https://www.googleapis.com/auth/datastore') {
+    cachedAccessToken = {
+      token: json.access_token,
+      expiresAt: Date.now() + (Number(json.expires_in) || 3600) * 1000,
+    };
+  }
+  return json.access_token;
 }
 
 function toFirestoreValue(val: any): any {
   if (val === null || val === undefined) return { nullValue: null };
   if (typeof val === 'boolean') return { booleanValue: val };
   if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return { nullValue: null };
     return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
   }
   if (typeof val === 'string') return { stringValue: val };
@@ -181,6 +203,25 @@ function fromFirestoreValue(v: any): any {
   return null;
 }
 
+function parseFirestoreDocument(collection: string, doc: any): SecondaryRecordEnvelope {
+  const id = String(doc.name || '').split('/').pop() || '';
+  const dataObj: Record<string, any> = {};
+  for (const [k, v] of Object.entries(doc.fields || {})) {
+    dataObj[k] = fromFirestoreValue(v);
+  }
+  return {
+    id,
+    collection,
+    data: dataObj,
+    sync_version: Number(dataObj._sync_version || 1),
+    source_db: (dataObj._source_db === 'firebase' ? 'firebase' : 'supabase') as 'supabase' | 'firebase',
+    idempotency_key: String(dataObj._idempotency_key || id),
+    updated_at: String(dataObj._updated_at || doc.updateTime || new Date().toISOString()),
+    created_at: String(dataObj._created_at || doc.createTime || dataObj.created_at || new Date().toISOString()),
+    deleted_at: dataObj._deleted_at || null,
+  };
+}
+
 export async function checkFirebaseHealth(): Promise<{
   status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
   configured: boolean;
@@ -194,13 +235,13 @@ export async function checkFirebaseHealth(): Promise<{
       status: 'unknown',
       configured: false,
       responseTimeMs: Date.now() - t0,
-      message: 'Firebase Service Account credentials not configured (local mirror fallback active).',
+      message: 'Firebase Service Account credentials not configured (FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY required; local mirror staging active).',
     };
   }
   try {
     const token = await getGoogleOAuthToken(sa);
     const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/app_settings?pageSize=1`,
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/failover_state/primary_lease`,
       {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(5000),
@@ -208,13 +249,14 @@ export async function checkFirebaseHealth(): Promise<{
     );
     const ms = Date.now() - t0;
     if (res.ok || res.status === 404) {
-      return { status: 'healthy', configured: true, responseTimeMs: ms, message: 'Cloud Firestore reachable' };
+      return { status: 'healthy', configured: true, responseTimeMs: ms, message: `Cloud Firestore reachable (project: ${sa.projectId})` };
     }
+    const errText = await res.text().catch(() => '');
     return {
       status: res.status >= 500 ? 'unhealthy' : 'degraded',
       configured: true,
       responseTimeMs: ms,
-      message: `Firestore HTTP ${res.status}`,
+      message: `Firestore HTTP ${res.status}${errText ? `: ${errText.slice(0, 100)}` : ''}`,
     };
   } catch (err: any) {
     return {
@@ -226,12 +268,145 @@ export async function checkFirebaseHealth(): Promise<{
   }
 }
 
+export async function checkFirebaseAuthHealth(): Promise<{
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+  configured: boolean;
+  responseTimeMs: number;
+  message: string;
+}> {
+  const t0 = Date.now();
+  const projectId = (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '').trim();
+  const webApiKey = (process.env.VITE_FIREBASE_API_KEY || '').trim();
+  if (!projectId) {
+    return {
+      status: 'unknown',
+      configured: false,
+      responseTimeMs: Date.now() - t0,
+      message: 'Firebase Auth project ID not configured (FIREBASE_PROJECT_ID / VITE_FIREBASE_PROJECT_ID).',
+    };
+  }
+  try {
+    // Verify Google SecureToken public certificates endpoint used for RS256 ID token verification
+    const res = await fetch(
+      'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com',
+      { signal: AbortSignal.timeout(4500) }
+    );
+    const ms = Date.now() - t0;
+    if (!res.ok) {
+      return {
+        status: res.status >= 500 ? 'unhealthy' : 'degraded',
+        configured: true,
+        responseTimeMs: ms,
+        message: `Firebase SecureToken certs HTTP ${res.status}`,
+      };
+    }
+    return {
+      status: webApiKey ? 'healthy' : 'degraded',
+      configured: true,
+      responseTimeMs: ms,
+      message: webApiKey
+        ? `Firebase Auth token verification ready (project: ${projectId})`
+        : `Server token verification ready (project: ${projectId}); VITE_FIREBASE_API_KEY unset for browser popup`,
+    };
+  } catch (err: any) {
+    return {
+      status: 'unhealthy',
+      configured: true,
+      responseTimeMs: Date.now() - t0,
+      message: err?.message || 'Firebase Auth verification endpoint unreachable',
+    };
+  }
+}
+
+export async function checkFirebaseStorageHealth(): Promise<{
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+  configured: boolean;
+  responseTimeMs: number;
+  message: string;
+}> {
+  const t0 = Date.now();
+  const sa = getFirebaseServiceAccount();
+  const bucket = (
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    process.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    (sa?.projectId ? `${sa.projectId}.firebasestorage.app` : '')
+  ).trim();
+  if (!sa || !bucket) {
+    return {
+      status: 'unknown',
+      configured: false,
+      responseTimeMs: Date.now() - t0,
+      message: 'Firebase Storage bucket / service account not configured.',
+    };
+  }
+  try {
+    const token = await getGoogleOAuthToken(sa, 'https://www.googleapis.com/auth/devstorage.read_only');
+    const res = await fetch(
+      `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}?fields=name,location`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(4500),
+      }
+    );
+    const ms = Date.now() - t0;
+    if (res.ok) {
+      return { status: 'healthy', configured: true, responseTimeMs: ms, message: `Firebase Storage bucket reachable (${bucket})` };
+    }
+    if (res.status === 404) {
+      return { status: 'unknown', configured: false, responseTimeMs: ms, message: `Firebase Storage bucket not provisioned (${bucket})` };
+    }
+    return {
+      status: res.status >= 500 ? 'unhealthy' : 'degraded',
+      configured: true,
+      responseTimeMs: ms,
+      message: `Firebase Storage HTTP ${res.status}`,
+    };
+  } catch (err: any) {
+    return {
+      status: 'unhealthy',
+      configured: true,
+      responseTimeMs: Date.now() - t0,
+      message: err?.message || 'Firebase Storage probe failed',
+    };
+  }
+}
+
+export async function getSecondaryRecord(
+  collection: string,
+  id: string
+): Promise<SecondaryRecordEnvelope | null> {
+  const sa = getFirebaseServiceAccount();
+  if (sa) {
+    try {
+      const token = await getGoogleOAuthToken(sa);
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+      if (res.ok) {
+        const doc = await res.json();
+        return parseFirestoreDocument(collection, doc);
+      }
+      if (res.status === 404) return null;
+    } catch {
+      // Fall through to local mirror
+    }
+  }
+
+  loadLocalMirrorOnce();
+  return localMirrorStore.get(collection)?.get(id) || null;
+}
+
 export async function upsertSecondaryRecord(envelope: SecondaryRecordEnvelope): Promise<{
   ok: boolean;
   mode: 'firestore' | 'local_mirror';
+  skippedStale?: boolean;
   error?: string;
 }> {
-  // Always keep local mirror updated in sync
+  // Always keep local mirror updated with monotonic sync_version guard (idempotent & stale-safe)
   loadLocalMirrorOnce();
   let colMap = localMirrorStore.get(envelope.collection);
   if (!colMap) {
@@ -239,8 +414,14 @@ export async function upsertSecondaryRecord(envelope: SecondaryRecordEnvelope): 
     localMirrorStore.set(envelope.collection, colMap);
   }
   const existing = colMap.get(envelope.id);
+  if (existing && existing.sync_version > envelope.sync_version) {
+    return { ok: true, mode: getFirebaseServiceAccount() ? 'firestore' : 'local_mirror', skippedStale: true };
+  }
   if (!existing || existing.sync_version <= envelope.sync_version) {
-    colMap.set(envelope.id, envelope);
+    colMap.set(envelope.id, {
+      ...envelope,
+      created_at: existing?.created_at || envelope.created_at || envelope.updated_at,
+    });
     persistLocalMirrorBestEffort();
   }
 
@@ -252,12 +433,20 @@ export async function upsertSecondaryRecord(envelope: SecondaryRecordEnvelope): 
   try {
     const token = await getGoogleOAuthToken(sa);
     const docUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(envelope.collection)}/${encodeURIComponent(envelope.id)}`;
+
+    // Check existing remote version to avoid regressing newer revisions
+    const remoteExisting = await getSecondaryRecord(envelope.collection, envelope.id).catch(() => null);
+    if (remoteExisting && remoteExisting.sync_version > envelope.sync_version) {
+      return { ok: true, mode: 'firestore', skippedStale: true };
+    }
+
     const fields: Record<string, any> = {};
     const merged = {
       ...envelope.data,
       _sync_version: envelope.sync_version,
       _source_db: envelope.source_db,
       _idempotency_key: envelope.idempotency_key,
+      _created_at: remoteExisting?.created_at || envelope.created_at || envelope.updated_at,
       _updated_at: envelope.updated_at,
       _deleted_at: envelope.deleted_at || null,
     };
@@ -284,52 +473,83 @@ export async function upsertSecondaryRecord(envelope: SecondaryRecordEnvelope): 
   }
 }
 
-export async function listSecondaryCollection(collection: string, userIdFilter?: string): Promise<SecondaryRecordEnvelope[]> {
+export async function listSecondaryCollection(
+  collection: string,
+  userIdFilter?: string,
+  includeDeleted: boolean = false
+): Promise<SecondaryRecordEnvelope[]> {
   const sa = getFirebaseServiceAccount();
   if (sa) {
     try {
       const token = await getGoogleOAuthToken(sa);
-      const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}?pageSize=200`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(6000),
-        }
-      );
-      if (res.ok) {
+      const allDocs: SecondaryRecordEnvelope[] = [];
+      let pageToken = '';
+      for (let page = 0; page < 5; page++) {
+        const qs = new URLSearchParams({ pageSize: '200' });
+        if (pageToken) qs.set('pageToken', pageToken);
+        const res = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}?${qs.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(6000),
+          }
+        );
+        if (!res.ok) break;
         const json: any = await res.json();
         const docs: any[] = Array.isArray(json?.documents) ? json.documents : [];
-        const parsed: SecondaryRecordEnvelope[] = docs
-          .map((d) => {
-            const id = String(d.name || '').split('/').pop() || '';
-            const dataObj: Record<string, any> = {};
-            for (const [k, v] of Object.entries(d.fields || {})) {
-              dataObj[k] = fromFirestoreValue(v);
-            }
-            return {
-              id,
-              collection,
-              data: dataObj,
-              sync_version: Number(dataObj._sync_version || 1),
-              source_db: (dataObj._source_db || 'supabase') as 'supabase' | 'firebase',
-              idempotency_key: String(dataObj._idempotency_key || id),
-              updated_at: String(dataObj._updated_at || d.updateTime || new Date().toISOString()),
-              deleted_at: dataObj._deleted_at || null,
-            };
-          })
-          .filter((env) => !env.deleted_at)
-          .filter((env) => !userIdFilter || env.data.user_id === userIdFilter || env.data.user_a_id === userIdFilter || env.data.user_b_id === userIdFilter);
-        return parsed;
+        for (const d of docs) {
+          allDocs.push(parseFirestoreDocument(collection, d));
+        }
+        if (!json?.nextPageToken) break;
+        pageToken = String(json.nextPageToken);
       }
-    } catch {}
+      return allDocs
+        .filter((env) => includeDeleted || !env.deleted_at)
+        .filter(
+          (env) =>
+            !userIdFilter ||
+            env.data.user_id === userIdFilter ||
+            env.data.user_a_id === userIdFilter ||
+            env.data.user_b_id === userIdFilter ||
+            env.id === userIdFilter
+        );
+    } catch {
+      // Fall back to local mirror when cloud read fails
+    }
   }
 
   loadLocalMirrorOnce();
   const map = localMirrorStore.get(collection);
   if (!map) return [];
   return Array.from(map.values())
-    .filter((env) => !env.deleted_at)
-    .filter((env) => !userIdFilter || env.data.user_id === userIdFilter || env.data.user_a_id === userIdFilter || env.data.user_b_id === userIdFilter);
+    .filter((env) => includeDeleted || !env.deleted_at)
+    .filter(
+      (env) =>
+        !userIdFilter ||
+        env.data.user_id === userIdFilter ||
+        env.data.user_a_id === userIdFilter ||
+        env.data.user_b_id === userIdFilter ||
+        env.id === userIdFilter
+    );
+}
+
+export async function writeFailoverLeaseToSecondary(lease: {
+  activeProvider: string;
+  providerEpoch: number;
+  leaseUntil: number | null;
+  lastFailoverAt: string | null;
+  lastRecoveryAt: string | null;
+  reason: string;
+}): Promise<void> {
+  await upsertSecondaryRecord({
+    id: 'primary_lease',
+    collection: 'failover_state',
+    data: lease,
+    sync_version: lease.providerEpoch,
+    source_db: lease.activeProvider === 'firebase' ? 'firebase' : 'supabase',
+    idempotency_key: `lease_epoch_${lease.providerEpoch}`,
+    updated_at: new Date().toISOString(),
+  }).catch(() => {});
 }
 
 export function getLocalMirrorStats() {
@@ -340,5 +560,10 @@ export function getLocalMirrorStats() {
     counts[col] = map.size;
     total += map.size;
   }
-  return { totalRecords: total, collections: counts };
+  return {
+    configured: isFirebaseDbConfigured(),
+    mode: isFirebaseDbConfigured() ? 'cloud_firestore' : 'local_mirror_staging',
+    totalRecords: total,
+    collections: counts,
+  };
 }

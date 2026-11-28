@@ -115,7 +115,7 @@ export function getSupabaseClient(): SupabaseClient | null {
         },
         realtime: {
           params: {
-            eventsPerSecond: 40,
+            eventsPerSecond: 10,
           },
         },
       });
@@ -184,10 +184,46 @@ export async function testSupabaseConnection(
 // SUPABASE TRANSACTION DATABASE OPERATIONS
 // ==========================================
 
+async function getBackendTxAuthHeaders(): Promise<Record<string, string> | null> {
+  try {
+    const { getStoredSessionToken } = await import('./authApi');
+    const token = getStoredSessionToken();
+    if (!token) return null;
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchTransactionsFromSupabase(
   userId?: string,
   includeDeleted: boolean = false
 ): Promise<Transaction[]> {
+  // Prefer centralized backend database provider (handles Supabase -> Firebase automatic failover)
+  const headers = await getBackendTxAuthHeaders();
+  if (headers) {
+    try {
+      const qs = new URLSearchParams();
+      if (includeDeleted) qs.set('includeDeleted', 'true');
+      const res = await fetch(`/api/transactions${qs.toString() ? `?${qs.toString()}` : ''}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers,
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.transactions)) {
+          return json.transactions.map(mapRowToTransaction);
+        }
+      }
+    } catch {
+      // Fall back to direct Supabase client below when API endpoint is unavailable
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase client is not configured.');
 
@@ -242,6 +278,59 @@ export function mapRowToTransaction(row: any): Transaction {
 }
 
 export async function saveTransactionToSupabase(tx: Transaction): Promise<Transaction> {
+  // Prefer centralized backend database provider (enforces fencing, active primary/failover, and transactional outbox)
+  const headers = await getBackendTxAuthHeaders();
+  if (headers) {
+    let backendRes: Response | null = null;
+    try {
+      backendRes = await fetch('/api/transactions', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify(tx),
+      });
+    } catch {
+      backendRes = null;
+    }
+
+    if (backendRes) {
+      if (backendRes.ok) {
+        const json = await backendRes.json();
+        if (json?.success && json.transaction) {
+          const savedTx = mapRowToTransaction(json.transaction);
+          if (!tx.is_deleted) {
+            fetch('/api/notifications/events/transaction-created', {
+              method: 'POST',
+              credentials: 'include',
+              headers,
+              body: JSON.stringify({
+                id: savedTx.id,
+                title: savedTx.title,
+                amount: savedTx.amount,
+                type: savedTx.transaction_type,
+                category: savedTx.subcategory,
+                section: savedTx.category,
+              }),
+            })
+              .then(() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('mymoney:notifications-refresh'));
+                }
+              })
+              .catch(() => {});
+          }
+          return savedTx;
+        }
+      } else if (backendRes.status === 503 || backendRes.status === 400 || backendRes.status === 403 || backendRes.status === 409) {
+        const errJson = await backendRes.json().catch(() => ({}));
+        throw new Error(
+          errJson?.message ||
+            'Financial write rejected because database persistence could not be verified. Please retry shortly.'
+        );
+      }
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase client is not configured.');
 
@@ -352,6 +441,27 @@ export async function updateTransactionInSupabase(
  * Soft delete: Move transaction to Recycle Bin
  */
 export async function softDeleteTransactionFromSupabase(id: string, deletedBy?: string): Promise<void> {
+  const headers = await getBackendTxAuthHeaders();
+  if (headers) {
+    let backendRes: Response | null = null;
+    try {
+      backendRes = await fetch(`/api/transactions/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers,
+      });
+    } catch {
+      backendRes = null;
+    }
+    if (backendRes) {
+      if (backendRes.ok) return;
+      if (backendRes.status === 503 || backendRes.status === 403 || backendRes.status === 404) {
+        const errJson = await backendRes.json().catch(() => ({}));
+        throw new Error(errJson?.message || 'Unable to delete transaction while database is unavailable.');
+      }
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase client is not configured.');
 
@@ -375,6 +485,27 @@ export async function softDeleteTransactionFromSupabase(id: string, deletedBy?: 
  * Restore transaction from Recycle Bin
  */
 export async function restoreTransactionInSupabase(id: string): Promise<void> {
+  const headers = await getBackendTxAuthHeaders();
+  if (headers) {
+    let backendRes: Response | null = null;
+    try {
+      backendRes = await fetch(`/api/transactions/${encodeURIComponent(id)}/restore`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+      });
+    } catch {
+      backendRes = null;
+    }
+    if (backendRes) {
+      if (backendRes.ok) return;
+      if (backendRes.status === 503 || backendRes.status === 403 || backendRes.status === 404) {
+        const errJson = await backendRes.json().catch(() => ({}));
+        throw new Error(errJson?.message || 'Unable to restore transaction while database is unavailable.');
+      }
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase client is not configured.');
 
@@ -398,6 +529,27 @@ export async function restoreTransactionInSupabase(id: string): Promise<void> {
  * Permanent hard delete: Irreversibly delete transaction
  */
 export async function permanentDeleteTransactionFromSupabase(id: string): Promise<void> {
+  const headers = await getBackendTxAuthHeaders();
+  if (headers) {
+    let backendRes: Response | null = null;
+    try {
+      backendRes = await fetch(`/api/transactions/${encodeURIComponent(id)}?permanent=true`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers,
+      });
+    } catch {
+      backendRes = null;
+    }
+    if (backendRes) {
+      if (backendRes.ok) return;
+      if (backendRes.status === 503 || backendRes.status === 403 || backendRes.status === 404) {
+        const errJson = await backendRes.json().catch(() => ({}));
+        throw new Error(errJson?.message || 'Unable to permanently delete transaction while database is unavailable.');
+      }
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase client is not configured.');
 
@@ -777,32 +929,61 @@ export function subscribeToSupabaseFeedbacks(onChanged: () => void): () => void 
   };
 }
 
+type UdharRealtimeTable = 'udhar_transactions' | 'udhar_repayments' | 'udhar_contacts' | 'user_connections';
+const udharRealtimeListeners = new Set<(table: UdharRealtimeTable) => void>();
+let sharedUdharChannel: any = null;
+let sharedUdharChannelClient: SupabaseClient | null = null;
+
 export function subscribeToSupabaseUdharRealtime(
-  onChanged: (table: 'udhar_transactions' | 'udhar_repayments' | 'udhar_contacts' | 'user_connections') => void
+  onChanged: (table: UdharRealtimeTable) => void
 ): () => void {
   const client = getSupabaseClient();
   if (!client) return () => {};
 
-  const channel = client
-    .channel('realtime_shared_udhar_' + Math.random().toString(36).substring(2, 7))
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_transactions' }, () => {
-      onChanged('udhar_transactions');
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_repayments' }, () => {
-      onChanged('udhar_repayments');
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_contacts' }, () => {
-      onChanged('udhar_contacts');
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections' }, () => {
-      onChanged('user_connections');
-    })
-    .subscribe();
+  udharRealtimeListeners.add(onChanged);
+
+  // Share a single Realtime channel across DashboardView, PeopleSection, and ReportsSection
+  // to reduce Supabase Nano WebSocket/WAL fanout pressure by 3x.
+  if (!sharedUdharChannel || sharedUdharChannelClient !== client) {
+    if (sharedUdharChannel && sharedUdharChannelClient) {
+      try {
+        sharedUdharChannelClient.removeChannel(sharedUdharChannel);
+      } catch {}
+    }
+    const notifyAll = (table: UdharRealtimeTable) => {
+      udharRealtimeListeners.forEach((fn) => {
+        try {
+          fn(table);
+        } catch {}
+      });
+    };
+    sharedUdharChannelClient = client;
+    sharedUdharChannel = client
+      .channel('realtime_shared_udhar_singleton')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_transactions' }, () => {
+        notifyAll('udhar_transactions');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_repayments' }, () => {
+        notifyAll('udhar_repayments');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'udhar_contacts' }, () => {
+        notifyAll('udhar_contacts');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections' }, () => {
+        notifyAll('user_connections');
+      })
+      .subscribe();
+  }
 
   return () => {
-    try {
-      client.removeChannel(channel);
-    } catch {}
+    udharRealtimeListeners.delete(onChanged);
+    if (udharRealtimeListeners.size === 0 && sharedUdharChannel && sharedUdharChannelClient) {
+      try {
+        sharedUdharChannelClient.removeChannel(sharedUdharChannel);
+      } catch {}
+      sharedUdharChannel = null;
+      sharedUdharChannelClient = null;
+    }
   };
 }
 

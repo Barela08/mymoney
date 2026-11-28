@@ -83,14 +83,34 @@ function getSupabaseRestConfig() {
   return { url, key };
 }
 
+const postgrestMetrics = {
+  totalRequests: 0,
+  successCount: 0,
+  error4xxCount: 0,
+  error5xxCount: 0,
+  timeoutOrNetworkCount: 0,
+  consecutiveFailures: 0,
+  lastLatencyMs: 0,
+  lastError: null as string | null,
+  lastErrorAt: null as string | null,
+  lastSuccessAt: null as string | null,
+};
+
+export function getPostgrestClientMetrics() {
+  return { ...postgrestMetrics };
+}
+
 export async function sbRestRequest<T = any>(
   restPath: string,
   options: {
     method?: string;
     body?: any;
     prefer?: string;
+    timeoutMs?: number;
   } = {}
 ): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
+  const startedAt = Date.now();
+  postgrestMetrics.totalRequests += 1;
   try {
     const { url, key } = getSupabaseRestConfig();
     const headers: Record<string, string> = {
@@ -105,12 +125,15 @@ export async function sbRestRequest<T = any>(
       headers['Prefer'] = options.prefer;
     }
 
+    const timeoutMs = Math.max(1500, Math.min(options.timeoutMs ?? 6500, 15000));
     const response = await fetch(`${url}/rest/v1/${restPath}`, {
       method: options.method || 'GET',
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
+    postgrestMetrics.lastLatencyMs = Date.now() - startedAt;
     const text = await response.text();
     let parsed: any = null;
     if (text) {
@@ -126,11 +149,27 @@ export async function sbRestRequest<T = any>(
         (parsed && typeof parsed === 'object' && (parsed.message || parsed.error || parsed.details)) ||
         (typeof parsed === 'string' && parsed) ||
         `Supabase REST HTTP ${response.status}`;
+      if (response.status >= 500) {
+        postgrestMetrics.error5xxCount += 1;
+        postgrestMetrics.consecutiveFailures += 1;
+      } else {
+        postgrestMetrics.error4xxCount += 1;
+      }
+      postgrestMetrics.lastError = `HTTP ${response.status}: ${String(errMsg).slice(0, 180)}`;
+      postgrestMetrics.lastErrorAt = new Date().toISOString();
       return { ok: false, status: response.status, data: null, error: errMsg };
     }
 
+    postgrestMetrics.successCount += 1;
+    postgrestMetrics.consecutiveFailures = 0;
+    postgrestMetrics.lastSuccessAt = new Date().toISOString();
     return { ok: true, status: response.status, data: parsed as T };
   } catch (err: any) {
+    postgrestMetrics.lastLatencyMs = Date.now() - startedAt;
+    postgrestMetrics.timeoutOrNetworkCount += 1;
+    postgrestMetrics.consecutiveFailures += 1;
+    postgrestMetrics.lastError = err?.message || 'Network or timeout error';
+    postgrestMetrics.lastErrorAt = new Date().toISOString();
     return { ok: false, status: 0, data: null, error: err?.message || 'Network error' };
   }
 }

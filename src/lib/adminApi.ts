@@ -807,6 +807,10 @@ export const adminClient = {
     return adminRequest('/api/admin/database/backup-verify', { method: 'POST' });
   },
 
+  async retryPendingHealthAlerts() {
+    return adminRequest('/api/admin/database/alerts/retry', { method: 'POST' });
+  },
+
   // 18. Website & Multi-App Control Center
   async getControlCenterState() {
     return adminRequest('/api/admin/control-center', { method: 'GET' });

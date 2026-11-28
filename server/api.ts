@@ -198,6 +198,20 @@ import {
   getUdharHistoryRest,
   getPersonUpiProfileRest,
 } from './supabaseRestUdhar.js';
+import {
+  listUserTransactionsViaProvider,
+  upsertUserTransactionViaProvider,
+  mutateUserTransactionDeleteStateViaProvider,
+  syncBusinessRecordToSecondary,
+} from './dbProvider.js';
+import { getFailoverState } from './dbFailover.js';
+import {
+  runIndependentHealthCheck,
+  drainPendingEmailAlertQueue,
+  ensurePeriodicHealthMonitorStarted,
+} from './healthMonitor.js';
+
+ensurePeriodicHealthMonitorStarted();
 
 async function syncSupabaseAuthPassword(email: string, newPassword: string): Promise<void> {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
@@ -637,12 +651,55 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
 
   // Lightweight health check (no secrets exposed)
   if (pathname === '/api/health' && method === 'GET') {
+    const failover = getFailoverState();
     sendJson(res, 200, {
       success: true,
-      status: 'ok',
+      status: failover.activeProvider === 'degraded_readonly' ? 'degraded' : 'ok',
       databaseAvailable: isDatabaseAvailable(),
+      activeProvider: failover.activeProvider,
+      providerEpoch: failover.providerEpoch,
       concurrency: getConcurrencyMetrics(),
       cache: appCache.getStats(),
+      timestamp: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  // Independent External Cron Health Monitor Endpoint (secured by CRON_SECRET or Admin auth)
+  if (pathname === '/api/cron/health-check' && (method === 'GET' || method === 'POST')) {
+    const cronSecret = (process.env.CRON_SECRET || '').trim();
+    const authHeader = String(req.headers.authorization || '');
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    let authorized = false;
+
+    if (cronSecret && bearer && bearer.length === cronSecret.length) {
+      try {
+        authorized = crypto.timingSafeEqual(Buffer.from(bearer, 'utf8'), Buffer.from(cronSecret, 'utf8'));
+      } catch {
+        authorized = false;
+      }
+    }
+    if (!authorized) {
+      const adminUser = await authenticateRequest(req);
+      const role = String(adminUser?.role || '').toLowerCase();
+      if (adminUser && (role === 'admin' || role === 'superadmin')) {
+        authorized = true;
+      }
+    }
+    if (!authorized) {
+      sendJson(res, 401, { success: false, message: 'Unauthorized cron monitor invocation.' });
+      return true;
+    }
+
+    const sweep = await runIndependentHealthCheck();
+    const alertDrain = await drainPendingEmailAlertQueue().catch(() => ({ attempted: 0, delivered: 0, remaining: 0 }));
+    sendJson(res, 200, {
+      success: true,
+      activeProvider: sweep.failoverState.activeProvider,
+      providerEpoch: sweep.failoverState.providerEpoch,
+      transitioned: sweep.transitioned,
+      unhealthyServices: sweep.services.filter((s) => s.status === 'unhealthy').map((s) => s.key),
+      alertDrain,
       timestamp: new Date().toISOString(),
     });
     return true;
@@ -1668,6 +1725,132 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     }
 
     // ---------------------------------------------------------
+    // 0C. CENTRALIZED DUAL-DB TRANSACTIONS API (/api/transactions)
+    // Enforces server-side auth, ownership, split-brain fencing,
+    // automatic Firebase failover, and transactional outbox sync.
+    // ---------------------------------------------------------
+    if (pathname === '/api/transactions' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const isAdminUser = ['admin', 'superadmin'].includes(String(authUser.role || '').toLowerCase());
+      const includeDeleted = queryParams.includeDeleted === 'true';
+      const scopeAll = isAdminUser && queryParams.scope === 'all';
+      const result = await listUserTransactionsViaProvider({
+        userId: scopeAll ? undefined : authUser.id,
+        includeDeleted,
+      });
+      res.setHeader('X-DB-Provider', result.provider);
+      res.setHeader('X-DB-Epoch', String(result.epoch));
+      sendJson(res, result.status, {
+        success: result.ok,
+        provider: result.provider,
+        epoch: result.epoch,
+        transactions: result.data || [],
+        code: result.code,
+        message: result.error,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/transactions' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const body = await parseJsonBody(req);
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) {
+        sendJson(res, 400, { success: false, message: 'Valid positive amount is required.' });
+        return true;
+      }
+      const title = String(body.title || '').trim().slice(0, 250);
+      if (!title) {
+        sendJson(res, 400, { success: false, message: 'Transaction title is required.' });
+        return true;
+      }
+      const allowedTypes = new Set(['income', 'expense', 'transfer']);
+      const txType = allowedTypes.has(body.transaction_type) ? body.transaction_type : 'expense';
+      const idempotencyHeader = String(req.headers['idempotency-key'] || body.idempotencyKey || '').trim().slice(0, 128) || undefined;
+
+      const result = await upsertUserTransactionViaProvider({
+        idempotencyKey: idempotencyHeader,
+        tx: {
+          id: typeof body.id === 'string' ? body.id : undefined,
+          user_id: authUser.id,
+          user_email: authUser.email,
+          category: String(body.category || 'other').trim().slice(0, 60),
+          subcategory: String(body.subcategory || 'General').trim().slice(0, 100),
+          transaction_type: txType,
+          amount,
+          title,
+          description: body.description ? String(body.description).slice(0, 1000) : null,
+          person_name: body.person_name ? String(body.person_name).slice(0, 150) : null,
+          transaction_date: String(body.transaction_date || new Date().toISOString().slice(0, 10)).slice(0, 32),
+          transaction_time: String(body.transaction_time || '00:00').slice(0, 32),
+          notes: body.notes ? String(body.notes).slice(0, 1000) : null,
+          metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+          is_deleted: Boolean(body.is_deleted),
+          deleted_at: body.deleted_at || null,
+          deleted_by: body.deleted_by || null,
+          created_at: body.created_at,
+        },
+      });
+      res.setHeader('X-DB-Provider', result.provider);
+      res.setHeader('X-DB-Epoch', String(result.epoch));
+      if (result.ok) {
+        appCache.invalidateUser(authUser.id);
+      }
+      sendJson(res, result.status, {
+        success: result.ok,
+        provider: result.provider,
+        epoch: result.epoch,
+        transaction: result.data,
+        code: result.code,
+        message: result.error,
+      });
+      return true;
+    }
+
+    const txItemMatch = pathname.match(/^\/api\/transactions\/([0-9a-fA-F-]{8,64})(?:\/(restore))?$/);
+    if (txItemMatch && (method === 'DELETE' || (method === 'POST' && txItemMatch[2] === 'restore'))) {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const txId = txItemMatch[1];
+      const isRestore = txItemMatch[2] === 'restore';
+      const isPermanent = queryParams.permanent === 'true';
+      const isAdminUser = ['admin', 'superadmin'].includes(String(authUser.role || '').toLowerCase());
+      const action = isRestore ? 'restore' : isPermanent ? 'permanent_delete' : 'soft_delete';
+
+      const result = await mutateUserTransactionDeleteStateViaProvider({
+        id: txId,
+        userId: authUser.id,
+        isAdmin: isAdminUser,
+        action,
+        deletedBy: authUser.id,
+      });
+      res.setHeader('X-DB-Provider', result.provider);
+      res.setHeader('X-DB-Epoch', String(result.epoch));
+      if (result.ok) {
+        appCache.invalidateUser(authUser.id);
+      }
+      sendJson(res, result.status, {
+        success: result.ok,
+        provider: result.provider,
+        epoch: result.epoch,
+        code: result.code,
+        message: result.error,
+      });
+      return true;
+    }
+
+    // ---------------------------------------------------------
     // 1. REGISTER: POST /api/auth/register
     // ---------------------------------------------------------
     if (pathname === '/api/auth/register' && method === 'POST') {
@@ -2349,10 +2532,18 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         ipAddress: clientIp,
       }).catch(() => {});
 
+      const safeUpdatedUser = sanitizeUserOutput(updatedUser);
+      syncBusinessRecordToSecondary({
+        collection: 'profiles',
+        recordId: String(updatedUser.id),
+        operation: 'upsert',
+        payload: safeUpdatedUser,
+      }).catch(() => {});
+
       sendJson(res, 200, {
         success: true,
         message: 'Profile updated successfully.',
-        user: sanitizeUserOutput(updatedUser),
+        user: safeUpdatedUser,
       });
       return true;
     }
@@ -6764,6 +6955,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           }).catch((e) => console.warn('[Udhar Created Two-Sided Email Error]:', e));
 
           const createdRow = userARes.rows[0];
+          syncBusinessRecordToSecondary({
+            collection: 'udhar_transactions',
+            recordId: String(createdRow.id),
+            operation: 'upsert',
+            payload: createdRow,
+          }).catch(() => {});
           sendJson(res, 201, {
             success: true,
             requiresConfirmation: !isInstantQr,
@@ -6831,6 +7028,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           }).catch((e) => console.warn('[Notify Udhar Created Error]:', e));
 
           const createdRow = singleRes.rows[0];
+          syncBusinessRecordToSecondary({
+            collection: 'udhar_transactions',
+            recordId: String(createdRow.id),
+            operation: 'upsert',
+            payload: createdRow,
+          }).catch(() => {});
           sendJson(res, 201, {
             success: true,
             requiresConfirmation: false,
@@ -7363,9 +7566,30 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
           }
         }
 
+        const createdRepayment = repInsertRes.rows[0];
+        if (createdRepayment?.id) {
+          syncBusinessRecordToSecondary({
+            collection: 'udhar_repayments',
+            recordId: String(createdRepayment.id),
+            operation: 'upsert',
+            payload: createdRepayment,
+          }).catch(() => {});
+        }
+        syncBusinessRecordToSecondary({
+          collection: 'udhar_transactions',
+          recordId: String(tx.id),
+          operation: 'upsert',
+          payload: {
+            ...tx,
+            current_balance: newBalance,
+            status: isSettled ? 'settled' : tx.status,
+            updated_at: new Date().toISOString(),
+          },
+        }).catch(() => {});
+
         sendJson(res, 200, {
           success: true,
-          repayment: repInsertRes.rows[0],
+          repayment: createdRepayment,
           isPendingConfirmation: repaymentStatus === 'pending_confirmation',
           message: repaymentStatus === 'pending_confirmation'
             ? `Payment of ₹${repayAmount.toLocaleString('en-IN')} submitted! Waiting for ${tx.counterpart_name} to confirm receipt.`

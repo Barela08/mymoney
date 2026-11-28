@@ -621,15 +621,13 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const targetUserId = isAdmin ? undefined : user?.uid;
 
-        // Run all public metadata, server site-config, and transactions fetches in PARALLEL
-        const [siteConfigRes, sectionsData, maint, popupCfg, brand, notifs, supaData] = await Promise.all([
+        // Fetch cached server site-config, sections, notifications, and user transactions in parallel.
+        // Avoid redundant PostgREST app_settings queries whenever /api/public/site-config succeeds (cuts PostgREST Nano load by 50%).
+        const [siteConfigRes, sectionsData, notifs, supaData] = await Promise.all([
           fetch('/api/public/site-config', { cache: 'no-store' })
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
           fetchSectionsFromSupabase().catch(() => null),
-          fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
-          fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
-          fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
           fetchNotificationsFromSupabase().catch(() => []),
           user
             ? fetchTransactionsFromSupabase(targetUserId, true).catch((err) => {
@@ -638,6 +636,17 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
               })
             : Promise.resolve(null),
         ]);
+
+        let maint: MaintenanceSettings | null = null;
+        let popupCfg: AppDownloadPopupSettings | null = null;
+        let brand: AppBrandingSettings | null = null;
+        if (!siteConfigRes?.siteConfig && !siteConfigRes?.maintenance) {
+          [maint, popupCfg, brand] = await Promise.all([
+            fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
+            fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
+            fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
+          ]);
+        }
 
         if (sectionsData && sectionsData.length > 0) {
           setDynamicSections(sectionsData);
@@ -783,20 +792,22 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Load public site config (all non-secret Control Center modules + maintenance + popup)
   const fetchPublicSiteConfig = useCallback(async () => {
     try {
-      const [siteRes, maintSupa, popupSupa, brandSupa] = await Promise.all([
-        fetch('/api/public/site-config', { cache: 'no-store' })
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
-        fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
-        fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
-        fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
-      ]);
+      const siteRes = await fetch('/api/public/site-config', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
 
       if (siteRes?.siteConfig) {
         applyLiveSiteConfig(siteRes.siteConfig, false);
         setConfigSyncStatus('live');
         return;
       }
+
+      // Only fall back to direct PostgREST app_settings queries if server site-config is unreachable
+      const [maintSupa, popupSupa, brandSupa] = await Promise.all([
+        fetchAppSettingFromSupabase<MaintenanceSettings>('maintenance_mode').catch(() => null),
+        fetchAppSettingFromSupabase<AppDownloadPopupSettings>('app_download_popup').catch(() => null),
+        fetchAppSettingFromSupabase<AppBrandingSettings>('app_branding').catch(() => null),
+      ]);
 
       const serverMaint = siteRes?.maintenance as MaintenanceSettings | undefined;
       const resolvedMaint = (() => {

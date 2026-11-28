@@ -77,8 +77,101 @@ const normalizedConnectionString = normalizeDatabaseUrl(process.env.DATABASE_URL
 export const isDatabaseConfigured = Boolean(normalizedConnectionString);
 
 let databaseFatalError: string | null = null;
+let databaseFatalPermanent = false;
+let databaseRetryAfterMs = 0;
+let lastSuccessfulQueryAt: string | null = null;
+let lastDatabaseErrorAt: string | null = null;
+let consecutiveDbErrors = 0;
+
+function inspectConnectionUrlMetadata(urlStr: string): {
+  mode: 'unconfigured' | 'transaction_pooler' | 'session_pooler' | 'direct_postgres' | 'custom';
+  port: number | null;
+  hostKind: string;
+} {
+  if (!urlStr) return { mode: 'unconfigured', port: null, hostKind: 'none' };
+  try {
+    const parsed = new URL(urlStr);
+    const port = parsed.port ? parseInt(parsed.port, 10) : 5432;
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('pooler.supabase.com')) {
+      return {
+        mode: port === 6543 ? 'transaction_pooler' : 'session_pooler',
+        port,
+        hostKind: 'supabase_pooler',
+      };
+    }
+    if (host.endsWith('.supabase.co')) {
+      return { mode: 'direct_postgres', port, hostKind: 'supabase_direct' };
+    }
+    return { mode: 'custom', port, hostKind: 'postgres' };
+  } catch {
+    return { mode: 'custom', port: null, hostKind: 'unknown' };
+  }
+}
+
+const connectionMeta = inspectConnectionUrlMetadata(normalizedConnectionString);
+
 export function isDatabaseAvailable(): boolean {
-  return isDatabaseConfigured && databaseFatalError === null;
+  if (!isDatabaseConfigured) return false;
+  if (databaseFatalPermanent) return false;
+  if (databaseFatalError !== null) {
+    if (Date.now() >= databaseRetryAfterMs) {
+      return true; // Half-open probe window
+    }
+    return false;
+  }
+  return true;
+}
+
+export function getDbPoolDiagnostics() {
+  const anyPool = pool as any;
+  return {
+    configured: isDatabaseConfigured,
+    available: isDatabaseAvailable(),
+    connectionMode: connectionMeta.mode,
+    port: connectionMeta.port,
+    hostKind: connectionMeta.hostKind,
+    poolMax: process.env.VERCEL ? 2 : 4,
+    totalCount: typeof anyPool?.totalCount === 'number' ? anyPool.totalCount : 0,
+    idleCount: typeof anyPool?.idleCount === 'number' ? anyPool.idleCount : 0,
+    waitingCount: typeof anyPool?.waitingCount === 'number' ? anyPool.waitingCount : 0,
+    consecutiveErrors: consecutiveDbErrors,
+    lastError: databaseFatalError,
+    lastErrorAt: lastDatabaseErrorAt,
+    lastSuccessAt: lastSuccessfulQueryAt,
+    retryAfterMs: databaseRetryAfterMs > Date.now() ? databaseRetryAfterMs - Date.now() : 0,
+    recommendation:
+      connectionMeta.mode === 'direct_postgres'
+        ? 'Direct port 5432 detected. Switch DATABASE_URL to Supabase Supavisor Transaction Pooler (port 6543) to avoid Nano 60-connection exhaustion.'
+        : !isDatabaseConfigured
+        ? 'DATABASE_URL not set in server environment. Using Supabase HTTPS REST / Firebase secondary fallback.'
+        : 'Transaction pooling active with bounded pool size (max 2–4 connections per worker).',
+  };
+}
+
+export async function probeDatabaseRecovery(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  if (!isDatabaseConfigured) {
+    return { ok: false, latencyMs: 0, error: 'DATABASE_URL not configured' };
+  }
+  if (databaseFatalPermanent) {
+    return { ok: false, latencyMs: 0, error: databaseFatalError || 'Fatal DB configuration error' };
+  }
+  const t0 = Date.now();
+  try {
+    await pool.query('SELECT 1');
+    databaseFatalError = null;
+    databaseRetryAfterMs = 0;
+    consecutiveDbErrors = 0;
+    lastSuccessfulQueryAt = new Date().toISOString();
+    return { ok: true, latencyMs: Date.now() - t0 };
+  } catch (err: any) {
+    const msg = err?.message || 'PostgreSQL probe failed';
+    consecutiveDbErrors += 1;
+    lastDatabaseErrorAt = new Date().toISOString();
+    databaseFatalError = msg;
+    databaseRetryAfterMs = Date.now() + Math.min(60_000, 5_000 * Math.pow(2, Math.min(consecutiveDbErrors, 4)));
+    return { ok: false, latencyMs: Date.now() - t0, error: msg };
+  }
 }
 
 const emptyResult = <T extends pg.QueryResultRow = any>(): pg.QueryResult<T> => ({
@@ -132,7 +225,7 @@ const customLookup = (
 
 let poolInstance: pg.Pool;
 if (!isDatabaseConfigured) {
-  console.warn('[AI Studio] DATABASE_URL not set — PostgreSQL mock active (using Supabase HTTPS fallback where supported)');
+  console.warn('[DB] DATABASE_URL not set — PostgreSQL pool inactive (using Supabase HTTPS REST / Firebase secondary where configured)');
   poolInstance = createMockPool();
 } else {
   try {
@@ -152,8 +245,9 @@ if (!isDatabaseConfigured) {
       console.warn('PostgreSQL idle client notice (will reconnect on next query):', err.message);
     });
   } catch (err: any) {
-    console.warn('[AI Studio] PostgreSQL init failed — mock active:', err?.message);
+    console.warn('[DB] PostgreSQL init failed — fallback active:', err?.message);
     databaseFatalError = err?.message || 'Pool initialization failed';
+    databaseFatalPermanent = true;
     poolInstance = createMockPool();
   }
 }
@@ -172,6 +266,10 @@ export async function query<T extends pg.QueryResultRow = any>(
   try {
     const res = await pool.query<T>(text, params);
     const duration = Date.now() - start;
+    databaseFatalError = null;
+    databaseRetryAfterMs = 0;
+    consecutiveDbErrors = 0;
+    lastSuccessfulQueryAt = new Date().toISOString();
     if (duration > 500) {
       recordSlowQueryMetric(duration, text);
     }
@@ -183,17 +281,17 @@ export async function query<T extends pg.QueryResultRow = any>(
     const msg = err.message || '';
     const code = err.code || '';
 
-    // Fatal DB configuration/availability errors (e.g., 3D000 database does not exist, 28P01 bad password)
+    // Fatal DB configuration errors (e.g., 3D000 database does not exist, 28P01 bad password)
     if (
       code === '3D000' ||
       code === '28P01' ||
       code === '28000' ||
-      msg.includes('does not exist') && msg.includes('database')
+      (msg.includes('does not exist') && msg.includes('database'))
     ) {
-      if (!databaseFatalError) {
-        databaseFatalError = msg;
-        console.warn(`[AI Studio] PostgreSQL unavailable (${msg}) — switching to mock fallback.`);
-      }
+      databaseFatalError = msg;
+      databaseFatalPermanent = true;
+      lastDatabaseErrorAt = new Date().toISOString();
+      console.warn(`[DB] PostgreSQL configuration error (${msg}) — direct PG disabled.`);
       return emptyResult<T>();
     }
 
@@ -209,19 +307,23 @@ export async function query<T extends pg.QueryResultRow = any>(
       msg.includes('connection timeout') ||
       msg.includes('timeout expired') ||
       msg.includes('timeout') ||
+      msg.includes('too many clients') ||
+      msg.includes('remaining connection slots') ||
       msg.includes('closed');
 
     if (isConnErr && retries > 0) {
       console.warn(`[DB Reconnect] Query failed (${msg}), retrying (${retries} attempts left)...`);
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 300 + Math.floor(Math.random() * 250)));
       return query<T>(text, params, retries - 1);
     }
 
     if (isConnErr) {
-      if (!databaseFatalError) {
-        databaseFatalError = msg;
-        console.warn(`[AI Studio] PostgreSQL connection unreachable (${msg}) — falling back to Supabase REST.`);
-      }
+      consecutiveDbErrors += 1;
+      lastDatabaseErrorAt = new Date().toISOString();
+      databaseFatalError = msg;
+      // Exponential cooldown (10s -> 20s -> 40s -> max 60s) so PG automatically recovers once healthy!
+      databaseRetryAfterMs = Date.now() + Math.min(60_000, 10_000 * Math.pow(2, Math.min(consecutiveDbErrors - 1, 3)));
+      console.warn(`[DB Circuit] PostgreSQL unreachable (${msg}) — half-open retry in ${Math.round((databaseRetryAfterMs - Date.now()) / 1000)}s.`);
       return emptyResult<T>();
     }
     throw err;

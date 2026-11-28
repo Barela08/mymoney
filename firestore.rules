@@ -229,8 +229,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Dynamic expense categories / sections (read-only for authenticated users; server-managed)
+    match /sections/{sectionId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
     // =========================================================================
-    // Internal System, Failover, Backup & Audit Collections (Admin SDK Only)
+    // Internal System, Failover, Backup, Identity Mapping & Audit Collections (Admin SDK Only)
     // =========================================================================
     // Strictly deny all client reads and writes. Only the backend server
     // operating with Firebase Admin SDK credentials may access these paths.
@@ -256,6 +262,14 @@ service cloud.firestore {
     }
 
     match /security_audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    match /identity_mappings/{mappingId} {
+      allow read, write: if false;
+    }
+
+    match /alert_delivery_queue/{alertId} {
       allow read, write: if false;
     }
   }
