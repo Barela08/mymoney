@@ -139,9 +139,10 @@ if (!isDatabaseConfigured) {
       connectionString: normalizedConnectionString,
       ssl: { rejectUnauthorized: false },
       lookup: customLookup,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      max: process.env.VERCEL ? 2 : 4, // Protect Supabase Nano 60-connection pool
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 8000,
+      statement_timeout: 8000,
       keepAlive: true,
       keepAliveInitialDelayMillis: 5000,
     });

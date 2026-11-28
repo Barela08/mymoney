@@ -18,17 +18,21 @@ export const AdminDatabaseTab: React.FC = () => {
   const toast = useToast();
   const [databaseInfo, setDatabaseInfo] = useState<any>(null);
   const [backups, setBackups] = useState<any[]>([]);
+  const [healthMatrix, setHealthMatrix] = useState<any>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isTriggeringBackup, setIsTriggeringBackup] = useState<boolean>(false);
+  const [isProbingHealth, setIsProbingHealth] = useState<boolean>(false);
+  const [isSyncBusy, setIsSyncBusy] = useState<boolean>(false);
 
   const fetchData = async () => {
     setIsLoading(true);
     const start = Date.now();
     try {
-      const [dbRes, bkRes] = await Promise.all([
+      const [dbRes, bkRes, hmRes] = await Promise.all([
         adminClient.getDatabaseDiagnostics(),
         adminClient.getSystemBackups(),
+        adminClient.getDatabaseHealthMatrix().catch(() => null),
       ]);
       setLatencyMs(Date.now() - start);
 
@@ -37,6 +41,9 @@ export const AdminDatabaseTab: React.FC = () => {
       }
       if (bkRes.success && Array.isArray(bkRes.backups)) {
         setBackups(bkRes.backups);
+      }
+      if (hmRes?.success && hmRes.matrix) {
+        setHealthMatrix(hmRes.matrix);
       }
     } catch (err: any) {
       toast.error('Diagnostics failed', err.message);
@@ -230,6 +237,137 @@ export const AdminDatabaseTab: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Dual-Database & 14-Service Independent Health Matrix */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              <span>Database &amp; Service Health Matrix</span>
+              {healthMatrix?.failoverState && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 uppercase">
+                  Active: {healthMatrix.failoverState.activeProvider} (Epoch {healthMatrix.failoverState.providerEpoch})
+                </span>
+              )}
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Independent live probes for Supabase, Firebase, Sync Outbox, Email, Push &amp; Cache.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={isProbingHealth}
+              onClick={async () => {
+                setIsProbingHealth(true);
+                try {
+                  const res = await adminClient.runDatabaseHealthCheck();
+                  if (res.success) setHealthMatrix(res.matrix);
+                  toast.success('Health Probe Complete', 'All 14 services probed independently.');
+                } catch (e: any) {
+                  toast.error('Probe Failed', e?.message || 'Could not probe services.');
+                } finally {
+                  setIsProbingHealth(false);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isProbingHealth ? 'animate-spin' : ''}`} />
+              <span>Run Health Probe</span>
+            </button>
+            <button
+              type="button"
+              disabled={isSyncBusy}
+              onClick={async () => {
+                setIsSyncBusy(true);
+                try {
+                  const res = await adminClient.reconcileDualDatabases();
+                  if (res.success) setHealthMatrix(res.matrix);
+                  toast.success('Reconciled', `Outbox processed: ${res.result?.outboxProcessed ?? 0}`);
+                } catch (e: any) {
+                  toast.error('Reconcile Failed', e?.message || 'Error');
+                } finally {
+                  setIsSyncBusy(false);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-50 cursor-pointer"
+            >
+              Reconcile Sync
+            </button>
+            <button
+              type="button"
+              disabled={isSyncBusy}
+              onClick={async () => {
+                setIsSyncBusy(true);
+                try {
+                  const res = await adminClient.verifyLogicalBackupRestore();
+                  if (res.success) setHealthMatrix(res.matrix);
+                  toast.success(
+                    'Backup & Restore Verified',
+                    `Checksum ${String(res.snapshot?.checksumSha256 || '').slice(0, 12)}... verified`
+                  );
+                } catch (e: any) {
+                  toast.error('Verify Failed', e?.message || 'Error');
+                } finally {
+                  setIsSyncBusy(false);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+            >
+              Backup &amp; Verify Restore
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {(healthMatrix?.services || []).map((svc: any) => {
+            const badgeCls =
+              svc.status === 'healthy'
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                : svc.status === 'degraded'
+                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                : svc.status === 'unhealthy'
+                ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                : 'bg-slate-800 text-slate-400 border-slate-700';
+            return (
+              <div key={svc.key} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-slate-200 truncate">{svc.label}</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase border ${badgeCls}`}>
+                    {svc.status}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-mono">
+                  {svc.responseTimeMs !== null ? `${svc.responseTimeMs}ms` : '—'} · {svc.lastCheckedAt ? new Date(svc.lastCheckedAt).toLocaleTimeString() : 'Not probed'}
+                </p>
+                {svc.errorDetails && (
+                  <p className="text-[10px] text-rose-400 truncate" title={svc.errorDetails}>
+                    {svc.errorDetails}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {healthMatrix?.outbox && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+            <span>
+              Sync Outbox — Pending: <strong className="text-amber-400">{healthMatrix.outbox.pending}</strong> · Synced: <strong className="text-emerald-400">{healthMatrix.outbox.synced}</strong> · Failed: <strong className="text-rose-400">{healthMatrix.outbox.failed}</strong>
+            </span>
+            {healthMatrix.outbox.failed > 0 && (
+              <button
+                type="button"
+                onClick={() => void adminClient.retryOutboxSync().then((r) => r.success && setHealthMatrix(r.matrix))}
+                className="px-2.5 py-1 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/30 font-bold cursor-pointer"
+              >
+                Retry Failed Syncs
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -20,6 +20,12 @@ import {
   PROGRESSIVE_COOLDOWN_MS,
 } from './security.js';
 import { appCache, getConcurrencyMetrics } from './cache.js';
+import { getFullHealthMatrix, runIndependentHealthCheck } from './healthMonitor.js';
+import {
+  retryFailedOutboxEvents,
+  runDualDbReconciliation,
+  createLogicalBackupAndVerifyRestore,
+} from './dbFailover.js';
 import {
   ALLOWED_GEMINI_MODELS,
   getAiProviderStatus,
@@ -2379,6 +2385,66 @@ export async function handleAdminApiRequest(
       }
 
       sendJson(res, 201, { success: true, message: 'Database backup successfully generated.', backup: backupRecord });
+      return true;
+    }
+
+    // =========================================================
+    // 17B. DUAL-DB HEALTH MATRIX & FAILOVER CONTROLS
+    // =========================================================
+    if (pathname === '/api/admin/database/health-matrix' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'system.read');
+      if (!auth) return true;
+      sendJson(res, 200, { success: true, matrix: getFullHealthMatrix() });
+      return true;
+    }
+
+    if (pathname === '/api/admin/database/health-check' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'system.read');
+      if (!auth) return true;
+      await runIndependentHealthCheck();
+      sendJson(res, 200, { success: true, matrix: getFullHealthMatrix() });
+      return true;
+    }
+
+    if (pathname === '/api/admin/database/outbox/retry' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'backups.manage');
+      if (!auth) return true;
+      const result = await retryFailedOutboxEvents();
+      await logSecurityEvent('ADMIN_OUTBOX_RETRY', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: result,
+      }).catch(() => {});
+      sendJson(res, 200, { success: true, result, matrix: getFullHealthMatrix() });
+      return true;
+    }
+
+    if (pathname === '/api/admin/database/reconcile' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'backups.manage');
+      if (!auth) return true;
+      const result = await runDualDbReconciliation();
+      await logSecurityEvent('ADMIN_DUAL_DB_RECONCILE', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: result,
+      }).catch(() => {});
+      sendJson(res, 200, { success: true, result, matrix: getFullHealthMatrix() });
+      return true;
+    }
+
+    if (pathname === '/api/admin/database/backup-verify' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'backups.manage');
+      if (!auth) return true;
+      const snapshot = await createLogicalBackupAndVerifyRestore(auth.authUser.email);
+      await logSecurityEvent('ADMIN_BACKUP_RESTORE_VERIFIED', {
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { id: snapshot.id, restoreVerified: snapshot.restoreVerified, recordCounts: snapshot.recordCounts },
+      }).catch(() => {});
+      sendJson(res, 200, { success: true, snapshot, matrix: getFullHealthMatrix() });
       return true;
     }
 

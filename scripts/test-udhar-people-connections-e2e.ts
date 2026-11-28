@@ -81,7 +81,8 @@ const tables: Record<string, any[]> = {
   udhar_repayments: [],
   udhar_edit_history: [],
   security_audit_logs: [],
-  maintenance_settings: [],
+  maintenance_settings: [{ id: 1, is_enabled: false }],
+  app_settings: [{ key: 'maintenance_mode', value: { isEnabled: false } }],
 };
 
 function matchesFilter(row: any, key: string, expr: string): boolean {
@@ -331,7 +332,7 @@ async function main() {
     // 1. Method A: Search & Send Request
     await check('Method A: User A searches User B -> status none', async () => {
       const res = await apiCall(TOKEN_A, 'GET', '/api/udhar/users/search?q=Bob');
-      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.status, 200, `Search failed: ${JSON.stringify(res.payload)}`);
       assert.strictEqual(res.payload.success, true);
       const bob = res.payload.users.find((u: any) => u.id === USER_B_ID);
       assert.ok(bob, 'Bob must appear in search');

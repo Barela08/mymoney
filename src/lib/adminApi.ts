@@ -782,9 +782,29 @@ export const adminClient = {
     return adminRequest('/api/admin/smtp-settings/password', { method: 'DELETE' });
   },
 
-  // 17. Database Diagnostics (PART N)
+  // 17. Database Diagnostics (PART N) & Dual-DB Service Health
   async getDatabaseDiagnostics() {
     return adminRequest('/api/admin/system/database', { method: 'GET' });
+  },
+
+  async getDatabaseHealthMatrix() {
+    return adminRequest('/api/admin/database/health-matrix', { method: 'GET' });
+  },
+
+  async runDatabaseHealthCheck() {
+    return adminRequest('/api/admin/database/health-check', { method: 'POST' });
+  },
+
+  async retryOutboxSync() {
+    return adminRequest('/api/admin/database/outbox/retry', { method: 'POST' });
+  },
+
+  async reconcileDualDatabases() {
+    return adminRequest('/api/admin/database/reconcile', { method: 'POST' });
+  },
+
+  async verifyLogicalBackupRestore() {
+    return adminRequest('/api/admin/database/backup-verify', { method: 'POST' });
   },
 
   // 18. Website & Multi-App Control Center

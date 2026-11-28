@@ -1,0 +1,262 @@
+rules_version = '2';
+
+// =============================================================================
+// My Money Manager by HackifyPro — Cloud Firestore Security Rules
+// =============================================================================
+// Architecture Note (Server-Authoritative Sync & Failover Layer):
+//   Primary transactional state lives in PostgreSQL / Supabase. Cloud Firestore
+//   serves as a secondary synchronized mirror & failover layer populated by the
+//   trusted backend via the Firebase Admin SDK (which bypasses client rules).
+//
+//   Why client writes are strictly denied (`allow write: if false;`) on all
+//   financial, identity, and failover collections:
+//     1. Prevent Split-Brain: Allowing direct client writes to Firestore would
+//        diverge from the primary PostgreSQL ledger, breaking ACID balances,
+//        Udhar settlement calculations, and idempotency guarantees.
+//     2. Prevent Privilege Escalation: Denying client writes to `app_users`
+//        ensures users cannot self-assign `role`, `role_slug`, `status`, or
+//        `custom_permissions` (e.g., escalating to `admin` or `superadmin`).
+//     3. Prevent Financial Tampering: Denying client writes to `transactions`,
+//        `udhar_transactions`, `udhar_repayments`, `udhar_contacts`,
+//        `user_connections`, and `user_notifications` blocks arbitrary edits to
+//        amounts, balances, settlement states, and audit trails.
+//     4. Protect Infrastructure & Audit Integrity: Operational collections
+//        (`app_settings`, `sync_outbox`, `failover_state`, `service_health_logs`,
+//        `backup_snapshots`, `security_audit_logs`) contain internal secrets,
+//        system health telemetry, and tamper-evident audit trails and are
+//        strictly inaccessible to any client (`allow read, write: if false;`).
+// =============================================================================
+
+// =============================================================================
+// Assumed Data Model
+// =============================================================================
+//
+// Collection: app_users
+// Document ID: {userId} (canonical user ID matching Firebase Auth UID)
+// Fields:
+//   - id: string (required, immutable) - canonical user ID
+//   - email: string (required, valid email, <= 254 chars) - user email (PII)
+//   - full_name: string (optional, <= 120 chars) - display name
+//   - phone: string (optional, <= 30 chars) - phone number (PII)
+//   - role: string (required, enum: ['user', 'staff', 'admin', 'superadmin'])
+//   - role_slug: string (optional, <= 50 chars)
+//   - status: string (required, enum: ['active', 'suspended', 'disabled'])
+//   - custom_permissions: map (optional) - server-managed RBAC overrides
+//   - avatar_url: string (optional, valid URL, <= 500 chars)
+//   - created_at: timestamp (required, immutable)
+//   - updated_at: timestamp (optional)
+//
+// Collection: transactions
+// Document ID: {txId}
+// Fields:
+//   - id: string (required, immutable)
+//   - user_id: string (required, immutable) - owner Firebase UID
+//   - category: string (required, enum: ['home', 'received', 'room', 'food', 'other', 'people'])
+//   - subcategory: string (required, <= 100 chars)
+//   - transaction_type: string (required, enum: ['income', 'expense', 'transfer'])
+//   - amount: number (required, > 0 and <= 100000000)
+//   - title: string (required, <= 250 chars)
+//   - description: string (optional, <= 1000 chars)
+//   - person_name: string (optional, <= 150 chars)
+//   - transaction_date: string (required, <= 32 chars)
+//   - transaction_time: string (required, <= 32 chars)
+//   - notes: string (optional, <= 1000 chars)
+//   - metadata: map (optional)
+//   - created_at: timestamp (required, immutable)
+//   - updated_at: timestamp (required)
+//
+// Collection: udhar_transactions
+// Document ID: {txId}
+// Fields:
+//   - id: string (required, immutable)
+//   - user_id: string (required, immutable) - owner Firebase UID
+//   - counterpart_user_id: string (optional)
+//   - direction: string (required, enum: ['gave', 'took'])
+//   - amount: number (required, > 0)
+//   - current_balance: number (required, >= 0)
+//   - status: string (required, <= 40 chars)
+//   - created_at: timestamp (required, immutable)
+//   - updated_at: timestamp (required)
+//
+// Collection: udhar_repayments
+// Document ID: {repId}
+// Fields:
+//   - id: string (required, immutable)
+//   - user_id: string (required, immutable) - owner/synced participant UID
+//   - link_id: string (required, <= 128 chars)
+//   - recorded_by_user_id: string (required, immutable)
+//   - amount: number (required, > 0)
+//   - status: string (required, enum: ['pending_confirmation', 'confirmed', 'rejected', 'deleted', 'cancelled'])
+//   - created_at: timestamp (required, immutable)
+//
+// Collection: udhar_contacts
+// Document ID: {contactId}
+// Fields:
+//   - id: string (required, immutable)
+//   - user_id: string (required, immutable) - owner Firebase UID
+//   - name: string (required, <= 150 chars)
+//   - email: string (optional, valid email, <= 254 chars) - PII
+//   - phone: string (optional, <= 30 chars) - PII
+//   - relationship_type: string (optional, <= 50 chars)
+//   - linked_user_id: string (optional)
+//   - created_at: timestamp (required, immutable)
+//   - updated_at: timestamp (required)
+//
+// Collection: user_connections
+// Document ID: {connId}
+// Fields:
+//   - id: string (required, immutable)
+//   - user_a_id: string (required, immutable) - participant A UID
+//   - user_b_id: string (required, immutable) - participant B UID
+//   - status: string (required, enum: ['pending', 'connected', 'blocked'])
+//   - created_at: timestamp (required, immutable)
+//
+// Collection: user_notifications
+// Document ID: {notifId}
+// Fields:
+//   - id: string (required, immutable)
+//   - user_id: string (required, immutable) - recipient Firebase UID
+//   - title: string (required, <= 200 chars)
+//   - message: string (required, <= 2000 chars)
+//   - category: string (required, <= 50 chars)
+//   - type: string (required, <= 50 chars)
+//   - is_read: bool (required)
+//   - is_deleted: bool (required)
+//   - created_at: timestamp (required, immutable)
+//
+// Server-Only Operational Collections (Strictly Denied to All Clients):
+//   - app_settings/{docId}
+//   - sync_outbox/{eventId}
+//   - failover_state/{docId}
+//   - service_health_logs/{logId}
+//   - backup_snapshots/{snapId}
+//   - security_audit_logs/{logId}
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // Helper Functions
+    // =========================================================================
+
+    // Check if the caller is authenticated via Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated caller matches the target document userId
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if the authenticated caller owns the document via `user_id`
+    function isUserIdOwner() {
+      return isAuthenticated() && resource.data.user_id == request.auth.uid;
+    }
+
+    // Check if the authenticated caller is a participant in a user connection
+    function isConnectionParticipant() {
+      return isAuthenticated() &&
+        (resource.data.user_a_id == request.auth.uid ||
+         resource.data.user_b_id == request.auth.uid);
+    }
+
+    // =========================================================================
+    // Default Deny Rule (Root)
+    // =========================================================================
+    // Explicitly deny all reads and writes to any unmatched collection or path.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // User Profile Mirror (PII & RBAC Protected)
+    // =========================================================================
+    // Authenticated owner can read only their own profile document.
+    // All client writes are denied so users cannot tamper with `role`,
+    // `role_slug`, `status`, or `custom_permissions`, and to prevent
+    // split-brain with the primary PostgreSQL/Supabase database.
+    match /app_users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    // =========================================================================
+    // Financial & Ledger Synchronized Collections (Server-Authoritative)
+    // =========================================================================
+    // Direct unauthenticated access is denied.
+    // Authenticated users may read only records where `user_id == request.auth.uid`
+    // (client queries must include `where('user_id', '==', uid)`).
+    // All client writes are denied: mutations must flow through the backend
+    // API and sync via the Firebase Admin SDK to preserve ledger integrity.
+
+    match /transactions/{txId} {
+      allow read: if isUserIdOwner();
+      allow write: if false;
+    }
+
+    match /udhar_transactions/{txId} {
+      allow read: if isUserIdOwner();
+      allow write: if false;
+    }
+
+    match /udhar_repayments/{repId} {
+      allow read: if isUserIdOwner();
+      allow write: if false;
+    }
+
+    match /udhar_contacts/{contactId} {
+      allow read: if isUserIdOwner();
+      allow write: if false;
+    }
+
+    // =========================================================================
+    // Peer Connections & Notifications (Server-Authoritative)
+    // =========================================================================
+    // Connections are readable only by either participant (`user_a_id` or
+    // `user_b_id`). Notifications are readable only by their recipient (`user_id`).
+    // Client writes are denied to prevent unauthorized connection spoofing or
+    // forged financial notifications.
+
+    match /user_connections/{connId} {
+      allow read: if isConnectionParticipant();
+      allow write: if false;
+    }
+
+    match /user_notifications/{notifId} {
+      allow read: if isUserIdOwner();
+      allow write: if false;
+    }
+
+    // =========================================================================
+    // Internal System, Failover, Backup & Audit Collections (Admin SDK Only)
+    // =========================================================================
+    // Strictly deny all client reads and writes. Only the backend server
+    // operating with Firebase Admin SDK credentials may access these paths.
+
+    match /app_settings/{docId} {
+      allow read, write: if false;
+    }
+
+    match /sync_outbox/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /failover_state/{docId} {
+      allow read, write: if false;
+    }
+
+    match /service_health_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    match /backup_snapshots/{snapId} {
+      allow read, write: if false;
+    }
+
+    match /security_audit_logs/{logId} {
+      allow read, write: if false;
+    }
+  }
+}
