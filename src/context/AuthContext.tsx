@@ -3,6 +3,7 @@ import { AuthUser, AdminUserListItem } from '../types';
 import {
   authApi,
   getStoredSessionToken,
+  getStoredAuthUser,
   setStoredSessionToken,
   setStoredAuthUser,
   type ActiveDeviceSession,
@@ -10,8 +11,6 @@ import {
 import { getSupabaseClient } from '../lib/supabase';
 import { syncDeviceRegistration } from './PwaInstallContext';
 import { clearUpiProfileCache } from '../lib/upiProfileApi';
-import { signInWithFirebaseGoogle } from '../lib/firebaseClient';
-import { loginWithPasskeyOnDevice } from '../lib/webauthnClient';
 import {
   getDefaultPermissionsForRole,
   isAdminPortalUser,
@@ -89,9 +88,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    const token = getStoredSessionToken();
+    const cached = getStoredAuthUser();
+    return token && cached ? cached : null;
+  });
   const [portalPermissions, setPortalPermissions] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    const token = getStoredSessionToken();
+    const cached = getStoredAuthUser();
+    // Instant boot if user + token are already cached locally (2G resilience)
+    return !(token && cached);
+  });
   const [isRecoveryMode, setIsRecoveryMode] = useState<boolean>(false);
   const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
@@ -184,6 +192,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
       } catch (err: any) {
+        if (err?.status === 401 || err?.status === 403) {
+          clearUpiProfileCache();
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+        // On 2G timeout / offline error, keep cached user instead of wiping session
+        const cached = getStoredAuthUser();
+        if (cached) {
+          setUser(cached);
+          setIsLoading(false);
+          return;
+        }
         console.warn('Notice verifying server session token:', err.message);
       }
     }
@@ -254,7 +275,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    refreshUserProfile();
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 4500);
+    Promise.resolve(refreshUserProfile()).finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
   }, [refreshUserProfile]);
 
   // Automatically log out this browser if its session was revoked remotely from another device
@@ -711,6 +736,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Google Sign-In via Firebase Auth -> server-verified canonical app_users.id
   const loginWithGoogle = async (replaceSessionId?: string): Promise<LoginResult> => {
     try {
+      const { signInWithFirebaseGoogle } = await import('../lib/firebaseClient');
       const { idToken } = await signInWithFirebaseGoogle();
       const res = await authApi.loginWithGoogle(idToken, replaceSessionId);
       if (res.success && res.user) {
@@ -734,6 +760,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Passkey (WebAuthn) Sign-In -> server-verified canonical app_users.id
   const loginWithPasskey = async (email?: string, replaceSessionId?: string): Promise<LoginResult> => {
     try {
+      const { loginWithPasskeyOnDevice } = await import('../lib/webauthnClient');
       const res = await loginWithPasskeyOnDevice(email, replaceSessionId);
       if (res.success && res.user && res.sessionToken) {
         setStoredSessionToken(res.sessionToken);

@@ -6,21 +6,9 @@ import { ExpenseProvider, useExpense } from './context/ExpenseContext';
 import { Sidebar, NavTab } from './components/common/Sidebar';
 import { Navbar } from './components/common/Navbar';
 import { MobileNav } from './components/common/MobileNav';
-import { DashboardView } from './components/dashboard/DashboardView';
-import { HomeSection } from './components/home/HomeSection';
-import { RoomSection } from './components/room/RoomSection';
-import { FoodSection } from './components/food/FoodSection';
-import { OtherSection } from './components/other/OtherSection';
-import { PeopleSection } from './components/people/PeopleSection';
-import { AllTransactionsSection } from './components/all-transactions/AllTransactionsSection';
 import { MaintenanceScreen } from './components/maintenance/MaintenanceScreen';
 import { OfflineBanner } from './components/common/OfflineBanner';
-import { ScanQrModal } from './components/people/ScanQrModal';
 import { udharDeletionApi } from './lib/udharDeletionApi';
-import { AddTransactionModal } from './components/modals/AddTransactionModal';
-import { AuthPage } from './components/auth/AuthPage';
-import { AdminLoginPage } from './components/auth/AdminLoginPage';
-import { StaffLoginPage } from './components/auth/StaffLoginPage';
 import { AppDownloadPopup } from './components/common/AppDownloadPopup';
 import { TransactionCategory, TransactionSubcategory } from './types';
 import { AlertTriangle, EyeOff } from 'lucide-react';
@@ -38,7 +26,19 @@ import { InstantExpensePopupModal } from './components/upi/InstantExpensePopupMo
 import { UpiDetectionOnboardingModal } from './components/upi/UpiDetectionOnboardingModal';
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 
-// High-Performance On-Demand Lazy Loaded Modules
+// High-Performance On-Demand Lazy Loaded Modules (2G-fast initial boot)
+const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
+const HomeSection = lazy(() => import('./components/home/HomeSection').then(m => ({ default: m.HomeSection })));
+const RoomSection = lazy(() => import('./components/room/RoomSection').then(m => ({ default: m.RoomSection })));
+const FoodSection = lazy(() => import('./components/food/FoodSection').then(m => ({ default: m.FoodSection })));
+const OtherSection = lazy(() => import('./components/other/OtherSection').then(m => ({ default: m.OtherSection })));
+const PeopleSection = lazy(() => import('./components/people/PeopleSection').then(m => ({ default: m.PeopleSection })));
+const AllTransactionsSection = lazy(() => import('./components/all-transactions/AllTransactionsSection').then(m => ({ default: m.AllTransactionsSection })));
+const ScanQrModal = lazy(() => import('./components/people/ScanQrModal').then(m => ({ default: m.ScanQrModal })));
+const AddTransactionModal = lazy(() => import('./components/modals/AddTransactionModal').then(m => ({ default: m.AddTransactionModal })));
+const AuthPage = lazy(() => import('./components/auth/AuthPage').then(m => ({ default: m.AuthPage })));
+const AdminLoginPage = lazy(() => import('./components/auth/AdminLoginPage').then(m => ({ default: m.AdminLoginPage })));
+const StaffLoginPage = lazy(() => import('./components/auth/StaffLoginPage').then(m => ({ default: m.StaffLoginPage })));
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const StaffDashboard = lazy(() => import('./components/staff/StaffDashboard').then(m => ({ default: m.StaffDashboard })));
 const LegalCenterSection = lazy(() => import('./components/legal/LegalCenterSection').then(m => ({ default: m.LegalCenterSection })));
@@ -447,10 +447,12 @@ const MainContent: React.FC = () => {
     if (!user) {
       return (
         <>
-          <StaffLoginPage
-            onReturnHome={() => navigatePortalPath('/')}
-            onGoToAdmin={() => navigatePortalPath('/myadmin')}
-          />
+          <Suspense fallback={<SectionFallback />}>
+            <StaffLoginPage
+              onReturnHome={() => navigatePortalPath('/')}
+              onGoToAdmin={() => navigatePortalPath('/myadmin')}
+            />
+          </Suspense>
           <AppDownloadPopup
             portalScope="mystaff"
             isAdminRoute={false}
@@ -484,10 +486,12 @@ const MainContent: React.FC = () => {
     if (!user) {
       return (
         <>
-          <AdminLoginPage
-            onReturnHome={() => navigatePortalPath('/')}
-            onGoToStaff={() => navigatePortalPath('/mystaff')}
-          />
+          <Suspense fallback={<SectionFallback />}>
+            <AdminLoginPage
+              onReturnHome={() => navigatePortalPath('/')}
+              onGoToStaff={() => navigatePortalPath('/mystaff')}
+            />
+          </Suspense>
           <AppDownloadPopup
             portalScope="myadmin"
             isAdminRoute={false}
@@ -556,7 +560,9 @@ const MainContent: React.FC = () => {
   if (!user || isAuthRoute) {
     return (
       <>
-        <AuthPage />
+        <Suspense fallback={<SectionFallback />}>
+          <AuthPage />
+        </Suspense>
         <AppDownloadPopup
           isAdminRoute={false}
           isMaintenanceBlocked={false}
@@ -929,17 +935,21 @@ const MainContent: React.FC = () => {
       )}
 
         {/* Universal Add Transaction Modal */}
-        <AddTransactionModal
-          isOpen={isAddModalOpen}
-          onClose={() => setIsAddModalOpen(false)}
-          initialCategory={modalInitialCategory}
-          initialSubcategory={modalInitialSubcategory}
-          initialPersonName={modalInitialPerson}
-          initialAmount={modalInitialAmount}
-          initialTitle={modalInitialTitle}
-          initialDate={modalInitialDate}
-          onOpenReceiptScanner={() => setCurrentTab('receipt_scanner')}
-        />
+        <Suspense fallback={null}>
+          {isAddModalOpen && (
+            <AddTransactionModal
+              isOpen={isAddModalOpen}
+              onClose={() => setIsAddModalOpen(false)}
+              initialCategory={modalInitialCategory}
+              initialSubcategory={modalInitialSubcategory}
+              initialPersonName={modalInitialPerson}
+              initialAmount={modalInitialAmount}
+              initialTitle={modalInitialTitle}
+              initialDate={modalInitialDate}
+              onOpenReceiptScanner={() => setCurrentTab('receipt_scanner')}
+            />
+          )}
+        </Suspense>
 
         <Suspense fallback={null}>
           {/* Dedicated Add Udhar Modal (when triggered via People / quick-action) */}

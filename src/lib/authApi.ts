@@ -116,11 +116,22 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(endpoint, {
-    ...options,
-    headers,
-    credentials: 'include', // sends cookies
-  });
+  const controller = !options.signal ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), 8000)
+    : null;
+
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      ...options,
+      headers,
+      credentials: 'include', // sends cookies
+      signal: options.signal || controller?.signal,
+    });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 
   let data: any = {};
   const contentType = res.headers.get('content-type') || '';
