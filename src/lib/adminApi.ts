@@ -839,16 +839,137 @@ export const adminClient = {
     });
   },
 
-  async uploadBrandingAsset(data: {
-    scope: 'user_app' | 'admin_app' | 'staff_app' | 'website' | 'general';
-    slot: 'logo' | 'favicon' | 'pwa_icon' | 'og_image' | 'hero_image' | 'banner' | 'splash';
-    dataUrl: string;
-    width?: number;
-    height?: number;
-  }) {
-    return adminRequest('/api/admin/control-center/upload-asset', {
+  uploadBrandingAsset(
+    data: {
+      scope: 'user_app' | 'admin_app' | 'staff_app' | 'website' | 'general';
+      slot:
+        | 'logo'
+        | 'sidebar_logo'
+        | 'favicon'
+        | 'pwa_icon'
+        | 'notification_icon'
+        | 'og_image'
+        | 'hero_image'
+        | 'banner'
+        | 'splash';
+      dataUrl: string;
+      filename?: string;
+      allowSvg?: boolean;
+      optimizedDataUrl?: string;
+      variants?: Record<string, string>;
+      width?: number;
+      height?: number;
+    },
+    options?: {
+      onProgress?: (percent: number) => void;
+      signal?: AbortSignal;
+    }
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    assetUrl?: string;
+    asset?: {
+      id: string;
+      url: string;
+      mimeType: string;
+      byteSize: number;
+      width?: number;
+      height?: number;
+    };
+    originalAsset?: {
+      quarantineId: string;
+      objectKey: string;
+      byteSize: number;
+      width?: number;
+      height?: number;
+    };
+    variants?: Record<string, string>;
+    scannerEngine?: string;
+    scanStatus?: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      if (options?.signal?.aborted) {
+        reject(new Error('Upload cancelled.'));
+        return;
+      }
+
+      const xhr = new XMLHttpRequest();
+      const headers = getHeaders();
+
+      const cleanupAbort = () => {
+        if (options?.signal) {
+          options.signal.removeEventListener('abort', handleAbort);
+        }
+      };
+
+      const handleAbort = () => {
+        try {
+          xhr.abort();
+        } catch {}
+        cleanupAbort();
+        reject(new Error('Upload cancelled by administrator.'));
+      };
+
+      if (options?.signal) {
+        options.signal.addEventListener('abort', handleAbort);
+      }
+
+      xhr.open('POST', '/api/admin/control-center/upload-asset', true);
+      xhr.withCredentials = true;
+      xhr.timeout = 90_000;
+      for (const [k, v] of Object.entries(headers)) {
+        xhr.setRequestHeader(k, v);
+      }
+
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable && options?.onProgress) {
+          const pct = Math.min(95, Math.max(15, Math.round((ev.loaded / ev.total) * 90)));
+          options.onProgress(pct);
+        }
+      };
+
+      xhr.onerror = () => {
+        cleanupAbort();
+        reject(new Error('Network error while uploading branding asset.'));
+      };
+
+      xhr.ontimeout = () => {
+        cleanupAbort();
+        reject(new Error('Upload timed out after 90 seconds.'));
+      };
+
+      xhr.onload = () => {
+        cleanupAbort();
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(xhr.responseText || '{}');
+        } catch {
+          parsed = { success: false, message: xhr.responseText || `HTTP ${xhr.status}` };
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300 && parsed?.success) {
+          const normalizedUrl = parsed?.asset?.url || parsed?.assetUrl || '';
+          resolve({
+            ...parsed,
+            assetUrl: normalizedUrl,
+          });
+        } else {
+          reject(new Error(parsed?.message || `Upload rejected (HTTP ${xhr.status}).`));
+        }
+      };
+
+      xhr.send(JSON.stringify(data));
+    });
+  },
+
+  async getUploadSecurityDashboard() {
+    return adminRequest('/api/admin/security/uploads', { method: 'GET' });
+  },
+
+  async reviewQuarantineItem(quarantineId: string, action: 'approve' | 'delete') {
+    return adminRequest('/api/admin/security/quarantine/action', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ quarantineId, action }),
     });
   },
 

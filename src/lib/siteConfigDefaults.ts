@@ -17,10 +17,12 @@ export const DEFAULT_SITE_CONTROL_CENTER_CONFIG: SiteControlCenterConfig = {
       tagline: 'by HackifyPro',
       description: 'Smart personal finance, expense tracking & verified Udhar ledger.',
       logoUrl: '/logo.jpg',
+      sidebarLogoUrl: '/logo.jpg',
       lightLogoUrl: '/logo.jpg',
       darkLogoUrl: '/logo.jpg',
       faviconUrl: '/favicon.svg',
       pwaIconUrl: '/icon-192.png',
+      notificationIconUrl: '/icon-192.png',
       primaryColor: '#10b981',
       secondaryColor: '#0f172a',
       accentColor: '#14b8a6',
@@ -39,10 +41,12 @@ export const DEFAULT_SITE_CONTROL_CENTER_CONFIG: SiteControlCenterConfig = {
       tagline: 'A product of HackifyPro · Admin Security Gateway',
       description: 'Dedicated administrative control center, RBAC, website studio, and security gateway.',
       logoUrl: '/admin-logo.png',
+      sidebarLogoUrl: '/admin-logo.png',
       lightLogoUrl: '/admin-logo.png',
       darkLogoUrl: '/admin-logo.png',
       faviconUrl: '/admin-favicon.png',
       pwaIconUrl: '/admin-icon-192.png',
+      notificationIconUrl: '/admin-notification-icon.png',
       primaryColor: '#059669',
       secondaryColor: '#020617',
       accentColor: '#10b981',
@@ -62,10 +66,12 @@ export const DEFAULT_SITE_CONTROL_CENTER_CONFIG: SiteControlCenterConfig = {
       tagline: 'A product of HackifyPro · Staff Operations Desk',
       description: 'Dedicated operations workspace for support specialists, analysts, and assigned tasks.',
       logoUrl: '/staff-logo.png',
+      sidebarLogoUrl: '/staff-logo.png',
       lightLogoUrl: '/staff-logo.png',
       darkLogoUrl: '/staff-logo.png',
       faviconUrl: '/staff-favicon.png',
       pwaIconUrl: '/staff-icon-192.png',
+      notificationIconUrl: '/staff-icon-192.png',
       primaryColor: '#4f46e5',
       secondaryColor: '#0f172a',
       accentColor: '#06b6d4',
@@ -332,10 +338,28 @@ export function normalizeClientSiteConfig(raw: any): SiteControlCenterConfig {
     tagline: String(src?.tagline ?? def.tagline).trim(),
     description: String(src?.description ?? def.description).trim(),
     logoUrl: sanitizePublicUrl(src?.logoUrl, def.logoUrl),
+    sidebarLogoUrl: sanitizePublicUrl(src?.sidebarLogoUrl, src?.logoUrl || def.sidebarLogoUrl || def.logoUrl),
     lightLogoUrl: sanitizePublicUrl(src?.lightLogoUrl, src?.logoUrl || def.lightLogoUrl || def.logoUrl),
     darkLogoUrl: sanitizePublicUrl(src?.darkLogoUrl, src?.logoUrl || def.darkLogoUrl || def.logoUrl),
     faviconUrl: sanitizePublicUrl(src?.faviconUrl, def.faviconUrl),
     pwaIconUrl: sanitizePublicUrl(src?.pwaIconUrl, def.pwaIconUrl),
+    notificationIconUrl: sanitizePublicUrl(
+      src?.notificationIconUrl,
+      def.notificationIconUrl || src?.pwaIconUrl || def.pwaIconUrl
+    ),
+    originalLogoAssetId:
+      typeof src?.originalLogoAssetId === 'string' && /^[a-zA-Z0-9_-]{4,120}$/.test(src.originalLogoAssetId)
+        ? src.originalLogoAssetId
+        : undefined,
+    originalLogoMeta:
+      src?.originalLogoMeta && typeof src.originalLogoMeta === 'object'
+        ? {
+            byteSize: Number(src.originalLogoMeta.byteSize) || undefined,
+            width: Number(src.originalLogoMeta.width) || undefined,
+            height: Number(src.originalLogoMeta.height) || undefined,
+            mimeType: typeof src.originalLogoMeta.mimeType === 'string' ? src.originalLogoMeta.mimeType : undefined,
+          }
+        : undefined,
     primaryColor: sanitizeHexColorClient(src?.primaryColor, def.primaryColor),
     secondaryColor: sanitizeHexColorClient(src?.secondaryColor, def.secondaryColor),
     accentColor: sanitizeHexColorClient(src?.accentColor, def.accentColor),

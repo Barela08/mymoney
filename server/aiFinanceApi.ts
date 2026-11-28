@@ -4,8 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import { authenticateRequest } from './auth.js';
 import { query, isDatabaseAvailable } from './db.js';
-import { logSecurityEvent } from './security.js';
+import { logSecurityEvent, extractClientIp } from './security.js';
 import { hasServerUserConsent } from './privacyConsentApi.js';
+import { processSecureUpload } from './uploadSecurity.js';
 import {
   getAiProviderStatus,
   askFinancialAssistant,
@@ -767,23 +768,24 @@ export async function handleAiFinanceRequest(
 
       const body = await parseJsonBody(req, 8 * 1024 * 1024);
       const dataUrl = String(body.imageDataUrl || '');
-      const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/);
+      const filename = String(body.filename || 'receipt.jpg').slice(0, 140);
+      const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
       if (!match) {
         sendJson(res, 400, { success: false, message: 'Invalid receipt image data. Please upload a JPG, PNG, or WEBP image.' });
         return true;
       }
 
       const mimeType = match[1].toLowerCase();
-      const base64Data = match[2];
-      const estimatedBytes = Math.floor((base64Data.length * 3) / 4);
+      const rawBase64 = match[2].replace(/\s+/g, '');
+      const estimatedBytes = Math.floor((rawBase64.length * 3) / 4);
       const validation = validateReceiptUpload(mimeType, estimatedBytes);
       if (!validation.valid) {
         sendJson(res, 400, { success: false, message: validation.error });
         return true;
       }
 
-      // Security: verify binary magic-byte file signature, not just extension/MIME header
-      const sigValidation = validateReceiptFileSignature(base64Data, mimeType);
+      // Security: quarantine-first validation (filename, magic bytes, dimension bomb, polyglot/EICAR, EXIF scrub, ClamAV)
+      const sigValidation = validateReceiptFileSignature(rawBase64, mimeType);
       if (!sigValidation.valid) {
         if (useDb) {
           logSecurityEvent('RECEIPT_INVALID_SIGNATURE', {
@@ -797,10 +799,35 @@ export async function handleAiFinanceRequest(
         return true;
       }
 
-      const fileHash = crypto.createHash('sha256').update(base64Data).digest('hex');
+      const scanRes = await processSecureUpload({
+        userId,
+        userEmail: authUser.email,
+        purpose: 'receipt_ocr',
+        filename,
+        dataUrlOrRawBase64: dataUrl,
+        declaredMime: mimeType,
+        ipAddress: extractClientIp(req),
+        allowSvg: false,
+      });
+
+      if (!scanRes.success || !scanRes.cleanBytes || !scanRes.mimeType) {
+        const statusCode = scanRes.status === 'quarantined_pending' ? 202 : 400;
+        sendJson(res, statusCode, {
+          success: false,
+          code: scanRes.status === 'quarantined_pending' ? 'QUARANTINED_PENDING_REVIEW' : 'UPLOAD_SECURITY_REJECTED',
+          quarantineId: scanRes.quarantineId,
+          scanStatus: scanRes.status,
+          scannerEngine: scanRes.scannerEngine,
+          message: scanRes.error || 'Receipt image failed security validation.',
+        });
+        return true;
+      }
+
+      const cleanBase64 = scanRes.cleanBytes.toString('base64');
+      const fileHash = scanRes.sha256 || crypto.createHash('sha256').update(cleanBase64).digest('hex');
 
       try {
-        const extraction = await extractReceiptWithOcr({ base64Image: base64Data, mimeType });
+        const extraction = await extractReceiptWithOcr({ base64Image: cleanBase64, mimeType: scanRes.mimeType });
         const store = readUserStore(userId);
         const categorization = categorizeTransactionDeterministic(
           {
@@ -815,6 +842,10 @@ export async function handleAiFinanceRequest(
         sendJson(res, 200, {
           success: true,
           fileHash,
+          quarantineId: scanRes.quarantineId,
+          scanStatus: scanRes.status,
+          scannerEngine: scanRes.scannerEngine,
+          signedAccessUrl: scanRes.signedAccessUrl,
           extraction,
           categorization,
         });

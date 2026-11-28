@@ -11,6 +11,13 @@ import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { validateReceiptFileSignature } from '../../lib/financialIntelligenceEngine';
 
+import {
+  MAX_AVATAR_BYTES,
+  decodeBase64ToBytes,
+  inspectImageBinary,
+  sanitizeUploadFilename,
+} from '../../lib/uploadSecurityCore';
+
 const ALLOWED_AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
 interface ProfilePhotoUploadModalProps {
@@ -37,7 +44,7 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
 
   if (!isOpen) return null;
 
-  // Compress and resize image using HTML5 Canvas (max 512x512, high quality)
+  // Compress and resize image using HTML5 Canvas (max 480x480, strips metadata)
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -50,6 +57,20 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
           reject(new Error(sigCheck.error || 'Selected file is not a valid JPEG, PNG, or WEBP image.'));
           return;
         }
+        try {
+          const binaryCheck = inspectImageBinary(decodeBase64ToBytes(b64Part), file.type, {
+            maxBytes: MAX_AVATAR_BYTES,
+            allowGif: false,
+          });
+          if (!binaryCheck.valid) {
+            reject(new Error(binaryCheck.error || 'Profile image failed binary security validation.'));
+            return;
+          }
+        } catch (err: any) {
+          reject(new Error(err?.message || 'Unable to inspect selected image bytes.'));
+          return;
+        }
+
         const img = new Image();
         img.src = dataUrl;
         img.onload = () => {
@@ -90,7 +111,14 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+
+    const nameCheck = sanitizeUploadFilename(file.name);
+    if (!nameCheck.valid) {
+      toast.error('Unsafe Filename', nameCheck.error || 'Disallowed file extension.');
+      return;
+    }
 
     // Validate strict MIME type allowlist (rejects SVG, HTML, scripts)
     if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type.toLowerCase())) {
@@ -98,9 +126,9 @@ export const ProfilePhotoUploadModal: React.FC<ProfilePhotoUploadModalProps> = (
       return;
     }
 
-    // Validate size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File Too Large', 'Please select an image smaller than 5 MB.');
+    // Validate size (max 2 MB)
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error('File Too Large', 'Profile photos must be 2 MB or smaller.');
       return;
     }
 

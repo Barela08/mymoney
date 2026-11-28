@@ -1,33 +1,45 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { ShieldAlert, ArrowLeft, RefreshCw, LogOut, Headset } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AdminLayout, AdminSectionKey } from './AdminLayout';
 import { isAdminPortalUser } from '../../lib/portalAuth';
 
-// Tab Components
-import { AdminOverviewTab } from './tabs/AdminOverviewTab';
-import { AdminUsersTab } from './tabs/AdminUsersTab';
-import { AdminSecurityTab } from './tabs/AdminSecurityTab';
-import { AdminDeletionsTab } from './tabs/AdminDeletionsTab';
-import { AdminEmailsTab } from './tabs/AdminEmailsTab';
-import { AdminNotificationsTab } from './tabs/AdminNotificationsTab';
-import { AdminSupportTab } from './tabs/AdminSupportTab';
-import { AdminLegalTab } from './tabs/AdminLegalTab';
-import { AdminAnalyticsTab } from './tabs/AdminAnalyticsTab';
-import { AdminSystemTab } from './tabs/AdminSystemTab';
-import { AdminAuditLogsTab } from './tabs/AdminAuditLogsTab';
-import { AdminSettingsTab } from './tabs/AdminSettingsTab';
-import { AdminRolesTab } from './tabs/AdminRolesTab';
-import { AdminFeaturesTab } from './tabs/AdminFeaturesTab';
-import { AdminFinancialAccessTab } from './tabs/AdminFinancialAccessTab';
-import { AdminAccountsTab } from './tabs/AdminAccountsTab';
-import { AdminTransactionMonitoringTab } from './tabs/AdminTransactionMonitoringTab';
-import { AdminAiTab } from './tabs/AdminAiTab';
-import { AdminDatabaseTab } from './tabs/AdminDatabaseTab';
-import { AdminInstalledDevicesTab } from './tabs/AdminInstalledDevicesTab';
-import { AdminControlCenterTab } from './tabs/AdminControlCenterTab';
-import { AdminStaffTasksTab } from './tabs/AdminStaffTasksTab';
-import { AdminAppPushNotificationsTab } from './tabs/AdminAppPushNotificationsTab';
+// Lazy-loaded Admin Tabs for fast 3G & low-end mobile initial bundle size
+const AdminOverviewTab = lazy(() => import('./tabs/AdminOverviewTab').then((m) => ({ default: m.AdminOverviewTab })));
+const AdminUsersTab = lazy(() => import('./tabs/AdminUsersTab').then((m) => ({ default: m.AdminUsersTab })));
+const AdminSecurityTab = lazy(() => import('./tabs/AdminSecurityTab').then((m) => ({ default: m.AdminSecurityTab })));
+const AdminDeletionsTab = lazy(() => import('./tabs/AdminDeletionsTab').then((m) => ({ default: m.AdminDeletionsTab })));
+const AdminEmailsTab = lazy(() => import('./tabs/AdminEmailsTab').then((m) => ({ default: m.AdminEmailsTab })));
+const AdminNotificationsTab = lazy(() => import('./tabs/AdminNotificationsTab').then((m) => ({ default: m.AdminNotificationsTab })));
+const AdminSupportTab = lazy(() => import('./tabs/AdminSupportTab').then((m) => ({ default: m.AdminSupportTab })));
+const AdminLegalTab = lazy(() => import('./tabs/AdminLegalTab').then((m) => ({ default: m.AdminLegalTab })));
+const AdminAnalyticsTab = lazy(() => import('./tabs/AdminAnalyticsTab').then((m) => ({ default: m.AdminAnalyticsTab })));
+const AdminSystemTab = lazy(() => import('./tabs/AdminSystemTab').then((m) => ({ default: m.AdminSystemTab })));
+const AdminAuditLogsTab = lazy(() => import('./tabs/AdminAuditLogsTab').then((m) => ({ default: m.AdminAuditLogsTab })));
+const AdminSettingsTab = lazy(() => import('./tabs/AdminSettingsTab').then((m) => ({ default: m.AdminSettingsTab })));
+const AdminRolesTab = lazy(() => import('./tabs/AdminRolesTab').then((m) => ({ default: m.AdminRolesTab })));
+const AdminFeaturesTab = lazy(() => import('./tabs/AdminFeaturesTab').then((m) => ({ default: m.AdminFeaturesTab })));
+const AdminFinancialAccessTab = lazy(() => import('./tabs/AdminFinancialAccessTab').then((m) => ({ default: m.AdminFinancialAccessTab })));
+const AdminAccountsTab = lazy(() => import('./tabs/AdminAccountsTab').then((m) => ({ default: m.AdminAccountsTab })));
+const AdminTransactionMonitoringTab = lazy(() => import('./tabs/AdminTransactionMonitoringTab').then((m) => ({ default: m.AdminTransactionMonitoringTab })));
+const AdminAiTab = lazy(() => import('./tabs/AdminAiTab').then((m) => ({ default: m.AdminAiTab })));
+const AdminDatabaseTab = lazy(() => import('./tabs/AdminDatabaseTab').then((m) => ({ default: m.AdminDatabaseTab })));
+const AdminInstalledDevicesTab = lazy(() => import('./tabs/AdminInstalledDevicesTab').then((m) => ({ default: m.AdminInstalledDevicesTab })));
+const AdminControlCenterTab = lazy(() => import('./tabs/AdminControlCenterTab').then((m) => ({ default: m.AdminControlCenterTab })));
+const AdminStaffTasksTab = lazy(() => import('./tabs/AdminStaffTasksTab').then((m) => ({ default: m.AdminStaffTasksTab })));
+const AdminAppPushNotificationsTab = lazy(() => import('./tabs/AdminAppPushNotificationsTab').then((m) => ({ default: m.AdminAppPushNotificationsTab })));
+
+const AdminTabSkeleton: React.FC = () => (
+  <div className="space-y-4 animate-pulse py-4">
+    <div className="h-8 w-56 rounded-xl bg-slate-200 dark:bg-slate-800" />
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      <div className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      <div className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+    </div>
+    <div className="h-64 rounded-3xl bg-slate-200 dark:bg-slate-800" />
+  </div>
+);
 
 interface AdminDashboardProps {
   onExit?: () => void;
@@ -219,7 +231,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onSelectSection={setCurrentSection}
       onExitAdmin={onExit}
     >
-      {renderSectionContent()}
+      <Suspense fallback={<AdminTabSkeleton />}>
+        {renderSectionContent()}
+      </Suspense>
     </AdminLayout>
   );
 };

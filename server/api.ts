@@ -111,6 +111,14 @@ import {
   listStaffTasks,
   updateStaffTask,
 } from './siteControlCenter.js';
+import { recordHttpRequestMetric, recordRateLimitEvent } from './telemetry.js';
+import { processSecureUpload } from './uploadSecurity.js';
+import {
+  verifySignedPrivateParams,
+  getObjectFromStorage,
+  createSignedPrivateUrl,
+  hashOwnerId,
+} from './storageService.js';
 import {
   insertFeedbackFallback,
   listFeedbacksFallback,
@@ -228,13 +236,19 @@ async function syncSupabaseAuthPassword(email: string, newPassword: string): Pro
 }
 
 // Helper: parse JSON body from incoming request
-async function parseJsonBody(req: IncomingMessage): Promise<any> {
+async function parseJsonBody(req: IncomingMessage, maxBytes = 1024 * 1024): Promise<any> {
   // If Vercel or middleware already consumed and parsed JSON body
   if ((req as any).body !== undefined && (req as any).body !== null) {
     if (typeof (req as any).body === 'object') {
+      if (Buffer.byteLength(JSON.stringify((req as any).body), 'utf8') > maxBytes) {
+        throw new Error('Request payload too large');
+      }
       return (req as any).body;
     }
     if (typeof (req as any).body === 'string') {
+      if (Buffer.byteLength((req as any).body, 'utf8') > maxBytes) {
+        throw new Error('Request payload too large');
+      }
       try {
         return JSON.parse((req as any).body);
       } catch {
@@ -243,23 +257,33 @@ async function parseJsonBody(req: IncomingMessage): Promise<any> {
     }
   }
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
-      // Protect against request flooding: max 1MB
-      if (body.length > 1024 * 1024) {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let aborted = false;
+    req.on('data', (chunk: Buffer | string) => {
+      if (aborted) return;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        aborted = true;
         reject(new Error('Request payload too large'));
+        return;
       }
+      chunks.push(buf);
     });
     req.on('end', () => {
-      if (!body) return resolve({});
+      if (aborted) return;
+      if (totalBytes === 0) return resolve({});
       try {
-        resolve(JSON.parse(body));
-      } catch (e) {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
         reject(new Error('Invalid JSON payload'));
       }
     });
-    req.on('error', (err) => reject(err));
+    req.on('error', (err) => {
+      if (!aborted) reject(err);
+    });
   });
 }
 
@@ -373,6 +397,60 @@ function validateAvatarUrlInput(raw: unknown): { valid: boolean; value: string |
   }
 }
 
+function sanitizeAttachmentUrlInput(raw: unknown): { valid: boolean; value: string | null; error?: string } {
+  if (raw === null || raw === undefined) return { valid: true, value: null };
+  const trimmed = String(raw).trim();
+  if (!trimmed) return { valid: true, value: null };
+  if (/[\r\n\0]/.test(trimmed)) {
+    return { valid: false, value: null, error: 'Attachment URL contains invalid control characters.' };
+  }
+
+  // Signed private storage access route
+  if (trimmed.startsWith('/api/uploads/private?')) {
+    return trimmed.length <= 1200
+      ? { valid: true, value: trimmed }
+      : { valid: false, value: null, error: 'Attachment reference URL is too long.' };
+  }
+
+  // Legacy data URLs must be safe raster images (no SVG, HTML, scripts)
+  if (trimmed.startsWith('data:')) {
+    const match = trimmed.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+    if (!match) {
+      return {
+        valid: false,
+        value: null,
+        error: 'Only PNG, JPG, JPEG, or WebP attachment images are allowed.',
+      };
+    }
+    const est = Math.floor((match[2].length * 3) / 4);
+    if (est <= 0 || est > 5 * 1024 * 1024) {
+      return { valid: false, value: null, error: 'Attachment exceeds maximum 5 MB limit.' };
+    }
+    const sig = validateReceiptFileSignature(match[2], match[1].toLowerCase());
+    if (!sig.valid) {
+      return { valid: false, value: null, error: sig.error || 'Attachment signature mismatch.' };
+    }
+    return { valid: true, value: trimmed };
+  }
+
+  if (trimmed.length > 800) {
+    return { valid: false, value: null, error: 'Attachment URL exceeds maximum length.' };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      return { valid: false, value: null, error: 'Attachment URL must use HTTPS.' };
+    }
+    if (/\.(svgz?|html?|xhtml|js|mjs|php|exe|dll|bat|cmd|ps1|sh|jar|apk|msi|scr)(\?|#|$)/i.test(parsed.pathname)) {
+      return { valid: false, value: null, error: 'Dangerous attachment file type blocked.' };
+    }
+    return { valid: true, value: parsed.toString() };
+  } catch {
+    return { valid: false, value: null, error: 'Invalid attachment URL.' };
+  }
+}
+
 // -----------------------------------------------------------------------------
 // AUTOMATED 24-HOUR ACCOUNT DELETION BACKGROUND EXECUTION WORKER
 // - Idempotent execution
@@ -478,6 +556,15 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
   // Handle /api/* and dynamic SEO endpoints (/robots.txt, /sitemap.xml)
   if (!pathname.startsWith('/api/') && pathname !== '/robots.txt' && pathname !== '/sitemap.xml') {
     return false;
+  }
+
+  // Real-time HTTP latency & status telemetry (skip long-lived SSE stream)
+  if (pathname !== '/api/public/site-config/stream' && !(res as any).__mmTelemetryHooked) {
+    (res as any).__mmTelemetryHooked = true;
+    const reqStart = Date.now();
+    res.on('finish', () => {
+      recordHttpRequestMetric(Date.now() - reqStart, res.statusCode || 200);
+    });
   }
 
   const clientIp = getClientIp(req);
@@ -608,6 +695,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         checkRateLimitAsync(`read:device:${deviceId}`, RATE_LIMITS.GENERAL_READ_DEVICE.max, RATE_LIMITS.GENERAL_READ_DEVICE.windowMs, RATE_LIMITS.GENERAL_READ_DEVICE.op),
       ]);
       if (!ipRead.allowed || !devRead.allowed) {
+        recordRateLimitEvent();
         const violated = !ipRead.allowed ? ipRead : devRead;
         await recordViolationAndMaybeRestrictAsync({
           dimension: 'ip_device',
@@ -674,7 +762,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       sendJson(res, 404, { success: false, message: 'Branding asset not found.' });
       return true;
     }
-    serveBrandingAssetResponse(res, asset);
+    await serveBrandingAssetResponse(res, asset);
     return true;
   }
 
@@ -725,6 +813,156 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
   }
 
   try {
+    // ---------------------------------------------------------
+    // 0-UPLOADS. SECURE QUARANTINE UPLOAD & SIGNED PRIVATE ACCESS
+    // ---------------------------------------------------------
+    if (pathname === '/api/uploads/attachment' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+
+      const body = await parseJsonBody(req, 8 * 1024 * 1024);
+      const allowedPurposes = new Set([
+        'transaction_attachment',
+        'udhar_attachment',
+        'receipt_ocr',
+        'profile_avatar',
+      ]);
+      const purpose = allowedPurposes.has(String(body.purpose))
+        ? (body.purpose as 'transaction_attachment' | 'udhar_attachment' | 'receipt_ocr' | 'profile_avatar')
+        : 'transaction_attachment';
+      const dataUrl = String(body.dataUrl || body.imageDataUrl || '').trim();
+      const filename = String(body.filename || 'attachment.jpg').slice(0, 140);
+
+      if (!dataUrl) {
+        sendJson(res, 400, { success: false, message: 'Upload payload is required.' });
+        return true;
+      }
+
+      const result = await processSecureUpload({
+        userId: authUser.id,
+        userEmail: authUser.email,
+        purpose,
+        filename,
+        dataUrlOrRawBase64: dataUrl,
+        declaredMime: typeof body.mimeType === 'string' ? body.mimeType : undefined,
+        ipAddress: clientIp,
+        allowSvg: false,
+      });
+
+      if (!result.success) {
+        const statusCode = result.status === 'quarantined_pending' ? 202 : 400;
+        sendJson(res, statusCode, {
+          success: false,
+          code: result.status === 'quarantined_pending' ? 'QUARANTINED_PENDING_REVIEW' : 'UPLOAD_SECURITY_REJECTED',
+          quarantineId: result.quarantineId,
+          scanStatus: result.status,
+          scannerEngine: result.scannerEngine,
+          message: result.error || 'File failed security validation.',
+        });
+        return true;
+      }
+
+      sendJson(res, 201, {
+        success: true,
+        quarantineId: result.quarantineId,
+        scanStatus: result.status,
+        scannerEngine: result.scannerEngine,
+        mimeType: result.mimeType,
+        byteSize: result.byteSize,
+        width: result.width,
+        height: result.height,
+        sha256: result.sha256,
+        bucket: result.bucket,
+        objectKey: result.objectKey,
+        signedAccessUrl: result.signedAccessUrl,
+        signedUrlExpiresAt: result.signedUrlExpiresAt,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/uploads/signed-url' && method === 'POST') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const body = await parseJsonBody(req);
+      const objectKey = String(body.objectKey || '').trim();
+      const mimeType = String(body.mimeType || 'image/jpeg').trim();
+      const ownerPrefix = `${hashOwnerId(authUser.id)}/`;
+      const isAdmin = authUser.role === 'admin' || authUser.role === 'superadmin';
+      if (!objectKey || (!objectKey.startsWith(ownerPrefix) && !isAdmin)) {
+        sendJson(res, 403, { success: false, message: 'Unauthorized storage object reference.' });
+        return true;
+      }
+      const signed = await createSignedPrivateUrl({
+        bucket: 'private-attachments',
+        objectKey,
+        ownerUserId: authUser.id,
+        mimeType,
+        ttlSeconds: 300,
+      });
+      sendJson(res, 200, { success: true, ...signed });
+      return true;
+    }
+
+    if (pathname === '/api/uploads/private' && method === 'GET') {
+      const authUser = await authenticateRequest(req);
+      if (!authUser) {
+        sendJson(res, 401, { success: false, message: 'Authentication required.' });
+        return true;
+      }
+      const bucket = String(parsed.query.bucket || '');
+      const objectKey = String(parsed.query.key || '');
+      const exp = String(parsed.query.exp || '');
+      const mime = String(parsed.query.mime || 'application/octet-stream');
+      const sig = String(parsed.query.sig || '');
+
+      if (bucket !== 'private-attachments' || !objectKey) {
+        sendJson(res, 403, { success: false, message: 'Forbidden storage bucket.' });
+        return true;
+      }
+      const ownerPrefix = `${hashOwnerId(authUser.id)}/`;
+      const isAdmin = authUser.role === 'admin' || authUser.role === 'superadmin';
+      if (!objectKey.startsWith(ownerPrefix) && !isAdmin) {
+        sendJson(res, 403, { success: false, message: 'Access denied to another user attachment.' });
+        return true;
+      }
+      if (!isAdmin) {
+        const sigValid = verifySignedPrivateParams({
+          bucket,
+          objectKey,
+          ownerUserId: authUser.id,
+          mimeType: mime,
+          exp,
+          sig,
+        });
+        if (!sigValid) {
+          sendJson(res, 403, { success: false, message: 'Signed attachment link expired or invalid.' });
+          return true;
+        }
+      }
+
+      const obj = await getObjectFromStorage('private-attachments', objectKey);
+      if (!obj) {
+        sendJson(res, 404, { success: false, message: 'Attachment not found.' });
+        return true;
+      }
+      const safeContentType = ['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'application/octet-stream';
+      res.writeHead(200, {
+        'Content-Type': safeContentType,
+        'Content-Length': String(obj.data.length),
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store, max-age=0',
+        'Content-Disposition': 'inline',
+      });
+      res.end(obj.data);
+      return true;
+    }
+
     // ---------------------------------------------------------
     // 0A. DEDICATED ADMIN LOGIN: POST /api/admin/auth/login
     // Always accessible (even during Maintenance Mode); strictly verifies admin role.
@@ -2003,7 +2241,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         return true;
       }
 
-      const body = await parseJsonBody(req);
+      const body = await parseJsonBody(req, 4 * 1024 * 1024);
       // Security: strictly allow ONLY full_name, phone, username, avatar_url — NEVER role, status, or email_verified
       const fullName = (body.fullName || body.full_name || authUser.full_name).trim();
       const phone = (body.phone !== undefined ? body.phone : authUser.phone || '').trim();
@@ -2017,7 +2255,28 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         });
         return true;
       }
-      const avatarUrl = avatarCheck.value;
+      let avatarUrl = avatarCheck.value;
+      if (avatarUrl && avatarUrl.startsWith('data:')) {
+        const avatarScan = await processSecureUpload({
+          userId: authUser.id,
+          userEmail: authUser.email,
+          purpose: 'profile_avatar',
+          filename: String(body.avatarFilename || 'avatar.jpg'),
+          dataUrlOrRawBase64: avatarUrl,
+          ipAddress: clientIp,
+          allowSvg: false,
+        });
+        if (!avatarScan.success || !avatarScan.sanitizedDataUrl) {
+          sendJson(res, avatarScan.status === 'quarantined_pending' ? 202 : 400, {
+            success: false,
+            code: 'INVALID_AVATAR_IMAGE',
+            quarantineId: avatarScan.quarantineId,
+            message: avatarScan.error || 'Uploaded profile photo failed security verification.',
+          });
+          return true;
+        }
+        avatarUrl = avatarScan.sanitizedDataUrl;
+      }
       const rawUsername =
         body.username !== undefined ? String(body.username || '').trim().toLowerCase() : authUser.username || '';
 
@@ -6164,7 +6423,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const category = (body.category || 'Personal Loan').trim();
       const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
       const description = (body.description || '').trim();
-      const attachmentUrl = body.attachment_url || null;
+      const attCheck = sanitizeAttachmentUrlInput(body.attachment_url);
+      if (!attCheck.valid) {
+        sendJson(res, 400, { success: false, code: 'INVALID_ATTACHMENT', message: attCheck.error || 'Invalid attachment.' });
+        return true;
+      }
+      const attachmentUrl = attCheck.value;
       const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
       if (isExplicitQrEndpoint && !qrToken && !pairingCode && !qrDataRaw) {
@@ -6938,7 +7202,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const plainNotes = (body.notes || '').trim();
       const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
       const transactionRef = (body.transaction_ref || body.transactionRef || '').trim();
-      const attachmentUrl = (body.attachment_url || body.attachmentUrl || '').trim();
+      const repAttCheck = sanitizeAttachmentUrlInput(body.attachment_url || body.attachmentUrl);
+      if (!repAttCheck.valid) {
+        sendJson(res, 400, { success: false, code: 'INVALID_ATTACHMENT', message: repAttCheck.error || 'Invalid attachment.' });
+        return true;
+      }
+      const attachmentUrl = repAttCheck.value || '';
       const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
       const packedRepayNotes = packStructuredNote(plainNotes, {
@@ -7390,13 +7659,23 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const isSettled = Boolean(validation.isSettled);
         const newStatus = validation.nextStatus!;
         const nextPlainNote = body.notes !== undefined ? (body.notes || '').trim() : prevPlainNote;
+        let nextAttachmentUrl = prevMeta.attachment_url;
+        if (body.attachment_url !== undefined) {
+          const updAttCheck = sanitizeAttachmentUrlInput(body.attachment_url);
+          if (!updAttCheck.valid) {
+            await client.query('ROLLBACK');
+            sendJson(res, 400, { success: false, code: 'INVALID_ATTACHMENT', message: updAttCheck.error || 'Invalid attachment.' });
+            return true;
+          }
+          nextAttachmentUrl = updAttCheck.value || undefined;
+        }
         const nextPackedNotes = packStructuredNote(nextPlainNote, {
           ...prevMeta,
           lifecycle_status: newStatus,
           category: body.category !== undefined ? body.category : prevMeta.category,
           payment_method: body.payment_method !== undefined ? body.payment_method : prevMeta.payment_method,
           description: body.description !== undefined ? body.description : prevMeta.description,
-          attachment_url: body.attachment_url !== undefined ? body.attachment_url : prevMeta.attachment_url,
+          attachment_url: nextAttachmentUrl,
         });
         const updatedDate = body.transaction_date || body.date || tx.transaction_date;
         const updatedDueDate =
@@ -8517,7 +8796,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const description = (body.description || body.message || '').trim();
       const phone = (body.phone || body.user_phone || '').trim() || null;
       const category = (body.category || 'General Complaint').trim();
-      const attachmentUrl = (body.attachment_url || body.attachment || '').trim() || null;
+      const cmpAttCheck = sanitizeAttachmentUrlInput(body.attachment_url || body.attachment);
+      if (!cmpAttCheck.valid) {
+        sendJson(res, 400, { success: false, code: 'INVALID_ATTACHMENT', message: cmpAttCheck.error || 'Invalid attachment.' });
+        return true;
+      }
+      const attachmentUrl = cmpAttCheck.value;
 
       if (!subject || subject.length < 3) {
         sendJson(res, 400, { success: false, message: 'Complaint subject is required (min 3 characters).' });
@@ -8679,7 +8963,12 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       const category = (body.category || 'How to use the app').trim();
       const subject = (body.subject || '').trim();
       const message = (body.message || body.description || '').trim();
-      const attachmentUrl = (body.attachment_url || body.attachment || '').trim() || null;
+      const supAttCheck = sanitizeAttachmentUrlInput(body.attachment_url || body.attachment);
+      if (!supAttCheck.valid) {
+        sendJson(res, 400, { success: false, code: 'INVALID_ATTACHMENT', message: supAttCheck.error || 'Invalid attachment.' });
+        return true;
+      }
+      const attachmentUrl = supAttCheck.value;
 
       if (!subject || subject.length < 3) {
         sendJson(res, 400, { success: false, message: 'Support subject is required.' });
@@ -10436,6 +10725,14 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
     sendJson(res, 404, { success: false, message: 'API endpoint not found.' });
     return true;
   } catch (err: any) {
+    if (err?.message === 'Request payload too large' || err?.message === 'PAYLOAD_TOO_LARGE') {
+      sendJson(res, 413, {
+        success: false,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Uploaded request payload exceeds the maximum allowed server limit.',
+      });
+      return true;
+    }
     console.error(`[API Error] ${method} ${pathname}:`, err);
     sendJson(res, 500, {
       success: false,

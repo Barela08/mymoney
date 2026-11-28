@@ -221,10 +221,19 @@ export interface AppIdentityBranding {
   tagline: string;
   description: string;
   logoUrl: string;
+  sidebarLogoUrl?: string;
   lightLogoUrl?: string;
   darkLogoUrl?: string;
   faviconUrl: string;
   pwaIconUrl: string;
+  notificationIconUrl?: string;
+  originalLogoAssetId?: string;
+  originalLogoMeta?: {
+    byteSize?: number;
+    width?: number;
+    height?: number;
+    mimeType?: string;
+  };
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;

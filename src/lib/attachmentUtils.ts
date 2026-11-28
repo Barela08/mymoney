@@ -2,10 +2,22 @@ import {
   validateReceiptUpload,
   validateReceiptFileSignature,
 } from './financialIntelligenceEngine';
+import {
+  MAX_ATTACHMENT_BYTES,
+  decodeBase64ToBytes,
+  inspectImageBinary,
+  sanitizeUploadFilename,
+} from './uploadSecurityCore';
+import { getStoredSessionToken } from './authApi';
 
 export interface ProcessedAttachmentResult {
   valid: boolean;
   dataUrl?: string;
+  signedAccessUrl?: string;
+  objectKey?: string;
+  quarantineId?: string;
+  scanStatus?: string;
+  scannerEngine?: string;
   fileName?: string;
   mimeType?: string;
   sizeBytes?: number;
@@ -15,13 +27,14 @@ export interface ProcessedAttachmentResult {
 const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i;
 
 /**
- * Validates that an attachment URL/DataURL uses a strictly safe image or HTTP(S) scheme.
+ * Validates that an attachment URL/DataURL uses a strictly safe image, private signed endpoint, or HTTP(S) scheme.
  * Blocks SVG, HTML, javascript:, vbscript:, or arbitrary inline scripts.
  */
 export function isSafeAttachmentUrl(url?: string | null): boolean {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
   if (!trimmed) return false;
+  if (trimmed.startsWith('/api/uploads/private?')) return true;
   if (SAFE_IMAGE_DATA_URL_RE.test(trimmed)) return true;
   try {
     const parsed = new URL(trimmed);
@@ -61,7 +74,6 @@ function compressImageDataUrl(dataUrl: string, maxDim = 1280, quality = 0.82): P
         const targetW = Math.max(1, Math.round(w * scale));
         const targetH = Math.max(1, Math.round(h * scale));
 
-        // If image is already compact (< 320 KB base64) and within max dimension, keep original
         if (scale === 1 && dataUrl.length < 320 * 1024) {
           resolve(dataUrl);
           return;
@@ -88,12 +100,17 @@ function compressImageDataUrl(dataUrl: string, maxDim = 1280, quality = 0.82): P
 }
 
 /**
- * Sanitizes filename and validates MIME, file size (<= 5 MB), and binary magic bytes
+ * Sanitizes filename and validates MIME, file size (<= 5 MB), pixel dimensions, and binary magic bytes
  * before compressing large camera/gallery photos for safe ledger storage.
  */
 export async function processImageAttachment(file: File): Promise<ProcessedAttachmentResult> {
   if (!file) {
     return { valid: false, error: 'No file selected.' };
+  }
+
+  const nameCheck = sanitizeUploadFilename(file.name);
+  if (!nameCheck.valid) {
+    return { valid: false, error: nameCheck.error || 'Disallowed file extension or unsafe filename.' };
   }
 
   const mimeCheck = validateReceiptUpload(file.type, file.size);
@@ -113,32 +130,37 @@ export async function processImageAttachment(file: File): Promise<ProcessedAttac
       return { valid: false, error: sigCheck.error };
     }
 
+    const binaryCheck = inspectImageBinary(decodeBase64ToBytes(base64Body), declaredMime, {
+      maxBytes: MAX_ATTACHMENT_BYTES,
+      allowGif: false,
+    });
+    if (!binaryCheck.valid) {
+      return { valid: false, error: binaryCheck.error || 'File failed binary magic-byte inspection.' };
+    }
+
     const optimizedDataUrl = await compressImageDataUrl(rawDataUrl);
     if (!isSafeAttachmentUrl(optimizedDataUrl)) {
       return { valid: false, error: 'Attachment failed safety verification.' };
     }
 
-    // Ensure post-compression size stays reasonable for ledger persistence (< 1.2 MB encoded)
     if (optimizedDataUrl.length > 1.2 * 1024 * 1024) {
       const tightCompressed = await compressImageDataUrl(rawDataUrl, 960, 0.68);
       if (tightCompressed.length > 1.2 * 1024 * 1024) {
         return { valid: false, error: 'Image is too large even after compression. Please choose a smaller photo.' };
       }
-      const cleanName = (file.name || 'receipt.jpg').replace(/[^\w.\- ()]/g, '_').slice(0, 80);
       return {
         valid: true,
         dataUrl: tightCompressed,
-        fileName: cleanName,
+        fileName: nameCheck.sanitizedName,
         mimeType: 'image/jpeg',
         sizeBytes: Math.round((tightCompressed.length * 3) / 4),
       };
     }
 
-    const cleanName = (file.name || 'receipt.jpg').replace(/[^\w.\- ()]/g, '_').slice(0, 80);
     return {
       valid: true,
       dataUrl: optimizedDataUrl,
-      fileName: cleanName,
+      fileName: nameCheck.sanitizedName,
       mimeType: optimizedDataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : declaredMime,
       sizeBytes: Math.round((optimizedDataUrl.length * 3) / 4),
     };
@@ -147,5 +169,70 @@ export async function processImageAttachment(file: File): Promise<ProcessedAttac
       valid: false,
       error: err?.message || 'Unable to process image attachment.',
     };
+  }
+}
+
+/**
+ * Validates, optimizes, and uploads an attachment through the server-side
+ * quarantine + malware scan + private signed storage pipeline (/api/uploads/attachment).
+ */
+export async function uploadSecuredAttachment(
+  file: File,
+  purpose: 'receipt_ocr' | 'transaction_attachment' | 'udhar_attachment' | 'support_attachment' = 'transaction_attachment'
+): Promise<ProcessedAttachmentResult> {
+  const local = await processImageAttachment(file);
+  if (!local.valid || !local.dataUrl) {
+    return local;
+  }
+
+  try {
+    const token =
+      getStoredSessionToken() ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('my_money_auth_token') : null);
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/uploads/attachment', {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({
+        purpose,
+        filename: local.fileName,
+        dataUrl: local.dataUrl,
+      }),
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok && res.status !== 202) {
+      return {
+        valid: false,
+        error: data?.message || `Attachment rejected by server (${res.status}).`,
+      };
+    }
+
+    if (res.status === 202) {
+      return {
+        valid: false,
+        quarantineId: data?.quarantineId,
+        scanStatus: data?.scanStatus,
+        scannerEngine: data?.scannerEngine,
+        error: data?.message || 'File placed in quarantine pending security scan.',
+      };
+    }
+
+    return {
+      ...local,
+      valid: true,
+      signedAccessUrl: data?.signedAccessUrl,
+      objectKey: data?.objectKey,
+      quarantineId: data?.quarantineId,
+      scanStatus: data?.scanStatus,
+      scannerEngine: data?.scannerEngine,
+    };
+  } catch {
+    // Allow offline-first local encrypted/compressed usage only if already validated locally
+    return local;
   }
 }

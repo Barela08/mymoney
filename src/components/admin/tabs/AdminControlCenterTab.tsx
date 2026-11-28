@@ -75,7 +75,7 @@ const CONTROL_MODULES: {
   icon: React.ElementType;
 }[] = [
   { id: 'general', num: 1, label: 'General Website', icon: Globe },
-  { id: 'branding', num: 2, label: '4 App Identities & Logos', icon: ImageIcon },
+  { id: 'branding', num: 2, label: 'Branding & Application Logo', icon: ImageIcon },
   { id: 'theme', num: 3, label: 'Theme & Colors', icon: Palette },
   { id: 'homepage', num: 4, label: 'Homepage Manager', icon: LayoutTemplate },
   { id: 'header', num: 5, label: 'Header Navigation', icon: Navigation },
@@ -133,6 +133,7 @@ export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
   const [isPublishing, setIsPublishing] = useState(false);
   const [isRestoringId, setIsRestoringId] = useState<string | null>(null);
   const [showSidePreview, setShowSidePreview] = useState(false);
+  const [autoGenerateVariants, setAutoGenerateVariants] = useState(true);
 
   const loadControlCenter = useCallback(async () => {
     setIsLoading(true);
@@ -568,16 +569,29 @@ export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
               </div>
             )}
 
-            {/* 2. 4 Separate Branding Identities & Logos */}
+            {/* 2. Branding & Application Logo */}
             {activeModule === 'branding' && (
               <div className="space-y-5">
-                <div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    2. Branding &amp; Logo (4 Separate Identities)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Independently manage User App (/), Admin App (/myadmin), Staff App (/mystaff), and Website branding. Supports PNG, JPG, WebP, GIF &amp; sanitized XSS-safe SVG uploads.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      2. Branding &amp; Application Logo
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Upload up to 10 MB PNG, JPG/JPEG, or WebP logos (transparent PNG supported; SVG OFF by default). Originals stay archived privately while compressed variants load cleanly across desktop, mobile &amp; 3G.
+                    </p>
+                  </div>
+                  {activeBrandScope !== 'website' && (
+                    <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={autoGenerateVariants}
+                        onChange={(e) => setAutoGenerateVariants(e.target.checked)}
+                        className="rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>Auto-generate all 5 optimized variants</span>
+                    </label>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
@@ -688,19 +702,87 @@ export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <BrandingAssetUploader
-                        label="App Logo"
-                        helperText="Shown in navbar, sidebar & login header"
+                        label="1. Main Application Logo"
+                        helperText="Shown in navbar, auth screens & splash header"
+                        recommendedDimensions="512×512 PNG/WebP"
                         scope={activeBrandScope}
                         slot="logo"
+                        showDevicePreviews={true}
+                        generateAllVariants={autoGenerateVariants}
                         value={draftConfig.branding[activeBrandScope].logoUrl}
                         defaultValue={DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].logoUrl}
                         onChange={(url) => updateIdentity(activeBrandScope, 'logoUrl', url)}
+                        onOriginalMeta={(meta) => {
+                          patchDraft((prev) => ({
+                            ...prev,
+                            branding: {
+                              ...prev.branding,
+                              [activeBrandScope]: {
+                                ...prev.branding[activeBrandScope],
+                                originalLogoAssetId: meta.assetId,
+                                originalLogoMeta: {
+                                  byteSize: meta.byteSize,
+                                  width: meta.width,
+                                  height: meta.height,
+                                  mimeType: meta.mimeType,
+                                },
+                              },
+                            },
+                          }));
+                        }}
+                        onVariantsGenerated={(variants) => {
+                          if (!autoGenerateVariants) return;
+                          patchDraft((prev) => {
+                            const cur = prev.branding[activeBrandScope];
+                            return {
+                              ...prev,
+                              branding: {
+                                ...prev.branding,
+                                [activeBrandScope]: {
+                                  ...cur,
+                                  sidebarLogoUrl: variants.sidebar_logo || variants.logo || cur.sidebarLogoUrl,
+                                  pwaIconUrl: variants.pwa_icon || cur.pwaIconUrl,
+                                  faviconUrl: variants.favicon || cur.faviconUrl,
+                                  notificationIconUrl: variants.notification_icon || variants.pwa_icon || cur.notificationIconUrl,
+                                },
+                              },
+                            };
+                          });
+                        }}
                       />
                       <BrandingAssetUploader
-                        label="Browser Favicon"
-                        helperText="Updated live in browser tab icon"
+                        label="2. Sidebar Logo"
+                        helperText="Compact mark for desktop sidebar & mobile drawer"
+                        recommendedDimensions="192×192 PNG/WebP"
+                        scope={activeBrandScope}
+                        slot="sidebar_logo"
+                        showDevicePreviews={true}
+                        value={
+                          draftConfig.branding[activeBrandScope].sidebarLogoUrl ||
+                          draftConfig.branding[activeBrandScope].logoUrl
+                        }
+                        defaultValue={
+                          DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].sidebarLogoUrl ||
+                          DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].logoUrl
+                        }
+                        onChange={(url) => updateIdentity(activeBrandScope, 'sidebarLogoUrl', url)}
+                      />
+                      <BrandingAssetUploader
+                        label="3. PWA App Icon"
+                        helperText="Used in dynamic manifest (192px & 512px install dialogs)"
+                        recommendedDimensions="512×512 PNG"
+                        scope={activeBrandScope}
+                        slot="pwa_icon"
+                        value={draftConfig.branding[activeBrandScope].pwaIconUrl}
+                        defaultValue={DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].pwaIconUrl}
+                        onChange={(url) => updateIdentity(activeBrandScope, 'pwaIconUrl', url)}
+                      />
+                      <BrandingAssetUploader
+                        label="4. Browser Favicon"
+                        helperText="Displayed live in browser tab & bookmark bar"
+                        recommendedDimensions="32×32 or 64×64 PNG"
                         scope={activeBrandScope}
                         slot="favicon"
                         value={draftConfig.branding[activeBrandScope].faviconUrl}
@@ -708,15 +790,55 @@ export const AdminControlCenterTab: React.FC<AdminControlCenterTabProps> = ({
                         onChange={(url) => updateIdentity(activeBrandScope, 'faviconUrl', url)}
                       />
                       <BrandingAssetUploader
-                        label="PWA App Icon (192/512)"
-                        helperText="Used in dynamic manifest & install dialogs"
+                        label="5. Notification Icon"
+                        helperText="Displayed on web push & FCM alert notifications"
+                        recommendedDimensions="192×192 PNG"
                         scope={activeBrandScope}
-                        slot="pwa_icon"
-                        value={draftConfig.branding[activeBrandScope].pwaIconUrl}
-                        defaultValue={DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].pwaIconUrl}
-                        onChange={(url) => updateIdentity(activeBrandScope, 'pwaIconUrl', url)}
+                        slot="notification_icon"
+                        value={
+                          draftConfig.branding[activeBrandScope].notificationIconUrl ||
+                          draftConfig.branding[activeBrandScope].pwaIconUrl
+                        }
+                        defaultValue={
+                          DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].notificationIconUrl ||
+                          DEFAULT_SITE_CONTROL_CENTER_CONFIG.branding[activeBrandScope].pwaIconUrl
+                        }
+                        onChange={(url) => {
+                          patchDraft((prev) => {
+                            const notifField =
+                              activeBrandScope === 'admin_app'
+                                ? 'adminIconUrl'
+                                : activeBrandScope === 'staff_app'
+                                ? 'staffIconUrl'
+                                : 'userIconUrl';
+                            return {
+                              ...prev,
+                              branding: {
+                                ...prev.branding,
+                                [activeBrandScope]: {
+                                  ...prev.branding[activeBrandScope],
+                                  notificationIconUrl: url,
+                                },
+                              },
+                              notifications: {
+                                ...prev.notifications,
+                                [notifField]: url,
+                              },
+                            };
+                          });
+                        }}
                       />
                     </div>
+                    {draftConfig.branding[activeBrandScope].originalLogoMeta?.byteSize && (
+                      <div className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/70 text-[11px] text-slate-600 dark:text-slate-300 flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          Original Master Asset archived privately ({Math.round((draftConfig.branding[activeBrandScope].originalLogoMeta?.byteSize || 0) / 1024)} KB · {draftConfig.branding[activeBrandScope].originalLogoMeta?.width || '?'}×{draftConfig.branding[activeBrandScope].originalLogoMeta?.height || '?'}px)
+                        </span>
+                        <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                          Public pages serve compressed optimized variants only
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">

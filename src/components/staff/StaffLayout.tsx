@@ -155,12 +155,13 @@ export const StaffLayout: React.FC<StaffLayoutProps> = ({
 
           <div className="flex items-center gap-2.5 min-w-0">
             <img
-              src={sanitizePublicUrl(staffBrand.logoUrl, '/staff-logo.png')}
+              src={sanitizePublicUrl(staffBrand.sidebarLogoUrl || staffBrand.logoUrl, '/staff-logo.png')}
               alt={staffBrand.appName || 'My Money Manager Staff'}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/staff-icon-192.png';
               }}
-              className="w-9 h-9 rounded-xl object-cover shadow-md border border-indigo-500/40 shrink-0 bg-indigo-950"
+              decoding="async"
+              className="w-9 h-9 rounded-xl object-contain shadow-md border border-indigo-500/40 shrink-0 bg-indigo-950"
             />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">

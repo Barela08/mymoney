@@ -59,6 +59,13 @@ import {
   createStaffTask,
   updateStaffTask,
 } from './siteControlCenter.js';
+import { getTelemetrySnapshot } from './telemetry.js';
+import { getStorageUtilizationStats } from './storageService.js';
+import {
+  getMalwareScannerStatus,
+  getUploadSecurityDashboardState,
+  adminReviewQuarantineItem,
+} from './uploadSecurity.js';
 import {
   sendAdminReplyToTicketEmail,
   sendAdminTestEmail,
@@ -158,11 +165,19 @@ function isProtectedMasterAdmin(email?: string | null): boolean {
 }
 
 // Parse request body safely (supports pre-parsed Vercel serverless req.body and raw HTTP stream)
-async function parseJsonBody(req: http.IncomingMessage): Promise<any> {
+async function parseJsonBody(req: http.IncomingMessage, maxBytes = 2 * 1024 * 1024): Promise<any> {
   const preParsed = (req as any).body;
   if (preParsed !== undefined && preParsed !== null) {
-    if (typeof preParsed === 'object') return preParsed;
+    if (typeof preParsed === 'object') {
+      if (Buffer.byteLength(JSON.stringify(preParsed), 'utf8') > maxBytes) {
+        throw new Error('PAYLOAD_TOO_LARGE');
+      }
+      return preParsed;
+    }
     if (typeof preParsed === 'string') {
+      if (Buffer.byteLength(preParsed, 'utf8') > maxBytes) {
+        throw new Error('PAYLOAD_TOO_LARGE');
+      }
       try {
         return JSON.parse(preParsed);
       } catch {
@@ -170,23 +185,34 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<any> {
       }
     }
   }
-  return new Promise((resolve) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 2 * 1024 * 1024) {
-        // 2MB payload limit
-        resolve({});
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let aborted = false;
+    req.on('data', (chunk: Buffer | string) => {
+      if (aborted) return;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        aborted = true;
+        reject(new Error('PAYLOAD_TOO_LARGE'));
+        return;
       }
+      chunks.push(buf);
     });
     req.on('end', () => {
+      if (aborted) return;
+      if (totalBytes === 0) return resolve({});
       try {
-        resolve(body ? JSON.parse(body) : {});
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
       } catch {
         resolve({});
       }
     });
-    req.on('error', () => resolve({}));
+    req.on('error', () => {
+      if (!aborted) resolve({});
+    });
   });
 }
 
@@ -2302,6 +2328,15 @@ export async function handleAdminApiRequest(
 
       const smtpCfg = await getEffectiveSmtpConfig();
       const memoryUsage = process.memoryUsage();
+      const [scanner, healthMatrix] = await Promise.all([
+        getMalwareScannerStatus(),
+        getFullHealthMatrix().catch(() => null),
+      ]);
+      const storage = getStorageUtilizationStats();
+      const telemetry = getTelemetrySnapshot();
+      const concurrency = getConcurrencyMetrics();
+      const cache = appCache.getStats();
+
       sendJson(res, 200, {
         success: true,
         health: {
@@ -2323,6 +2358,12 @@ export async function handleAdminApiRequest(
             heapUsedMb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
             rssMb: Math.round(memoryUsage.rss / 1024 / 1024),
           },
+          telemetry,
+          concurrency,
+          cache,
+          storage,
+          scanner,
+          healthMatrix,
           timestamp: new Date().toISOString(),
         },
       });
@@ -4924,9 +4965,20 @@ export async function handleAdminApiRequest(
       const auth = await verifyAdminAuth(req, res, 'settings.manage');
       if (!auth) return true;
 
-      const body = await parseJsonBody(req);
+      // Support up to 10 MB original image + optional compressed variants in JSON (~18 MB max body)
+      const body = await parseJsonBody(req, 18 * 1024 * 1024);
       const allowedScopes = new Set(['user_app', 'admin_app', 'staff_app', 'website', 'general']);
-      const allowedSlots = new Set(['logo', 'favicon', 'pwa_icon', 'og_image', 'hero_image', 'banner', 'splash']);
+      const allowedSlots = new Set([
+        'logo',
+        'sidebar_logo',
+        'favicon',
+        'pwa_icon',
+        'notification_icon',
+        'og_image',
+        'hero_image',
+        'banner',
+        'splash',
+      ]);
       const scope = allowedScopes.has(String(body.scope)) ? (body.scope as any) : 'general';
       const slot = allowedSlots.has(String(body.slot)) ? (body.slot as any) : 'logo';
       const dataUrl = String(body.dataUrl || body.content || '').trim();
@@ -4935,9 +4987,15 @@ export async function handleAdminApiRequest(
         scope,
         slot,
         dataUrl,
+        filename: typeof body.filename === 'string' ? body.filename : undefined,
+        allowSvg: Boolean(body.allowSvg) === true,
+        optimizedDataUrl: typeof body.optimizedDataUrl === 'string' ? body.optimizedDataUrl : undefined,
+        variants: body.variants && typeof body.variants === 'object' ? body.variants : undefined,
         width: typeof body.width === 'number' ? body.width : undefined,
         height: typeof body.height === 'number' ? body.height : undefined,
+        actorId: auth.authUser.id,
         actorEmail: auth.authUser.email,
+        ipAddress: clientIp,
       });
 
       if (!saved.success || !saved.asset) {
@@ -4946,9 +5004,15 @@ export async function handleAdminApiRequest(
           userEmail: auth.authUser.email,
           actorRole: auth.role,
           ipAddress: clientIp,
-          details: { scope, slot, reason: saved.error },
+          details: { scope, slot, reason: saved.error, scanStatus: saved.scanStatus },
         }).catch(() => {});
-        sendJson(res, 400, { success: false, message: saved.error || 'Branding image rejected.' });
+        const code = saved.scanStatus === 'quarantined_pending' ? 202 : 400;
+        sendJson(res, code, {
+          success: false,
+          scanStatus: saved.scanStatus,
+          scannerEngine: saved.scannerEngine,
+          message: saved.error || 'Branding image rejected.',
+        });
         return true;
       }
 
@@ -4957,13 +5021,26 @@ export async function handleAdminApiRequest(
         userEmail: auth.authUser.email,
         actorRole: auth.role,
         ipAddress: clientIp,
-        details: { assetId: saved.asset.id, scope, slot, mimeType: saved.asset.mimeType, byteSize: saved.asset.byteSize },
+        details: {
+          assetId: saved.asset.id,
+          originalAssetId: saved.originalAsset?.quarantineId,
+          scope,
+          slot,
+          mimeType: saved.asset.mimeType,
+          byteSize: saved.asset.byteSize,
+          originalBytes: saved.originalAsset?.byteSize,
+          scannerEngine: saved.scannerEngine,
+        },
       }).catch(() => {});
 
       sendJson(res, 201, {
         success: true,
-        message: 'Branding asset validated, sanitized, and stored.',
+        message: 'Branding asset validated, scanned, optimized, and stored.',
         asset: saved.asset,
+        originalAsset: saved.originalAsset,
+        variants: saved.variants,
+        scannerEngine: saved.scannerEngine,
+        scanStatus: saved.scanStatus,
       });
       return true;
     }
@@ -5540,9 +5617,62 @@ export async function handleAdminApiRequest(
       return true;
     }
 
+    // =========================================================
+    // 22. UPLOAD SECURITY & QUARANTINE MANAGEMENT
+    // =========================================================
+    if (pathname === '/api/admin/security/uploads' && method === 'GET') {
+      const auth = await verifyAdminAuth(req, res, 'security.read');
+      if (!auth) return true;
+
+      const [dashboard, storage] = await Promise.all([
+        getUploadSecurityDashboardState(),
+        Promise.resolve(getStorageUtilizationStats()),
+      ]);
+      sendJson(res, 200, { success: true, ...dashboard, storage });
+      return true;
+    }
+
+    if (pathname === '/api/admin/security/quarantine/action' && method === 'POST') {
+      const auth = await verifyAdminAuth(req, res, 'security.manage');
+      if (!auth) return true;
+
+      const body = await parseJsonBody(req);
+      const quarantineId = String(body.quarantineId || '').trim();
+      const action = body.action === 'approve' ? 'approve' : body.action === 'delete' ? 'delete' : null;
+      if (!quarantineId || !action) {
+        sendJson(res, 400, { success: false, message: 'quarantineId and valid action (approve | delete) are required.' });
+        return true;
+      }
+
+      const result = await adminReviewQuarantineItem({
+        quarantineId,
+        action,
+        adminEmail: auth.authUser.email,
+      });
+
+      await logSecurityEvent('ADMIN_QUARANTINE_ACTION', {
+        userId: auth.authUser.id,
+        userEmail: auth.authUser.email,
+        actorRole: auth.role,
+        ipAddress: clientIp,
+        details: { quarantineId, action, success: result.success },
+      }).catch(() => {});
+
+      sendJson(res, result.success ? 200 : 400, result);
+      return true;
+    }
+
     // Not handled by admin API router
     return false;
   } catch (err: any) {
+    if (err?.message === 'PAYLOAD_TOO_LARGE') {
+      sendJson(res, 413, {
+        success: false,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Uploaded request payload exceeds the maximum allowed server limit.',
+      });
+      return true;
+    }
     console.error(`[Admin API Error] ${method} ${pathname}:`, err);
     sendJson(res, 500, {
       success: false,

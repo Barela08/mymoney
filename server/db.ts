@@ -2,6 +2,7 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import dns from 'dns';
+import { recordSlowQueryMetric } from './telemetry.js';
 
 // Ensure IPv6-only database hosts (like Supabase direct connection) resolve properly in Node.js
 try {
@@ -171,6 +172,9 @@ export async function query<T extends pg.QueryResultRow = any>(
   try {
     const res = await pool.query<T>(text, params);
     const duration = Date.now() - start;
+    if (duration > 500) {
+      recordSlowQueryMetric(duration, text);
+    }
     if (process.env.NODE_ENV === 'development' && duration > 2000) {
       console.warn(`[DB Slow Query] ${duration}ms: ${text.slice(0, 80)}...`);
     }

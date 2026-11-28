@@ -973,7 +973,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     syncWithDatabase(false);
     refreshContacts();
 
-    // 2. High-speed real-time updates via WebSocket (instant UI reflection without manual reload)
+    // 2. High-speed real-time updates via WebSocket scoped to the current user (prevents 10k broadcast fanout)
     const unsubscribeSupabase = subscribeToSupabaseTransactions((event?: RealtimeTransactionEvent) => {
       setIsSupabaseConnected(true);
 
@@ -1030,11 +1030,15 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } else {
         syncWithDatabase(true);
       }
-    });
+    }, isAdmin ? undefined : user.uid);
 
-    // 3. Mobile screen wake / Tab focus / Reconnect listener
+    // 3. Debounced mobile screen wake / Tab focus / Reconnect listener (prevents thundering herd on 10k users)
+    let lastSyncAt = Date.now();
     const handleSyncTrigger = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        const now = Date.now();
+        if (now - lastSyncAt < 8000) return;
+        lastSyncAt = now;
         syncWithDatabase(true);
         refreshContacts();
       }
@@ -1043,6 +1047,7 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const handleOnline = () => {
       setIsOffline(false);
       setIsReconnecting(true);
+      lastSyncAt = Date.now();
       Promise.all([syncWithDatabase(true), refreshContacts()]).finally(() => setIsReconnecting(false));
     };
     const handleOffline = () => {
@@ -1059,13 +1064,14 @@ export const ExpenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     window.addEventListener('offline', handleOffline);
     window.addEventListener('mymoney:udhar-updated', handleUdharUpdated);
 
-    // 4. Polling fallback every 20 seconds when screen is visible
+    // 4. Low-frequency polling fallback every 90 seconds when screen is visible (Realtime handles instant updates)
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        lastSyncAt = Date.now();
         syncWithDatabase(true);
         refreshContacts();
       }
-    }, 20000);
+    }, 90000);
 
     return () => {
       unsubscribeSupabase();

@@ -302,9 +302,24 @@ export const LivePortalPreview: React.FC<LivePortalPreviewProps> = ({ config, is
                     <p className="text-[10px] opacity-70">{activeIdentity.loginSubtitle}</p>
                   </div>
                   <img
+                    src={sanitizePublicUrl(
+                      viewportMode === 'mobile'
+                        ? activeIdentity.logoUrl
+                        : activeIdentity.sidebarLogoUrl || activeIdentity.logoUrl,
+                      activeIdentity.logoUrl
+                    )}
+                    alt="Portal Logo"
+                    className="w-8 h-8 rounded-lg object-contain border border-slate-500/30"
+                  />
+                  <img
                     src={sanitizePublicUrl(activeIdentity.pwaIconUrl, activeIdentity.logoUrl)}
                     alt="PWA Icon"
-                    className="w-8 h-8 rounded-lg object-cover border border-slate-500/30"
+                    className="w-8 h-8 rounded-lg object-contain border border-slate-500/30"
+                  />
+                  <img
+                    src={sanitizePublicUrl(activeIdentity.notificationIconUrl, activeIdentity.pwaIconUrl || activeIdentity.logoUrl)}
+                    alt="Notification Icon"
+                    className="w-8 h-8 rounded-lg object-contain border border-slate-500/30"
                   />
                 </div>
 

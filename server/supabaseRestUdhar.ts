@@ -31,8 +31,41 @@ import {
   type UdharCreationMethod,
 } from '../src/lib/sharedUdharEngine.js';
 
+import { validateReceiptFileSignature } from '../src/lib/financialIntelligenceEngine.js';
+
 const DEFAULT_SUPABASE_URL = 'https://frgrfajnrzqwnevhlrio.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_RHVRSE_Z4R1Qit3djpOfCA_L93zsRjg';
+
+function sanitizeRestAttachmentUrl(raw: unknown): { valid: boolean; value: string | null; error?: string } {
+  if (raw === null || raw === undefined) return { valid: true, value: null };
+  const trimmed = String(raw).trim();
+  if (!trimmed) return { valid: true, value: null };
+  if (/[\r\n\0]/.test(trimmed)) return { valid: false, value: null, error: 'Invalid attachment reference.' };
+  if (trimmed.startsWith('/api/uploads/private?')) {
+    return trimmed.length <= 1200 ? { valid: true, value: trimmed } : { valid: false, value: null, error: 'Attachment URL too long.' };
+  }
+  if (trimmed.startsWith('data:')) {
+    const m = trimmed.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+    if (!m) return { valid: false, value: null, error: 'Only PNG, JPG, JPEG, or WebP attachment images are allowed.' };
+    const est = Math.floor((m[2].length * 3) / 4);
+    if (est <= 0 || est > 5 * 1024 * 1024) return { valid: false, value: null, error: 'Attachment exceeds maximum 5 MB limit.' };
+    const sig = validateReceiptFileSignature(m[2], m[1].toLowerCase());
+    if (!sig.valid) return { valid: false, value: null, error: sig.error || 'Attachment signature mismatch.' };
+    return { valid: true, value: trimmed };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      return { valid: false, value: null, error: 'Attachment URL must use HTTPS.' };
+    }
+    if (/\.(svgz?|html?|xhtml|js|mjs|php|exe|dll|bat|cmd|ps1|sh|jar|apk|msi|scr)(\?|#|$)/i.test(parsed.pathname)) {
+      return { valid: false, value: null, error: 'Dangerous attachment file type blocked.' };
+    }
+    return { valid: true, value: parsed.toString() };
+  } catch {
+    return { valid: false, value: null, error: 'Invalid attachment URL.' };
+  }
+}
 
 function getRestConfig() {
   const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/+$/, '');
@@ -2858,7 +2891,11 @@ export async function createUdharTransactionRest(authUser: AuthenticatedUser, bo
   const category = (body.category || 'Personal Loan').trim();
   const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
   const description = (body.description || '').trim();
-  const attachmentUrl = body.attachment_url || null;
+  const attCheck = sanitizeRestAttachmentUrl(body.attachment_url);
+  if (!attCheck.valid) {
+    return { status: 400, body: { success: false, code: 'INVALID_ATTACHMENT', message: attCheck.error || 'Invalid attachment.' } };
+  }
+  const attachmentUrl = attCheck.value;
   const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 
   if (!['gave', 'took'].includes(direction)) {
@@ -3487,7 +3524,11 @@ export async function repayUdharRest(authUser: AuthenticatedUser, txId: string, 
   const repayTime = (body.repayment_time || body.repaymentTime || '').trim();
   const paymentMethod = (body.payment_method || body.paymentMethod || 'UPI').trim();
   const transactionRef = (body.transaction_ref || body.transactionRef || '').trim();
-  const attachmentUrl = (body.attachment_url || body.attachmentUrl || '').trim();
+  const repAttCheck = sanitizeRestAttachmentUrl(body.attachment_url || body.attachmentUrl);
+  if (!repAttCheck.valid) {
+    return { status: 400, body: { success: false, code: 'INVALID_ATTACHMENT', message: repAttCheck.error || 'Invalid attachment.' } };
+  }
+  const attachmentUrl = repAttCheck.value || '';
   const plainNotes = (body.notes || '').trim();
   const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').trim() || null;
 

@@ -186,3 +186,18 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Low-end mobile & Slow 3G performance: reduce compositor overdraw from backdrop-blur & offscreen painting */
+@media (max-width: 640px) {
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+.content-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 280px;
+}

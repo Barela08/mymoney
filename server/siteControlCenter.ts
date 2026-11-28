@@ -17,6 +17,8 @@ import {
   validateBrandingImageInput,
   sanitizeHexColor,
 } from '../src/lib/svgSanitizer.js';
+import { processSecureUpload } from './uploadSecurity.js';
+import { getObjectFromStorage } from './storageService.js';
 import type {
   SiteControlCenterConfig,
   ConfigVersionEntry,
@@ -37,9 +39,11 @@ const STAFF_TASKS_FILE = 'staff-tasks.json';
 interface StoredBrandingAsset {
   id: string;
   scope: 'user_app' | 'admin_app' | 'staff_app' | 'website' | 'general';
-  slot: 'logo' | 'favicon' | 'pwa_icon' | 'og_image' | 'hero_image' | 'banner' | 'splash';
+  slot: 'logo' | 'sidebar_logo' | 'favicon' | 'pwa_icon' | 'notification_icon' | 'og_image' | 'hero_image' | 'banner' | 'splash';
   mimeType: string;
   dataContent: string;
+  storageBucket?: 'branding-originals' | 'branding-optimized';
+  storageObjectKey?: string;
   width?: number;
   height?: number;
   byteSize: number;
@@ -183,8 +187,10 @@ export function createDefaultSiteControlCenterConfig(): SiteControlCenterConfig 
         tagline: 'A product of HackifyPro',
         description: 'Personal & shared finance ledger, Udhaar tracker, UPI QR & smart financial insights.',
         logoUrl: '/logo.jpg',
+        sidebarLogoUrl: '/logo.jpg',
         faviconUrl: '/icon-192.png',
         pwaIconUrl: '/icon-192.png',
+        notificationIconUrl: '/icon-192.png',
         primaryColor: '#10b981',
         secondaryColor: '#059669',
         accentColor: '#3b82f6',
@@ -202,8 +208,10 @@ export function createDefaultSiteControlCenterConfig(): SiteControlCenterConfig 
         tagline: 'A product of HackifyPro · Admin Security Gateway',
         description: 'Dedicated administration console, Website Control Center, Staff RBAC & real-time alerts.',
         logoUrl: '/admin-logo.png',
+        sidebarLogoUrl: '/admin-logo.png',
         faviconUrl: '/admin-favicon.png',
         pwaIconUrl: '/admin-icon-192.png',
+        notificationIconUrl: '/admin-notification-icon.png',
         primaryColor: '#10b981',
         secondaryColor: '#0f172a',
         accentColor: '#14b8a6',
@@ -221,8 +229,10 @@ export function createDefaultSiteControlCenterConfig(): SiteControlCenterConfig 
         tagline: 'A product of HackifyPro · Staff Operations Desk',
         description: 'Dedicated staff workspace for assigned tasks, support desk, and authorized operations.',
         logoUrl: '/staff-logo.png',
+        sidebarLogoUrl: '/staff-logo.png',
         faviconUrl: '/staff-favicon.png',
         pwaIconUrl: '/staff-icon-192.png',
+        notificationIconUrl: '/staff-icon-192.png',
         primaryColor: '#6366f1',
         secondaryColor: '#312e81',
         accentColor: '#06b6d4',
@@ -454,10 +464,28 @@ function normalizeIdentity(
     tagline: String(raw?.tagline || def.tagline).trim().slice(0, 140) || def.tagline,
     description: String(raw?.description || def.description).trim().slice(0, 320) || def.description,
     logoUrl: sanitizeAssetRef(raw?.logoUrl, def.logoUrl),
+    sidebarLogoUrl: sanitizeAssetRef(raw?.sidebarLogoUrl, raw?.logoUrl || def.sidebarLogoUrl || def.logoUrl),
     lightLogoUrl: sanitizeAssetRef(raw?.lightLogoUrl, raw?.logoUrl || def.lightLogoUrl || def.logoUrl),
     darkLogoUrl: sanitizeAssetRef(raw?.darkLogoUrl, raw?.logoUrl || def.darkLogoUrl || def.logoUrl),
     faviconUrl: sanitizeAssetRef(raw?.faviconUrl, def.faviconUrl),
     pwaIconUrl: sanitizeAssetRef(raw?.pwaIconUrl, def.pwaIconUrl),
+    notificationIconUrl: sanitizeAssetRef(
+      raw?.notificationIconUrl,
+      def.notificationIconUrl || raw?.pwaIconUrl || def.pwaIconUrl
+    ),
+    originalLogoAssetId:
+      typeof raw?.originalLogoAssetId === 'string' && /^[a-zA-Z0-9_-]{4,120}$/.test(raw.originalLogoAssetId)
+        ? raw.originalLogoAssetId
+        : undefined,
+    originalLogoMeta:
+      raw?.originalLogoMeta && typeof raw.originalLogoMeta === 'object'
+        ? {
+            byteSize: Number(raw.originalLogoMeta.byteSize) || undefined,
+            width: Number(raw.originalLogoMeta.width) || undefined,
+            height: Number(raw.originalLogoMeta.height) || undefined,
+            mimeType: typeof raw.originalLogoMeta.mimeType === 'string' ? raw.originalLogoMeta.mimeType : undefined,
+          }
+        : undefined,
     primaryColor: sanitizeHexColor(raw?.primaryColor, def.primaryColor),
     secondaryColor: sanitizeHexColor(raw?.secondaryColor, def.secondaryColor),
     accentColor: sanitizeHexColor(raw?.accentColor, def.accentColor),
@@ -742,11 +770,11 @@ export function normalizeSiteControlCenterConfig(raw: any): SiteControlCenterCon
     },
     notifications: {
       userAppName: String(r.notifications?.userAppName || userBrand.appName).trim().slice(0, 80),
-      userIconUrl: sanitizeAssetRef(r.notifications?.userIconUrl, userBrand.pwaIconUrl),
+      userIconUrl: sanitizeAssetRef(r.notifications?.userIconUrl, userBrand.notificationIconUrl || userBrand.pwaIconUrl),
       adminAppName: String(r.notifications?.adminAppName || adminBrand.appName).trim().slice(0, 80),
-      adminIconUrl: sanitizeAssetRef(r.notifications?.adminIconUrl, adminBrand.pwaIconUrl),
+      adminIconUrl: sanitizeAssetRef(r.notifications?.adminIconUrl, adminBrand.notificationIconUrl || adminBrand.pwaIconUrl),
       staffAppName: String(r.notifications?.staffAppName || staffBrand.appName).trim().slice(0, 80),
-      staffIconUrl: sanitizeAssetRef(r.notifications?.staffIconUrl, staffBrand.pwaIconUrl),
+      staffIconUrl: sanitizeAssetRef(r.notifications?.staffIconUrl, staffBrand.notificationIconUrl || staffBrand.pwaIconUrl),
       categories: {
         user: normalizeBoolMap(r.notifications?.categories?.user, def.notifications.categories.user),
         admin: normalizeBoolMap(r.notifications?.categories?.admin, def.notifications.categories.admin),
@@ -1200,52 +1228,50 @@ function loadAssetsStore(): Record<string, StoredBrandingAsset> {
   return g.__mmBrandingAssetsCache!;
 }
 
-export async function saveSanitizedBrandingAsset(params: {
+type BrandingSlot =
+  | 'logo'
+  | 'sidebar_logo'
+  | 'favicon'
+  | 'pwa_icon'
+  | 'notification_icon'
+  | 'og_image'
+  | 'hero_image'
+  | 'banner'
+  | 'splash';
+
+async function persistOptimizedBrandingAssetRecord(params: {
   scope: BrandingIdentityKey | 'general';
-  slot: 'logo' | 'favicon' | 'pwa_icon' | 'og_image' | 'hero_image' | 'banner' | 'splash';
-  dataUrl: string;
+  slot: BrandingSlot;
+  mimeType: string;
+  dataContent: string;
+  storageBucket: 'branding-originals' | 'branding-optimized';
+  storageObjectKey?: string;
   width?: number;
   height?: number;
+  byteSize: number;
+  sha256: string;
   actorEmail: string;
-}): Promise<{
-  success: boolean;
-  asset?: { id: string; url: string; mimeType: string; width?: number; height?: number; byteSize: number };
-  error?: string;
-}> {
-  const check = validateBrandingImageInput(params.dataUrl, {
-    width: params.width,
-    height: params.height,
-  });
-
-  if (!check.valid || !check.sanitizedDataUrl || !check.mimeType) {
-    return { success: false, error: check.error || 'Invalid branding image.' };
-  }
-
+}): Promise<StoredBrandingAsset> {
   const assetId = `${params.scope}_${params.slot}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-  const dataContent =
-    check.mimeType === 'image/svg+xml' && check.sanitizedSvg
-      ? check.sanitizedSvg
-      : check.sanitizedDataUrl;
-
-  const sha256 = crypto.createHash('sha256').update(dataContent).digest('hex');
   const asset: StoredBrandingAsset = {
     id: assetId,
     scope: params.scope,
     slot: params.slot,
-    mimeType: check.mimeType,
-    dataContent,
-    width: check.width,
-    height: check.height,
-    byteSize: check.byteSize || Buffer.byteLength(dataContent, 'utf8'),
-    sha256,
+    mimeType: params.mimeType,
+    dataContent: params.dataContent,
+    storageBucket: params.storageBucket,
+    storageObjectKey: params.storageObjectKey,
+    width: params.width,
+    height: params.height,
+    byteSize: params.byteSize,
+    sha256: params.sha256,
     createdBy: params.actorEmail,
     createdAt: new Date().toISOString(),
   };
 
   const store = loadAssetsStore();
   store[assetId] = asset;
-  // Prune old assets if count > 80 keeping latest
-  const entries = Object.values(store).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 80);
+  const entries = Object.values(store).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 120);
   const compact: Record<string, StoredBrandingAsset> = {};
   for (const e of entries) compact[e.id] = e;
   g.__mmBrandingAssetsCache = compact;
@@ -1271,16 +1297,184 @@ export async function saveSanitizedBrandingAsset(params: {
     ).catch(() => {});
   }
 
+  return asset;
+}
+
+export async function saveSanitizedBrandingAsset(params: {
+  scope: BrandingIdentityKey | 'general';
+  slot: BrandingSlot;
+  dataUrl: string;
+  filename?: string;
+  allowSvg?: boolean;
+  optimizedDataUrl?: string;
+  variants?: Partial<Record<'mainLogo' | 'sidebarLogo' | 'pwaIcon' | 'favicon' | 'notificationIcon', string>>;
+  width?: number;
+  height?: number;
+  actorId?: string;
+  actorEmail: string;
+  ipAddress?: string;
+}): Promise<{
+  success: boolean;
+  asset?: { id: string; url: string; mimeType: string; width?: number; height?: number; byteSize: number; originalAssetId?: string };
+  originalAsset?: { quarantineId: string; byteSize: number; width?: number; height?: number; mimeType: string; sha256: string };
+  variants?: Partial<Record<'mainLogo' | 'sidebarLogo' | 'pwaIcon' | 'favicon' | 'notificationIcon', { id: string; url: string; byteSize: number; width?: number; height?: number; mimeType: string }>>;
+  scannerEngine?: string;
+  scanStatus?: string;
+  error?: string;
+}> {
+  // 1. Validate, quarantine, scan & EXIF-scrub the original master upload (up to 10 MB)
+  const originalScan = await processSecureUpload({
+    userId: params.actorId || params.actorEmail || 'admin',
+    userEmail: params.actorEmail,
+    purpose: 'admin_logo',
+    filename: params.filename || `${params.scope}_${params.slot}.png`,
+    dataUrlOrRawBase64: params.dataUrl,
+    ipAddress: params.ipAddress || '127.0.0.1',
+    allowSvg: Boolean(params.allowSvg),
+  });
+
+  if (!originalScan.success || !originalScan.mimeType || !originalScan.sanitizedDataUrl) {
+    return {
+      success: false,
+      scannerEngine: originalScan.scannerEngine,
+      scanStatus: originalScan.status,
+      error: originalScan.error || 'Branding image rejected by upload security gate.',
+    };
+  }
+
+  // 2. If a compressed display variant was provided (keeping regular pages light instead of loading a 10 MB image),
+  //    run it through the same security pipeline as an optimized variant; otherwise store the scrubbed original if <= 512 KB,
+  //    or warn cleanly while serving from immutable cached endpoint.
+  let displayMime = originalScan.mimeType;
+  let displayContent =
+    originalScan.mimeType === 'image/svg+xml' && originalScan.sanitizedSvg
+      ? originalScan.sanitizedSvg
+      : originalScan.sanitizedDataUrl;
+  let displayWidth = originalScan.width ?? params.width;
+  let displayHeight = originalScan.height ?? params.height;
+  let displayByteSize = originalScan.byteSize || Buffer.byteLength(displayContent, 'utf8');
+  let displaySha = originalScan.sha256 || crypto.createHash('sha256').update(displayContent).digest('hex');
+  let displayBucket: 'branding-originals' | 'branding-optimized' = 'branding-originals';
+  let displayObjectKey = originalScan.objectKey;
+
+  if (params.optimizedDataUrl && params.optimizedDataUrl.trim() && originalScan.mimeType !== 'image/svg+xml') {
+    const optScan = await processSecureUpload({
+      userId: params.actorId || params.actorEmail || 'admin',
+      userEmail: params.actorEmail,
+      purpose: 'admin_branding_variant',
+      filename: `opt_${params.scope}_${params.slot}.webp`,
+      dataUrlOrRawBase64: params.optimizedDataUrl,
+      ipAddress: params.ipAddress || '127.0.0.1',
+      allowSvg: false,
+      skipRateLimit: true,
+    });
+    if (optScan.success && optScan.sanitizedDataUrl && optScan.mimeType) {
+      displayMime = optScan.mimeType;
+      displayContent = optScan.sanitizedDataUrl;
+      displayWidth = optScan.width ?? displayWidth;
+      displayHeight = optScan.height ?? displayHeight;
+      displayByteSize = optScan.byteSize || displayByteSize;
+      displaySha = optScan.sha256 || displaySha;
+      displayBucket = 'branding-optimized';
+      displayObjectKey = optScan.objectKey;
+    }
+  }
+
+  const primaryAsset = await persistOptimizedBrandingAssetRecord({
+    scope: params.scope,
+    slot: params.slot,
+    mimeType: displayMime,
+    dataContent: displayContent,
+    storageBucket: displayBucket,
+    storageObjectKey: displayObjectKey,
+    width: displayWidth,
+    height: displayHeight,
+    byteSize: displayByteSize,
+    sha256: displaySha,
+    actorEmail: params.actorEmail,
+  });
+
+  // 3. Process optional multi-variant package (Main, Sidebar, PWA, Favicon, Notification)
+  const savedVariants: Partial<
+    Record<
+      'mainLogo' | 'sidebarLogo' | 'pwaIcon' | 'favicon' | 'notificationIcon',
+      { id: string; url: string; byteSize: number; width?: number; height?: number; mimeType: string }
+    >
+  > = {};
+
+  if (params.variants && typeof params.variants === 'object') {
+    const slotMap: Record<'mainLogo' | 'sidebarLogo' | 'pwaIcon' | 'favicon' | 'notificationIcon', BrandingSlot> = {
+      mainLogo: 'logo',
+      sidebarLogo: 'sidebar_logo',
+      pwaIcon: 'pwa_icon',
+      favicon: 'favicon',
+      notificationIcon: 'notification_icon',
+    };
+
+    for (const [key, variantDataUrl] of Object.entries(params.variants) as Array<
+      ['mainLogo' | 'sidebarLogo' | 'pwaIcon' | 'favicon' | 'notificationIcon', string | undefined]
+    >) {
+      if (!variantDataUrl || !slotMap[key]) continue;
+      const vScan = await processSecureUpload({
+        userId: params.actorId || params.actorEmail || 'admin',
+        userEmail: params.actorEmail,
+        purpose: 'admin_branding_variant',
+        filename: `${params.scope}_${key}.png`,
+        dataUrlOrRawBase64: variantDataUrl,
+        ipAddress: params.ipAddress || '127.0.0.1',
+        allowSvg: Boolean(params.allowSvg),
+        skipRateLimit: true,
+      });
+      if (vScan.success && vScan.mimeType && vScan.sanitizedDataUrl) {
+        const vContent =
+          vScan.mimeType === 'image/svg+xml' && vScan.sanitizedSvg ? vScan.sanitizedSvg : vScan.sanitizedDataUrl;
+        const vAsset = await persistOptimizedBrandingAssetRecord({
+          scope: params.scope,
+          slot: slotMap[key],
+          mimeType: vScan.mimeType,
+          dataContent: vContent,
+          storageBucket: 'branding-optimized',
+          storageObjectKey: vScan.objectKey,
+          width: vScan.width,
+          height: vScan.height,
+          byteSize: vScan.byteSize || 0,
+          sha256: vScan.sha256 || '',
+          actorEmail: params.actorEmail,
+        });
+        savedVariants[key] = {
+          id: vAsset.id,
+          url: `/api/branding/assets/${encodeURIComponent(vAsset.id)}`,
+          byteSize: vAsset.byteSize,
+          width: vAsset.width,
+          height: vAsset.height,
+          mimeType: vAsset.mimeType,
+        };
+      }
+    }
+  }
+
   return {
     success: true,
-    asset: {
-      id: asset.id,
-      url: `/api/branding/assets/${encodeURIComponent(asset.id)}`,
-      mimeType: asset.mimeType,
-      width: asset.width,
-      height: asset.height,
-      byteSize: asset.byteSize,
+    scannerEngine: originalScan.scannerEngine,
+    scanStatus: originalScan.status,
+    originalAsset: {
+      quarantineId: originalScan.quarantineId,
+      byteSize: originalScan.byteSize || 0,
+      width: originalScan.width,
+      height: originalScan.height,
+      mimeType: originalScan.mimeType,
+      sha256: originalScan.sha256 || '',
     },
+    asset: {
+      id: primaryAsset.id,
+      url: `/api/branding/assets/${encodeURIComponent(primaryAsset.id)}`,
+      mimeType: primaryAsset.mimeType,
+      width: primaryAsset.width,
+      height: primaryAsset.height,
+      byteSize: primaryAsset.byteSize,
+      originalAssetId: originalScan.quarantineId,
+    },
+    variants: Object.keys(savedVariants).length > 0 ? savedVariants : undefined,
   };
 }
 
@@ -1318,13 +1512,13 @@ export async function getBrandingAssetById(assetId: string): Promise<StoredBrand
   return null;
 }
 
-export function serveBrandingAssetResponse(res: http.ServerResponse, asset: StoredBrandingAsset): void {
+export async function serveBrandingAssetResponse(res: http.ServerResponse, asset: StoredBrandingAsset): Promise<void> {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
   if (asset.mimeType === 'image/svg+xml') {
     // Double-sanitize before serving SVG, plus strict sandbox CSP so inline scripts can never run even if opened directly
-    const recheck = validateBrandingImageInput(asset.dataContent);
+    const recheck = validateBrandingImageInput(asset.dataContent, { allowSvg: true });
     const svgBody = recheck.valid && recheck.sanitizedSvg ? recheck.sanitizedSvg : '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
     res.writeHead(200, {
       'Content-Type': 'image/svg+xml; charset=utf-8',
@@ -1347,6 +1541,20 @@ export function serveBrandingAssetResponse(res: http.ServerResponse, asset: Stor
     });
     res.end(buf);
     return;
+  }
+
+  if (asset.storageBucket && asset.storageObjectKey) {
+    const stored = await getObjectFromStorage(asset.storageBucket, asset.storageObjectKey);
+    if (stored) {
+      res.writeHead(200, {
+        'Content-Type': asset.mimeType,
+        'Content-Length': String(stored.data.length),
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      });
+      res.end(stored.data);
+      return;
+    }
   }
 
   res.writeHead(404);
@@ -1565,7 +1773,7 @@ export async function resolveDynamicPwaIcon(
     const assetId = rawIcon.replace('/api/branding/assets/', '').split('?')[0];
     const asset = await getBrandingAssetById(assetId);
     if (asset) {
-      serveBrandingAssetResponse(res, asset);
+      await serveBrandingAssetResponse(res, asset);
       return;
     }
   }
@@ -1573,7 +1781,7 @@ export async function resolveDynamicPwaIcon(
   if (rawIcon.startsWith('data:')) {
     const check = validateBrandingImageInput(rawIcon);
     if (check.valid && check.mimeType) {
-      serveBrandingAssetResponse(res, {
+      await serveBrandingAssetResponse(res, {
         id: `inline-${scope}`,
         scope: scope === 'myadmin' ? 'admin_app' : scope === 'mystaff' ? 'staff_app' : 'user_app',
         slot: 'pwa_icon',

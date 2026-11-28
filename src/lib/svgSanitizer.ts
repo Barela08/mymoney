@@ -4,15 +4,23 @@
  * Never allows executable scripts, event handlers, foreignObject, or external URI references inside SVGs.
  */
 
-export const MAX_SVG_BYTES = 512 * 1024; // 512 KB
-export const MAX_RASTER_BYTES = 2 * 1024 * 1024; // 2 MB
+import {
+  MAX_ADMIN_LOGO_BYTES,
+  MAX_SVG_BYTES as CORE_MAX_SVG_BYTES,
+  decodeBase64ToBytes,
+  encodeBytesToBase64,
+  inspectImageBinary,
+  sanitizeUploadFilename,
+  stripBinaryImageMetadata,
+} from './uploadSecurityCore';
+
+export const MAX_SVG_BYTES = CORE_MAX_SVG_BYTES; // 512 KB
+export const MAX_RASTER_BYTES = MAX_ADMIN_LOGO_BYTES; // 10 MB
 export const ALLOWED_BRANDING_MIME_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/jpg',
   'image/webp',
-  'image/gif',
-  'image/svg+xml',
 ]);
 
 export interface SanitizedImageValidationResult {
@@ -208,11 +216,31 @@ export function validateAndSanitizeSvg(rawInput: string): SanitizedImageValidati
  */
 export function validateBrandingImageInput(
   rawDataOrUrl: string,
-  options?: { width?: number; height?: number }
+  options?: {
+    width?: number;
+    height?: number;
+    maxBytes?: number;
+    allowSvg?: boolean;
+    allowGif?: boolean;
+    filename?: string;
+  }
 ): SanitizedImageValidationResult {
   const input = String(rawDataOrUrl || '').trim();
   if (!input) {
     return { valid: false, error: 'Image payload is required.' };
+  }
+
+  if (options?.filename) {
+    const fnCheck = sanitizeUploadFilename(options.filename);
+    if (!fnCheck.valid) {
+      return { valid: false, error: fnCheck.error || 'Unsafe filename rejected.' };
+    }
+    if ((fnCheck.extension === 'svg' || fnCheck.extension === 'svgz') && options?.allowSvg !== true) {
+      return {
+        valid: false,
+        error: 'SVG upload is disabled by default for security. Upload PNG, JPG, JPEG, or WebP, or explicitly enable sanitized SVG mode.',
+      };
+    }
   }
 
   if (input.startsWith('/') && !input.startsWith('//')) {
@@ -229,39 +257,57 @@ export function validateBrandingImageInput(
   }
 
   if (/^data:image\/svg\+xml/i.test(input) || /^<\?xml/i.test(input) || /^<svg[\s>]/i.test(input)) {
+    if (options?.allowSvg !== true) {
+      return {
+        valid: false,
+        error: 'SVG upload is disabled by default for security. Upload PNG, JPG, JPEG, or WebP, or explicitly enable sanitized SVG mode.',
+      };
+    }
     return validateAndSanitizeSvg(input);
   }
 
-  const rasterMatch = input.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i);
+  const rasterMatch = input.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/i);
   if (!rasterMatch) {
     return {
       valid: false,
-      error: 'Unsupported format. Please upload PNG, JPG/JPEG, WebP, GIF, or sanitized SVG.',
+      error: 'Unsupported format. Please upload PNG, JPG, JPEG, or WebP.',
     };
   }
 
-  const mime = rasterMatch[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : rasterMatch[1].toLowerCase();
-  const b64 = rasterMatch[2];
-  const approxBytes = Math.floor((b64.length * 3) / 4);
+  const declaredMime = rasterMatch[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : rasterMatch[1].toLowerCase();
+  const rawB64 = rasterMatch[2].replace(/\s+/g, '');
+  const maxBytes = options?.maxBytes ?? MAX_RASTER_BYTES;
 
-  if (approxBytes > MAX_RASTER_BYTES) {
-    return { valid: false, error: 'Image file size must be 2 MB or smaller.' };
+  let bytes: Uint8Array;
+  try {
+    bytes = decodeBase64ToBytes(rawB64);
+  } catch {
+    return { valid: false, error: 'Corrupt base64 image payload.' };
   }
 
-  if (options?.width && (options.width < 16 || options.width > 4096)) {
-    return { valid: false, error: 'Image width must be between 16px and 4096px.' };
+  const binaryCheck = inspectImageBinary(bytes, declaredMime, {
+    maxBytes,
+    allowGif: options?.allowGif !== false,
+  });
+
+  if (!binaryCheck.valid || !binaryCheck.detectedMime) {
+    return {
+      valid: false,
+      error: binaryCheck.error || 'Image failed binary security verification.',
+    };
   }
-  if (options?.height && (options.height < 16 || options.height > 4096)) {
-    return { valid: false, error: 'Image height must be between 16px and 4096px.' };
-  }
+
+  // Strip EXIF, GPS, XMP, and trailing polyglot bytes
+  const scrubbedBytes = stripBinaryImageMetadata(bytes, binaryCheck.detectedMime);
+  const cleanB64 = encodeBytesToBase64(scrubbedBytes);
 
   return {
     valid: true,
-    mimeType: mime,
-    sanitizedDataUrl: `data:${mime};base64,${b64}`,
-    byteSize: approxBytes,
-    width: options?.width,
-    height: options?.height,
+    mimeType: binaryCheck.detectedMime,
+    sanitizedDataUrl: `data:${binaryCheck.detectedMime};base64,${cleanB64}`,
+    byteSize: scrubbedBytes.length,
+    width: binaryCheck.width ?? options?.width,
+    height: binaryCheck.height ?? options?.height,
   };
 }
 

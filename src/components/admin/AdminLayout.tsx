@@ -340,12 +340,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
           <div className="flex items-center gap-2.5">
             <img
-              src={sanitizePublicUrl(adminBrand.logoUrl, '/admin-logo.png')}
+              src={sanitizePublicUrl(adminBrand.sidebarLogoUrl || adminBrand.logoUrl, '/admin-logo.png')}
               alt={adminBrand.appName || 'My Money Manager Admin'}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/admin-icon-192.png';
               }}
-              className="w-9 h-9 rounded-xl object-cover shadow-md border border-emerald-500/40 bg-slate-900"
+              decoding="async"
+              className="w-9 h-9 rounded-xl object-contain shadow-md border border-emerald-500/40 bg-slate-900"
             />
             <div>
               <div className="flex items-center gap-1.5">

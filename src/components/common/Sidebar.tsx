@@ -224,10 +224,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-5 border-b border-slate-100 dark:border-slate-800/80">
         <div className="flex items-center gap-3">
           <img
-            src={userBrand.logoUrl || appBranding?.logoUrl || '/logo.jpg'}
+            src={userBrand.sidebarLogoUrl || userBrand.logoUrl || appBranding?.logoUrl || '/logo.jpg'}
             alt={`${userBrand.appName || appBranding?.appName || 'My Money Manager'} ${userBrand.tagline || appBranding?.subTitle || 'by HackifyPro'}`}
             onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo.jpg'; }}
-            className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
+            decoding="async"
+            className="w-10 h-10 rounded-xl object-contain bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
           />
           <div className="min-w-0">
             <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight truncate">

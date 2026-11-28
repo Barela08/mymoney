@@ -206,6 +206,8 @@ export async function fetchTransactionsFromSupabase(
     query = query.or('is_deleted.is.null,is_deleted.eq.false');
   }
 
+  query = query.limit(1500);
+
   const { data, error } = await query;
   if (error) {
     console.error('Error fetching transactions from Supabase:', error);
@@ -575,16 +577,28 @@ export type RealtimeTransactionEvent = {
 };
 
 export function subscribeToSupabaseTransactions(
-  onChanged: (event?: RealtimeTransactionEvent) => void
+  onChanged: (event?: RealtimeTransactionEvent) => void,
+  userId?: string
 ): () => void {
   const client = getSupabaseClient();
   if (!client) return () => {};
 
+  const pgConfig: {
+    event: '*';
+    schema: 'public';
+    table: 'transactions';
+    filter?: string;
+  } = { event: '*', schema: 'public', table: 'transactions' };
+
+  if (userId) {
+    pgConfig.filter = `user_id=eq.${userId}`;
+  }
+
   const channel = client
-    .channel('realtime_transactions_' + Math.random().toString(36).substring(2, 7))
+    .channel(`realtime_transactions_${userId ? userId.slice(0, 8) : 'all'}_${Math.random().toString(36).substring(2, 7)}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'transactions' },
+      pgConfig,
       (payload) => {
         try {
           const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
