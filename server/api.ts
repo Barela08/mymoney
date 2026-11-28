@@ -3400,7 +3400,6 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       );
 
       const safeAppBase =
-        (requestOrigin && isAllowedOrigin(requestOrigin) ? requestOrigin : '') ||
         APP_CONFIG.appBaseUrl ||
         'https://mymoney.nileshbarela.site';
       const cancelLink = `${safeAppBase}/#cancel-deletion&token=${rawToken}&email=${encodeURIComponent(authUser.email)}`;
@@ -5244,7 +5243,7 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       // Generate secure invitation token
       const tokenHash = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
-      const appBaseUrl = process.env.APP_URL || 'http://localhost:3000';
+      const appBaseUrl = APP_CONFIG.appBaseUrl || 'https://mymoney.nileshbarela.site';
       const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
 
       await query(

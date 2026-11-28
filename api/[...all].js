@@ -52404,6 +52404,24 @@ function resolveVapidKeys() {
   };
   return g3.__myMoneyVapidKeys;
 }
+var PRODUCTION_APP_URL = "https://mymoney.nileshbarela.site";
+function sanitizePublicEmailUrl(rawUrl, fallbackUrl) {
+  const trimmed = (rawUrl || "").trim().replace(/\/+$/, "");
+  if (!trimmed) return fallbackUrl;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "0.0.0.0" || parsed.hostname === "::1") {
+      return fallbackUrl;
+    }
+    return trimmed;
+  } catch {
+    return fallbackUrl;
+  }
+}
+var resolvedAppBaseUrl = sanitizePublicEmailUrl(
+  process.env.EMAIL_BASE_URL || process.env.APP_BASE_URL || process.env.APP_URL,
+  PRODUCTION_APP_URL
+);
 var APP_CONFIG = {
   appName: process.env.APP_NAME || "My Money Manager",
   appTagline: process.env.APP_TAGLINE || "Personal Finance, Simplified.",
@@ -52413,9 +52431,9 @@ var APP_CONFIG = {
   supportPhone: process.env.SUPPORT_PHONE || "+91 74149 35405",
   supportPhoneRaw: "+917414935405",
   supportWhatsAppUrl: "https://wa.me/917414935405?text=Hello%20HackifyPro%20Support%20Team%2C%0A%0AI%20need%20assistance%20regarding%20My%20Money%20Manager%20app.%20I%20have%20a%20query%20and%20would%20like%20some%20help.%0A%0APlease%20guide%20me%20regarding%20my%20issue.%0A%0AThank%20you.",
-  appBaseUrl: process.env.APP_BASE_URL || "https://mymoney.nileshbarela.site",
-  appLoginUrl: process.env.APP_LOGIN_URL || "https://mymoney.nileshbarela.site/#login",
-  appLogoUrl: process.env.APP_LOGO_URL || "https://mymoney.nileshbarela.site/logo.jpg",
+  appBaseUrl: resolvedAppBaseUrl,
+  appLoginUrl: sanitizePublicEmailUrl(process.env.APP_LOGIN_URL, `${resolvedAppBaseUrl}/#login`),
+  appLogoUrl: sanitizePublicEmailUrl(process.env.APP_LOGO_URL, `${resolvedAppBaseUrl}/logo.jpg`),
   footerCopyright: `\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} My Money Manager \xB7 Powered by HackifyPro`,
   // SMTP Configuration
   smtp: {
@@ -105515,7 +105533,7 @@ async function handleApiRequest(req, res) {
          WHERE id = $3`,
           [scheduledFor, requestId, authUser.id]
         );
-        const safeAppBase = (requestOrigin && isAllowedOrigin(requestOrigin) ? requestOrigin : "") || APP_CONFIG.appBaseUrl || "https://mymoney.nileshbarela.site";
+        const safeAppBase = APP_CONFIG.appBaseUrl || "https://mymoney.nileshbarela.site";
         const cancelLink = `${safeAppBase}/#cancel-deletion&token=${rawToken}&email=${encodeURIComponent(authUser.email)}`;
         const submissionTimeStr = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
         const scheduledForStr = scheduledFor.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST";
@@ -107124,7 +107142,7 @@ async function handleApiRequest(req, res) {
         }
         const tokenHash = crypto25.randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1e3);
-        const appBaseUrl = process.env.APP_URL || "http://localhost:3000";
+        const appBaseUrl = APP_CONFIG.appBaseUrl || "https://mymoney.nileshbarela.site";
         const inviteLink = `${appBaseUrl}/#register?invite=${tokenHash}&email=${encodeURIComponent(contact.email)}`;
         await query(
           `INSERT INTO public.invitations (

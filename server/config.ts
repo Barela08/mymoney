@@ -107,6 +107,31 @@ function resolveVapidKeys(): { publicKey: string; privateKey: string; isPersiste
   return g.__myMoneyVapidKeys;
 }
 
+const PRODUCTION_APP_URL = 'https://mymoney.nileshbarela.site';
+function sanitizePublicEmailUrl(rawUrl: string | undefined, fallbackUrl: string): string {
+  const trimmed = (rawUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return fallbackUrl;
+  try {
+    const parsed = new URL(trimmed);
+    if (
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === '0.0.0.0' ||
+      parsed.hostname === '::1'
+    ) {
+      return fallbackUrl;
+    }
+    return trimmed;
+  } catch {
+    return fallbackUrl;
+  }
+}
+
+const resolvedAppBaseUrl = sanitizePublicEmailUrl(
+  process.env.EMAIL_BASE_URL || process.env.APP_BASE_URL || process.env.APP_URL,
+  PRODUCTION_APP_URL
+);
+
 /**
  * Centralized Application, Branding, and Support Configuration
  */
@@ -120,9 +145,9 @@ export const APP_CONFIG = {
   supportPhoneRaw: '+917414935405',
   supportWhatsAppUrl:
     'https://wa.me/917414935405?text=Hello%20HackifyPro%20Support%20Team%2C%0A%0AI%20need%20assistance%20regarding%20My%20Money%20Manager%20app.%20I%20have%20a%20query%20and%20would%20like%20some%20help.%0A%0APlease%20guide%20me%20regarding%20my%20issue.%0A%0AThank%20you.',
-  appBaseUrl: process.env.APP_BASE_URL || 'https://mymoney.nileshbarela.site',
-  appLoginUrl: process.env.APP_LOGIN_URL || 'https://mymoney.nileshbarela.site/#login',
-  appLogoUrl: process.env.APP_LOGO_URL || 'https://mymoney.nileshbarela.site/logo.jpg',
+  appBaseUrl: resolvedAppBaseUrl,
+  appLoginUrl: sanitizePublicEmailUrl(process.env.APP_LOGIN_URL, `${resolvedAppBaseUrl}/#login`),
+  appLogoUrl: sanitizePublicEmailUrl(process.env.APP_LOGO_URL, `${resolvedAppBaseUrl}/logo.jpg`),
   footerCopyright: `© ${new Date().getFullYear()} My Money Manager · Powered by HackifyPro`,
   
   // SMTP Configuration
